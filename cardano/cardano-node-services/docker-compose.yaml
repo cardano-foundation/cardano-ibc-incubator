@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  cardano-node-service:
+      container_name: cardano-node-service
+      build:
+        context: .
+        dockerfile: Dockerfile
+      ports:
+        - '8080:8080'
+      env_file:
+        - .env
+      network_mode: "host"
+

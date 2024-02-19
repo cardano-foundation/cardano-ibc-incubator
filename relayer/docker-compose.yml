@@ -1,0 +1,31 @@
+version: "3"
+
+services:
+  relayer:
+    container_name: relayer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+      - "8081:8080"
+      - "9090:9090"
+      - "26658:26656"
+      - "26659:26657"
+    environment:
+      - TX_CARDANO_HOST=localhost
+      - TX_CARDANO_PORT=4884
+    network_mode: "host"
+
+  tx_cardano:
+    container_name: tx_cardano
+    build:
+      context: tx-cardano
+      dockerfile: Dockerfile
+    volumes:
+      - type: bind
+        source: ./data/relayer
+        target: /root/.relayer
+    ports:
+      - "4884:4884"
+    network_mode: "host"

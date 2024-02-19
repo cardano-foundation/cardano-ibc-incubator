@@ -1,0 +1,17 @@
+# docker
+.dockerignore
+Dockerfile
+
+# git
+.git/
+.gitignore
+
+# ide
+.idea
+
+# cabal-install
+haskell-part/dist-newstyle/
+go/libcardano-ibc-helper.so
+
+#openapi
+sidechain/docs/static/openapi.yml

@@ -1,0 +1,9 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    network_mode: "host"
+    env_file:
+      - .env
+
+

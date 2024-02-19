@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  sidechain-node:
+    build: 
+      context: ../
+      dockerfile: ./.devcontainer/Dockerfile
+    volumes:
+      - ../:/root/sidechain/workspace
+    ports:
+      - "26657:26657"
+      - "4500:4500"
+      - "1317:1317"

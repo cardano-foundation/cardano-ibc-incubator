@@ -1,0 +1,5 @@
+{
+    "@type": "/ibc.clients.cardano.v1.ConsensusState",
+    "timestamp": 1705895324,
+    "slot": 1063
+}

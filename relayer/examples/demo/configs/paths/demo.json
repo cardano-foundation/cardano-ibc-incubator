@@ -1,0 +1,12 @@
+{
+  "src": {
+    "chain-id": "cardano"
+  },
+  "dst": {
+    "chain-id": "sidechain"
+  },
+  "src-channel-filter": {
+    "rule": null,
+    "channel-list": []
+  }
+}

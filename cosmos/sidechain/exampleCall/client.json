@@ -1,0 +1,34 @@
+{
+    "@type": "/ibc.clients.cardano.v1.ClientState",
+    "chain_id": "1",
+    "latest_height": {
+        "revision_number": 0,
+        "revision_height": 254
+    },
+    "frozen_height": {
+        "revision_number": 0,
+        "revision_height": 0
+    },
+    "valid_after": 0,
+    "genesis_time": 1705895324,
+    "current_epoch": 0,
+    "epoch_length": 423000,
+    "slot_per_kes_period": 129600,
+    "current_validator_set": [
+        {
+            "vrf_key_hash": "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+            "pool_id": "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09"
+        }
+    ],
+    "next_validator_set": [
+        {
+            "vrf_key_hash": "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+            "pool_id": "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09"
+        }
+    ],
+    "trusting_period": 12000,
+    "upgrade_path": [
+        "1",
+        "2"
+    ]
+}
