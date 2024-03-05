@@ -1,0 +1,6 @@
+build/
+chain-code/
+clib/
+scripts/
+testnets/
+two-chains/

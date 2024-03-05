@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package tx;
+
+option go_package = ".;pb";
+
+message SignAndSubmitTxRequest {
+  string chain_id = 1;
+  //string transaction_hex_string = 2;
+  bytes transaction_hex_string = 2;
+}
+
+message SignAndSubmitTxResponse {
+  string transaction_id = 1;
+}
+
+service TransactionService {
+  rpc SignAndSubmitTx(SignAndSubmitTxRequest) returns (SignAndSubmitTxResponse) {};
+}

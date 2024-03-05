@@ -1,0 +1,32 @@
+{
+  "name": "tx-cardano",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node --loader ts-node/esm src/index.ts",
+    "gen-sk-addr": "ts-node src/util/generate-credentials.ts",
+    "ts-node": "ts-node"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/google-protobuf": "^3.15.10",
+    "grpc_tools_node_protoc_ts": "^5.3.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.9.10",
+    "@grpc/proto-loader": "^0.7.10",
+    "dotenv": "^16.3.1",
+    "lucid-cardano": "^0.10.7",
+    "protoc-gen-ts": "^0.8.7",
+    "ts": "^0.2.2",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  }
+}

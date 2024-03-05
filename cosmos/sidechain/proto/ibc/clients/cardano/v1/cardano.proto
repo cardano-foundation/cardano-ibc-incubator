@@ -1,0 +1,103 @@
+syntax = "proto3";
+package ibc.clients.cardano.v1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "sidechain/x/clients/cardano";
+
+message Height {
+  option (gogoproto.goproto_getters)  = false;
+  option (gogoproto.goproto_stringer) = false;
+
+  // the revision that the client is currently on
+  uint64 revision_number = 1;
+  // the height within the given revision
+  uint64 revision_height = 2;
+}
+
+// ConsensusState defines the consensus state from Tendermint.
+message ConsensusState {
+  option (gogoproto.goproto_getters) = false;
+
+  // timestamp that corresponds to the block height in which the ConsensusState
+  // was stored. Will be Chain start time + slot, unit: seconds
+  uint64 timestamp = 1;
+  // Slot at consensus height
+  uint64 slot = 2;
+}
+
+message Validator {
+  option (gogoproto.goproto_getters) = false;
+
+  // vrf key hash of pool operator
+  string vrf_key_hash = 1;
+  // pool id of operator
+  string pool_id = 2;
+}
+
+message BlockData {
+  option (gogoproto.goproto_getters) = false;
+
+  // Block number
+  Height height = 1;
+  // Slot number
+  uint64 slot = 2;
+  // Block hash
+  string hash = 3;
+  // Hash of previous block
+  string prev_hash = 4;
+  // Epoch number
+  uint64 epoch_no = 5;
+
+  // Hex string of block header to cbor
+  string header_cbor = 6;
+  // Hex string of block txs to cbor
+  string body_cbor = 7;
+
+  // Hex string of current epoch's epoch nonce, calculated at the start of each epoch,
+  // calculated by evolving nonce of block inside epoch and last block nonce of prev block
+  // Used to construct vrf value, also to verify slot leader is valid
+  string epoch_nonce = 8;
+  // Time stamp of current block, unit: seconds
+  uint64 timestamp = 9;
+  // Chain id
+  string chain_id = 10;
+
+}
+
+message ClientState {
+  option (gogoproto.goproto_getters) = false;
+
+  // Chain id
+  string chain_id = 1;
+  // Latest height the client was updated to
+  Height latest_height = 2;
+  // Block height when the client was frozen due to a misbehaviour
+  Height frozen_height = 3;
+  // To support finality, this state will be mark as finality after `valid_after` slots, default 0, unit: slot
+  uint64 valid_after = 4;
+  // Time when chain start, unit: seconds
+  uint64 genesis_time = 5;
+  // Epoch number of current chain state
+  uint64 current_epoch = 6;
+  // Number of slots of this current epoch
+  uint64 epoch_length = 7;
+  // Number of slots of per KES period
+  uint64 slot_per_kes_period = 8;
+  // Current epoch validator set
+  repeated Validator current_validator_set = 9;
+  // Next epoch validator set
+  repeated Validator next_validator_set = 10;
+
+  uint64 trusting_period = 11;
+  // Path at which next upgraded client will be committed.
+  repeated string upgrade_path = 12;
+}
+
+message Misbehaviour {
+  option (gogoproto.goproto_getters) = false;
+  // ClientID is deprecated
+  string client_id = 1 [deprecated = true];
+  BlockData block_data_1  = 2 [(gogoproto.customname) = "BlockData1"];
+  BlockData block_data_2  = 3 [(gogoproto.customname) = "BlockData2"];
+}

@@ -1,0 +1,45 @@
+pub type Height {
+  // the revision that the client is currently on
+  revision_number: Int,
+  // the height within the given revision
+  revision_height: Int,
+}
+
+pub fn new_height(revision_number: Int, revision_height: Int) -> Height {
+  Height { revision_number, revision_height }
+}
+
+// TODO: 
+// We need a library to manipulate strings and regex, 
+// so here we temporarily return the revision number as 0
+pub fn parse_chain_id(_chain_id: ByteArray) -> Int {
+  0
+}
+
+pub fn is_valid(height: Height) -> Bool {
+  height.revision_number >= 0 && height.revision_height >= 0
+}
+
+pub fn compare(h1: Height, h2: Height) -> Ordering {
+  if h1.revision_number < h2.revision_number {
+    Less
+  } else if h1.revision_number > h2.revision_number {
+    Greater
+  } else {
+    if h1.revision_height < h2.revision_height {
+      Less
+    } else if h1.revision_height > h2.revision_height {
+      Greater
+    } else {
+      Equal
+    }
+  }
+}
+
+pub fn zero_height() -> Height {
+  Height { revision_number: 0, revision_height: 0 }
+}
+
+pub fn is_zero(height: Height) -> Bool {
+  height.revision_number == 0 && height.revision_height == 0
+}

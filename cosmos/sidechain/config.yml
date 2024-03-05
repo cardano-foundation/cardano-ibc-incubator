@@ -1,0 +1,70 @@
+version: 1
+accounts:
+  - name: alice
+    coins:
+      - 20000token
+      - 200000000stake
+    mnemonic: metal gown play execute nature near grass obscure velvet grow omit frequent valid elevator stock gallery end pluck ritual dial dwarf squirrel element tree
+  - name: bob
+    coins:
+      - 10000token
+      - 100000000stake
+    mnemonic: equal hello catch wine cricket village negative spell just few desk daring bachelor impact hat better hand depart maple sad please over lunch news
+client:
+  openapi:
+    path: docs/static/openapi.yml
+faucet:
+  name: bob
+  coins:
+    - 5token
+    - 100000stake
+genesis:
+  app_state:
+    ibc:
+      client_genesis:
+        clients: []
+        clients_consensus: []
+        clients_metadata: []
+        "params":
+          "allowed_clients":
+            - "099-cardano"
+            - "07-tendermint"
+            - "06-solomachine"
+        create_localhost: false
+        next_client_sequence: 0
+      connection_genesis:
+        connections: []
+        client_connection_paths: []
+        next_connection_sequence: 0
+        "params":
+          max_expected_time_per_block: 30000000000
+      channel_genesis:
+        "channels": []
+        "acknowledgements": []
+        "commitments": []
+        "receipts": []
+        "send_sequences": []
+        "recv_sequences": []
+        "ack_sequences": []
+        "next_channel_sequence": 0
+
+    "transfer":
+      "port_id": "transfer"
+      "denom_traces": []
+      "params":
+        "send_enabled": true
+        "receive_enabled": true
+
+    feeibc:
+      identified_fees: []
+      fee_enabled_channels: []
+      registered_payees: []
+      registered_counterparty_payees: []
+      forward_relayers: []
+
+validators:
+  - name: alice
+    bonded: 100000000stake
+
+build:
+  main: cmd/sidechaind/

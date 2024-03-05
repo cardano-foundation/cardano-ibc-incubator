@@ -1,0 +1,12 @@
+{
+  "src": {
+    "chain-id": "cardano"
+  },
+  "dst": {
+    "chain-id": "ibc-1"
+  },
+  "src-channel-filter": {
+    "rule": null,
+    "channel-list": []
+  }
+}
