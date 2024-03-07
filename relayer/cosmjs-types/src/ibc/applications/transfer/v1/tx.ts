@@ -47,7 +47,7 @@ function createBaseMsgTransfer(): MsgTransfer {
     receiver: "",
     timeout_height: Height.fromPartial({}),
     timeout_timestamp: BigInt(0),
-    memo: "",
+    memo: ""
   };
 }
 export const MsgTransfer = {
@@ -136,10 +136,8 @@ export const MsgTransfer = {
     message.token !== undefined && (obj.token = message.token ? Coin.toJSON(message.token) : undefined);
     message.sender !== undefined && (obj.sender = message.sender);
     message.receiver !== undefined && (obj.receiver = message.receiver);
-    message.timeout_height !== undefined &&
-      (obj.timeout_height = message.timeout_height ? Height.toJSON(message.timeout_height) : undefined);
-    message.timeout_timestamp !== undefined &&
-      (obj.timeout_timestamp = (message.timeout_timestamp || BigInt(0)).toString());
+    message.timeout_height !== undefined && (obj.timeout_height = message.timeout_height ? Height.toJSON(message.timeout_height) : undefined);
+    message.timeout_timestamp !== undefined && (obj.timeout_timestamp = (message.timeout_timestamp || BigInt(0)).toString());
     message.memo !== undefined && (obj.memo = message.memo);
     return obj;
   },
@@ -160,11 +158,11 @@ export const MsgTransfer = {
     }
     message.memo = object.memo ?? "";
     return message;
-  },
+  }
 };
 function createBaseMsgTransferResponse(): MsgTransferResponse {
   return {
-    sequence: BigInt(0),
+    sequence: BigInt(0)
   };
 }
 export const MsgTransferResponse = {
@@ -208,7 +206,7 @@ export const MsgTransferResponse = {
       message.sequence = BigInt(object.sequence.toString());
     }
     return message;
-  },
+  }
 };
 /** Msg defines the ibc/transfer Msg service. */
 export interface Msg {
@@ -224,6 +222,6 @@ export class MsgClientImpl implements Msg {
   Transfer(request: MsgTransfer): Promise<MsgTransferResponse> {
     const data = MsgTransfer.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Msg", "Transfer", data);
-    return promise.then((data) => MsgTransferResponse.decode(new BinaryReader(data)));
+    return promise.then(data => MsgTransferResponse.decode(new BinaryReader(data)));
   }
 }

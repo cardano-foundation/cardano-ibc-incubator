@@ -48,7 +48,7 @@ func VerifyBlock(block BlockHexCbor) string {
 
 	for i, arg := range argv {
 		c_argv[i] = C.CString(arg)
-		defer C.free(unsafe.Pointer(c_argv[i]))
+		// defer C.free(unsafe.Pointer(c_argv[i]))
 	}
 
 	C.init_hs(argc, (**C.char)(unsafe.Pointer(c_argv)))
@@ -79,7 +79,7 @@ func ExtractBlockData(blockCborHex string) string {
 
 	for i, arg := range argv {
 		c_argv[i] = C.CString(arg)
-		defer C.free(unsafe.Pointer(c_argv[i]))
+		// defer C.free(unsafe.Pointer(c_argv[i]))
 	}
 
 	C.init_hs(argc, (**C.char)(unsafe.Pointer(c_argv)))

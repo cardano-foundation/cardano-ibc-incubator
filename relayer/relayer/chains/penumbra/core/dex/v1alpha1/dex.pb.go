@@ -6,7 +6,7 @@ package dexv1alpha1
 import (
 	fmt "fmt"
 	proto "github.com/cosmos/gogoproto/proto"
-	v1alpha1 "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/penumbra/core/crypto/v1alpha1"
+	v1alpha1 "github.com/cardano/relayer/v1/relayer/chains/penumbra/core/crypto/v1alpha1"
 	io "io"
 	math "math"
 	math_bits "math/bits"

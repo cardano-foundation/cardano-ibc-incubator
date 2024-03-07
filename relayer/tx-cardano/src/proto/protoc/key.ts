@@ -3,7 +3,6 @@
  * compiler version: 3.6.1
  * source: key.proto
  * git: https://github.com/thesayyn/protoc-gen-ts */
-import * as dependency_1 from "./google/protobuf/empty";
 import * as pb_1 from "google-protobuf";
 import * as grpc_1 from "@grpc/grpc-js";
 export namespace key {
@@ -95,6 +94,96 @@ export namespace key {
         }
         static deserializeBinary(bytes: Uint8Array): AddKeyRequest {
             return AddKeyRequest.deserialize(bytes);
+        }
+    }
+    export class AddKeyResponse extends pb_1.Message {
+        #one_of_decls: number[][] = [];
+        constructor(data?: any[] | {
+            address?: string;
+            mnemonic?: string;
+        }) {
+            super();
+            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+            if (!Array.isArray(data) && typeof data == "object") {
+                if ("address" in data && data.address != undefined) {
+                    this.address = data.address;
+                }
+                if ("mnemonic" in data && data.mnemonic != undefined) {
+                    this.mnemonic = data.mnemonic;
+                }
+            }
+        }
+        get address() {
+            return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+        }
+        set address(value: string) {
+            pb_1.Message.setField(this, 1, value);
+        }
+        get mnemonic() {
+            return pb_1.Message.getFieldWithDefault(this, 2, "") as string;
+        }
+        set mnemonic(value: string) {
+            pb_1.Message.setField(this, 2, value);
+        }
+        static fromObject(data: {
+            address?: string;
+            mnemonic?: string;
+        }): AddKeyResponse {
+            const message = new AddKeyResponse({});
+            if (data.address != null) {
+                message.address = data.address;
+            }
+            if (data.mnemonic != null) {
+                message.mnemonic = data.mnemonic;
+            }
+            return message;
+        }
+        toObject() {
+            const data: {
+                address?: string;
+                mnemonic?: string;
+            } = {};
+            if (this.address != null) {
+                data.address = this.address;
+            }
+            if (this.mnemonic != null) {
+                data.mnemonic = this.mnemonic;
+            }
+            return data;
+        }
+        serialize(): Uint8Array;
+        serialize(w: pb_1.BinaryWriter): void;
+        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+            const writer = w || new pb_1.BinaryWriter();
+            if (this.address.length)
+                writer.writeString(1, this.address);
+            if (this.mnemonic.length)
+                writer.writeString(2, this.mnemonic);
+            if (!w)
+                return writer.getResultBuffer();
+        }
+        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): AddKeyResponse {
+            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new AddKeyResponse();
+            while (reader.nextField()) {
+                if (reader.isEndGroup())
+                    break;
+                switch (reader.getFieldNumber()) {
+                    case 1:
+                        message.address = reader.readString();
+                        break;
+                    case 2:
+                        message.mnemonic = reader.readString();
+                        break;
+                    default: reader.skipField();
+                }
+            }
+            return message;
+        }
+        serializeBinary(): Uint8Array {
+            return this.serialize();
+        }
+        static deserializeBinary(bytes: Uint8Array): AddKeyResponse {
+            return AddKeyResponse.deserialize(bytes);
         }
     }
     export class DeleteKeyRequest extends pb_1.Message {
@@ -315,6 +404,73 @@ export namespace key {
         }
         static deserializeBinary(bytes: Uint8Array): ShowAddressRequest {
             return ShowAddressRequest.deserialize(bytes);
+        }
+    }
+    export class ShowAddressResponse extends pb_1.Message {
+        #one_of_decls: number[][] = [];
+        constructor(data?: any[] | {
+            address?: string;
+        }) {
+            super();
+            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+            if (!Array.isArray(data) && typeof data == "object") {
+                if ("address" in data && data.address != undefined) {
+                    this.address = data.address;
+                }
+            }
+        }
+        get address() {
+            return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+        }
+        set address(value: string) {
+            pb_1.Message.setField(this, 1, value);
+        }
+        static fromObject(data: {
+            address?: string;
+        }): ShowAddressResponse {
+            const message = new ShowAddressResponse({});
+            if (data.address != null) {
+                message.address = data.address;
+            }
+            return message;
+        }
+        toObject() {
+            const data: {
+                address?: string;
+            } = {};
+            if (this.address != null) {
+                data.address = this.address;
+            }
+            return data;
+        }
+        serialize(): Uint8Array;
+        serialize(w: pb_1.BinaryWriter): void;
+        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+            const writer = w || new pb_1.BinaryWriter();
+            if (this.address.length)
+                writer.writeString(1, this.address);
+            if (!w)
+                return writer.getResultBuffer();
+        }
+        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): ShowAddressResponse {
+            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new ShowAddressResponse();
+            while (reader.nextField()) {
+                if (reader.isEndGroup())
+                    break;
+                switch (reader.getFieldNumber()) {
+                    case 1:
+                        message.address = reader.readString();
+                        break;
+                    default: reader.skipField();
+                }
+            }
+            return message;
+        }
+        serializeBinary(): Uint8Array {
+            return this.serialize();
+        }
+        static deserializeBinary(bytes: Uint8Array): ShowAddressResponse {
+            return ShowAddressResponse.deserialize(bytes);
         }
     }
     export class KeyExistRequest extends pb_1.Message {
@@ -562,113 +718,6 @@ export namespace key {
         }
         static deserializeBinary(bytes: Uint8Array): AddressInfo {
             return AddressInfo.deserialize(bytes);
-        }
-    }
-    export class Empty extends pb_1.Message {
-        #one_of_decls: number[][] = [];
-        constructor(data?: any[] | {}) {
-            super();
-            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
-            if (!Array.isArray(data) && typeof data == "object") { }
-        }
-        static fromObject(data: {}): Empty {
-            const message = new Empty({});
-            return message;
-        }
-        toObject() {
-            const data: {} = {};
-            return data;
-        }
-        serialize(): Uint8Array;
-        serialize(w: pb_1.BinaryWriter): void;
-        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
-            const writer = w || new pb_1.BinaryWriter();
-            if (!w)
-                return writer.getResultBuffer();
-        }
-        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): Empty {
-            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new Empty();
-            while (reader.nextField()) {
-                if (reader.isEndGroup())
-                    break;
-                switch (reader.getFieldNumber()) {
-                    default: reader.skipField();
-                }
-            }
-            return message;
-        }
-        serializeBinary(): Uint8Array {
-            return this.serialize();
-        }
-        static deserializeBinary(bytes: Uint8Array): Empty {
-            return Empty.deserialize(bytes);
-        }
-    }
-    export class Address extends pb_1.Message {
-        #one_of_decls: number[][] = [];
-        constructor(data?: any[] | {
-            address?: string;
-        }) {
-            super();
-            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
-            if (!Array.isArray(data) && typeof data == "object") {
-                if ("address" in data && data.address != undefined) {
-                    this.address = data.address;
-                }
-            }
-        }
-        get address() {
-            return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
-        }
-        set address(value: string) {
-            pb_1.Message.setField(this, 1, value);
-        }
-        static fromObject(data: {
-            address?: string;
-        }): Address {
-            const message = new Address({});
-            if (data.address != null) {
-                message.address = data.address;
-            }
-            return message;
-        }
-        toObject() {
-            const data: {
-                address?: string;
-            } = {};
-            if (this.address != null) {
-                data.address = this.address;
-            }
-            return data;
-        }
-        serialize(): Uint8Array;
-        serialize(w: pb_1.BinaryWriter): void;
-        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
-            const writer = w || new pb_1.BinaryWriter();
-            if (this.address.length)
-                writer.writeString(1, this.address);
-            if (!w)
-                return writer.getResultBuffer();
-        }
-        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): Address {
-            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new Address();
-            while (reader.nextField()) {
-                if (reader.isEndGroup())
-                    break;
-                switch (reader.getFieldNumber()) {
-                    case 1:
-                        message.address = reader.readString();
-                        break;
-                    default: reader.skipField();
-                }
-            }
-            return message;
-        }
-        serializeBinary(): Uint8Array {
-            return this.serialize();
-        }
-        static deserializeBinary(bytes: Uint8Array): Address {
-            return Address.deserialize(bytes);
         }
     }
     export class ListAddressesRequest extends pb_1.Message {
@@ -962,6 +1011,186 @@ export namespace key {
             return KeyFromKeyOrAddressResponse.deserialize(bytes);
         }
     }
+    export class RestoreKeyRequest extends pb_1.Message {
+        #one_of_decls: number[][] = [];
+        constructor(data?: any[] | {
+            key_name?: string;
+            chain_id?: string;
+            mnemonic?: string;
+        }) {
+            super();
+            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+            if (!Array.isArray(data) && typeof data == "object") {
+                if ("key_name" in data && data.key_name != undefined) {
+                    this.key_name = data.key_name;
+                }
+                if ("chain_id" in data && data.chain_id != undefined) {
+                    this.chain_id = data.chain_id;
+                }
+                if ("mnemonic" in data && data.mnemonic != undefined) {
+                    this.mnemonic = data.mnemonic;
+                }
+            }
+        }
+        get key_name() {
+            return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+        }
+        set key_name(value: string) {
+            pb_1.Message.setField(this, 1, value);
+        }
+        get chain_id() {
+            return pb_1.Message.getFieldWithDefault(this, 2, "") as string;
+        }
+        set chain_id(value: string) {
+            pb_1.Message.setField(this, 2, value);
+        }
+        get mnemonic() {
+            return pb_1.Message.getFieldWithDefault(this, 3, "") as string;
+        }
+        set mnemonic(value: string) {
+            pb_1.Message.setField(this, 3, value);
+        }
+        static fromObject(data: {
+            key_name?: string;
+            chain_id?: string;
+            mnemonic?: string;
+        }): RestoreKeyRequest {
+            const message = new RestoreKeyRequest({});
+            if (data.key_name != null) {
+                message.key_name = data.key_name;
+            }
+            if (data.chain_id != null) {
+                message.chain_id = data.chain_id;
+            }
+            if (data.mnemonic != null) {
+                message.mnemonic = data.mnemonic;
+            }
+            return message;
+        }
+        toObject() {
+            const data: {
+                key_name?: string;
+                chain_id?: string;
+                mnemonic?: string;
+            } = {};
+            if (this.key_name != null) {
+                data.key_name = this.key_name;
+            }
+            if (this.chain_id != null) {
+                data.chain_id = this.chain_id;
+            }
+            if (this.mnemonic != null) {
+                data.mnemonic = this.mnemonic;
+            }
+            return data;
+        }
+        serialize(): Uint8Array;
+        serialize(w: pb_1.BinaryWriter): void;
+        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+            const writer = w || new pb_1.BinaryWriter();
+            if (this.key_name.length)
+                writer.writeString(1, this.key_name);
+            if (this.chain_id.length)
+                writer.writeString(2, this.chain_id);
+            if (this.mnemonic.length)
+                writer.writeString(3, this.mnemonic);
+            if (!w)
+                return writer.getResultBuffer();
+        }
+        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): RestoreKeyRequest {
+            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new RestoreKeyRequest();
+            while (reader.nextField()) {
+                if (reader.isEndGroup())
+                    break;
+                switch (reader.getFieldNumber()) {
+                    case 1:
+                        message.key_name = reader.readString();
+                        break;
+                    case 2:
+                        message.chain_id = reader.readString();
+                        break;
+                    case 3:
+                        message.mnemonic = reader.readString();
+                        break;
+                    default: reader.skipField();
+                }
+            }
+            return message;
+        }
+        serializeBinary(): Uint8Array {
+            return this.serialize();
+        }
+        static deserializeBinary(bytes: Uint8Array): RestoreKeyRequest {
+            return RestoreKeyRequest.deserialize(bytes);
+        }
+    }
+    export class RestoreKeyResponse extends pb_1.Message {
+        #one_of_decls: number[][] = [];
+        constructor(data?: any[] | {
+            address?: string;
+        }) {
+            super();
+            pb_1.Message.initialize(this, Array.isArray(data) ? data : [], 0, -1, [], this.#one_of_decls);
+            if (!Array.isArray(data) && typeof data == "object") {
+                if ("address" in data && data.address != undefined) {
+                    this.address = data.address;
+                }
+            }
+        }
+        get address() {
+            return pb_1.Message.getFieldWithDefault(this, 1, "") as string;
+        }
+        set address(value: string) {
+            pb_1.Message.setField(this, 1, value);
+        }
+        static fromObject(data: {
+            address?: string;
+        }): RestoreKeyResponse {
+            const message = new RestoreKeyResponse({});
+            if (data.address != null) {
+                message.address = data.address;
+            }
+            return message;
+        }
+        toObject() {
+            const data: {
+                address?: string;
+            } = {};
+            if (this.address != null) {
+                data.address = this.address;
+            }
+            return data;
+        }
+        serialize(): Uint8Array;
+        serialize(w: pb_1.BinaryWriter): void;
+        serialize(w?: pb_1.BinaryWriter): Uint8Array | void {
+            const writer = w || new pb_1.BinaryWriter();
+            if (this.address.length)
+                writer.writeString(1, this.address);
+            if (!w)
+                return writer.getResultBuffer();
+        }
+        static deserialize(bytes: Uint8Array | pb_1.BinaryReader): RestoreKeyResponse {
+            const reader = bytes instanceof pb_1.BinaryReader ? bytes : new pb_1.BinaryReader(bytes), message = new RestoreKeyResponse();
+            while (reader.nextField()) {
+                if (reader.isEndGroup())
+                    break;
+                switch (reader.getFieldNumber()) {
+                    case 1:
+                        message.address = reader.readString();
+                        break;
+                    default: reader.skipField();
+                }
+            }
+            return message;
+        }
+        serializeBinary(): Uint8Array {
+            return this.serialize();
+        }
+        static deserializeBinary(bytes: Uint8Array): RestoreKeyResponse {
+            return RestoreKeyResponse.deserialize(bytes);
+        }
+    }
     interface GrpcUnaryServiceInterface<P, R> {
         (message: P, metadata: grpc_1.Metadata, options: grpc_1.CallOptions, callback: grpc_1.requestCallback<R>): grpc_1.ClientUnaryCall;
         (message: P, metadata: grpc_1.Metadata, callback: grpc_1.requestCallback<R>): grpc_1.ClientUnaryCall;
@@ -994,8 +1223,8 @@ export namespace key {
                 responseStream: false,
                 requestSerialize: (message: AddKeyRequest) => Buffer.from(message.serialize()),
                 requestDeserialize: (bytes: Buffer) => AddKeyRequest.deserialize(new Uint8Array(bytes)),
-                responseSerialize: (message: Address) => Buffer.from(message.serialize()),
-                responseDeserialize: (bytes: Buffer) => Address.deserialize(new Uint8Array(bytes))
+                responseSerialize: (message: AddKeyResponse) => Buffer.from(message.serialize()),
+                responseDeserialize: (bytes: Buffer) => AddKeyResponse.deserialize(new Uint8Array(bytes))
             },
             ShowAddress: {
                 path: "/key.KeyService/ShowAddress",
@@ -1003,8 +1232,8 @@ export namespace key {
                 responseStream: false,
                 requestSerialize: (message: ShowAddressRequest) => Buffer.from(message.serialize()),
                 requestDeserialize: (bytes: Buffer) => ShowAddressRequest.deserialize(new Uint8Array(bytes)),
-                responseSerialize: (message: Address) => Buffer.from(message.serialize()),
-                responseDeserialize: (bytes: Buffer) => Address.deserialize(new Uint8Array(bytes))
+                responseSerialize: (message: ShowAddressResponse) => Buffer.from(message.serialize()),
+                responseDeserialize: (bytes: Buffer) => ShowAddressResponse.deserialize(new Uint8Array(bytes))
             },
             DeleteKey: {
                 path: "/key.KeyService/DeleteKey",
@@ -1012,8 +1241,8 @@ export namespace key {
                 responseStream: false,
                 requestSerialize: (message: DeleteKeyRequest) => Buffer.from(message.serialize()),
                 requestDeserialize: (bytes: Buffer) => DeleteKeyRequest.deserialize(new Uint8Array(bytes)),
-                responseSerialize: (message: Empty) => Buffer.from(message.serialize()),
-                responseDeserialize: (bytes: Buffer) => Empty.deserialize(new Uint8Array(bytes))
+                responseSerialize: (message: DeleteKeyResponse) => Buffer.from(message.serialize()),
+                responseDeserialize: (bytes: Buffer) => DeleteKeyResponse.deserialize(new Uint8Array(bytes))
             },
             KeyExist: {
                 path: "/key.KeyService/KeyExist",
@@ -1041,27 +1270,37 @@ export namespace key {
                 requestDeserialize: (bytes: Buffer) => KeyFromKeyOrAddressRequest.deserialize(new Uint8Array(bytes)),
                 responseSerialize: (message: KeyFromKeyOrAddressResponse) => Buffer.from(message.serialize()),
                 responseDeserialize: (bytes: Buffer) => KeyFromKeyOrAddressResponse.deserialize(new Uint8Array(bytes))
+            },
+            RestoreKey: {
+                path: "/key.KeyService/RestoreKey",
+                requestStream: false,
+                responseStream: false,
+                requestSerialize: (message: RestoreKeyRequest) => Buffer.from(message.serialize()),
+                requestDeserialize: (bytes: Buffer) => RestoreKeyRequest.deserialize(new Uint8Array(bytes)),
+                responseSerialize: (message: RestoreKeyResponse) => Buffer.from(message.serialize()),
+                responseDeserialize: (bytes: Buffer) => RestoreKeyResponse.deserialize(new Uint8Array(bytes))
             }
         };
         [method: string]: grpc_1.UntypedHandleCall;
-        abstract AddKey(call: grpc_1.ServerUnaryCall<AddKeyRequest, Address>, callback: grpc_1.sendUnaryData<Address>): void;
-        abstract ShowAddress(call: grpc_1.ServerUnaryCall<ShowAddressRequest, Address>, callback: grpc_1.sendUnaryData<Address>): void;
-        abstract DeleteKey(call: grpc_1.ServerUnaryCall<DeleteKeyRequest, Empty>, callback: grpc_1.sendUnaryData<Empty>): void;
+        abstract AddKey(call: grpc_1.ServerUnaryCall<AddKeyRequest, AddKeyResponse>, callback: grpc_1.sendUnaryData<AddKeyResponse>): void;
+        abstract ShowAddress(call: grpc_1.ServerUnaryCall<ShowAddressRequest, ShowAddressResponse>, callback: grpc_1.sendUnaryData<ShowAddressResponse>): void;
+        abstract DeleteKey(call: grpc_1.ServerUnaryCall<DeleteKeyRequest, DeleteKeyResponse>, callback: grpc_1.sendUnaryData<DeleteKeyResponse>): void;
         abstract KeyExist(call: grpc_1.ServerUnaryCall<KeyExistRequest, KeyExistResponse>, callback: grpc_1.sendUnaryData<KeyExistResponse>): void;
         abstract ListAddresses(call: grpc_1.ServerUnaryCall<ListAddressesRequest, ListAddressesResponse>, callback: grpc_1.sendUnaryData<ListAddressesResponse>): void;
         abstract KeyFromKeyOrAddress(call: grpc_1.ServerUnaryCall<KeyFromKeyOrAddressRequest, KeyFromKeyOrAddressResponse>, callback: grpc_1.sendUnaryData<KeyFromKeyOrAddressResponse>): void;
+        abstract RestoreKey(call: grpc_1.ServerUnaryCall<RestoreKeyRequest, RestoreKeyResponse>, callback: grpc_1.sendUnaryData<RestoreKeyResponse>): void;
     }
     export class KeyServiceClient extends grpc_1.makeGenericClientConstructor(UnimplementedKeyServiceService.definition, "KeyService", {}) {
         constructor(address: string, credentials: grpc_1.ChannelCredentials, options?: Partial<grpc_1.ChannelOptions>) {
             super(address, credentials, options);
         }
-        AddKey: GrpcUnaryServiceInterface<AddKeyRequest, Address> = (message: AddKeyRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<Address>, options?: grpc_1.CallOptions | grpc_1.requestCallback<Address>, callback?: grpc_1.requestCallback<Address>): grpc_1.ClientUnaryCall => {
+        AddKey: GrpcUnaryServiceInterface<AddKeyRequest, AddKeyResponse> = (message: AddKeyRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<AddKeyResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<AddKeyResponse>, callback?: grpc_1.requestCallback<AddKeyResponse>): grpc_1.ClientUnaryCall => {
             return super.AddKey(message, metadata, options, callback);
         };
-        ShowAddress: GrpcUnaryServiceInterface<ShowAddressRequest, Address> = (message: ShowAddressRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<Address>, options?: grpc_1.CallOptions | grpc_1.requestCallback<Address>, callback?: grpc_1.requestCallback<Address>): grpc_1.ClientUnaryCall => {
+        ShowAddress: GrpcUnaryServiceInterface<ShowAddressRequest, ShowAddressResponse> = (message: ShowAddressRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<ShowAddressResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<ShowAddressResponse>, callback?: grpc_1.requestCallback<ShowAddressResponse>): grpc_1.ClientUnaryCall => {
             return super.ShowAddress(message, metadata, options, callback);
         };
-        DeleteKey: GrpcUnaryServiceInterface<DeleteKeyRequest, Empty> = (message: DeleteKeyRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<Empty>, options?: grpc_1.CallOptions | grpc_1.requestCallback<Empty>, callback?: grpc_1.requestCallback<Empty>): grpc_1.ClientUnaryCall => {
+        DeleteKey: GrpcUnaryServiceInterface<DeleteKeyRequest, DeleteKeyResponse> = (message: DeleteKeyRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<DeleteKeyResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<DeleteKeyResponse>, callback?: grpc_1.requestCallback<DeleteKeyResponse>): grpc_1.ClientUnaryCall => {
             return super.DeleteKey(message, metadata, options, callback);
         };
         KeyExist: GrpcUnaryServiceInterface<KeyExistRequest, KeyExistResponse> = (message: KeyExistRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<KeyExistResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<KeyExistResponse>, callback?: grpc_1.requestCallback<KeyExistResponse>): grpc_1.ClientUnaryCall => {
@@ -1072,6 +1311,9 @@ export namespace key {
         };
         KeyFromKeyOrAddress: GrpcUnaryServiceInterface<KeyFromKeyOrAddressRequest, KeyFromKeyOrAddressResponse> = (message: KeyFromKeyOrAddressRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<KeyFromKeyOrAddressResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<KeyFromKeyOrAddressResponse>, callback?: grpc_1.requestCallback<KeyFromKeyOrAddressResponse>): grpc_1.ClientUnaryCall => {
             return super.KeyFromKeyOrAddress(message, metadata, options, callback);
+        };
+        RestoreKey: GrpcUnaryServiceInterface<RestoreKeyRequest, RestoreKeyResponse> = (message: RestoreKeyRequest, metadata: grpc_1.Metadata | grpc_1.CallOptions | grpc_1.requestCallback<RestoreKeyResponse>, options?: grpc_1.CallOptions | grpc_1.requestCallback<RestoreKeyResponse>, callback?: grpc_1.requestCallback<RestoreKeyResponse>): grpc_1.ClientUnaryCall => {
+            return super.RestoreKey(message, metadata, options, callback);
         };
     }
 }

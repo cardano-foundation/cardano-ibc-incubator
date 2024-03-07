@@ -12,7 +12,7 @@ export interface Params {
 }
 function createBaseParams(): Params {
   return {
-    controller_enabled: false,
+    controller_enabled: false
   };
 }
 export const Params = {
@@ -54,5 +54,5 @@ export const Params = {
     const message = createBaseParams();
     message.controller_enabled = object.controller_enabled ?? false;
     return message;
-  },
+  }
 };

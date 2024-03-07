@@ -4,7 +4,7 @@ import { isSet, DeepPartial, Exact } from "../../../helpers";
 export const protobufPackage = "cosmos.base.v1beta1";
 /**
  * Coin defines a token with a denomination and an amount.
- *
+ * 
  * NOTE: The amount field is an Int which implements the custom method
  * signatures required by gogoproto.
  */
@@ -14,7 +14,7 @@ export interface Coin {
 }
 /**
  * DecCoin defines a token with a denomination and a decimal amount.
- *
+ * 
  * NOTE: The amount field is an Dec which implements the custom method
  * signatures required by gogoproto.
  */
@@ -33,7 +33,7 @@ export interface DecProto {
 function createBaseCoin(): Coin {
   return {
     denom: "",
-    amount: "",
+    amount: ""
   };
 }
 export const Coin = {
@@ -84,12 +84,12 @@ export const Coin = {
     message.denom = object.denom ?? "";
     message.amount = object.amount ?? "";
     return message;
-  },
+  }
 };
 function createBaseDecCoin(): DecCoin {
   return {
     denom: "",
-    amount: "",
+    amount: ""
   };
 }
 export const DecCoin = {
@@ -140,11 +140,11 @@ export const DecCoin = {
     message.denom = object.denom ?? "";
     message.amount = object.amount ?? "";
     return message;
-  },
+  }
 };
 function createBaseIntProto(): IntProto {
   return {
-    int: "",
+    int: ""
   };
 }
 export const IntProto = {
@@ -186,11 +186,11 @@ export const IntProto = {
     const message = createBaseIntProto();
     message.int = object.int ?? "";
     return message;
-  },
+  }
 };
 function createBaseDecProto(): DecProto {
   return {
-    dec: "",
+    dec: ""
   };
 }
 export const DecProto = {
@@ -232,5 +232,5 @@ export const DecProto = {
     const message = createBaseDecProto();
     message.dec = object.dec ?? "";
     return message;
-  },
+  }
 };

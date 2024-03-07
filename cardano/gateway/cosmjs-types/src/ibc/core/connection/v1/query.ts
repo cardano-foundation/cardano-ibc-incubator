@@ -119,7 +119,7 @@ export interface QueryConnectionParamsResponse {
 }
 function createBaseQueryConnectionRequest(): QueryConnectionRequest {
   return {
-    connection_id: "",
+    connection_id: ""
   };
 }
 export const QueryConnectionRequest = {
@@ -161,13 +161,13 @@ export const QueryConnectionRequest = {
     const message = createBaseQueryConnectionRequest();
     message.connection_id = object.connection_id ?? "";
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionResponse(): QueryConnectionResponse {
   return {
     connection: undefined,
     proof: new Uint8Array(),
-    proof_height: Height.fromPartial({}),
+    proof_height: Height.fromPartial({})
   };
 }
 export const QueryConnectionResponse = {
@@ -216,12 +216,9 @@ export const QueryConnectionResponse = {
   },
   toJSON(message: QueryConnectionResponse): unknown {
     const obj: any = {};
-    message.connection !== undefined &&
-      (obj.connection = message.connection ? ConnectionEnd.toJSON(message.connection) : undefined);
-    message.proof !== undefined &&
-      (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
-    message.proof_height !== undefined &&
-      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    message.connection !== undefined && (obj.connection = message.connection ? ConnectionEnd.toJSON(message.connection) : undefined);
+    message.proof !== undefined && (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
+    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryConnectionResponse>, I>>(object: I): QueryConnectionResponse {
@@ -234,11 +231,11 @@ export const QueryConnectionResponse = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionsRequest(): QueryConnectionsRequest {
   return {
-    pagination: undefined,
+    pagination: undefined
   };
 }
 export const QueryConnectionsRequest = {
@@ -273,8 +270,7 @@ export const QueryConnectionsRequest = {
   },
   toJSON(message: QueryConnectionsRequest): unknown {
     const obj: any = {};
-    message.pagination !== undefined &&
-      (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined && (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryConnectionsRequest>, I>>(object: I): QueryConnectionsRequest {
@@ -283,13 +279,13 @@ export const QueryConnectionsRequest = {
       message.pagination = PageRequest.fromPartial(object.pagination);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionsResponse(): QueryConnectionsResponse {
   return {
     connections: [],
     pagination: undefined,
-    height: Height.fromPartial({}),
+    height: Height.fromPartial({})
   };
 }
 export const QueryConnectionsResponse = {
@@ -331,8 +327,7 @@ export const QueryConnectionsResponse = {
   },
   fromJSON(object: any): QueryConnectionsResponse {
     const obj = createBaseQueryConnectionsResponse();
-    if (Array.isArray(object?.connections))
-      obj.connections = object.connections.map((e: any) => IdentifiedConnection.fromJSON(e));
+    if (Array.isArray(object?.connections)) obj.connections = object.connections.map((e: any) => IdentifiedConnection.fromJSON(e));
     if (isSet(object.pagination)) obj.pagination = PageResponse.fromJSON(object.pagination);
     if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
     return obj;
@@ -340,20 +335,17 @@ export const QueryConnectionsResponse = {
   toJSON(message: QueryConnectionsResponse): unknown {
     const obj: any = {};
     if (message.connections) {
-      obj.connections = message.connections.map((e) => (e ? IdentifiedConnection.toJSON(e) : undefined));
+      obj.connections = message.connections.map(e => e ? IdentifiedConnection.toJSON(e) : undefined);
     } else {
       obj.connections = [];
     }
-    message.pagination !== undefined &&
-      (obj.pagination = message.pagination ? PageResponse.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined && (obj.pagination = message.pagination ? PageResponse.toJSON(message.pagination) : undefined);
     message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionsResponse>, I>>(
-    object: I,
-  ): QueryConnectionsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionsResponse>, I>>(object: I): QueryConnectionsResponse {
     const message = createBaseQueryConnectionsResponse();
-    message.connections = object.connections?.map((e) => IdentifiedConnection.fromPartial(e)) || [];
+    message.connections = object.connections?.map(e => IdentifiedConnection.fromPartial(e)) || [];
     if (object.pagination !== undefined && object.pagination !== null) {
       message.pagination = PageResponse.fromPartial(object.pagination);
     }
@@ -361,11 +353,11 @@ export const QueryConnectionsResponse = {
       message.height = Height.fromPartial(object.height);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryClientConnectionsRequest(): QueryClientConnectionsRequest {
   return {
-    client_id: "",
+    client_id: ""
   };
 }
 export const QueryClientConnectionsRequest = {
@@ -403,27 +395,22 @@ export const QueryClientConnectionsRequest = {
     message.client_id !== undefined && (obj.client_id = message.client_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryClientConnectionsRequest>, I>>(
-    object: I,
-  ): QueryClientConnectionsRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryClientConnectionsRequest>, I>>(object: I): QueryClientConnectionsRequest {
     const message = createBaseQueryClientConnectionsRequest();
     message.client_id = object.client_id ?? "";
     return message;
-  },
+  }
 };
 function createBaseQueryClientConnectionsResponse(): QueryClientConnectionsResponse {
   return {
     connection_paths: [],
     proof: new Uint8Array(),
-    proof_height: Height.fromPartial({}),
+    proof_height: Height.fromPartial({})
   };
 }
 export const QueryClientConnectionsResponse = {
   typeUrl: "/ibc.core.connection.v1.QueryClientConnectionsResponse",
-  encode(
-    message: QueryClientConnectionsResponse,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryClientConnectionsResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     for (const v of message.connection_paths) {
       writer.uint32(10).string(v!);
     }
@@ -460,8 +447,7 @@ export const QueryClientConnectionsResponse = {
   },
   fromJSON(object: any): QueryClientConnectionsResponse {
     const obj = createBaseQueryClientConnectionsResponse();
-    if (Array.isArray(object?.connection_paths))
-      obj.connection_paths = object.connection_paths.map((e: any) => String(e));
+    if (Array.isArray(object?.connection_paths)) obj.connection_paths = object.connection_paths.map((e: any) => String(e));
     if (isSet(object.proof)) obj.proof = bytesFromBase64(object.proof);
     if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
     return obj;
@@ -469,39 +455,32 @@ export const QueryClientConnectionsResponse = {
   toJSON(message: QueryClientConnectionsResponse): unknown {
     const obj: any = {};
     if (message.connection_paths) {
-      obj.connection_paths = message.connection_paths.map((e) => e);
+      obj.connection_paths = message.connection_paths.map(e => e);
     } else {
       obj.connection_paths = [];
     }
-    message.proof !== undefined &&
-      (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
-    message.proof_height !== undefined &&
-      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    message.proof !== undefined && (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
+    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryClientConnectionsResponse>, I>>(
-    object: I,
-  ): QueryClientConnectionsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryClientConnectionsResponse>, I>>(object: I): QueryClientConnectionsResponse {
     const message = createBaseQueryClientConnectionsResponse();
-    message.connection_paths = object.connection_paths?.map((e) => e) || [];
+    message.connection_paths = object.connection_paths?.map(e => e) || [];
     message.proof = object.proof ?? new Uint8Array();
     if (object.proof_height !== undefined && object.proof_height !== null) {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionClientStateRequest(): QueryConnectionClientStateRequest {
   return {
-    connection_id: "",
+    connection_id: ""
   };
 }
 export const QueryConnectionClientStateRequest = {
   typeUrl: "/ibc.core.connection.v1.QueryConnectionClientStateRequest",
-  encode(
-    message: QueryConnectionClientStateRequest,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryConnectionClientStateRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.connection_id !== "") {
       writer.uint32(10).string(message.connection_id);
     }
@@ -534,27 +513,22 @@ export const QueryConnectionClientStateRequest = {
     message.connection_id !== undefined && (obj.connection_id = message.connection_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionClientStateRequest>, I>>(
-    object: I,
-  ): QueryConnectionClientStateRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionClientStateRequest>, I>>(object: I): QueryConnectionClientStateRequest {
     const message = createBaseQueryConnectionClientStateRequest();
     message.connection_id = object.connection_id ?? "";
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionClientStateResponse(): QueryConnectionClientStateResponse {
   return {
     identified_client_state: undefined,
     proof: new Uint8Array(),
-    proof_height: Height.fromPartial({}),
+    proof_height: Height.fromPartial({})
   };
 }
 export const QueryConnectionClientStateResponse = {
   typeUrl: "/ibc.core.connection.v1.QueryConnectionClientStateResponse",
-  encode(
-    message: QueryConnectionClientStateResponse,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryConnectionClientStateResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.identified_client_state !== undefined) {
       IdentifiedClientState.encode(message.identified_client_state, writer.uint32(10).fork()).ldelim();
     }
@@ -591,27 +565,19 @@ export const QueryConnectionClientStateResponse = {
   },
   fromJSON(object: any): QueryConnectionClientStateResponse {
     const obj = createBaseQueryConnectionClientStateResponse();
-    if (isSet(object.identified_client_state))
-      obj.identified_client_state = IdentifiedClientState.fromJSON(object.identified_client_state);
+    if (isSet(object.identified_client_state)) obj.identified_client_state = IdentifiedClientState.fromJSON(object.identified_client_state);
     if (isSet(object.proof)) obj.proof = bytesFromBase64(object.proof);
     if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
     return obj;
   },
   toJSON(message: QueryConnectionClientStateResponse): unknown {
     const obj: any = {};
-    message.identified_client_state !== undefined &&
-      (obj.identified_client_state = message.identified_client_state
-        ? IdentifiedClientState.toJSON(message.identified_client_state)
-        : undefined);
-    message.proof !== undefined &&
-      (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
-    message.proof_height !== undefined &&
-      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    message.identified_client_state !== undefined && (obj.identified_client_state = message.identified_client_state ? IdentifiedClientState.toJSON(message.identified_client_state) : undefined);
+    message.proof !== undefined && (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
+    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionClientStateResponse>, I>>(
-    object: I,
-  ): QueryConnectionClientStateResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionClientStateResponse>, I>>(object: I): QueryConnectionClientStateResponse {
     const message = createBaseQueryConnectionClientStateResponse();
     if (object.identified_client_state !== undefined && object.identified_client_state !== null) {
       message.identified_client_state = IdentifiedClientState.fromPartial(object.identified_client_state);
@@ -621,21 +587,18 @@ export const QueryConnectionClientStateResponse = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionConsensusStateRequest(): QueryConnectionConsensusStateRequest {
   return {
     connection_id: "",
     revision_number: BigInt(0),
-    revision_height: BigInt(0),
+    revision_height: BigInt(0)
   };
 }
 export const QueryConnectionConsensusStateRequest = {
   typeUrl: "/ibc.core.connection.v1.QueryConnectionConsensusStateRequest",
-  encode(
-    message: QueryConnectionConsensusStateRequest,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryConnectionConsensusStateRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.connection_id !== "") {
       writer.uint32(10).string(message.connection_id);
     }
@@ -680,15 +643,11 @@ export const QueryConnectionConsensusStateRequest = {
   toJSON(message: QueryConnectionConsensusStateRequest): unknown {
     const obj: any = {};
     message.connection_id !== undefined && (obj.connection_id = message.connection_id);
-    message.revision_number !== undefined &&
-      (obj.revision_number = (message.revision_number || BigInt(0)).toString());
-    message.revision_height !== undefined &&
-      (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionConsensusStateRequest>, I>>(
-    object: I,
-  ): QueryConnectionConsensusStateRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionConsensusStateRequest>, I>>(object: I): QueryConnectionConsensusStateRequest {
     const message = createBaseQueryConnectionConsensusStateRequest();
     message.connection_id = object.connection_id ?? "";
     if (object.revision_number !== undefined && object.revision_number !== null) {
@@ -698,22 +657,19 @@ export const QueryConnectionConsensusStateRequest = {
       message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionConsensusStateResponse(): QueryConnectionConsensusStateResponse {
   return {
     consensus_state: undefined,
     client_id: "",
     proof: new Uint8Array(),
-    proof_height: Height.fromPartial({}),
+    proof_height: Height.fromPartial({})
   };
 }
 export const QueryConnectionConsensusStateResponse = {
   typeUrl: "/ibc.core.connection.v1.QueryConnectionConsensusStateResponse",
-  encode(
-    message: QueryConnectionConsensusStateResponse,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryConnectionConsensusStateResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.consensus_state !== undefined) {
       Any.encode(message.consensus_state, writer.uint32(10).fork()).ldelim();
     }
@@ -764,18 +720,13 @@ export const QueryConnectionConsensusStateResponse = {
   },
   toJSON(message: QueryConnectionConsensusStateResponse): unknown {
     const obj: any = {};
-    message.consensus_state !== undefined &&
-      (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
+    message.consensus_state !== undefined && (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.proof !== undefined &&
-      (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
-    message.proof_height !== undefined &&
-      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    message.proof !== undefined && (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
+    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionConsensusStateResponse>, I>>(
-    object: I,
-  ): QueryConnectionConsensusStateResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionConsensusStateResponse>, I>>(object: I): QueryConnectionConsensusStateResponse {
     const message = createBaseQueryConnectionConsensusStateResponse();
     if (object.consensus_state !== undefined && object.consensus_state !== null) {
       message.consensus_state = Any.fromPartial(object.consensus_state);
@@ -786,7 +737,7 @@ export const QueryConnectionConsensusStateResponse = {
       message.proof_height = Height.fromPartial(object.proof_height);
     }
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionParamsRequest(): QueryConnectionParamsRequest {
   return {};
@@ -818,16 +769,14 @@ export const QueryConnectionParamsRequest = {
     const obj: any = {};
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionParamsRequest>, I>>(
-    _: I,
-  ): QueryConnectionParamsRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionParamsRequest>, I>>(_: I): QueryConnectionParamsRequest {
     const message = createBaseQueryConnectionParamsRequest();
     return message;
-  },
+  }
 };
 function createBaseQueryConnectionParamsResponse(): QueryConnectionParamsResponse {
   return {
-    params: undefined,
+    params: undefined
   };
 }
 export const QueryConnectionParamsResponse = {
@@ -865,15 +814,13 @@ export const QueryConnectionParamsResponse = {
     message.params !== undefined && (obj.params = message.params ? Params.toJSON(message.params) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryConnectionParamsResponse>, I>>(
-    object: I,
-  ): QueryConnectionParamsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryConnectionParamsResponse>, I>>(object: I): QueryConnectionParamsResponse {
     const message = createBaseQueryConnectionParamsResponse();
     if (object.params !== undefined && object.params !== null) {
       message.params = Params.fromPartial(object.params);
     }
     return message;
-  },
+  }
 };
 /** Query provides defines the gRPC querier service */
 export interface Query {
@@ -890,16 +837,12 @@ export interface Query {
    * ConnectionClientState queries the client state associated with the
    * connection.
    */
-  ConnectionClientState(
-    request: QueryConnectionClientStateRequest,
-  ): Promise<QueryConnectionClientStateResponse>;
+  ConnectionClientState(request: QueryConnectionClientStateRequest): Promise<QueryConnectionClientStateResponse>;
   /**
    * ConnectionConsensusState queries the consensus state associated with the
    * connection.
    */
-  ConnectionConsensusState(
-    request: QueryConnectionConsensusStateRequest,
-  ): Promise<QueryConnectionConsensusStateResponse>;
+  ConnectionConsensusState(request: QueryConnectionConsensusStateRequest): Promise<QueryConnectionConsensusStateResponse>;
   /** ConnectionParams queries all parameters of the ibc connection submodule. */
   ConnectionParams(request?: QueryConnectionParamsRequest): Promise<QueryConnectionParamsResponse>;
 }
@@ -917,39 +860,33 @@ export class QueryClientImpl implements Query {
   Connection(request: QueryConnectionRequest): Promise<QueryConnectionResponse> {
     const data = QueryConnectionRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "Connection", data);
-    return promise.then((data) => QueryConnectionResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryConnectionResponse.decode(new BinaryReader(data)));
   }
-  Connections(
-    request: QueryConnectionsRequest = {
-      pagination: PageRequest.fromPartial({}),
-    },
-  ): Promise<QueryConnectionsResponse> {
+  Connections(request: QueryConnectionsRequest = {
+    pagination: PageRequest.fromPartial({})
+  }): Promise<QueryConnectionsResponse> {
     const data = QueryConnectionsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "Connections", data);
-    return promise.then((data) => QueryConnectionsResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryConnectionsResponse.decode(new BinaryReader(data)));
   }
   ClientConnections(request: QueryClientConnectionsRequest): Promise<QueryClientConnectionsResponse> {
     const data = QueryClientConnectionsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "ClientConnections", data);
-    return promise.then((data) => QueryClientConnectionsResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryClientConnectionsResponse.decode(new BinaryReader(data)));
   }
-  ConnectionClientState(
-    request: QueryConnectionClientStateRequest,
-  ): Promise<QueryConnectionClientStateResponse> {
+  ConnectionClientState(request: QueryConnectionClientStateRequest): Promise<QueryConnectionClientStateResponse> {
     const data = QueryConnectionClientStateRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "ConnectionClientState", data);
-    return promise.then((data) => QueryConnectionClientStateResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryConnectionClientStateResponse.decode(new BinaryReader(data)));
   }
-  ConnectionConsensusState(
-    request: QueryConnectionConsensusStateRequest,
-  ): Promise<QueryConnectionConsensusStateResponse> {
+  ConnectionConsensusState(request: QueryConnectionConsensusStateRequest): Promise<QueryConnectionConsensusStateResponse> {
     const data = QueryConnectionConsensusStateRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "ConnectionConsensusState", data);
-    return promise.then((data) => QueryConnectionConsensusStateResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryConnectionConsensusStateResponse.decode(new BinaryReader(data)));
   }
   ConnectionParams(request: QueryConnectionParamsRequest = {}): Promise<QueryConnectionParamsResponse> {
     const data = QueryConnectionParamsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.connection.v1.Query", "ConnectionParams", data);
-    return promise.then((data) => QueryConnectionParamsResponse.decode(new BinaryReader(data)));
+    return promise.then(data => QueryConnectionParamsResponse.decode(new BinaryReader(data)));
   }
 }

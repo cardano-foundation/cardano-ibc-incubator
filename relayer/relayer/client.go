@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"github.com/avast/retry-go/v4"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
@@ -23,10 +23,17 @@ import (
 func (c *Chain) CreateClients(ctx context.Context, dst *Chain, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override bool, customClientTrustingPeriod time.Duration, memo string) (string, string, error) {
 	// Query the latest heights on src and dst and retry if the query fails
 	var srch, dsth int64
+	cardanoChain, cosmosChain := c, dst
+	if cardanoChain.ChainProvider.Type() != "cardano" {
+		cardanoChain = dst
+		cosmosChain = c
+	}
 	if err := retry.Do(func() error {
 		var err error
-		srch, err = c.ChainProvider.QueryCardanoLatestHeight(ctx)
-		dsth, err = QueryCosmosLatestHeight(ctx, dst)
+		//srch, err = c.ChainProvider.QueryCardanoLatestHeight(ctx)
+		//dsth, err = QueryCosmosLatestHeight(ctx, dst)
+		srch, err = cardanoChain.ChainProvider.QueryLatestHeight(ctx)
+		dsth, err = cosmosChain.ChainProvider.QueryLatestHeight(ctx)
 		if srch == 0 || dsth == 0 || err != nil {
 			return fmt.Errorf("failed to query latest heights: %w", err)
 		}
@@ -35,13 +42,12 @@ func (c *Chain) CreateClients(ctx context.Context, dst *Chain, allowUpdateAfterE
 	}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr); err != nil {
 		return "", "", err
 	}
-
 	// Query the light signed headers for src & dst at the heights srch & dsth, retry if the query fails
 	var dstUpdateHeader provider.IBCHeader
 	if err := retry.Do(func() error {
 		var err error
-		dst.Chainid = dst.PathEnd.ChainID
-		dstUpdateHeader, err = QueryIBCHeader(ctx, dst, dsth)
+		cosmosChain.Chainid = cosmosChain.PathEnd.ChainID
+		dstUpdateHeader, err = QueryIBCHeader(ctx, cosmosChain, dsth)
 		if err != nil {
 			return err
 		}
@@ -66,7 +72,7 @@ func (c *Chain) CreateClients(ctx context.Context, dst *Chain, allowUpdateAfterE
 	eg.Go(func() error {
 		var err error
 		// Create client on cardano for cosmos
-		clientSrc, err = CreateClient(egCtx, c, dst, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, memo, true)
+		clientSrc, err = CreateClient(egCtx, cardanoChain, cosmosChain, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, memo, true)
 		if err != nil {
 			return fmt.Errorf("failed to create client on src chain{%s}: %w", c.ChainID(), err)
 		}
@@ -76,7 +82,7 @@ func (c *Chain) CreateClients(ctx context.Context, dst *Chain, allowUpdateAfterE
 	eg.Go(func() error {
 		var err error
 		// Create client on cosmos for cardano
-		clientDst, err = CreateClient(egCtx, c, dst, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, memo, false)
+		clientDst, err = CreateClient(egCtx, cardanoChain, cosmosChain, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, memo, false)
 		if err != nil {
 			return fmt.Errorf("failed to create client on dst chain{%s}: %w", dst.ChainID(), err)
 		}
@@ -225,28 +231,14 @@ func MsgUpdateClient(
 	srch, dsth int64,
 ) (provider.RelayerMessage, error) {
 	var dstClientState ibcexported.ClientState
-	fmt.Println("src clientId: ", src.ClientID())
-	fmt.Println("dst clientId: ", dst.ClientID())
-
-	srcClientId := src.ClientID()
+	// srcClientId := src.ClientID()
 	dstClientId := dst.ClientID()
-	if strings.HasPrefix(srcClientId, "07-tendermint-") {
-		srcClientId = strings.TrimPrefix(srcClientId, "07-tendermint-")
-	}
-
-	if strings.HasPrefix(dstClientId, "07-tendermint-") {
-		dstClientId = strings.TrimPrefix(dstClientId, "07-tendermint-")
-	}
+	// srcClientId = strings.TrimPrefix(srcClientId, "07-tendermint-")
+	dstClientId = strings.TrimPrefix(dstClientId, "07-tendermint-")
 
 	if err := retry.Do(func() error {
 		var err error
-		fmt.Println("dstClientId: ", dstClientId, dsth)
-		// if strings.HasPrefix(dstClientId, "099-cardano-") {
-		// 	dstClientId = "099-cardano-78"
-		// }
 		dstClientState, err = dst.ChainProvider.QueryClientState(ctx, dsth, dstClientId)
-		fmt.Println("DstClientState: ", dstClientState)
-		//dstClientState, err = dst.ChainProvider.QueryClientState(ctx, dsth, "099-cardano-0")
 		return err
 	}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
 		dst.log.Info(
@@ -259,8 +251,6 @@ func MsgUpdateClient(
 	})); err != nil {
 		return nil, err
 	}
-	println("type.... ")
-	println(src.ChainProvider.Type())
 	switch src.ChainProvider.Type() {
 	case "cardano": // cardano -> cosmos
 		var srcBlockData *module.BlockData
@@ -272,7 +262,6 @@ func MsgUpdateClient(
 			return retry.Do(func() error {
 				var err error
 				srcBlockData, err = src.ChainProvider.QueryBlockData(egCtx, srch)
-				fmt.Println("cardano/queryblockdata: ", srcBlockData, err)
 				return err
 			}, retry.Context(egCtx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
 				src.log.Info(
@@ -306,7 +295,6 @@ func MsgUpdateClient(
 		}
 
 		// updates off-chain light client
-		fmt.Println("client.go/MsgUpdateClient: ", dstClientId, len(dstClientId))
 		return dst.ChainProvider.MsgUpdateClient(dstClientId, srcBlockData)
 
 	case "cosmos": // cosmos -> cardano
@@ -382,10 +370,6 @@ func UpdateClients(
 	if err != nil {
 		return err
 	}
-	fmt.Println("print height ..")
-	fmt.Println(src.Chainid, srch)
-	fmt.Println(dst.Chainid, dsth)
-
 	var srcMsgUpdateClient, dstMsgUpdateClient provider.RelayerMessage
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -406,8 +390,6 @@ func UpdateClients(
 		Src: []provider.RelayerMessage{srcMsgUpdateClient},
 		Dst: []provider.RelayerMessage{dstMsgUpdateClient},
 	}
-
-	fmt.Println("client.go/UpdateClients", srcMsgUpdateClient, dstMsgUpdateClient)
 
 	// Send msgs to both chains
 	result := clients.Send(ctx, src.log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)

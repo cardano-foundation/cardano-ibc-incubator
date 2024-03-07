@@ -5,11 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 )
 
@@ -19,9 +19,9 @@ import (
 type pathEndRuntime struct {
 	log *zap.Logger
 
-	info PathEnd
+	Info PathEnd
 
-	chainProvider provider.ChainProvider
+	ChainProvider provider.ChainProvider
 
 	// cached data
 	latestBlock          provider.LatestBlock
@@ -63,7 +63,7 @@ func newPathEndRuntime(log *zap.Logger, pathEnd PathEnd, metrics *PrometheusMetr
 			zap.String("chain_id", pathEnd.ChainID),
 			zap.String("client_id", pathEnd.ClientID),
 		),
-		info:                 pathEnd,
+		Info:                 pathEnd,
 		incomingCacheData:    make(chan ChainProcessorCacheData, 100),
 		connectionStateCache: make(ConnectionStateCache),
 		channelStateCache:    make(ChannelStateCache),
@@ -107,10 +107,10 @@ func (pathEnd *pathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, 
 	clientICQMessages := make(ClientICQMessagesCache)
 
 	for ch, pmc := range messageCache.PacketFlow {
-		if pathEnd.info.ShouldRelayChannel(ChainChannelKey{ChainID: pathEnd.info.ChainID, CounterpartyChainID: counterpartyChainID, ChannelKey: ch}) {
+		if pathEnd.Info.ShouldRelayChannel(ChainChannelKey{ChainID: pathEnd.Info.ChainID, CounterpartyChainID: counterpartyChainID, ChannelKey: ch}) {
 			if inSync && pathEnd.metrics != nil {
 				for eventType, pCache := range pmc {
-					pathEnd.metrics.AddPacketsObserved(pathEnd.info.PathName, pathEnd.info.ChainID, ch.ChannelID, ch.PortID, eventType, len(pCache))
+					pathEnd.metrics.AddPacketsObserved(pathEnd.Info.PathName, pathEnd.Info.ChainID, ch.ChannelID, ch.PortID, eventType, len(pCache))
 				}
 			}
 			packetMessages[ch] = pmc
@@ -126,6 +126,7 @@ func (pathEnd *pathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, 
 				// since PathProcessor holds reference to the counterparty chain pathEndRuntime.
 				newCmc[k] = ci
 			}
+			newCmc[k] = ci
 		}
 		if len(newCmc) == 0 {
 			continue
@@ -195,7 +196,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 	}
 	switch m := messageLifecycle.(type) {
 	case *PacketMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		channelKey, err := PacketInfoChannelKey(m.Termination.EventType, m.Termination.Info)
@@ -223,7 +224,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 		pathEnd.log.Info("Found termination condition for packet flow")
 		return true
 	case *ChannelMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		cache, ok := ibcMessagesCache.ChannelHandshake[m.Termination.EventType]
@@ -274,7 +275,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 				zap.String("termination_channel_id", m.SrcChannelID),
 				zap.String("observed_channel_id", ci.ChannelID),
 			)
-			if pathEnd.info.ChainID == m.SrcChainID {
+			if pathEnd.Info.ChainID == m.SrcChainID {
 				if ci.ChannelID == m.SrcChannelID {
 					foundChannelID = true
 				}
@@ -295,7 +296,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 			return true
 		}
 	case *ConnectionMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		cache, ok := ibcMessagesCache.ConnectionHandshake[m.Termination.EventType]
@@ -348,7 +349,7 @@ func (pathEnd *pathEndRuntime) checkForMisbehaviour(
 ) (bool, error) {
 	cachedHeader := counterparty.ibcHeaderCache[state.ConsensusHeight.RevisionHeight]
 
-	misbehaviour, err := provider.CheckForMisbehaviour(ctx, counterparty.chainProvider, pathEnd.info.ClientID, state.Header, cachedHeader)
+	misbehaviour, err := provider.CheckForMisbehaviour(ctx, counterparty.ChainProvider, pathEnd.Info.ClientID, state.Header, cachedHeader)
 	if err != nil {
 		return false, err
 	}
@@ -356,12 +357,12 @@ func (pathEnd *pathEndRuntime) checkForMisbehaviour(
 		return false, nil
 	}
 
-	msgMisbehaviour, err := pathEnd.chainProvider.MsgSubmitMisbehaviour(pathEnd.info.ClientID, misbehaviour)
+	msgMisbehaviour, err := pathEnd.ChainProvider.MsgSubmitMisbehaviour(pathEnd.Info.ClientID, misbehaviour)
 	if err != nil {
 		return true, err
 	}
 
-	_, _, err = pathEnd.chainProvider.SendMessage(ctx, msgMisbehaviour, "")
+	_, _, err = pathEnd.ChainProvider.SendMessage(ctx, msgMisbehaviour, "")
 	if err != nil {
 		return true, err
 	}
@@ -378,14 +379,15 @@ func (pathEnd *pathEndRuntime) mergeCacheData(ctx context.Context, cancel func()
 	pathEnd.latestHeader = d.LatestHeader
 	pathEnd.clientState = d.ClientState
 
-	terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.clientState, counterParty)
-	if err != nil {
-		pathEnd.log.Error(
-			"Failed to check for misbehaviour",
-			zap.String("client_id", pathEnd.info.ClientID),
-			zap.Error(err),
-		)
-	}
+	// TODO: add checkForMisbehaviour
+	// terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.clientState, counterParty)
+	// if err != nil {
+	// 	pathEnd.log.Error(
+	// 		"Failed to check for misbehaviour",
+	// 		zap.String("client_id", pathEnd.Info.ClientID),
+	// 		zap.Error(err),
+	// 	)
+	// }
 
 	if d.ClientState.ConsensusHeight != pathEnd.clientState.ConsensusHeight {
 		pathEnd.clientState = d.ClientState
@@ -397,7 +399,8 @@ func (pathEnd *pathEndRuntime) mergeCacheData(ctx context.Context, cancel func()
 
 	pathEnd.handleCallbacks(d.IBCMessagesCache)
 
-	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) || terminate {
+	// TODO: after adding checkForMisbehaviour then uncomment condition
+	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) { // || terminate {
 		cancel()
 		return
 	}
@@ -609,7 +612,7 @@ func (pathEnd *pathEndRuntime) shouldSendChannelMessage(message channelIBCMessag
 	}
 
 	// For localhost cache the channel order on OpenInit so that we can access it during the other channel handshake steps
-	if pathEnd.info.ClientID == ibcexported.LocalhostClientID && eventType == chantypes.EventTypeChannelOpenInit {
+	if pathEnd.Info.ClientID == ibcexported.LocalhostClientID && eventType == chantypes.EventTypeChannelOpenInit {
 		pathEnd.channelOrderCache[channelKey.ChannelID] = message.info.Order
 		counterparty.channelOrderCache[channelKey.CounterpartyChannelID] = message.info.Order
 	}
@@ -858,7 +861,7 @@ func (pathEnd *pathEndRuntime) localhostSentinelProofPacket(
 ) (provider.PacketProof, error) {
 	return provider.PacketProof{
 		Proof:       []byte{0x01},
-		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.info.ChainID), height),
+		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.Info.ChainID), height),
 	}, nil
 }
 
@@ -869,7 +872,7 @@ func (pathEnd *pathEndRuntime) localhostSentinelProofChannel(
 ) (provider.ChannelProof, error) {
 	return provider.ChannelProof{
 		Proof:       []byte{0x01},
-		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.info.ChainID), height),
+		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.Info.ChainID), height),
 		Ordering:    info.Order,
 		Version:     info.Version,
 	}, nil

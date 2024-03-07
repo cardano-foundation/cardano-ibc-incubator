@@ -88,7 +88,7 @@ function createBaseClientState(): ClientState {
   return {
     sequence: BigInt(0),
     is_frozen: false,
-    consensus_state: undefined,
+    consensus_state: undefined
   };
 }
 export const ClientState = {
@@ -139,10 +139,7 @@ export const ClientState = {
     const obj: any = {};
     message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
     message.is_frozen !== undefined && (obj.is_frozen = message.is_frozen);
-    message.consensus_state !== undefined &&
-      (obj.consensus_state = message.consensus_state
-        ? ConsensusState.toJSON(message.consensus_state)
-        : undefined);
+    message.consensus_state !== undefined && (obj.consensus_state = message.consensus_state ? ConsensusState.toJSON(message.consensus_state) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -155,13 +152,13 @@ export const ClientState = {
       message.consensus_state = ConsensusState.fromPartial(object.consensus_state);
     }
     return message;
-  },
+  }
 };
 function createBaseConsensusState(): ConsensusState {
   return {
     public_key: undefined,
     diversifier: "",
-    timestamp: BigInt(0),
+    timestamp: BigInt(0)
   };
 }
 export const ConsensusState = {
@@ -210,8 +207,7 @@ export const ConsensusState = {
   },
   toJSON(message: ConsensusState): unknown {
     const obj: any = {};
-    message.public_key !== undefined &&
-      (obj.public_key = message.public_key ? Any.toJSON(message.public_key) : undefined);
+    message.public_key !== undefined && (obj.public_key = message.public_key ? Any.toJSON(message.public_key) : undefined);
     message.diversifier !== undefined && (obj.diversifier = message.diversifier);
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
     return obj;
@@ -226,14 +222,14 @@ export const ConsensusState = {
       message.timestamp = BigInt(object.timestamp.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseHeader(): Header {
   return {
     timestamp: BigInt(0),
     signature: new Uint8Array(),
     new_public_key: undefined,
-    new_diversifier: "",
+    new_diversifier: ""
   };
 }
 export const Header = {
@@ -290,12 +286,8 @@ export const Header = {
   toJSON(message: Header): unknown {
     const obj: any = {};
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
-    message.signature !== undefined &&
-      (obj.signature = base64FromBytes(
-        message.signature !== undefined ? message.signature : new Uint8Array(),
-      ));
-    message.new_public_key !== undefined &&
-      (obj.new_public_key = message.new_public_key ? Any.toJSON(message.new_public_key) : undefined);
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
+    message.new_public_key !== undefined && (obj.new_public_key = message.new_public_key ? Any.toJSON(message.new_public_key) : undefined);
     message.new_diversifier !== undefined && (obj.new_diversifier = message.new_diversifier);
     return obj;
   },
@@ -310,13 +302,13 @@ export const Header = {
     }
     message.new_diversifier = object.new_diversifier ?? "";
     return message;
-  },
+  }
 };
 function createBaseMisbehaviour(): Misbehaviour {
   return {
     sequence: BigInt(0),
     signature_one: undefined,
-    signature_two: undefined,
+    signature_two: undefined
   };
 }
 export const Misbehaviour = {
@@ -366,14 +358,8 @@ export const Misbehaviour = {
   toJSON(message: Misbehaviour): unknown {
     const obj: any = {};
     message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
-    message.signature_one !== undefined &&
-      (obj.signature_one = message.signature_one
-        ? SignatureAndData.toJSON(message.signature_one)
-        : undefined);
-    message.signature_two !== undefined &&
-      (obj.signature_two = message.signature_two
-        ? SignatureAndData.toJSON(message.signature_two)
-        : undefined);
+    message.signature_one !== undefined && (obj.signature_one = message.signature_one ? SignatureAndData.toJSON(message.signature_one) : undefined);
+    message.signature_two !== undefined && (obj.signature_two = message.signature_two ? SignatureAndData.toJSON(message.signature_two) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
@@ -388,14 +374,14 @@ export const Misbehaviour = {
       message.signature_two = SignatureAndData.fromPartial(object.signature_two);
     }
     return message;
-  },
+  }
 };
 function createBaseSignatureAndData(): SignatureAndData {
   return {
     signature: new Uint8Array(),
     path: new Uint8Array(),
     data: new Uint8Array(),
-    timestamp: BigInt(0),
+    timestamp: BigInt(0)
   };
 }
 export const SignatureAndData = {
@@ -451,14 +437,9 @@ export const SignatureAndData = {
   },
   toJSON(message: SignatureAndData): unknown {
     const obj: any = {};
-    message.signature !== undefined &&
-      (obj.signature = base64FromBytes(
-        message.signature !== undefined ? message.signature : new Uint8Array(),
-      ));
-    message.path !== undefined &&
-      (obj.path = base64FromBytes(message.path !== undefined ? message.path : new Uint8Array()));
-    message.data !== undefined &&
-      (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
+    message.path !== undefined && (obj.path = base64FromBytes(message.path !== undefined ? message.path : new Uint8Array()));
+    message.data !== undefined && (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
     return obj;
   },
@@ -471,12 +452,12 @@ export const SignatureAndData = {
       message.timestamp = BigInt(object.timestamp.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseTimestampedSignatureData(): TimestampedSignatureData {
   return {
     signature_data: new Uint8Array(),
-    timestamp: BigInt(0),
+    timestamp: BigInt(0)
   };
 }
 export const TimestampedSignatureData = {
@@ -518,23 +499,18 @@ export const TimestampedSignatureData = {
   },
   toJSON(message: TimestampedSignatureData): unknown {
     const obj: any = {};
-    message.signature_data !== undefined &&
-      (obj.signature_data = base64FromBytes(
-        message.signature_data !== undefined ? message.signature_data : new Uint8Array(),
-      ));
+    message.signature_data !== undefined && (obj.signature_data = base64FromBytes(message.signature_data !== undefined ? message.signature_data : new Uint8Array()));
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<TimestampedSignatureData>, I>>(
-    object: I,
-  ): TimestampedSignatureData {
+  fromPartial<I extends Exact<DeepPartial<TimestampedSignatureData>, I>>(object: I): TimestampedSignatureData {
     const message = createBaseTimestampedSignatureData();
     message.signature_data = object.signature_data ?? new Uint8Array();
     if (object.timestamp !== undefined && object.timestamp !== null) {
       message.timestamp = BigInt(object.timestamp.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseSignBytes(): SignBytes {
   return {
@@ -542,7 +518,7 @@ function createBaseSignBytes(): SignBytes {
     timestamp: BigInt(0),
     diversifier: "",
     path: new Uint8Array(),
-    data: new Uint8Array(),
+    data: new Uint8Array()
   };
 }
 export const SignBytes = {
@@ -608,10 +584,8 @@ export const SignBytes = {
     message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
     message.diversifier !== undefined && (obj.diversifier = message.diversifier);
-    message.path !== undefined &&
-      (obj.path = base64FromBytes(message.path !== undefined ? message.path : new Uint8Array()));
-    message.data !== undefined &&
-      (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
+    message.path !== undefined && (obj.path = base64FromBytes(message.path !== undefined ? message.path : new Uint8Array()));
+    message.data !== undefined && (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<SignBytes>, I>>(object: I): SignBytes {
@@ -626,12 +600,12 @@ export const SignBytes = {
     message.path = object.path ?? new Uint8Array();
     message.data = object.data ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseHeaderData(): HeaderData {
   return {
     new_pub_key: undefined,
-    new_diversifier: "",
+    new_diversifier: ""
   };
 }
 export const HeaderData = {
@@ -673,8 +647,7 @@ export const HeaderData = {
   },
   toJSON(message: HeaderData): unknown {
     const obj: any = {};
-    message.new_pub_key !== undefined &&
-      (obj.new_pub_key = message.new_pub_key ? Any.toJSON(message.new_pub_key) : undefined);
+    message.new_pub_key !== undefined && (obj.new_pub_key = message.new_pub_key ? Any.toJSON(message.new_pub_key) : undefined);
     message.new_diversifier !== undefined && (obj.new_diversifier = message.new_diversifier);
     return obj;
   },
@@ -685,5 +658,5 @@ export const HeaderData = {
     }
     message.new_diversifier = object.new_diversifier ?? "";
     return message;
-  },
+  }
 };

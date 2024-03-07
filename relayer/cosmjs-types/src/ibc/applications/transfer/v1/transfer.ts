@@ -36,7 +36,7 @@ export interface Params {
 function createBaseDenomTrace(): DenomTrace {
   return {
     path: "",
-    base_denom: "",
+    base_denom: ""
   };
 }
 export const DenomTrace = {
@@ -87,12 +87,12 @@ export const DenomTrace = {
     message.path = object.path ?? "";
     message.base_denom = object.base_denom ?? "";
     return message;
-  },
+  }
 };
 function createBaseParams(): Params {
   return {
     send_enabled: false,
-    receive_enabled: false,
+    receive_enabled: false
   };
 }
 export const Params = {
@@ -143,5 +143,5 @@ export const Params = {
     message.send_enabled = object.send_enabled ?? false;
     message.receive_enabled = object.receive_enabled ?? false;
     return message;
-  },
+  }
 };

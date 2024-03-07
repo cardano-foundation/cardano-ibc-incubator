@@ -2,20 +2,22 @@ package cardano
 
 import (
 	"fmt"
+	"math/big"
+	"sort"
+	"strconv"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
 
-	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/fxamacker/cbor/v2"
-
 	"encoding/hex"
 
+	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -27,14 +29,14 @@ func (cs *ClientState) VerifyClientMessage(
 	switch msg := clientMsg.(type) {
 	case *BlockData:
 		return cs.verifyBlockData(ctx, clientStore, cdc, msg)
-	case *Misbehaviour:
-		return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
+	// case *Misbehaviour:
+	// 	return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	default:
 		return clienttypes.ErrInvalidClientType
 	}
 }
 
-func unpackVerifyBlockOutput(s string) VerifyBlockOutput {
+func UnpackVerifyBlockOutput(s string) VerifyBlockOutput {
 	data, _ := hex.DecodeString(s)
 	var vOutput VerifyBlockOutput
 	err2 := cbor.Unmarshal(data, &vOutput)
@@ -44,7 +46,7 @@ func unpackVerifyBlockOutput(s string) VerifyBlockOutput {
 	return vOutput
 }
 
-func extractBlockOutput(s string) ExtractBlockOutput {
+func ExtractBlockDataOutput(s string) ExtractBlockOutput {
 	data, _ := hex.DecodeString(s)
 	var vOutput ExtractBlockOutput
 	err2 := cbor.Unmarshal(data, &vOutput)
@@ -62,6 +64,7 @@ func (cs *ClientState) verifyBlockData(
 	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	blockData *BlockData,
 ) error {
+	// TODO: extract block number and slot, compare with ClientMsg
 	vOutput := VerifyBlock(BlockHexCbor{
 		HeaderCbor:    blockData.HeaderCbor,
 		Eta0:          blockData.EpochNonce,
@@ -70,144 +73,106 @@ func (cs *ClientState) verifyBlockData(
 	})
 
 	if len(vOutput) == 0 {
-		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data")
+		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data, data not valid")
 	}
-	vOutputObj := unpackVerifyBlockOutput(vOutput)
+	vOutputObj := UnpackVerifyBlockOutput(vOutput)
 
 	if !vOutputObj.IsValid {
-		return errorsmod.Wrap(ErrInvalidBlockData, "Verify: Invalid block data")
+		return errorsmod.Wrap(ErrInvalidBlockData, "Verify: Invalid block data, signature not valid")
 	}
 
-	// check, calculator and store validator set for new epoch
+	blockNo, _ := strconv.ParseUint(vOutputObj.BlockNo, 10, 64)
+	slotNo, _ := strconv.ParseUint(vOutputObj.SlotNo, 10, 64)
+
+	if slotNo != blockData.Slot || blockNo != blockData.Height.RevisionHeight {
+		return errorsmod.Wrap(ErrInvalidBlockData, "Verify: Invalid block data, slot or block not valid")
+	}
+
+	// check, calculate and store validator set for new epoch
 	if cs.CurrentEpoch != blockData.EpochNo {
-		newValidatorSet := calValidatorsNewEpoch(clientStore, cs.CurrentEpoch, blockData.EpochNo)
+		newValidatorSet := CalValidatorsNewEpoch(clientStore, cs.CurrentEpoch, blockData.EpochNo)
 
 		// verify
 		if !newValidatorSetIsValid(newValidatorSet, vOutputObj.VrfKHexString) {
-			return errorsmod.Wrap(ErrInvalidSPOsNewEpoch, "Verify: Invalid new validator set for new epoch")
+			return errorsmod.Wrap(ErrInvalidSPOsNewEpoch, "Verify: Invalid signature")
 		}
 
 		// store
 		setClientSPOs(clientStore, newValidatorSet, blockData.EpochNo)
+	} else {
+		oldValidatorSetBytes := clientStore.Get(ClientSPOsKey(cs.CurrentEpoch))
+		oldValidatorSet := MustUnmarshalClientSPOs(oldValidatorSetBytes)
+		// verify
+		if !newValidatorSetIsValid(oldValidatorSet, vOutputObj.VrfKHexString) {
+			return errorsmod.Wrap(ErrInvalidSPOsNewEpoch, "Verify: Invalid signature")
+		}
 	}
 
 	return nil
-	//currentTimestamp := ctx.BlockTime()
-	//
-	//// Retrieve trusted consensus states for each Header in misbehaviour
-	//consState, found := GetConsensusState(clientStore, cdc, blockData.TrustedHeight)
-	//if !found {
-	//	return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get trusted consensus state from clientStore for Header at TrustedHeight: %s", blockData.TrustedHeight)
-	//}
-	//
-	//if err := checkTrustedBlockHeader(blockData, consState); err != nil {
-	//	return err
-	//}
-	//
-	//// UpdateClient only accepts updates with a blockData at the same revision
-	//// as the trusted consensus state
-	//if blockData.GetHeight().GetRevisionNumber() != blockData.TrustedHeight.RevisionNumber {
-	//	return errorsmod.Wrapf(
-	//		ErrInvalidBlockDataHeight,
-	//		"blockData height revision %d does not match trusted blockData revision %d",
-	//		blockData.GetHeight().GetRevisionNumber(), blockData.TrustedHeight.RevisionNumber,
-	//	)
-	//}
-	//
-	//tmTrustedValidators, err := tmtypes.ValidatorSetFromProto(blockData.TrustedValidators)
-	//if err != nil {
-	//	return errorsmod.Wrap(err, "trusted validator set in not cardano validator set type")
-	//}
-	//
-	//tmSignedHeader, err := tmtypes.SignedHeaderFromProto(blockData.SignedHeader)
-	//if err != nil {
-	//	return errorsmod.Wrap(err, "signed blockData in not cardano signed blockData type")
-	//}
-	//
-	//tmValidatorSet, err := tmtypes.ValidatorSetFromProto(blockData.ValidatorSet)
-	//if err != nil {
-	//	return errorsmod.Wrap(err, "validator set in not cardano validator set type")
-	//}
-	//
-	//// assert blockData height is newer than consensus state
-	//if blockData.GetHeight().LTE(blockData.TrustedHeight) {
-	//	return errorsmod.Wrapf(
-	//		clienttypes.ErrInvalidHeader,
-	//		"blockData height ≤ consensus state height (%s ≤ %s)", blockData.GetHeight(), blockData.TrustedHeight,
-	//	)
-	//}
-	//
-	//// Construct a trusted blockData using the fields in consensus state
-	//// Only Height, Time, and NextValidatorsHash are necessary for verification
-	//// NOTE: updates must be within the same revision
-	//trustedHeader := tmtypes.Header{
-	//	ChainID:            cs.GetChainID(),
-	//	Height:             int64(blockData.TrustedHeight.RevisionHeight),
-	//	Time:               consState.Timestamp,
-	//	NextValidatorsHash: consState.NextValidatorsHash,
-	//}
-	//signedHeader := tmtypes.SignedHeader{
-	//	Header: &trustedHeader,
-	//}
-	//
-	//// Verify next blockData with the passed-in trustedVals
-	//// - asserts trusting period not passed
-	//// - assert blockData timestamp is not past the trusting period
-	//// - assert blockData timestamp is past latest stored consensus state timestamp
-	//// - assert that a TrustLevel proportion of TrustedValidators signed new Commit
-	//err = light.Verify(
-	//	&signedHeader,
-	//	tmTrustedValidators, tmSignedHeader, tmValidatorSet,
-	//	cs.TrustingPeriod, currentTimestamp, cs.MaxClockDrift, cs.TrustLevel.ToCardano(),
-	//)
-	//if err != nil {
-	//	return errorsmod.Wrap(err, "failed to verify blockData")
-	//}
-	//
-	//return nil
 }
 
 // calValidatorsNewEpoch calculate SPO for new epoch
-func calValidatorsNewEpoch(clientStore storetypes.KVStore, oldEpoch, newEpoch uint64) []*Validator {
-	// current validator set
-	oldValidatorSetBytes := clientStore.Get(ClientSPOsKey(oldEpoch))
-	oldValidatorSet := MustUnmarshalClientSPOs(oldValidatorSetBytes)
-
-	// get next register cert
-	registerCert := getRegisterCert(clientStore, newEpoch)
-
-	// get next register cert
-	unregisterCert := getUnregisterCert(clientStore, fmt.Sprint(newEpoch))
-
+func CalValidatorsNewEpoch(clientStore storetypes.KVStore, oldEpoch, newEpoch uint64) []*Validator {
+	// get SPO State
+	spoState := getSPOState(clientStore, newEpoch)
 	// calculate
-	newValidatorSet := make([]*Validator, 0)
-	for _, validator := range oldValidatorSet {
-		// check register list
-		for _, cert := range registerCert {
-			if strings.EqualFold(cert.RegisPoolId, validator.PoolId) {
-				// update pool vrf key
-				newValidatorSet = append(newValidatorSet, &Validator{
-					VrfKeyHash: cert.RegisPoolVrf,
-					PoolId:     cert.RegisPoolId,
-				})
-				continue
-			}
-		}
-
-		// check unregister list
-		for _, cert := range unregisterCert {
-			if cert.DeRegisPoolId == validator.PoolId {
-				continue
-			}
-		}
-
-		// set new validator
-		newValidatorSet = append(newValidatorSet, validator)
+	var newValidatorSet []*Validator
+	if nextValidatorSet := getClientSPOs(clientStore, newEpoch); len(nextValidatorSet) > 0 {
+		newValidatorSet = nextValidatorSet
+	} else {
+		// current validator set
+		newValidatorSet = getClientSPOs(clientStore, oldEpoch)
 	}
+
+	if len(spoState) > 0 {
+		newValidatorSet = applyStateChange(newValidatorSet, spoState)
+	}
+
 	return newValidatorSet
 }
 
+func applyStateChange(validatorSet []*Validator, spoStates []SPOState) []*Validator {
+	result := validatorSet
+	// sort to get correct order of regis or deregis
+	sort.Slice(spoStates[:], func(i, j int) bool {
+		var a, b big.Int
+		if spoStates[i].BlockNo != spoStates[j].BlockNo {
+			a.SetUint64(spoStates[i].BlockNo)
+			b.SetUint64(spoStates[j].BlockNo)
+		} else {
+			a.SetUint64(spoStates[i].TxIndex)
+			b.SetUint64(spoStates[j].TxIndex)
+		}
+		return a.Cmp(&b) == -1
+	})
+
+	// apply state changes
+	for _, spoState := range spoStates {
+		if spoState.IsRegisCert {
+			result = append(result, &Validator{
+				VrfKeyHash: spoState.PoolVrf,
+				PoolId:     spoState.PoolId,
+			})
+		} else {
+			tmp := make([]*Validator, 0)
+			// remove validator
+			for _, validator := range result {
+				poolToRemove := strings.ToLower(spoState.PoolId)
+				validatorPool := strings.ToLower(validator.PoolId)
+				if poolToRemove != validatorPool {
+					tmp = append(tmp, validator)
+				}
+			}
+			result = tmp
+		}
+	}
+	return result
+}
+
 func newValidatorSetIsValid(validatorSet []*Validator, vrfKHexString string) bool {
+	if len(validatorSet) == 0 {
+		return false
+	}
 	bytesVrfKey, err := hex.DecodeString(vrfKHexString)
 	if err != nil {
 		return false
@@ -254,9 +219,9 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	if cs.CurrentEpoch != blockData.EpochNo {
 		// update ClientState
 		cs.CurrentEpoch = blockData.EpochNo
-		cs.CurrentValidatorSet = getClientSPOs(clientStore, blockData.EpochNo)
 		// TODO: update NextValidatorSet after set (maybe set when verify BlockData)
-		//cs.NextValidatorSet = getClientSPOs(clientStore, blockData.EpochNo + 1)
+		// cs.CurrentValidatorSet = getClientSPOs(clientStore, blockData.EpochNo)
+		// cs.NextValidatorSet = getClientSPOs(clientStore, blockData.EpochNo+1)
 	}
 
 	consensusState := &ConsensusState{
@@ -269,15 +234,23 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	setConsensusState(clientStore, cdc, consensusState, blockData.GetHeight())
 	setConsensusMetadata(ctx, clientStore, blockData.GetHeight())
 
-	blockOutput := extractBlockOutput(ExtractBlockData(blockData.BodyCbor))
+	blockOutput := ExtractBlockDataOutput(ExtractBlockData(blockData.BodyCbor))
 
 	// update register cert
-	updateRegisterCert(clientStore, blockOutput.RegisCerts, blockData.EpochNo)
+	UpdateRegisterCert(clientStore, blockOutput.RegisCerts, blockData.EpochNo+2, blockData.Height.RevisionHeight)
 	// update unregister cert
-	updateUnregisterCert(clientStore, blockOutput.DeRegisCerts)
+	UpdateUnregisterCert(clientStore, blockOutput.DeRegisCerts, blockData.Height.RevisionHeight)
 
 	// set UTXOs
-	setUTXOs(clientStore, blockOutput.Outputs,blockData.GetHeight())
+	setUTXOs(ctx, *cs.TokenConfigs, clientStore, blockOutput.Outputs, blockData.GetHeight())
+
+	// emit event update validators set
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent("validators-set-updated",
+			sdk.NewAttribute("register-cert", strings.Join(blockOutput.GetListRegisCertPoolId(), ",")),
+			sdk.NewAttribute("unregister-cert", strings.Join(blockOutput.GetListUnregisCertPoolId(), ",")),
+		),
+	)
 	return []exported.Height{height}
 }
 

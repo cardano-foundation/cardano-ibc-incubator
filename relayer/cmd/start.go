@@ -23,10 +23,10 @@ import (
 	"net"
 	"strings"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/internal/relaydebug"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
+	"github.com/cardano/relayer/v1/internal/relaydebug"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

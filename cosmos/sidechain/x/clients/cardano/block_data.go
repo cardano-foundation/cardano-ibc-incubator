@@ -65,7 +65,7 @@ func (b BlockData) ValidateBasic() error {
 		return errorsmod.Wrap(ErrInvalidBlockDataEpochNonce, "timestamp in BlockData is invalid")
 	}
 	if strings.EqualFold(b.ChainId, "") {
-		return errorsmod.Wrap(ErrInvalidChainId, "timestamp in BlockData is invalid")
+		return errorsmod.Wrap(ErrInvalidChainId, "ChainID in BlockData is invalid")
 	}
 	return nil
 }

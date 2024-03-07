@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )

@@ -1,5 +1,5 @@
 use aiken/list
-use aiken/transaction.{ScriptContext}
+use aiken/transaction.{ScriptContext, Transaction}
 use ibc/auth
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{
@@ -13,8 +13,9 @@ validator {
     redeemer: SpendClientRedeemer,
     context: ScriptContext,
   ) -> Bool {
-    let (spent_output, _, outputs, _) =
+    let (spent_output, transaction) =
       validator_utils.extract_spending_context(context)
+    let Transaction { outputs, .. } = transaction
 
     //========================valid input=======================
     // input contains client token

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/cardano/relayer/v1/cmd"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/cmd"
 )
 
 func main() {

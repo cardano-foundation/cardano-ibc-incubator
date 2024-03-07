@@ -22,7 +22,7 @@ function createBaseValidatorSet(): ValidatorSet {
   return {
     validators: [],
     proposer: undefined,
-    total_voting_power: BigInt(0),
+    total_voting_power: BigInt(0)
   };
 }
 export const ValidatorSet = {
@@ -64,29 +64,25 @@ export const ValidatorSet = {
   },
   fromJSON(object: any): ValidatorSet {
     const obj = createBaseValidatorSet();
-    if (Array.isArray(object?.validators))
-      obj.validators = object.validators.map((e: any) => Validator.fromJSON(e));
+    if (Array.isArray(object?.validators)) obj.validators = object.validators.map((e: any) => Validator.fromJSON(e));
     if (isSet(object.proposer)) obj.proposer = Validator.fromJSON(object.proposer);
-    if (isSet(object.total_voting_power))
-      obj.total_voting_power = BigInt(object.total_voting_power.toString());
+    if (isSet(object.total_voting_power)) obj.total_voting_power = BigInt(object.total_voting_power.toString());
     return obj;
   },
   toJSON(message: ValidatorSet): unknown {
     const obj: any = {};
     if (message.validators) {
-      obj.validators = message.validators.map((e) => (e ? Validator.toJSON(e) : undefined));
+      obj.validators = message.validators.map(e => e ? Validator.toJSON(e) : undefined);
     } else {
       obj.validators = [];
     }
-    message.proposer !== undefined &&
-      (obj.proposer = message.proposer ? Validator.toJSON(message.proposer) : undefined);
-    message.total_voting_power !== undefined &&
-      (obj.total_voting_power = (message.total_voting_power || BigInt(0)).toString());
+    message.proposer !== undefined && (obj.proposer = message.proposer ? Validator.toJSON(message.proposer) : undefined);
+    message.total_voting_power !== undefined && (obj.total_voting_power = (message.total_voting_power || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ValidatorSet>, I>>(object: I): ValidatorSet {
     const message = createBaseValidatorSet();
-    message.validators = object.validators?.map((e) => Validator.fromPartial(e)) || [];
+    message.validators = object.validators?.map(e => Validator.fromPartial(e)) || [];
     if (object.proposer !== undefined && object.proposer !== null) {
       message.proposer = Validator.fromPartial(object.proposer);
     }
@@ -94,14 +90,14 @@ export const ValidatorSet = {
       message.total_voting_power = BigInt(object.total_voting_power.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseValidator(): Validator {
   return {
     address: new Uint8Array(),
     pub_key: PublicKey.fromPartial({}),
     voting_power: BigInt(0),
-    proposer_priority: BigInt(0),
+    proposer_priority: BigInt(0)
   };
 }
 export const Validator = {
@@ -157,13 +153,10 @@ export const Validator = {
   },
   toJSON(message: Validator): unknown {
     const obj: any = {};
-    message.address !== undefined &&
-      (obj.address = base64FromBytes(message.address !== undefined ? message.address : new Uint8Array()));
-    message.pub_key !== undefined &&
-      (obj.pub_key = message.pub_key ? PublicKey.toJSON(message.pub_key) : undefined);
+    message.address !== undefined && (obj.address = base64FromBytes(message.address !== undefined ? message.address : new Uint8Array()));
+    message.pub_key !== undefined && (obj.pub_key = message.pub_key ? PublicKey.toJSON(message.pub_key) : undefined);
     message.voting_power !== undefined && (obj.voting_power = (message.voting_power || BigInt(0)).toString());
-    message.proposer_priority !== undefined &&
-      (obj.proposer_priority = (message.proposer_priority || BigInt(0)).toString());
+    message.proposer_priority !== undefined && (obj.proposer_priority = (message.proposer_priority || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Validator>, I>>(object: I): Validator {
@@ -179,12 +172,12 @@ export const Validator = {
       message.proposer_priority = BigInt(object.proposer_priority.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseSimpleValidator(): SimpleValidator {
   return {
     pub_key: undefined,
-    voting_power: BigInt(0),
+    voting_power: BigInt(0)
   };
 }
 export const SimpleValidator = {
@@ -226,8 +219,7 @@ export const SimpleValidator = {
   },
   toJSON(message: SimpleValidator): unknown {
     const obj: any = {};
-    message.pub_key !== undefined &&
-      (obj.pub_key = message.pub_key ? PublicKey.toJSON(message.pub_key) : undefined);
+    message.pub_key !== undefined && (obj.pub_key = message.pub_key ? PublicKey.toJSON(message.pub_key) : undefined);
     message.voting_power !== undefined && (obj.voting_power = (message.voting_power || BigInt(0)).toString());
     return obj;
   },
@@ -240,5 +232,5 @@ export const SimpleValidator = {
       message.voting_power = BigInt(object.voting_power.toString());
     }
     return message;
-  },
+  }
 };

@@ -2,6 +2,16 @@
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../helpers";
 export const protobufPackage = "ibc.clients.cardano.v1";
+export interface TokenConfigs {
+  /** IBC handler token uint (policyID + name), in hex format */
+  handler_token_unit: string;
+  /** IBC client token policyID, in hex format */
+  client_policy_id: string;
+  /** IBC connection token policyID, in hex format */
+  connection_policy_id: string;
+  /** IBC channel token policyID, in hex format */
+  channel_policy_id: string;
+}
 export interface Height {
   /** the revision that the client is currently on */
   revision_number: bigint;
@@ -74,6 +84,8 @@ export interface ClientState {
   trusting_period: bigint;
   /** Path at which next upgraded client will be committed. */
   upgrade_path: string[];
+  /** IBC related auth token policy configs */
+  token_configs?: TokenConfigs;
 }
 export interface Misbehaviour {
   /** ClientID is deprecated */
@@ -82,6 +94,82 @@ export interface Misbehaviour {
   block_data1?: BlockData;
   block_data2?: BlockData;
 }
+function createBaseTokenConfigs(): TokenConfigs {
+  return {
+    handler_token_unit: "",
+    client_policy_id: "",
+    connection_policy_id: "",
+    channel_policy_id: "",
+  };
+}
+export const TokenConfigs = {
+  typeUrl: "/ibc.clients.cardano.v1.TokenConfigs",
+  encode(message: TokenConfigs, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.handler_token_unit !== "") {
+      writer.uint32(10).string(message.handler_token_unit);
+    }
+    if (message.client_policy_id !== "") {
+      writer.uint32(18).string(message.client_policy_id);
+    }
+    if (message.connection_policy_id !== "") {
+      writer.uint32(26).string(message.connection_policy_id);
+    }
+    if (message.channel_policy_id !== "") {
+      writer.uint32(34).string(message.channel_policy_id);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): TokenConfigs {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseTokenConfigs();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.handler_token_unit = reader.string();
+          break;
+        case 2:
+          message.client_policy_id = reader.string();
+          break;
+        case 3:
+          message.connection_policy_id = reader.string();
+          break;
+        case 4:
+          message.channel_policy_id = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): TokenConfigs {
+    const obj = createBaseTokenConfigs();
+    if (isSet(object.handler_token_unit)) obj.handler_token_unit = String(object.handler_token_unit);
+    if (isSet(object.client_policy_id)) obj.client_policy_id = String(object.client_policy_id);
+    if (isSet(object.connection_policy_id)) obj.connection_policy_id = String(object.connection_policy_id);
+    if (isSet(object.channel_policy_id)) obj.channel_policy_id = String(object.channel_policy_id);
+    return obj;
+  },
+  toJSON(message: TokenConfigs): unknown {
+    const obj: any = {};
+    message.handler_token_unit !== undefined && (obj.handler_token_unit = message.handler_token_unit);
+    message.client_policy_id !== undefined && (obj.client_policy_id = message.client_policy_id);
+    message.connection_policy_id !== undefined && (obj.connection_policy_id = message.connection_policy_id);
+    message.channel_policy_id !== undefined && (obj.channel_policy_id = message.channel_policy_id);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<TokenConfigs>, I>>(object: I): TokenConfigs {
+    const message = createBaseTokenConfigs();
+    message.handler_token_unit = object.handler_token_unit ?? "";
+    message.client_policy_id = object.client_policy_id ?? "";
+    message.connection_policy_id = object.connection_policy_id ?? "";
+    message.channel_policy_id = object.channel_policy_id ?? "";
+    return message;
+  },
+};
 function createBaseHeight(): Height {
   return {
     revision_number: BigInt(0),
@@ -418,6 +506,7 @@ function createBaseClientState(): ClientState {
     next_validator_set: [],
     trusting_period: BigInt(0),
     upgrade_path: [],
+    token_configs: undefined,
   };
 }
 export const ClientState = {
@@ -458,6 +547,9 @@ export const ClientState = {
     }
     for (const v of message.upgrade_path) {
       writer.uint32(98).string(v!);
+    }
+    if (message.token_configs !== undefined) {
+      TokenConfigs.encode(message.token_configs, writer.uint32(106).fork()).ldelim();
     }
     return writer;
   },
@@ -504,6 +596,9 @@ export const ClientState = {
         case 12:
           message.upgrade_path.push(reader.string());
           break;
+        case 13:
+          message.token_configs = TokenConfigs.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -529,6 +624,7 @@ export const ClientState = {
     if (isSet(object.trusting_period)) obj.trusting_period = BigInt(object.trusting_period.toString());
     if (Array.isArray(object?.upgrade_path))
       obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
+    if (isSet(object.token_configs)) obj.token_configs = TokenConfigs.fromJSON(object.token_configs);
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -564,6 +660,8 @@ export const ClientState = {
     } else {
       obj.upgrade_path = [];
     }
+    message.token_configs !== undefined &&
+      (obj.token_configs = message.token_configs ? TokenConfigs.toJSON(message.token_configs) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -596,6 +694,9 @@ export const ClientState = {
       message.trusting_period = BigInt(object.trusting_period.toString());
     }
     message.upgrade_path = object.upgrade_path?.map((e) => e) || [];
+    if (object.token_configs !== undefined && object.token_configs !== null) {
+      message.token_configs = TokenConfigs.fromPartial(object.token_configs);
+    }
     return message;
   },
 };

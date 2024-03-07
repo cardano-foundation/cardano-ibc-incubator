@@ -30,6 +30,29 @@ pub fn trim_right(str: ByteArray) -> ByteArray {
   }
 }
 
+pub fn parse_uint(str: ByteArray) -> Option<Int> {
+  if str == "" {
+    None
+  } else {
+    bytearray.reduce(
+      str,
+      Some(0),
+      fn(acc, cur_byte) {
+        when acc is {
+          Some(acc) ->
+            // '0' <= char <= '9'
+            if 0x30 <= cur_byte && cur_byte <= 0x39 {
+              Some(acc * 10 + cur_byte - 0x30)
+            } else {
+              None
+            }
+          None -> None
+        }
+      },
+    )
+  }
+}
+
 test test_trim_space() {
   expect trim_space("") == ""
   expect trim_space("             ") == ""

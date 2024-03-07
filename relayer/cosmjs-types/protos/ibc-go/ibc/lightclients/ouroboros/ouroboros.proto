@@ -5,7 +5,21 @@ import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
 
 option go_package = "sidechain/x/clients/cardano";
-
+message TokenConfigs {
+  option (gogoproto.goproto_getters) = false;
+ 
+  // IBC handler token uint (policyID + name), in hex format
+  string handler_token_unit = 1;
+ 
+  // IBC client token policyID, in hex format
+  string client_policy_id = 2;
+ 
+  // IBC connection token policyID, in hex format
+  string connection_policy_id = 3;
+ 
+  // IBC channel token policyID, in hex format
+  string channel_policy_id = 4;
+}
 message Height {
   option (gogoproto.goproto_getters)  = false;
   option (gogoproto.goproto_stringer) = false;
@@ -93,6 +107,8 @@ message ClientState {
   uint64 trusting_period = 11;
   // Path at which next upgraded client will be committed.
   repeated string upgrade_path = 12;
+  // IBC related auth token policy configs
+  TokenConfigs token_configs = 13;
 }
 
 message Misbehaviour {

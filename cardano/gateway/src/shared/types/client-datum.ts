@@ -6,7 +6,10 @@ export type ClientDatum = {
   state: ClientDatumState;
   token: AuthToken;
 };
-export async function encodeClientDatum(clientDatum: ClientDatum, Lucid: typeof import('lucid-cardano')) {
+export async function encodeClientDatum(
+  clientDatum: ClientDatum,
+  Lucid: typeof import('lucid-cardano'),
+): Promise<string> {
   const { Data } = Lucid;
 
   const RationalSchema = Data.Object({
@@ -77,7 +80,10 @@ export async function encodeClientDatum(clientDatum: ClientDatum, Lucid: typeof 
   return Data.to(clientDatum, TClientDatum);
 }
 
-export async function decodeClientDatum(clientDatum: string, Lucid: typeof import('lucid-cardano')) {
+export async function decodeClientDatum(
+  clientDatum: string,
+  Lucid: typeof import('lucid-cardano'),
+): Promise<ClientDatum> {
   const { Data } = Lucid;
 
   const RationalSchema = Data.Object({

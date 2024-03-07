@@ -304,6 +304,71 @@ test new_client_state() {
   ) == client_state
 }
 
+test test_get_chain_id() {
+  let mock_chain_id = "sidechain-0"
+  let mock_height = Height { revision_number: 0, revision_height: 8 }
+  let mock_client_state =
+    client_state.new_client_state(
+      mock_chain_id,
+      rational.from_int(1),
+      1000,
+      1500,
+      10,
+      mock_height,
+      [],
+    )
+  client_state.get_chain_id(mock_client_state) == mock_chain_id
+}
+
+test test_is_expired() {
+  expect Some(trust_level) = rational.new(3, 2)
+  // Creating the client state using the defined parameters
+  let mock_client_state =
+    ClientState {
+      chain_id: "cosmoshub",
+      trust_level,
+      trusting_period: 0,
+      unbonding_period: 0,
+      max_clock_drift: 0,
+      frozen_height: Height { revision_number: 0, revision_height: 0 },
+      latest_height: Height { revision_number: 0, revision_height: 0 },
+      proof_specs: [],
+    }
+  //client_state - latest_timestamp - now - result
+  let test_cases: List<(ClientState, Time, Time, Bool)> =
+    // expiration_time = latest_timestamp + cs.trusting_period
+    [
+      //  expiration_time < now
+      (
+        ClientState { ..mock_client_state, trusting_period: 1000 },
+        1000,
+        3000,
+        True,
+      ),
+      //  expiration_time = now
+      (
+        ClientState { ..mock_client_state, trusting_period: 1000 },
+        1000,
+        2000,
+        True,
+      ),
+      //  expiration_time > now
+      (
+        ClientState { ..mock_client_state, trusting_period: 1000 },
+        1000,
+        1000,
+        False,
+      ),
+    ]
+
+  test_cases
+    |> list.all(
+         fn(case) {
+           client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
+         },
+       )
+}
+
 // Tests the correctness of the new_client_state method.
 test status() {
   expect Some(trust_level) = rational.new(3, 2)

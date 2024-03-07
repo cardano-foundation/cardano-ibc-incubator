@@ -3,17 +3,22 @@ package cardano
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"strconv"
 	"strings"
+
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	"github.com/fxamacker/cbor/v2"
 )
 
 /*
@@ -62,40 +67,62 @@ func setClientSPOs(clientStore storetypes.KVStore, validatorSet []*Validator, ep
 // getClientSPOs get the client SPOs
 func getClientSPOs(clientStore storetypes.KVStore, epochNo uint64) []*Validator {
 	key := ClientSPOsKey(epochNo)
-	return MustUnmarshalClientSPOs(clientStore.Get(key))
+	bz := clientStore.Get(key)
+	if len(bz) == 0 {
+		return []*Validator{}
+	}
+	return MustUnmarshalClientSPOs(bz)
 }
 
 // updateRegisterCert stores the client RegisterCert
-func updateRegisterCert(clientStore storetypes.KVStore, registerCert []RegisCert, epochNo uint64) {
-	if len(registerCert) > 0 {
-		currentRegisterCert := getRegisterCert(clientStore, epochNo)
-		val := MustMarshalRegisterCert(RemoveDuplicateRegisterCert(append(currentRegisterCert, registerCert...)))
-		clientStore.Set(RegisterCertKey(epochNo), val)
+func UpdateRegisterCert(clientStore storetypes.KVStore, registerCerts []RegisCert, epochNo uint64, blockNo uint64) {
+	if len(registerCerts) > 0 {
+		currentState := getSPOState(clientStore, epochNo)
+		// val := MustMarshalSPOState(RemoveDuplicateRegisterCert(append(currentRegisterCert, registerCert...)))
+		for _, cert := range registerCerts {
+			currentState = append(currentState, SPOState{
+				IsRegisCert: true,
+				PoolId:      cert.RegisPoolId,
+				PoolVrf:     cert.RegisPoolVrf,
+				BlockNo:     blockNo,
+				TxIndex:     uint64(cert.TxIndex),
+			})
+		}
+		val := MustMarshalSPOState(currentState)
+		clientStore.Set(SPOStateKey(epochNo), val)
 	}
 }
 
 // updateUnregisterCert stores the client UnregisterCert
-func updateUnregisterCert(clientStore storetypes.KVStore, unregisterCert []DeRegisCert) {
+func UpdateUnregisterCert(clientStore storetypes.KVStore, unregisterCert []DeRegisCert, blockNo uint64) {
 	if len(unregisterCert) > 0 {
 		groups := classifyUnregisterCert(unregisterCert)
-		for _, e := range groups {
-			currentUnregisterCert := getUnregisterCert(clientStore, e[0].DeRegisEpoch)
-			val := MustMarshalUnregisterCert(RemoveDuplicateUnregisterCert(append(currentUnregisterCert, e...)))
-			clientStore.Set(UnregisterCertKey(e[0].DeRegisEpoch), val)
+		for _, certs := range groups {
+			if len(certs) > 0 {
+				epochNum, _ := strconv.ParseUint(certs[0].DeRegisEpoch, 10, 64)
+				// deregis will be apply in epoch N+2
+				epochToApply := epochNum + 2
+				epochState := getSPOState(clientStore, epochToApply)
+				for _, cert := range certs {
+					epochState = append(epochState, SPOState{
+						IsRegisCert: false,
+						PoolId:      cert.DeRegisPoolId,
+						PoolVrf:     "",
+						BlockNo:     blockNo,
+						TxIndex:     uint64(cert.TxIndex),
+					})
+				}
+				val := MustMarshalSPOState(epochState)
+				clientStore.Set(SPOStateKey(epochToApply), val)
+			}
 		}
 	}
 }
 
-func getRegisterCert(clientStore storetypes.KVStore, epochNo uint64) []RegisCert {
-	key := RegisterCertKey(epochNo)
+func getSPOState(clientStore storetypes.KVStore, epochNo uint64) []SPOState {
+	key := SPOStateKey(epochNo)
 	bytesVal := clientStore.Get(key)
-	return MustUnmarshalRegisterCert(bytesVal)
-}
-
-func getUnregisterCert(clientStore storetypes.KVStore, epochNo string) []DeRegisCert {
-	key := UnregisterCertKey(epochNo)
-	bytesVal := clientStore.Get(key)
-	return MustUnmarshalUnregisterCert(bytesVal)
+	return MustUnmarshalSPOState(bytesVal)
 }
 
 // classifyUnregisterCert classify a slide to groups
@@ -332,38 +359,6 @@ func GetPreviousConsensusState(clientStore storetypes.KVStore, cdc codec.BinaryC
 	return getCardanoConsensusState(clientStore, cdc, csKey)
 }
 
-// PruneAllExpiredConsensusStates iterates over all consensus states for a given
-// client store. If a consensus state is expired, it is deleted and its metadata
-// is deleted. The number of consensus states pruned is returned.
-func PruneAllExpiredConsensusStates(
-	ctx sdk.Context, clientStore storetypes.KVStore,
-	cdc codec.BinaryCodec, clientState *ClientState,
-) int {
-	var heights []exported.Height
-
-	pruneCb := func(height exported.Height) bool {
-		consState, found := GetConsensusState(clientStore, cdc, height)
-		if !found { // consensus state should always be found
-			return true
-		}
-
-		if clientState.IsExpired(consState.GetTime(), ctx.BlockTime()) {
-			heights = append(heights, height)
-		}
-
-		return false
-	}
-
-	IterateConsensusStateAscending(clientStore, pruneCb)
-
-	for _, height := range heights {
-		deleteConsensusState(clientStore, height)
-		deleteConsensusMetadata(clientStore, height)
-	}
-
-	return len(heights)
-}
-
 // Helper function for GetNextConsensusState and GetPreviousConsensusState
 func getCardanoConsensusState(clientStore storetypes.KVStore, cdc codec.BinaryCodec, key []byte) (*ConsensusState, bool) {
 	bz := clientStore.Get(key)
@@ -416,45 +411,241 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height exported.Hei
 	deleteIterationKey(clientStore, height)
 }
 
-func setUTXOs(clientStore storetypes.KVStore, UTXOs []UTXOOutput, height exported.Height) {
+func setUTXOs(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, UTXOs []UTXOOutput, height exported.Height) {
 	if len(UTXOs) > 0 {
 		for _, UTXO := range UTXOs {
-			key := ClientUTXOKey(height, UTXO.TxHash, UTXO.OutputIndex)
-			val := MustMarshalUTXOs(UTXOs)
-			clientStore.Set(key, val)
+			// IBC UTXO will always have datum, and also included a custom token
+			if UTXO.DatumHex != "" && len(UTXO.Tokens) > 1 {
+				UTXO.extractAndSaveIBCData(ctx, tokenConfigs, clientStore, height)
+			}
 		}
 	}
 }
 
-func getUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) UTXOOutput {
-	key := ClientUTXOKey(height, txHash, txIndex)
-	return MustUnmarshalUTXO(clientStore.Get(key))
+func (utxo UTXOOutput) extractAndSaveIBCData(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) {
+	// default key
+	key := ClientUTXOKey(height, utxo.TxHash, utxo.OutputIndex)
+	val := MustMarshalUTXO(utxo)
+	tryFindType := utxo.TryMatchAndSaveIBCType(ctx, tokenConfigs, clientStore, height)
+	// fallback if we cannot identify UTXO IBC
+	if tryFindType == "" {
+		clientStore.Set(key, val)
+	}
 }
 
-// IterationKeyUTXO returns the key under which the UTXOs key will be stored.
-func IterationKeyUTXO(height exported.Height, txHash, txIndex string) []byte {
-	heightBytes := bigEndianHeightBytes(height)
-	key := append([]byte(KeyIterateUTXOsPrefix), heightBytes...)
-	key = append(key, []byte(txHash)...)
-	key = append(key, []byte(txIndex)...)
-	return key
+// Try to match UTXO related to IBC action, will return "" if cannot match any
+func (utxo UTXOOutput) TryMatchAndSaveIBCType(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) string {
+	clientTokenPrefix := strings.ToLower(tokenConfigs.ClientPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOClientStateTokenPrefix))
+	connectionTokenPrefix := strings.ToLower(tokenConfigs.ConnectionPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOConnectionStatePrefix))
+	channelTokenPrefix := strings.ToLower(tokenConfigs.ChannelPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOChannelStatePrefix))
+
+	// Emit Event TokenPrefix
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent("TokenPrefix",
+			sdk.NewAttribute("clientTokenPrefix:", clientTokenPrefix),
+			sdk.NewAttribute("connectionTokenPrefix:", connectionTokenPrefix),
+			sdk.NewAttribute("channelTokenPrefix:", channelTokenPrefix),
+			sdk.NewAttribute("utxo.Tokens len:", fmt.Sprintf("%v", len(utxo.Tokens))),
+			sdk.NewAttribute("utxo:", fmt.Sprintf("%v", utxo)),
+		),
+	)
+
+	utxoIBCType := ""
+	for _, token := range utxo.Tokens {
+		tokenAssetName := strings.ToLower(token.TokenAssetName)
+		switch true {
+		case strings.Contains(tokenAssetName, clientTokenPrefix):
+			// maybe client
+			// try unmarshall, if ok, set utxoIBCType = KeyUTXOClientStatePrefix
+			datumBytes, _ := hex.DecodeString(utxo.DatumHex)
+			var vOutput ClientDatum
+			err := cbor.Unmarshal(datumBytes, &vOutput)
+			if err == nil {
+				utxoIBCType = KeyUTXOClientStatePrefix
+				clientStateBytes, _ := cbor.Marshal(vOutput.State.ClientState)
+				// TODO: Should decode client ID using token name, then use it to save
+				// clientIdHex, _ := hex.DecodeString(strings.ReplaceAll(token.TokenAssetName, clientTokenPrefix, ""))
+				// clientId :=  string(clientIdHex)
+				// save client state
+				clientStateKey := ClientUTXOIBCKey(height, KeyUTXOClientStatePrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex)
+				clientStore.Set(clientStateKey, clientStateBytes)
+
+				// Emit Event ClientState
+				ctx.EventManager().EmitEvent(
+					sdk.NewEvent("Saved: clientState",
+						sdk.NewAttribute("clientStateKey:", string(clientStateKey[:])),
+					),
+				)
+
+				// save consensus states
+				for consensusHeight, consensusValue := range vOutput.State.ConsensusStates {
+					consensusStateHeight := Height{
+						RevisionNumber: consensusHeight.RevisionNumber,
+						RevisionHeight: consensusHeight.RevisionHeight,
+					}
+					consensusStateKey := ClientUTXOIBCKey(height, KeyUTXOConsensusStatePrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex)
+					keyAppend := []byte(fmt.Sprintf("/%s", consensusStateHeight))
+					consensusStateKey = append(consensusStateKey, keyAppend...)
+					consensusValueBytes, _ := cbor.Marshal(consensusValue)
+					clientStore.Set(consensusStateKey, consensusValueBytes)
+					// Emit Event ClientState
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent("Saved: consensusState",
+							sdk.NewAttribute("consensusStateKey:", string(consensusStateKey[:])),
+						),
+					)
+				}
+				break
+			}
+		case strings.Contains(tokenAssetName, connectionTokenPrefix):
+			// maybe connection
+			// try unmarshall, if ok, set utxoIBCType = KeyUTXOConnectionStatePrefix
+			datumBytes, _ := hex.DecodeString(utxo.DatumHex)
+			var vOutput ConnectionDatum
+			err := cbor.Unmarshal(datumBytes, &vOutput)
+			if err == nil {
+				utxoIBCType = KeyUTXOConnectionStatePrefix
+				connectionStateBytes, _ := cbor.Marshal(vOutput.State)
+				// save connection end
+				connectionStateKey := ClientUTXOIBCKey(height, KeyUTXOConnectionStatePrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex)
+				clientStore.Set(connectionStateKey, connectionStateBytes)
+
+				// Emit Event ConnectionState
+				ctx.EventManager().EmitEvent(
+					sdk.NewEvent("Saved: ConnectionState",
+						sdk.NewAttribute("connectionStateKey:", string(connectionStateKey[:])),
+					),
+				)
+
+				break
+			}
+		case strings.Contains(tokenAssetName, channelTokenPrefix):
+			// maybe channel
+			// try unmarshall, if ok, set utxoIBCType = KeyUTXOChannelStatePrefix
+			datumBytes, _ := hex.DecodeString(utxo.DatumHex)
+			var vOutput ChannelDatumWithPort
+			err := cbor.Unmarshal(datumBytes, &vOutput)
+			if err == nil {
+				utxoIBCType = KeyUTXOChannelStatePrefix
+				channelStateBytes, _ := cbor.Marshal(vOutput.State.Channel)
+				channelChannelSeqHex, _ := hex.DecodeString(strings.ReplaceAll(tokenAssetName, channelTokenPrefix, ""))
+				channelSeq, _ := strconv.ParseUint(string(channelChannelSeqHex), 10, 64)
+				// save channel end
+				// {height}/channel/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}
+				channelStateKey := ClientUTXOIBCAnyKey(height, KeyUTXOChannelStatePrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq))
+				clientStore.Set(channelStateKey, channelStateBytes)
+
+				// Emit Event ConnectionState
+				ctx.EventManager().EmitEvent(
+					sdk.NewEvent("Saved: ChannelState",
+						sdk.NewAttribute("channelStateKey:", string(channelStateKey[:])),
+					),
+				)
+
+				// {height}/commitments/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}/{seq}
+				// save PacketCommitment
+				for seq, commitmentByte := range vOutput.State.PacketCommitment {
+					packetCommitmentKey := ClientUTXOIBCAnyKey(height, KeyUTXOPacketCommitmentPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq), strconv.FormatUint(seq, 10))
+					clientStore.Set(packetCommitmentKey, commitmentByte)
+
+					// Emit Event commitments
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent("Saved: packetCommitment",
+							sdk.NewAttribute("packetCommitmentKey:", string(packetCommitmentKey[:])),
+						),
+					)
+				}
+
+				// {height}/acks/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}/{seq}
+				// save PacketAcknowledgement
+				for seq, ackByte := range vOutput.State.PacketAcknowledgement {
+					packetAcknowledgementKey := ClientUTXOIBCAnyKey(height, KeyUTXOPacketAcksPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq), strconv.FormatUint(seq, 10))
+					clientStore.Set(packetAcknowledgementKey, ackByte)
+
+					// Emit Event packetAcknowledgement
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent("Saved: packetAcknowledgement",
+							sdk.NewAttribute("packetAcknowledgementKey:", string(packetAcknowledgementKey[:])),
+						),
+					)
+				}
+
+				// {height}/receipts/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}/{seq}
+				// save PacketReceipt
+				for seq, recvByte := range vOutput.State.PacketReceipt {
+					packetReceiptKey := ClientUTXOIBCAnyKey(height, KeyUTXOPacketReceiptsPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq), strconv.FormatUint(seq, 10))
+					clientStore.Set(packetReceiptKey, recvByte)
+
+					// Emit Event packetReceipt
+					ctx.EventManager().EmitEvent(
+						sdk.NewEvent("Saved: packetReceipt",
+							sdk.NewAttribute("packetReceiptKey:", string(packetReceiptKey[:])),
+						),
+					)
+				}
+
+				// {height}/nextSequenceRecv/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}
+				// save NextSequenceRecv
+				nextSequenceRecvKey := ClientUTXOIBCAnyKey(height, KeyUTXONextSequenceRecvPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq))
+				clientStore.Set(nextSequenceRecvKey, sdk.Uint64ToBigEndian(vOutput.State.NextSequenceRecv))
+
+				// {height}/nextSequenceSend/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}
+				// save nextSequenceSend
+				nextSequenceSendKey := ClientUTXOIBCAnyKey(height, KeyUTXONextSequenceSendPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq))
+				clientStore.Set(nextSequenceSendKey, sdk.Uint64ToBigEndian(vOutput.State.NextSequenceSend))
+
+				// {height}/nextSequenceAck/{tx_hash}/{utxo_index}/{portId}/channel-{channelSeq}
+				// save nextSequenceAck
+				nextSequenceAckKey := ClientUTXOIBCAnyKey(height, KeyUTXONextSequenceAckPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq))
+				clientStore.Set(nextSequenceAckKey, sdk.Uint64ToBigEndian(vOutput.State.NextSequenceAck))
+
+				// Emit Event next seq
+				ctx.EventManager().EmitEvent(
+					sdk.NewEvent("Next-seq-keys",
+						sdk.NewAttribute("nextSequenceRecvKey:", string(nextSequenceRecvKey[:])),
+						sdk.NewAttribute("nextSequenceSendKey:", string(nextSequenceSendKey[:])),
+						sdk.NewAttribute("nextSequenceAckKey:", string(nextSequenceAckKey[:])),
+					),
+				)
+				break
+			}
+		default:
+		}
+	}
+
+	return utxoIBCType
+
 }
 
-// SetIterationKeyUTXO stores the UTXOs key under a key that is more efficient for ordered iteration
-func SetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
-	key := IterationKeyUTXO(height, txHash, txIndex)
-	val := ClientUTXOKey(height, txHash, txIndex)
-	clientStore.Set(key, val)
-}
+// func getUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) UTXOOutput {
+// 	key := ClientUTXOKey(height, txHash, txIndex)
+// 	return MustUnmarshalUTXO(clientStore.Get(key))
+// }
 
-// GetIterationKeyUTXO returns the UTXOs key stored under the efficient iteration key.
-func GetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) []byte {
-	key := IterationKeyUTXO(height, txHash, txIndex)
-	return clientStore.Get(key)
-}
+// // IterationKeyUTXO returns the key under which the UTXOs key will be stored.
+// func IterationKeyUTXO(height exported.Height, txHash, txIndex string) []byte {
+// 	heightBytes := bigEndianHeightBytes(height)
+// 	key := append([]byte(KeyIterateUTXOsPrefix), heightBytes...)
+// 	key = append(key, []byte(txHash)...)
+// 	key = append(key, []byte(txIndex)...)
+// 	return key
+// }
 
-// deleteIterationKey deletes the iteration key for a given height
-func deleteIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
-	key := IterationKeyUTXO(height, txHash, txIndex)
-	clientStore.Delete(key)
-}
+// // SetIterationKeyUTXO stores the UTXOs key under a key that is more efficient for ordered iteration
+// func SetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
+// 	key := IterationKeyUTXO(height, txHash, txIndex)
+// 	val := ClientUTXOKey(height, txHash, txIndex)
+// 	clientStore.Set(key, val)
+// }
+
+// // GetIterationKeyUTXO returns the UTXOs key stored under the efficient iteration key.
+// func GetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) []byte {
+// 	key := IterationKeyUTXO(height, txHash, txIndex)
+// 	return clientStore.Get(key)
+// }
+
+// // deleteIterationKey deletes the iteration key for a given height
+// func deleteIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
+// 	key := IterationKeyUTXO(height, txHash, txIndex)
+// 	clientStore.Delete(key)
+// }

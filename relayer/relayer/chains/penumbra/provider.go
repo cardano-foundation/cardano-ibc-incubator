@@ -3,15 +3,17 @@ package penumbra
 import (
 	"context"
 	"fmt"
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
-	module2 "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
 	"io"
 	"os"
 	"path"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	module2 "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
+
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	provtypes "github.com/cometbft/cometbft/light/provider"
 	prov "github.com/cometbft/cometbft/light/provider/http"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
@@ -148,6 +150,11 @@ type PenumbraProvider struct {
 
 	// for comet < v0.37, decode tm events as base64
 	cometLegacyEncoding bool
+}
+
+func (cc *PenumbraProvider) QueryBlockResults(ctx context.Context, h int64) (*coretypes.ResultBlockResults, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (cc *PenumbraProvider) QueryBlockData(ctx context.Context, h int64) (*module2.BlockData, error) {

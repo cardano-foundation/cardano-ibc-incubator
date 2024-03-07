@@ -2,11 +2,13 @@ package relayer
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 )
 
@@ -22,9 +24,14 @@ func (c *Chain) CreateOpenConnections(
 	pathName string,
 ) (string, string, error) {
 	// client identifiers must be filled in
-	if err := ValidateClientPaths(c, dst); err != nil {
-		return "", "", err
-	}
+	// if err := ValidateClientPaths(c, dst); err != nil {
+	// 	return "", "", err
+	// }
+	//srcClientId := c.PathEnd.ClientID
+	//dstClientId := dst.ClientID()
+	c.PathEnd.ClientID = strings.TrimPrefix(c.PathEnd.ClientID, "07-tendermint-")
+
+	dst.PathEnd.ClientID = strings.TrimPrefix(dst.PathEnd.ClientID, "07-tendermint-")
 
 	// Timeout is per message. Four connection handshake messages, allowing maxRetries for each.
 	processorTimeout := timeout * 4 * time.Duration(maxRetries)
@@ -58,7 +65,10 @@ func (c *Chain) CreateOpenConnections(
 		zap.String("dst_chain_id", dst.PathEnd.ChainID),
 		zap.String("dst_client_id", dst.PathEnd.ClientID),
 	)
-
+	initialCPClientId := dst.PathEnd.ClientID
+	if c.ChainProvider.Type() == "cosmos" {
+		initialCPClientId = fmt.Sprintf("07-tendermint-%s", dst.PathEnd.ClientID)
+	}
 	return connectionSrc, connectionDst, processor.NewEventProcessor().
 		WithChainProcessors(
 			c.chainProcessor(c.log, nil),
@@ -72,7 +82,7 @@ func (c *Chain) CreateOpenConnections(
 				EventType: conntypes.EventTypeConnectionOpenInit,
 				Info: provider.ConnectionInfo{
 					ClientID:                     c.PathEnd.ClientID,
-					CounterpartyClientID:         dst.PathEnd.ClientID,
+					CounterpartyClientID:         initialCPClientId,
 					CounterpartyCommitmentPrefix: dst.ChainProvider.CommitmentPrefix(),
 				},
 			},
@@ -81,7 +91,7 @@ func (c *Chain) CreateOpenConnections(
 				EventType: conntypes.EventTypeConnectionOpenConfirm,
 				Info: provider.ConnectionInfo{
 					ClientID:                     dst.PathEnd.ClientID,
-					CounterpartyClientID:         c.PathEnd.ClientID,
+					CounterpartyClientID:         "ibc_client-" + c.PathEnd.ClientID,
 					CounterpartyCommitmentPrefix: c.ChainProvider.CommitmentPrefix(),
 				},
 			},

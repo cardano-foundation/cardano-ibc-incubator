@@ -58,7 +58,7 @@ function createBaseGenesisState(): GenesisState {
     fee_enabled_channels: [],
     registered_payees: [],
     registered_counterparty_payees: [],
-    forward_relayers: [],
+    forward_relayers: []
   };
 }
 export const GenesisState = {
@@ -98,9 +98,7 @@ export const GenesisState = {
           message.registered_payees.push(RegisteredPayee.decode(reader, reader.uint32()));
           break;
         case 4:
-          message.registered_counterparty_payees.push(
-            RegisteredCounterpartyPayee.decode(reader, reader.uint32()),
-          );
+          message.registered_counterparty_payees.push(RegisteredCounterpartyPayee.decode(reader, reader.uint32()));
           break;
         case 5:
           message.forward_relayers.push(ForwardRelayerAddress.decode(reader, reader.uint32()));
@@ -114,54 +112,37 @@ export const GenesisState = {
   },
   fromJSON(object: any): GenesisState {
     const obj = createBaseGenesisState();
-    if (Array.isArray(object?.identified_fees))
-      obj.identified_fees = object.identified_fees.map((e: any) => IdentifiedPacketFees.fromJSON(e));
-    if (Array.isArray(object?.fee_enabled_channels))
-      obj.fee_enabled_channels = object.fee_enabled_channels.map((e: any) => FeeEnabledChannel.fromJSON(e));
-    if (Array.isArray(object?.registered_payees))
-      obj.registered_payees = object.registered_payees.map((e: any) => RegisteredPayee.fromJSON(e));
-    if (Array.isArray(object?.registered_counterparty_payees))
-      obj.registered_counterparty_payees = object.registered_counterparty_payees.map((e: any) =>
-        RegisteredCounterpartyPayee.fromJSON(e),
-      );
-    if (Array.isArray(object?.forward_relayers))
-      obj.forward_relayers = object.forward_relayers.map((e: any) => ForwardRelayerAddress.fromJSON(e));
+    if (Array.isArray(object?.identified_fees)) obj.identified_fees = object.identified_fees.map((e: any) => IdentifiedPacketFees.fromJSON(e));
+    if (Array.isArray(object?.fee_enabled_channels)) obj.fee_enabled_channels = object.fee_enabled_channels.map((e: any) => FeeEnabledChannel.fromJSON(e));
+    if (Array.isArray(object?.registered_payees)) obj.registered_payees = object.registered_payees.map((e: any) => RegisteredPayee.fromJSON(e));
+    if (Array.isArray(object?.registered_counterparty_payees)) obj.registered_counterparty_payees = object.registered_counterparty_payees.map((e: any) => RegisteredCounterpartyPayee.fromJSON(e));
+    if (Array.isArray(object?.forward_relayers)) obj.forward_relayers = object.forward_relayers.map((e: any) => ForwardRelayerAddress.fromJSON(e));
     return obj;
   },
   toJSON(message: GenesisState): unknown {
     const obj: any = {};
     if (message.identified_fees) {
-      obj.identified_fees = message.identified_fees.map((e) =>
-        e ? IdentifiedPacketFees.toJSON(e) : undefined,
-      );
+      obj.identified_fees = message.identified_fees.map(e => e ? IdentifiedPacketFees.toJSON(e) : undefined);
     } else {
       obj.identified_fees = [];
     }
     if (message.fee_enabled_channels) {
-      obj.fee_enabled_channels = message.fee_enabled_channels.map((e) =>
-        e ? FeeEnabledChannel.toJSON(e) : undefined,
-      );
+      obj.fee_enabled_channels = message.fee_enabled_channels.map(e => e ? FeeEnabledChannel.toJSON(e) : undefined);
     } else {
       obj.fee_enabled_channels = [];
     }
     if (message.registered_payees) {
-      obj.registered_payees = message.registered_payees.map((e) =>
-        e ? RegisteredPayee.toJSON(e) : undefined,
-      );
+      obj.registered_payees = message.registered_payees.map(e => e ? RegisteredPayee.toJSON(e) : undefined);
     } else {
       obj.registered_payees = [];
     }
     if (message.registered_counterparty_payees) {
-      obj.registered_counterparty_payees = message.registered_counterparty_payees.map((e) =>
-        e ? RegisteredCounterpartyPayee.toJSON(e) : undefined,
-      );
+      obj.registered_counterparty_payees = message.registered_counterparty_payees.map(e => e ? RegisteredCounterpartyPayee.toJSON(e) : undefined);
     } else {
       obj.registered_counterparty_payees = [];
     }
     if (message.forward_relayers) {
-      obj.forward_relayers = message.forward_relayers.map((e) =>
-        e ? ForwardRelayerAddress.toJSON(e) : undefined,
-      );
+      obj.forward_relayers = message.forward_relayers.map(e => e ? ForwardRelayerAddress.toJSON(e) : undefined);
     } else {
       obj.forward_relayers = [];
     }
@@ -169,21 +150,18 @@ export const GenesisState = {
   },
   fromPartial<I extends Exact<DeepPartial<GenesisState>, I>>(object: I): GenesisState {
     const message = createBaseGenesisState();
-    message.identified_fees = object.identified_fees?.map((e) => IdentifiedPacketFees.fromPartial(e)) || [];
-    message.fee_enabled_channels =
-      object.fee_enabled_channels?.map((e) => FeeEnabledChannel.fromPartial(e)) || [];
-    message.registered_payees = object.registered_payees?.map((e) => RegisteredPayee.fromPartial(e)) || [];
-    message.registered_counterparty_payees =
-      object.registered_counterparty_payees?.map((e) => RegisteredCounterpartyPayee.fromPartial(e)) || [];
-    message.forward_relayers =
-      object.forward_relayers?.map((e) => ForwardRelayerAddress.fromPartial(e)) || [];
+    message.identified_fees = object.identified_fees?.map(e => IdentifiedPacketFees.fromPartial(e)) || [];
+    message.fee_enabled_channels = object.fee_enabled_channels?.map(e => FeeEnabledChannel.fromPartial(e)) || [];
+    message.registered_payees = object.registered_payees?.map(e => RegisteredPayee.fromPartial(e)) || [];
+    message.registered_counterparty_payees = object.registered_counterparty_payees?.map(e => RegisteredCounterpartyPayee.fromPartial(e)) || [];
+    message.forward_relayers = object.forward_relayers?.map(e => ForwardRelayerAddress.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseFeeEnabledChannel(): FeeEnabledChannel {
   return {
     port_id: "",
-    channel_id: "",
+    channel_id: ""
   };
 }
 export const FeeEnabledChannel = {
@@ -234,13 +212,13 @@ export const FeeEnabledChannel = {
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
     return message;
-  },
+  }
 };
 function createBaseRegisteredPayee(): RegisteredPayee {
   return {
     channel_id: "",
     relayer: "",
-    payee: "",
+    payee: ""
   };
 }
 export const RegisteredPayee = {
@@ -300,13 +278,13 @@ export const RegisteredPayee = {
     message.relayer = object.relayer ?? "";
     message.payee = object.payee ?? "";
     return message;
-  },
+  }
 };
 function createBaseRegisteredCounterpartyPayee(): RegisteredCounterpartyPayee {
   return {
     channel_id: "",
     relayer: "",
-    counterparty_payee: "",
+    counterparty_payee: ""
   };
 }
 export const RegisteredCounterpartyPayee = {
@@ -360,20 +338,18 @@ export const RegisteredCounterpartyPayee = {
     message.counterparty_payee !== undefined && (obj.counterparty_payee = message.counterparty_payee);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<RegisteredCounterpartyPayee>, I>>(
-    object: I,
-  ): RegisteredCounterpartyPayee {
+  fromPartial<I extends Exact<DeepPartial<RegisteredCounterpartyPayee>, I>>(object: I): RegisteredCounterpartyPayee {
     const message = createBaseRegisteredCounterpartyPayee();
     message.channel_id = object.channel_id ?? "";
     message.relayer = object.relayer ?? "";
     message.counterparty_payee = object.counterparty_payee ?? "";
     return message;
-  },
+  }
 };
 function createBaseForwardRelayerAddress(): ForwardRelayerAddress {
   return {
     address: "",
-    packet_id: PacketId.fromPartial({}),
+    packet_id: PacketId.fromPartial({})
   };
 }
 export const ForwardRelayerAddress = {
@@ -416,8 +392,7 @@ export const ForwardRelayerAddress = {
   toJSON(message: ForwardRelayerAddress): unknown {
     const obj: any = {};
     message.address !== undefined && (obj.address = message.address);
-    message.packet_id !== undefined &&
-      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ForwardRelayerAddress>, I>>(object: I): ForwardRelayerAddress {
@@ -427,5 +402,5 @@ export const ForwardRelayerAddress = {
       message.packet_id = PacketId.fromPartial(object.packet_id);
     }
     return message;
-  },
+  }
 };

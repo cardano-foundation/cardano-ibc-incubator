@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -117,13 +117,35 @@ func (mp *messageProcessor) processMessages(
 // Otherwise, it will be attempted if either 2/3 of the trusting period
 // or the configured client update threshold duration has passed.
 func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst *pathEndRuntime) (bool, error) {
+	if src.ChainProvider.Type() == "cardano" {
+		return false, nil
+	}
+
 	var consensusHeightTime time.Time
+
+	clientConsensusHeight := dst.clientState.ConsensusHeight
+	trustedConsensusHeight := dst.clientTrustedState.ClientState.ConsensusHeight
+	if trustedConsensusHeight.EQ(clientConsensusHeight) {
+		return false, nil
+	}
+
 	if dst.clientState.ConsensusTime.IsZero() {
-		h, err := src.chainProvider.QueryIBCHeader(ctx, int64(dst.clientState.ConsensusHeight.RevisionHeight))
-		if err != nil {
-			return false, fmt.Errorf("failed to get header height: %w", err)
+		var timestamp uint64
+		switch src.ChainProvider.Type() {
+		case "cardano":
+			srcBlockData, err := src.ChainProvider.QueryBlockData(context.Background(), int64(dst.clientState.ConsensusHeight.RevisionHeight))
+			if err != nil {
+				return false, fmt.Errorf("failed to get header height: %w", err)
+			}
+			timestamp = srcBlockData.Timestamp
+		case "cosmos":
+			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.clientState.ConsensusHeight.RevisionHeight))
+			if err != nil {
+				return false, fmt.Errorf("failed to get header height: %w", err)
+			}
+			timestamp = h.ConsensusState().GetTimestamp()
 		}
-		consensusHeightTime = time.Unix(0, int64(h.ConsensusState().GetTimestamp()))
+		consensusHeightTime = time.Unix(0, int64(timestamp))
 	} else {
 		consensusHeightTime = dst.clientState.ConsensusTime
 	}
@@ -147,15 +169,15 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 
 	if mp.metrics != nil {
 		timeToExpiration := dst.clientState.TrustingPeriod - time.Since(consensusHeightTime)
-		mp.metrics.SetClientExpiration(src.info.PathName, dst.info.ChainID, dst.clientState.ClientID, fmt.Sprint(dst.clientState.TrustingPeriod.String()), timeToExpiration)
-		mp.metrics.SetClientTrustingPeriod(src.info.PathName, dst.info.ChainID, dst.info.ClientID, time.Duration(dst.clientState.TrustingPeriod))
+		mp.metrics.SetClientExpiration(src.Info.PathName, dst.Info.ChainID, dst.clientState.ClientID, fmt.Sprint(dst.clientState.TrustingPeriod.String()), timeToExpiration)
+		mp.metrics.SetClientTrustingPeriod(src.Info.PathName, dst.Info.ChainID, dst.Info.ClientID, time.Duration(dst.clientState.TrustingPeriod))
 	}
 
 	if shouldUpdateClientNow {
 		mp.log.Info("Client update threshold condition met",
-			zap.String("path_name", src.info.PathName),
-			zap.String("chain_id", dst.info.ChainID),
-			zap.String("client_id", dst.info.ClientID),
+			zap.String("path_name", src.Info.PathName),
+			zap.String("chain_id", dst.Info.ChainID),
+			zap.String("client_id", dst.Info.ClientID),
 			zap.Int64("trusting_period", dst.clientState.TrustingPeriod.Milliseconds()),
 			zap.Int64("time_since_client_update", time.Since(consensusHeightTime).Milliseconds()),
 			zap.Int64("client_threshold_time", mp.clientUpdateThresholdTime.Milliseconds()),
@@ -237,13 +259,17 @@ func (mp *messageProcessor) assembleMessage(
 // assembleMsgUpdateClient uses the ChainProvider from both pathEnds to assemble the client update header
 // from the source and then assemble the update client message in the correct format for the destination.
 func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, dst *pathEndRuntime) error {
-	clientID := dst.info.ClientID
+	clientID := dst.Info.ClientID
 	clientConsensusHeight := dst.clientState.ConsensusHeight
 	trustedConsensusHeight := dst.clientTrustedState.ClientState.ConsensusHeight
 	var trustedNextValidatorsHash []byte
+	//TODO: remove this comment and below
+	// check clientTrustedState.IBCHeader
 	if dst.clientTrustedState.IBCHeader != nil {
 		trustedNextValidatorsHash = dst.clientTrustedState.IBCHeader.NextValidatorsHash()
 	}
+
+	var counterpartyHeader ibcexported.ClientMessage
 
 	// If the client state height is not equal to the client trusted state height and the client state height is
 	// the latest block, we cannot send a MsgUpdateClient until another block is observed on the counterparty.
@@ -254,49 +280,73 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 			return fmt.Errorf("observed client trusted height: %d does not equal latest client state height: %d",
 				trustedConsensusHeight.RevisionHeight, clientConsensusHeight.RevisionHeight)
 		}
-		header, err := src.chainProvider.QueryIBCHeader(ctx, int64(clientConsensusHeight.RevisionHeight+1))
-		if err != nil {
-			return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-				clientConsensusHeight.RevisionHeight+1, src.info.ChainID, err)
+
+		switch src.ChainProvider.Type() {
+		case "cardano":
+			blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(clientConsensusHeight.RevisionHeight+1))
+			if err != nil {
+				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
+					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
+			}
+			//counterpartyHeader = blockData
+			//TODO: check this condition
+			//if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
+			//	!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
+			//	return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
+			//		"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
+			//		trustedConsensusHeight.RevisionHeight)
+			//}
+
+			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, blockData)
+			if err != nil {
+				return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
+					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
+			}
+			mp.msgUpdateClient = msgUpdateClient
+		case "cosmos":
+			header, err := src.ChainProvider.QueryIBCHeader(ctx, int64(clientConsensusHeight.RevisionHeight+1))
+			if err != nil {
+				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
+					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
+			}
+			dst.clientTrustedState = provider.ClientTrustedState{
+				ClientState: dst.clientState,
+				IBCHeader:   header,
+			}
+			trustedConsensusHeight = clientConsensusHeight
+			trustedNextValidatorsHash = header.NextValidatorsHash()
+			if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
+				!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
+				return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
+					"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
+					trustedConsensusHeight.RevisionHeight)
+			}
+			msgUpdateClientHeader, err := src.ChainProvider.MsgUpdateClientHeader(
+				src.latestHeader,
+				trustedConsensusHeight,
+				dst.clientTrustedState.IBCHeader,
+			)
+			if err != nil {
+				return fmt.Errorf("error assembling new client header: %w", err)
+			}
+			counterpartyHeader = msgUpdateClientHeader
+			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, counterpartyHeader)
+			if err != nil {
+				return fmt.Errorf("error assembling MsgUpdateClient: %w", err)
+			}
+
+			mp.msgUpdateClient = msgUpdateClient
 		}
+
 		mp.log.Debug("Had to query for client trusted IBC header",
-			zap.String("path_name", src.info.PathName),
-			zap.String("chain_id", src.info.ChainID),
-			zap.String("counterparty_chain_id", dst.info.ChainID),
+			zap.String("path_name", src.Info.PathName),
+			zap.String("chain_id", src.Info.ChainID),
+			zap.String("counterparty_chain_id", dst.Info.ChainID),
 			zap.String("counterparty_client_id", clientID),
 			zap.Uint64("height", clientConsensusHeight.RevisionHeight+1),
 			zap.Uint64("latest_height", src.latestBlock.Height),
 		)
-		dst.clientTrustedState = provider.ClientTrustedState{
-			ClientState: dst.clientState,
-			IBCHeader:   header,
-		}
-		trustedConsensusHeight = clientConsensusHeight
-		trustedNextValidatorsHash = header.NextValidatorsHash()
 	}
-
-	if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
-		!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
-		return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
-			"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
-			trustedConsensusHeight.RevisionHeight)
-	}
-
-	msgUpdateClientHeader, err := src.chainProvider.MsgUpdateClientHeader(
-		src.latestHeader,
-		trustedConsensusHeight,
-		dst.clientTrustedState.IBCHeader,
-	)
-	if err != nil {
-		return fmt.Errorf("error assembling new client header: %w", err)
-	}
-
-	msgUpdateClient, err := dst.chainProvider.MsgUpdateClient(clientID, msgUpdateClientHeader)
-	if err != nil {
-		return fmt.Errorf("error assembling MsgUpdateClient: %w", err)
-	}
-
-	mp.msgUpdateClient = msgUpdateClient
 
 	return nil
 }
@@ -309,7 +359,7 @@ func (mp *messageProcessor) trackAndSendMessages(
 	src, dst *pathEndRuntime,
 	needsClientUpdate bool,
 ) error {
-	broadcastBatch := dst.chainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
+	broadcastBatch := dst.ChainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
 	var batch []messageToTrack
 
 	for _, t := range mp.trackers() {
@@ -363,23 +413,22 @@ func (mp *messageProcessor) sendClientUpdate(
 	dst.lastClientUpdateHeightMu.Unlock()
 
 	msgs := []provider.RelayerMessage{mp.msgUpdateClient}
-
-	if err := dst.chainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, nil); err != nil {
+	if err := dst.ChainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, nil); err != nil {
 		mp.log.Error("Error sending client update message",
-			zap.String("path_name", src.info.PathName),
-			zap.String("src_chain_id", src.info.ChainID),
-			zap.String("dst_chain_id", dst.info.ChainID),
-			zap.String("src_client_id", src.info.ClientID),
-			zap.String("dst_client_id", dst.info.ClientID),
+			zap.String("path_name", src.Info.PathName),
+			zap.String("src_chain_id", src.Info.ChainID),
+			zap.String("dst_chain_id", dst.Info.ChainID),
+			zap.String("src_client_id", src.Info.ClientID),
+			zap.String("dst_client_id", dst.Info.ClientID),
 			zap.Error(err),
 		)
 
 		for _, promError := range promErrorCatagories {
 			if mp.metrics != nil {
 				if errors.Is(err, promError) {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, promError.Error())
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, promError.Error())
 				} else {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, "Tx Failure")
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, "Tx Failure")
 				}
 			}
 		}
@@ -413,17 +462,23 @@ func (mp *messageProcessor) sendBatchMessages(
 	)
 
 	if mp.isLocalhost {
-		msgs = make([]provider.RelayerMessage, len(batch))
 		for i, t := range batch {
 			msgs[i] = t.assembledMsg()
 			fields = append(fields, zap.Object(fmt.Sprintf("msg_%d", i), t))
 		}
 	} else {
-		// messages are batch with appended MsgUpdateClient
-		msgs = make([]provider.RelayerMessage, 1+len(batch))
-		msgs[0] = mp.msgUpdateClient
+		startIndex := 0
+
+		if mp.msgUpdateClient != nil {
+			msgs = make([]provider.RelayerMessage, 1+len(batch))
+			msgs[0] = mp.msgUpdateClient
+			startIndex = 1
+		} else {
+			msgs = make([]provider.RelayerMessage, len(batch))
+		}
+
 		for i, t := range batch {
-			msgs[i+1] = t.assembledMsg()
+			msgs[startIndex+i] = t.assembledMsg()
 			fields = append(fields, zap.Object(fmt.Sprintf("msg_%d", i), t))
 		}
 	}
@@ -448,7 +503,7 @@ func (mp *messageProcessor) sendBatchMessages(
 				channel = t.msg.info.SourceChannel
 				port = t.msg.info.SourcePort
 			}
-			mp.metrics.IncPacketsRelayed(dst.info.PathName, dst.info.ChainID, channel, port, t.msg.eventType)
+			mp.metrics.IncPacketsRelayed(dst.Info.PathName, dst.Info.ChainID, channel, port, t.msg.eventType)
 		}
 	}
 	callbacks := []func(rtr *provider.RelayerTxResponse, err error){callback}
@@ -457,7 +512,7 @@ func (mp *messageProcessor) sendBatchMessages(
 	if PathProcMessageCollector != nil {
 		testCallback := func(rtr *provider.RelayerTxResponse, err error) {
 			msgResult := &PathProcessorMessageResp{
-				DestinationChain: dst.chainProvider,
+				DestinationChain: dst.ChainProvider,
 				Response:         rtr,
 				SuccessfulTx:     err == nil,
 				Error:            err,
@@ -466,23 +521,22 @@ func (mp *messageProcessor) sendBatchMessages(
 		}
 		callbacks = append(callbacks, testCallback)
 	}
-
-	if err := dst.chainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, callbacks); err != nil {
+	if err := dst.ChainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, callbacks); err != nil {
 		errFields := []zapcore.Field{
-			zap.String("path_name", src.info.PathName),
-			zap.String("src_chain_id", src.info.ChainID),
-			zap.String("dst_chain_id", dst.info.ChainID),
-			zap.String("src_client_id", src.info.ClientID),
-			zap.String("dst_client_id", dst.info.ClientID),
+			zap.String("path_name", src.Info.PathName),
+			zap.String("src_chain_id", src.Info.ChainID),
+			zap.String("dst_chain_id", dst.Info.ChainID),
+			zap.String("src_client_id", src.Info.ClientID),
+			zap.String("dst_client_id", dst.Info.ClientID),
 			zap.Error(err),
 		}
 
 		for _, promError := range promErrorCatagories {
 			if mp.metrics != nil {
 				if errors.Is(err, promError) {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, promError.Error())
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, promError.Error())
 				} else {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, "Tx Failure")
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, "Tx Failure")
 				}
 			}
 		}
@@ -508,7 +562,11 @@ func (mp *messageProcessor) sendSingleMessage(
 	if mp.isLocalhost {
 		msgs = []provider.RelayerMessage{tracker.assembledMsg()}
 	} else {
-		msgs = []provider.RelayerMessage{mp.msgUpdateClient, tracker.assembledMsg()}
+		if mp.msgUpdateClient != nil {
+			msgs = []provider.RelayerMessage{mp.msgUpdateClient, tracker.assembledMsg()}
+		} else {
+			msgs = []provider.RelayerMessage{tracker.assembledMsg()}
+		}
 	}
 
 	broadcastCtx, cancel := context.WithTimeout(ctx, messageSendTimeout)
@@ -534,7 +592,7 @@ func (mp *messageProcessor) sendSingleMessage(
 				channel = t.msg.info.SourceChannel
 				port = t.msg.info.SourcePort
 			}
-			mp.metrics.IncPacketsRelayed(dst.info.PathName, dst.info.ChainID, channel, port, t.msg.eventType)
+			mp.metrics.IncPacketsRelayed(dst.Info.PathName, dst.Info.ChainID, channel, port, t.msg.eventType)
 		}
 
 		callbacks = append(callbacks, callback)
@@ -544,7 +602,7 @@ func (mp *messageProcessor) sendSingleMessage(
 	if PathProcMessageCollector != nil {
 		testCallback := func(rtr *provider.RelayerTxResponse, err error) {
 			msgResult := &PathProcessorMessageResp{
-				DestinationChain: dst.chainProvider,
+				DestinationChain: dst.ChainProvider,
 				Response:         rtr,
 				SuccessfulTx:     err == nil,
 				Error:            err,
@@ -553,23 +611,22 @@ func (mp *messageProcessor) sendSingleMessage(
 		}
 		callbacks = append(callbacks, testCallback)
 	}
-
-	err := dst.chainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, callbacks)
+	err := dst.ChainProvider.SendMessagesToMempool(broadcastCtx, msgs, mp.memo, ctx, callbacks)
 	if err != nil {
 		errFields := []zapcore.Field{
-			zap.String("path_name", src.info.PathName),
-			zap.String("src_chain_id", src.info.ChainID),
-			zap.String("dst_chain_id", dst.info.ChainID),
-			zap.String("src_client_id", src.info.ClientID),
-			zap.String("dst_client_id", dst.info.ClientID),
+			zap.String("path_name", src.Info.PathName),
+			zap.String("src_chain_id", src.Info.ChainID),
+			zap.String("dst_chain_id", dst.Info.ChainID),
+			zap.String("src_client_id", src.Info.ClientID),
+			zap.String("dst_client_id", dst.Info.ClientID),
 		}
 
 		for _, promError := range promErrorCatagories {
 			if mp.metrics != nil {
 				if errors.Is(err, promError) {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, promError.Error())
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, promError.Error())
 				} else {
-					mp.metrics.IncTxFailure(src.info.PathName, src.info.ChainID, "Tx Failure")
+					mp.metrics.IncTxFailure(src.Info.PathName, src.Info.ChainID, "Tx Failure")
 				}
 			}
 		}

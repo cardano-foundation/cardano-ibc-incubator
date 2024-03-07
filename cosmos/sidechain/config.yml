@@ -10,6 +10,16 @@ accounts:
       - 10000token
       - 100000000stake
     mnemonic: equal hello catch wine cricket village negative spell just few desk daring bachelor impact hat better hand depart maple sad please over lunch news
+  - name: relayer
+    coins:
+      - 10000token
+      - 100000000stake
+    mnemonic: engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance
+  - name: zebra
+    coins:
+      - 10000token
+      - 100000000000stake
+    mnemonic: attitude action perfect cradle mesh movie insect enhance have garbage crane tell scene shrimp spy surface shell wall radar rigid soccer prize merry much
 client:
   openapi:
     path: docs/static/openapi.yml
@@ -64,7 +74,7 @@ genesis:
 
 validators:
   - name: alice
-    bonded: 100000000stake
+    bonded: 10000000stake
 
 build:
   main: cmd/sidechaind/

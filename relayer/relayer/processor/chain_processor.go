@@ -3,7 +3,7 @@ package processor
 import (
 	"context"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 )
 
 // The ChainProcessor interface is reponsible for polling blocks and emitting IBC message events to the PathProcessors.

@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/bytearray
 use aiken/dict
 use aiken/int
@@ -11,6 +12,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/constants.{
 }
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/vote
 
 pub fn verify_commit_light(
   chain_id: ByteArray,
@@ -128,11 +130,8 @@ fn verify_basic_vals_and_commit(
   block_id: BlockID,
 ) -> Bool {
   expect !list.is_empty(vals.validators)
-
   expect !list.is_empty(commit.signatures)
-
   expect validator_set.size(vals) == list.length(commit.signatures)
-
   expect height == commit.height
   expect block_id == commit.block_id
   True
@@ -142,14 +141,14 @@ fn verify_basic_vals_and_commit(
 // BatchVerifier implements batch verification for pubkey
 fn should_batch_verify(_vals: ValidatorSet, commit: Commit) -> Bool {
   expect list.length(commit.signatures) >= batch_verify_threshold
-
   // expect batch.supports_batch_verifier(vals.get_proposer().pubkey)
   False
 }
 
 //TODO: Need to verify signature for val.pubkey 
+// Note: Default to using verify_ed25519_signature to verify the validator operator's signature
 fn verify_commit_single(
-  _chain_id: ByteArray,
+  chain_id: ByteArray,
   vals: ValidatorSet,
   commit: Commit,
   voting_power_needed: Int,
@@ -170,6 +169,14 @@ fn verify_commit_single(
           if lock_up_by_index {
             expect Some(val) = list.at(vals.validators, accum.2nd)
             expect !bytearray.is_empty(val.pubkey)
+            let vote_sign_bytes =
+              vote.vote_sign_bytes_for_commit(commit, chain_id, accum.2nd)
+            expect
+              builtin.verify_ed25519_signature(
+                val.pubkey,
+                vote_sign_bytes,
+                sig.signature,
+              )
             if count_sig(sig) {
               (accum.1st + val.voting_power, accum.2nd + 1, accum.3rd)
             } else {
@@ -182,6 +189,14 @@ fn verify_commit_single(
               (accum.1st, accum.2nd + 1, accum.3rd)
             } else {
               expect !bytearray.is_empty(val.pubkey)
+              let vote_sign_bytes =
+                vote.vote_sign_bytes_for_commit(commit, chain_id, accum.2nd)
+              expect
+                builtin.verify_ed25519_signature(
+                  val.pubkey,
+                  vote_sign_bytes,
+                  sig.signature,
+                )
               expect option.is_none(dict.get(accum.3rd, val_idx))
               if count_sig(sig) {
                 (
@@ -216,5 +231,6 @@ fn verify_commit_batch(
   _count_all_signatures: Bool,
   _lock_up_by_index: Bool,
 ) -> Bool {
-  todo
+  // TODO
+  True
 }

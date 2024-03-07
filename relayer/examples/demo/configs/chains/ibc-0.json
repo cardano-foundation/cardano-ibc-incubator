@@ -1,18 +1,16 @@
 {
-  "type": "cosmos",
+  "type": "cardano",
   "value": {
-    "key": "testkey",
-    "chain-id": "ibc-0",
-    "rpc-addr": "http://localhost:26657",
+    "key": "cardano-key",
+    "chain-id": "cardano",
+    "rpc-addr": "http://localhost:5001",
     "grpc-addr": "",
-    "account-prefix": "cosmos",
+    "account-prefix": "addr_test",
     "keyring-backend": "test",
-    "gas-adjustment": 1.5,
-    "gas-prices": "0.025stake",
-    "debug": true,
+    "gas-adjustment": 1.2,
+    "gas-prices": "0.0ada",
     "timeout": "10s",
     "output-format": "json",
     "sign-mode": "direct"
   }
 }
-

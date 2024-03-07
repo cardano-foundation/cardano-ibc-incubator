@@ -3,15 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
-	"github.com/cosmos/cosmos-sdk/codec"
-	"google.golang.org/protobuf/types/known/anypb"
 	"time"
 
-	pb "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/pb"
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"github.com/cometbft/cometbft/proto/tendermint/crypto"
+	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
@@ -23,6 +22,7 @@ import (
 	tendermint "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type BroadcastMode string
@@ -207,8 +207,8 @@ type MsgGetClientStateResponse struct {
 	ValidAfter          uint64
 	GenesisTime         time.Time
 	CurrentEpoch        uint64
-	CurrentValidatorSet []pb.Validator
-	NextValidatorSet    []pb.Validator
+	CurrentValidatorSet []pbclientstruct.Validator
+	NextValidatorSet    []pbclientstruct.Validator
 	EpochLength         uint64
 	SlotPerKesPeriod    uint64
 	TrustingPeriod      uint64
@@ -606,6 +606,8 @@ type QueryProvider interface {
 
 	// QueryBlockData from cardano
 	QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error)
+	// Query block result from cardano
+	QueryBlockResults(ctx context.Context, h int64) (*ctypes.ResultBlockResults, error)
 
 	// query packet info for sequence
 	QuerySendPacket(ctx context.Context, srcChanID, srcPortID string, sequence uint64) (PacketInfo, error)

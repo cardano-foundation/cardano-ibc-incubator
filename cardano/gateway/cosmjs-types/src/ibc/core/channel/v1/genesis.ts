@@ -33,7 +33,7 @@ function createBaseGenesisState(): GenesisState {
     send_sequences: [],
     recv_sequences: [],
     ack_sequences: [],
-    next_channel_sequence: BigInt(0),
+    next_channel_sequence: BigInt(0)
   };
 }
 export const GenesisState = {
@@ -105,85 +105,76 @@ export const GenesisState = {
   },
   fromJSON(object: any): GenesisState {
     const obj = createBaseGenesisState();
-    if (Array.isArray(object?.channels))
-      obj.channels = object.channels.map((e: any) => IdentifiedChannel.fromJSON(e));
-    if (Array.isArray(object?.acknowledgements))
-      obj.acknowledgements = object.acknowledgements.map((e: any) => PacketState.fromJSON(e));
-    if (Array.isArray(object?.commitments))
-      obj.commitments = object.commitments.map((e: any) => PacketState.fromJSON(e));
-    if (Array.isArray(object?.receipts))
-      obj.receipts = object.receipts.map((e: any) => PacketState.fromJSON(e));
-    if (Array.isArray(object?.send_sequences))
-      obj.send_sequences = object.send_sequences.map((e: any) => PacketSequence.fromJSON(e));
-    if (Array.isArray(object?.recv_sequences))
-      obj.recv_sequences = object.recv_sequences.map((e: any) => PacketSequence.fromJSON(e));
-    if (Array.isArray(object?.ack_sequences))
-      obj.ack_sequences = object.ack_sequences.map((e: any) => PacketSequence.fromJSON(e));
-    if (isSet(object.next_channel_sequence))
-      obj.next_channel_sequence = BigInt(object.next_channel_sequence.toString());
+    if (Array.isArray(object?.channels)) obj.channels = object.channels.map((e: any) => IdentifiedChannel.fromJSON(e));
+    if (Array.isArray(object?.acknowledgements)) obj.acknowledgements = object.acknowledgements.map((e: any) => PacketState.fromJSON(e));
+    if (Array.isArray(object?.commitments)) obj.commitments = object.commitments.map((e: any) => PacketState.fromJSON(e));
+    if (Array.isArray(object?.receipts)) obj.receipts = object.receipts.map((e: any) => PacketState.fromJSON(e));
+    if (Array.isArray(object?.send_sequences)) obj.send_sequences = object.send_sequences.map((e: any) => PacketSequence.fromJSON(e));
+    if (Array.isArray(object?.recv_sequences)) obj.recv_sequences = object.recv_sequences.map((e: any) => PacketSequence.fromJSON(e));
+    if (Array.isArray(object?.ack_sequences)) obj.ack_sequences = object.ack_sequences.map((e: any) => PacketSequence.fromJSON(e));
+    if (isSet(object.next_channel_sequence)) obj.next_channel_sequence = BigInt(object.next_channel_sequence.toString());
     return obj;
   },
   toJSON(message: GenesisState): unknown {
     const obj: any = {};
     if (message.channels) {
-      obj.channels = message.channels.map((e) => (e ? IdentifiedChannel.toJSON(e) : undefined));
+      obj.channels = message.channels.map(e => e ? IdentifiedChannel.toJSON(e) : undefined);
     } else {
       obj.channels = [];
     }
     if (message.acknowledgements) {
-      obj.acknowledgements = message.acknowledgements.map((e) => (e ? PacketState.toJSON(e) : undefined));
+      obj.acknowledgements = message.acknowledgements.map(e => e ? PacketState.toJSON(e) : undefined);
     } else {
       obj.acknowledgements = [];
     }
     if (message.commitments) {
-      obj.commitments = message.commitments.map((e) => (e ? PacketState.toJSON(e) : undefined));
+      obj.commitments = message.commitments.map(e => e ? PacketState.toJSON(e) : undefined);
     } else {
       obj.commitments = [];
     }
     if (message.receipts) {
-      obj.receipts = message.receipts.map((e) => (e ? PacketState.toJSON(e) : undefined));
+      obj.receipts = message.receipts.map(e => e ? PacketState.toJSON(e) : undefined);
     } else {
       obj.receipts = [];
     }
     if (message.send_sequences) {
-      obj.send_sequences = message.send_sequences.map((e) => (e ? PacketSequence.toJSON(e) : undefined));
+      obj.send_sequences = message.send_sequences.map(e => e ? PacketSequence.toJSON(e) : undefined);
     } else {
       obj.send_sequences = [];
     }
     if (message.recv_sequences) {
-      obj.recv_sequences = message.recv_sequences.map((e) => (e ? PacketSequence.toJSON(e) : undefined));
+      obj.recv_sequences = message.recv_sequences.map(e => e ? PacketSequence.toJSON(e) : undefined);
     } else {
       obj.recv_sequences = [];
     }
     if (message.ack_sequences) {
-      obj.ack_sequences = message.ack_sequences.map((e) => (e ? PacketSequence.toJSON(e) : undefined));
+      obj.ack_sequences = message.ack_sequences.map(e => e ? PacketSequence.toJSON(e) : undefined);
     } else {
       obj.ack_sequences = [];
     }
-    message.next_channel_sequence !== undefined &&
-      (obj.next_channel_sequence = (message.next_channel_sequence || BigInt(0)).toString());
+    message.next_channel_sequence !== undefined && (obj.next_channel_sequence = (message.next_channel_sequence || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<GenesisState>, I>>(object: I): GenesisState {
     const message = createBaseGenesisState();
-    message.channels = object.channels?.map((e) => IdentifiedChannel.fromPartial(e)) || [];
-    message.acknowledgements = object.acknowledgements?.map((e) => PacketState.fromPartial(e)) || [];
-    message.commitments = object.commitments?.map((e) => PacketState.fromPartial(e)) || [];
-    message.receipts = object.receipts?.map((e) => PacketState.fromPartial(e)) || [];
-    message.send_sequences = object.send_sequences?.map((e) => PacketSequence.fromPartial(e)) || [];
-    message.recv_sequences = object.recv_sequences?.map((e) => PacketSequence.fromPartial(e)) || [];
-    message.ack_sequences = object.ack_sequences?.map((e) => PacketSequence.fromPartial(e)) || [];
+    message.channels = object.channels?.map(e => IdentifiedChannel.fromPartial(e)) || [];
+    message.acknowledgements = object.acknowledgements?.map(e => PacketState.fromPartial(e)) || [];
+    message.commitments = object.commitments?.map(e => PacketState.fromPartial(e)) || [];
+    message.receipts = object.receipts?.map(e => PacketState.fromPartial(e)) || [];
+    message.send_sequences = object.send_sequences?.map(e => PacketSequence.fromPartial(e)) || [];
+    message.recv_sequences = object.recv_sequences?.map(e => PacketSequence.fromPartial(e)) || [];
+    message.ack_sequences = object.ack_sequences?.map(e => PacketSequence.fromPartial(e)) || [];
     if (object.next_channel_sequence !== undefined && object.next_channel_sequence !== null) {
       message.next_channel_sequence = BigInt(object.next_channel_sequence.toString());
     }
     return message;
-  },
+  }
 };
 function createBasePacketSequence(): PacketSequence {
   return {
     port_id: "",
     channel_id: "",
-    sequence: BigInt(0),
+    sequence: BigInt(0)
   };
 }
 export const PacketSequence = {
@@ -245,5 +236,5 @@ export const PacketSequence = {
       message.sequence = BigInt(object.sequence.toString());
     }
     return message;
-  },
+  }
 };

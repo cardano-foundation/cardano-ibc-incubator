@@ -12,6 +12,8 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 
 const expected_revision_height = 99
 
+const mock_round = 1
+
 const expected_time = 1705552992062000
 
 const expected_next_validators_hash =
@@ -33,6 +35,7 @@ fn get_sample_header() -> Header {
       },
       commit: Commit {
         height: expected_revision_height,
+        round: mock_round,
         block_id: BlockID {
           hash: "",
           part_set_header: PartSetHeader { total: 0, hash: "" },

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
+	"github.com/cardano/relayer/v1/relayer"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

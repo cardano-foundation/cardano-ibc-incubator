@@ -4,8 +4,16 @@ use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
-use ibc/client/ics_007_tendermint_client/client_state
+use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
+  BlockID, Commit, PartSetHeader,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
+use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
+use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
+use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
+use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_023_vector_commitments/merkle
 
@@ -30,6 +38,98 @@ const mock_next_validators_hash =
 
 const mock_app_hash =
   #"67e58e47576a6fea2d127f9287205a8c789e4d822171064920e1081136e02816"
+
+const mock_round = 1
+
+const expected_time = 1705552992062000
+
+const expected_next_validators_hash =
+  #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
+
+const expected_app_hash =
+  #"92dad9443e4dd6d70a7f11872101ebff87e21798e4fbb26fa4bf590eb440e71b"
+
+fn get_mock_header(latest_height: Height) -> Header {
+  Header {
+    signed_header: SignedHeader {
+      header: tm_header.TmHeader {
+        //TODO: must check chain Id for getting Height from header
+        chain_id: "ogmosis",
+        height: latest_height.revision_height,
+        time: expected_time,
+        validators_hash: "",
+        next_validators_hash: expected_next_validators_hash,
+        app_hash: expected_app_hash,
+      },
+      commit: Commit {
+        height: latest_height.revision_height,
+        round: mock_round,
+        block_id: BlockID {
+          hash: "",
+          part_set_header: PartSetHeader { total: 0, hash: "" },
+        },
+        signatures: [],
+      },
+    },
+    validator_set: ValidatorSet {
+      validators: [],
+      proposer: Validator {
+        address: "",
+        pubkey: "",
+        voting_power: 0,
+        proposer_priority: 0,
+      },
+      total_voting_power: 0,
+    },
+    trusted_height: Height { revision_number: 0, revision_height: 10 },
+    trusted_validators: ValidatorSet {
+      validators: [],
+      proposer: Validator {
+        address: "",
+        pubkey: "",
+        voting_power: 0,
+        proposer_priority: 0,
+      },
+      total_voting_power: 0,
+    },
+  }
+}
+
+fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
+  let mock_client_state =
+    client_state.new_client_state(
+      mock_chain_id,
+      rational.from_int(1),
+      mock_trusting_period,
+      mock_unbonding_period,
+      mock_max_clock_drift,
+      latest_height,
+      [],
+    )
+  let mock_consensus_states =
+    dict.new()
+      |> dict.insert(
+           latest_height,
+           ConsensusState {
+             timestamp: mock_timestamp,
+             next_validators_hash: mock_next_validators_hash,
+             root: merkle.new_merkle_root(mock_app_hash),
+           },
+           height.compare,
+         )
+  let mock_auth_token =
+    AuthToken {
+      policy_id: mock_auth_token_policy_id,
+      name: mock_auth_token_name,
+    }
+  ClientDatum {
+    state: ClientDatumState {
+      client_state: mock_client_state,
+      consensus_states: mock_consensus_states,
+    },
+    token: mock_auth_token,
+  }
+}
 
 // Unit test with success case for is_initialized_valid function
 // NOTE: Will use not null proof specs for test case after resolving validate's TODO part
@@ -193,4 +293,183 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
     }
 
   client_datum.is_initialized_valid(mock_datum, mock_auth_token) == True
+}
+
+// The input consensus_states do not contain the key that corresponds to the header height.
+// The latest height of the input client_state is less than the header height.
+// The output consensus_states has one more element than the input consensus_states, which is the header consensus_states.
+// The header_height is equal to the latest height of the output client_state.
+// All other elements of the input and output datum must be equal.
+test test_is_updated_valid_succeed_01() {
+  let mock_header_lastest_height =
+    Height { revision_number: 0, revision_height: 100 }
+  let mock_input_lastest_height =
+    Height { revision_number: 0, revision_height: 99 }
+  let mock_client_datum = get_mock_client_datum(mock_input_lastest_height)
+  let mock_header = get_mock_header(mock_header_lastest_height)
+  let input_client_datum = mock_client_datum
+  let output_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+        client_state: ClientState {
+          ..mock_client_datum.state.client_state,
+          latest_height: mock_header_lastest_height,
+        },
+      },
+    }
+  client_datum.is_updated_valid(
+    input_client_datum,
+    output_client_datum,
+    mock_header,
+  )
+}
+
+// The input consensus_states do not contain the key that corresponds to the header height.
+// The latest height of the input client_state greater than or equal the header height.
+// The output consensus_states has one more element than the input consensus_states, which is the header consensus_states.
+// The header_height is equal to the latest height of the output client_state.
+// All other elements of the input and output datum must be equal.
+test test_is_updated_valid_succeed_02() {
+  let mock_header_lastest_height =
+    Height { revision_number: 0, revision_height: 100 }
+  let mock_input_lastest_height =
+    Height { revision_number: 0, revision_height: 101 }
+  let mock_client_datum = get_mock_client_datum(mock_input_lastest_height)
+  let mock_header = get_mock_header(mock_header_lastest_height)
+  let input_client_datum = mock_client_datum
+  let output_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        ..mock_client_datum.state,
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+      },
+    }
+  client_datum.is_updated_valid(
+    input_client_datum,
+    output_client_datum,
+    mock_header,
+  )
+}
+
+// The input consensus_states do not contain the key that corresponds to the header height.
+// The latest height of the input client_state is greater than or equal to the header height.
+// The output consensus_states has one more element than the input consensus_states, which is the header consensus_states.
+// The header_height is equal to the latest height of the output client_state.
+// All other elements of the input and output datum must be equal.
+test test_is_updated_valid_return_false_01() {
+  let mock_header_lastest_height =
+    Height { revision_number: 0, revision_height: 100 }
+  let mock_input_lastest_height =
+    Height { revision_number: 0, revision_height: 101 }
+  let mock_client_datum = get_mock_client_datum(mock_input_lastest_height)
+  let mock_header = get_mock_header(mock_header_lastest_height)
+  let input_client_datum = mock_client_datum
+  let output_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+        client_state: ClientState {
+          ..mock_client_datum.state.client_state,
+          latest_height: mock_header_lastest_height,
+        },
+      },
+    }
+  !client_datum.is_updated_valid(
+    input_client_datum,
+    output_client_datum,
+    mock_header,
+  )
+}
+
+// The input consensus_states do not contain the key that corresponds to the header height.
+// The latest height of the input client_state less than the header height.
+// The output consensus_states has one more element than the input consensus_states, which is the header consensus_states.
+// The header_height is equal to the latest height of the output client_state.
+// All other elements of the input and output datum must be equal.
+test test_is_updated_valid_return_false_02() {
+  let mock_header_lastest_height =
+    Height { revision_number: 0, revision_height: 100 }
+  let mock_input_lastest_height =
+    Height { revision_number: 0, revision_height: 99 }
+  let mock_client_datum = get_mock_client_datum(mock_input_lastest_height)
+  let mock_header = get_mock_header(mock_header_lastest_height)
+  let input_client_datum = mock_client_datum
+  let output_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        ..mock_client_datum.state,
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+      },
+    }
+  !client_datum.is_updated_valid(
+    input_client_datum,
+    output_client_datum,
+    mock_header,
+  )
+}
+
+//The input consensus_states contain the key that corresponds to the header height.
+test test_is_updated_valid_fail_when_input_consensus_state_contain_header_height_key() fail {
+  let mock_header_lastest_height =
+    Height { revision_number: 0, revision_height: 100 }
+  let mock_input_lastest_height =
+    Height { revision_number: 0, revision_height: 101 }
+  let mock_client_datum = get_mock_client_datum(mock_input_lastest_height)
+  let mock_header = get_mock_header(mock_header_lastest_height)
+  let input_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        ..mock_client_datum.state,
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+      },
+    }
+  let output_client_datum =
+    ClientDatum {
+      ..mock_client_datum,
+      state: ClientDatumState {
+        ..mock_client_datum.state,
+        consensus_states: mock_client_datum.state.consensus_states
+          |> dict.insert(
+               header.get_height(mock_header),
+               header.consensus_state(mock_header),
+               height.compare,
+             ),
+      },
+    }
+  client_datum.is_updated_valid(
+    input_client_datum,
+    output_client_datum,
+    mock_header,
+  )
 }

@@ -8,13 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cardano"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	penumbraprocessor "github.com/cardano/relayer/v1/relayer/chains/penumbra"
+	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	penumbraprocessor "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/penumbra"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
 	"go.uber.org/zap"
 )
 
@@ -125,6 +127,9 @@ func (chain *Chain) chainProcessor(log *zap.Logger, metrics *processor.Prometheu
 		return penumbraprocessor.NewPenumbraChainProcessor(log, p)
 	case *cosmos.CosmosProvider:
 		return cosmos.NewCosmosChainProcessor(log, p, metrics)
+	case *cardano.CardanoProvider:
+		return cardano.NewCardanoChainProcessor(log, p, metrics)
+
 	default:
 		panic(fmt.Errorf("unsupported chain provider type: %T", chain.ChainProvider))
 	}

@@ -24,4 +24,6 @@ bin/*
 /vendor
 
 go.work.sum
-#tx-cardano/
+
+test/ibctest/config
+test/ibctest/keys

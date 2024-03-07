@@ -20,7 +20,9 @@ export interface MsgConnectionOpenInit {
  * MsgConnectionOpenInitResponse defines the Msg/ConnectionOpenInit response
  * type.
  */
-export interface MsgConnectionOpenInitResponse {}
+export interface MsgConnectionOpenInitResponse {
+  unsigned_tx?: Any;
+}
 /**
  * MsgConnectionOpenTry defines a msg sent by a Relayer to try to open a
  * connection on Chain B.
@@ -50,7 +52,9 @@ export interface MsgConnectionOpenTry {
   host_consensus_state_proof: Uint8Array;
 }
 /** MsgConnectionOpenTryResponse defines the Msg/ConnectionOpenTry response type. */
-export interface MsgConnectionOpenTryResponse {}
+export interface MsgConnectionOpenTryResponse {
+  unsigned_tx?: Any;
+}
 /**
  * MsgConnectionOpenAck defines a msg sent by a Relayer to Chain A to
  * acknowledge the change of connection state to TRYOPEN on Chain B.
@@ -76,7 +80,9 @@ export interface MsgConnectionOpenAck {
   host_consensus_state_proof: Uint8Array;
 }
 /** MsgConnectionOpenAckResponse defines the Msg/ConnectionOpenAck response type. */
-export interface MsgConnectionOpenAckResponse {}
+export interface MsgConnectionOpenAckResponse {
+  unsigned_tx?: Any;
+}
 /**
  * MsgConnectionOpenConfirm defines a msg sent by a Relayer to Chain B to
  * acknowledge the change of connection state to OPEN on Chain A.
@@ -92,7 +98,9 @@ export interface MsgConnectionOpenConfirm {
  * MsgConnectionOpenConfirmResponse defines the Msg/ConnectionOpenConfirm
  * response type.
  */
-export interface MsgConnectionOpenConfirmResponse {}
+export interface MsgConnectionOpenConfirmResponse {
+  unsigned_tx?: Any;
+}
 function createBaseMsgConnectionOpenInit(): MsgConnectionOpenInit {
   return {
     client_id: "",
@@ -188,11 +196,16 @@ export const MsgConnectionOpenInit = {
   },
 };
 function createBaseMsgConnectionOpenInitResponse(): MsgConnectionOpenInitResponse {
-  return {};
+  return {
+    unsigned_tx: undefined,
+  };
 }
 export const MsgConnectionOpenInitResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenInitResponse",
-  encode(_: MsgConnectionOpenInitResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgConnectionOpenInitResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgConnectionOpenInitResponse {
@@ -202,6 +215,9 @@ export const MsgConnectionOpenInitResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -209,18 +225,24 @@ export const MsgConnectionOpenInitResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgConnectionOpenInitResponse {
+  fromJSON(object: any): MsgConnectionOpenInitResponse {
     const obj = createBaseMsgConnectionOpenInitResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgConnectionOpenInitResponse): unknown {
+  toJSON(message: MsgConnectionOpenInitResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgConnectionOpenInitResponse>, I>>(
-    _: I,
+    object: I,
   ): MsgConnectionOpenInitResponse {
     const message = createBaseMsgConnectionOpenInitResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   },
 };
@@ -429,11 +451,16 @@ export const MsgConnectionOpenTry = {
   },
 };
 function createBaseMsgConnectionOpenTryResponse(): MsgConnectionOpenTryResponse {
-  return {};
+  return {
+    unsigned_tx: undefined,
+  };
 }
 export const MsgConnectionOpenTryResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenTryResponse",
-  encode(_: MsgConnectionOpenTryResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgConnectionOpenTryResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgConnectionOpenTryResponse {
@@ -443,6 +470,9 @@ export const MsgConnectionOpenTryResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -450,18 +480,24 @@ export const MsgConnectionOpenTryResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgConnectionOpenTryResponse {
+  fromJSON(object: any): MsgConnectionOpenTryResponse {
     const obj = createBaseMsgConnectionOpenTryResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgConnectionOpenTryResponse): unknown {
+  toJSON(message: MsgConnectionOpenTryResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgConnectionOpenTryResponse>, I>>(
-    _: I,
+    object: I,
   ): MsgConnectionOpenTryResponse {
     const message = createBaseMsgConnectionOpenTryResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   },
 };
@@ -641,11 +677,16 @@ export const MsgConnectionOpenAck = {
   },
 };
 function createBaseMsgConnectionOpenAckResponse(): MsgConnectionOpenAckResponse {
-  return {};
+  return {
+    unsigned_tx: undefined,
+  };
 }
 export const MsgConnectionOpenAckResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenAckResponse",
-  encode(_: MsgConnectionOpenAckResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgConnectionOpenAckResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgConnectionOpenAckResponse {
@@ -655,6 +696,9 @@ export const MsgConnectionOpenAckResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -662,18 +706,24 @@ export const MsgConnectionOpenAckResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgConnectionOpenAckResponse {
+  fromJSON(object: any): MsgConnectionOpenAckResponse {
     const obj = createBaseMsgConnectionOpenAckResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgConnectionOpenAckResponse): unknown {
+  toJSON(message: MsgConnectionOpenAckResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgConnectionOpenAckResponse>, I>>(
-    _: I,
+    object: I,
   ): MsgConnectionOpenAckResponse {
     const message = createBaseMsgConnectionOpenAckResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   },
 };
@@ -762,11 +812,19 @@ export const MsgConnectionOpenConfirm = {
   },
 };
 function createBaseMsgConnectionOpenConfirmResponse(): MsgConnectionOpenConfirmResponse {
-  return {};
+  return {
+    unsigned_tx: undefined,
+  };
 }
 export const MsgConnectionOpenConfirmResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenConfirmResponse",
-  encode(_: MsgConnectionOpenConfirmResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: MsgConnectionOpenConfirmResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgConnectionOpenConfirmResponse {
@@ -776,6 +834,9 @@ export const MsgConnectionOpenConfirmResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -783,18 +844,24 @@ export const MsgConnectionOpenConfirmResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgConnectionOpenConfirmResponse {
+  fromJSON(object: any): MsgConnectionOpenConfirmResponse {
     const obj = createBaseMsgConnectionOpenConfirmResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgConnectionOpenConfirmResponse): unknown {
+  toJSON(message: MsgConnectionOpenConfirmResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgConnectionOpenConfirmResponse>, I>>(
-    _: I,
+    object: I,
   ): MsgConnectionOpenConfirmResponse {
     const message = createBaseMsgConnectionOpenConfirmResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   },
 };

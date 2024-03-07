@@ -4,15 +4,7 @@ import { Consensus } from "../version/types";
 import { Timestamp } from "../../google/protobuf/timestamp";
 import { ValidatorSet } from "./validator";
 import { BinaryReader, BinaryWriter } from "../../binary";
-import {
-  isSet,
-  bytesFromBase64,
-  base64FromBytes,
-  DeepPartial,
-  Exact,
-  fromJsonTimestamp,
-  fromTimestamp,
-} from "../../helpers";
+import { isSet, bytesFromBase64, base64FromBytes, DeepPartial, Exact, fromJsonTimestamp, fromTimestamp } from "../../helpers";
 export const protobufPackage = "tendermint.types";
 /** BlockIdFlag indicates which BlcokID the signature is for */
 export enum BlockIDFlag {
@@ -212,7 +204,7 @@ export interface TxProof {
 function createBasePartSetHeader(): PartSetHeader {
   return {
     total: 0,
-    hash: new Uint8Array(),
+    hash: new Uint8Array()
   };
 }
 export const PartSetHeader = {
@@ -255,8 +247,7 @@ export const PartSetHeader = {
   toJSON(message: PartSetHeader): unknown {
     const obj: any = {};
     message.total !== undefined && (obj.total = Math.round(message.total));
-    message.hash !== undefined &&
-      (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
+    message.hash !== undefined && (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<PartSetHeader>, I>>(object: I): PartSetHeader {
@@ -264,13 +255,13 @@ export const PartSetHeader = {
     message.total = object.total ?? 0;
     message.hash = object.hash ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBasePart(): Part {
   return {
     index: 0,
     bytes: new Uint8Array(),
-    proof: Proof.fromPartial({}),
+    proof: Proof.fromPartial({})
   };
 }
 export const Part = {
@@ -320,8 +311,7 @@ export const Part = {
   toJSON(message: Part): unknown {
     const obj: any = {};
     message.index !== undefined && (obj.index = Math.round(message.index));
-    message.bytes !== undefined &&
-      (obj.bytes = base64FromBytes(message.bytes !== undefined ? message.bytes : new Uint8Array()));
+    message.bytes !== undefined && (obj.bytes = base64FromBytes(message.bytes !== undefined ? message.bytes : new Uint8Array()));
     message.proof !== undefined && (obj.proof = message.proof ? Proof.toJSON(message.proof) : undefined);
     return obj;
   },
@@ -333,12 +323,12 @@ export const Part = {
       message.proof = Proof.fromPartial(object.proof);
     }
     return message;
-  },
+  }
 };
 function createBaseBlockID(): BlockID {
   return {
     hash: new Uint8Array(),
-    part_set_header: PartSetHeader.fromPartial({}),
+    part_set_header: PartSetHeader.fromPartial({})
   };
 }
 export const BlockID = {
@@ -380,12 +370,8 @@ export const BlockID = {
   },
   toJSON(message: BlockID): unknown {
     const obj: any = {};
-    message.hash !== undefined &&
-      (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
-    message.part_set_header !== undefined &&
-      (obj.part_set_header = message.part_set_header
-        ? PartSetHeader.toJSON(message.part_set_header)
-        : undefined);
+    message.hash !== undefined && (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
+    message.part_set_header !== undefined && (obj.part_set_header = message.part_set_header ? PartSetHeader.toJSON(message.part_set_header) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BlockID>, I>>(object: I): BlockID {
@@ -395,7 +381,7 @@ export const BlockID = {
       message.part_set_header = PartSetHeader.fromPartial(object.part_set_header);
     }
     return message;
-  },
+  }
 };
 function createBaseHeader(): Header {
   return {
@@ -412,7 +398,7 @@ function createBaseHeader(): Header {
     app_hash: new Uint8Array(),
     last_results_hash: new Uint8Array(),
     evidence_hash: new Uint8Array(),
-    proposer_address: new Uint8Array(),
+    proposer_address: new Uint8Array()
   };
 }
 export const Header = {
@@ -528,8 +514,7 @@ export const Header = {
     if (isSet(object.last_commit_hash)) obj.last_commit_hash = bytesFromBase64(object.last_commit_hash);
     if (isSet(object.data_hash)) obj.data_hash = bytesFromBase64(object.data_hash);
     if (isSet(object.validators_hash)) obj.validators_hash = bytesFromBase64(object.validators_hash);
-    if (isSet(object.next_validators_hash))
-      obj.next_validators_hash = bytesFromBase64(object.next_validators_hash);
+    if (isSet(object.next_validators_hash)) obj.next_validators_hash = bytesFromBase64(object.next_validators_hash);
     if (isSet(object.consensus_hash)) obj.consensus_hash = bytesFromBase64(object.consensus_hash);
     if (isSet(object.app_hash)) obj.app_hash = bytesFromBase64(object.app_hash);
     if (isSet(object.last_results_hash)) obj.last_results_hash = bytesFromBase64(object.last_results_hash);
@@ -539,47 +524,20 @@ export const Header = {
   },
   toJSON(message: Header): unknown {
     const obj: any = {};
-    message.version !== undefined &&
-      (obj.version = message.version ? Consensus.toJSON(message.version) : undefined);
+    message.version !== undefined && (obj.version = message.version ? Consensus.toJSON(message.version) : undefined);
     message.chain_id !== undefined && (obj.chain_id = message.chain_id);
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.time !== undefined && (obj.time = fromTimestamp(message.time).toISOString());
-    message.last_block_id !== undefined &&
-      (obj.last_block_id = message.last_block_id ? BlockID.toJSON(message.last_block_id) : undefined);
-    message.last_commit_hash !== undefined &&
-      (obj.last_commit_hash = base64FromBytes(
-        message.last_commit_hash !== undefined ? message.last_commit_hash : new Uint8Array(),
-      ));
-    message.data_hash !== undefined &&
-      (obj.data_hash = base64FromBytes(
-        message.data_hash !== undefined ? message.data_hash : new Uint8Array(),
-      ));
-    message.validators_hash !== undefined &&
-      (obj.validators_hash = base64FromBytes(
-        message.validators_hash !== undefined ? message.validators_hash : new Uint8Array(),
-      ));
-    message.next_validators_hash !== undefined &&
-      (obj.next_validators_hash = base64FromBytes(
-        message.next_validators_hash !== undefined ? message.next_validators_hash : new Uint8Array(),
-      ));
-    message.consensus_hash !== undefined &&
-      (obj.consensus_hash = base64FromBytes(
-        message.consensus_hash !== undefined ? message.consensus_hash : new Uint8Array(),
-      ));
-    message.app_hash !== undefined &&
-      (obj.app_hash = base64FromBytes(message.app_hash !== undefined ? message.app_hash : new Uint8Array()));
-    message.last_results_hash !== undefined &&
-      (obj.last_results_hash = base64FromBytes(
-        message.last_results_hash !== undefined ? message.last_results_hash : new Uint8Array(),
-      ));
-    message.evidence_hash !== undefined &&
-      (obj.evidence_hash = base64FromBytes(
-        message.evidence_hash !== undefined ? message.evidence_hash : new Uint8Array(),
-      ));
-    message.proposer_address !== undefined &&
-      (obj.proposer_address = base64FromBytes(
-        message.proposer_address !== undefined ? message.proposer_address : new Uint8Array(),
-      ));
+    message.last_block_id !== undefined && (obj.last_block_id = message.last_block_id ? BlockID.toJSON(message.last_block_id) : undefined);
+    message.last_commit_hash !== undefined && (obj.last_commit_hash = base64FromBytes(message.last_commit_hash !== undefined ? message.last_commit_hash : new Uint8Array()));
+    message.data_hash !== undefined && (obj.data_hash = base64FromBytes(message.data_hash !== undefined ? message.data_hash : new Uint8Array()));
+    message.validators_hash !== undefined && (obj.validators_hash = base64FromBytes(message.validators_hash !== undefined ? message.validators_hash : new Uint8Array()));
+    message.next_validators_hash !== undefined && (obj.next_validators_hash = base64FromBytes(message.next_validators_hash !== undefined ? message.next_validators_hash : new Uint8Array()));
+    message.consensus_hash !== undefined && (obj.consensus_hash = base64FromBytes(message.consensus_hash !== undefined ? message.consensus_hash : new Uint8Array()));
+    message.app_hash !== undefined && (obj.app_hash = base64FromBytes(message.app_hash !== undefined ? message.app_hash : new Uint8Array()));
+    message.last_results_hash !== undefined && (obj.last_results_hash = base64FromBytes(message.last_results_hash !== undefined ? message.last_results_hash : new Uint8Array()));
+    message.evidence_hash !== undefined && (obj.evidence_hash = base64FromBytes(message.evidence_hash !== undefined ? message.evidence_hash : new Uint8Array()));
+    message.proposer_address !== undefined && (obj.proposer_address = base64FromBytes(message.proposer_address !== undefined ? message.proposer_address : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Header>, I>>(object: I): Header {
@@ -607,11 +565,11 @@ export const Header = {
     message.evidence_hash = object.evidence_hash ?? new Uint8Array();
     message.proposer_address = object.proposer_address ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseData(): Data {
   return {
-    txs: [],
+    txs: []
   };
 }
 export const Data = {
@@ -647,7 +605,7 @@ export const Data = {
   toJSON(message: Data): unknown {
     const obj: any = {};
     if (message.txs) {
-      obj.txs = message.txs.map((e) => base64FromBytes(e !== undefined ? e : new Uint8Array()));
+      obj.txs = message.txs.map(e => base64FromBytes(e !== undefined ? e : new Uint8Array()));
     } else {
       obj.txs = [];
     }
@@ -655,9 +613,9 @@ export const Data = {
   },
   fromPartial<I extends Exact<DeepPartial<Data>, I>>(object: I): Data {
     const message = createBaseData();
-    message.txs = object.txs?.map((e) => e) || [];
+    message.txs = object.txs?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseVote(): Vote {
   return {
@@ -668,7 +626,7 @@ function createBaseVote(): Vote {
     timestamp: Timestamp.fromPartial({}),
     validator_address: new Uint8Array(),
     validator_index: 0,
-    signature: new Uint8Array(),
+    signature: new Uint8Array()
   };
 }
 export const Vote = {
@@ -708,7 +666,7 @@ export const Vote = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.type = reader.int32() as any;
+          message.type = (reader.int32() as any);
           break;
         case 2:
           message.height = reader.int64();
@@ -755,18 +713,11 @@ export const Vote = {
     message.type !== undefined && (obj.type = signedMsgTypeToJSON(message.type));
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.round !== undefined && (obj.round = Math.round(message.round));
-    message.block_id !== undefined &&
-      (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
+    message.block_id !== undefined && (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
     message.timestamp !== undefined && (obj.timestamp = fromTimestamp(message.timestamp).toISOString());
-    message.validator_address !== undefined &&
-      (obj.validator_address = base64FromBytes(
-        message.validator_address !== undefined ? message.validator_address : new Uint8Array(),
-      ));
+    message.validator_address !== undefined && (obj.validator_address = base64FromBytes(message.validator_address !== undefined ? message.validator_address : new Uint8Array()));
     message.validator_index !== undefined && (obj.validator_index = Math.round(message.validator_index));
-    message.signature !== undefined &&
-      (obj.signature = base64FromBytes(
-        message.signature !== undefined ? message.signature : new Uint8Array(),
-      ));
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Vote>, I>>(object: I): Vote {
@@ -786,14 +737,14 @@ export const Vote = {
     message.validator_index = object.validator_index ?? 0;
     message.signature = object.signature ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseCommit(): Commit {
   return {
     height: BigInt(0),
     round: 0,
     block_id: BlockID.fromPartial({}),
-    signatures: [],
+    signatures: []
   };
 }
 export const Commit = {
@@ -844,18 +795,16 @@ export const Commit = {
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     if (isSet(object.round)) obj.round = Number(object.round);
     if (isSet(object.block_id)) obj.block_id = BlockID.fromJSON(object.block_id);
-    if (Array.isArray(object?.signatures))
-      obj.signatures = object.signatures.map((e: any) => CommitSig.fromJSON(e));
+    if (Array.isArray(object?.signatures)) obj.signatures = object.signatures.map((e: any) => CommitSig.fromJSON(e));
     return obj;
   },
   toJSON(message: Commit): unknown {
     const obj: any = {};
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.round !== undefined && (obj.round = Math.round(message.round));
-    message.block_id !== undefined &&
-      (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
+    message.block_id !== undefined && (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
     if (message.signatures) {
-      obj.signatures = message.signatures.map((e) => (e ? CommitSig.toJSON(e) : undefined));
+      obj.signatures = message.signatures.map(e => e ? CommitSig.toJSON(e) : undefined);
     } else {
       obj.signatures = [];
     }
@@ -870,16 +819,16 @@ export const Commit = {
     if (object.block_id !== undefined && object.block_id !== null) {
       message.block_id = BlockID.fromPartial(object.block_id);
     }
-    message.signatures = object.signatures?.map((e) => CommitSig.fromPartial(e)) || [];
+    message.signatures = object.signatures?.map(e => CommitSig.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseCommitSig(): CommitSig {
   return {
     block_id_flag: 0,
     validator_address: new Uint8Array(),
     timestamp: Timestamp.fromPartial({}),
-    signature: new Uint8Array(),
+    signature: new Uint8Array()
   };
 }
 export const CommitSig = {
@@ -907,7 +856,7 @@ export const CommitSig = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.block_id_flag = reader.int32() as any;
+          message.block_id_flag = (reader.int32() as any);
           break;
         case 2:
           message.validator_address = reader.bytes();
@@ -936,15 +885,9 @@ export const CommitSig = {
   toJSON(message: CommitSig): unknown {
     const obj: any = {};
     message.block_id_flag !== undefined && (obj.block_id_flag = blockIDFlagToJSON(message.block_id_flag));
-    message.validator_address !== undefined &&
-      (obj.validator_address = base64FromBytes(
-        message.validator_address !== undefined ? message.validator_address : new Uint8Array(),
-      ));
+    message.validator_address !== undefined && (obj.validator_address = base64FromBytes(message.validator_address !== undefined ? message.validator_address : new Uint8Array()));
     message.timestamp !== undefined && (obj.timestamp = fromTimestamp(message.timestamp).toISOString());
-    message.signature !== undefined &&
-      (obj.signature = base64FromBytes(
-        message.signature !== undefined ? message.signature : new Uint8Array(),
-      ));
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CommitSig>, I>>(object: I): CommitSig {
@@ -956,7 +899,7 @@ export const CommitSig = {
     }
     message.signature = object.signature ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseProposal(): Proposal {
   return {
@@ -966,7 +909,7 @@ function createBaseProposal(): Proposal {
     pol_round: 0,
     block_id: BlockID.fromPartial({}),
     timestamp: Timestamp.fromPartial({}),
-    signature: new Uint8Array(),
+    signature: new Uint8Array()
   };
 }
 export const Proposal = {
@@ -1003,7 +946,7 @@ export const Proposal = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.type = reader.int32() as any;
+          message.type = (reader.int32() as any);
           break;
         case 2:
           message.height = reader.int64();
@@ -1047,13 +990,9 @@ export const Proposal = {
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.round !== undefined && (obj.round = Math.round(message.round));
     message.pol_round !== undefined && (obj.pol_round = Math.round(message.pol_round));
-    message.block_id !== undefined &&
-      (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
+    message.block_id !== undefined && (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
     message.timestamp !== undefined && (obj.timestamp = fromTimestamp(message.timestamp).toISOString());
-    message.signature !== undefined &&
-      (obj.signature = base64FromBytes(
-        message.signature !== undefined ? message.signature : new Uint8Array(),
-      ));
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Proposal>, I>>(object: I): Proposal {
@@ -1072,12 +1011,12 @@ export const Proposal = {
     }
     message.signature = object.signature ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseSignedHeader(): SignedHeader {
   return {
     header: undefined,
-    commit: undefined,
+    commit: undefined
   };
 }
 export const SignedHeader = {
@@ -1132,12 +1071,12 @@ export const SignedHeader = {
       message.commit = Commit.fromPartial(object.commit);
     }
     return message;
-  },
+  }
 };
 function createBaseLightBlock(): LightBlock {
   return {
     signed_header: undefined,
-    validator_set: undefined,
+    validator_set: undefined
   };
 }
 export const LightBlock = {
@@ -1179,10 +1118,8 @@ export const LightBlock = {
   },
   toJSON(message: LightBlock): unknown {
     const obj: any = {};
-    message.signed_header !== undefined &&
-      (obj.signed_header = message.signed_header ? SignedHeader.toJSON(message.signed_header) : undefined);
-    message.validator_set !== undefined &&
-      (obj.validator_set = message.validator_set ? ValidatorSet.toJSON(message.validator_set) : undefined);
+    message.signed_header !== undefined && (obj.signed_header = message.signed_header ? SignedHeader.toJSON(message.signed_header) : undefined);
+    message.validator_set !== undefined && (obj.validator_set = message.validator_set ? ValidatorSet.toJSON(message.validator_set) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<LightBlock>, I>>(object: I): LightBlock {
@@ -1194,14 +1131,14 @@ export const LightBlock = {
       message.validator_set = ValidatorSet.fromPartial(object.validator_set);
     }
     return message;
-  },
+  }
 };
 function createBaseBlockMeta(): BlockMeta {
   return {
     block_id: BlockID.fromPartial({}),
     block_size: BigInt(0),
     header: Header.fromPartial({}),
-    num_txs: BigInt(0),
+    num_txs: BigInt(0)
   };
 }
 export const BlockMeta = {
@@ -1257,8 +1194,7 @@ export const BlockMeta = {
   },
   toJSON(message: BlockMeta): unknown {
     const obj: any = {};
-    message.block_id !== undefined &&
-      (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
+    message.block_id !== undefined && (obj.block_id = message.block_id ? BlockID.toJSON(message.block_id) : undefined);
     message.block_size !== undefined && (obj.block_size = (message.block_size || BigInt(0)).toString());
     message.header !== undefined && (obj.header = message.header ? Header.toJSON(message.header) : undefined);
     message.num_txs !== undefined && (obj.num_txs = (message.num_txs || BigInt(0)).toString());
@@ -1279,13 +1215,13 @@ export const BlockMeta = {
       message.num_txs = BigInt(object.num_txs.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseTxProof(): TxProof {
   return {
     root_hash: new Uint8Array(),
     data: new Uint8Array(),
-    proof: undefined,
+    proof: undefined
   };
 }
 export const TxProof = {
@@ -1334,12 +1270,8 @@ export const TxProof = {
   },
   toJSON(message: TxProof): unknown {
     const obj: any = {};
-    message.root_hash !== undefined &&
-      (obj.root_hash = base64FromBytes(
-        message.root_hash !== undefined ? message.root_hash : new Uint8Array(),
-      ));
-    message.data !== undefined &&
-      (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
+    message.root_hash !== undefined && (obj.root_hash = base64FromBytes(message.root_hash !== undefined ? message.root_hash : new Uint8Array()));
+    message.data !== undefined && (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
     message.proof !== undefined && (obj.proof = message.proof ? Proof.toJSON(message.proof) : undefined);
     return obj;
   },
@@ -1351,5 +1283,5 @@ export const TxProof = {
       message.proof = Proof.fromPartial(object.proof);
     }
     return message;
-  },
+  }
 };

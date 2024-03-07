@@ -6,7 +6,8 @@ import { ClientDatum } from "./types/client_datum.ts";
 let spendClientAddress = Deno.args[0];
 
 if (Deno.args.length < 1) {
-  spendClientAddress = "addr_test1wrm3e96z0tncx8cfy2wvl8ge8uggm7m9g8tka5jd58pax4cpk4dmm";
+  spendClientAddress =
+    "addr_test1wppdu5hwndn4dxdz37te8a5qyyvpcydd24a97wxxs4hw4ecddq98k";
 } else {
   spendClientAddress = Deno.args[0];
 }

@@ -53,17 +53,13 @@ func (h Height) GetRevisionHeight() uint64 {
 // It first compares based on revision numbers, whichever has the higher revision number is the higher height
 // If revision number is the same, then the revision height is compared
 func (h Height) Compare(other exported.Height) int64 {
-	height, ok := other.(Height)
-	if !ok {
-		panic(fmt.Errorf("cannot compare against invalid height type: %T. expected height type: %T", other, h))
-	}
 	var a, b big.Int
-	if h.RevisionNumber != height.RevisionNumber {
+	if h.RevisionNumber != other.GetRevisionNumber() {
 		a.SetUint64(h.RevisionNumber)
-		b.SetUint64(height.RevisionNumber)
+		b.SetUint64(other.GetRevisionNumber())
 	} else {
 		a.SetUint64(h.RevisionHeight)
-		b.SetUint64(height.RevisionHeight)
+		b.SetUint64(other.GetRevisionHeight())
 	}
 	return int64(a.Cmp(&b))
 }

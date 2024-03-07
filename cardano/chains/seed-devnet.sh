@@ -7,12 +7,12 @@ NETWORK_ID=42
 
 CCLI_CMD=
 DEVNET_DIR=/devnet
-if [[ -n ${1} ]]; then
-    echo >&2 "Using provided cardano-cli command: ${1}"
-    $(${1} version > /dev/null)
-    CCLI_CMD=${1}
-    DEVNET_DIR=${SCRIPT_DIR}/devnet
-fi
+# if [[ -n ${1} ]]; then
+#     echo >&2 "Using provided cardano-cli command: ${1}"
+#     $(${1} version > /dev/null)
+#     CCLI_CMD=${1}
+#     DEVNET_DIR=${SCRIPT_DIR}/devnet
+# fi
 
 DOCKER_COMPOSE_CMD=
 if docker compose --version > /dev/null 2>&1; then
@@ -26,11 +26,12 @@ function ccli() {
   ccli_ ${@} --testnet-magic ${NETWORK_ID}
 }
 function ccli_() {
-  if [[ -x ${CCLI_CMD} ]]; then
-      ${CCLI_CMD} ${@}
-  else
-      ${DOCKER_COMPOSE_CMD} exec cardano-node cardano-cli ${@}
-  fi
+  # if [[ -x ${CCLI_CMD} ]]; then
+  #     ${CCLI_CMD} ${@}
+  # else
+  #     ${DOCKER_COMPOSE_CMD} exec cardano-node cardano-cli ${@}
+  # fi
+  ${DOCKER_COMPOSE_CMD} exec cardano-node cardano-cli ${@}
 }
 
 # Retrieve some lovelace from faucet
@@ -70,4 +71,21 @@ function seedFaucet() {
 }
 
 echo >&2 "Fueling up me"
-seedFaucet "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m" 30000000 # 30 Ada to the node
+defaultAddresses="addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql"
+
+if [ "$#" -eq 0 ]; then
+  # Set default values
+  addresses=$defaultAddresses
+  amount=30000000000
+else
+  # Capture all strings except the last one
+  addresses="${@:1:$#-1}"
+  amount="${!#}"
+fi
+
+for address in $addresses; do
+  seedFaucet $address $amount
+done
+
+# seedFaucet "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m" 30000000 # 30 Ada to the node
+# seedFaucet "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg" 30000000

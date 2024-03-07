@@ -10,7 +10,8 @@ pub type ValidatorSet {
 }
 
 pub fn hash(_vals: ValidatorSet) -> ByteArray {
-  todo
+  // TODO
+  ""
 }
 
 pub fn null_validator_set() -> ValidatorSet {

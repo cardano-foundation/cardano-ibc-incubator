@@ -12,4 +12,4 @@ else
 fi
 
 cd ../
-${DOCKER_COMPOSE_CMD} up -d 
+${DOCKER_COMPOSE_CMD} up -d --build

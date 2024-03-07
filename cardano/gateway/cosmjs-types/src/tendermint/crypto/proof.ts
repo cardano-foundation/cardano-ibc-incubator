@@ -38,7 +38,7 @@ function createBaseProof(): Proof {
     total: BigInt(0),
     index: BigInt(0),
     leaf_hash: new Uint8Array(),
-    aunts: [],
+    aunts: []
   };
 }
 export const Proof = {
@@ -96,12 +96,9 @@ export const Proof = {
     const obj: any = {};
     message.total !== undefined && (obj.total = (message.total || BigInt(0)).toString());
     message.index !== undefined && (obj.index = (message.index || BigInt(0)).toString());
-    message.leaf_hash !== undefined &&
-      (obj.leaf_hash = base64FromBytes(
-        message.leaf_hash !== undefined ? message.leaf_hash : new Uint8Array(),
-      ));
+    message.leaf_hash !== undefined && (obj.leaf_hash = base64FromBytes(message.leaf_hash !== undefined ? message.leaf_hash : new Uint8Array()));
     if (message.aunts) {
-      obj.aunts = message.aunts.map((e) => base64FromBytes(e !== undefined ? e : new Uint8Array()));
+      obj.aunts = message.aunts.map(e => base64FromBytes(e !== undefined ? e : new Uint8Array()));
     } else {
       obj.aunts = [];
     }
@@ -116,14 +113,14 @@ export const Proof = {
       message.index = BigInt(object.index.toString());
     }
     message.leaf_hash = object.leaf_hash ?? new Uint8Array();
-    message.aunts = object.aunts?.map((e) => e) || [];
+    message.aunts = object.aunts?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseValueOp(): ValueOp {
   return {
     key: new Uint8Array(),
-    proof: undefined,
+    proof: undefined
   };
 }
 export const ValueOp = {
@@ -165,8 +162,7 @@ export const ValueOp = {
   },
   toJSON(message: ValueOp): unknown {
     const obj: any = {};
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
     message.proof !== undefined && (obj.proof = message.proof ? Proof.toJSON(message.proof) : undefined);
     return obj;
   },
@@ -177,13 +173,13 @@ export const ValueOp = {
       message.proof = Proof.fromPartial(object.proof);
     }
     return message;
-  },
+  }
 };
 function createBaseDominoOp(): DominoOp {
   return {
     key: "",
     input: "",
-    output: "",
+    output: ""
   };
 }
 export const DominoOp = {
@@ -243,13 +239,13 @@ export const DominoOp = {
     message.input = object.input ?? "";
     message.output = object.output ?? "";
     return message;
-  },
+  }
 };
 function createBaseProofOp(): ProofOp {
   return {
     type: "",
     key: new Uint8Array(),
-    data: new Uint8Array(),
+    data: new Uint8Array()
   };
 }
 export const ProofOp = {
@@ -299,10 +295,8 @@ export const ProofOp = {
   toJSON(message: ProofOp): unknown {
     const obj: any = {};
     message.type !== undefined && (obj.type = message.type);
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
-    message.data !== undefined &&
-      (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.data !== undefined && (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ProofOp>, I>>(object: I): ProofOp {
@@ -311,11 +305,11 @@ export const ProofOp = {
     message.key = object.key ?? new Uint8Array();
     message.data = object.data ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseProofOps(): ProofOps {
   return {
-    ops: [],
+    ops: []
   };
 }
 export const ProofOps = {
@@ -351,7 +345,7 @@ export const ProofOps = {
   toJSON(message: ProofOps): unknown {
     const obj: any = {};
     if (message.ops) {
-      obj.ops = message.ops.map((e) => (e ? ProofOp.toJSON(e) : undefined));
+      obj.ops = message.ops.map(e => e ? ProofOp.toJSON(e) : undefined);
     } else {
       obj.ops = [];
     }
@@ -359,7 +353,7 @@ export const ProofOps = {
   },
   fromPartial<I extends Exact<DeepPartial<ProofOps>, I>>(object: I): ProofOps {
     const message = createBaseProofOps();
-    message.ops = object.ops?.map((e) => ProofOp.fromPartial(e)) || [];
+    message.ops = object.ops?.map(e => ProofOp.fromPartial(e)) || [];
     return message;
-  },
+  }
 };

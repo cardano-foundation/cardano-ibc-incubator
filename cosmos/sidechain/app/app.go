@@ -52,6 +52,7 @@ import (
 	ibcfeekeeper "github.com/cosmos/ibc-go/v8/modules/apps/29-fee/keeper"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v8/modules/apps/transfer/keeper"
 	ibckeeper "github.com/cosmos/ibc-go/v8/modules/core/keeper"
+	"github.com/cosmos/ibc-go/v8/testing/types"
 
 	// this line is used by starport scaffolding # stargate/app/moduleImport
 
@@ -101,7 +102,7 @@ type App struct {
 	ConsensusParamsKeeper consensuskeeper.Keeper
 	CircuitBreakerKeeper  circuitkeeper.Keeper
 
-    // IBC
+	// IBC
 	IBCKeeper           *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
 	CapabilityKeeper    *capabilitykeeper.Keeper
 	IBCFeeKeeper        ibcfeekeeper.Keeper
@@ -119,6 +120,26 @@ type App struct {
 
 	// simulation manager
 	sm *module.SimulationManager
+}
+
+// GetBaseApp implements ibctesting.TestingApp.
+func (app *App) GetBaseApp() *baseapp.BaseApp {
+	return app.BaseApp
+}
+
+// GetScopedIBCKeeper implements ibctesting.TestingApp.
+func (app *App) GetScopedIBCKeeper() capabilitykeeper.ScopedKeeper {
+	return app.ScopedIBCKeeper
+}
+
+// GetStakingKeeper implements ibctesting.TestingApp.
+func (app *App) GetStakingKeeper() types.StakingKeeper {
+	return app.StakingKeeper
+}
+
+// GetTxConfig implements ibctesting.TestingApp.
+func (app *App) GetTxConfig() client.TxConfig {
+	return app.txConfig
 }
 
 func init() {
@@ -179,12 +200,12 @@ func New(
 			depinject.Supply(
 				// Supply the application options
 				appOpts,
-                // Supply with IBC keeper getter for the IBC modules with App Wiring.
-                // The IBC Keeper cannot be passed because it has not been initiated yet.
-                // Passing the getter, the app IBC Keeper will always be accessible.
-                // This needs to be removed after IBC supports App Wiring.
-                app.GetIBCKeeper,
-                app.GetCapabilityScopedKeeper,
+				// Supply with IBC keeper getter for the IBC modules with App Wiring.
+				// The IBC Keeper cannot be passed because it has not been initiated yet.
+				// Passing the getter, the app IBC Keeper will always be accessible.
+				// This needs to be removed after IBC supports App Wiring.
+				app.GetIBCKeeper,
+				app.GetCapabilityScopedKeeper,
 				// Supply the logger
 				logger,
 
@@ -196,11 +217,11 @@ func New(
 				// add it below. By default the auth module uses simulation.RandomGenesisAccounts.
 				//
 				// authtypes.RandomGenesisAccountsFn(simulation.RandomGenesisAccounts),
-                //
+				//
 				// For providing a custom a base account type add it below.
 				// By default the auth module uses authtypes.ProtoBaseAccount().
 				//
-                // func() sdk.AccountI { return authtypes.ProtoBaseAccount() },
+				// func() sdk.AccountI { return authtypes.ProtoBaseAccount() },
 				//
 				// For providing a different address codec, add it below.
 				// By default the auth module uses a Bech32 address codec,
@@ -295,7 +316,7 @@ func New(
 	app.registerIBCModules()
 
 	// register streaming services
-    if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
+	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
 		return nil, err
 	}
 

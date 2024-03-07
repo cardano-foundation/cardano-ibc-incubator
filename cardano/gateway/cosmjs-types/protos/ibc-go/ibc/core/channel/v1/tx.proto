@@ -7,6 +7,7 @@ option go_package = "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types";
 import "gogoproto/gogo.proto";
 import "ibc/core/client/v1/client.proto";
 import "ibc/core/channel/v1/channel.proto";
+import "google/protobuf/any.proto";
 
 // Msg defines the ibc/channel Msg service.
 service Msg {
@@ -69,6 +70,7 @@ message MsgChannelOpenInit {
 message MsgChannelOpenInitResponse {
   string channel_id = 1 [(gogoproto.moretags) = "yaml:\"channel_id\""];
   string version    = 2;
+  google.protobuf.Any unsigned_tx = 3;
 }
 
 // MsgChannelOpenInit defines a msg sent by a Relayer to try to open a channel
@@ -93,6 +95,7 @@ message MsgChannelOpenTry {
 // MsgChannelOpenTryResponse defines the Msg/ChannelOpenTry response type.
 message MsgChannelOpenTryResponse {
   string version = 1;
+  google.protobuf.Any unsigned_tx = 2;
 }
 
 // MsgChannelOpenAck defines a msg sent by a Relayer to Chain A to acknowledge
@@ -112,7 +115,9 @@ message MsgChannelOpenAck {
 }
 
 // MsgChannelOpenAckResponse defines the Msg/ChannelOpenAck response type.
-message MsgChannelOpenAckResponse {}
+message MsgChannelOpenAckResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
 
 // MsgChannelOpenConfirm defines a msg sent by a Relayer to Chain B to
 // acknowledge the change of channel state to OPEN on Chain A.
@@ -130,7 +135,9 @@ message MsgChannelOpenConfirm {
 
 // MsgChannelOpenConfirmResponse defines the Msg/ChannelOpenConfirm response
 // type.
-message MsgChannelOpenConfirmResponse {}
+message MsgChannelOpenConfirmResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
 
 // MsgChannelCloseInit defines a msg sent by a Relayer to Chain A
 // to close a channel with Chain B.
@@ -144,7 +151,8 @@ message MsgChannelCloseInit {
 }
 
 // MsgChannelCloseInitResponse defines the Msg/ChannelCloseInit response type.
-message MsgChannelCloseInitResponse {}
+message MsgChannelCloseInitResponse {
+}
 
 // MsgChannelCloseConfirm defines a msg sent by a Relayer to Chain B
 // to acknowledge the change of channel state to CLOSED on Chain A.
@@ -181,6 +189,8 @@ message MsgRecvPacketResponse {
   option (gogoproto.goproto_getters) = false;
 
   ResponseResultType result = 1;
+  google.protobuf.Any unsigned_tx = 2;
+
 }
 
 // MsgTimeout receives timed-out packet

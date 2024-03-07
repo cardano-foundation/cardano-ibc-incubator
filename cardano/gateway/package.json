@@ -37,6 +37,7 @@
     "camelcase-keys": "^7.0.1",
     "google-proto-files": "^4.0.0",
     "google-protobuf": "^3.21.2",
+    "js-sha3": "^0.9.3",
     "kafkajs": "^2.2.4",
     "lucid-cardano": "^0.10.7",
     "nestjs-grpc-exceptions": "^0.2.1",
@@ -76,14 +77,42 @@
       "ts"
     ],
     "rootDir": "src",
+    "moduleNameMapper": {
+      "^src/(.*)$": "<rootDir>/$1",
+      "^@shared/(.*)$": "<rootDir>/shared/$1",
+      "^@cosmjs-types/(.*)$": "<rootDir>/../cosmjs-types/$1",
+      "^cosmjs-types/(.*)$": "<rootDir>/../cosmjs-types/$1",
+      "^@utils/(.*)$": [
+        "<rootDir>/utils/$1"
+      ],
+      "^@config(.*)$": [
+        "<rootDir>/config/$1"
+      ]
+    },
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "collectCoverageFrom": [
-      "**/*.(t|j)s"
+      "**/*.(t|j)s",
+      "!**/*.module.(t|j)s",
+      "!<rootDir>/main.ts"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "coverageReporters": [
+      "html",
+      "text",
+      "text-summary",
+      "cobertura"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 80,
+        "lines": 80,
+        "statements": 80
+      }
+    }
   }
 }

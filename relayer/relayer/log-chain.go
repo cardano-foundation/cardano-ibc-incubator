@@ -3,8 +3,8 @@ package relayer
 import (
 	"fmt"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"go.uber.org/zap"
 
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"

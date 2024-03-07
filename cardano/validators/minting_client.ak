@@ -1,5 +1,3 @@
-use aiken/bytearray
-use aiken/cbor
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
@@ -13,13 +11,14 @@ use aiken/transaction/credential.{Script}
 use aiken/transaction/value
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
-  ClientDatum, ClientDatumState, client_token_prefix,
+  ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
+use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 use ibc/core/ics_025_handler_interface/handler_datum.{
@@ -59,16 +58,13 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     let spent_handler_output = handler_input.output
     expect spent_handler_datum: HandlerDatum =
       validator_utils.get_inline_datum(spent_handler_output)
-    let client_id =
-      cbor.serialise(spent_handler_datum.state.next_client_sequence)
 
     // mint just 1 client_state token
     let client_token_name =
-      hash.blake2b_256(
-        handler_auth_token.policy_id
-          |> bytearray.concat(handler_auth_token.name)
-          |> bytearray.concat(client_token_prefix)
-          |> bytearray.concat(client_id),
+      auth.generate_token_name(
+        handler_auth_token,
+        client_prefix,
+        spent_handler_datum.state.next_client_sequence,
       )
     let client_token =
       AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
@@ -83,20 +79,20 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     expect client_output |> auth.contain_auth_token(client_token)
 
     // client utxo datum created valid
-    expect client_ouput_datum: ClientDatum =
+    expect client_output_datum: ClientDatum =
       validator_utils.get_inline_datum(client_output)
     expect
-      client_ouput_datum
+      client_output_datum
         |> client_datum.is_initialized_valid(client_token)
 
     // client status must be Active
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     expect
       client_state.status(
-        client_ouput_datum.state.client_state,
+        client_output_datum.state.client_state,
         // posix time in cardano is millisecond while time of cosmos tendermint is nanosecond
         tx_valid_to * 1_000_000,
-        client_ouput_datum.state.consensus_states,
+        client_output_datum.state.consensus_states,
       ) == Active
 
     True
@@ -128,7 +124,12 @@ test test_create_valid_client() {
   //========================arrange input=======================
   let handler_datum =
     HandlerDatum {
-      state: HandlerState { next_client_sequence: mock_client_id },
+      state: HandlerState {
+        next_client_sequence: mock_client_id,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: dict.new(),
+      },
       token: mock_handler_auth_token,
     }
 
@@ -152,14 +153,11 @@ test test_create_valid_client() {
       |> dict.from_list(fn(_key1, _key2) { Greater })
 
   //========================arrange mint=======================
-  let client_id = cbor.serialise(mock_client_id)
-
   let client_token_name =
-    hash.blake2b_256(
-      mock_handler_auth_token.policy_id
-        |> bytearray.concat(mock_handler_auth_token.name)
-        |> bytearray.concat(client_token_prefix)
-        |> bytearray.concat(client_id),
+    auth.generate_token_name(
+      mock_handler_auth_token,
+      client_prefix,
+      mock_client_id,
     )
 
   let mint =

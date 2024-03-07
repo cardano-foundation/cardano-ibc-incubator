@@ -1,4 +1,4 @@
-module git02.smartosc.com/cardano/ibc-sidechain/relayer
+module github.com/cardano/relayer/v1
 
 go 1.21
 

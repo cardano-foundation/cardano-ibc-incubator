@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -15,7 +16,6 @@ import (
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	gogogrpc "github.com/cosmos/gogoproto/grpc"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

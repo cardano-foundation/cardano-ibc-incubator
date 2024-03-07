@@ -3,13 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/tx-cardano/pb"
-	"github.com/joho/godotenv"
 	"os"
 
-	// "github.com/joho/godotenv"
+	pb "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/tx-cardano"
+	"github.com/joho/godotenv"
 	"google.golang.org/grpc"
-	// "os"
 )
 
 type TxCardanoService interface {
@@ -23,39 +21,39 @@ type TxCardano struct {
 	KeyClient         pb.KeyServiceClient
 }
 
-func (txc *TxCardano) NewTxCardanoService() error {
+func NewTxCardanoService() (*TxCardano, error) {
 	err := godotenv.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	address := os.Getenv("TX_CARDANO_HOST") + ":" + os.Getenv("TX_CARDANO_PORT")
-	//address := "localhost:4884"
+	host := os.Getenv("TX_CARDANO_HOST")
+	port := os.Getenv("TX_CARDANO_PORT")
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("environment variables TX_CARDANO_HOST or TX_CARDANO_PORT not set")
+	}
+
+	address := host + ":" + port
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to dial GRPC server: %v", err)
 	}
 
 	transactionClient := pb.NewTransactionServiceClient(conn)
 	keyClient := pb.NewKeyServiceClient(conn)
 
-	txc.TransactionClient = transactionClient
-	txc.KeyClient = keyClient
-
-	return nil
+	return &TxCardano{
+		TransactionClient: transactionClient,
+		KeyClient:         keyClient,
+	}, nil
 }
 
 func (txc *TxCardano) SignAndSubmitTx(ctx context.Context, chainId string, txHexString []byte) (string, error) {
-	//signTxReq := &pb.SignAndSubmitTxRequest{
-	//	ChainId:              chainId,
-	//	TransactionHexString: txHexString,
-	//}
 	signTxReq := &pb.SignAndSubmitTxRequest{
 		ChainId:              chainId,
 		TransactionHexString: txHexString,
 	}
 	res, err := txc.TransactionClient.SignAndSubmitTx(ctx, signTxReq)
-	fmt.Println("SignAndSubmit error: ", err)
 	if err != nil {
 		return "", err
 	}
@@ -145,4 +143,17 @@ func (txc *TxCardano) KeyFromKeyOrAddress(ctx context.Context, keyOrAddress stri
 	}
 
 	return res.KeyName, nil
+}
+
+func (txc *TxCardano) RestoreKey(ctx context.Context, keyName, chainId, mnemonic string) (string, error) {
+	req := &pb.RestoreKeyRequest{
+		KeyName:  keyName,
+		ChainId:  chainId,
+		Mnemonic: mnemonic,
+	}
+	res, err := txc.KeyClient.RestoreKey(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return res.Address, nil
 }

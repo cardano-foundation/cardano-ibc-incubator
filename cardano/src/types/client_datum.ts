@@ -17,5 +17,4 @@ export const ClientDatumSchema = Data.Object({
   token: AuthTokenSchema,
 });
 export type ClientDatum = Data.Static<typeof ClientDatumSchema>;
-export const ClientDatum =
-  ClientDatumSchema as unknown as ClientDatum;
+export const ClientDatum = ClientDatumSchema as unknown as ClientDatum;

@@ -11,3 +11,11 @@ pub const block_id_flag_absent = 1
 pub const block_id_flag_commit = 2
 
 pub const block_id_flag_nil = 3
+
+pub const unknown_type = 0
+
+pub const prevote_type = 1
+
+pub const precommit_type = 2
+
+pub const proposal_type = 32

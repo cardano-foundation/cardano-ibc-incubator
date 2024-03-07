@@ -1,7 +1,7 @@
 package cosmos
 
 import (
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -30,10 +30,10 @@ import (
 	"github.com/cosmos/ibc-go/v7/modules/apps/transfer"
 	ibc "github.com/cosmos/ibc-go/v7/modules/core"
 
-	cosmosmodule "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
-	ethermintcodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	injectivecodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/injective"
+	cosmosmodule "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
+	ethermintcodecs "github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	injectivecodecs "github.com/cardano/relayer/v1/relayer/codecs/injective"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 )
 

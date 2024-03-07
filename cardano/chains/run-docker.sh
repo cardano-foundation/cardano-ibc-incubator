@@ -41,3 +41,6 @@ echo >&2 -e "\n# Query tip: cardano-cli query tip --testnet-magic 42"
 echo >&2 -e "\n# Or: docker compose exec cardano-node cardano-cli query tip --testnet-magic 42"
 echo >&2 -e "\n# Query address utxo: docker compose exec cardano-node cardano-cli query utxo --address addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m --testnet-magic 42"
 echo >&2 -e "\n# Stop the demo: ${DOCKER_COMPOSE_CMD} down\n"
+
+# echo >&2 -e "\n# Sleep 120 sec, wait for services to sync"
+# sleep 120

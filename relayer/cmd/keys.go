@@ -22,9 +22,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )

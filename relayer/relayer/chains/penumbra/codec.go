@@ -26,10 +26,10 @@ import (
 	"github.com/cosmos/ibc-go/v7/modules/apps/transfer"
 	ibc "github.com/cosmos/ibc-go/v7/modules/core"
 
-	cosmosmodule "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
-	ethermintcodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	injectivecodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/injective"
+	cosmosmodule "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
+	ethermintcodecs "github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	injectivecodecs "github.com/cardano/relayer/v1/relayer/codecs/injective"
 )
 
 var moduleBasics = []module.AppModuleBasic{

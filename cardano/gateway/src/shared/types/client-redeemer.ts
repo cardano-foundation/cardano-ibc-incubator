@@ -29,6 +29,7 @@ export async function encodeSpendClientRedeemer(
   });
   const CommitSchema = Data.Object({
     height: Data.Integer(),
+    round: Data.Integer(),
     blockId: BlockIDSchema,
     signatures: Data.Array(CommitSigSchema),
   });

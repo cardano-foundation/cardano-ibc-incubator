@@ -9,15 +9,16 @@ export class Transaction extends transaction_pb.tx.UnimplementedTransactionServi
     async SignAndSubmitTx(call: grpc.ServerUnaryCall<transaction_pb.tx.SignAndSubmitTxRequest, transaction_pb.tx.SignAndSubmitTxResponse>, callback: grpc.sendUnaryData<transaction_pb.tx.SignAndSubmitTxResponse>) {
         try {
             const chainId = call.request.chain_id
-            const tx_hex_str = call.request.transaction_hex_string
-
+            const txHexStr = call.request.transaction_hex_string
+            
+            if(txHexStr.length == 0) {
+                throw Error("Transaction Hex String Empty")
+            }
             // init lucid
             const lucid = await InitLucid()
-            //let initTx = lucid.selectWalletFromPrivateKey(keys.GetPrivateKeyUse(chainId))
-            let initTx = lucid.selectWalletFromPrivateKey(GetPrivateKeyDefault())
-            
-            const tx = initTx.fromTx(toHex(tx_hex_str))
-            
+            // const initTx = lucid.selectWalletFromPrivateKey(GetPrivateKeyDefault())
+            const initTx = lucid.selectWalletFromSeed(keys.GetMnemonicKeyUse(chainId), {addressType:"Enterprise"})
+            const tx = initTx.fromTx(toHex(txHexStr))
             // sign tx
             const signedTx = await tx.sign().complete();
             
@@ -27,13 +28,13 @@ export class Transaction extends transaction_pb.tx.UnimplementedTransactionServi
             const res =  new transaction_pb.tx.SignAndSubmitTxResponse()
             res.transaction_id = tx_id
 
-            logger.print(`Transaction Service: SignAndSubmit:  tx_id: ${res.transaction_id}`)
+            logger.print(`[Transaction Service] [API SignAndSubmit] [Status: Success] [Request: {chain_id: ${chainId}}] [Response: {tx_id: ${res.transaction_id}}]`)
             callback(null, res)
             
-        } catch (error) {
-            console.log(error)
-            logger.print(`Transaction Service: SignAndSubmit:  error: ` + error.message)
-            callback(error, null)
+        } catch (err) {
+            console.log(err)
+            logger.print(`[Transaction Service] [API SignAndSubmit] [Status: Error] [Request: {chain_id: ${call.request.chain_id}}]` + " [Error Msg: "+ err + "]")
+            callback(null, err)
         }
     }
 }

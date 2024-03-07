@@ -1,177 +1,124 @@
 import {
   applyParamsToScript,
-  Constr,
   Data,
-  type MintingPolicy,
-  type Script,
-  type SpendingValidator,
+  Lucid,
+  Script,
+  SpendingValidator,
 } from "https://deno.land/x/lucid@0.10.7/mod.ts";
-import { formatTimestamp, readValidator, setUp, submitTx } from "./utils.ts";
-import { EMULATOR_ENV, HANDLER_TOKEN_NAME } from "./constants.ts";
-import { HandlerDatum } from "./types/handler.ts";
-import { ConfigTemplate } from "./template.ts";
-import { ensureDir } from "https://deno.land/std@0.212.0/fs/mod.ts";
+import { readValidator, setUp, submitTx } from "./utils.ts";
+import { HANDLER_TOKEN_NAME } from "./constants.ts";
+import { HandlerDatum } from "./types/handler/handler.ts";
+import { DeploymentTemplate } from "./template.ts";
+import {
+  OutputReference,
+  OutputReferenceSchema,
+} from "./types/common/output_reference.ts";
+import { AuthToken } from "./types/auth_token.ts";
 
-if (Deno.args.length < 1) throw new Error("Missing script params");
+export const createHandler = async (
+  lucid: Lucid,
+  deploymentInfo: DeploymentTemplate,
+) => {
+  console.log("Create Handler");
 
-const MODE = Deno.args[0];
+  const spendHandlerScriptHash =
+    deploymentInfo.validators.spendHandler.scriptHash;
 
-const { lucid, signer } = await setUp(MODE);
+  // load nonce UTXO
+  const signerUtxos = await lucid.wallet.getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO founded");
+  const NONCE_UTXO = signerUtxos[0];
 
-// load nonce UTXO
-const signerUtxos = await lucid.utxosAt(signer.address);
-if (signerUtxos.length < 1) throw new Error("No UTXO founded");
-const NONCE_UTXO = signerUtxos[0];
-console.log(`Use nonce UTXO: ${NONCE_UTXO.txHash}-${NONCE_UTXO.outputIndex}`);
-
-// load spend client validator
-const spendClientValidator: SpendingValidator = {
-  type: "PlutusV2",
-  script: readValidator("spending_client.spend_client"),
-};
-const spendClientScriptHash = lucid.utils.validatorToScriptHash(
-  spendClientValidator,
-);
-const spendClientAddress = lucid.utils.validatorToAddress(
-  spendClientValidator,
-);
-
-// load mint client validator
-const rawMintClientValidator: Script = {
-  type: "PlutusV2",
-  script: readValidator("minting_client.mint_client"),
-};
-const mintClientValidator: MintingPolicy = {
-  type: "PlutusV2",
-  script: applyParamsToScript(rawMintClientValidator.script, [
-    spendClientScriptHash,
-  ]),
-};
-const mintClientPolicyId = lucid.utils.mintingPolicyToId(mintClientValidator);
-
-// load spend handler validator
-const rawSpendHandlerValidator: Script = {
-  type: "PlutusV2",
-  script: readValidator("spending_handler.spend_handler"),
-};
-const spendHandlerValidator: SpendingValidator = {
-  type: "PlutusV2",
-  script: applyParamsToScript(rawSpendHandlerValidator.script, [
-    mintClientPolicyId,
-  ]),
-};
-const spendHandlerScriptHash = lucid.utils.validatorToScriptHash(
-  spendHandlerValidator,
-);
-const spendHandlerAddress = lucid.utils.validatorToAddress(
-  spendHandlerValidator,
-);
-
-// load mint handler validator
-const outputReference = {
-  txHash: NONCE_UTXO.txHash,
-  outputIndex: NONCE_UTXO.outputIndex,
-};
-const outRefData = new Constr(0, [
-  new Constr(0, [outputReference.txHash]),
-  BigInt(outputReference.outputIndex),
-]);
-const rawMintHandlerValidator: Script = {
-  type: "PlutusV2",
-  script: readValidator("minting_handler.mint_handler"),
-};
-const mintHandlerValidator: SpendingValidator = {
-  type: "PlutusV2",
-  script: applyParamsToScript(rawMintHandlerValidator.script, [
-    outRefData,
-    spendHandlerScriptHash,
-  ]),
-};
-const mintHandlerPolicyId = lucid.utils.mintingPolicyToId(mintHandlerValidator);
-console.log("Validators loaded!");
-
-// get auth token
-const handlerAuthToken = mintHandlerPolicyId + HANDLER_TOKEN_NAME;
-
-// create handler datum
-const initHandlerDatum: HandlerDatum = {
-  state: { next_client_sequence: 0n },
-  token: { name: HANDLER_TOKEN_NAME, policyId: mintHandlerPolicyId },
-};
-
-// create and send tx create handler
-const mintHandlerTx = lucid
-  .newTx()
-  .collectFrom([NONCE_UTXO], Data.void())
-  .attachMintingPolicy(mintHandlerValidator)
-  .mintAssets(
-    {
-      [handlerAuthToken]: 1n,
+  // load mint handler validator
+  const outputReference: OutputReference = {
+    transaction_id: {
+      hash: NONCE_UTXO.txHash,
     },
-    Data.void(),
-  )
-  .payToContract(
-    spendHandlerAddress,
-    {
-      inline: Data.to(initHandlerDatum, HandlerDatum),
-    },
-    {
-      [handlerAuthToken]: 1n,
-    },
-  );
+    output_index: BigInt(NONCE_UTXO.outputIndex),
+  };
+  const rawMintHandlerValidator: Script = {
+    type: "PlutusV2",
+    script: readValidator("minting_handler.mint_handler"),
+  };
+  const mintHandlerValidator: SpendingValidator = {
+    type: "PlutusV2",
+    script: applyParamsToScript(
+      rawMintHandlerValidator.script,
+      [outputReference, spendHandlerScriptHash],
+      Data.Tuple([OutputReferenceSchema, Data.Bytes()]) as unknown as [
+        OutputReference,
+        string
+      ]
+    ),
+  };
+  const mintHandlerPolicyId =
+    lucid.utils.mintingPolicyToId(mintHandlerValidator);
 
-const mintHandlerTxHash = await submitTx(mintHandlerTx);
-console.log("Tx submitted with hash:", mintHandlerTxHash);
-console.log("Waiting tx complete");
-await lucid.awaitTx(mintHandlerTxHash);
-console.log("Mint Handler tx succeeded");
-console.log("----------------------------------------------------------");
-const deployInfo: ConfigTemplate = {
-  validators: {
-    spendHandler: {
-      title: "spending_handler.spend_handler",
-      script: spendHandlerValidator.script,
-      scriptHash: spendHandlerScriptHash,
-      address: spendHandlerAddress,
-    },
-    spendClient: {
-      title: "spending_client.spend_client",
-      script: spendClientValidator.script,
-      scriptHash: spendClientScriptHash,
-      address: spendClientAddress,
-    },
-    mintHandlerValidator: {
-      title: "minting_handler.mint_handler",
-      script: mintHandlerValidator.script,
-      scriptHash: mintHandlerPolicyId,
-      address: "",
-    },
-    mintClient: {
-      title: "minting_client.mint_client",
-      script: mintClientValidator.script,
-      scriptHash: mintClientPolicyId,
-      address: "",
-    },
-  },
-  nonceUtxo: {
-    txHash: NONCE_UTXO.txHash,
-    outputIndex: NONCE_UTXO.outputIndex,
-  },
-  handlerAuthToken: {
+  const handlerToken: AuthToken = {
     policyId: mintHandlerPolicyId,
     name: HANDLER_TOKEN_NAME,
-  },
+  };
+  const handlerTokenUnit = mintHandlerPolicyId + HANDLER_TOKEN_NAME;
+
+  // create handler datum
+  const initHandlerDatum: HandlerDatum = {
+    state: {
+      next_client_sequence: 0n,
+      next_connection_sequence: 0n,
+      next_channel_sequence: 0n,
+      bound_port: new Map(),
+    },
+    token: { name: HANDLER_TOKEN_NAME, policyId: mintHandlerPolicyId },
+  };
+
+  const spendHandlerAddress = lucid.utils.credentialToAddress({
+    type: "Script",
+    hash: spendHandlerScriptHash,
+  });
+
+  // create and send tx create handler
+  const mintHandlerTx = lucid
+    .newTx()
+    .collectFrom([NONCE_UTXO], Data.void())
+    .attachMintingPolicy(mintHandlerValidator)
+    .mintAssets(
+      {
+        [handlerTokenUnit]: 1n,
+      },
+      Data.void(),
+    )
+    .payToContract(
+      spendHandlerAddress,
+      {
+        inline: Data.to(initHandlerDatum, HandlerDatum),
+      },
+      {
+        [handlerTokenUnit]: 1n,
+      }
+    );
+
+  const mintHandlerTxHash = await submitTx(mintHandlerTx);
+  console.log("Tx submitted with hash:", mintHandlerTxHash);
+  console.log("Waiting tx complete");
+  await lucid.awaitTx(mintHandlerTxHash);
+  console.log("Mint Handler tx succeeded");
+
+  return { handlerToken, handlerTokenUnit };
 };
 
-if (MODE != EMULATOR_ENV) {
-  const jsonConfig = JSON.stringify(deployInfo);
+const main = async () => {
+  if (Deno.args.length < 2) throw new Error("Missing script params");
 
-  const folder = "./deployments";
-  await ensureDir(folder);
+  const MODE = Deno.args[0];
+  const DEPLOYMENT_FILE_PATH = Deno.args[1];
 
-  const filePath = folder + "/handler_" +
-    formatTimestamp(new Date().getTime()) + ".json";
+  const { lucid } = await setUp(MODE);
+  const deploymentRaw = await Deno.readTextFile(DEPLOYMENT_FILE_PATH);
+  const deploymentInfo: DeploymentTemplate = JSON.parse(deploymentRaw);
 
-  await Deno.writeTextFile(filePath, jsonConfig);
-  console.log("Deploy info saved to:", filePath);
+  await createHandler(lucid, deploymentInfo);
+};
+
+if (import.meta.main) {
+  main();
 }

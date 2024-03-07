@@ -2,14 +2,15 @@ package cmd_test
 
 import (
 	"encoding/json"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/cmd"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/internal/relayertest"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+
+	"github.com/cardano/relayer/v1/cmd"
+	"github.com/cardano/relayer/v1/internal/relayertest"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/stretchr/testify/require"
 )
 
 func TestChainsList_Empty(t *testing.T) {

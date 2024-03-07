@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	gogogrpc "github.com/cosmos/gogoproto/grpc"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/encoding"

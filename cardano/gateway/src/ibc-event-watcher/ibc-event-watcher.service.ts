@@ -7,7 +7,7 @@ import { ConsensusStateEvent } from './ibc-events';
 import { Kafka, Producer, Consumer } from 'kafkajs';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { kafkaConfig } from '../config/kafka.config';
-import { callJsonRpcMethod } from 'src/utils/json-rpc';
+import { callJsonRpcMethod } from '@utils/json-rpc';
 
 @Injectable()
 export class IBCEventWatcherService implements OnModuleInit {
