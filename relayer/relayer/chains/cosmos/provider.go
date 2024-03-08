@@ -9,9 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	ctypes "github.com/cometbft/cometbft/rpc/core/types"
+
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	provtypes "github.com/cometbft/cometbft/light/provider"
 	prov "github.com/cometbft/cometbft/light/provider/http"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
@@ -147,6 +149,11 @@ type CosmosProvider struct {
 
 	// for comet < v0.37, decode tm events as base64
 	cometLegacyEncoding bool
+}
+
+func (cc *CosmosProvider) QueryBlockResults(ctx context.Context, h int64) (*ctypes.ResultBlockResults, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 type WalletState struct {

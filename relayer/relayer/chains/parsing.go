@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"

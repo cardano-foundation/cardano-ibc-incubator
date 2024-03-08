@@ -1,21 +1,51 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { type Lucid, type UTxO, type Tx, type SpendingValidator, type MintingPolicy } from 'lucid-cardano';
+import { type Lucid, type UTxO, Tx, type SpendingValidator, type MintingPolicy } from 'lucid-cardano';
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
-import { CLIENT_TOKEN_PREFIX, HANDLER_TOKEN_NAME } from '../../../constant';
-import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from 'src/shared/types/handler-datum';
-import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
-import { ClientState } from 'src/shared/types/client-state-types';
-import { ConsensusState } from 'src/shared/types/consesus-state';
-import { MintClientOperator, encodeMintClientOperator } from 'src/shared/types/mint-client-operator';
-import { HandlerOperator, encodeHandlerOperator } from 'src/shared/types/handler-operator';
-import { ClientDatum, encodeClientDatum } from 'src/shared/types/client-datum';
-import { ClientDatumState } from 'src/shared/types/client-datum-state';
-import { decodeClientDatum } from 'src/shared/types/client-datum';
-import { Header } from 'src/shared/types/header';
-import { SpendClientRedeemer, encodeSpendClientRedeemer } from 'src/shared/types/client-redeemer';
-import { Height } from 'src/shared/types/height';
-
+import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
+import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
+import { GrpcInternalException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
+import { MintClientOperator, encodeMintClientOperator } from '../../types/mint-client-operator';
+import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-operator';
+import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
+import { decodeClientDatum } from '../../types/client-datum';
+import { SpendClientRedeemer, encodeSpendClientRedeemer } from '../../types/client-redeemer';
+import { AuthToken } from '../../types/auth-token';
+import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from '../../types/connection/connection-datum';
+import {
+  MintConnectionRedeemer,
+  SpendConnectionRedeemer,
+  encodeMintConnectionRedeemer,
+  encodeSpendConnectionRedeemer,
+} from '../../types/connection/connection-redeemer';
+import {
+  MintChannelRedeemer,
+  SpendChannelRedeemer,
+  encodeMintChannelRedeemer,
+  encodeSpendChannelRedeemer,
+} from '../../types/channel/channel-redeemer';
+import { ChannelDatum, decodeChannelDatum, encodeChannelDatum } from '../../types/channel/channel-datum';
+import { hashSha3_256 } from '../../helpers/hex';
+import { IBCModuleRedeemer, encodeIBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
+import {
+  MockModuleDatum,
+  decodeMockModuleDatum,
+  encodeMockModuleDatum,
+} from '@shared/types/apps/mock/mock-module-datum';
+type CodecType =
+  | 'client'
+  | 'connection'
+  | 'handler'
+  | 'channel'
+  | 'mockModule'
+  | 'spendClientRedeemer'
+  | 'mintClientOperator'
+  | 'handlerOperator'
+  | 'mintConnectionRedeemer'
+  | 'spendConnectionRedeemer'
+  | 'mintChannelRedeemer'
+  | 'spendChannelRedeemer'
+  | 'iBCModuleRedeemer';
 @Injectable()
 export class LucidService {
   constructor(
@@ -23,7 +53,8 @@ export class LucidService {
     @Inject(LUCID_CLIENT) public lucid: Lucid,
     private configService: ConfigService,
   ) {}
-
+  // ========================== Public functions ==========================
+  // ========================== UTXO-related methods ==========================
   public async findUtxoAtWithUnit(addressOrCredential: string, unit: string): Promise<UTxO> {
     const utxos = await this.lucid.utxosAtWithUnit(addressOrCredential, unit);
 
@@ -41,161 +72,149 @@ export class LucidService {
     if (utxos.length === 0) throw new GrpcNotFoundException(`Unable to find UTxO at  ${addressOrCredential}`);
     return utxos;
   }
+
   public async findUtxoAtHandlerAuthToken(): Promise<UTxO> {
-    const addressOrCredential = this.configService.get('deployment').validators.spendHandler.address;
+    const { address: addressOrCredential } = this.configService.get('deployment').validators.spendHandler;
     const handlerAuthTokenConfig = this.configService.get('deployment').handlerAuthToken;
     const handlerAuthToken = handlerAuthTokenConfig.policyId + handlerAuthTokenConfig.name;
     const handlerUtxos = await this.lucid.utxosAt(addressOrCredential);
     if (handlerUtxos.length === 0) throw new GrpcNotFoundException(`Unable to find UTxO at  ${addressOrCredential}`);
     const handlerUtxo = handlerUtxos.find((utxo) => utxo.assets.hasOwnProperty(handlerAuthToken));
-    if (!handlerUtxo) throw new GrpcNotFoundException(`Unable to find Handler UTxO at ${handlerUtxo.txHash}`);
+    if (!handlerUtxo) throw new GrpcNotFoundException(`Unable to find Handler UTxO at ${handlerAuthToken}`);
     return handlerUtxo;
   }
-  public async getClientDatum(clientDatumEncoded: string): Promise<ClientDatum> {
-    return await decodeClientDatum(clientDatumEncoded, this.LucidImporter);
-  }
-  public createUpdatedHandlerDatum(HandlerDatumDecoded: HandlerDatum): HandlerDatum {
-    return {
-      state: { next_client_sequence: HandlerDatumDecoded.state.next_client_sequence + 1n },
-      token: {
-        name: this.configService.get('deployment').handlerAuthToken.name,
-        policyId: this.configService.get('deployment').handlerAuthToken.policyId,
-      },
-    };
-  }
-  /**
-   * Builds an unsigned UpdateClient transaction.
-   **/
-  public async buildUnsignedUpdateClientTx(clientId: string, header: Header): Promise<Tx> {
-    // Get the token unit associated with the client
-    const clientTokenUnit = this.getClientTokenUnit(clientId);
-    // const clientTokenUnit = '46d060bc85f1517da53ac73985bd163c96d791f22e0641ba2af5e63e5c0f5a4c0706b6737aaadc47806655b66ed98894635e06265ebf93e0e26c70c4';
-    // Find the UTXO for the client token
-    const currentClientUtxo = await this.findUtxoByUnit(clientTokenUnit);
-    // Retrieve the current client datum from the UTXO
-    const currentClientDatum = await this.getClientDatum(currentClientUtxo.datum!);
-    const currentClientDatumState = currentClientDatum.state;
-    // Create a SpendClientRedeemer using the provided header
-    const spendClientRedeemer: SpendClientRedeemer = this.createSpendClientRedeemer(header);
-    const headerHeight = header.signedHeader.header.height;
-    const newHeight: Height = {
-      ...currentClientDatumState.clientState.latestHeight,
-      revisionHeight: headerHeight,
-    };
-
-    const newClientState: ClientState = this.updateClientState(currentClientDatumState.clientState, newHeight);
-
-    const newConsState: ConsensusState = this.createConsensusStateFromHeader(header);
-    const currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries());
-    currentConsStateInArray.push([newHeight, newConsState]);
-    currentConsStateInArray.sort(([height1], [height2]) => {
-      if (height1.revisionNumber == height2.revisionNumber) {
-        return Number(height1.revisionHeight - height2.revisionHeight);
-      }
-      return Number(height1.revisionNumber - height2.revisionNumber);
-    });
-    const newConsStates = new Map(currentConsStateInArray);
-    const newClientDatum: ClientDatum = {
-      ...currentClientDatum,
-      state: {
-        clientState: newClientState,
-        consensusStates: newConsStates,
-      },
-    };
-
-    const encodedSpendClientRedeemer = await encodeSpendClientRedeemer(spendClientRedeemer, this.LucidImporter);
-    const encodedNewClientDatum = await encodeClientDatum(newClientDatum, this.LucidImporter);
-    return this.createUnsignedUpdateClientTransaction(
-      currentClientUtxo,
-      encodedSpendClientRedeemer,
-      encodedNewClientDatum,
-      clientTokenUnit,
+  // ========================== helper ==========================
+  public getHandlerTokenUnit(): string {
+    return (
+      this.configService.get('deployment').handlerAuthToken.policyId +
+      this.configService.get('deployment').handlerAuthToken.name
     );
   }
-
-  /**
-   * Builds an unsigned transaction for creating a new client, incorporating client and consensus state.
-   *
-   * @returns A Promise resolving to the unsigned transaction (Tx) for creating a new client.
-   */
-  public async buildUnsignedCreateClientTx(
-    clientState: ClientState,
-    consensusState: ConsensusState,
-  ): Promise<[Tx, bigint]> {
-    const handlerUtxo: UTxO = await this.findUtxoAtHandlerAuthToken();
-    // Decode the handler datum from the handler UTXO
-    const handlerDatumDecoded: HandlerDatum = await decodeHandlerDatum(handlerUtxo.datum!, this.LucidImporter);
-    // Create an updated handler datum with an incremented client sequence
-    const updatedHandlerDatum: HandlerDatum = this.createUpdatedHandlerDatum(handlerDatumDecoded);
-    // const clientStateTokenName = this.generateClientStateTokenName(handlerDatumDecoded);
-    const mintClientScriptHash = this.getMintClientScriptHash();
-
-    const clientDatumState: ClientDatumState = {
-      clientState: clientState,
-      consensusStates: new Map([[clientState.latestHeight, consensusState]]),
-    };
-
-    const clientTokenName = this.generateClientTokenName(handlerDatumDecoded);
-
-    const clientDatum: ClientDatum = {
-      state: clientDatumState,
-      token: {
-        policyId: mintClientScriptHash,
-        name: clientTokenName,
-      },
-    };
-    const mintClientOperator: MintClientOperator = this.createMintClientOperator();
-    const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
-    const handlerOperator: HandlerOperator = 'CreateClient';
-    // Encode encoded data for created transaction
-    const mintClientOperatorEncoded: string = await encodeMintClientOperator(mintClientOperator, this.LucidImporter);
-    const handlerOperatorEncoded: string = await encodeHandlerOperator(handlerOperator, this.LucidImporter);
-    const updatedHandlerDatumEncoded: string = await encodeHandlerDatum(updatedHandlerDatum, this.LucidImporter);
-    const clientDatumEncoded: string = await encodeClientDatum(clientDatum, this.LucidImporter);
-    // Create and return the unsigned transaction for creating new client
-    return [
-      this.createUnsignedCreateClientTransaction(
-        handlerUtxo,
-        handlerOperatorEncoded,
-        clientAuthTokenUnit,
-        mintClientOperatorEncoded,
-        updatedHandlerDatumEncoded,
-        clientDatumEncoded,
-      ),
-      handlerDatumDecoded.state.next_client_sequence,
-    ];
+  public getClientPolicyId(): string {
+    return this.configService.get('deployment').validators.mintClient.scriptHash;
+  }
+  public getConnectionPolicyId(): string {
+    return this.configService.get('deployment').validators.mintConnection.scriptHash;
+  }
+  public getChannelPolicyId(): string {
+    return this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
   public getClientAuthTokenUnit(handlerDatum: HandlerDatum): string {
-    const mintClientPolicyId = this.getMintClientScriptHash();
-    const handlerAuthTokenUnit = this.getHandlerAuthTokenUnit();
-    const nextClientSequenceEncoded = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence - 1n);
-    // const nextClientSequenceEncoded = this.LucidImporter.Data.to(BigInt(9));
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
+    // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence - 1n);
+    const baseToken = handlerDatum.token;
     const clientStateTokenName = this.generateTokenName(
-      handlerAuthTokenUnit,
-      CLIENT_TOKEN_PREFIX,
-      nextClientSequenceEncoded,
+      baseToken,
+      CLIENT_PREFIX,
+      handlerDatum.state.next_client_sequence - 1n,
     );
     return mintClientPolicyId + clientStateTokenName;
   }
-  public getClientTokenUnit(clientId: string) {
-    const mintClientPolicyId = this.getMintClientScriptHash();
-    const clientTokenName = this.getClientTokenName(clientId);
+
+  public toBytes(buffer: Uint8Array) {
+    if (!buffer) return '';
+    return this.LucidImporter.toHex(buffer);
+  }
+  //string to hex
+  public toHex(data: string) {
+    return this.LucidImporter.toHex(Buffer.from(data));
+  }
+  //hex to string
+  public toText(data: string) {
+    return this.LucidImporter.toText(data);
+  }
+  //hex to string
+  public fromText(data: string) {
+    return this.LucidImporter.fromText(data);
+  }
+  public async decodeDatum<T>(encodedDatum: string, type: CodecType): Promise<T> {
+    try {
+      switch (type) {
+        case 'client':
+          return (await decodeClientDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'connection':
+          return (await decodeConnectionDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'handler':
+          return (await decodeHandlerDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'channel':
+          return (await decodeChannelDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'mockModule':
+          return (await decodeMockModuleDatum(encodedDatum, this.LucidImporter)) as T;
+        default:
+          throw new Error(`Unknown datum type: ${type}`);
+      }
+    } catch (error) {
+      throw new GrpcInternalException(`An unexpected error occurred when trying to decode ${type}: ${error}`);
+    }
+  }
+  // The main encode function
+  public async encode<T>(data: T, type: CodecType): Promise<string> {
+    try {
+      switch (type) {
+        case 'client':
+          return await encodeClientDatum(data as ClientDatum, this.LucidImporter);
+        case 'connection':
+          return await encodeConnectionDatum(data as ConnectionDatum, this.LucidImporter);
+        case 'handler':
+          return await encodeHandlerDatum(data as HandlerDatum, this.LucidImporter);
+        case 'channel':
+          return await encodeChannelDatum(data as ChannelDatum, this.LucidImporter);
+        case 'mockModule':
+          return await encodeMockModuleDatum(data as MockModuleDatum, this.LucidImporter);
+        case 'spendClientRedeemer':
+          return await encodeSpendClientRedeemer(data as SpendClientRedeemer, this.LucidImporter);
+        case 'mintClientOperator':
+          return await encodeMintClientOperator(data as MintClientOperator, this.LucidImporter);
+        case 'handlerOperator':
+          return await encodeHandlerOperator(data as HandlerOperator, this.LucidImporter);
+        case 'mintConnectionRedeemer':
+          return await encodeMintConnectionRedeemer(data as MintConnectionRedeemer, this.LucidImporter);
+        case 'spendConnectionRedeemer':
+          return await encodeSpendConnectionRedeemer(data as SpendConnectionRedeemer, this.LucidImporter);
+        case 'mintChannelRedeemer':
+          return await encodeMintChannelRedeemer(data as MintChannelRedeemer, this.LucidImporter);
+        case 'spendChannelRedeemer':
+          return await encodeSpendChannelRedeemer(data as SpendChannelRedeemer, this.LucidImporter);
+        case 'iBCModuleRedeemer':
+          return await encodeIBCModuleRedeemer(data as IBCModuleRedeemer, this.LucidImporter);
+        default:
+          throw new Error(`Unknown datum type: ${type}`);
+      }
+    } catch (error) {
+      throw new GrpcInternalException(`An unexpected error occurred when trying to encode ${type}: ${error}`);
+    }
+  }
+
+  public getClientTokenUnit(clientId: string): string {
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
+    const clientTokenName = this.generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(clientId));
     return mintClientPolicyId + clientTokenName;
   }
-  private updateClientState(clientState: ClientState, newHeight: Height): ClientState {
-    return {
-      ...clientState,
-      latestHeight: newHeight,
-    };
+  public getConnectionTokenUnit(connectionId: bigint): [string, string] {
+    const mintConnectionPolicyId = this.getMintConnectionScriptHash();
+    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
+    const connectionTokenName = this.generateTokenName(handlerAuthToken, CONNECTION_TOKEN_PREFIX, BigInt(connectionId));
+    return [mintConnectionPolicyId, connectionTokenName];
   }
-  private createUnsignedUpdateClientTransaction(
+  public getChannelTokenUnit(channelId: bigint): [string, string] {
+    const mintChannelPolicyId = this.getMintChannelScriptHash();
+    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
+    const channelTokenName = this.generateTokenName(handlerAuthToken, CHANNEL_TOKEN_PREFIX, channelId);
+    return [mintChannelPolicyId, channelTokenName];
+  }
+  // ========================== Build transaction ==========================
+
+  public createUnsignedUpdateClientTransaction(
     currentClientUtxo: UTxO,
     encodedSpendClientRedeemer: string,
     encodedNewClientDatum: string,
     clientTokenUnit: string,
+    constructedAddress: string,
   ): Tx {
     const deploymentConfig = this.configService.get('deployment');
-    const tx = this.lucid.newTx();
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
     tx.collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
       .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendClient.script))
       .payToContract(
@@ -208,40 +227,366 @@ export class LucidService {
 
     return tx;
   }
-  private createUnsignedCreateClientTransaction(
+  public createUnsignedCreateClientTransaction(
     handlerUtxo: any,
-    handlerOperatorEncoded: string,
+    encodedHandlerOperator: string,
     clientAuthTokenUnit: string,
-    mintClientOperatorEncoded: string,
-    updatedHandlerDatumEncoded: string,
-    clientDatumEncoded: string,
+    encodedMintClientOperator: string,
+    encodedUpdatedHandlerDatum: string,
+    encodedClientDatum: string,
+    constructedAddress: string,
   ): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
-    const tx = this.lucid.newTx();
+    const tx: Tx = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([handlerUtxo], handlerOperatorEncoded)
+    tx.collectFrom([handlerUtxo], encodedHandlerOperator)
       .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
         },
-        mintClientOperatorEncoded,
+        encodedMintClientOperator,
       )
       .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintClient.script));
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.payToContract(address, { inline }, token);
     };
-    addPayToContract(deploymentConfig.validators.spendHandler.address, updatedHandlerDatumEncoded, {
+    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [handlerAuthToken]: 1n,
     });
-    addPayToContract(deploymentConfig.validators.spendClient.address, clientDatumEncoded, {
+    addPayToContract(deploymentConfig.validators.spendClient.address, encodedClientDatum, {
       [clientAuthTokenUnit]: 1n,
     });
     // Optional: call validTo method if needed
     return tx;
   }
+  public createUnsignedConnectionOpenInitTransaction(
+    handlerUtxo: UTxO,
+    encodedSpendHandlerRedeemer: string,
+    connectionTokenUnit: string,
+    clientUtxo: UTxO,
+    encodedMintConnectionRedeemer: string,
+    encodedUpdatedHandlerDatum: string,
+    encodedConnectionDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
+      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
+      .mintAssets(
+        {
+          [connectionTokenUnit]: 1n,
+        },
+        encodedMintConnectionRedeemer,
+      )
+      .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintConnection.script))
+      .readFrom([clientUtxo]);
+
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendConnection.address, encodedConnectionDatum, {
+      [connectionTokenUnit]: 1n,
+    });
+    return tx;
+  }
+  public createUnsignedConnectionOpenTryTransaction(
+    handlerUtxo: UTxO,
+    encodedSpendHandlerRedeemer: string,
+    connectionTokenUnit: string,
+    clientUtxo: UTxO,
+    encodedMintConnectionRedeemer: string,
+    encodedUpdatedHandlerDatum: string,
+    encodedConnectionDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
+      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
+      .mintAssets(
+        {
+          [connectionTokenUnit]: 1n,
+        },
+        encodedMintConnectionRedeemer,
+      )
+      .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintConnection.script))
+      .readFrom([clientUtxo]);
+
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendConnection.address, encodedConnectionDatum, {
+      [connectionTokenUnit]: 1n,
+    });
+    return tx;
+  }
+  public createUnsignedConnectionOpenAckTransaction(
+    connectionUtxo: UTxO,
+    encodedSpendConnectionRedeemer: string,
+    connectionTokenUnit: string,
+    clientUtxo: UTxO,
+    encodedUpdatedConnectionDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
+      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendConnection.script))
+      .readFrom([clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendConnection.address,
+        { inline: encodedUpdatedConnectionDatum },
+        {
+          [connectionTokenUnit]: 1n,
+        },
+      );
+    return tx;
+  }
+  public createUnsignedConnectionOpenConfirmTransaction(
+    connectionUtxo: UTxO,
+    encodedSpendConnectionRedeemer: string,
+    connectionTokenUnit: string,
+    clientUtxo: UTxO,
+    encodedUpdatedConnectionDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
+      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendConnection.script))
+      .readFrom([clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendConnection.address,
+        { inline: encodedUpdatedConnectionDatum },
+        {
+          [connectionTokenUnit]: 1n,
+        },
+      );
+    return tx;
+  }
+  public createUnsignedChannelOpenInitTransaction(
+    handlerUtxo: UTxO,
+    connectionUtxo: UTxO,
+    clientUtxo: UTxO,
+    spendHandlerRefUtxo: UTxO,
+    mintChannelRefUtxo: UTxO,
+    spendMockModuleRefUtxo: UTxO,
+    mockModuleUtxo: UTxO,
+    encodedSpendMockModuleRedeemer: string,
+    encodedSpendHandlerRedeemer: string,
+    encodedMintChannelRedeemer: string,
+    channelTokenUnit: string,
+    encodedUpdatedHandlerDatum: string,
+    encodedChannelDatum: string,
+    encodedNewMockModuleDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.readFrom([spendHandlerRefUtxo, mintChannelRefUtxo, spendMockModuleRefUtxo])
+      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
+      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+      .mintAssets(
+        {
+          [channelTokenUnit]: 1n,
+        },
+        encodedMintChannelRedeemer,
+      )
+      .readFrom([connectionUtxo, clientUtxo]);
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendChannel.address, encodedChannelDatum, {
+      [channelTokenUnit]: 1n,
+    });
+    addPayToContract(deploymentConfig.modules.mock.address, encodedNewMockModuleDatum, mockModuleUtxo.assets);
+
+    return tx;
+  }
+  public createUnsignedChannelOpenTryTransaction(
+    handlerUtxo: UTxO,
+    connectionUtxo: UTxO,
+    clientUtxo: UTxO,
+    mockModuleUtxo: UTxO,
+    spendHandlerRefUtxo: UTxO,
+    mintChannelRefUtxo: UTxO,
+    spendMockModuleRefUtxo: UTxO,
+    encodedSpendMockModuleRedeemer: string,
+    encodedSpendHandlerRedeemer: string,
+    encodedMintChannelRedeemer: string,
+    channelTokenUnit: string,
+    encodedUpdatedHandlerDatum: string,
+    encodedChannelDatum: string,
+    encodedNewMockModuleDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+    tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
+      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+      .readFrom([spendHandlerRefUtxo, mintChannelRefUtxo, spendMockModuleRefUtxo])
+      .mintAssets(
+        {
+          [channelTokenUnit]: 1n,
+        },
+        encodedMintChannelRedeemer,
+      )
+      .readFrom([connectionUtxo, clientUtxo]);
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendChannel.address, encodedChannelDatum, {
+      [channelTokenUnit]: 1n,
+    });
+    addPayToContract(deploymentConfig.modules.mock.address, encodedNewMockModuleDatum, mockModuleUtxo.assets);
+
+    return tx;
+  }
+
+  public createUnsignedChannelOpenAckTransaction(
+    channelUtxo: UTxO,
+    connectionUtxo: UTxO,
+    clientUtxo: UTxO,
+    spendChannelRefUtxo: UTxO,
+    spendMockModuleRefUtxo: UTxO,
+    mockModuleUtxo: UTxO,
+    encodedSpendChannelRedeemer: string,
+    encodedSpendMockModuleRedeemer: string,
+    channelTokenUnit: string,
+    encodedUpdatedChannelDatum: string,
+    encodedNewMockModuleDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.readFrom([spendChannelRefUtxo, spendMockModuleRefUtxo])
+      .collectFrom([channelUtxo], encodedSpendChannelRedeemer)
+      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+      .readFrom([connectionUtxo, clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: encodedUpdatedChannelDatum,
+        },
+        {
+          [channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: encodedNewMockModuleDatum,
+        },
+        mockModuleUtxo.assets,
+      );
+
+    return tx;
+  }
+  public createUnsignedChannelOpenConfirmTransaction(
+    channelUtxo: UTxO,
+    connectionUtxo: UTxO,
+    clientUtxo: UTxO,
+    spendChannelRefUtxo: UTxO,
+    spendMockModuleRefUtxo: UTxO,
+    mockModuleUtxo: UTxO,
+    encodedSpendChannelRedeemer: string,
+    encodedSpendMockModuleRedeemer: string,
+    channelTokenUnit: string,
+    encodedUpdatedChannelDatum: string,
+    encodedNewMockModuleDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(constructedAddress);
+
+    tx.readFrom([spendChannelRefUtxo, spendMockModuleRefUtxo])
+
+      .collectFrom([channelUtxo], encodedSpendChannelRedeemer)
+      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+      .readFrom([connectionUtxo, clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: encodedUpdatedChannelDatum,
+        },
+        {
+          [channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: encodedNewMockModuleDatum,
+        },
+        mockModuleUtxo.assets,
+      );
+
+    return tx;
+  }
+  public createUnsignedRecvPacketTransaction(
+    channelUtxo: UTxO,
+    connectionUtxo: UTxO,
+    clientUtxo: UTxO,
+    spendChannelRefUtxo: UTxO,
+    spendMockModuleRefUtxo: UTxO,
+    mockModuleUtxo: UTxO,
+    encodedSpendChannelRedeemer: string,
+    encodedSpendMockModuleRedeemer: string,
+    channelTokenUnit: string,
+    encodedUpdatedChannelDatum: string,
+    encodedNewMockModuleDatum: string,
+    constructedAddress: string,
+  ): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+
+    const tx: Tx = this.txFromWallet(constructedAddress);
+    tx.readFrom([spendChannelRefUtxo, spendMockModuleRefUtxo])
+      .collectFrom([channelUtxo], encodedSpendChannelRedeemer)
+      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+      .readFrom([connectionUtxo, clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: encodedUpdatedChannelDatum,
+        },
+        {
+          [channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: encodedNewMockModuleDatum,
+        },
+        mockModuleUtxo.assets,
+      );
+
+    return tx;
+  }
+  // ========================== private functions ==========================
+
   private getSpendingValidator(script: string): SpendingValidator {
     return {
       type: 'PlutusV2',
@@ -254,60 +599,33 @@ export class LucidService {
       script: script,
     };
   }
-  private createMintClientOperator(): MintClientOperator {
-    return {
-      MintNewClient: {
-        handlerAuthToken: {
-          name: HANDLER_TOKEN_NAME,
-          policyId: this.configService.get('deployment').validators.mintHandlerValidator.scriptHash,
-        },
-      },
-    };
+
+  private getMintConnectionScriptHash(): string {
+    return this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
-  private createSpendClientRedeemer(header: Header): SpendClientRedeemer {
-    return {
-      UpdateClient: {
-        header,
-      },
-    };
+  private getMintChannelScriptHash(): string {
+    return this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
-  private createConsensusStateFromHeader(header: Header): ConsensusState {
-    return {
-      timestamp: header.signedHeader.header.time,
-      next_validators_hash: header.signedHeader.header.nextValidatorsHash,
-      root: {
-        hash: header.signedHeader.header.appHash,
-      },
-    };
-  }
-  private getHandlerAuthTokenUnit(): string {
-    const handlerAuthTokenConfig = this.configService.get('deployment').handlerAuthToken;
-    return handlerAuthTokenConfig.policyId + handlerAuthTokenConfig.name;
-  }
-  private generateClientTokenName(handlerDatum: HandlerDatum): string {
-    const handlerAuthTokenUnit = this.getHandlerAuthTokenUnit();
-    const nextClientSequenceEncoded = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence);
-    return this.generateTokenName(handlerAuthTokenUnit, CLIENT_TOKEN_PREFIX, nextClientSequenceEncoded);
-  }
-  public toBytes(buffer: Uint8Array) {
-    return this.LucidImporter.toHex(buffer);
-  }
-  private generateTokenName(...parts: any[]): string {
-    return this.LucidImporter.toHex(
-      this.LucidImporter.C.hash_blake2b256(this.LucidImporter.fromHex(parts.map(String).join(''))),
-    );
-  }
-  private getMintClientScriptHash(): string {
-    return this.configService.get('deployment').validators.mintClient.scriptHash;
-  }
-  private getMintClientTokenName(): string {
-    return this.configService.get('deployment').validators.mintClient.name;
-  }
-  private getClientTokenName(clientId: string): string {
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
-    const handlerAuthTokenPolicyId = handlerAuthToken.policyId;
-    const handlerAuthTokenName = handlerAuthToken.name;
-    const clientIdEncoded = this.LucidImporter.Data.to(BigInt(clientId));
-    return this.generateTokenName(handlerAuthTokenPolicyId, handlerAuthTokenName, CLIENT_TOKEN_PREFIX, clientIdEncoded);
+
+  public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {
+    if (postfix < 0) throw new Error('sequence must be unsigned integer');
+    const postfixHex = this.toHex(postfix.toString());
+    if (postfixHex.length > 16) throw new Error('postfix size > 8 bytes');
+    const baseTokenPart = hashSha3_256(baseToken.policyId + baseToken.name).slice(0, 40);
+    const prefixPart = hashSha3_256(prefix).slice(0, 8);
+    const fullName = baseTokenPart + prefixPart + postfixHex;
+    return fullName;
+  };
+
+  private txFromWallet(constructedAddress: string): Tx {
+    if (constructedAddress) {
+      try {
+        const lucid = this.lucid.selectWalletFrom({ address: constructedAddress });
+        return lucid.newTx();
+      } catch (err) {
+        throw new GrpcInternalException('invalid constructed address');
+      }
+    }
+    return this.lucid.newTx();
   }
 }

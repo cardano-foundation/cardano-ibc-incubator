@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"github.com/spf13/cobra"
@@ -175,13 +174,21 @@ func createClientCmd(a *appState) *cobra.Command {
 			}
 
 			// Query the latest heights on src and dst and retry if the query fails
-			var cardanoh, cosmosh int64
+			//var cardanoh, cosmosh int64
+			var srcHeight, dstHeight int64
 			//var mainConsensusState = provider.MsgGetConsensusStateResponse{}
 
 			if err = retry.Do(func() error {
-				cardanoh, err = src.ChainProvider.QueryCardanoLatestHeight(cmd.Context())
-				cosmosh, err = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
-				if cosmosh == 0 || err != nil {
+
+				//cardanoh, err = src.ChainProvider.QueryCardanoLatestHeight(cmd.Context())
+				//cosmosh, err = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
+				srcHeight, err = src.ChainProvider.QueryLatestHeight(cmd.Context())
+				dstHeight, err = dst.ChainProvider.QueryLatestHeight(cmd.Context())
+
+				//if cosmosh == 0 || err != nil {
+				//	return fmt.Errorf("failed to query latest heights: %w", err)
+				//}
+				if dstHeight == 0 || err != nil {
 					return fmt.Errorf("failed to query latest heights: %w", err)
 				}
 				return err
@@ -192,7 +199,7 @@ func createClientCmd(a *appState) *cobra.Command {
 			// Query the light signed headers for src & dst at the heights srch & dsth, retry if the query fails
 			var dstUpdateHeader provider.IBCHeader
 			if err = retry.Do(func() error {
-				dstUpdateHeader, err = relayer.QueryIBCHeader(cmd.Context(), dst, cosmosh)
+				dstUpdateHeader, err = relayer.QueryIBCHeader(cmd.Context(), dst, dstHeight)
 				if err != nil {
 					return err
 				}
@@ -201,14 +208,14 @@ func createClientCmd(a *appState) *cobra.Command {
 				a.log.Info(
 					"Failed to get light signed header",
 					zap.String("src_chain_id", src.ChainID()),
-					zap.Int64("src_height", cardanoh),
+					zap.Int64("src_height", srcHeight),
 					zap.String("dst_chain_id", dst.ChainID()),
-					zap.Int64("dst_height", cosmosh),
+					zap.Int64("dst_height", dstHeight),
 					zap.Uint("attempt", n+1),
 					zap.Uint("max_attempts", relayer.RtyAttNum),
 					zap.Error(err),
 				)
-				cosmosh, _ = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
+				dstHeight, _ = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
 			})); err != nil {
 				return err
 			}
@@ -659,18 +666,23 @@ $ %s tx connect demo-path --src-port transfer --dst-port transfer --order unorde
 			if err != nil {
 				return fmt.Errorf("error creating clients: %w", err)
 			}
-			log.Println("clientSrc: ", clientSrc)
-			log.Println("clientDst: ", clientDst)
 
 			// TODO: create connection and channel
-			if clientSrc != "" || clientDst != "" {
+			if clientSrc != "" && clientDst != "" {
 				if len(clientSrc) <= 3 {
 					clientSrc = "07-tendermint-" + clientSrc
-				} else {
+				}
+				if len(clientDst) <= 3 {
 					clientDst = "07-tendermint-" + clientDst
 				}
+				if c[src].ChainProvider.Type() == "cardano" {
+					if err := a.updatePathConfig(cmd.Context(), pathName, clientSrc, clientDst, "", ""); err != nil {
+						return err
+					}
+					return nil
 
-				if err := a.updatePathConfig(cmd.Context(), pathName, clientSrc, clientDst, "", ""); err != nil {
+				}
+				if err := a.updatePathConfig(cmd.Context(), pathName, clientDst, clientSrc, "", ""); err != nil {
 					return err
 				}
 			}
@@ -826,7 +838,7 @@ $ %s tx flush demo-path channel-0`,
 				a.config.memo(cmd),
 				0,
 				0,
-				&processor.FlushLifecycle{},
+				nil, //&processor.FlushLifecycle{},
 				relayer.ProcessorEvents,
 				0,
 				nil,

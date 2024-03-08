@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -59,27 +59,27 @@ func (msg packetIBCMessage) assemble(
 	var assembleMessage func(provider.PacketInfo, provider.PacketProof) (provider.RelayerMessage, error)
 	switch msg.eventType {
 	case chantypes.EventTypeRecvPacket:
-		packetProof = src.chainProvider.PacketCommitment
-		assembleMessage = dst.chainProvider.MsgRecvPacket
+		packetProof = src.ChainProvider.PacketCommitment
+		assembleMessage = dst.ChainProvider.MsgRecvPacket
 	case chantypes.EventTypeAcknowledgePacket:
-		packetProof = src.chainProvider.PacketAcknowledgement
-		assembleMessage = dst.chainProvider.MsgAcknowledgement
+		packetProof = src.ChainProvider.PacketAcknowledgement
+		assembleMessage = dst.ChainProvider.MsgAcknowledgement
 	case chantypes.EventTypeTimeoutPacket:
 		if msg.info.ChannelOrder == chantypes.ORDERED.String() {
-			packetProof = src.chainProvider.NextSeqRecv
+			packetProof = src.ChainProvider.NextSeqRecv
 		} else {
-			packetProof = src.chainProvider.PacketReceipt
+			packetProof = src.ChainProvider.PacketReceipt
 		}
 
-		assembleMessage = dst.chainProvider.MsgTimeout
+		assembleMessage = dst.ChainProvider.MsgTimeout
 	case chantypes.EventTypeTimeoutPacketOnClose:
 		if msg.info.ChannelOrder == chantypes.ORDERED.String() {
-			packetProof = src.chainProvider.NextSeqRecv
+			packetProof = src.ChainProvider.NextSeqRecv
 		} else {
-			packetProof = src.chainProvider.PacketReceipt
+			packetProof = src.ChainProvider.PacketReceipt
 		}
 
-		assembleMessage = dst.chainProvider.MsgTimeoutOnClose
+		assembleMessage = dst.ChainProvider.MsgTimeoutOnClose
 	default:
 		return nil, fmt.Errorf("unexepected packet message eventType for message assembly: %s", msg.eventType)
 	}
@@ -156,22 +156,22 @@ func (msg channelIBCMessage) assemble(
 	switch msg.eventType {
 	case chantypes.EventTypeChannelOpenInit:
 		// don't need proof for this message
-		assembleMessage = dst.chainProvider.MsgChannelOpenInit
+		assembleMessage = dst.ChainProvider.MsgChannelOpenInit
 	case chantypes.EventTypeChannelOpenTry:
-		chanProof = src.chainProvider.ChannelProof
-		assembleMessage = dst.chainProvider.MsgChannelOpenTry
+		chanProof = src.ChainProvider.ChannelProof
+		assembleMessage = dst.ChainProvider.MsgChannelOpenTry
 	case chantypes.EventTypeChannelOpenAck:
-		chanProof = src.chainProvider.ChannelProof
-		assembleMessage = dst.chainProvider.MsgChannelOpenAck
+		chanProof = src.ChainProvider.ChannelProof
+		assembleMessage = dst.ChainProvider.MsgChannelOpenAck
 	case chantypes.EventTypeChannelOpenConfirm:
-		chanProof = src.chainProvider.ChannelProof
-		assembleMessage = dst.chainProvider.MsgChannelOpenConfirm
+		chanProof = src.ChainProvider.ChannelProof
+		assembleMessage = dst.ChainProvider.MsgChannelOpenConfirm
 	case chantypes.EventTypeChannelCloseInit:
 		// don't need proof for this message
-		assembleMessage = dst.chainProvider.MsgChannelCloseInit
+		assembleMessage = dst.ChainProvider.MsgChannelCloseInit
 	case chantypes.EventTypeChannelCloseConfirm:
-		chanProof = src.chainProvider.ChannelProof
-		assembleMessage = dst.chainProvider.MsgChannelCloseConfirm
+		chanProof = src.ChainProvider.ChannelProof
+		assembleMessage = dst.ChainProvider.MsgChannelCloseConfirm
 	default:
 		return nil, fmt.Errorf("unexepected channel message eventType for message assembly: %s", msg.eventType)
 	}
@@ -236,18 +236,18 @@ func (msg connectionIBCMessage) assemble(
 	switch msg.eventType {
 	case conntypes.EventTypeConnectionOpenInit:
 		// don't need proof for this message
-		msg.info.CounterpartyCommitmentPrefix = src.chainProvider.CommitmentPrefix()
-		assembleMessage = dst.chainProvider.MsgConnectionOpenInit
+		msg.info.CounterpartyCommitmentPrefix = src.ChainProvider.CommitmentPrefix()
+		assembleMessage = dst.ChainProvider.MsgConnectionOpenInit
 	case conntypes.EventTypeConnectionOpenTry:
-		msg.info.CounterpartyCommitmentPrefix = src.chainProvider.CommitmentPrefix()
-		connProof = src.chainProvider.ConnectionHandshakeProof
-		assembleMessage = dst.chainProvider.MsgConnectionOpenTry
+		msg.info.CounterpartyCommitmentPrefix = src.ChainProvider.CommitmentPrefix()
+		connProof = src.ChainProvider.ConnectionHandshakeProof
+		assembleMessage = dst.ChainProvider.MsgConnectionOpenTry
 	case conntypes.EventTypeConnectionOpenAck:
-		connProof = src.chainProvider.ConnectionHandshakeProof
-		assembleMessage = dst.chainProvider.MsgConnectionOpenAck
+		connProof = src.ChainProvider.ConnectionHandshakeProof
+		assembleMessage = dst.ChainProvider.MsgConnectionOpenAck
 	case conntypes.EventTypeConnectionOpenConfirm:
-		connProof = src.chainProvider.ConnectionProof
-		assembleMessage = dst.chainProvider.MsgConnectionOpenConfirm
+		connProof = src.ChainProvider.ConnectionProof
+		assembleMessage = dst.ChainProvider.MsgConnectionOpenConfirm
 	default:
 		return nil, fmt.Errorf("unexepected connection message eventType for message assembly: %s", msg.eventType)
 	}
@@ -260,8 +260,9 @@ func (msg connectionIBCMessage) assemble(
 			return nil, fmt.Errorf("error querying connection proof: %w", err)
 		}
 	}
+	res, err := assembleMessage(msg.info, proof)
 
-	return assembleMessage(msg.info, proof)
+	return res, err
 }
 
 // tracker creates a message tracker for message status
@@ -309,12 +310,12 @@ func (msg clientICQMessage) assemble(
 	ctx, cancel := context.WithTimeout(ctx, interchainQueryTimeout)
 	defer cancel()
 
-	proof, err := src.chainProvider.QueryICQWithProof(ctx, msg.info.Type, msg.info.Request, src.latestBlock.Height-1)
+	proof, err := src.ChainProvider.QueryICQWithProof(ctx, msg.info.Type, msg.info.Request, src.latestBlock.Height-1)
 	if err != nil {
 		return nil, fmt.Errorf("error during interchain query: %w", err)
 	}
 
-	return dst.chainProvider.MsgSubmitQueryResponse(msg.info.Chain, msg.info.QueryID, proof)
+	return dst.ChainProvider.MsgSubmitQueryResponse(msg.info.Chain, msg.info.QueryID, proof)
 }
 
 // tracker creates a message tracker for message status

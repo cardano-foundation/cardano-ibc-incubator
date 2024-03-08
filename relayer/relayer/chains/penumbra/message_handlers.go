@@ -1,10 +1,10 @@
 package penumbra
 
 import (
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

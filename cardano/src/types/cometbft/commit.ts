@@ -16,6 +16,7 @@ export const BlockID = BlockIDSchema as unknown as BlockID;
 
 export const CommitSchema = Data.Object({
   height: Data.Integer(),
+  round: Data.Integer(),
   blockId: BlockIDSchema,
   signatures: Data.Array(Data.Bytes()),
 });

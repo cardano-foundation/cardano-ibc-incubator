@@ -53,7 +53,7 @@ function createBaseInterchainAccountPacketData(): InterchainAccountPacketData {
   return {
     type: 0,
     data: new Uint8Array(),
-    memo: "",
+    memo: ""
   };
 }
 export const InterchainAccountPacketData = {
@@ -78,7 +78,7 @@ export const InterchainAccountPacketData = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.type = reader.int32() as any;
+          message.type = (reader.int32() as any);
           break;
         case 2:
           message.data = reader.bytes();
@@ -103,24 +103,21 @@ export const InterchainAccountPacketData = {
   toJSON(message: InterchainAccountPacketData): unknown {
     const obj: any = {};
     message.type !== undefined && (obj.type = typeToJSON(message.type));
-    message.data !== undefined &&
-      (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
+    message.data !== undefined && (obj.data = base64FromBytes(message.data !== undefined ? message.data : new Uint8Array()));
     message.memo !== undefined && (obj.memo = message.memo);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<InterchainAccountPacketData>, I>>(
-    object: I,
-  ): InterchainAccountPacketData {
+  fromPartial<I extends Exact<DeepPartial<InterchainAccountPacketData>, I>>(object: I): InterchainAccountPacketData {
     const message = createBaseInterchainAccountPacketData();
     message.type = object.type ?? 0;
     message.data = object.data ?? new Uint8Array();
     message.memo = object.memo ?? "";
     return message;
-  },
+  }
 };
 function createBaseCosmosTx(): CosmosTx {
   return {
-    messages: [],
+    messages: []
   };
 }
 export const CosmosTx = {
@@ -156,7 +153,7 @@ export const CosmosTx = {
   toJSON(message: CosmosTx): unknown {
     const obj: any = {};
     if (message.messages) {
-      obj.messages = message.messages.map((e) => (e ? Any.toJSON(e) : undefined));
+      obj.messages = message.messages.map(e => e ? Any.toJSON(e) : undefined);
     } else {
       obj.messages = [];
     }
@@ -164,7 +161,7 @@ export const CosmosTx = {
   },
   fromPartial<I extends Exact<DeepPartial<CosmosTx>, I>>(object: I): CosmosTx {
     const message = createBaseCosmosTx();
-    message.messages = object.messages?.map((e) => Any.fromPartial(e)) || [];
+    message.messages = object.messages?.map(e => Any.fromPartial(e)) || [];
     return message;
-  },
+  }
 };

@@ -4,7 +4,6 @@ import (
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
-	"github.com/golang/protobuf/ptypes/timestamp"
 
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
@@ -17,10 +16,10 @@ const SentinelRoot = "sentinel_root"
 
 // NewConsensusState creates a new ConsensusState instance.
 func NewConsensusState(
-	timestamp timestamp.Timestamp, slot uint64, height Height,
+	timestamp uint64, slot uint64,
 ) *ConsensusState {
 	return &ConsensusState{
-		Timestamp: 1,
+		Timestamp: timestamp,
 		Slot:      slot,
 	}
 }

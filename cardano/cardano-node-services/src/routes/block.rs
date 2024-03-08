@@ -120,6 +120,8 @@ async fn get_block_data(
     None => data.len(),
   };
 
+  peer.abort();
+
   Ok(Json(BlockData {
     block_no: block.number().to_owned(),
     slot: block.slot().to_owned(),

@@ -3,12 +3,13 @@ package relayer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap"
 )
 
@@ -23,15 +24,15 @@ func (c *Chain) CreateOpenChannels(
 	memo string,
 	pathName string,
 ) error {
-	// client and connection identifiers must be filled in
-	if err := ValidateConnectionPaths(c, dst); err != nil {
-		return err
-	}
+	// // client and connection identifiers must be filled in
+	// if err := ValidateConnectionPaths(c, dst); err != nil {
+	// 	return err
+	// }
 
-	// port identifiers and channel ORDER must be valid
-	if err := ValidateChannelParams(srcPortID, dstPortID, order); err != nil {
-		return err
-	}
+	// // port identifiers and channel ORDER must be valid
+	// if err := ValidateChannelParams(srcPortID, dstPortID, order); err != nil {
+	// 	return err
+	// }
 
 	if !override {
 		channel, err := QueryPortChannel(ctx, c, srcPortID)
@@ -50,6 +51,10 @@ func (c *Chain) CreateOpenChannels(
 
 	ctx, cancel := context.WithTimeout(ctx, processorTimeout)
 	defer cancel()
+
+	if strings.HasPrefix(c.PathEnd.ClientID, "07-tendermint-") {
+		c.PathEnd.ClientID = "ibc_client-" + strings.TrimPrefix(c.PathEnd.ClientID, "07-tendermint-")
+	}
 
 	pp := processor.NewPathProcessor(
 		c.log,

@@ -38,7 +38,7 @@ export interface MerkleProof {
 }
 function createBaseMerkleRoot(): MerkleRoot {
   return {
-    hash: new Uint8Array(),
+    hash: new Uint8Array()
   };
 }
 export const MerkleRoot = {
@@ -73,19 +73,18 @@ export const MerkleRoot = {
   },
   toJSON(message: MerkleRoot): unknown {
     const obj: any = {};
-    message.hash !== undefined &&
-      (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
+    message.hash !== undefined && (obj.hash = base64FromBytes(message.hash !== undefined ? message.hash : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MerkleRoot>, I>>(object: I): MerkleRoot {
     const message = createBaseMerkleRoot();
     message.hash = object.hash ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseMerklePrefix(): MerklePrefix {
   return {
-    key_prefix: new Uint8Array(),
+    key_prefix: new Uint8Array()
   };
 }
 export const MerklePrefix = {
@@ -120,21 +119,18 @@ export const MerklePrefix = {
   },
   toJSON(message: MerklePrefix): unknown {
     const obj: any = {};
-    message.key_prefix !== undefined &&
-      (obj.key_prefix = base64FromBytes(
-        message.key_prefix !== undefined ? message.key_prefix : new Uint8Array(),
-      ));
+    message.key_prefix !== undefined && (obj.key_prefix = base64FromBytes(message.key_prefix !== undefined ? message.key_prefix : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MerklePrefix>, I>>(object: I): MerklePrefix {
     const message = createBaseMerklePrefix();
     message.key_prefix = object.key_prefix ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseMerklePath(): MerklePath {
   return {
-    key_path: [],
+    key_path: []
   };
 }
 export const MerklePath = {
@@ -170,7 +166,7 @@ export const MerklePath = {
   toJSON(message: MerklePath): unknown {
     const obj: any = {};
     if (message.key_path) {
-      obj.key_path = message.key_path.map((e) => e);
+      obj.key_path = message.key_path.map(e => e);
     } else {
       obj.key_path = [];
     }
@@ -178,13 +174,13 @@ export const MerklePath = {
   },
   fromPartial<I extends Exact<DeepPartial<MerklePath>, I>>(object: I): MerklePath {
     const message = createBaseMerklePath();
-    message.key_path = object.key_path?.map((e) => e) || [];
+    message.key_path = object.key_path?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseMerkleProof(): MerkleProof {
   return {
-    proofs: [],
+    proofs: []
   };
 }
 export const MerkleProof = {
@@ -214,14 +210,13 @@ export const MerkleProof = {
   },
   fromJSON(object: any): MerkleProof {
     const obj = createBaseMerkleProof();
-    if (Array.isArray(object?.proofs))
-      obj.proofs = object.proofs.map((e: any) => CommitmentProof.fromJSON(e));
+    if (Array.isArray(object?.proofs)) obj.proofs = object.proofs.map((e: any) => CommitmentProof.fromJSON(e));
     return obj;
   },
   toJSON(message: MerkleProof): unknown {
     const obj: any = {};
     if (message.proofs) {
-      obj.proofs = message.proofs.map((e) => (e ? CommitmentProof.toJSON(e) : undefined));
+      obj.proofs = message.proofs.map(e => e ? CommitmentProof.toJSON(e) : undefined);
     } else {
       obj.proofs = [];
     }
@@ -229,7 +224,7 @@ export const MerkleProof = {
   },
   fromPartial<I extends Exact<DeepPartial<MerkleProof>, I>>(object: I): MerkleProof {
     const message = createBaseMerkleProof();
-    message.proofs = object.proofs?.map((e) => CommitmentProof.fromPartial(e)) || [];
+    message.proofs = object.proofs?.map(e => CommitmentProof.fromPartial(e)) || [];
     return message;
-  },
+  }
 };

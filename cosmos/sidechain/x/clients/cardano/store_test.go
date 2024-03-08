@@ -1,203 +1,215 @@
 package cardano_test
 
 import (
-	"math"
+	"encoding/hex"
+	cardano "sidechain/x/clients/cardano"
 	"time"
 
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
-	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
-	solomachine "github.com/cosmos/ibc-go/v8/modules/light-clients/06-solomachine"
-	tendermint "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
-	ibctesting "sidechain/testing"
+	ibctesting "github.com/cosmos/ibc-go/v8/testing"
+	"github.com/fxamacker/cbor/v2"
 )
 
-func (suite *CardanoTestSuite) TestGetConsensusState() {
+func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 	var (
-		height exported.Height
-		path   *ibctesting.Path
+		path         *ibctesting.Path
+		tokenConfigs cardano.TokenConfigs
+		utxo         cardano.UTXOOutput
 	)
 
 	testCases := []struct {
-		name     string
-		malleate func()
-		expPass  bool
-		expPanic bool
+		name      string
+		malleate  func()
+		expOutput string
 	}{
 		{
-			"success", func() {}, true, false,
+			name: "successful match clientToken",
+			malleate: func() {
+				mapConsensusStates := map[cardano.HeightDatum]cardano.ConsensusStateDatum{
+					cardano.HeightDatum{RevisionNumber: 0, RevisionHeight: 1}: cardano.ConsensusStateDatum{Timestamp: 1111111, NextValidatorsHash: []byte("NextValidatorsHash1"), Root: cardano.RootHashInDatum{Hash: []byte("RootHashInDatum1")}},
+				}
+				clientDatum := cardano.ClientDatum{
+					State: cardano.ClientDatumState{
+						ConsensusStates: mapConsensusStates,
+					},
+					Token: cardano.TokenDatum{
+						PolicyId: []byte("dummy PolicyId"),
+						Name:     []byte("dummy Name"),
+					},
+				}
+				clientDatumBytes, _ := cbor.Marshal(clientDatum)
+				utxo = cardano.UTXOOutput{
+					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
+					OutputIndex: "0",
+					Tokens: []cardano.UTXOOutputToken{
+						{TokenAssetName: "lovelace", TokenValue: "1"},
+						{TokenAssetName: tokenConfigs.ClientPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOClientStateTokenPrefix) + "31", TokenValue: "1"},
+					},
+					DatumHex: hex.EncodeToString(clientDatumBytes),
+				}
+			},
+			expOutput: cardano.KeyUTXOClientStatePrefix,
 		},
 		{
-			"consensus state not found", func() {
-				// use height with no consensus state set
-				height = height.(clienttypes.Height).Increment()
-			}, false, false,
+			name: "successful match connectionToken",
+			malleate: func() {
+				connectionDatum := cardano.ConnectionDatum{
+					State: cardano.ConnectionEndDatum{
+						ClientId: []byte("ClientId"),
+						Versions: []cardano.VersionDatum{},
+						State: cbor.Tag{
+							Number: 121,
+						},
+						Counterparty: cardano.CounterpartyDatum{
+							ClientId:     []byte("Counterparty ClientId"),
+							ConnectionId: []byte("Counterparty ConnectionId"),
+							Prefix:       cardano.MerklePrefixDatum{KeyPrefix: []byte("MerklePrefixDatum")},
+						},
+						DelayPeriod: 0,
+					},
+					Token: cardano.TokenDatum{
+						PolicyId: []byte("dummy PolicyId"),
+						Name:     []byte("dummy Name"),
+					},
+				}
+				connectionDatumBytes, _ := cbor.Marshal(connectionDatum)
+				utxo = cardano.UTXOOutput{
+					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
+					OutputIndex: "0",
+					Tokens: []cardano.UTXOOutputToken{
+						{TokenAssetName: "lovelace", TokenValue: "1"},
+						{TokenAssetName: tokenConfigs.ConnectionPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOConnectionStatePrefix) + "31", TokenValue: "1"},
+					},
+					DatumHex: hex.EncodeToString(connectionDatumBytes),
+				}
+			},
+			expOutput: cardano.KeyUTXOConnectionStatePrefix,
 		},
 		{
-			"not a consensus state interface", func() {
-				// marshal an empty client state and set as consensus state
-				store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-				clientStateBz := suite.chainA.App.GetIBCKeeper().ClientKeeper.MustMarshalClientState(&tendermint.ClientState{})
-				store.Set(host.ConsensusStateKey(height), clientStateBz)
-			}, false, true,
-		},
-		{
-			"invalid consensus state (solomachine)", func() {
-				// marshal and set solomachine consensus state
-				store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-				consensusStateBz := suite.chainA.App.GetIBCKeeper().ClientKeeper.MustMarshalConsensusState(&solomachine.ConsensusState{})
-				store.Set(host.ConsensusStateKey(height), consensusStateBz)
-			}, false, true,
+			name: "successful match channelToken",
+			malleate: func() {
+				channelDatum := cardano.ChannelDatum{
+					State: cbor.Tag{
+						Number: 121,
+					},
+					Ordering: cbor.Tag{
+						Number: 121,
+					},
+					Counterparty: cardano.ChannelCounterpartyDatum{},
+					ConnectionHops: [][]byte{
+						[]byte("ConnectionHops1"),
+						[]byte("ConnectionHops2"),
+					},
+					Version: []byte("Version"),
+				}
+				channelDatumState := cardano.ChannelDatumState{
+					Channel:          channelDatum,
+					NextSequenceSend: 2,
+					NextSequenceRecv: 1,
+					NextSequenceAck:  1,
+					PacketCommitment: map[uint64][]byte{
+						0: []byte("dummy PacketCommitment 0"),
+						1: []byte("dummy PacketCommitment 1"),
+					},
+					PacketReceipt: map[uint64][]byte{
+						0: []byte("dummy PacketReceipt 0"),
+					},
+					PacketAcknowledgement: map[uint64][]byte{
+						0: []byte("dummy PacketAcknowledgement 0"),
+					},
+				}
+				channelDatumWithPort := cardano.ChannelDatumWithPort{
+					State:  channelDatumState,
+					PortId: []byte("dummy-port"),
+					Token: cardano.TokenDatum{
+						PolicyId: []byte(tokenConfigs.ConnectionPolicyId),
+						Name:     []byte(cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOChannelStatePrefix) + "31"),
+					},
+				}
+				channelDatumBytes, _ := cbor.Marshal(channelDatumWithPort)
+				utxo = cardano.UTXOOutput{
+					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
+					OutputIndex: "0",
+					Tokens: []cardano.UTXOOutputToken{
+						{TokenAssetName: "lovelace", TokenValue: "1"},
+						{TokenAssetName: tokenConfigs.ConnectionPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOChannelStatePrefix) + "31", TokenValue: "1"},
+					},
+					DatumHex: hex.EncodeToString(channelDatumBytes),
+				}
+			},
+			expOutput: cardano.KeyUTXOChannelStatePrefix,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
-
 		suite.Run(tc.name, func() {
 			suite.SetupTest()
-			path = ibctesting.NewPath(suite.chainA, suite.chainB)
 
-			suite.coordinator.Setup(path)
-			clientState := suite.chainA.GetClientState(path.EndpointA.ClientID)
-			height = clientState.GetLatestHeight()
+			path = NewPath(suite.chainA, suite.chainB)
+			SetupCardanoClientInCosmos(suite.coordinator, path)
 
-			tc.malleate() // change vars as necessary
+			tc.malleate()
 
-			if tc.expPanic {
-				suite.Require().Panics(func() {
-					store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-					tendermint.GetConsensusState(store, suite.chainA.Codec, height)
-				})
-
-				return
-			}
-
-			store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-			consensusState, found := tendermint.GetConsensusState(store, suite.chainA.Codec, height)
-
-			if tc.expPass {
-				suite.Require().True(found)
-
-				expConsensusState, found := suite.chainA.GetConsensusState(path.EndpointA.ClientID, height)
-				suite.Require().True(found)
-				suite.Require().Equal(expConsensusState, consensusState)
-			} else {
-				suite.Require().False(found)
-				suite.Require().Nil(consensusState)
-			}
+			clientStore := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
+			actualOutput := utxo.TryMatchAndSaveIBCType(suite.chainA.GetContext(), tokenConfigs, clientStore, cardano.Height{RevisionNumber: 0, RevisionHeight: 5})
+			suite.Require().Equal(tc.expOutput, actualOutput)
 		})
 	}
 }
 
-func (suite *CardanoTestSuite) TestGetProcessedTime() {
-	path := ibctesting.NewPath(suite.chainA, suite.chainB)
-	suite.coordinator.UpdateTime()
-
-	expectedTime := suite.chainA.CurrentHeader.Time
-
-	// Verify ProcessedTime on CreateClient
-	err := path.EndpointA.CreateClient()
-	suite.Require().NoError(err)
-
-	clientState := suite.chainA.GetClientState(path.EndpointA.ClientID)
-	height := clientState.GetLatestHeight()
-
-	store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-	actualTime, ok := tendermint.GetProcessedTime(store, height)
-	suite.Require().True(ok, "could not retrieve processed time for stored consensus state")
-	suite.Require().Equal(uint64(expectedTime.UnixNano()), actualTime, "retrieved processed time is not expected value")
-
-	suite.coordinator.UpdateTime()
-	// coordinator increments time before updating client
-	expectedTime = suite.chainA.CurrentHeader.Time.Add(ibctesting.TimeIncrement)
-
-	// Verify ProcessedTime on UpdateClient
-	err = path.EndpointA.UpdateClient()
-	suite.Require().NoError(err)
-
-	clientState = suite.chainA.GetClientState(path.EndpointA.ClientID)
-	height = clientState.GetLatestHeight()
-
-	store = suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-	actualTime, ok = tendermint.GetProcessedTime(store, height)
-	suite.Require().True(ok, "could not retrieve processed time for stored consensus state")
-	suite.Require().Equal(uint64(expectedTime.UnixNano()), actualTime, "retrieved processed time is not expected value")
-
-	// try to get processed time for height that doesn't exist in store
-	_, ok = tendermint.GetProcessedTime(store, clienttypes.NewHeight(1, 1))
-	suite.Require().False(ok, "retrieved processed time for a non-existent consensus state")
-}
-
-func (suite *CardanoTestSuite) TestIterationKey() {
-	testHeights := []exported.Height{
-		clienttypes.NewHeight(0, 1),
-		clienttypes.NewHeight(0, 1234),
-		clienttypes.NewHeight(7890, 4321),
-		clienttypes.NewHeight(math.MaxUint64, math.MaxUint64),
-	}
-	for _, h := range testHeights {
-		k := tendermint.IterationKey(h)
-		retrievedHeight := tendermint.GetHeightFromIterationKey(k)
-		suite.Require().Equal(h, retrievedHeight, "retrieving height from iteration key failed")
-	}
-}
-
-func (suite *CardanoTestSuite) TestIterateConsensusStates() {
-	nextValsHash := []byte("nextVals")
-
-	// Set iteration keys and consensus states
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), clienttypes.NewHeight(0, 1))
-	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", clienttypes.NewHeight(0, 1), tendermint.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("hash0-1")), nextValsHash))
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), clienttypes.NewHeight(4, 9))
-	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", clienttypes.NewHeight(4, 9), tendermint.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("hash4-9")), nextValsHash))
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), clienttypes.NewHeight(0, 10))
-	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", clienttypes.NewHeight(0, 10), tendermint.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("hash0-10")), nextValsHash))
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), clienttypes.NewHeight(0, 4))
-	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", clienttypes.NewHeight(0, 4), tendermint.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("hash0-4")), nextValsHash))
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), clienttypes.NewHeight(40, 1))
-	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", clienttypes.NewHeight(40, 1), tendermint.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("hash40-1")), nextValsHash))
-
-	var testArr []string
-	cb := func(height exported.Height) bool {
-		testArr = append(testArr, height.String())
-		return false
-	}
-
-	tendermint.IterateConsensusStateAscending(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), cb)
-	expectedArr := []string{"0-1", "0-4", "0-10", "4-9", "40-1"}
-	suite.Require().Equal(expectedArr, testArr)
-}
-
 func (suite *CardanoTestSuite) TestGetNeighboringConsensusStates() {
-	nextValsHash := []byte("nextVals")
-	cs01 := tendermint.NewConsensusState(time.Now().UTC(), commitmenttypes.NewMerkleRoot([]byte("hash0-1")), nextValsHash)
-	cs04 := tendermint.NewConsensusState(time.Now().UTC(), commitmenttypes.NewMerkleRoot([]byte("hash0-4")), nextValsHash)
-	cs49 := tendermint.NewConsensusState(time.Now().UTC(), commitmenttypes.NewMerkleRoot([]byte("hash4-9")), nextValsHash)
-	height01 := clienttypes.NewHeight(0, 1)
-	height04 := clienttypes.NewHeight(0, 4)
-	height49 := clienttypes.NewHeight(4, 9)
+	cs01 := cardano.NewConsensusState(uint64(time.Now().UTC().UnixNano()), 1)
+	cs04 := cardano.NewConsensusState(uint64(time.Now().UTC().UnixNano()), 4)
+	cs49 := cardano.NewConsensusState(uint64(time.Now().UTC().UnixNano()), 9)
+	height01 := cardano.NewHeight(0, 1)
+	height04 := cardano.NewHeight(0, 4)
+	height49 := cardano.NewHeight(4, 9)
 
 	// Set iteration keys and consensus states
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height01)
+	cardano.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height01)
 	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", height01, cs01)
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height04)
+	cardano.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height04)
 	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", height04, cs04)
-	tendermint.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height49)
+	cardano.SetIterationKey(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), height49)
 	suite.chainA.App.GetIBCKeeper().ClientKeeper.SetClientConsensusState(suite.chainA.GetContext(), "testClient", height49, cs49)
 
-	prevCs01, ok := tendermint.GetPreviousConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height01)
+	prevCs01, ok := cardano.GetPreviousConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height01)
 	suite.Require().Nil(prevCs01, "consensus state exists before lowest consensus state")
 	suite.Require().False(ok)
-	prevCs49, ok := tendermint.GetPreviousConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height49)
+	prevCs49, ok := cardano.GetPreviousConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height49)
 	suite.Require().Equal(cs04, prevCs49, "previous consensus state is not returned correctly")
 	suite.Require().True(ok)
 
-	nextCs01, ok := tendermint.GetNextConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height01)
+	nextCs01, ok := cardano.GetNextConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height01)
 	suite.Require().Equal(cs04, nextCs01, "next consensus state not returned correctly")
 	suite.Require().True(ok)
-	nextCs49, ok := tendermint.GetNextConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height49)
+	nextCs49, ok := cardano.GetNextConsensusState(suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), "testClient"), suite.chainA.Codec, height49)
 	suite.Require().Nil(nextCs49, "next consensus state exists after highest consensus state")
 	suite.Require().False(ok)
+}
+
+func (suite *CardanoTestSuite) TestGetSetClientSPOs() {
+	var (
+		path *ibctesting.Path
+	)
+	suite.SetupTest()
+
+	path = NewPath(suite.chainA, suite.chainB)
+	SetupCardanoClientInCosmos(suite.coordinator, path)
+	clientStore := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
+	cardano.UpdateRegisterCert(clientStore, []cardano.RegisCert{
+		{RegisPoolId: "pool1", RegisPoolVrf: "pool1Vrf1"}, {RegisPoolId: "pool2", RegisPoolVrf: "pool2Vrf1"}, {RegisPoolId: "pool3", RegisPoolVrf: "pool3Vrf1"},
+	}, 3, 303387)
+
+	cardano.UpdateUnregisterCert(clientStore, []cardano.DeRegisCert{
+		{DeRegisPoolId: "pool1", DeRegisEpoch: "1"}, {DeRegisPoolId: "pool2", DeRegisEpoch: "1"},
+	}, 303387)
+	valSet := cardano.CalValidatorsNewEpoch(clientStore, 2, 3)
+	suite.Require().Equal(2, len(valSet))
+	heightTest := cardano.Height{
+		RevisionNumber: 0,
+		RevisionHeight: 303387,
+	}
+	_, found := cardano.GetProcessedHeight(clientStore, heightTest)
+	suite.Require().True(found)
 }

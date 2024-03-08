@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"go.uber.org/zap"

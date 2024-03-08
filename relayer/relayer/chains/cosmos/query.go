@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -378,7 +378,6 @@ func (cc *CosmosProvider) QueryTendermintProof(ctx context.Context, height int64
 	// Base app does not support queries for height less than or equal to 1.
 	// Therefore, a query at height 2 would be equivalent to a query at height 3.
 	// A height of 0 will query with the lastest state.
-	fmt.Println("QueryTendermintProof --- 1")
 	if height != 0 && height <= 2 {
 		return nil, nil, clienttypes.Height{}, fmt.Errorf("proof queries at height <= 2 are not supported")
 	}
@@ -396,13 +395,11 @@ func (cc *CosmosProvider) QueryTendermintProof(ctx context.Context, height int64
 		Prove:  true,
 	}
 
-	fmt.Println("QueryTendermintProof --- 2")
 	res, err := cc.QueryABCI(ctx, req)
 	if err != nil {
 		return nil, nil, clienttypes.Height{}, err
 	}
 
-	fmt.Println("QueryTendermintProof --- 3")
 	merkleProof, err := commitmenttypes.ConvertProofs(res.ProofOps)
 	if err != nil {
 		return nil, nil, clienttypes.Height{}, err
@@ -411,27 +408,18 @@ func (cc *CosmosProvider) QueryTendermintProof(ctx context.Context, height int64
 	cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
 
 	proofBz, err := cdc.Marshal(&merkleProof)
-	fmt.Println("QueryTendermintProof --- 4")
 	if err != nil {
 		return nil, nil, clienttypes.Height{}, err
 	}
 
-	fmt.Println("QueryTendermintProof --- 5")
 	revision := clienttypes.ParseChainID(cc.PCfg.ChainID)
-	fmt.Println("QueryTendermintProof --- 6")
-	fmt.Println("res value:", res.Value)
 	return res.Value, proofBz, clienttypes.NewHeight(revision, uint64(res.Height)+1), nil
 }
 
 // QueryClientStateResponse retrieves the latest consensus state for a client in state at a given height
 func (cc *CosmosProvider) QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error) {
 	key := host.FullClientStateKey(srcClientId)
-	fmt.Println("srcClientIdClientState: ", srcClientId)
 	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	fmt.Println("value: ", value)
-	fmt.Println("proofBz: ", proofBz)
-	fmt.Println("proofHeight: ", proofHeight)
-	fmt.Println("err: ", err)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +453,6 @@ func (cc *CosmosProvider) QueryClientStateResponse(ctx context.Context, height i
 func (cc *CosmosProvider) QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error) {
 	clientStateRes, err := cc.QueryClientStateResponse(ctx, height, clientid)
 	if err != nil {
-		fmt.Println("error QueryClientState: ", err)
 		return nil, err
 	}
 

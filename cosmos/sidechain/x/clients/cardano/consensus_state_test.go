@@ -1,90 +1,94 @@
 package cardano_test
 
 import (
+	"testing"
 	"time"
 
-	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
-	ibctm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
+	"github.com/stretchr/testify/require"
+
+	cardano "sidechain/x/clients/cardano"
 )
 
-func (suite *CardanoTestSuite) TestConsensusStateValidateBasic() {
+func TestConsensusStateValidateBasic(t *testing.T) {
 	testCases := []struct {
-		msg            string
-		consensusState *ibctm.ConsensusState
-		expectPass     bool
+		name           string
+		consensusState cardano.ConsensusState
+		expPass        bool
 	}{
 		{
-			"success",
-			&ibctm.ConsensusState{
-				Timestamp:          suite.now,
-				Root:               commitmenttypes.NewMerkleRoot([]byte("app_hash")),
-				NextValidatorsHash: suite.valsHash,
+			"Success: ConsensusState",
+			cardano.ConsensusState{
+				Timestamp: uint64(time.Now().UnixNano()),
+				Slot:      123,
 			},
 			true,
 		},
 		{
-			"success with sentinel",
-			&ibctm.ConsensusState{
-				Timestamp:          suite.now,
-				Root:               commitmenttypes.NewMerkleRoot([]byte(ibctm.SentinelRoot)),
-				NextValidatorsHash: suite.valsHash,
-			},
-			true,
-		},
-		{
-			"root is nil",
-			&ibctm.ConsensusState{
-				Timestamp:          suite.now,
-				Root:               commitmenttypes.MerkleRoot{},
-				NextValidatorsHash: suite.valsHash,
+			"Failed: ConsensusState with slot == 0",
+			cardano.ConsensusState{
+				Timestamp: uint64(time.Now().UnixNano()),
+				Slot:      0,
 			},
 			false,
 		},
 		{
-			"root is empty",
-			&ibctm.ConsensusState{
-				Timestamp:          suite.now,
-				Root:               commitmenttypes.MerkleRoot{},
-				NextValidatorsHash: suite.valsHash,
-			},
-			false,
-		},
-		{
-			"nextvalshash is invalid",
-			&ibctm.ConsensusState{
-				Timestamp:          suite.now,
-				Root:               commitmenttypes.NewMerkleRoot([]byte("app_hash")),
-				NextValidatorsHash: []byte("hi"),
-			},
-			false,
-		},
-
-		{
-			"timestamp is zero",
-			&ibctm.ConsensusState{
-				Timestamp:          time.Time{},
-				Root:               commitmenttypes.NewMerkleRoot([]byte("app_hash")),
-				NextValidatorsHash: suite.valsHash,
+			"Failed: ConsensusState with Timestamp == 0",
+			cardano.ConsensusState{
+				Timestamp: uint64(0),
+				Slot:      123,
 			},
 			false,
 		},
 	}
 
-	for i, tc := range testCases {
+	for _, tc := range testCases {
 		tc := tc
 
-		suite.Run(tc.msg, func() {
-			// check just to increase coverage
-			suite.Require().Equal(exported.Tendermint, tc.consensusState.ClientType())
-			suite.Require().Equal(tc.consensusState.GetRoot(), tc.consensusState.Root)
-
-			err := tc.consensusState.ValidateBasic()
-			if tc.expectPass {
-				suite.Require().NoError(err, "valid test case %d failed: %s", i, tc.msg)
+		t.Run(tc.name, func(t *testing.T) {
+			cs := tc.consensusState
+			err := cs.ValidateBasic()
+			if tc.expPass {
+				require.NoError(t, err)
 			} else {
-				suite.Require().Error(err, "invalid test case %d passed: %s", i, tc.msg)
+				require.Error(t, err)
 			}
+		})
+	}
+}
+
+func TestConsensusStateTime(t *testing.T) {
+	testCases := []struct {
+		name           string
+		consensusState cardano.ConsensusState
+		expTimeStamp   uint64
+		expTime        time.Time
+		expSlot        uint64
+		expClientType  string
+	}{
+		{
+			"Success: ConsensusState",
+			cardano.ConsensusState{
+				Timestamp: 1707122673,
+				Slot:      123,
+			},
+			1707122673 * 1e9,
+			time.Unix(1707122673, 0),
+			123,
+			cardano.ModuleName,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			cs := tc.consensusState
+			timestamp := cs.GetTimestamp()
+			cs_time := cs.GetTime()
+			require.Equal(t, tc.expTimeStamp, timestamp)
+			require.Equal(t, tc.expTime, cs_time)
+			require.Equal(t, tc.expSlot, cs.GetSlot())
+			require.Equal(t, tc.expClientType, cs.ClientType())
 		})
 	}
 }

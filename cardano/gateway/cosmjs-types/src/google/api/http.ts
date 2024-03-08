@@ -10,7 +10,7 @@ export const protobufPackage = "google.api";
 export interface Http {
   /**
    * A list of HTTP configuration rules that apply to individual API methods.
-   *
+   * 
    * **NOTE:** All service configuration rules follow "last one wins" order.
    */
   rules: HttpRule[];
@@ -18,7 +18,7 @@ export interface Http {
    * When set to true, URL path parameters will be fully URI-decoded except in
    * cases of single segment matches in reserved expansion, where "%2F" will be
    * left encoded.
-   *
+   * 
    * The default behavior is to not decode RFC 6570 reserved characters in multi
    * segment matches.
    */
@@ -26,7 +26,7 @@ export interface Http {
 }
 /**
  * # gRPC Transcoding
- *
+ * 
  * gRPC Transcoding is a feature for mapping between a gRPC method and one or
  * more HTTP REST endpoints. It allows developers to build a single API service
  * that supports both gRPC APIs and REST APIs. Many systems, including [Google
@@ -35,21 +35,21 @@ export interface Http {
  * Gateway](https://github.com/grpc-ecosystem/grpc-gateway),
  * and [Envoy](https://github.com/envoyproxy/envoy) proxy support this feature
  * and use it for large scale production services.
- *
+ * 
  * `HttpRule` defines the schema of the gRPC/REST mapping. The mapping specifies
  * how different portions of the gRPC request message are mapped to the URL
  * path, URL query parameters, and HTTP request body. It also controls how the
  * gRPC response message is mapped to the HTTP response body. `HttpRule` is
  * typically specified as an `google.api.http` annotation on the gRPC method.
- *
+ * 
  * Each mapping specifies a URL path template and an HTTP method. The path
  * template may refer to one or more fields in the gRPC request message, as long
  * as each field is a non-repeated field with a primitive (non-message) type.
  * The path template controls how fields of the request message are mapped to
  * the URL path.
- *
+ * 
  * Example:
- *
+ * 
  *     service Messaging {
  *       rpc GetMessage(GetMessageRequest) returns (Message) {
  *         option (google.api.http) = {
@@ -63,17 +63,17 @@ export interface Http {
  *     message Message {
  *       string text = 1; // The resource content.
  *     }
- *
+ * 
  * This enables an HTTP REST to gRPC mapping as below:
- *
+ * 
  * HTTP | gRPC
  * -----|-----
  * `GET /v1/messages/123456`  | `GetMessage(name: "messages/123456")`
- *
+ * 
  * Any fields in the request message which are not bound by the path template
  * automatically become HTTP query parameters if there is no HTTP request body.
  * For example:
- *
+ * 
  *     service Messaging {
  *       rpc GetMessage(GetMessageRequest) returns (Message) {
  *         option (google.api.http) = {
@@ -89,26 +89,26 @@ export interface Http {
  *       int64 revision = 2;    // Mapped to URL query parameter `revision`.
  *       SubMessage sub = 3;    // Mapped to URL query parameter `sub.subfield`.
  *     }
- *
+ * 
  * This enables a HTTP JSON to RPC mapping as below:
- *
+ * 
  * HTTP | gRPC
  * -----|-----
  * `GET /v1/messages/123456?revision=2&sub.subfield=foo` |
  * `GetMessage(message_id: "123456" revision: 2 sub: SubMessage(subfield:
  * "foo"))`
- *
+ * 
  * Note that fields which are mapped to URL query parameters must have a
  * primitive type or a repeated primitive type or a non-repeated message type.
  * In the case of a repeated type, the parameter can be repeated in the URL
  * as `...?param=A&param=B`. In the case of a message type, each field of the
  * message is mapped to a separate parameter, such as
  * `...?foo.a=A&foo.b=B&foo.c=C`.
- *
+ * 
  * For HTTP methods that allow a request body, the `body` field
  * specifies the mapping. Consider a REST update method on the
  * message resource collection:
- *
+ * 
  *     service Messaging {
  *       rpc UpdateMessage(UpdateMessageRequest) returns (Message) {
  *         option (google.api.http) = {
@@ -121,21 +121,21 @@ export interface Http {
  *       string message_id = 1; // mapped to the URL
  *       Message message = 2;   // mapped to the body
  *     }
- *
+ * 
  * The following HTTP JSON to RPC mapping is enabled, where the
  * representation of the JSON in the request body is determined by
  * protos JSON encoding:
- *
+ * 
  * HTTP | gRPC
  * -----|-----
  * `PATCH /v1/messages/123456 { "text": "Hi!" }` | `UpdateMessage(message_id:
  * "123456" message { text: "Hi!" })`
- *
+ * 
  * The special name `*` can be used in the body mapping to define that
  * every field not bound by the path template should be mapped to the
  * request body.  This enables the following alternative definition of
  * the update method:
- *
+ * 
  *     service Messaging {
  *       rpc UpdateMessage(Message) returns (Message) {
  *         option (google.api.http) = {
@@ -148,24 +148,24 @@ export interface Http {
  *       string message_id = 1;
  *       string text = 2;
  *     }
- *
- *
+ * 
+ * 
  * The following HTTP JSON to RPC mapping is enabled:
- *
+ * 
  * HTTP | gRPC
  * -----|-----
  * `PATCH /v1/messages/123456 { "text": "Hi!" }` | `UpdateMessage(message_id:
  * "123456" text: "Hi!")`
- *
+ * 
  * Note that when using `*` in the body mapping, it is not possible to
  * have HTTP parameters, as all fields not bound by the path end in
  * the body. This makes this option more rarely used in practice when
  * defining REST APIs. The common usage of `*` is in custom methods
  * which don't use the URL at all for transferring data.
- *
+ * 
  * It is possible to define multiple HTTP methods for one RPC by using
  * the `additional_bindings` option. Example:
- *
+ * 
  *     service Messaging {
  *       rpc GetMessage(GetMessageRequest) returns (Message) {
  *         option (google.api.http) = {
@@ -180,17 +180,17 @@ export interface Http {
  *       string message_id = 1;
  *       string user_id = 2;
  *     }
- *
+ * 
  * This enables the following two alternative HTTP JSON to RPC mappings:
- *
+ * 
  * HTTP | gRPC
  * -----|-----
  * `GET /v1/messages/123456` | `GetMessage(message_id: "123456")`
  * `GET /v1/users/me/messages/123456` | `GetMessage(user_id: "me" message_id:
  * "123456")`
- *
+ * 
  * ## Rules for HTTP mapping
- *
+ * 
  * 1. Leaf request fields (recursive expansion nested messages in the request
  *    message) are classified into three categories:
  *    - Fields referred by the path template. They are passed via the URL path.
@@ -204,29 +204,29 @@ export interface Http {
  *     are passed via URL path and HTTP request body.
  *  3. If [HttpRule.body][google.api.HttpRule.body] is omitted, there is no HTTP request body, all
  *     fields are passed via URL path and URL query parameters.
- *
+ * 
  * ### Path template syntax
- *
+ * 
  *     Template = "/" Segments [ Verb ] ;
  *     Segments = Segment { "/" Segment } ;
  *     Segment  = "*" | "**" | LITERAL | Variable ;
  *     Variable = "{" FieldPath [ "=" Segments ] "}" ;
  *     FieldPath = IDENT { "." IDENT } ;
  *     Verb     = ":" LITERAL ;
- *
+ * 
  * The syntax `*` matches a single URL path segment. The syntax `**` matches
  * zero or more URL path segments, which must be the last part of the URL path
  * except the `Verb`.
- *
+ * 
  * The syntax `Variable` matches part of the URL path as specified by its
  * template. A variable template must not contain other variables. If a variable
  * matches a single path segment, its template may be omitted, e.g. `{var}`
  * is equivalent to `{var=*}`.
- *
+ * 
  * The syntax `LITERAL` matches literal text in the URL path. If the `LITERAL`
  * contains any reserved character, such characters should be percent-encoded
  * before the matching.
- *
+ * 
  * If a variable contains exactly one path segment, such as `"{var}"` or
  * `"{var=*}"`, when such a variable is expanded into a URL path on the client
  * side, all characters except `[-_.~0-9a-zA-Z]` are percent-encoded. The
@@ -234,7 +234,7 @@ export interface Http {
  * [Discovery
  * Document](https://developers.google.com/discovery/v1/reference/apis) as
  * `{var}`.
- *
+ * 
  * If a variable contains multiple path segments, such as `"{var=foo/*}"`
  * or `"{var=**}"`, when such a variable is expanded into a URL path on the
  * client side, all characters except `[-_.~/0-9a-zA-Z]` are percent-encoded.
@@ -243,14 +243,14 @@ export interface Http {
  * [Discovery
  * Document](https://developers.google.com/discovery/v1/reference/apis) as
  * `{+var}`.
- *
+ * 
  * ## Using gRPC API Service Configuration
- *
+ * 
  * gRPC API Service Configuration (service config) is a configuration language
  * for configuring a gRPC service to become a user-facing product. The
  * service config is simply the YAML representation of the `google.api.Service`
  * proto message.
- *
+ * 
  * As an alternative to annotating your proto file, you can configure gRPC
  * transcoding in your service config YAML files. You do this by specifying a
  * `HttpRule` that maps the gRPC method to a REST endpoint, achieving the same
@@ -258,21 +258,21 @@ export interface Http {
  * have a proto that is reused in multiple services. Note that any transcoding
  * specified in the service config will override any matching transcoding
  * configuration in the proto.
- *
+ * 
  * Example:
- *
+ * 
  *     http:
  *       rules:
  *         # Selects a gRPC method and applies HttpRule to it.
  *         - selector: example.v1.Messaging.GetMessage
  *           get: /v1/messages/{message_id}/{sub.subfield}
- *
+ * 
  * ## Special notes
- *
+ * 
  * When gRPC Transcoding is used to map a gRPC to JSON REST endpoints, the
  * proto to JSON conversion must follow the [proto3
  * specification](https://developers.google.com/protocol-buffers/docs/proto3#json).
- *
+ * 
  * While the single segment variable follows the semantics of
  * [RFC 6570](https://tools.ietf.org/html/rfc6570) Section 3.2.2 Simple String
  * Expansion, the multi segment variable **does not** follow RFC 6570 Section
@@ -280,17 +280,17 @@ export interface Http {
  * does not expand special characters like `?` and `#`, which would lead
  * to invalid URLs. As the result, gRPC Transcoding uses a custom encoding
  * for multi segment variables.
- *
+ * 
  * The path variables **must not** refer to any repeated or mapped field,
  * because client libraries are not capable of handling such variable expansion.
- *
+ * 
  * The path variables **must not** capture the leading "/" character. The reason
  * is that the most common use case "{var}" does not capture the leading "/"
  * character. For consistency, all path variables must share the same behavior.
- *
+ * 
  * Repeated message fields must not be mapped to URL query parameters, because
  * no client library can support such complicated mapping.
- *
+ * 
  * If an API needs to use a JSON array for request or response body, it can map
  * the request or response body to a repeated field. However, some gRPC
  * Transcoding implementations may not support this feature.
@@ -298,7 +298,7 @@ export interface Http {
 export interface HttpRule {
   /**
    * Selects a method to which this rule applies.
-   *
+   * 
    * Refer to [selector][google.api.DocumentationRule.selector] for syntax details.
    */
   selector: string;
@@ -326,7 +326,7 @@ export interface HttpRule {
    * The name of the request field whose value is mapped to the HTTP request
    * body, or `*` for mapping all request fields not captured by the path
    * pattern to the HTTP body, or omitted for not having any HTTP request body.
-   *
+   * 
    * NOTE: the referred field must be present at the top-level of the request
    * message type.
    */
@@ -335,7 +335,7 @@ export interface HttpRule {
    * Optional. The name of the response field whose value is mapped to the HTTP
    * response body. When omitted, the entire response message will be used
    * as the HTTP response body.
-   *
+   * 
    * NOTE: The referred field must be present at the top-level of the response
    * message type.
    */
@@ -357,7 +357,7 @@ export interface CustomHttpPattern {
 function createBaseHttp(): Http {
   return {
     rules: [],
-    fully_decode_reserved_expansion: false,
+    fully_decode_reserved_expansion: false
   };
 }
 export const Http = {
@@ -394,27 +394,25 @@ export const Http = {
   fromJSON(object: any): Http {
     const obj = createBaseHttp();
     if (Array.isArray(object?.rules)) obj.rules = object.rules.map((e: any) => HttpRule.fromJSON(e));
-    if (isSet(object.fully_decode_reserved_expansion))
-      obj.fully_decode_reserved_expansion = Boolean(object.fully_decode_reserved_expansion);
+    if (isSet(object.fully_decode_reserved_expansion)) obj.fully_decode_reserved_expansion = Boolean(object.fully_decode_reserved_expansion);
     return obj;
   },
   toJSON(message: Http): unknown {
     const obj: any = {};
     if (message.rules) {
-      obj.rules = message.rules.map((e) => (e ? HttpRule.toJSON(e) : undefined));
+      obj.rules = message.rules.map(e => e ? HttpRule.toJSON(e) : undefined);
     } else {
       obj.rules = [];
     }
-    message.fully_decode_reserved_expansion !== undefined &&
-      (obj.fully_decode_reserved_expansion = message.fully_decode_reserved_expansion);
+    message.fully_decode_reserved_expansion !== undefined && (obj.fully_decode_reserved_expansion = message.fully_decode_reserved_expansion);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Http>, I>>(object: I): Http {
     const message = createBaseHttp();
-    message.rules = object.rules?.map((e) => HttpRule.fromPartial(e)) || [];
+    message.rules = object.rules?.map(e => HttpRule.fromPartial(e)) || [];
     message.fully_decode_reserved_expansion = object.fully_decode_reserved_expansion ?? false;
     return message;
-  },
+  }
 };
 function createBaseHttpRule(): HttpRule {
   return {
@@ -427,7 +425,7 @@ function createBaseHttpRule(): HttpRule {
     custom: undefined,
     body: "",
     response_body: "",
-    additional_bindings: [],
+    additional_bindings: []
   };
 }
 export const HttpRule = {
@@ -520,8 +518,7 @@ export const HttpRule = {
     if (isSet(object.custom)) obj.custom = CustomHttpPattern.fromJSON(object.custom);
     if (isSet(object.body)) obj.body = String(object.body);
     if (isSet(object.response_body)) obj.response_body = String(object.response_body);
-    if (Array.isArray(object?.additional_bindings))
-      obj.additional_bindings = object.additional_bindings.map((e: any) => HttpRule.fromJSON(e));
+    if (Array.isArray(object?.additional_bindings)) obj.additional_bindings = object.additional_bindings.map((e: any) => HttpRule.fromJSON(e));
     return obj;
   },
   toJSON(message: HttpRule): unknown {
@@ -532,12 +529,11 @@ export const HttpRule = {
     message.post !== undefined && (obj.post = message.post);
     message.delete !== undefined && (obj.delete = message.delete);
     message.patch !== undefined && (obj.patch = message.patch);
-    message.custom !== undefined &&
-      (obj.custom = message.custom ? CustomHttpPattern.toJSON(message.custom) : undefined);
+    message.custom !== undefined && (obj.custom = message.custom ? CustomHttpPattern.toJSON(message.custom) : undefined);
     message.body !== undefined && (obj.body = message.body);
     message.response_body !== undefined && (obj.response_body = message.response_body);
     if (message.additional_bindings) {
-      obj.additional_bindings = message.additional_bindings.map((e) => (e ? HttpRule.toJSON(e) : undefined));
+      obj.additional_bindings = message.additional_bindings.map(e => e ? HttpRule.toJSON(e) : undefined);
     } else {
       obj.additional_bindings = [];
     }
@@ -556,14 +552,14 @@ export const HttpRule = {
     }
     message.body = object.body ?? "";
     message.response_body = object.response_body ?? "";
-    message.additional_bindings = object.additional_bindings?.map((e) => HttpRule.fromPartial(e)) || [];
+    message.additional_bindings = object.additional_bindings?.map(e => HttpRule.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseCustomHttpPattern(): CustomHttpPattern {
   return {
     kind: "",
-    path: "",
+    path: ""
   };
 }
 export const CustomHttpPattern = {
@@ -614,5 +610,5 @@ export const CustomHttpPattern = {
     message.kind = object.kind ?? "";
     message.path = object.path ?? "";
     return message;
-  },
+  }
 };

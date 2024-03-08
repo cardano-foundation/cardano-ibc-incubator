@@ -1,10 +1,10 @@
 package cardano
 
 import (
-	cosmosmodule "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/module"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
-	ethermintcodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	injectivecodecs "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/injective"
+	cosmosmodule "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
+	ethermintcodecs "github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	injectivecodecs "github.com/cardano/relayer/v1/relayer/codecs/injective"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"

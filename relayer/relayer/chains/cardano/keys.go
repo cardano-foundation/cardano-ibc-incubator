@@ -3,15 +3,16 @@ package cardano
 import (
 	"context"
 	"errors"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/keys/sr25519"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/injective"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"os"
+
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/keys/sr25519"
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/codecs/injective"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
-	"os"
 )
 
 const ethereumCoinType = uint32(60)
@@ -84,8 +85,11 @@ func (cc *CardanoProvider) UseKey(key string) error {
 // RestoreKey converts a mnemonic to a private key and BIP-39 HD Path and persists it to the keystore.
 // It fails if there is an existing key with the same address.
 func (cc *CardanoProvider) RestoreKey(name, mnemonic string, coinType uint32, signingAlgorithm string) (address string, err error) {
-	// Not implement for Cardano Chain
-	return "", nil
+	address, err = cc.TxCardano.RestoreKey(context.Background(), name, cc.PCfg.ChainID, mnemonic)
+	if err != nil {
+		return "", err
+	}
+	return address, nil
 }
 
 // KeyAddOrRestore either generates a new mnemonic or uses the specified mnemonic and converts it to a private key

@@ -9,18 +9,18 @@ export const protobufPackage = "google.protobuf";
  * or "month". It is related to Timestamp in that the difference between
  * two Timestamp values is a Duration and it can be added or subtracted
  * from a Timestamp. Range is approximately +-10,000 years.
- *
+ * 
  * # Examples
- *
+ * 
  * Example 1: Compute Duration from two Timestamps in pseudo code.
- *
+ * 
  *     Timestamp start = ...;
  *     Timestamp end = ...;
  *     Duration duration = ...;
- *
+ * 
  *     duration.seconds = end.seconds - start.seconds;
  *     duration.nanos = end.nanos - start.nanos;
- *
+ * 
  *     if (duration.seconds < 0 && duration.nanos > 0) {
  *       duration.seconds += 1;
  *       duration.nanos -= 1000000000;
@@ -28,16 +28,16 @@ export const protobufPackage = "google.protobuf";
  *       duration.seconds -= 1;
  *       duration.nanos += 1000000000;
  *     }
- *
+ * 
  * Example 2: Compute Timestamp from Timestamp + Duration in pseudo code.
- *
+ * 
  *     Timestamp start = ...;
  *     Duration duration = ...;
  *     Timestamp end = ...;
- *
+ * 
  *     end.seconds = start.seconds + duration.seconds;
  *     end.nanos = start.nanos + duration.nanos;
- *
+ * 
  *     if (end.nanos < 0) {
  *       end.seconds -= 1;
  *       end.nanos += 1000000000;
@@ -45,15 +45,15 @@ export const protobufPackage = "google.protobuf";
  *       end.seconds += 1;
  *       end.nanos -= 1000000000;
  *     }
- *
+ * 
  * Example 3: Compute Duration from datetime.timedelta in Python.
- *
+ * 
  *     td = datetime.timedelta(days=3, minutes=10)
  *     duration = Duration()
  *     duration.FromTimedelta(td)
- *
+ * 
  * # JSON Mapping
- *
+ * 
  * In JSON format, the Duration type is encoded as a string rather than an
  * object, where the string ends in the suffix "s" (indicating seconds) and
  * is preceded by the number of seconds, with nanoseconds expressed as
@@ -82,7 +82,7 @@ export interface Duration {
 function createBaseDuration(): Duration {
   return {
     seconds: BigInt(0),
-    nanos: 0,
+    nanos: 0
   };
 }
 export const Duration = {
@@ -135,5 +135,5 @@ export const Duration = {
     }
     message.nanos = object.nanos ?? 0;
     return message;
-  },
+  }
 };

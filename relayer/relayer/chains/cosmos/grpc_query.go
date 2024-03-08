@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	gogogrpc "github.com/cosmos/gogoproto/grpc"
 	"google.golang.org/grpc"

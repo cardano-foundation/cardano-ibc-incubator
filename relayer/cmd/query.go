@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -1146,8 +1146,6 @@ $ %s query clients-expiration demo-path`,
 			if err = c[dst].SetPath(path.Dst); err != nil {
 				return err
 			}
-			// TODO: uncomment
-			return nil
 
 			srcExpiration, srcClientInfo, errSrc := relayer.QueryClientExpiration(cmd.Context(), c[src], c[dst])
 			if errSrc != nil && !strings.Contains(errSrc.Error(), "light client not found") {

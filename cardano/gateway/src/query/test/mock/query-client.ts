@@ -1,0 +1,41 @@
+const queryClientMock = {
+  genesisConfig: {
+    systemStart: '2024-01-22T07:31:04Z',
+    networkMagic: 42,
+    network: 'testnet',
+    activeSlotsCoefficient: '1/4',
+    securityParameter: 2160,
+    epochLength: 432000,
+    slotsPerKesPeriod: 129600,
+    maxKesEvolutions: 60,
+    slotLength: 1,
+    updateQuorum: 2,
+    maxLovelaceSupply: 2000000000000,
+    protocolParameters: {
+      minFeeCoefficient: 44,
+      minFeeConstant: 155381,
+      maxBlockBodySize: 65536,
+      maxBlockHeaderSize: 1100,
+      maxTxSize: 16384,
+      stakeKeyDeposit: 0,
+      poolDeposit: 0,
+      poolRetirementEpochBound: 18,
+      desiredNumberOfPools: 100,
+      poolInfluence: '0/1',
+      monetaryExpansion: '1/10',
+      treasuryExpansion: '1/10',
+      decentralizationParameter: '0/1',
+      extraEntropy: 'neutral',
+      protocolVersion: {
+        major: 7,
+        minor: 0,
+      },
+      minUtxoValue: 0,
+      minPoolCost: 0,
+    },
+  },
+  blockHeight: 650879n,
+  systemStart: new Date('Mon Jan 22 2024 14:31:04 GMT+0700 (Indochina Time)'),
+};
+
+export { queryClientMock };

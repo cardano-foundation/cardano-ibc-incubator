@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/cmd"
+	"github.com/cardano/relayer/v1/cmd"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"

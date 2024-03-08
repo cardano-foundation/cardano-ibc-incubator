@@ -1,6 +1,6 @@
-import { ClientState as ClientStateTendermint } from 'cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
-import { bytesFromBase64, toDuration } from 'cosmjs-types/src/helpers';
-import { hashOpFromJSON, lengthOpFromJSON } from 'cosmjs-types/src/cosmos/ics23/v1/proofs';
+import { ClientState as ClientStateTendermint } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { bytesFromBase64, toDuration } from '@cosmjs-types/src/helpers';
+import { hashOpFromJSON, lengthOpFromJSON } from '@cosmjs-types/src/cosmos/ics23/v1/proofs';
 import { ClientState } from '../types/client-state-types';
 
 export function normalizeClientStateFromDatum(clientState: ClientState): ClientStateTendermint {

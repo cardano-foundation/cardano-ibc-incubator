@@ -19,12 +19,65 @@ Your blockchain in development can be configured with `config.yml`.
 ```sh
 sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
 
-./sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from `./sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --dry-run 
+sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from `./sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --dry-run
 
 Update client
-Est : sidechaind tx ibc client update "099-cardano-0" ./exampleCall/updateClient.json --from `sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --dry-run
+Estimate gas : sidechaind tx ibc client update "099-cardano-0" ./exampleCall/updateClient.json --from `sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --dry-run
+
+then append `--gas XXX` to the command below
+
 Exec : sidechaind tx ibc client update "099-cardano-0" ./exampleCall/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
 
 Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states" -H  "accept: application/json"
 
 ```
+
+## Debug with vs code
+
+<https://docs.ignite.com/guide/debug#visual-studio-code>
+
+```sh
+ignite chain debug --server --server-address 127.0.0.1:30500
+```
+
+## Regis a validator
+
+```sh
+This script will connect to your current docker and regis a new validator
+
+Run this to check we only have 1 validator: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
+
+Run this to regis new validator: cd scripts/ && ./regis-spo.sh
+
+Run this to check we now have 2 validators: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
+
+```
+
+## DeRegis a validator
+
+```sh
+Stop the running script above, then wait for about 100 blocks (~2 mins), then check we only have 1 validator: 
+
+curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
+
+```
+
+### Test call update client with de/register Cert
+
+```sh
+sidechaind tx ibc client create ./exampleCall/testSPO/client.json ./exampleCall/testSPO/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+
+Update client
+
+Replace "099-cardano-0" with client-id we\'ve created above
+
+Exec with regis cert: sidechaind tx ibc client update "099-cardano-0" ./exampleCall/testSPO/regisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
+
+Exec with deregis cert: sidechaind tx ibc client update "099-cardano-0" ./exampleCall/testSPO/deregisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
+
+Verify: curl -X GET "http://localhost:1317/cosmos/tx/v1beta1/txs/{tx id got from exec}" -H  "accept: application/json"
+
+Check if there is a key: register-cert or unregister-cert
+```
+
+## Check on the Mainchain: TBD

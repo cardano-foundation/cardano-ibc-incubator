@@ -90,7 +90,7 @@ export interface ScalarDescriptor {
 function createBaseInterfaceDescriptor(): InterfaceDescriptor {
   return {
     name: "",
-    description: "",
+    description: ""
   };
 }
 export const InterfaceDescriptor = {
@@ -141,13 +141,13 @@ export const InterfaceDescriptor = {
     message.name = object.name ?? "";
     message.description = object.description ?? "";
     return message;
-  },
+  }
 };
 function createBaseScalarDescriptor(): ScalarDescriptor {
   return {
     name: "",
     description: "",
-    field_type: [],
+    field_type: []
   };
 }
 export const ScalarDescriptor = {
@@ -183,10 +183,10 @@ export const ScalarDescriptor = {
           if ((tag & 7) === 2) {
             const end2 = reader.uint32() + reader.pos;
             while (reader.pos < end2) {
-              message.field_type.push(reader.int32() as any);
+              message.field_type.push((reader.int32() as any));
             }
           } else {
-            message.field_type.push(reader.int32() as any);
+            message.field_type.push((reader.int32() as any));
           }
           break;
         default:
@@ -200,8 +200,7 @@ export const ScalarDescriptor = {
     const obj = createBaseScalarDescriptor();
     if (isSet(object.name)) obj.name = String(object.name);
     if (isSet(object.description)) obj.description = String(object.description);
-    if (Array.isArray(object?.field_type))
-      obj.field_type = object.field_type.map((e: any) => scalarTypeFromJSON(e));
+    if (Array.isArray(object?.field_type)) obj.field_type = object.field_type.map((e: any) => scalarTypeFromJSON(e));
     return obj;
   },
   toJSON(message: ScalarDescriptor): unknown {
@@ -209,7 +208,7 @@ export const ScalarDescriptor = {
     message.name !== undefined && (obj.name = message.name);
     message.description !== undefined && (obj.description = message.description);
     if (message.field_type) {
-      obj.field_type = message.field_type.map((e) => scalarTypeToJSON(e));
+      obj.field_type = message.field_type.map(e => scalarTypeToJSON(e));
     } else {
       obj.field_type = [];
     }
@@ -219,7 +218,7 @@ export const ScalarDescriptor = {
     const message = createBaseScalarDescriptor();
     message.name = object.name ?? "";
     message.description = object.description ?? "";
-    message.field_type = object.field_type?.map((e) => e) || [];
+    message.field_type = object.field_type?.map(e => e) || [];
     return message;
-  },
+  }
 };

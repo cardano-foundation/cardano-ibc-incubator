@@ -27,7 +27,7 @@ function createBaseAllocation(): Allocation {
     source_port: "",
     source_channel: "",
     spend_limit: [],
-    allow_list: [],
+    allow_list: []
   };
 }
 export const Allocation = {
@@ -77,8 +77,7 @@ export const Allocation = {
     const obj = createBaseAllocation();
     if (isSet(object.source_port)) obj.source_port = String(object.source_port);
     if (isSet(object.source_channel)) obj.source_channel = String(object.source_channel);
-    if (Array.isArray(object?.spend_limit))
-      obj.spend_limit = object.spend_limit.map((e: any) => Coin.fromJSON(e));
+    if (Array.isArray(object?.spend_limit)) obj.spend_limit = object.spend_limit.map((e: any) => Coin.fromJSON(e));
     if (Array.isArray(object?.allow_list)) obj.allow_list = object.allow_list.map((e: any) => String(e));
     return obj;
   },
@@ -87,12 +86,12 @@ export const Allocation = {
     message.source_port !== undefined && (obj.source_port = message.source_port);
     message.source_channel !== undefined && (obj.source_channel = message.source_channel);
     if (message.spend_limit) {
-      obj.spend_limit = message.spend_limit.map((e) => (e ? Coin.toJSON(e) : undefined));
+      obj.spend_limit = message.spend_limit.map(e => e ? Coin.toJSON(e) : undefined);
     } else {
       obj.spend_limit = [];
     }
     if (message.allow_list) {
-      obj.allow_list = message.allow_list.map((e) => e);
+      obj.allow_list = message.allow_list.map(e => e);
     } else {
       obj.allow_list = [];
     }
@@ -102,14 +101,14 @@ export const Allocation = {
     const message = createBaseAllocation();
     message.source_port = object.source_port ?? "";
     message.source_channel = object.source_channel ?? "";
-    message.spend_limit = object.spend_limit?.map((e) => Coin.fromPartial(e)) || [];
-    message.allow_list = object.allow_list?.map((e) => e) || [];
+    message.spend_limit = object.spend_limit?.map(e => Coin.fromPartial(e)) || [];
+    message.allow_list = object.allow_list?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseTransferAuthorization(): TransferAuthorization {
   return {
-    allocations: [],
+    allocations: []
   };
 }
 export const TransferAuthorization = {
@@ -139,14 +138,13 @@ export const TransferAuthorization = {
   },
   fromJSON(object: any): TransferAuthorization {
     const obj = createBaseTransferAuthorization();
-    if (Array.isArray(object?.allocations))
-      obj.allocations = object.allocations.map((e: any) => Allocation.fromJSON(e));
+    if (Array.isArray(object?.allocations)) obj.allocations = object.allocations.map((e: any) => Allocation.fromJSON(e));
     return obj;
   },
   toJSON(message: TransferAuthorization): unknown {
     const obj: any = {};
     if (message.allocations) {
-      obj.allocations = message.allocations.map((e) => (e ? Allocation.toJSON(e) : undefined));
+      obj.allocations = message.allocations.map(e => e ? Allocation.toJSON(e) : undefined);
     } else {
       obj.allocations = [];
     }
@@ -154,7 +152,7 @@ export const TransferAuthorization = {
   },
   fromPartial<I extends Exact<DeepPartial<TransferAuthorization>, I>>(object: I): TransferAuthorization {
     const message = createBaseTransferAuthorization();
-    message.allocations = object.allocations?.map((e) => Allocation.fromPartial(e)) || [];
+    message.allocations = object.allocations?.map(e => Allocation.fromPartial(e)) || [];
     return message;
-  },
+  }
 };

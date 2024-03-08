@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
-	//"git02.smartosc.com/cardano/ibc-sidechain/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	//"github.com/cardano/relayer/v1/chains/cosmos"
 	"github.com/spf13/cobra"
 )
 

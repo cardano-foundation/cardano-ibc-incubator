@@ -1,51 +1,39 @@
-export const configTemplate: {
+import { UTxO } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+
+type Validator =
+  | "spendHandler"
+  | "mintClient"
+  | "spendClient"
+  | "mintConnection"
+  | "spendConnection"
+  | "mintChannel"
+  | "spendChannel"
+  | "mintPort"
+  | "mintIdentifier"
+  | "spendMockModule";
+
+type Module = "handler" | "mock";
+
+export type DeploymentTemplate = {
   validators: Record<
-    string,
-    { title: string; script: string; scriptHash: string; address: string }
+    Validator,
+    {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    }
   >;
-  nonceUtxo: {
-    txHash: string;
-    outputIndex: number;
-  };
   handlerAuthToken: {
     policyId: string;
     name: string;
   };
-} = {
-  validators: {
-    spendHandler: {
-      title: "",
-      script: "",
-      scriptHash: "",
-      address: "",
-    },
-    spendClient: {
-      title: "",
-      script: "",
-      scriptHash: "",
-      address: "",
-    },
-    mintHandler: {
-      title: "",
-      script: "",
-      scriptHash: "",
-      address: "",
-    },
-    mintClient: {
-      title: "",
-      script: "",
-      scriptHash: "",
-      address: "",
-    },
-  },
-  nonceUtxo: {
-    txHash: "",
-    outputIndex: 0,
-  },
-  handlerAuthToken: {
-    policyId: "",
-    name: "",
-  },
-} as const;
-
-export type ConfigTemplate = typeof configTemplate;
+  modules: Record<
+    Module,
+    {
+      identifier: string;
+      address: string;
+    }
+  >;
+};

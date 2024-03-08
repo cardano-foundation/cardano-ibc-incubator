@@ -2,10 +2,8 @@ use aiken/dict.{Dict}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/header.{Header}
-
-pub const client_token_prefix = "client"
+use ibc/client/ics_007_tendermint_client/height.{Height}
 
 pub type ClientDatum {
   state: ClientDatumState,

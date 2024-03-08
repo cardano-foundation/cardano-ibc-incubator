@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package tx;
+
+message SignAndSubmitTxRequest {
+  string chain_id = 1;
+  bytes transaction_hex_string = 2;
+}
+
+message SignAndSubmitTxResponse {
+  string transaction_id = 1;
+}
+
+service TransactionService {
+  rpc SignAndSubmitTx(SignAndSubmitTxRequest) returns (SignAndSubmitTxResponse) {};
+}

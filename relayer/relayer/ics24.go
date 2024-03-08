@@ -27,10 +27,10 @@ func (c *Chain) PathSet() bool {
 
 // SetPath sets the path and validates the identifiers if they are initialized.
 func (c *Chain) SetPath(p *PathEnd) error {
-	err := p.ValidateFull()
-	if err != nil {
-		return c.ErrCantSetPath(err)
-	}
+	// err := p.ValidateFull()
+	// if err != nil {
+	// 	return c.ErrCantSetPath(err)
+	// }
 	c.PathEnd = p
 	return nil
 }

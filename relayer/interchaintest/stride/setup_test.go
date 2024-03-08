@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	rlystride "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
 	"github.com/cosmos/cosmos-sdk/types/module/testutil"
-	rlystride "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
 	"github.com/icza/dyno"
 	"github.com/strangelove-ventures/interchaintest/v7/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"

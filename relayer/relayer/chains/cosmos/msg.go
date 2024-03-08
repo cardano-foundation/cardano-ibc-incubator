@@ -3,10 +3,10 @@ package cosmos
 import (
 	"fmt"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -17,10 +17,13 @@ type CosmosMessage struct {
 }
 
 func NewCosmosMessage(msg sdk.Msg, optionalSetSigner func(string)) provider.RelayerMessage {
-	return CosmosMessage{
+	cm := CosmosMessage{
 		Msg:       msg,
 		SetSigner: optionalSetSigner,
 	}
+
+	rm := provider.RelayerMessage(cm)
+	return rm
 }
 
 func CosmosMsg(rm provider.RelayerMessage) sdk.Msg {

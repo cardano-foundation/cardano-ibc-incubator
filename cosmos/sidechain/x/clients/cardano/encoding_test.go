@@ -1,29 +1,51 @@
-package cardano
+package cardano_test
 
 import (
-	"fmt"
+	"reflect"
 	"testing"
+
+	cardano "sidechain/x/clients/cardano"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestMarshalInterface(t *testing.T) {
-	return
-}
-
-func TestUnmarshalInterface(t *testing.T) {
-	i := []RegisCert{
+	i := []cardano.RegisCert{
 		{
 			Flag:         1,
 			RegisPoolId:  "RegisPoolId",
 			RegisPoolVrf: "RegisPoolVrf",
 		},
 	}
-	iBytes, _ := MarshalInterface(i)
-	o := make([]RegisCert, 0)
-	err := UnmarshalInterface(iBytes, &o)
-	if err != nil {
-		fmt.Println("aaaa")
-		return
+	_, err := cardano.MarshalInterface(i)
+	require.NoError(t, err, "TestMarshalInterface: Should not thrown error")
+}
+
+func TestUnmarshalInterface(t *testing.T) {
+	i := []cardano.RegisCert{
+		{
+			Flag:         1,
+			RegisPoolId:  "RegisPoolId",
+			RegisPoolVrf: "RegisPoolVrf",
+		},
 	}
-	fmt.Println(o)
-	return
+	iBytes, _ := cardano.MarshalInterface(i)
+	var o []cardano.RegisCert
+	cardano.UnmarshalInterface(iBytes, &o)
+	require.Equal(t, true, reflect.DeepEqual(i, o), "TestUnmarshalInterface: Not equal")
+}
+
+func TestMarshalUnmarshalUTXO(t *testing.T) {
+	utxo := cardano.UTXOOutput{
+		TxHash:      "dummyTxHash",
+		OutputIndex: "1",
+		Tokens: []cardano.UTXOOutputToken{{
+			TokenAssetName: "lovelace",
+			TokenValue:     "1",
+		}},
+		DatumHex: "",
+	}
+	iBytes := cardano.MustMarshalUTXO(utxo)
+	output := cardano.MustUnmarshalUTXO(iBytes)
+	require.Equal(t, true, reflect.DeepEqual(utxo, output), "TestMarshalUnmarshalUTXO: Not equal")
 }

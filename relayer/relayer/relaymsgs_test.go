@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )

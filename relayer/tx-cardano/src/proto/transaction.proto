@@ -2,11 +2,8 @@ syntax = "proto3";
 
 package tx;
 
-import "google/protobuf/empty.proto";
-
 message SignAndSubmitTxRequest {
     string chain_id = 1;
-    //string transaction_hex_string = 2;
     bytes transaction_hex_string = 2;
 }
 

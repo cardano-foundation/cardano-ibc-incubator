@@ -3,16 +3,20 @@ package cardano
 import (
 	"context"
 	"fmt"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/package/services"
 	"io"
 	"os"
 	"path"
 	"sync"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/package/services"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
+	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
+
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	provtypes "github.com/cometbft/cometbft/light/provider"
 	prov "github.com/cometbft/cometbft/light/provider/http"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
@@ -98,14 +102,14 @@ func (pc CardanoProviderConfig) NewProvider(log *zap.Logger, homepath string, de
 	pc.KeyDirectory = keysDir(homepath, pc.ChainID)
 
 	pc.ChainName = chainName
+	// TODO: Add the transfer module
 	//pc.Modules = append([]module.AppModuleBasic{}, ModuleBasics...)
 
 	if pc.Broadcast == "" {
 		pc.Broadcast = provider.BroadcastModeBatch
 	}
 	// new TxCardano Service
-	txCardano := services.TxCardano{}
-	err := txCardano.NewTxCardanoService()
+	txCardano, err := services.NewTxCardanoService()
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +122,7 @@ func (pc CardanoProviderConfig) NewProvider(log *zap.Logger, homepath string, de
 
 	cp := &CardanoProvider{
 		log:            log,
-		TxCardano:      txCardano,
+		TxCardano:      *txCardano,
 		GateWay:        gateway,
 		PCfg:           pc,
 		KeyringOptions: []keyring.Option{ethermint.EthSecp256k1Option()},
@@ -385,4 +389,26 @@ func NewRPCClient(addr string, timeout time.Duration) (*rpchttp.HTTP, error) {
 		return nil, err
 	}
 	return rpcClient, nil
+}
+
+type CardanoIBCHeader struct {
+	CardanoBlockData *module.BlockData
+}
+
+func (h CardanoIBCHeader) Height() uint64 {
+	return uint64(h.CardanoBlockData.Height.RevisionHeight)
+}
+
+func (h CardanoIBCHeader) ConsensusState() ibcexported.ConsensusState {
+	return &tmclient.ConsensusState{
+		Timestamp: time.Unix(int64(h.CardanoBlockData.Timestamp), 0),
+		Root:      commitmenttypes.NewMerkleRoot([]byte(h.CardanoBlockData.Hash)),
+		// TODO: fill data
+		NextValidatorsHash: []byte(""),
+	}
+}
+
+func (h CardanoIBCHeader) NextValidatorsHash() []byte {
+	// TODO: fill data
+	return []byte("")
 }

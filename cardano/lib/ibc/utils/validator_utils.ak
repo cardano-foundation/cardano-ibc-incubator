@@ -7,6 +7,17 @@ use aiken/transaction.{
   Spend, Transaction, ValidityRange,
 }
 use aiken/transaction/value.{AssetName, MintedValue, PolicyId}
+use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
+use ibc/core/ics_002_client_semantics/types/keys as client_keys
+use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
+use ibc/core/ics_005/types/ibc_module_redeemer.{
+  Callback, IBCModuleCallback, IBCModuleRedeemer,
+}
+use ibc/core/ics_005/types/keys as port_keys
+use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
+use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerOperator}
 
 pub fn get_inline_datum(output: Output) -> Data {
   expect InlineDatum(data) = output.datum
@@ -22,19 +33,15 @@ pub fn extract_minting_context(
   (policy_id, inputs, outputs, mint)
 }
 
-pub fn extract_spending_context(
-  context: ScriptContext,
-) -> (Output, List<Input>, List<Output>, Dict<ScriptPurpose, Redeemer>) {
+pub fn extract_spending_context(context: ScriptContext) -> (Output, Transaction) {
   let ScriptContext { transaction, purpose } = context
-  let Transaction { inputs, outputs, redeemers, .. } = transaction
+  let Transaction { inputs, .. } = transaction
 
   expect Spend(spent_ref) = purpose
-  let spent_input = inputs |> transaction.find_input(spent_ref)
-  expect Some(spent_input) = spent_input
-
+  expect Some(spent_input) = transaction.find_input(inputs, spent_ref)
   let spent_output = spent_input.output
 
-  (spent_output, inputs, outputs, redeemers)
+  (spent_output, transaction)
 }
 
 pub fn quantity_token_output(
@@ -72,4 +79,171 @@ pub fn get_tx_valid_to(validity_range: ValidityRange) -> PosixTime {
   expect Finite(valid_to) = upper_bound.bound_type
 
   valid_to
+}
+
+pub fn validate_handler_redeemer(
+  inputs: List<Input>,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  handler_token: AuthToken,
+  expected_redeemer: HandlerOperator,
+) -> Option<HandlerDatum> {
+  when
+    list.find(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(handler_token) },
+    )
+  is {
+    Some(handler_input) ->
+      when dict.get(redeemers, Spend(handler_input.output_reference)) is {
+        Some(spent_handler_redeemer) -> {
+          expect handler_operator: HandlerOperator = spent_handler_redeemer
+          if handler_operator == expected_redeemer {
+            let handler_output = handler_input.output
+            expect handler_datum: HandlerDatum =
+              get_inline_datum(handler_output)
+            Some(handler_datum)
+          } else {
+            None
+          }
+        }
+        None -> None
+      }
+    None -> None
+  }
+}
+
+pub fn validate_module_callback(
+  inputs: List<Input>,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  channel_token_name: ByteArray,
+  port_minting_policy_id: PolicyId,
+  port_id: ByteArray,
+) -> Option<IBCModuleCallback> {
+  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_token_name =
+    auth.generate_token_name_from_another(
+      channel_token_name,
+      port_keys.port_prefix,
+      port_number,
+    )
+  let port_token =
+    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+
+  expect [module_input] =
+    list.filter(
+      inputs,
+      fn(input) { auth.contain_auth_token(input.output, port_token) },
+    )
+
+  expect Some(spent_module_redeemer) =
+    dict.get(redeemers, Spend(module_input.output_reference))
+  expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
+  expect Callback(ibc_module_callback) = ibc_module_redeemer
+
+  Some(ibc_module_callback)
+}
+
+pub fn validate_referred_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  client_id: ByteArray,
+) -> Option<ClientDatum> {
+  let client_sequence = client_keys.parse_client_id_sequence(client_id)
+
+  let client_token_name =
+    auth.generate_token_name_from_another(
+      referrer_token_name,
+      client_keys.client_prefix,
+      client_sequence,
+    )
+  let client_token =
+    AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
+
+  when
+    list.find(
+      reference_inputs,
+      fn(input) { input.output |> auth.contain_auth_token(client_token) },
+    )
+  is {
+    Some(client_input) -> {
+      expect client_datum: ClientDatum = get_inline_datum(client_input.output)
+      Some(client_datum)
+    }
+    None -> None
+  }
+}
+
+pub fn validate_referred_connection(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> Option<ConnectionDatum> {
+  let connection_sequence =
+    connection_keys.parse_connection_id_sequence(connection_id)
+
+  let connection_token_name =
+    auth.generate_token_name_from_another(
+      referrer_token_name,
+      connection_keys.connection_prefix,
+      connection_sequence,
+    )
+  let connection_token =
+    AuthToken {
+      policy_id: connection_minting_policy_id,
+      name: connection_token_name,
+    }
+
+  when
+    list.find(
+      reference_inputs,
+      fn(input) { input.output |> auth.contain_auth_token(connection_token) },
+    )
+  is {
+    Some(connection_input) -> {
+      expect connection_datum: ConnectionDatum =
+        get_inline_datum(connection_input.output)
+      Some(connection_datum)
+    }
+    None -> None
+  }
+}
+
+pub fn validate_mint(
+  mint: MintedValue,
+  minting_policy_id: PolicyId,
+  handler_token: AuthToken,
+  token_name_prefix: ByteArray,
+  sequence: Int,
+) -> Option<AuthToken> {
+  let token_name =
+    auth.generate_token_name(handler_token, token_name_prefix, sequence)
+
+  let token = AuthToken { policy_id: minting_policy_id, name: token_name }
+
+  if auth.mint_auth_token(mint, token) {
+    Some(token)
+  } else {
+    None
+  }
+}
+
+pub fn validate_token_remain(
+  spent_output: Output,
+  outputs: List<Output>,
+) -> Option<Output> {
+  expect [updated_output] =
+    list.filter(outputs, fn(output) { output.address == spent_output.address })
+
+  let is_remain =
+    value.without_lovelace(spent_output.value) == value.without_lovelace(
+      updated_output.value,
+    )
+
+  if is_remain {
+    Some(updated_output)
+  } else {
+    None
+  }
 }

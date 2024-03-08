@@ -8,7 +8,8 @@ pub type Validator {
 }
 
 pub fn bytes() -> ByteArray {
-  todo
+  // TODO
+  ""
 }
 
 pub fn null_validator() -> Validator {

@@ -22,7 +22,7 @@ export interface ModuleAccount {
 }
 /**
  * ModuleCredential represents a unclaimable pubkey for base accounts controlled by modules.
- *
+ * 
  * Since: cosmos-sdk 0.47
  */
 export interface ModuleCredential {
@@ -47,7 +47,7 @@ function createBaseBaseAccount(): BaseAccount {
     address: "",
     pub_key: undefined,
     account_number: BigInt(0),
-    sequence: BigInt(0),
+    sequence: BigInt(0)
   };
 }
 export const BaseAccount = {
@@ -104,10 +104,8 @@ export const BaseAccount = {
   toJSON(message: BaseAccount): unknown {
     const obj: any = {};
     message.address !== undefined && (obj.address = message.address);
-    message.pub_key !== undefined &&
-      (obj.pub_key = message.pub_key ? Any.toJSON(message.pub_key) : undefined);
-    message.account_number !== undefined &&
-      (obj.account_number = (message.account_number || BigInt(0)).toString());
+    message.pub_key !== undefined && (obj.pub_key = message.pub_key ? Any.toJSON(message.pub_key) : undefined);
+    message.account_number !== undefined && (obj.account_number = (message.account_number || BigInt(0)).toString());
     message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
     return obj;
   },
@@ -124,13 +122,13 @@ export const BaseAccount = {
       message.sequence = BigInt(object.sequence.toString());
     }
     return message;
-  },
+  }
 };
 function createBaseModuleAccount(): ModuleAccount {
   return {
     base_account: undefined,
     name: "",
-    permissions: [],
+    permissions: []
   };
 }
 export const ModuleAccount = {
@@ -179,11 +177,10 @@ export const ModuleAccount = {
   },
   toJSON(message: ModuleAccount): unknown {
     const obj: any = {};
-    message.base_account !== undefined &&
-      (obj.base_account = message.base_account ? BaseAccount.toJSON(message.base_account) : undefined);
+    message.base_account !== undefined && (obj.base_account = message.base_account ? BaseAccount.toJSON(message.base_account) : undefined);
     message.name !== undefined && (obj.name = message.name);
     if (message.permissions) {
-      obj.permissions = message.permissions.map((e) => e);
+      obj.permissions = message.permissions.map(e => e);
     } else {
       obj.permissions = [];
     }
@@ -195,14 +192,14 @@ export const ModuleAccount = {
       message.base_account = BaseAccount.fromPartial(object.base_account);
     }
     message.name = object.name ?? "";
-    message.permissions = object.permissions?.map((e) => e) || [];
+    message.permissions = object.permissions?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseModuleCredential(): ModuleCredential {
   return {
     module_name: "",
-    derivation_keys: [],
+    derivation_keys: []
   };
 }
 export const ModuleCredential = {
@@ -239,17 +236,14 @@ export const ModuleCredential = {
   fromJSON(object: any): ModuleCredential {
     const obj = createBaseModuleCredential();
     if (isSet(object.module_name)) obj.module_name = String(object.module_name);
-    if (Array.isArray(object?.derivation_keys))
-      obj.derivation_keys = object.derivation_keys.map((e: any) => bytesFromBase64(e));
+    if (Array.isArray(object?.derivation_keys)) obj.derivation_keys = object.derivation_keys.map((e: any) => bytesFromBase64(e));
     return obj;
   },
   toJSON(message: ModuleCredential): unknown {
     const obj: any = {};
     message.module_name !== undefined && (obj.module_name = message.module_name);
     if (message.derivation_keys) {
-      obj.derivation_keys = message.derivation_keys.map((e) =>
-        base64FromBytes(e !== undefined ? e : new Uint8Array()),
-      );
+      obj.derivation_keys = message.derivation_keys.map(e => base64FromBytes(e !== undefined ? e : new Uint8Array()));
     } else {
       obj.derivation_keys = [];
     }
@@ -258,9 +252,9 @@ export const ModuleCredential = {
   fromPartial<I extends Exact<DeepPartial<ModuleCredential>, I>>(object: I): ModuleCredential {
     const message = createBaseModuleCredential();
     message.module_name = object.module_name ?? "";
-    message.derivation_keys = object.derivation_keys?.map((e) => e) || [];
+    message.derivation_keys = object.derivation_keys?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseParams(): Params {
   return {
@@ -268,7 +262,7 @@ function createBaseParams(): Params {
     tx_sig_limit: BigInt(0),
     tx_size_cost_per_byte: BigInt(0),
     sig_verify_cost_ed25519: BigInt(0),
-    sig_verify_cost_secp256k1: BigInt(0),
+    sig_verify_cost_secp256k1: BigInt(0)
   };
 }
 export const Params = {
@@ -322,28 +316,20 @@ export const Params = {
   },
   fromJSON(object: any): Params {
     const obj = createBaseParams();
-    if (isSet(object.max_memo_characters))
-      obj.max_memo_characters = BigInt(object.max_memo_characters.toString());
+    if (isSet(object.max_memo_characters)) obj.max_memo_characters = BigInt(object.max_memo_characters.toString());
     if (isSet(object.tx_sig_limit)) obj.tx_sig_limit = BigInt(object.tx_sig_limit.toString());
-    if (isSet(object.tx_size_cost_per_byte))
-      obj.tx_size_cost_per_byte = BigInt(object.tx_size_cost_per_byte.toString());
-    if (isSet(object.sig_verify_cost_ed25519))
-      obj.sig_verify_cost_ed25519 = BigInt(object.sig_verify_cost_ed25519.toString());
-    if (isSet(object.sig_verify_cost_secp256k1))
-      obj.sig_verify_cost_secp256k1 = BigInt(object.sig_verify_cost_secp256k1.toString());
+    if (isSet(object.tx_size_cost_per_byte)) obj.tx_size_cost_per_byte = BigInt(object.tx_size_cost_per_byte.toString());
+    if (isSet(object.sig_verify_cost_ed25519)) obj.sig_verify_cost_ed25519 = BigInt(object.sig_verify_cost_ed25519.toString());
+    if (isSet(object.sig_verify_cost_secp256k1)) obj.sig_verify_cost_secp256k1 = BigInt(object.sig_verify_cost_secp256k1.toString());
     return obj;
   },
   toJSON(message: Params): unknown {
     const obj: any = {};
-    message.max_memo_characters !== undefined &&
-      (obj.max_memo_characters = (message.max_memo_characters || BigInt(0)).toString());
+    message.max_memo_characters !== undefined && (obj.max_memo_characters = (message.max_memo_characters || BigInt(0)).toString());
     message.tx_sig_limit !== undefined && (obj.tx_sig_limit = (message.tx_sig_limit || BigInt(0)).toString());
-    message.tx_size_cost_per_byte !== undefined &&
-      (obj.tx_size_cost_per_byte = (message.tx_size_cost_per_byte || BigInt(0)).toString());
-    message.sig_verify_cost_ed25519 !== undefined &&
-      (obj.sig_verify_cost_ed25519 = (message.sig_verify_cost_ed25519 || BigInt(0)).toString());
-    message.sig_verify_cost_secp256k1 !== undefined &&
-      (obj.sig_verify_cost_secp256k1 = (message.sig_verify_cost_secp256k1 || BigInt(0)).toString());
+    message.tx_size_cost_per_byte !== undefined && (obj.tx_size_cost_per_byte = (message.tx_size_cost_per_byte || BigInt(0)).toString());
+    message.sig_verify_cost_ed25519 !== undefined && (obj.sig_verify_cost_ed25519 = (message.sig_verify_cost_ed25519 || BigInt(0)).toString());
+    message.sig_verify_cost_secp256k1 !== undefined && (obj.sig_verify_cost_secp256k1 = (message.sig_verify_cost_secp256k1 || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Params>, I>>(object: I): Params {
@@ -364,5 +350,5 @@ export const Params = {
       message.sig_verify_cost_secp256k1 = BigInt(object.sig_verify_cost_secp256k1.toString());
     }
     return message;
-  },
+  }
 };

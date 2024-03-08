@@ -32,7 +32,6 @@ export function GetChainConfig(chainId:String) {
 
         throw Error('ChainId Not Found')
     } catch (err) {
-        console.log(err)
         throw Error(err)
     }
 }
@@ -45,7 +44,6 @@ export function ChainValid(chainId: String) {
         }
         return false
     } catch(err) {
-        console.log(err)
         throw Error(err)
     }
 }

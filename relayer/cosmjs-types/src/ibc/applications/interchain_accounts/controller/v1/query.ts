@@ -22,7 +22,7 @@ export interface QueryParamsResponse {
 function createBaseQueryInterchainAccountRequest(): QueryInterchainAccountRequest {
   return {
     owner: "",
-    connection_id: "",
+    connection_id: ""
   };
 }
 export const QueryInterchainAccountRequest = {
@@ -68,26 +68,21 @@ export const QueryInterchainAccountRequest = {
     message.connection_id !== undefined && (obj.connection_id = message.connection_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryInterchainAccountRequest>, I>>(
-    object: I,
-  ): QueryInterchainAccountRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryInterchainAccountRequest>, I>>(object: I): QueryInterchainAccountRequest {
     const message = createBaseQueryInterchainAccountRequest();
     message.owner = object.owner ?? "";
     message.connection_id = object.connection_id ?? "";
     return message;
-  },
+  }
 };
 function createBaseQueryInterchainAccountResponse(): QueryInterchainAccountResponse {
   return {
-    address: "",
+    address: ""
   };
 }
 export const QueryInterchainAccountResponse = {
   typeUrl: "/ibc.applications.interchain_accounts.controller.v1.QueryInterchainAccountResponse",
-  encode(
-    message: QueryInterchainAccountResponse,
-    writer: BinaryWriter = BinaryWriter.create(),
-  ): BinaryWriter {
+  encode(message: QueryInterchainAccountResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.address !== "") {
       writer.uint32(10).string(message.address);
     }
@@ -120,13 +115,11 @@ export const QueryInterchainAccountResponse = {
     message.address !== undefined && (obj.address = message.address);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryInterchainAccountResponse>, I>>(
-    object: I,
-  ): QueryInterchainAccountResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryInterchainAccountResponse>, I>>(object: I): QueryInterchainAccountResponse {
     const message = createBaseQueryInterchainAccountResponse();
     message.address = object.address ?? "";
     return message;
-  },
+  }
 };
 function createBaseQueryParamsRequest(): QueryParamsRequest {
   return {};
@@ -161,11 +154,11 @@ export const QueryParamsRequest = {
   fromPartial<I extends Exact<DeepPartial<QueryParamsRequest>, I>>(_: I): QueryParamsRequest {
     const message = createBaseQueryParamsRequest();
     return message;
-  },
+  }
 };
 function createBaseQueryParamsResponse(): QueryParamsResponse {
   return {
-    params: undefined,
+    params: undefined
   };
 }
 export const QueryParamsResponse = {
@@ -209,7 +202,7 @@ export const QueryParamsResponse = {
       message.params = Params.fromPartial(object.params);
     }
     return message;
-  },
+  }
 };
 /** Query provides defines the gRPC querier service. */
 export interface Query {
@@ -227,20 +220,12 @@ export class QueryClientImpl implements Query {
   }
   InterchainAccount(request: QueryInterchainAccountRequest): Promise<QueryInterchainAccountResponse> {
     const data = QueryInterchainAccountRequest.encode(request).finish();
-    const promise = this.rpc.request(
-      "ibc.applications.interchain_accounts.controller.v1.Query",
-      "InterchainAccount",
-      data,
-    );
-    return promise.then((data) => QueryInterchainAccountResponse.decode(new BinaryReader(data)));
+    const promise = this.rpc.request("ibc.applications.interchain_accounts.controller.v1.Query", "InterchainAccount", data);
+    return promise.then(data => QueryInterchainAccountResponse.decode(new BinaryReader(data)));
   }
   Params(request: QueryParamsRequest = {}): Promise<QueryParamsResponse> {
     const data = QueryParamsRequest.encode(request).finish();
-    const promise = this.rpc.request(
-      "ibc.applications.interchain_accounts.controller.v1.Query",
-      "Params",
-      data,
-    );
-    return promise.then((data) => QueryParamsResponse.decode(new BinaryReader(data)));
+    const promise = this.rpc.request("ibc.applications.interchain_accounts.controller.v1.Query", "Params", data);
+    return promise.then(data => QueryParamsResponse.decode(new BinaryReader(data)));
   }
 }

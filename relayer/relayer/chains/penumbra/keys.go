@@ -4,14 +4,14 @@ import (
 	"errors"
 	"os"
 
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/codecs/injective"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	ckeys "github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/codecs/injective"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 )
 
 const ethereumCoinType = uint32(60)

@@ -5,13 +5,13 @@ import (
 	"math"
 	"testing"
 
+	"github.com/cardano/relayer/v1/relayer/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
 	"github.com/stretchr/testify/require"
 )
 

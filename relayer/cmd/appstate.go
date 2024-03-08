@@ -9,7 +9,7 @@ import (
 	"os"
 	"path"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
+	"github.com/cardano/relayer/v1/relayer"
 	"github.com/gofrs/flock"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"

@@ -15,7 +15,7 @@ export interface Params {
 function createBaseParams(): Params {
   return {
     host_enabled: false,
-    allow_messages: [],
+    allow_messages: []
   };
 }
 export const Params = {
@@ -52,15 +52,14 @@ export const Params = {
   fromJSON(object: any): Params {
     const obj = createBaseParams();
     if (isSet(object.host_enabled)) obj.host_enabled = Boolean(object.host_enabled);
-    if (Array.isArray(object?.allow_messages))
-      obj.allow_messages = object.allow_messages.map((e: any) => String(e));
+    if (Array.isArray(object?.allow_messages)) obj.allow_messages = object.allow_messages.map((e: any) => String(e));
     return obj;
   },
   toJSON(message: Params): unknown {
     const obj: any = {};
     message.host_enabled !== undefined && (obj.host_enabled = message.host_enabled);
     if (message.allow_messages) {
-      obj.allow_messages = message.allow_messages.map((e) => e);
+      obj.allow_messages = message.allow_messages.map(e => e);
     } else {
       obj.allow_messages = [];
     }
@@ -69,7 +68,7 @@ export const Params = {
   fromPartial<I extends Exact<DeepPartial<Params>, I>>(object: I): Params {
     const message = createBaseParams();
     message.host_enabled = object.host_enabled ?? false;
-    message.allow_messages = object.allow_messages?.map((e) => e) || [];
+    message.allow_messages = object.allow_messages?.map(e => e) || [];
     return message;
-  },
+  }
 };

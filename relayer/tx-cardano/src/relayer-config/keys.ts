@@ -38,10 +38,10 @@ export async function GenerateKey(chainId:string, keyName:string) {
     try {
         const lucid = await Lucid.new(undefined,"Preview");
 
-        const privateKey = lucid.utils.generatePrivateKey();
-        const address = await lucid.selectWalletFromPrivateKey(privateKey).wallet.address();
+        const mnemonic = lucid.utils.generateSeedPhrase();
+        const address = await lucid.selectWalletFromSeed(mnemonic,{addressType:"Enterprise"}).wallet.address();
 
-        const data = `PRIVATEKEY=${privateKey}\nADDRESS=${address}\nNAME=${keyName}`;
+        const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
 
         const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
         const keyPathAddress = GetKeysPathWithAddress(chainId, address);
@@ -49,7 +49,7 @@ export async function GenerateKey(chainId:string, keyName:string) {
         fs.writeFileSync(keyPathName,data);
         fs.writeFileSync(keyPathAddress, data);
 
-        return address
+        return [address,mnemonic]
     } catch (err) {
         console.log(err);
         throw Error(err);
@@ -157,7 +157,39 @@ export function GetPrivateKeyUse(chainId: string) {
         const key = GetKey(chainId, chain.value.key)
         return key['PRIVATEKEY']
     } catch(err) {
-        console.log(err)
         throw Error
+    }
+}
+
+export function GetMnemonicKeyUse(chainId: string) {
+    try{
+        // get chain
+        const chain = chains.GetChainConfig(chainId)
+        // get key use
+        const key = GetKey(chainId, chain.value.key)
+        return key['MNEMONIC']
+    } catch(err) {
+        throw Error
+    }
+}
+
+export async function RestoreKey(chainId: string, mnemonic:string , keyName: string) {
+    try {
+        const lucid = await Lucid.new(undefined,"Preview");
+
+        const address = await lucid.selectWalletFromSeed(mnemonic,{addressType:"Enterprise"}).wallet.address();
+
+        const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
+
+        const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
+        const keyPathAddress = GetKeysPathWithAddress(chainId, address);
+        
+        fs.writeFileSync(keyPathName,data);
+        fs.writeFileSync(keyPathAddress, data);
+
+        return address
+    } catch (err) {
+        console.log(err);
+        throw Error(err);
     }
 }

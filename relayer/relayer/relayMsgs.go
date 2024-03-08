@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -151,13 +151,12 @@ func (r *RelayMsgs) Send(ctx context.Context, log *zap.Logger, src, dst RelayMsg
 		wg     sync.WaitGroup
 		result SendMsgsResult
 	)
-	fmt.Println("relayer/relayMsgs.go-154: ", src, dst)
 	// TODO: sonhs comment
-	//if len(r.Src) > 0 {
-	//	wg.Add(1)
-	//	go r.send(ctx, log, &wg, src, r.Src, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
-	//}
-	//}
+	if len(r.Src) > 0 {
+		wg.Add(1)
+		go r.send(ctx, log, &wg, src, r.Src, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
+	}
+
 	if len(r.Dst) > 0 {
 		wg.Add(1)
 		go r.send(ctx, log, &wg, dst, r.Dst, memo, &result.SuccessfulDstBatches, &result.DstSendError)
@@ -177,7 +176,6 @@ func (r *RelayMsgs) send(
 	successes *int,
 	errors *error,
 ) {
-	fmt.Println("relayMsgs.go-178: ", msgs)
 	defer wg.Done()
 
 	var txSize, batchStartIdx uint64

@@ -15,7 +15,7 @@ export interface Metadata {
 function createBaseMetadata(): Metadata {
   return {
     fee_version: "",
-    app_version: "",
+    app_version: ""
   };
 }
 export const Metadata = {
@@ -66,5 +66,5 @@ export const Metadata = {
     message.fee_version = object.fee_version ?? "";
     message.app_version = object.app_version ?? "";
     return message;
-  },
+  }
 };

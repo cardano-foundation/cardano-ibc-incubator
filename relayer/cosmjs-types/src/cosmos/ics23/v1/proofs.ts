@@ -155,19 +155,19 @@ export function lengthOpToJSON(object: LengthOp): string {
  * ExistenceProof takes a key and a value and a set of steps to perform on it.
  * The result of peforming all these steps will provide a "root hash", which can
  * be compared to the value in a header.
- *
+ * 
  * Since it is computationally infeasible to produce a hash collission for any of the used
  * cryptographic hash functions, if someone can provide a series of operations to transform
  * a given key and value into a root hash that matches some trusted root, these key and values
  * must be in the referenced merkle tree.
- *
+ * 
  * The only possible issue is maliablity in LeafOp, such as providing extra prefix data,
  * which should be controlled by a spec. Eg. with lengthOp as NONE,
  * prefix = FOO, key = BAR, value = CHOICE
  * and
  * prefix = F, key = OOBAR, value = CHOICE
  * would produce the same value.
- *
+ * 
  * With LengthOp this is tricker but not impossible. Which is why the "leafPrefixEqual" field
  * in the ProofSpec is valuable to prevent this mutability. And why all trees should
  * length-prefix the data before hashing it.
@@ -201,14 +201,14 @@ export interface CommitmentProof {
  * must be flexible to represent the internal transformation from
  * the original key-value pairs into the basis hash, for many existing
  * merkle trees.
- *
+ * 
  * key and value are passed in. So that the signature of this operation is:
  * leafOp(key, value) -> output
- *
+ * 
  * To process this, first prehash the keys and values if needed (ANY means no hash in this case):
  * hkey = prehashKey(key)
  * hvalue = prehashValue(value)
- *
+ * 
  * Then combine the bytes, and hash it
  * output = hash(prefix || length(hkey) || hkey || length(hvalue) || hvalue)
  */
@@ -226,16 +226,16 @@ export interface LeafOp {
 /**
  * InnerOp represents a merkle-proof step that is not a leaf.
  * It represents concatenating two children and hashing them to provide the next result.
- *
+ * 
  * The result of the previous step is passed in, so the signature of this op is:
  * innerOp(child) -> output
- *
+ * 
  * The result of applying InnerOp should be:
  * output = op.hash(op.prefix || child || op.suffix)
- *
+ * 
  * where the || operator is concatenation of binary data,
  * and child is the result of hashing all the tree below this step.
- *
+ * 
  * Any special data, like prepending child with the length, or prepending the entire operation with
  * some value to differentiate from leaf nodes, should be included in prefix and suffix.
  * If either of prefix or suffix is empty, we just treat it as an empty string
@@ -248,9 +248,9 @@ export interface InnerOp {
 /**
  * ProofSpec defines what the expected parameters are for a given proof type.
  * This can be stored in the client and used to validate any incoming proofs.
- *
+ * 
  * verify(ProofSpec, Proof) -> Proof | Error
- *
+ * 
  * As demonstrated in tests, if we don't fix the algorithm used to calculate the
  * LeafHash for a given tree, there are many possible key-value pairs that can
  * generate a given hash (by interpretting the preimage differently).
@@ -272,9 +272,9 @@ export interface ProofSpec {
 /**
  * InnerSpec contains all store-specific structure info to determine if two proofs from a
  * given store are neighbors.
- *
+ * 
  * This enables:
- *
+ * 
  * isLeftMost(spec: InnerSpec, op: InnerOp)
  * isRightMost(spec: InnerSpec, op: InnerOp)
  * isLeftNeighbor(spec: InnerSpec, left: InnerOp, right: InnerOp)
@@ -330,7 +330,7 @@ function createBaseExistenceProof(): ExistenceProof {
     key: new Uint8Array(),
     value: new Uint8Array(),
     leaf: undefined,
-    path: [],
+    path: []
   };
 }
 export const ExistenceProof = {
@@ -386,13 +386,11 @@ export const ExistenceProof = {
   },
   toJSON(message: ExistenceProof): unknown {
     const obj: any = {};
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
-    message.value !== undefined &&
-      (obj.value = base64FromBytes(message.value !== undefined ? message.value : new Uint8Array()));
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.value !== undefined && (obj.value = base64FromBytes(message.value !== undefined ? message.value : new Uint8Array()));
     message.leaf !== undefined && (obj.leaf = message.leaf ? LeafOp.toJSON(message.leaf) : undefined);
     if (message.path) {
-      obj.path = message.path.map((e) => (e ? InnerOp.toJSON(e) : undefined));
+      obj.path = message.path.map(e => e ? InnerOp.toJSON(e) : undefined);
     } else {
       obj.path = [];
     }
@@ -405,15 +403,15 @@ export const ExistenceProof = {
     if (object.leaf !== undefined && object.leaf !== null) {
       message.leaf = LeafOp.fromPartial(object.leaf);
     }
-    message.path = object.path?.map((e) => InnerOp.fromPartial(e)) || [];
+    message.path = object.path?.map(e => InnerOp.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseNonExistenceProof(): NonExistenceProof {
   return {
     key: new Uint8Array(),
     left: undefined,
-    right: undefined,
+    right: undefined
   };
 }
 export const NonExistenceProof = {
@@ -462,11 +460,9 @@ export const NonExistenceProof = {
   },
   toJSON(message: NonExistenceProof): unknown {
     const obj: any = {};
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
     message.left !== undefined && (obj.left = message.left ? ExistenceProof.toJSON(message.left) : undefined);
-    message.right !== undefined &&
-      (obj.right = message.right ? ExistenceProof.toJSON(message.right) : undefined);
+    message.right !== undefined && (obj.right = message.right ? ExistenceProof.toJSON(message.right) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<NonExistenceProof>, I>>(object: I): NonExistenceProof {
@@ -479,14 +475,14 @@ export const NonExistenceProof = {
       message.right = ExistenceProof.fromPartial(object.right);
     }
     return message;
-  },
+  }
 };
 function createBaseCommitmentProof(): CommitmentProof {
   return {
     exist: undefined,
     nonexist: undefined,
     batch: undefined,
-    compressed: undefined,
+    compressed: undefined
   };
 }
 export const CommitmentProof = {
@@ -542,13 +538,10 @@ export const CommitmentProof = {
   },
   toJSON(message: CommitmentProof): unknown {
     const obj: any = {};
-    message.exist !== undefined &&
-      (obj.exist = message.exist ? ExistenceProof.toJSON(message.exist) : undefined);
-    message.nonexist !== undefined &&
-      (obj.nonexist = message.nonexist ? NonExistenceProof.toJSON(message.nonexist) : undefined);
+    message.exist !== undefined && (obj.exist = message.exist ? ExistenceProof.toJSON(message.exist) : undefined);
+    message.nonexist !== undefined && (obj.nonexist = message.nonexist ? NonExistenceProof.toJSON(message.nonexist) : undefined);
     message.batch !== undefined && (obj.batch = message.batch ? BatchProof.toJSON(message.batch) : undefined);
-    message.compressed !== undefined &&
-      (obj.compressed = message.compressed ? CompressedBatchProof.toJSON(message.compressed) : undefined);
+    message.compressed !== undefined && (obj.compressed = message.compressed ? CompressedBatchProof.toJSON(message.compressed) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CommitmentProof>, I>>(object: I): CommitmentProof {
@@ -566,7 +559,7 @@ export const CommitmentProof = {
       message.compressed = CompressedBatchProof.fromPartial(object.compressed);
     }
     return message;
-  },
+  }
 };
 function createBaseLeafOp(): LeafOp {
   return {
@@ -574,7 +567,7 @@ function createBaseLeafOp(): LeafOp {
     prehash_key: 0,
     prehash_value: 0,
     length: 0,
-    prefix: new Uint8Array(),
+    prefix: new Uint8Array()
   };
 }
 export const LeafOp = {
@@ -605,16 +598,16 @@ export const LeafOp = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.hash = reader.int32() as any;
+          message.hash = (reader.int32() as any);
           break;
         case 2:
-          message.prehash_key = reader.int32() as any;
+          message.prehash_key = (reader.int32() as any);
           break;
         case 3:
-          message.prehash_value = reader.int32() as any;
+          message.prehash_value = (reader.int32() as any);
           break;
         case 4:
-          message.length = reader.int32() as any;
+          message.length = (reader.int32() as any);
           break;
         case 5:
           message.prefix = reader.bytes();
@@ -641,8 +634,7 @@ export const LeafOp = {
     message.prehash_key !== undefined && (obj.prehash_key = hashOpToJSON(message.prehash_key));
     message.prehash_value !== undefined && (obj.prehash_value = hashOpToJSON(message.prehash_value));
     message.length !== undefined && (obj.length = lengthOpToJSON(message.length));
-    message.prefix !== undefined &&
-      (obj.prefix = base64FromBytes(message.prefix !== undefined ? message.prefix : new Uint8Array()));
+    message.prefix !== undefined && (obj.prefix = base64FromBytes(message.prefix !== undefined ? message.prefix : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<LeafOp>, I>>(object: I): LeafOp {
@@ -653,13 +645,13 @@ export const LeafOp = {
     message.length = object.length ?? 0;
     message.prefix = object.prefix ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseInnerOp(): InnerOp {
   return {
     hash: 0,
     prefix: new Uint8Array(),
-    suffix: new Uint8Array(),
+    suffix: new Uint8Array()
   };
 }
 export const InnerOp = {
@@ -684,7 +676,7 @@ export const InnerOp = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.hash = reader.int32() as any;
+          message.hash = (reader.int32() as any);
           break;
         case 2:
           message.prefix = reader.bytes();
@@ -709,10 +701,8 @@ export const InnerOp = {
   toJSON(message: InnerOp): unknown {
     const obj: any = {};
     message.hash !== undefined && (obj.hash = hashOpToJSON(message.hash));
-    message.prefix !== undefined &&
-      (obj.prefix = base64FromBytes(message.prefix !== undefined ? message.prefix : new Uint8Array()));
-    message.suffix !== undefined &&
-      (obj.suffix = base64FromBytes(message.suffix !== undefined ? message.suffix : new Uint8Array()));
+    message.prefix !== undefined && (obj.prefix = base64FromBytes(message.prefix !== undefined ? message.prefix : new Uint8Array()));
+    message.suffix !== undefined && (obj.suffix = base64FromBytes(message.suffix !== undefined ? message.suffix : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<InnerOp>, I>>(object: I): InnerOp {
@@ -721,14 +711,14 @@ export const InnerOp = {
     message.prefix = object.prefix ?? new Uint8Array();
     message.suffix = object.suffix ?? new Uint8Array();
     return message;
-  },
+  }
 };
 function createBaseProofSpec(): ProofSpec {
   return {
     leaf_spec: undefined,
     inner_spec: undefined,
     max_depth: 0,
-    min_depth: 0,
+    min_depth: 0
   };
 }
 export const ProofSpec = {
@@ -784,10 +774,8 @@ export const ProofSpec = {
   },
   toJSON(message: ProofSpec): unknown {
     const obj: any = {};
-    message.leaf_spec !== undefined &&
-      (obj.leaf_spec = message.leaf_spec ? LeafOp.toJSON(message.leaf_spec) : undefined);
-    message.inner_spec !== undefined &&
-      (obj.inner_spec = message.inner_spec ? InnerSpec.toJSON(message.inner_spec) : undefined);
+    message.leaf_spec !== undefined && (obj.leaf_spec = message.leaf_spec ? LeafOp.toJSON(message.leaf_spec) : undefined);
+    message.inner_spec !== undefined && (obj.inner_spec = message.inner_spec ? InnerSpec.toJSON(message.inner_spec) : undefined);
     message.max_depth !== undefined && (obj.max_depth = Math.round(message.max_depth));
     message.min_depth !== undefined && (obj.min_depth = Math.round(message.min_depth));
     return obj;
@@ -803,7 +791,7 @@ export const ProofSpec = {
     message.max_depth = object.max_depth ?? 0;
     message.min_depth = object.min_depth ?? 0;
     return message;
-  },
+  }
 };
 function createBaseInnerSpec(): InnerSpec {
   return {
@@ -812,7 +800,7 @@ function createBaseInnerSpec(): InnerSpec {
     min_prefix_length: 0,
     max_prefix_length: 0,
     empty_child: new Uint8Array(),
-    hash: 0,
+    hash: 0
   };
 }
 export const InnerSpec = {
@@ -870,7 +858,7 @@ export const InnerSpec = {
           message.empty_child = reader.bytes();
           break;
         case 6:
-          message.hash = reader.int32() as any;
+          message.hash = (reader.int32() as any);
           break;
         default:
           reader.skipType(tag & 7);
@@ -892,36 +880,31 @@ export const InnerSpec = {
   toJSON(message: InnerSpec): unknown {
     const obj: any = {};
     if (message.child_order) {
-      obj.child_order = message.child_order.map((e) => Math.round(e));
+      obj.child_order = message.child_order.map(e => Math.round(e));
     } else {
       obj.child_order = [];
     }
     message.child_size !== undefined && (obj.child_size = Math.round(message.child_size));
-    message.min_prefix_length !== undefined &&
-      (obj.min_prefix_length = Math.round(message.min_prefix_length));
-    message.max_prefix_length !== undefined &&
-      (obj.max_prefix_length = Math.round(message.max_prefix_length));
-    message.empty_child !== undefined &&
-      (obj.empty_child = base64FromBytes(
-        message.empty_child !== undefined ? message.empty_child : new Uint8Array(),
-      ));
+    message.min_prefix_length !== undefined && (obj.min_prefix_length = Math.round(message.min_prefix_length));
+    message.max_prefix_length !== undefined && (obj.max_prefix_length = Math.round(message.max_prefix_length));
+    message.empty_child !== undefined && (obj.empty_child = base64FromBytes(message.empty_child !== undefined ? message.empty_child : new Uint8Array()));
     message.hash !== undefined && (obj.hash = hashOpToJSON(message.hash));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<InnerSpec>, I>>(object: I): InnerSpec {
     const message = createBaseInnerSpec();
-    message.child_order = object.child_order?.map((e) => e) || [];
+    message.child_order = object.child_order?.map(e => e) || [];
     message.child_size = object.child_size ?? 0;
     message.min_prefix_length = object.min_prefix_length ?? 0;
     message.max_prefix_length = object.max_prefix_length ?? 0;
     message.empty_child = object.empty_child ?? new Uint8Array();
     message.hash = object.hash ?? 0;
     return message;
-  },
+  }
 };
 function createBaseBatchProof(): BatchProof {
   return {
-    entries: [],
+    entries: []
   };
 }
 export const BatchProof = {
@@ -957,7 +940,7 @@ export const BatchProof = {
   toJSON(message: BatchProof): unknown {
     const obj: any = {};
     if (message.entries) {
-      obj.entries = message.entries.map((e) => (e ? BatchEntry.toJSON(e) : undefined));
+      obj.entries = message.entries.map(e => e ? BatchEntry.toJSON(e) : undefined);
     } else {
       obj.entries = [];
     }
@@ -965,14 +948,14 @@ export const BatchProof = {
   },
   fromPartial<I extends Exact<DeepPartial<BatchProof>, I>>(object: I): BatchProof {
     const message = createBaseBatchProof();
-    message.entries = object.entries?.map((e) => BatchEntry.fromPartial(e)) || [];
+    message.entries = object.entries?.map(e => BatchEntry.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseBatchEntry(): BatchEntry {
   return {
     exist: undefined,
-    nonexist: undefined,
+    nonexist: undefined
   };
 }
 export const BatchEntry = {
@@ -1014,10 +997,8 @@ export const BatchEntry = {
   },
   toJSON(message: BatchEntry): unknown {
     const obj: any = {};
-    message.exist !== undefined &&
-      (obj.exist = message.exist ? ExistenceProof.toJSON(message.exist) : undefined);
-    message.nonexist !== undefined &&
-      (obj.nonexist = message.nonexist ? NonExistenceProof.toJSON(message.nonexist) : undefined);
+    message.exist !== undefined && (obj.exist = message.exist ? ExistenceProof.toJSON(message.exist) : undefined);
+    message.nonexist !== undefined && (obj.nonexist = message.nonexist ? NonExistenceProof.toJSON(message.nonexist) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BatchEntry>, I>>(object: I): BatchEntry {
@@ -1029,12 +1010,12 @@ export const BatchEntry = {
       message.nonexist = NonExistenceProof.fromPartial(object.nonexist);
     }
     return message;
-  },
+  }
 };
 function createBaseCompressedBatchProof(): CompressedBatchProof {
   return {
     entries: [],
-    lookup_inners: [],
+    lookup_inners: []
   };
 }
 export const CompressedBatchProof = {
@@ -1070,21 +1051,19 @@ export const CompressedBatchProof = {
   },
   fromJSON(object: any): CompressedBatchProof {
     const obj = createBaseCompressedBatchProof();
-    if (Array.isArray(object?.entries))
-      obj.entries = object.entries.map((e: any) => CompressedBatchEntry.fromJSON(e));
-    if (Array.isArray(object?.lookup_inners))
-      obj.lookup_inners = object.lookup_inners.map((e: any) => InnerOp.fromJSON(e));
+    if (Array.isArray(object?.entries)) obj.entries = object.entries.map((e: any) => CompressedBatchEntry.fromJSON(e));
+    if (Array.isArray(object?.lookup_inners)) obj.lookup_inners = object.lookup_inners.map((e: any) => InnerOp.fromJSON(e));
     return obj;
   },
   toJSON(message: CompressedBatchProof): unknown {
     const obj: any = {};
     if (message.entries) {
-      obj.entries = message.entries.map((e) => (e ? CompressedBatchEntry.toJSON(e) : undefined));
+      obj.entries = message.entries.map(e => e ? CompressedBatchEntry.toJSON(e) : undefined);
     } else {
       obj.entries = [];
     }
     if (message.lookup_inners) {
-      obj.lookup_inners = message.lookup_inners.map((e) => (e ? InnerOp.toJSON(e) : undefined));
+      obj.lookup_inners = message.lookup_inners.map(e => e ? InnerOp.toJSON(e) : undefined);
     } else {
       obj.lookup_inners = [];
     }
@@ -1092,15 +1071,15 @@ export const CompressedBatchProof = {
   },
   fromPartial<I extends Exact<DeepPartial<CompressedBatchProof>, I>>(object: I): CompressedBatchProof {
     const message = createBaseCompressedBatchProof();
-    message.entries = object.entries?.map((e) => CompressedBatchEntry.fromPartial(e)) || [];
-    message.lookup_inners = object.lookup_inners?.map((e) => InnerOp.fromPartial(e)) || [];
+    message.entries = object.entries?.map(e => CompressedBatchEntry.fromPartial(e)) || [];
+    message.lookup_inners = object.lookup_inners?.map(e => InnerOp.fromPartial(e)) || [];
     return message;
-  },
+  }
 };
 function createBaseCompressedBatchEntry(): CompressedBatchEntry {
   return {
     exist: undefined,
-    nonexist: undefined,
+    nonexist: undefined
   };
 }
 export const CompressedBatchEntry = {
@@ -1142,10 +1121,8 @@ export const CompressedBatchEntry = {
   },
   toJSON(message: CompressedBatchEntry): unknown {
     const obj: any = {};
-    message.exist !== undefined &&
-      (obj.exist = message.exist ? CompressedExistenceProof.toJSON(message.exist) : undefined);
-    message.nonexist !== undefined &&
-      (obj.nonexist = message.nonexist ? CompressedNonExistenceProof.toJSON(message.nonexist) : undefined);
+    message.exist !== undefined && (obj.exist = message.exist ? CompressedExistenceProof.toJSON(message.exist) : undefined);
+    message.nonexist !== undefined && (obj.nonexist = message.nonexist ? CompressedNonExistenceProof.toJSON(message.nonexist) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CompressedBatchEntry>, I>>(object: I): CompressedBatchEntry {
@@ -1157,14 +1134,14 @@ export const CompressedBatchEntry = {
       message.nonexist = CompressedNonExistenceProof.fromPartial(object.nonexist);
     }
     return message;
-  },
+  }
 };
 function createBaseCompressedExistenceProof(): CompressedExistenceProof {
   return {
     key: new Uint8Array(),
     value: new Uint8Array(),
     leaf: undefined,
-    path: [],
+    path: []
   };
 }
 export const CompressedExistenceProof = {
@@ -1229,36 +1206,32 @@ export const CompressedExistenceProof = {
   },
   toJSON(message: CompressedExistenceProof): unknown {
     const obj: any = {};
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
-    message.value !== undefined &&
-      (obj.value = base64FromBytes(message.value !== undefined ? message.value : new Uint8Array()));
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.value !== undefined && (obj.value = base64FromBytes(message.value !== undefined ? message.value : new Uint8Array()));
     message.leaf !== undefined && (obj.leaf = message.leaf ? LeafOp.toJSON(message.leaf) : undefined);
     if (message.path) {
-      obj.path = message.path.map((e) => Math.round(e));
+      obj.path = message.path.map(e => Math.round(e));
     } else {
       obj.path = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CompressedExistenceProof>, I>>(
-    object: I,
-  ): CompressedExistenceProof {
+  fromPartial<I extends Exact<DeepPartial<CompressedExistenceProof>, I>>(object: I): CompressedExistenceProof {
     const message = createBaseCompressedExistenceProof();
     message.key = object.key ?? new Uint8Array();
     message.value = object.value ?? new Uint8Array();
     if (object.leaf !== undefined && object.leaf !== null) {
       message.leaf = LeafOp.fromPartial(object.leaf);
     }
-    message.path = object.path?.map((e) => e) || [];
+    message.path = object.path?.map(e => e) || [];
     return message;
-  },
+  }
 };
 function createBaseCompressedNonExistenceProof(): CompressedNonExistenceProof {
   return {
     key: new Uint8Array(),
     left: undefined,
-    right: undefined,
+    right: undefined
   };
 }
 export const CompressedNonExistenceProof = {
@@ -1307,17 +1280,12 @@ export const CompressedNonExistenceProof = {
   },
   toJSON(message: CompressedNonExistenceProof): unknown {
     const obj: any = {};
-    message.key !== undefined &&
-      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
-    message.left !== undefined &&
-      (obj.left = message.left ? CompressedExistenceProof.toJSON(message.left) : undefined);
-    message.right !== undefined &&
-      (obj.right = message.right ? CompressedExistenceProof.toJSON(message.right) : undefined);
+    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.left !== undefined && (obj.left = message.left ? CompressedExistenceProof.toJSON(message.left) : undefined);
+    message.right !== undefined && (obj.right = message.right ? CompressedExistenceProof.toJSON(message.right) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CompressedNonExistenceProof>, I>>(
-    object: I,
-  ): CompressedNonExistenceProof {
+  fromPartial<I extends Exact<DeepPartial<CompressedNonExistenceProof>, I>>(object: I): CompressedNonExistenceProof {
     const message = createBaseCompressedNonExistenceProof();
     message.key = object.key ?? new Uint8Array();
     if (object.left !== undefined && object.left !== null) {
@@ -1327,5 +1295,5 @@ export const CompressedNonExistenceProof = {
       message.right = CompressedExistenceProof.fromPartial(object.right);
     }
     return message;
-  },
+  }
 };

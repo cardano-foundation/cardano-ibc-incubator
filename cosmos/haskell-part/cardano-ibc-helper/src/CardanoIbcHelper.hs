@@ -104,7 +104,8 @@ import Cardano.Ledger.Alonzo.TxSeq (AlonzoTxSeq (AlonzoTxSeq, txSeqTxns), TxSeq,
 import Cardano.Ledger.Alonzo.Tx (AlonzoTx (AlonzoTx, body), IsValid (..), AlonzoTxBody (..))
 import Cardano.Crypto.Hash.Class (hashToStringAsHex, hashToBytes)
 import Cardano.Crypto.VRF.Praos(vkBytes)
-
+import Cardano.Slotting.Block (BlockNo (..))
+import Cardano.Slotting.Slot (SlotNo(..))
 import Data.Bool (Bool(..))
 import qualified Data.Binary as B
 import qualified Data.Binary.Put as B
@@ -117,10 +118,9 @@ import Debug.Trace
 
 data VerifyBlockOutput = VerifyBlockOutput { 
     isValid :: Bool, 
-    vrfKHexString :: String
-    -- outputs :: [UTXOOutput],
-    -- regisCerts :: [RegisCert],
-    -- deRegisCerts :: [DeRegisCert]
+    vrfKHexString :: String,
+    blockNo :: String,
+    slotNo :: String
   }
   deriving (Generic, Show)
 instance Serialise VerifyBlockOutput
@@ -151,14 +151,16 @@ instance Serialise UTXOOutputToken
 
 data RegisCert = RegisCert { 
     regisPoolId :: String,
-    regisPoolVrf :: String
+    regisPoolVrf :: String,
+    regisTxIndex :: Int
   }
   deriving (Generic, Show)
 instance Serialise RegisCert
 
 data DeRegisCert = DeRegisCert { 
     deRegisPoolId :: String,
-    deRegisEpoch :: String
+    deRegisEpoch :: String,
+    deRegisTxIndex :: Int
   }
   deriving (Generic, Show)
 instance Serialise DeRegisCert
@@ -176,7 +178,7 @@ getHeaderBody (Ouroboros.Consensus.Protocol.Praos.Header.Header hBody _) = hBody
 getHeaderSig (Ouroboros.Consensus.Protocol.Praos.Header.Header _ sig) = sig
 
 -- spkp => slotsPerKESPeriod 
-verifyHeaderPraos:: BL.ByteString -> Word64 -> Hash.ByteString -> (String , String , Bool)
+verifyHeaderPraos:: BL.ByteString -> Word64 -> Hash.ByteString -> (String , String , String , String , Bool)
 verifyHeaderPraos headerHex spkp epochNonce = do
   let (cborBytesBlock, ok) =
               case B16L.decode headerHex of
@@ -190,6 +192,10 @@ verifyHeaderPraos headerHex spkp epochNonce = do
         -- hHash = headerHash header
         hBody = getHeaderBody header
         hBodyHash = hbBodyHash hBody
+        BlockNo hBlockNo = hbBlockNo hBody
+        hBlockNoString = show hBlockNo
+        SlotNo hSlotNo = hbSlotNo hBody
+        hSlotNoString = show hSlotNo
         hBodySig = getHeaderSig header
         SL.OCert
           { SL.ocertVkHot = ocertVkHot,
@@ -223,9 +229,9 @@ verifyHeaderPraos headerHex spkp epochNonce = do
         vrfKBytes = VRF.rawSerialiseVerKeyVRF vrfK
         vrfKHex = B16.encode vrfKBytes
         vrfHexString = Text.unpack (Text.decodeLatin1 vrfKHex)
-    (vrfHexString, hashToStringAsHex hBodyHash, isKESRight && isVRFRight)
+    (vrfHexString, hashToStringAsHex hBodyHash, hBlockNoString, hSlotNoString, isKESRight && isVRFRight)
   else 
-    ("", "", False)
+    ("", "", "", "", False)
 
 convertCStringToString :: CString -> String
 convertCStringToString cstr = unsafePerformIO $ do
@@ -239,7 +245,7 @@ verifyHeaderPraos_hs cstr spkp epochNonce = do
       epochNonceStr = convertCStringToString epochNonce
       epochBL = TL.encodeUtf8 (TL.pack epochNonceStr)
       epochBLStrict = BL.toStrict epochBL
-      (_, _, isValid) = verifyHeaderPraos strBL spkpW64 epochBLStrict
+      (_, _, _, _, isValid) = verifyHeaderPraos strBL spkpW64 epochBLStrict
   isValid
 
 
@@ -264,10 +270,10 @@ verifyBlock cborStr = do
       eta0AgrBLStrict = BL.toStrict eta0AgrBL
       spkAgr = fromIntegral (spk blockHexCbor)
       blockBodyCborAgr = blockBodyCbor blockHexCbor
-      (vrfKHexString, blockBodyHash, isHeaderValid) = verifyHeaderPraos headerCborAgrBL spkAgr eta0AgrBLStrict
+      (vrfKHexString, blockBodyHash, blockNo, slotNo, isHeaderValid) = verifyHeaderPraos headerCborAgrBL spkAgr eta0AgrBLStrict
       isBodyValid = verifyBlockBody blockBodyCborAgr blockBodyHash
       isValid = isHeaderValid && isBodyValid
-      verifyBlockOutput = VerifyBlockOutput isValid vrfKHexString
+      verifyBlockOutput = VerifyBlockOutput isValid vrfKHexString blockNo slotNo
   verifyBlockOutput
 
 
@@ -308,15 +314,15 @@ verifyBlockBody blockBodyCborString blockBodyHash = do
       isBodyMatched = txSeqHash == blockBodyHash
   isBodyMatched
 
-buildRegisCertList :: [(String, String)] -> [RegisCert] -> [RegisCert]
+buildRegisCertList :: [(String, String, Int)] -> [RegisCert] -> [RegisCert]
 buildRegisCertList [] a = a
-buildRegisCertList ((regisPoolId, regisPoolVrf):xs) certs = do
-  let cert = RegisCert regisPoolId regisPoolVrf
+buildRegisCertList ((regisPoolId, regisPoolVrf, i):xs) certs = do
+  let cert = RegisCert regisPoolId regisPoolVrf i
   buildRegisCertList xs (certs ++ [cert])
-buildDeRegisCertList :: [(String, String)] -> [DeRegisCert] -> [DeRegisCert]
+buildDeRegisCertList :: [(String, String, Int)] -> [DeRegisCert] -> [DeRegisCert]
 buildDeRegisCertList [] a = a
-buildDeRegisCertList ((deRegisPoolId, deRegisEpoch):xs) certs = do
-  let cert = DeRegisCert deRegisPoolId deRegisEpoch
+buildDeRegisCertList ((deRegisPoolId, deRegisEpoch, i):xs) certs = do
+  let cert = DeRegisCert deRegisPoolId deRegisEpoch i
   buildDeRegisCertList xs (certs ++ [cert])
 
 buildOutputList :: [(String, String, [(String, String)], String)] -> [UTXOOutput] -> [UTXOOutput]
@@ -345,11 +351,11 @@ getBlockBodyData bodyArray = do
   txSeqHash
 
 getBlockBodyDataWithCerts :: [(String, String, String)] -> 
-  ([(String, String, [(String, String)], String)], [(String, String)], [(String, String)])
+  ([(String, String, [(String, String)], String)], [(String, String, Int)], [(String, String, Int)])
 getBlockBodyDataWithCerts bodyArray = do
   let bodyLength = Prelude.length bodyArray
       txs = Prelude.map convertToTx bodyArray
-      (utxoDatas, regisCerts, deRegisCerts) = extractTxData txs [] [] []
+      (utxoDatas, regisCerts, deRegisCerts) = extractTxData (List.zip [0..] txs) [] [] []
   (utxoDatas, regisCerts, deRegisCerts)
 
 convertToTx :: (String, String, String) -> AlonzoTx Babbage
@@ -415,12 +421,12 @@ assetNameToTextAsHex = Text.unpack . Text.decodeLatin1 . assetNameToBytesAsHex
 --   // Pool deregis
 --   [(poolIdHex: Hex String, epochNo: Int String)]
 -- )
-extractTxData :: [AlonzoTx Babbage] -> 
+extractTxData :: [(Int, AlonzoTx Babbage)] ->
     [(String, String, [(String, String)], String)] -> 
-    [(String, String)] -> [(String, String)] -> 
-    ([(String, String, [(String, String)], String)], [(String, String)], [(String, String)])
+    [(String, String, Int)] -> [(String, String, Int)] ->
+    ([(String, String, [(String, String)], String)], [(String, String, Int)], [(String, String, Int)])
 extractTxData [] a b c = (a, b, c)
-extractTxData (tx:rest) accOutput accRegCert accDeRegCert = do
+extractTxData ((i, tx):rest) accOutput accRegCert accDeRegCert = do
   let txBody = body tx
       txHash = Hash.hashToBytes (extractHash (hashAnnotated txBody))
       txHashByte = B16.encode txHash
@@ -430,12 +436,12 @@ extractTxData (tx:rest) accOutput accRegCert accDeRegCert = do
       outputUTXOs = extractUTXOs (List.zip [0..] outputsList) txHashString []
       certs = btbCerts txBody
       certsList = seqToList certs
-      (regCerts, deRegCerts) = filterCerts certsList [] []
+      (regCerts, deRegCerts) = filterCerts i certsList [] []
   extractTxData rest (accOutput ++ outputUTXOs) (accRegCert ++ regCerts) (accDeRegCert ++ deRegCerts)
   where
-    filterCerts :: [ShelleyTxCert Babbage] -> [(String, String)] -> [(String, String)] -> ([(String, String)], [(String, String)])
-    filterCerts [] a b = (a,b)
-    filterCerts (x:xs) regCerts deRegCerts = case x of
+    filterCerts :: Int -> [ShelleyTxCert Babbage] -> [(String, String, Int)] -> [(String, String, Int)] -> ([(String, String, Int)], [(String, String, Int)])
+    filterCerts _ [] a b = (a,b)
+    filterCerts i (x:xs) regCerts deRegCerts = case x of
       ShelleyTxCertPool (RegPool poolParams) -> do
         let poolVrf = ppVrf poolParams
             poolVrfByte = B16.encode (Hash.hashToBytes poolVrf)
@@ -443,13 +449,13 @@ extractTxData (tx:rest) accOutput accRegCert accDeRegCert = do
             poolId = ppId poolParams
             poolIdRawKeyHash = getRawKeyHash poolId
             poolIdString = poolIDToBech32 poolIdRawKeyHash
-        filterCerts xs (regCerts ++ [(poolIdString, poolVrfString)]) deRegCerts
+        filterCerts i xs (regCerts ++ [(poolIdString, poolVrfString, i)]) deRegCerts
       ShelleyTxCertPool (RetirePool poolId epochNo) -> do
         let poolIdRawKeyHash = getRawKeyHash poolId
             poolIdString = poolIDToBech32 poolIdRawKeyHash
             epochNoString = show (unEpochNo epochNo)
-        filterCerts xs regCerts (deRegCerts ++ [(poolIdString, epochNoString)])
-      _ -> filterCerts xs regCerts deRegCerts
+        filterCerts i xs regCerts (deRegCerts ++ [(poolIdString, epochNoString, i)])
+      _ -> filterCerts i xs regCerts deRegCerts
     extractUTXOs :: [(Int, Sized (TxOut Babbage))] -> 
       String -> [(String, String, [(String, String)], String)] -> 
       [(String, String, [(String, String)], String)]

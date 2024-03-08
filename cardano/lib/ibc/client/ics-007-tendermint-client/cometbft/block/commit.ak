@@ -2,6 +2,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 
 pub type Commit {
   height: Int,
+  round: Int,
   block_id: BlockID,
   signatures: List<CommitSig>,
 }

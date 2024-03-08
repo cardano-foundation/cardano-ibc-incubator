@@ -4,11 +4,11 @@ import (
 	"log"
 	"testing"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cardano"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/chains/cardano"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/cmd"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/internal/relayertest"
+	"github.com/cardano/relayer/v1/cmd"
+	"github.com/cardano/relayer/v1/internal/relayertest"
 )
 
 func TestCreateClient(t *testing.T) {
@@ -22,7 +22,7 @@ func TestCreateClient(t *testing.T) {
 		Type: "cardano",
 		Value: cardano.CardanoProviderConfig{
 			ChainID:        "cardano",
-			RPCAddr:        "http://192.168.11.72:5001",
+			RPCAddr:        "http://192.168.10.32:5001",
 			Key:            "cardano-key-test-2",
 			KeyringBackend: "test",
 			Timeout:        "10s",
@@ -49,7 +49,6 @@ func TestCreateClient(t *testing.T) {
 	sys.MustRun(t, "keys", "use", "sidechain", "key-cosmos-test")
 	sys.MustRun(t, "keys", "use", "cardano", "cardano-key-test-1")
 	res := sys.MustRun(t, "paths", "add", "cardano", "sidechain", "demo-path", "--file", "/home/it/Documents/IBC/relayer/examples/demo/configs/paths/demo.json")
-	log.Println("add path success : ", res.Stdout)
 
 	res = sys.MustRun(t, "transact", "link", "demo-path")
 	log.Println(res.Stdout)

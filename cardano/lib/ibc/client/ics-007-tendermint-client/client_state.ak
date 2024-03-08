@@ -4,10 +4,11 @@ use aiken/math/rational.{Rational}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{max_chain_id_len}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/client/ics_007_tendermint_client/proof.{ProofSpec}
 use ibc/core/ics_002_client_semantics/types/client.{
   Active, Expired, Frozen, Status,
 }
+use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec}
+use ibc/core/ics_023_vector_commitments/merkle.{MerklePath, MerkleProof}
 use ibc/utils/string
 use ibc/utils/time.{Duration, Time}
 
@@ -134,5 +135,29 @@ pub fn initialized(
   // Note: In Aiken, ClientState is initialized and stored in UTXO instead of being initialized
   // on-chain, as in ibc-go. Therefore, this function is only used for reference and mapping to
   // the ibc specs' purpose.
+  True
+}
+
+pub fn verify_membership(
+  cs: ClientState,
+  cons_state: ConsensusState,
+  height: Height,
+  delay_time_period: Int,
+  delay_block_period: Int,
+  proof: MerkleProof,
+  path: MerklePath,
+  value: ByteArray,
+) -> Bool {
+  expect height.compare(get_latest_height(cs), height) != Less
+  expect
+    verify_delay_period_passed(height, delay_time_period, delay_block_period)
+  merkle.verify_membership(proof, cs.proof_specs, cons_state.root, path, value)
+}
+
+fn verify_delay_period_passed(
+  _proof_height: Height,
+  _delay_time_period: Int,
+  _delay_block_period: Int,
+) -> Bool {
   True
 }

@@ -1,7 +1,7 @@
 package ethermint
 
 import (
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/ethermint"
+	"github.com/cardano/relayer/v1/relayer/ethermint"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"

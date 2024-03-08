@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package ibc.core.types.v1;
+
+option go_package = "github.com/cosmos/ibc-go/v7/modules/core/types";
+
+import "gogoproto/gogo.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "ibc/core/types/v1/block.proto";
+
+// Query provides defines the gRPC querier service
+service Query {
+  rpc BlockResults(QueryBlockResultsRequest) returns (QueryBlockResultsResponse) {
+    option (google.api.http).get = "/ibc/core/types/v1/block_results";
+  }
+}
+
+
+// QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
+message QueryBlockResultsRequest {
+  uint64 height = 1;
+}
+
+// QueryBlockResultsResponse is the response type for the Query/BlockResults RPC method.
+message QueryBlockResultsResponse {
+  // params defines the parameters of the module.
+  ResultBlockResults block_results = 1;
+}

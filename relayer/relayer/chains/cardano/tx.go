@@ -12,11 +12,17 @@ import (
 	"sync"
 	"time"
 
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
+	pbclient "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	any1 "github.com/golang/protobuf/ptypes/any"
 
-	strideicqtypes "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/ethermint"
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/avast/retry-go/v4"
+	pbconnection "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
+	pbchannel "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
+	"github.com/cardano/relayer/v1/relayer/ethermint"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/light"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
@@ -42,7 +48,7 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -107,7 +113,8 @@ func (cc *CardanoProvider) MsgAcknowledgement(
 		Signer:          signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -223,7 +230,8 @@ func (cc *CardanoProvider) MsgChannelCloseInit(info provider.ChannelInfo, proof 
 		Signer:    signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -241,13 +249,14 @@ func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelI
 		Signer:      signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
 
 func (cc *CardanoProvider) MsgChannelOpenAck(msgOpenTry provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -261,9 +270,32 @@ func (cc *CardanoProvider) MsgChannelOpenAck(msgOpenTry provider.ChannelInfo, pr
 		Signer:                signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	chanOpenAckRes, err := cc.GateWay.ChannelOpenAck(
+		context.Background(),
+		transformMsgChannelOpenAck(msg),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(msg, chanOpenAckRes.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgChannelOpenAck(msg *chantypes.MsgChannelOpenAck) *pbchannel.MsgChannelOpenAck {
+	return &pbchannel.MsgChannelOpenAck{
+		PortId:                msg.PortId,
+		ChannelId:             msg.ChannelId,
+		CounterpartyChannelId: msg.CounterpartyChannelId,
+		CounterpartyVersion:   msg.CounterpartyVersion,
+		ProofTry:              msg.ProofTry,
+		ProofHeight: &clienttypes.Height{
+			RevisionNumber: msg.ProofHeight.RevisionNumber,
+			RevisionHeight: msg.ProofHeight.RevisionHeight,
+		},
+		Signer: msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgChannelOpenConfirm(msgOpenAck provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -279,16 +311,18 @@ func (cc *CardanoProvider) MsgChannelOpenConfirm(msgOpenAck provider.ChannelInfo
 		Signer:      signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
 
 func (cc *CardanoProvider) MsgChannelOpenInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
+
 	msg := &chantypes.MsgChannelOpenInit{
 		PortId: info.PortID,
 		Channel: chantypes.Channel{
@@ -304,9 +338,33 @@ func (cc *CardanoProvider) MsgChannelOpenInit(info provider.ChannelInfo, proof p
 		Signer: signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	chanOpenInitRes, err := cc.GateWay.ChannelOpenInit(
+		context.Background(),
+		transformMsgChannelOpenInit(msg))
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(msg, chanOpenInitRes.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgChannelOpenInit(msg *chantypes.MsgChannelOpenInit) *pbchannel.MsgChannelOpenInit {
+	return &pbchannel.MsgChannelOpenInit{
+		PortId: msg.PortId,
+		Channel: &pbchannel.Channel{
+			State:    pbchannel.State_STATE_INIT,
+			Ordering: pbchannel.Order(msg.Channel.Ordering),
+			Counterparty: &pbchannel.Counterparty{
+				PortId:    msg.Channel.Counterparty.PortId,
+				ChannelId: "",
+			},
+			ConnectionHops: msg.Channel.ConnectionHops,
+			Version:        msg.Channel.Version,
+		},
+		Signer: msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgChannelOpenTry(msgOpenInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -336,13 +394,14 @@ func (cc *CardanoProvider) MsgChannelOpenTry(msgOpenInit provider.ChannelInfo, p
 		Signer:              signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -351,6 +410,9 @@ func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionIn
 	if err != nil {
 		return nil, err
 	}
+
+	clientState := proof.ClientState
+	latestHeight := clientState.GetLatestHeight()
 
 	msg := &conntypes.MsgConnectionOpenAck{
 		ConnectionId:             msgOpenTry.CounterpartyConnID,
@@ -361,16 +423,46 @@ func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionIn
 			RevisionNumber: proof.ProofHeight.GetRevisionNumber(),
 			RevisionHeight: proof.ProofHeight.GetRevisionHeight(),
 		},
-		ProofTry:        proof.ConnectionStateProof,
-		ProofClient:     proof.ClientStateProof,
-		ProofConsensus:  proof.ConsensusStateProof,
-		ConsensusHeight: proof.ClientState.GetLatestHeight().(clienttypes.Height),
-		Signer:          signer,
+		ProofTry:       proof.ConnectionStateProof,
+		ProofClient:    proof.ClientStateProof,
+		ProofConsensus: proof.ConsensusStateProof,
+		ConsensusHeight: clienttypes.Height{
+			RevisionNumber: latestHeight.GetRevisionNumber(),
+			RevisionHeight: latestHeight.GetRevisionHeight(),
+		},
+		Signer: signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	res, err := cc.GateWay.ConnectionOpenAck(context.Background(), transformMsgConnectionOpenAck(msg))
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgConnectionOpenAck(msg *conntypes.MsgConnectionOpenAck) *pbconnection.MsgConnectionOpenAck {
+	return &pbconnection.MsgConnectionOpenAck{
+		ConnectionId:             msg.ConnectionId,
+		CounterpartyConnectionId: msg.CounterpartyConnectionId,
+		Version: &pbconnection.Version{
+			Identifier: msg.Version.Identifier,
+			Features:   msg.Version.Features,
+		},
+		ClientState: &any1.Any{
+			TypeUrl: msg.ClientState.TypeUrl,
+			Value:   msg.ClientState.Value,
+		},
+		ProofHeight:             &msg.ProofHeight,
+		ProofTry:                msg.ProofTry,
+		ProofClient:             msg.ProofClient,
+		ProofConsensus:          msg.ProofConsensus,
+		ConsensusHeight:         &msg.ConsensusHeight,
+		Signer:                  msg.Signer,
+		HostConsensusStateProof: msg.HostConsensusStateProof,
+	}
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenConfirm(msgOpenAck provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
@@ -385,13 +477,19 @@ func (cc *CardanoProvider) MsgConnectionOpenConfirm(msgOpenAck provider.Connecti
 		Signer:       signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	_, err = cc.GateWay.ConnectionOpenConfirm(context.Background(), msg)
+	if err != nil {
+		return nil, err
+	}
+
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenInit(info provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -407,9 +505,28 @@ func (cc *CardanoProvider) MsgConnectionOpenInit(info provider.ConnectionInfo, p
 		Signer:      signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	connOpenInitRes, err := cc.GateWay.ConnectionOpenInit(context.Background(), transformMsgConnectionOpenInit(msg))
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(msg, connOpenInitRes.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgConnectionOpenInit(msg *conntypes.MsgConnectionOpenInit) *pbconnection.MsgConnectionOpenInit {
+	return &pbconnection.MsgConnectionOpenInit{
+		ClientId: msg.ClientId,
+		Counterparty: &pbconnection.Counterparty{
+			ClientId:     msg.Counterparty.ClientId,
+			ConnectionId: msg.Counterparty.ConnectionId,
+			Prefix:       &msg.Counterparty.Prefix,
+		},
+		Version:     nil,
+		DelayPeriod: msg.DelayPeriod,
+		Signer:      msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenTry(msgOpenInit provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
@@ -444,7 +561,14 @@ func (cc *CardanoProvider) MsgConnectionOpenTry(msgOpenInit provider.ConnectionI
 		Signer:               signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	//res, err := cc.GateWay.ConnectionOpenTry(context.Background(), msg)
+	_, err = cc.GateWay.ConnectionOpenTry(context.Background(), msg)
+	if err != nil {
+		return nil, err
+	}
+
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -474,18 +598,19 @@ func (cc *CardanoProvider) MsgCreateClient(
 		ConsensusState: anyConsensusState,
 		Signer:         "signer",
 	}
-	fmt.Println(anyClientState.TypeUrl)
-	fmt.Println(string(anyClientState.Value))
 
-	fmt.Println(anyConsensusState.TypeUrl)
-	fmt.Println(string(anyConsensusState.Value))
-	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState)
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	if err != nil {
+		return nil, err
+	}
+	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
 	if err != nil {
 		return nil, err
 	}
 
 	_, err = cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -494,7 +619,7 @@ func (cc *CardanoProvider) MsgRecvPacket(
 	msgTransfer provider.PacketInfo,
 	proof provider.PacketProof,
 ) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -505,15 +630,35 @@ func (cc *CardanoProvider) MsgRecvPacket(
 		Signer:          signer,
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	res, err := cc.GateWay.RecvPacket(context.Background(), transformMsgRecvPacket(msg))
+	if err != nil {
+		return nil, err
+	}
+	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgRecvPacket(msg *chantypes.MsgRecvPacket) *pbchannel.MsgRecvPacket {
+	return &pbchannel.MsgRecvPacket{
+		Packet: &pbchannel.Packet{
+			Sequence:           msg.Packet.Sequence,
+			SourcePort:         msg.Packet.SourcePort,
+			SourceChannel:      msg.Packet.SourceChannel,
+			DestinationPort:    msg.Packet.DestinationPort,
+			DestinationChannel: msg.Packet.DestinationChannel,
+			Data:               msg.Packet.Data,
+			TimeoutHeight:      &msg.Packet.TimeoutHeight,
+			TimeoutTimestamp:   msg.Packet.TimeoutTimestamp,
+		},
+		Signer: msg.Signer,
+	}
 }
 
 // MsgRegisterCounterpartyPayee creates an sdk.Msg to broadcast the counterparty address
 func (cc *CardanoProvider) MsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee string) (provider.RelayerMessage, error) {
 	msg := feetypes.NewMsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee)
-	return NewCosmosMessage(msg, nil), nil
+	return NewCardanoMessage(msg, nil, nil), nil
 }
 
 func (cc *CardanoProvider) MsgSubmitMisbehaviour(clientID string, misbehaviour ibcexported.ClientMessage) (provider.RelayerMessage, error) {
@@ -527,7 +672,8 @@ func (cc *CardanoProvider) MsgSubmitMisbehaviour(clientID string, misbehaviour i
 		return nil, err
 	}
 
-	return NewCosmosMessage(msg, func(signer string) {
+	anynil := anypb.Any{}
+	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -546,7 +692,7 @@ func (cc *CardanoProvider) MsgSubmitQueryResponse(chainID string, queryID provid
 		FromAddress: signer,
 	}
 
-	submitQueryRespMsg := NewCosmosMessage(msg, nil).(CosmosMessage)
+	submitQueryRespMsg := NewCardanoMessage(msg, nil, nil).(CardanoMessage)
 	submitQueryRespMsg.FeegrantDisabled = true
 	return submitQueryRespMsg, nil
 }
@@ -564,7 +710,7 @@ func (cc *CardanoProvider) MsgTimeoutOnClose(msgTransfer provider.PacketInfo, pr
 		Signer:           signer,
 	}
 
-	return NewCosmosMessage(assembled, func(signer string) {
+	return NewCardanoMessage(assembled, nil, func(signer string) {
 		assembled.Signer = signer
 	}), nil
 }
@@ -593,44 +739,46 @@ func (cc *CardanoProvider) MsgTransfer(
 		msg.TimeoutHeight = info.TimeoutHeight
 	}
 
-	msgTransfer := NewCosmosMessage(msg, nil).(CosmosMessage)
+	msgTransfer := NewCardanoMessage(msg, nil, nil).(CardanoMessage)
 	msgTransfer.FeegrantDisabled = true
 	return msgTransfer, nil
 }
 
 func (cc *CardanoProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexported.ClientMessage) (provider.RelayerMessage, error) {
-	//acc, err := cc.Address()
-	//if err != nil {
-	//	return nil, err
-	//}
-
 	clientMsg, err := clienttypes.PackClientMessage(dstHeader)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("MsgUpdateClient: ", srcClientID, len(srcClientID))
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
 	msg := &clienttypes.MsgUpdateClient{
 		ClientId:      srcClientID,
 		ClientMessage: clientMsg,
-		Signer:        "signer",
+		Signer:        signer,
 	}
 
-	fmt.Println("MsgUpdateClient object: ", msg)
-
-	res, err := cc.GateWay.UpdateClient(context.Background(), *msg)
-	fmt.Println("MsgUpdateClient call from cardano: ", res, err)
+	res, err := cc.GateWay.UpdateClient(context.Background(), transformStdUpdateClientToGwUpdateClient(msg))
 	if err != nil {
 		return nil, err
 	}
-	_, err = cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
-	fmt.Println("MsgUpdateClient SignAndSubmitTx: ", err)
-	if err != nil {
-		return nil, err
-	}
-	return NewCosmosMessage(msg, func(signer string) {
+	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func transformStdUpdateClientToGwUpdateClient(msg *clienttypes.MsgUpdateClient) *pbclient.MsgUpdateClient {
+	return &pbclient.MsgUpdateClient{
+		ClientId: msg.ClientId,
+		ClientMessage: &any1.Any{
+			TypeUrl: msg.ClientMessage.TypeUrl,
+			Value:   msg.ClientMessage.Value,
+		},
+		Signer: msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgUpdateClientHeader(latestHeader provider.IBCHeader, trustedHeight clienttypes.Height, trustedHeader provider.IBCHeader) (ibcexported.ClientMessage, error) {
@@ -681,7 +829,7 @@ func (cc *CardanoProvider) MsgUpgradeClient(srcClientId string, consRes *clientt
 		ProofUpgradeConsensusState: consRes.ConsensusState.Value,
 		Signer:                     acc}
 
-	return NewCosmosMessage(msgUpgradeClient, func(signer string) {
+	return NewCardanoMessage(msgUpgradeClient, nil, func(signer string) {
 		msgUpgradeClient.Signer = signer
 	}), nil
 }
@@ -744,18 +892,25 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	key := host.PacketAcknowledgementKey(msgRecvPacket.DestPort, msgRecvPacket.DestChannel, msgRecvPacket.Sequence)
-	ack, proof, proofHeight, err := cc.QueryTendermintProof(ctx, int64(height), key)
+	res, err := cc.GateWay.QueryPacketAcknowledgement(ctx, transformPacketAcknowledgement(msgRecvPacket.DestPort, msgRecvPacket.DestChannel, msgRecvPacket.Sequence))
 	if err != nil {
-		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for packet acknowledgement: %w", err)
+		return provider.PacketProof{}, err
 	}
-	if len(ack) == 0 {
+	if len(res.Acknowledgement) == 0 {
 		return provider.PacketProof{}, chantypes.ErrInvalidAcknowledgement
 	}
 	return provider.PacketProof{
-		Proof:       proof,
-		ProofHeight: proofHeight,
+		Proof:       res.Proof,
+		ProofHeight: *res.ProofHeight,
 	}, nil
+}
+
+func transformPacketAcknowledgement(portId, chanId string, seq uint64) *pbchannel.QueryPacketAcknowledgementRequest {
+	return &pbchannel.QueryPacketAcknowledgementRequest{
+		PortId:    portId,
+		ChannelId: chanId,
+		Sequence:  seq,
+	}
 }
 
 func (cc *CardanoProvider) PacketCommitment(
@@ -925,7 +1080,7 @@ func (cc *CardanoProvider) waitForTx(
 	waitTimeout time.Duration,
 	callbacks []func(*provider.RelayerTxResponse, error),
 ) {
-	res, err := cc.waitForBlockInclusion(ctx, txHash, waitTimeout)
+	_, err := cc.waitForBlockInclusion(ctx, txHash, waitTimeout)
 	if err != nil {
 		cc.log.Error("Failed to wait for block inclusion", zap.Error(err))
 		if len(callbacks) > 0 {
@@ -937,34 +1092,7 @@ func (cc *CardanoProvider) waitForTx(
 		return
 	}
 
-	rlyResp := &provider.RelayerTxResponse{
-		Height:    res.Height,
-		TxHash:    res.TxHash,
-		Codespace: res.Codespace,
-		Code:      res.Code,
-		Data:      res.Data,
-		Events:    parseEventsFromTxResponse(res),
-	}
-
-	// transaction was executed, log the success or failure using the tx response code
-	// NOTE: error is nil, logic should use the returned error to determine if the
-	// transaction was successfully executed.
-
-	if res.Code != 0 {
-		// Check for any registered SDK errors
-		err := cc.sdkError(res.Codespace, res.Code)
-		if err == nil {
-			err = fmt.Errorf("transaction failed to execute")
-		}
-		if len(callbacks) > 0 {
-			for _, cb := range callbacks {
-				//Call each callback in order since waitForTx is already invoked asyncronously
-				cb(nil, err)
-			}
-		}
-		cc.LogFailedTx(rlyResp, nil, msgs)
-		return
-	}
+	rlyResp := &provider.RelayerTxResponse{}
 
 	if len(callbacks) > 0 {
 		for _, cb := range callbacks {
@@ -972,7 +1100,7 @@ func (cc *CardanoProvider) waitForTx(
 			cb(rlyResp, nil)
 		}
 	}
-	cc.LogSuccessTx(res, msgs)
+
 }
 
 // waitForBlockInclusion will wait for a transaction to be included in a block, up to waitTimeout or context cancellation.
@@ -988,13 +1116,7 @@ func (cc *CardanoProvider) waitForBlockInclusion(
 			return nil, fmt.Errorf("timed out after: %d; %w", waitTimeout, ErrTimeoutAfterWaitingForTxBroadcast)
 		// This fixed poll is fine because it's only for logging and updating prometheus metrics currently.
 		case <-time.After(time.Millisecond * 100):
-			res, err := cc.RPCClient.Tx(ctx, txHash, false)
-			if err == nil {
-				return cc.mkTxResult(res)
-			}
-			if strings.Contains(err.Error(), "transaction indexing is disabled") {
-				return nil, fmt.Errorf("cannot determine success/failure of tx because transaction indexing is disabled on rpc url")
-			}
+			return nil, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -1187,35 +1309,32 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 	asyncCtx context.Context,
 	asyncCallbacks []func(*provider.RelayerTxResponse, error),
 ) error {
-	txSignerKey, feegranterKey, err := cc.buildSignerConfig(msgs)
-	if err != nil {
-		return err
-	}
-
-	sequenceGuard := ensureSequenceGuard(cc, txSignerKey)
-	sequenceGuard.Mu.Lock()
-	defer sequenceGuard.Mu.Unlock()
-
-	txBytes, sequence, fees, err := cc.buildMessages(ctx, msgs, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
-	if err != nil {
-		// Account sequence mismatch errors can happen on the simulated transaction also.
-		if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
-			cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+	for _, msg := range msgs {
+		if msg == nil {
+			continue
+		}
+		txData, err := msg.MsgBytes()
+		if err != nil {
+			return err
+		}
+		txHash, err := cc.TxCardano.SignAndSubmitTx(ctx, cc.ChainId(), txData)
+		if err != nil {
+			rlyResp := &provider.RelayerTxResponse{
+				TxHash: txHash,
+			}
+			cc.LogFailedTx(rlyResp, err, msgs)
+			return err
 		}
 
-		return err
-	}
-
-	if err := cc.broadcastTx(ctx, txBytes, msgs, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks); err != nil {
-		if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
-			cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+		txResp := &sdk.TxResponse{
+			TxHash: txHash,
 		}
 
-		return err
+		cc.LogSuccessTx(txResp, []provider.RelayerMessage{msg})
 	}
 
-	// we had a successful tx broadcast with this sequence, so update it to the next
-	cc.updateNextAccountSequence(sequenceGuard, sequence+1)
+	go cc.waitForTx(asyncCtx, []byte{}, msgs, defaultBroadcastWaitTimeout, asyncCallbacks)
+
 	return nil
 }
 
@@ -1252,7 +1371,7 @@ func (cc *CardanoProvider) buildSignerConfig(msgs []provider.RelayerMessage) (
 	isFeegrantEligible := cc.PCfg.FeeGrants != nil
 
 	for _, curr := range msgs {
-		if cMsg, ok := curr.(CosmosMessage); ok {
+		if cMsg, ok := curr.(CardanoMessage); ok {
 			if cMsg.FeegrantDisabled {
 				isFeegrantEligible = false
 			}
@@ -1278,7 +1397,7 @@ func (cc *CardanoProvider) buildSignerConfig(msgs []provider.RelayerMessage) (
 
 		//Overwrite the 'Signer' field in any Msgs that provide an 'optionalSetSigner' callback
 		for _, curr := range msgs {
-			if cMsg, ok := curr.(CosmosMessage); ok {
+			if cMsg, ok := curr.(CardanoMessage); ok {
 				if cMsg.SetSigner != nil {
 					cMsg.SetSigner(signerAccAddr)
 				}
@@ -1656,7 +1775,7 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 		Signer:           signer,
 	}
 
-	return NewCosmosMessage(assembled, func(signer string) {
+	return NewCardanoMessage(assembled, nil, func(signer string) {
 		assembled.Signer = signer
 	}), nil
 }
@@ -1689,20 +1808,26 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 		return nil, "", err
 	}
 
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	if err != nil {
+		return nil, "", err
+	}
 	msg := &clienttypes.MsgCreateClient{
 		ClientState:    anyClientState,
 		ConsensusState: anyConsensusState,
 		Signer:         "",
 	}
 
-	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState)
+	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
+	if err != nil {
+		return nil, "", err
+	}
+	tx_id, err := cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
 	if err != nil {
 		return nil, "", err
 	}
 
-	tx_id, err := cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
-
-	return NewCosmosMessage(msg, func(signer string) {
+	return NewCardanoMessage(msg, nil, func(signer string) {
 		msg.Signer = tx_id
 	}), res.ClientId, nil
 }

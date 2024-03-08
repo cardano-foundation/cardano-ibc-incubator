@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cardano/relayer/v1/relayer/processor"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )

@@ -3,7 +3,6 @@
  * compiler version: 3.6.1
  * source: transaction.proto
  * git: https://github.com/thesayyn/protoc-gen-ts */
-import * as dependency_1 from "./google/protobuf/empty";
 import * as pb_1 from "google-protobuf";
 import * as grpc_1 from "@grpc/grpc-js";
 export namespace tx {

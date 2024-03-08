@@ -8,8 +8,8 @@ import (
 	"path"
 	"strings"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/google/go-github/v43/github"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"

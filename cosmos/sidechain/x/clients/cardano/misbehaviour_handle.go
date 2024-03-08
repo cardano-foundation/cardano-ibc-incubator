@@ -96,7 +96,7 @@ func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore storetype
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get consensus state from clientStore for BlockData1 at Height: %s", misbehaviour.BlockData1.Height)
 	}
 
-	cardanoConsensusState2, found := GetConsensusState(clientStore, cdc, misbehaviour.BlockData1.Height)
+	cardanoConsensusState2, found := GetConsensusState(clientStore, cdc, misbehaviour.BlockData2.Height)
 	if !found {
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get trusted consensus state from clientStore for Header2 at TrustedHeight: %s", misbehaviour.BlockData2.Height)
 	}

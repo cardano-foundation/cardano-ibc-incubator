@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package ibc.core.types.v1;
+
+option go_package = "github.com/cosmos/ibc-go/v7/modules/core/types";
+
+import "gogoproto/gogo.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "ibc/core/client/v1/client.proto";
+
+message EventAttribute {
+  option (gogoproto.goproto_getters) = false;
+
+  string key = 1;
+  string value = 2;
+  bool index = 3;
+}
+
+message Event {
+  option (gogoproto.goproto_getters) = false;
+
+  string type = 1;
+  repeated EventAttribute event_attribute = 2;
+}
+
+message ResponseDeliverTx {
+  option (gogoproto.goproto_getters) = false;
+
+  uint32 code = 1;
+  repeated Event events = 2;
+}
+
+message ResultBlockResults {
+  option (gogoproto.goproto_getters) = false;
+  // height at which the proof was retrieved
+  ibc.core.client.v1.Height height = 1;
+
+  // txs result in blocks
+  repeated ResponseDeliverTx txs_results = 2;
+}

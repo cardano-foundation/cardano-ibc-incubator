@@ -4,9 +4,9 @@ import (
 	"log"
 	"testing"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/cmd"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/internal/relayertest"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/cmd"
+	"github.com/cardano/relayer/v1/internal/relayertest"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"

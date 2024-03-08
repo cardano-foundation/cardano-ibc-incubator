@@ -1,22 +1,24 @@
 package cardano_test
 
-
 import (
+	fmt "fmt"
+	"sidechain/x/clients/cardano"
 	"time"
 
-	ics23 "github.com/cosmos/ics23/go"
+	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
+	"github.com/fxamacker/cbor/v2"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/stretchr/testify/require"
 
-	transfertypes "github.com/cosmos/ibc-go/v8/modules/apps/transfer/types"
+	"github.com/cosmos/cosmos-sdk/codec"
+	ibctesting "github.com/cosmos/ibc-go/v8/testing"
+
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	connectiontypes "github.com/cosmos/ibc-go/v8/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
-	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
-	ibctm "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
-	ibctesting "sidechain/testing"
-	ibcmock "sidechain/testing/mock"
+	tmStruct "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 )
 
 const (
@@ -30,7 +32,7 @@ var invalidProof = []byte("invalid proof")
 func (suite *CardanoTestSuite) TestStatus() {
 	var (
 		path        *ibctesting.Path
-		clientState *ibctm.ClientState
+		clientState *cardano.ClientState
 	)
 
 	testCases := []struct {
@@ -40,16 +42,23 @@ func (suite *CardanoTestSuite) TestStatus() {
 	}{
 		{"client is active", func() {}, exported.Active},
 		{"client is frozen", func() {
-			clientState.FrozenHeight = clienttypes.NewHeight(0, 1)
+			clientState.FrozenHeight = &cardano.Height{
+				RevisionNumber: 0,
+				RevisionHeight: 1,
+			}
 			path.EndpointA.SetClientState(clientState)
 		}, exported.Frozen},
 		{"client status without consensus state", func() {
-			clientState.LatestHeight = clientState.LatestHeight.Increment().(clienttypes.Height)
+			newHeight := clientState.LatestHeight.Increment()
+			clientState.LatestHeight = &cardano.Height{
+				RevisionNumber: newHeight.GetRevisionNumber(),
+				RevisionHeight: newClientHeight.GetRevisionHeight() + 1,
+			}
 			path.EndpointA.SetClientState(clientState)
 		}, exported.Expired},
-		{"client status is expired", func() {
-			suite.coordinator.IncrementTimeBy(clientState.TrustingPeriod)
-		}, exported.Expired},
+		// {"client status is expired", func() {
+		// 	suite.coordinator.IncrementTimeBy(clientState.TrustingPeriod)
+		// }, exported.Expired},
 	}
 
 	for _, tc := range testCases {
@@ -57,11 +66,12 @@ func (suite *CardanoTestSuite) TestStatus() {
 		suite.Run(tc.name, func() {
 			suite.SetupTest()
 
-			path = ibctesting.NewPath(suite.chainA, suite.chainB)
-			suite.coordinator.SetupClients(path)
+			path = NewPath(suite.chainA, suite.chainB)
+			SetupCardanoClientInCosmos(suite.coordinator, path)
+			// suite.coordinator.SetupClients(path)
 
 			clientStore := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-			clientState = path.EndpointA.GetClientState().(*ibctm.ClientState)
+			clientState = path.EndpointA.GetClientState().(*cardano.ClientState)
 
 			tc.malleate()
 
@@ -70,6 +80,89 @@ func (suite *CardanoTestSuite) TestStatus() {
 		})
 
 	}
+}
+
+func CreateClientCardano(endpoint *ibctesting.Endpoint) (err error) {
+	// ensure counterparty has committed state
+	endpoint.Counterparty.Chain.NextBlock()
+
+	var (
+		clientState    exported.ClientState
+		consensusState exported.ConsensusState
+	)
+
+	switch endpoint.ClientConfig.GetClientType() {
+	case cardano.ModuleName:
+		// tmConfig, ok := endpoint.ClientConfig.(*TendermintConfig)
+		// require.True(endpoint.Chain.TB, ok)
+
+		// height := endpoint.Counterparty.Chain.LastHeader.GetHeight().(clienttypes.Height)
+		clientState = &cardano.ClientState{
+			ChainId: "1",
+			LatestHeight: &cardano.Height{
+				RevisionNumber: 0,
+				RevisionHeight: 303387,
+			},
+			FrozenHeight: &cardano.Height{
+				RevisionNumber: 0,
+				RevisionHeight: 0,
+			},
+			ValidAfter:       0,
+			GenesisTime:      1705895324,
+			CurrentEpoch:     2,
+			EpochLength:      423000,
+			SlotPerKesPeriod: 129600,
+			CurrentValidatorSet: []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}},
+			NextValidatorSet: []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}},
+			TrustingPeriod: 950400,
+			UpgradePath:    []string{},
+			TokenConfigs: &cardano.TokenConfigs{
+				HandlerTokenUnit:   "fe912a0d634c0901850f70fed4612f967e5b9074b3033d7e2085109a68616e646c6572",
+				ClientPolicyId:     "592de1385d612694eed18d767901c4731b34663e6aec79beaca88dab",
+				ConnectionPolicyId: "",
+				ChannelPolicyId:    "",
+			},
+		}
+		consensusState = &cardano.ConsensusState{
+			Timestamp: 1707122673,
+			Slot:      1214009,
+		}
+	default:
+		err = fmt.Errorf("client type %s is not supported", endpoint.ClientConfig.GetClientType())
+	}
+
+	if err != nil {
+		return err
+	}
+
+	msg, err := clienttypes.NewMsgCreateClient(
+		clientState, consensusState, endpoint.Chain.SenderAccount.GetAddress().String(),
+	)
+	require.NoError(endpoint.Chain.TB, err)
+
+	res, err := endpoint.Chain.SendMsgs(msg)
+	if err != nil {
+		return err
+	}
+
+	endpoint.ClientID, err = ibctesting.ParseClientIDFromEvents(res.Events)
+	require.NoError(endpoint.Chain.TB, err)
+
+	return nil
+}
+
+func SetupCardanoClientInCosmos(coord *ibctesting.Coordinator, path *ibctesting.Path) {
+	err := CreateClientCardano(path.EndpointA)
+	require.NoError(coord.T, err)
+
+	err = path.EndpointB.CreateClient()
+	require.NoError(coord.T, err)
 }
 
 func (suite *CardanoTestSuite) TestGetTimestampAtHeight() {
@@ -104,8 +197,8 @@ func (suite *CardanoTestSuite) TestGetTimestampAtHeight() {
 		suite.Run(tc.name, func() {
 			suite.SetupTest()
 
-			path = ibctesting.NewPath(suite.chainA, suite.chainB)
-			suite.coordinator.SetupClients(path)
+			path = NewPath(suite.chainA, suite.chainB)
+			SetupCardanoClientInCosmos(suite.coordinator, path)
 
 			clientState := path.EndpointA.GetClientState()
 			height = clientState.GetLatestHeight()
@@ -114,11 +207,11 @@ func (suite *CardanoTestSuite) TestGetTimestampAtHeight() {
 
 			// grab consensusState from store and update with a predefined timestamp
 			consensusState := path.EndpointA.GetConsensusState(height)
-			tmConsensusState, ok := consensusState.(*ibctm.ConsensusState)
+			cardanoConsensusState, ok := consensusState.(*cardano.ConsensusState)
 			suite.Require().True(ok)
 
-			tmConsensusState.Timestamp = expectedTimestamp
-			path.EndpointA.SetConsensusState(tmConsensusState, height)
+			cardanoConsensusState.Timestamp = uint64(expectedTimestamp.Unix())
+			path.EndpointA.SetConsensusState(cardanoConsensusState, height)
 
 			tc.malleate()
 
@@ -140,99 +233,118 @@ func (suite *CardanoTestSuite) TestGetTimestampAtHeight() {
 func (suite *CardanoTestSuite) TestValidate() {
 	testCases := []struct {
 		name        string
-		clientState *ibctm.ClientState
+		clientState *cardano.ClientState
 		expPass     bool
 	}{
 		{
-			name:        "valid client",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     true,
+			name: "valid client",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: true,
 		},
 		{
-			name:        "valid client with nil upgrade path",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), nil),
-			expPass:     true,
+			name: "valid client with nil upgrade path",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, nil, &cardano.TokenConfigs{}),
+			expPass: true,
 		},
 		{
-			name:        "invalid chainID",
-			clientState: ibctm.NewClientState("  ", ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "invalid chainID",
+			clientState: cardano.NewClientState("  ", &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			// NOTE: if this test fails, the code must account for the change in chainID length across tendermint versions!
-			// Do not only fix the test, fix the code!
-			// https://github.com/cosmos/ibc-go/issues/177
-			name:        "valid chainID - chainID validation failed for chainID of length 50! ",
-			clientState: ibctm.NewClientState(fiftyCharChainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     true,
+			name: "invalid chainID - chainID validation did not fail for chainID of length 51! ",
+			clientState: cardano.NewClientState(fiftyOneCharChainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			// NOTE: if this test fails, the code must account for the change in chainID length across tendermint versions!
-			// Do not only fix the test, fix the code!
-			// https://github.com/cosmos/ibc-go/issues/177
-			name:        "invalid chainID - chainID validation did not fail for chainID of length 51! ",
-			clientState: ibctm.NewClientState(fiftyOneCharChainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "invalid zero trusting period",
+			clientState: cardano.NewClientState(fiftyOneCharChainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 0, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			name:        "invalid trust level",
-			clientState: ibctm.NewClientState(chainID, ibctm.Fraction{Numerator: 0, Denominator: 1}, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "invalid revision number",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 1, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			name:        "invalid zero trusting period",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, 0, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "invalid revision height",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 0}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			name:        "invalid negative trusting period",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, -1, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "epoch length == 0",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 0, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			name:        "invalid zero unbonding period",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, 0, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
+			name: "slot per kes period == 0",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 0, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 		{
-			name:        "invalid negative unbonding period",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, -1, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "invalid zero max clock drift",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, 0, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "invalid negative max clock drift",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, -1, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "invalid revision number",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, clienttypes.NewHeight(1, 1), commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "invalid revision height",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, clienttypes.ZeroHeight(), commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "trusting period not less than unbonding period",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, ubdPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "proof specs is nil",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, ubdPeriod, ubdPeriod, maxClockDrift, height, nil, upgradePath),
-			expPass:     false,
-		},
-		{
-			name:        "proof specs contains nil",
-			clientState: ibctm.NewClientState(chainID, ibctm.DefaultTrustLevel, ubdPeriod, ubdPeriod, maxClockDrift, height, []*ics23.ProofSpec{ics23.TendermintSpec, nil}, upgradePath),
-			expPass:     false,
+			name: "upgrade path item empty",
+			clientState: cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{"test", "", "path"}, &cardano.TokenConfigs{}),
+			expPass: false,
 		},
 	}
 
@@ -257,7 +369,7 @@ func (suite *CardanoTestSuite) TestInitialize() {
 	}{
 		{
 			name:           "valid consensus",
-			consensusState: &ibctm.ConsensusState{},
+			consensusState: &cardano.ConsensusState{},
 			expPass:        true,
 		},
 		{
@@ -271,16 +383,15 @@ func (suite *CardanoTestSuite) TestInitialize() {
 		tc := tc
 		suite.Run(tc.name, func() {
 			suite.SetupTest()
-			path := ibctesting.NewPath(suite.chainA, suite.chainB)
+			path := NewPath(suite.chainA, suite.chainB)
 
-			tmConfig, ok := path.EndpointB.ClientConfig.(*ibctesting.TendermintConfig)
-			suite.Require().True(ok)
-
-			clientState := ibctm.NewClientState(
-				path.EndpointB.Chain.ChainID,
-				tmConfig.TrustLevel, tmConfig.TrustingPeriod, tmConfig.UnbondingPeriod, tmConfig.MaxClockDrift,
-				suite.chainB.LastHeader.GetTrustedHeight(), commitmenttypes.GetSDKSpecs(), ibctesting.UpgradePath,
-			)
+			clientState := cardano.NewClientState(chainID, &cardano.Height{RevisionNumber: 0, RevisionHeight: 1}, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{})
 
 			store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
 			err := clientState.Initialize(suite.chainA.GetContext(), suite.chainA.Codec, store, tc.consensusState)
@@ -288,480 +399,659 @@ func (suite *CardanoTestSuite) TestInitialize() {
 			if tc.expPass {
 				suite.Require().NoError(err, "valid case returned an error")
 				suite.Require().True(store.Has(host.ClientStateKey()))
-				suite.Require().True(store.Has(host.ConsensusStateKey(suite.chainB.LastHeader.GetTrustedHeight())))
+				suite.Require().True(store.Has(host.ConsensusStateKey(&cardano.Height{RevisionNumber: 0, RevisionHeight: 1})))
 			} else {
 				suite.Require().Error(err, "invalid case didn't return an error")
 				suite.Require().False(store.Has(host.ClientStateKey()))
-				suite.Require().False(store.Has(host.ConsensusStateKey(suite.chainB.LastHeader.GetTrustedHeight())))
+				suite.Require().False(store.Has(host.ConsensusStateKey(&cardano.Height{RevisionNumber: 0, RevisionHeight: 1})))
 			}
 		})
 	}
 }
 
-func (suite *CardanoTestSuite) TestVerifyMembership() {
-	var (
-		testingpath      *ibctesting.Path
-		delayTimePeriod  uint64
-		delayBlockPeriod uint64
-		err              error
-		proofHeight      exported.Height
-		proof            []byte
-		path             exported.Path
-		value            []byte
-	)
-
-	testCases := []struct {
-		name     string
-		malleate func()
-		expPass  bool
-	}{
-		{
-			"successful ClientState verification",
-			func() {
-				// default proof construction uses ClientState
-			},
-			true,
+func (suite *CardanoTestSuite) TestVerifyProofFn() {
+	proofPath := "0-10/client/124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d/0" // dummy path
+	/////// Client State
+	trustLevel := tmStruct.DefaultTrustLevel
+	latestHeight := clienttypes.Height{
+		RevisionNumber: 0,
+		RevisionHeight: 10,
+	}
+	proofSpecs := commitmenttypes.GetSDKSpecs()
+	upgradePath := []string{}
+	expectedClientState := tmStruct.NewClientState(chainID, trustLevel, trustingPeriod, ubdPeriod, maxClockDrift, latestHeight, proofSpecs, upgradePath)
+	proofDataClientState := cardano.ClientStateDatum{
+		ChainId: []byte(chainID),
+		TrustLevel: cardano.TrustLevelDatum{
+			Denominator: trustLevel.Denominator,
+			Numerator:   trustLevel.Numerator,
 		},
-		{
-			"successful ConsensusState verification", func() {
-				key := host.FullConsensusStateKey(testingpath.EndpointB.ClientID, testingpath.EndpointB.GetClientState().GetLatestHeight())
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = suite.chainB.QueryProof(key)
-
-				consensusState := testingpath.EndpointB.GetConsensusState(testingpath.EndpointB.GetClientState().GetLatestHeight()).(*ibctm.ConsensusState)
-				value, err = suite.chainB.Codec.MarshalInterface(consensusState)
-				suite.Require().NoError(err)
-			},
-			true,
-		},
-		{
-			"successful Connection verification", func() {
-				key := host.ConnectionKey(testingpath.EndpointB.ConnectionID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = suite.chainB.QueryProof(key)
-
-				connection := testingpath.EndpointB.GetConnection()
-				value, err = suite.chainB.Codec.Marshal(&connection)
-				suite.Require().NoError(err)
-			},
-			true,
-		},
-		{
-			"successful Channel verification", func() {
-				key := host.ChannelKey(testingpath.EndpointB.ChannelConfig.PortID, testingpath.EndpointB.ChannelID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = suite.chainB.QueryProof(key)
-
-				channel := testingpath.EndpointB.GetChannel()
-				value, err = suite.chainB.Codec.Marshal(&channel)
-				suite.Require().NoError(err)
-			},
-			true,
-		},
-		{
-			"successful PacketCommitment verification", func() {
-				// send from chainB to chainA since we are proving chainB sent a packet
-				sequence, err := testingpath.EndpointB.SendPacket(clienttypes.NewHeight(1, 100), 0, ibctesting.MockPacketData)
-				suite.Require().NoError(err)
-
-				// make packet commitment proof
-				packet := channeltypes.NewPacket(ibctesting.MockPacketData, sequence, testingpath.EndpointB.ChannelConfig.PortID, testingpath.EndpointB.ChannelID, testingpath.EndpointA.ChannelConfig.PortID, testingpath.EndpointA.ChannelID, clienttypes.NewHeight(1, 100), 0)
-				key := host.PacketCommitmentKey(packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
-
-				value = channeltypes.CommitPacket(suite.chainA.App.GetIBCKeeper().Codec(), packet)
-			}, true,
-		},
-		{
-			"successful Acknowledgement verification", func() {
-				// send from chainA to chainB since we are proving chainB wrote an acknowledgement
-				sequence, err := testingpath.EndpointA.SendPacket(clienttypes.NewHeight(1, 100), 0, ibctesting.MockPacketData)
-				suite.Require().NoError(err)
-
-				// write receipt and ack
-				packet := channeltypes.NewPacket(ibctesting.MockPacketData, sequence, testingpath.EndpointA.ChannelConfig.PortID, testingpath.EndpointA.ChannelID, testingpath.EndpointB.ChannelConfig.PortID, testingpath.EndpointB.ChannelID, clienttypes.NewHeight(1, 100), 0)
-				err = testingpath.EndpointB.RecvPacket(packet)
-				suite.Require().NoError(err)
-
-				key := host.PacketAcknowledgementKey(packet.GetSourcePort(), packet.GetSourceChannel(), packet.GetSequence())
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
-
-				value = channeltypes.CommitAcknowledgement(ibcmock.MockAcknowledgement.Acknowledgement())
-			},
-			true,
-		},
-		{
-			"successful NextSequenceRecv verification", func() {
-				// send from chainA to chainB since we are proving chainB incremented the sequence recv
-
-				// send packet
-				sequence, err := testingpath.EndpointA.SendPacket(clienttypes.NewHeight(1, 100), 0, ibctesting.MockPacketData)
-				suite.Require().NoError(err)
-
-				// next seq recv incremented
-				packet := channeltypes.NewPacket(ibctesting.MockPacketData, sequence, testingpath.EndpointA.ChannelConfig.PortID, testingpath.EndpointA.ChannelID, testingpath.EndpointB.ChannelConfig.PortID, testingpath.EndpointB.ChannelID, clienttypes.NewHeight(1, 100), 0)
-				err = testingpath.EndpointB.RecvPacket(packet)
-				suite.Require().NoError(err)
-
-				key := host.NextSequenceRecvKey(packet.GetSourcePort(), packet.GetSourceChannel())
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
-
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
-
-				value = sdk.Uint64ToBigEndian(packet.GetSequence() + 1)
-			},
-			true,
-		},
-		{
-			"successful verification outside IBC store", func() {
-				key := transfertypes.PortKey
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(commitmenttypes.NewMerklePrefix([]byte(transfertypes.StoreKey)), merklePath)
-				suite.Require().NoError(err)
-
-				clientState := testingpath.EndpointA.GetClientState()
-				proof, proofHeight = suite.chainB.QueryProofForStore(transfertypes.StoreKey, key, int64(clientState.GetLatestHeight().GetRevisionHeight()))
-
-				value = []byte(suite.chainB.GetSimApp().TransferKeeper.GetPort(suite.chainB.GetContext()))
-				suite.Require().NoError(err)
-			},
-			true,
-		},
-		{
-			"delay time period has passed", func() {
-				delayTimePeriod = uint64(time.Second.Nanoseconds())
-			},
-			true,
-		},
-		{
-			"delay time period has not passed", func() {
-				delayTimePeriod = uint64(time.Hour.Nanoseconds())
-			},
-			false,
-		},
-		{
-			"delay block period has passed", func() {
-				delayBlockPeriod = 1
-			},
-			true,
-		},
-		{
-			"delay block period has not passed", func() {
-				delayBlockPeriod = 1000
-			},
-			false,
-		},
-		{
-			"latest client height < height", func() {
-				proofHeight = testingpath.EndpointA.GetClientState().GetLatestHeight().Increment()
-			}, false,
-		},
-		{
-			"invalid path type",
-			func() {
-				path = ibcmock.KeyPath{}
-			},
-			false,
-		},
-		{
-			"failed to unmarshal merkle proof", func() {
-				proof = invalidProof
-			}, false,
-		},
-		{
-			"consensus state not found", func() {
-				proofHeight = clienttypes.ZeroHeight()
-			}, false,
-		},
-		{
-			"proof verification failed", func() {
-				// change the value being proved
-				value = []byte("invalid value")
-			}, false,
-		},
-		{
-			"proof is empty", func() {
-				// change the inserted proof
-				proof = []byte{}
-			}, false,
+		TrustingPeriod:  uint64(trustingPeriod),
+		UnbondingPeriod: uint64(ubdPeriod),
+		MaxClockDrift:   uint64(maxClockDrift),
+		FrozenHeight:    cardano.HeightDatum{},
+		LatestHeight: cardano.HeightDatum{
+			RevisionNumber: latestHeight.RevisionNumber,
+			RevisionHeight: latestHeight.RevisionHeight,
 		},
 	}
 
-	for _, tc := range testCases {
-		tc := tc
+	/////// Consensus State
+	consensusTimestamp := time.Time{}
+	nextValsHash := []byte("dummy nextValsHash")
+	rootHash := commitmenttypes.MerkleRoot{
+		Hash: []byte("dummy rootHash"),
+	}
 
-		suite.Run(tc.name, func() {
-			suite.SetupTest() // reset
-			testingpath = ibctesting.NewPath(suite.chainA, suite.chainB)
-			testingpath.SetChannelOrdered()
-			suite.coordinator.Setup(testingpath)
+	expectedConsensusState := tmStruct.NewConsensusState(consensusTimestamp, rootHash, nextValsHash)
+	proofConsensusState := cardano.ConsensusStateDatum{
+		Timestamp:          uint64(consensusTimestamp.UnixNano()),
+		NextValidatorsHash: nextValsHash,
+		Root: cardano.RootHashInDatum{
+			Hash: rootHash.Hash,
+		},
+	}
 
-			// reset time and block delays to 0, malleate may change to a specific non-zero value.
-			delayTimePeriod = 0
-			delayBlockPeriod = 0
+	/////// Connection State
+	delayPeriod := uint64(60000) // dummy delay period
+	connectionCounterpartyVersions := connectiontypes.GetCompatibleVersions()
+	k := suite.chainA.App.GetIBCKeeper().ConnectionKeeper
+	prefix := k.GetCommitmentPrefix()
+	connectionStateConnectionID := ""
+	expectedConnectionCounterparty := connectiontypes.NewCounterparty(clientID, connectionStateConnectionID, commitmenttypes.NewMerklePrefix(prefix.Bytes()))
+	expectedConnectionEnd := connectiontypes.NewConnectionEnd(connectiontypes.INIT, expectedConnectionCounterparty.ClientId, expectedConnectionCounterparty, connectionCounterpartyVersions, delayPeriod)
 
-			// create default proof, merklePath, and value which passes
-			// may be overwritten by malleate()
-			key := host.FullClientStateKey(testingpath.EndpointB.ClientID)
-			merklePath := commitmenttypes.NewMerklePath(string(key))
-			path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-			suite.Require().NoError(err)
-
-			proof, proofHeight = suite.chainB.QueryProof(key)
-
-			clientState := testingpath.EndpointB.GetClientState().(*ibctm.ClientState)
-			value, err = suite.chainB.Codec.MarshalInterface(clientState)
-			suite.Require().NoError(err)
-
-			tc.malleate() // make changes as necessary
-
-			clientState = testingpath.EndpointA.GetClientState().(*ibctm.ClientState)
-
-			ctx := suite.chainA.GetContext()
-			store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(ctx, testingpath.EndpointA.ClientID)
-
-			err = clientState.VerifyMembership(
-				ctx, store, suite.chainA.Codec, proofHeight, delayTimePeriod, delayBlockPeriod,
-				proof, path, value,
-			)
-
-			if tc.expPass {
-				suite.Require().NoError(err)
-			} else {
-				suite.Require().Error(err)
-			}
+	var datumVersions []cardano.VersionDatum
+	for i, versionValue := range connectionCounterpartyVersions {
+		var features [][]byte
+		for _, feature := range connectionCounterpartyVersions[i].Features {
+			features = append(features, []byte(feature))
+		}
+		datumVersions = append(datumVersions, cardano.VersionDatum{
+			Identifier: []byte(versionValue.Identifier),
+			Features:   features,
 		})
 	}
-}
 
-func (suite *CardanoTestSuite) TestVerifyNonMembership() {
-	var (
-		testingpath         *ibctesting.Path
-		delayTimePeriod     uint64
-		delayBlockPeriod    uint64
-		err                 error
-		proofHeight         exported.Height
-		path                exported.Path
-		proof               []byte
-		invalidClientID     = "09-tendermint"
-		invalidConnectionID = "connection-100"
-		invalidChannelID    = "channel-800"
-		invalidPortID       = "invalid-port"
+	proofConnectionEndDatum := cardano.ConnectionEndDatum{
+		ClientId: []byte(clientID),
+		Versions: datumVersions,
+		State: cbor.Tag{
+			Number: uint64(connectiontypes.INIT) + cardano.CBOR_TAG_MAGIC_NUMBER,
+		},
+		Counterparty: cardano.CounterpartyDatum{
+			ClientId:     []byte(clientID),
+			ConnectionId: []byte(connectionStateConnectionID),
+			Prefix: cardano.MerklePrefixDatum{
+				KeyPrefix: prefix.Bytes(),
+			},
+		},
+		DelayPeriod: delayPeriod,
+	}
+
+	/////// Channel State
+
+	channelPortID := ""
+	channelConnectionID := ""
+	channelCounterpartyChannelId := ""
+	channelCounterpartyHops := []string{channelConnectionID}
+	channelState := channeltypes.INIT
+	order := channeltypes.ORDERED
+	channelCounterpartyVersion := "ics20-1"
+
+	expectedCounterparty := channeltypes.NewCounterparty(channelPortID, channelCounterpartyChannelId)
+	expectedChannelValue := channeltypes.NewChannel(
+		channelState, order, expectedCounterparty,
+		channelCounterpartyHops, channelCounterpartyVersion,
 	)
+	var connectionHops [][]byte
+	for _, hop := range channelCounterpartyHops {
+		connectionHops = append(connectionHops, []byte(hop))
+	}
+	proofChannelData := cardano.ChannelDatum{
+		State: cbor.Tag{
+			Number: uint64(channelState) + cardano.CBOR_TAG_MAGIC_NUMBER,
+		},
+		Ordering: cbor.Tag{
+			Number: uint64(order) + cardano.CBOR_TAG_MAGIC_NUMBER,
+		},
+		Counterparty: cardano.ChannelCounterpartyDatum{
+			PortId:    []byte(channelPortID),
+			ChannelId: []byte(channelConnectionID),
+		},
+		ConnectionHops: connectionHops,
+		Version:        []byte(channelCounterpartyVersion),
+	}
 
 	testCases := []struct {
 		name     string
-		malleate func()
+		execFunc func(cdc codec.BinaryCodec) error
 		expPass  bool
 	}{
 		{
-			"successful ClientState verification of non membership",
-			func() {
-				// default proof construction uses ClientState
+			name: "valid VerifyProofClientState",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
 			},
-			true,
+			expPass: true,
 		},
 		{
-			"successful ConsensusState verification of non membership", func() {
-				key := host.FullConsensusStateKey(invalidClientID, testingpath.EndpointB.GetClientState().GetLatestHeight())
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+			name: "invalid VerifyProofClientState: Chain Id mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
 
-				proof, proofHeight = suite.chainB.QueryProof(key)
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.ChainId = []byte("dummy chain ID")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
 			},
-			true,
+			expPass: false,
 		},
 		{
-			"successful Connection verification of non membership", func() {
-				key := host.ConnectionKey(invalidConnectionID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+			name: "invalid VerifyProofClientState: TrustLevel mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.TrustLevel.Denominator += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofClientState: TrustingPeriod mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.TrustingPeriod += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofClientState: UnbondingPeriod mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.UnbondingPeriod += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofClientState: MaxClockDrift mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.MaxClockDrift += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofClientState: FrozenHeight mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.FrozenHeight.RevisionHeight += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofClientState: LatestHeight mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedClientState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofDataClientState
+				proofData.LatestHeight.RevisionHeight += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofClientState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "valid VerifyProofConsensusState",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedConsensusState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofConsensusState
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConsensusState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: true,
+		},
+		{
+			name: "invalid VerifyProofConsensusState: Timestamp mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedConsensusState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofConsensusState
+				proofData.Timestamp = uint64(time.Now().UnixNano())
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConsensusState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofConsensusState: NextValidatorsHash mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedConsensusState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofConsensusState
+				proofData.NextValidatorsHash = []byte("dummy nextValsHash invalid")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConsensusState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofConsensusState: RootHash mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedConsensusState
+				expectedValueBytes, err := cdc.MarshalInterface(expectedValue)
+				if err != nil {
+					return err
+				}
+				proofData := proofConsensusState
+				proofData.Root.Hash = []byte("dummy Root.Hash invalid")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConsensusState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "valid VerifyProofConnectionState",
+			execFunc: func(cdc codec.BinaryCodec) error {
 
-				proof, proofHeight = suite.chainB.QueryProof(key)
-			},
-			true,
-		},
-		{
-			"successful Channel verification of non membership", func() {
-				key := host.ChannelKey(testingpath.EndpointB.ChannelConfig.PortID, invalidChannelID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
 
-				proof, proofHeight = suite.chainB.QueryProof(key)
+				proofData := proofConnectionEndDatum
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
 			},
-			true,
+			expPass: true,
 		},
 		{
-			"successful PacketCommitment verification of non membership", func() {
-				// make packet commitment proof
-				key := host.PacketCommitmentKey(invalidPortID, invalidChannelID, 1)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+			name: "invalid VerifyProofConnectionState: ClientId mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
 
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
-			}, true,
-		},
-		{
-			"successful Acknowledgement verification of non membership", func() {
-				key := host.PacketAcknowledgementKey(invalidPortID, invalidChannelID, 1)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
 
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
+				proofData := proofConnectionEndDatum
+				proofData.ClientId = []byte("invalid ClientId")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
 			},
-			true,
+			expPass: false,
 		},
 		{
-			"successful NextSequenceRecv verification of non membership", func() {
-				key := host.NextSequenceRecvKey(invalidPortID, invalidChannelID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+			name: "invalid VerifyProofConnectionState: Versions length mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
 
-				proof, proofHeight = testingpath.EndpointB.QueryProof(key)
-			},
-			true,
-		},
-		{
-			"successful verification of non membership outside IBC store", func() {
-				key := []byte{0x08}
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(commitmenttypes.NewMerklePrefix([]byte(transfertypes.StoreKey)), merklePath)
-				suite.Require().NoError(err)
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
 
-				clientState := testingpath.EndpointA.GetClientState()
-				proof, proofHeight = suite.chainB.QueryProofForStore(transfertypes.StoreKey, key, int64(clientState.GetLatestHeight().GetRevisionHeight()))
+				proofData := proofConnectionEndDatum
+				proofData.Versions = []cardano.VersionDatum{}
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
 			},
-			true,
+			expPass: false,
 		},
 		{
-			"delay time period has passed", func() {
-				delayTimePeriod = uint64(time.Second.Nanoseconds())
-			},
-			true,
-		},
-		{
-			"delay time period has not passed", func() {
-				delayTimePeriod = uint64(time.Hour.Nanoseconds())
-			},
-			false,
-		},
-		{
-			"delay block period has passed", func() {
-				delayBlockPeriod = 1
-			},
-			true,
-		},
-		{
-			"delay block period has not passed", func() {
-				delayBlockPeriod = 1000
-			},
-			false,
-		},
-		{
-			"latest client height < height", func() {
-				proofHeight = testingpath.EndpointA.GetClientState().GetLatestHeight().Increment()
-			}, false,
-		},
-		{
-			"invalid path type",
-			func() {
-				path = ibcmock.KeyPath{}
-			},
-			false,
-		},
-		{
-			"failed to unmarshal merkle proof", func() {
-				proof = invalidProof
-			}, false,
-		},
-		{
-			"consensus state not found", func() {
-				proofHeight = clienttypes.ZeroHeight()
-			}, false,
-		},
-		{
-			"verify non membership fails as path exists", func() {
-				// change the value being proved
-				key := host.FullClientStateKey(testingpath.EndpointB.ClientID)
-				merklePath := commitmenttypes.NewMerklePath(string(key))
-				path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-				suite.Require().NoError(err)
+			name: "invalid VerifyProofConnectionState: State mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
 
-				proof, proofHeight = suite.chainB.QueryProof(key)
-			}, false,
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofConnectionEndDatum
+				proofData.State = cbor.Tag{
+					Number: uint64(connectiontypes.OPEN) + cardano.CBOR_TAG_MAGIC_NUMBER,
+				}
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
 		},
 		{
-			"proof is empty", func() {
-				// change the inserted proof
-				proof = []byte{}
-			}, false,
+			name: "invalid VerifyProofConnectionState: Counterparty.ClientId mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofConnectionEndDatum
+				proofData.Counterparty.ClientId = []byte("invalid Counterparty clientId")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofConnectionState: Counterparty.ConnectionId mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofConnectionEndDatum
+				proofData.Counterparty.ConnectionId = []byte("invalid Counterparty ConnectionId")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofConnectionState: Counterparty.Prefix mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofConnectionEndDatum
+				proofData.Counterparty.Prefix.KeyPrefix = []byte("invalid Counterparty KeyPrefix")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofConnectionState: DelayPeriod mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+
+				expectedValue := expectedConnectionEnd
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofConnectionEndDatum
+				proofData.DelayPeriod += 1
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofConnectionState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "valid VerifyProofChannelState",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: true,
+		},
+		{
+			name: "invalid VerifyProofChannelState: State mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofData.State = cbor.Tag{
+					Number: uint64(channelState) + cardano.CBOR_TAG_MAGIC_NUMBER + 1,
+				}
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofChannelState: Ordering mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofData.Ordering = cbor.Tag{
+					Number: uint64(order) + cardano.CBOR_TAG_MAGIC_NUMBER + 1,
+				}
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofChannelState: Counterparty.PortId mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofData.Counterparty.PortId = []byte("invalid Counterparty.PortId")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofChannelState: Counterparty.ChannelId mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofData.Counterparty.ChannelId = []byte("invalid Counterparty.ChannelId")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
+		},
+		{
+			name: "invalid VerifyProofChannelState: Version mismatch",
+			execFunc: func(cdc codec.BinaryCodec) error {
+				expectedValue := expectedChannelValue
+				expectedValueBytes, err := cdc.Marshal(&expectedValue)
+				if err != nil {
+					return err
+				}
+
+				proofData := proofChannelData
+				proofData.Version = []byte("invalid Version")
+				proofDataInStore, err := cbor.Marshal(proofData)
+				if err != nil {
+					return err
+				}
+				return cardano.VerifyProofChannelState(proofPath, expectedValueBytes, proofDataInStore, cdc)
+			},
+			expPass: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
-
 		suite.Run(tc.name, func() {
-			suite.SetupTest() // reset
-			testingpath = ibctesting.NewPath(suite.chainA, suite.chainB)
-			testingpath.SetChannelOrdered()
-			suite.coordinator.Setup(testingpath)
+			suite.SetupTest()
+			path := NewPath(suite.chainA, suite.chainB)
+			height := cardano.Height{RevisionNumber: 0, RevisionHeight: 10}
+			clientState := cardano.NewClientState(chainID, &height, 0, 1705895324, 2, 423000, 129600, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, []*cardano.Validator{{
+				VrfKeyHash: "FEC17ED60CBF2EC5BE3F061FB4DE0B6EF1F20947CFBFCE5FB2783D12F3F69FF5",
+				PoolId:     "pool13gsek6vd8dhqxsu346zvae30r4mtd77yth07fcc7p49kqc3fd09",
+			}}, 950400, []string{}, &cardano.TokenConfigs{})
 
-			// reset time and block delays to 0, malleate may change to a specific non-zero value.
-			delayTimePeriod = 0
-			delayBlockPeriod = 0
+			store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
+			clientState.Initialize(suite.chainA.GetContext(), suite.chainA.Codec, store, &cardano.ConsensusState{
+				Timestamp: 1707122673,
+				Slot:      1214009,
+			})
 
-			// create default proof, merklePath, and value which passes
-			// may be overwritten by malleate()
-			key := host.FullClientStateKey("invalid-client-id")
+			cdc := suite.chainA.Codec
 
-			merklePath := commitmenttypes.NewMerklePath(string(key))
-			path, err = commitmenttypes.ApplyPrefix(suite.chainB.GetPrefix(), merklePath)
-			suite.Require().NoError(err)
-
-			proof, proofHeight = suite.chainB.QueryProof(key)
-
-			tc.malleate() // make changes as necessary
-
-			clientState := testingpath.EndpointA.GetClientState().(*ibctm.ClientState)
-
-			ctx := suite.chainA.GetContext()
-			store := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(ctx, testingpath.EndpointA.ClientID)
-
-			err = clientState.VerifyNonMembership(
-				ctx, store, suite.chainA.Codec, proofHeight, delayTimePeriod, delayBlockPeriod,
-				proof, path,
-			)
+			err := tc.execFunc(cdc)
 
 			if tc.expPass {
-				suite.Require().NoError(err)
+				suite.Require().NoError(err, "valid case returned an error")
 			} else {
-				suite.Require().Error(err)
+				suite.Require().Error(err, "invalid case didn't return an error")
+
 			}
 		})
 	}

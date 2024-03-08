@@ -3,7 +3,7 @@ package processor_test
 import (
 	"testing"
 
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/stretchr/testify/require"
 )
 

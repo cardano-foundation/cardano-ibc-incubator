@@ -2,7 +2,6 @@ package cosmos
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -14,11 +13,13 @@ import (
 	"sync"
 	"time"
 
-	pbclientstruct "git02.smartosc.com/cardano/ibc-sidechain/relayer/proto/cardano/gateway/sidechain/x/clients/cardano"
-	strideicqtypes "git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/chains/cosmos/stride"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/ethermint"
-	"git02.smartosc.com/cardano/ibc-sidechain/relayer/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+
 	"github.com/avast/retry-go/v4"
+	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
+	"github.com/cardano/relayer/v1/relayer/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/cometbft/cometbft/libs/bytes"
 	"github.com/cometbft/cometbft/light"
@@ -170,12 +171,9 @@ func (cc *CosmosProvider) SendMessagesToMempool(
 		return err
 	}
 
-	fmt.Println(msgs)
-
 	sequenceGuard := ensureSequenceGuard(cc, txSignerKey)
 	sequenceGuard.Mu.Lock()
 	defer sequenceGuard.Mu.Unlock()
-
 	txBytes, sequence, fees, err := cc.buildMessages(ctx, msgs, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
 	if err != nil {
 		// Account sequence mismatch errors can happen on the simulated transaction also.
@@ -185,7 +183,6 @@ func (cc *CosmosProvider) SendMessagesToMempool(
 
 		return err
 	}
-
 	if err := cc.broadcastTx(ctx, txBytes, msgs, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks); err != nil {
 		if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
 			cc.handleAccountSequenceMismatchError(sequenceGuard, err)
@@ -361,7 +358,6 @@ func (cc *CosmosProvider) broadcastTx(
 	tx []byte, // raw tx to be broadcasted
 	msgs []provider.RelayerMessage, // used for logging only
 	fees sdk.Coins, // used for metrics
-
 	asyncCtx context.Context, // context for async wait for block inclusion after successful tx broadcast
 	asyncTimeout time.Duration, // timeout for waiting for block inclusion
 	asyncCallbacks []func(*provider.RelayerTxResponse, error), // callback for success/fail of the wait for block inclusion
@@ -417,8 +413,6 @@ func (cc *CosmosProvider) waitForTx(
 	callbacks []func(*provider.RelayerTxResponse, error),
 ) {
 	res, err := cc.waitForBlockInclusion(ctx, txHash, waitTimeout)
-	hexData := hex.EncodeToString(txHash)
-	fmt.Println("txHash:", hexData)
 	if err != nil {
 		cc.log.Error("Failed to wait for block inclusion", zap.Error(err))
 		if len(callbacks) > 0 {
@@ -1000,7 +994,7 @@ func (cc *CosmosProvider) ConnectionHandshakeProof(
 	msgOpenInit provider.ConnectionInfo,
 	height uint64,
 ) (provider.ConnectionProof, error) {
-	clientState, clientStateProof, consensusStateProof, connStateProof, proofHeight, err := cc.GenerateConnHandshakeProof(ctx, int64(height), msgOpenInit.ClientID, msgOpenInit.ConnID)
+	clientState, clientStateProof, consensusStateProof, connStateProof, proofHeight, err := cc.GenerateConnHandshakeProof(ctx, int64(height)+1, msgOpenInit.ClientID, msgOpenInit.ConnID)
 	if err != nil {
 		return provider.ConnectionProof{}, err
 	}
@@ -1027,7 +1021,6 @@ func (cc *CosmosProvider) MsgConnectionOpenTry(msgOpenInit provider.ConnectionIn
 	if err != nil {
 		return nil, err
 	}
-
 	csAny, err := clienttypes.PackClientState(proof.ClientState)
 	if err != nil {
 		return nil, err
@@ -1112,6 +1105,7 @@ func (cc *CosmosProvider) MsgConnectionOpenConfirm(msgOpenAck provider.Connectio
 	if err != nil {
 		return nil, err
 	}
+
 	msg := &conntypes.MsgConnectionOpenConfirm{
 		ConnectionId: msgOpenAck.CounterpartyConnID,
 		ProofAck:     proof.ConnectionStateProof,
@@ -1223,6 +1217,7 @@ func (cc *CosmosProvider) MsgChannelOpenConfirm(msgOpenAck provider.ChannelInfo,
 	if err != nil {
 		return nil, err
 	}
+
 	msg := &chantypes.MsgChannelOpenConfirm{
 		PortId:      msgOpenAck.CounterpartyPortID,
 		ChannelId:   msgOpenAck.CounterpartyChannelID,
@@ -1530,13 +1525,20 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 		return &tmclient.ClientState{}, err
 	}
 
-	clientState, ok := clientStateExported.(*tmclient.ClientState)
+	clientState, ok := clientStateExported.(*module.ClientState)
 	if !ok {
 		return &tmclient.ClientState{},
 			fmt.Errorf("error when casting exported clientstate to tendermint type, got(%T)", clientStateExported)
 	}
-
-	return clientState, nil
+	//TODO: find out better solution
+	// current use only for trustingPeriod and LatestHeight
+	return &tmclient.ClientState{
+		TrustingPeriod: time.Duration(clientState.TrustingPeriod),
+		LatestHeight: clienttypes.Height{
+			RevisionNumber: clientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientState.LatestHeight.RevisionHeight,
+		},
+	}, nil
 }
 
 // queryLocalhostClientState retrieves the latest consensus state for a client in state at a given height
@@ -1913,14 +1915,12 @@ func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.Cli
 		return nil, err
 	}
 	anyClientState.TypeUrl = string("/ibc.clients.cardano.v1.ClientState")
-	fmt.Printf("befor pack consensusState", consensusState)
 	anyConsensusState, err := PackConsensusState(consensusState)
 	if err != nil {
 		return nil, err
 	}
 	anyConsensusState.TypeUrl = string("/ibc.clients.cardano.v1.ConsensusState")
 
-	fmt.Printf("after pack consensusState", anyConsensusState)
 	msg := &clienttypes.MsgCreateClient{
 		ClientState:    anyClientState,
 		ConsensusState: anyConsensusState,

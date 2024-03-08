@@ -56,7 +56,7 @@ func genMnemonic(t *testing.T) string {
 }
 
 // TestRelayerFeeGrant Feegrant on a single chain
-// Run this test with e.g. go test -timeout 300s -run ^TestRelayerFeeGrant$ git02.smartosc.com/cardano/ibc-sidechain/relayer/ibctest.
+// Run this test with e.g. go test -timeout 300s -run ^TestRelayerFeeGrant$ github.com/cardano/relayer/v1/ibctest.
 //
 // Helpful to debug:
 // docker ps -a --format {{.Names}} then e.g. docker logs gaia-1-val-0-TestRelayerFeeGrant 2>&1 -f
