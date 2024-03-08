@@ -13,7 +13,7 @@ While we strive for high functionality and user satisfaction and endeavour to ma
 ## :eyes: Overview
 This repository is subdivided into three main folders:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
-- `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. Forked from 
+- `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
 - `relayer`: Contains all relayer related source code. Forked from https://github.com/cosmos/relayer
 
 ## :rocket: Getting Started
