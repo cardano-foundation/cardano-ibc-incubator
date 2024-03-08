@@ -1,22 +1,44 @@
-# IBC Cardano Cosmos
+# Cardano IBC Incubator
+This project is working towards a bridge implementation to allow exchange of information from a Cardano blockchain to Cosmos SDK based blockchains. 
 
-## System overview
+It follows the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) and is trying to achieve full compliance with the parts of the specification identified necessary for the developed framework.
 
-This repo have 3 folders:
-- cardano: this folder contain the Cardano chain and also a service named `gateway`, `cardano-node-services` to support replayer fetch/submit IBC related action to Cardano
-- cosmos: this folder contain the Cosmos chain, also the module Cardano client
-- relayer: this folder contain code of the relayer
+## :heavy_exclamation_mark: Disclaimer
+Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
 
-## Prerequire:
-- Install docker, aiken, deno and jq
+:heavy_exclamation_mark: The software withing this repository is provided to you on an "as is" and "as available" basis.
 
-## Building services
+While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
+
+## :eyes: Overview
+This repository is subdivided into three main folders:
+- `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
+- `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. Forked from 
+- `relayer`: Contains all relayer related source code. Forked from 
+
+## :rocket: Getting Started
+
+### Prerequisites:
+- [Docker](https://docs.docker.com/get-docker/)
+- [Aiken](https://aiken-lang.org/installation-instructions)
+- [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
+- [jq](https://jqlang.github.io/jq/download/)
+
+### Cardano developer ecosystem components used
+The current implementation leverages a number of frameworks maintained by the Cardano developer community. We list them here for appreciation and transparency. Without tools like those listed and others, projects like this would not be possible:
+- [Pallas](https://github.com/txpipe/pallas)
+- [Lucid](https://github.com/spacebudz/lucid)
+- [Ogmios](https://github.com/cardanosolutions/ogmios)
+- [Kupo](https://github.com/cardanosolutions/kupo)
+- [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
+
+### Build from source
 
 ```sh
 ./build.sh
 ```
 
-## Run Cardano chain, Cosmos chain and relayer
+### Run Cardano chain, Cosmos chain and relayer
 
 ```sh
 ./start.sh
@@ -33,13 +55,13 @@ sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF executed block app_hash=5EBC66
 
 ```
 
-## Stop Cardano chain, Cosmos chain and relayer
+### Stop Cardano chain, Cosmos chain and relayer
 
 ```sh
 ./stop.sh
 ```
 
-## Faucet:
+### Faucet:
 
 ```sh
 Sidechain:
@@ -55,14 +77,14 @@ cd cardano/chains
 Open file seed-devnet.sh, navigate to last line, enter your address, save then run: ./seed-devnet.sh
 ```
 
-## Aiken test:
+### Aiken test:
 
 ```sh
 cd cardano
 aiken check
 ```
 
-## Run create client:
+### Run create client:
 ```sh
 docker exec -it relayer /bin/bash # Access to relayer container
 cd /home/relayer && bash relayer-start.sh # Start init and create clients on both side
@@ -77,7 +99,7 @@ To verify:
 
 ```
 
-## Run update client
+### Run update client
 ```sh
 
 docker exec -it relayer /bin/bash # Access to relayer container
@@ -92,3 +114,12 @@ To verify:
     - After run script, client_id like "099-cardano-0" will have new value in latest_height.revision_height
 
 ```
+
+## :blue_heart: Contributing
+All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.
+
+Please read [Contributing](CONTRIBUTING.md) in advance. Thank you for contributing!
+
+## :books: Additional Documents
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
