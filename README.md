@@ -1,87 +1,104 @@
-# IBC Cardano Cosmos
+# Cardano IBC Incubator
+This project is working towards a bridge implementation to allow exchange of information from a Cardano blockchain to Cosmos SDK based blockchains. 
 
-## System overview
+It follows the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) and is trying to achieve full compliance with the parts of the specification identified necessary for the developed framework.
 
-This repo have 3 folders:
-- cardano: this folder contain the Cardano chain and also a service named `gateway`, `cardano-node-services` to support replayer fetch/submit IBC related action to Cardano
-- cosmos: this folder contain the Cosmos chain, also the module Cardano client
-- relayer: this folder contain code of the relayer
+## :heavy_exclamation_mark: Disclaimer
+Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
 
-## Prerequire:
-- Install docker, aiken, deno and jq
+:heavy_exclamation_mark: The software withing this repository is provided to you on an "as is" and "as available" basis.
 
-## Building services
+While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
 
+## :eyes: Overview
+This repository is subdivided into three main folders:
+- `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
+- `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
+- `relayer`: Contains all relayer related source code. Forked from https://github.com/cosmos/relayer
+
+## :rocket: Getting Started
+
+### Prerequisites
+- [Docker](https://docs.docker.com/get-docker/)
+- [Aiken](https://aiken-lang.org/installation-instructions)
+- [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
+- [jq](https://jqlang.github.io/jq/download/)
+
+### Cardano developer ecosystem components used
+The current implementation leverages a number of frameworks maintained by the Cardano developer community. We list them here for appreciation and transparency. Without tools like those listed and others, projects like this would not be possible:
+- [Pallas](https://github.com/txpipe/pallas)
+- [Lucid](https://github.com/spacebudz/lucid)
+- [Ogmios](https://github.com/cardanosolutions/ogmios)
+- [Kupo](https://github.com/cardanosolutions/kupo)
+- [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
+
+### Build from source
 ```sh
 ./build.sh
 ```
 
-## Run Cardano chain, Cosmos chain and relayer
+### Running a test environment on a local machine
 
 ```sh
 ./start.sh
+```
 
-Note: sidechain 1st start take a bit time to sprint up, you can view it logs using:
+Note: This will spin up a local Cardano and Cosmos blockchain and a relayer instance.
+
+Note: On 1st start of the sidechain it might take a bit time to be readily booted. You can check in the logs if it is done via:
+
+```sh
 cd cosmos && docker compose logs sidechain-node-prod -f
+```
 
 When it look like this, you can start to check create/update client:
+```sh
 ....
 sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF finalizing commit of block hash=2FA357EEC3EF7431C85861E3A331C7D1C8D6D8AEB9751BD3870E003B300F45A7 height=8 module=consensus num_txs=0 root=9FBBFCB424872B3B764B3CEAA9079955BA02DDB1E35B29B867A8D88C7600DA03
 sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF finalized block block_app_hash=5EBC66EF091AEF3CB4E5BC6A31F5713162739A4127EB59AF3A47DB4BF26B3AE8 height=8 module=state num_txs_res=0 num_val_updates=0
 sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF executed block app_hash=5EBC66EF091AEF3CB4E5BC6A31F5713162739A4127EB59AF3A47DB4BF26B3AE8 height=8 
 ....
-
 ```
 
-## Stop Cardano chain, Cosmos chain and relayer
+### Stopping the test environment
 
 ```sh
 ./stop.sh
 ```
 
-## Faucet:
+### Using the faucet to create and fund accounts in the test environment
 
-```sh
 Sidechain:
-
+```sh
 curl -X POST "http://localhost:4500/" -H  "accept: application/json" -H  "Content-Type: application/json" -d "{  \"address\": \"cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6\",  \"coins\": [    \"10token\",\"10stake\"  ]}"
+```
 
-or access to http://localhost:4500
+or access to `http://localhost:4500`
 
 Mainchain:
 
+```sh
 cd cardano/chains
-
-Open file seed-devnet.sh, navigate to last line, enter your address, save then run: ./seed-devnet.sh
 ```
 
-## Aiken test:
+Open file `seed-devnet.sh`, navigate to last line, enter your address, save then run: `./seed-devnet.sh`
+
+### Running the Aiken tests
 
 ```sh
 cd cardano
 aiken check
 ```
 
-## Msg will be use when doing handshake:
-### Connection:
- + /ibc.core.connection.v1.MsgConnectionOpenInit
- + /ibc.core.connection.v1.MsgConnectionOpenTry
- + /ibc.core.connection.v1.MsgConnectionOpenAck
- + /ibc.core.connection.v1.MsgConnectionOpenConfirm
-
-### Channel:
- + /ibc.core.channel.v1.MsgChannelOpenInit
- + /ibc.core.channel.v1.MsgChannelOpenTry
- + /ibc.core.channel.v1.MsgChannelOpenAck
- + /ibc.core.channel.v1.MsgChannelOpenConfirm
-
-## Run create client + connection + channel:
+### Creating IBC clients, connections and channels
 ```sh
 docker exec -it relayer /bin/bash # Access to relayer container
 cd /home/relayer && bash relayer-start.sh
+```
 
-Relayer will auto create new client, connection and channel.
+The relayer will automatically create a new client, connection and channel.
 
+```sh
 2024-03-04T09:22:55.419918Z	info	Starting event processor for connection handshake ...
 ...
 2024-03-04T09:23:21.817317Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.connection.v1.MsgConnectionOpenInit"], "tx_hash": "289dde7686a8bf1343278ddac0e6412b3a114367cd085e1e4f26dd7e682e9021"}
@@ -107,45 +124,48 @@ Relayer will auto create new client, connection and channel.
 2024-03-04T09:25:44.547784Z	info	Successfully created new channel
 ```
 
-## Msg will be use when doing packet relay:
- + /ibc.core.channel.v1.MsgRecvPacket
- + /ibc.core.channel.v1.MsgAcknowledgement
-
-## Run send packet from sidechain to mainchain
+### Sending a message from Cosmos to Cardano
 ```sh
-Open new terminal, run
-
 docker exec -it relayer /bin/bash # Access to relayer container
 cd /home/relayer && bash xtransfer.sh # Start submit transfer packet
+```
 
-After run xtransfer.sh, relayer will capture packet, then do relay msg to Cardano, then later, call Ack to Cosmos, complete that cycle
+After running `xtransfer.sh`, the relayer will capture the packet, relay a message to Cardano, call Ack on Cosmos, and by that complete the cycle.
 
+```sh
 2024-03-04T09:26:53.779140Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgRecvPacket"], "tx_hash": "a35bc010a9e5e78c88469707aa10c3501bf19e51e0539b4720d70479d44fc3bc"}
 ...
 2024-03-04T09:27:01.748158Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "packet_src_channel": "channel-7", "packet_dst_channel": "channel-7", "gas_used": 55261, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8573, "msg_types": ["/ibc.core.channel.v1.MsgAcknowledgement"], "tx_hash": "D162CC2356A09F09C80D616987FE4BE965FDEA7C3C93AC0F2D1D5BE4589C8A46"}
-
 ```
 
-### Add new SPO on Cardano:
+### Register a new stake pool on the local Cardano blockchain:
 ```sh
 cd cardano/chains && ./regis-spo.sh <name>
-
-Example: cd cardano/chains && ./regis-spo.sh alice
 ```
 
-### Retire your SPO on Cardano:
+Example:
+
+```sh
+cd cardano/chains && ./regis-spo.sh alice
+```
+
+### Retire a stake pool on the local Cardano blockchain:
+This will sent a tx to retire your pool in the next epoch:
+
 ```sh
 cd cardano/chains && ./deregis-spo.sh <name>
-
-This will sent a tx to retire your pool in next epoch
-Example: cd cardano/chains && ./deregis-spo.sh alice
 ```
 
-### Regis a validator on Cosmos
+Example:
 
 ```sh
+cd cardano/chains && ./deregis-spo.sh alice
+```
+
+### Register a validator on Cosmos
 This script will connect to your current docker and regis a new validator
 
+```sh
 Run this to check we only have 1 validator: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
 
 Run this to regis new validator: cd cosmos/scripts/ && ./regis-spo.sh
@@ -154,11 +174,18 @@ Run this to check we now have 2 validators: curl -X GET "http://localhost:1317/c
 
 ```
 
-### DeRegis a validator on Cosmos
+### Unregister a validator on Cosmos
+Stop the running script above, then wait for about 100 blocks (~2 mins), then check we only have 1 validator:
 
 ```sh
-Stop the running script above, then wait for about 100 blocks (~2 mins), then check we only have 1 validator: 
-
 curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
 ```
+
+## :blue_heart: Contributing
+All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.
+
+Please read [Contributing](CONTRIBUTING.md) in advance. Thank you for contributing!
+
+## :books: Additional Documents
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
