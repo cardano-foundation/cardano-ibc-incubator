@@ -575,11 +575,14 @@ func (utxo UTXOOutput) TryMatchAndSaveIBCType(ctx sdk.Context, tokenConfigs Toke
 				for seq, recvByte := range vOutput.State.PacketReceipt {
 					packetReceiptKey := ClientUTXOIBCAnyKey(height, KeyUTXOPacketReceiptsPrefix, strings.ToLower(utxo.TxHash), utxo.OutputIndex, string(vOutput.PortId[:]), channeltypes.FormatChannelIdentifier(channelSeq), strconv.FormatUint(seq, 10))
 					clientStore.Set(packetReceiptKey, recvByte)
+					extraKeys := []byte(KeyUTXOsPrefix + "/" + KeyUTXOPacketReceiptsPrefix + "/" + string(vOutput.PortId[:]) + "/" + channeltypes.FormatChannelIdentifier(channelSeq) + "/" + strconv.FormatUint(seq, 10))
+					clientStore.Set(extraKeys, []byte{1})
 
 					// Emit Event packetReceipt
 					ctx.EventManager().EmitEvent(
 						sdk.NewEvent("Saved: packetReceipt",
 							sdk.NewAttribute("packetReceiptKey:", string(packetReceiptKey[:])),
+							sdk.NewAttribute("extraKeys:", string(extraKeys[:])),
 						),
 					)
 				}
@@ -617,35 +620,19 @@ func (utxo UTXOOutput) TryMatchAndSaveIBCType(ctx sdk.Context, tokenConfigs Toke
 
 }
 
-// func getUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) UTXOOutput {
-// 	key := ClientUTXOKey(height, txHash, txIndex)
-// 	return MustUnmarshalUTXO(clientStore.Get(key))
-// }
+// setConsensusStateBlockHash stores the consensus state block hash at the given height.
+func SetConsensusStateBlockHash(clientStore storetypes.KVStore, height exported.Height, blockHash string) {
+	key := ConsensusStateBlockHashKey(height)
+	clientStore.Set(key, []byte(blockHash))
+}
 
-// // IterationKeyUTXO returns the key under which the UTXOs key will be stored.
-// func IterationKeyUTXO(height exported.Height, txHash, txIndex string) []byte {
-// 	heightBytes := bigEndianHeightBytes(height)
-// 	key := append([]byte(KeyIterateUTXOsPrefix), heightBytes...)
-// 	key = append(key, []byte(txHash)...)
-// 	key = append(key, []byte(txIndex)...)
-// 	return key
-// }
+// GetConsensusState retrieves the consensus state from the client prefixed store.
+// If the ConsensusState does not exist in state for the provided height a nil value and false boolean flag is returned
+func GetConsensusStateBlockHash(store storetypes.KVStore, height exported.Height) (string, bool) {
+	bz := store.Get(ConsensusStateBlockHashKey(height))
+	if len(bz) == 0 {
+		return "", false
+	}
 
-// // SetIterationKeyUTXO stores the UTXOs key under a key that is more efficient for ordered iteration
-// func SetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
-// 	key := IterationKeyUTXO(height, txHash, txIndex)
-// 	val := ClientUTXOKey(height, txHash, txIndex)
-// 	clientStore.Set(key, val)
-// }
-
-// // GetIterationKeyUTXO returns the UTXOs key stored under the efficient iteration key.
-// func GetIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) []byte {
-// 	key := IterationKeyUTXO(height, txHash, txIndex)
-// 	return clientStore.Get(key)
-// }
-
-// // deleteIterationKey deletes the iteration key for a given height
-// func deleteIterationKeyUTXO(clientStore storetypes.KVStore, height exported.Height, txHash, txIndex string) {
-// 	key := IterationKeyUTXO(height, txHash, txIndex)
-// 	clientStore.Delete(key)
-// }
+	return string(bz[:]), true
+}

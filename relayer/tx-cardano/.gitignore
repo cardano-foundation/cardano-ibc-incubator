@@ -1,4 +1,4 @@
 node_modules/*
-key.sk
 .env
 logs/*
+path-config.json

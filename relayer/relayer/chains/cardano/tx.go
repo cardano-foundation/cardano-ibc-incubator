@@ -2,15 +2,15 @@ package cardano
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
-	"math/big"
 	"regexp"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	ibcclient "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
+	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 
 	pbclient "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	any1 "github.com/golang/protobuf/ptypes/any"
@@ -21,37 +21,22 @@ import (
 	pbconnection "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
-	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
-	"github.com/cardano/relayer/v1/relayer/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/cometbft/cometbft/light"
-	rpcclient "github.com/cometbft/cometbft/rpc/client"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
-	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	"github.com/cosmos/cosmos-sdk/store/rootmulti"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	feetypes "github.com/cosmos/ibc-go/v7/modules/apps/29-fee/types"
-	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
-	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-
-	"github.com/cardano/relayer/v1/relayer/provider"
+	echovl "github.com/echovl/cardano-go"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 // Variables used for retries
@@ -80,28 +65,28 @@ var (
 )
 
 // AcknowledgementFromSequence relays an acknowledgement with a given seq on src, source is the sending chain, destination is the receiving chain
-func (cc *CardanoProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, error) {
+func (cc *CardanoProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, uint64, error) {
 	msgRecvPacket, err := dst.QueryRecvPacket(ctx, dstChanId, dstPortId, seq)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	pp, err := dst.PacketAcknowledgement(ctx, msgRecvPacket, dsth)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	msg, err := cc.MsgAcknowledgement(msgRecvPacket, pp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return msg, nil
+	return msg, pp.ProofHeight.RevisionHeight, nil
 }
 
 func (cc *CardanoProvider) MsgAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	proof provider.PacketProof,
 ) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -112,68 +97,42 @@ func (cc *CardanoProvider) MsgAcknowledgement(
 		ProofHeight:     proof.ProofHeight,
 		Signer:          signer,
 	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
+	res, err := cc.GateWay.PacketAcknowledgement(context.Background(), transferMsgAcknowledgement(msg))
+	if err != nil {
+		return nil, err
+	}
+	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+func transferMsgAcknowledgement(msg *chantypes.MsgAcknowledgement) *pbchannel.MsgAcknowledgement {
+	return &pbchannel.MsgAcknowledgement{
+		Packet: &pbchannel.Packet{
+			Sequence:           msg.Packet.Sequence,
+			SourcePort:         msg.Packet.SourcePort,
+			SourceChannel:      msg.Packet.SourceChannel,
+			DestinationPort:    msg.Packet.DestinationPort,
+			DestinationChannel: msg.Packet.DestinationChannel,
+			Data:               msg.Packet.Data,
+			TimeoutHeight: &clienttypes.Height{
+				RevisionNumber: msg.Packet.TimeoutHeight.RevisionNumber,
+				RevisionHeight: msg.Packet.TimeoutHeight.RevisionHeight,
+			},
+			TimeoutTimestamp: msg.Packet.TimeoutTimestamp,
+		},
+		Acknowledgement: msg.Acknowledgement,
+		ProofAcked:      msg.ProofAcked,
+		ProofHeight: &clienttypes.Height{
+			RevisionNumber: msg.ProofHeight.RevisionNumber,
+			RevisionHeight: msg.ProofHeight.RevisionHeight,
+		},
+		Signer: msg.Signer,
+	}
 }
 
 // QueryABCI performs an ABCI query and returns the appropriate response and error sdk error code.
 func (cc *CardanoProvider) QueryABCI(ctx context.Context, req abci.RequestQuery) (abci.ResponseQuery, error) {
-	opts := rpcclient.ABCIQueryOptions{
-		Height: req.Height,
-		Prove:  req.Prove,
-	}
-	result, err := cc.RPCClient.ABCIQueryWithOptions(ctx, req.Path, req.Data, opts)
-	if err != nil {
-		return abci.ResponseQuery{}, err
-	}
-
-	if !result.Response.IsOK() {
-		return abci.ResponseQuery{}, sdkErrorToGRPCError(result.Response)
-	}
-
-	// data from trusted node or subspace query doesn't need verification
-	if !opts.Prove || !isQueryStoreWithProof(req.Path) {
-		return result.Response, nil
-	}
-
-	return result.Response, nil
-}
-
-func sdkErrorToGRPCError(resp abci.ResponseQuery) error {
-	switch resp.Code {
-	case sdkerrors.ErrInvalidRequest.ABCICode():
-		return status.Error(codes.InvalidArgument, resp.Log)
-	case sdkerrors.ErrUnauthorized.ABCICode():
-		return status.Error(codes.Unauthenticated, resp.Log)
-	case sdkerrors.ErrKeyNotFound.ABCICode():
-		return status.Error(codes.NotFound, resp.Log)
-	default:
-		return status.Error(codes.Unknown, resp.Log)
-	}
-}
-
-// isQueryStoreWithProof expects a format like /<queryType>/<storeName>/<subpath>
-// queryType must be "store" and subpath must be "key" to require a proof.
-func isQueryStoreWithProof(path string) bool {
-	if !strings.HasPrefix(path, "/") {
-		return false
-	}
-
-	paths := strings.SplitN(path[1:], "/", 3)
-
-	switch {
-	case len(paths) != 3:
-		return false
-	case paths[0] != "store":
-		return false
-	case rootmulti.RequireProof("/" + paths[2]):
-		return true
-	}
-
-	return false
+	return abci.ResponseQuery{}, nil
 }
 
 func (cc *CardanoProvider) ConnectionHandshakeProof(
@@ -220,39 +179,11 @@ func (cc *CardanoProvider) ConnectionProof(
 }
 
 func (cc *CardanoProvider) MsgChannelCloseInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &chantypes.MsgChannelCloseInit{
-		PortId:    info.PortID,
-		ChannelId: info.ChannelID,
-		Signer:    signer,
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &chantypes.MsgChannelCloseConfirm{
-		PortId:      msgCloseInit.CounterpartyPortID,
-		ChannelId:   msgCloseInit.CounterpartyChannelID,
-		ProofInit:   proof.Proof,
-		ProofHeight: proof.ProofHeight,
-		Signer:      signer,
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgChannelOpenAck(msgOpenTry provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -299,22 +230,7 @@ func transformMsgChannelOpenAck(msg *chantypes.MsgChannelOpenAck) *pbchannel.Msg
 }
 
 func (cc *CardanoProvider) MsgChannelOpenConfirm(msgOpenAck provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &chantypes.MsgChannelOpenConfirm{
-		PortId:      msgOpenAck.CounterpartyPortID,
-		ChannelId:   msgOpenAck.CounterpartyChannelID,
-		ProofAck:    proof.Proof,
-		ProofHeight: proof.ProofHeight,
-		Signer:      signer,
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgChannelOpenInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -368,36 +284,7 @@ func transformMsgChannelOpenInit(msg *chantypes.MsgChannelOpenInit) *pbchannel.M
 }
 
 func (cc *CardanoProvider) MsgChannelOpenTry(msgOpenInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &chantypes.MsgChannelOpenTry{
-		PortId:            msgOpenInit.CounterpartyPortID,
-		PreviousChannelId: msgOpenInit.CounterpartyChannelID,
-		Channel: chantypes.Channel{
-			State:    chantypes.TRYOPEN,
-			Ordering: proof.Ordering,
-			Counterparty: chantypes.Counterparty{
-				PortId:    msgOpenInit.PortID,
-				ChannelId: msgOpenInit.ChannelID,
-			},
-			ConnectionHops: []string{msgOpenInit.CounterpartyConnID},
-			// In the future, may need to separate this from the CounterpartyVersion.
-			// https://github.com/cosmos/ibc/tree/master/spec/core/ics-004-channel-and-packet-semantics#definitions
-			// Using same version as counterparty for now.
-			Version: proof.Version,
-		},
-		CounterpartyVersion: proof.Version,
-		ProofInit:           proof.Proof,
-		ProofHeight:         proof.ProofHeight,
-		Signer:              signer,
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
@@ -432,7 +319,6 @@ func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionIn
 		},
 		Signer: signer,
 	}
-
 	res, err := cc.GateWay.ConnectionOpenAck(context.Background(), transformMsgConnectionOpenAck(msg))
 	if err != nil {
 		return nil, err
@@ -466,26 +352,7 @@ func transformMsgConnectionOpenAck(msg *conntypes.MsgConnectionOpenAck) *pbconne
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenConfirm(msgOpenAck provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &conntypes.MsgConnectionOpenConfirm{
-		ConnectionId: msgOpenAck.CounterpartyConnID,
-		ProofAck:     proof.ConnectionStateProof,
-		ProofHeight:  proof.ProofHeight,
-		Signer:       signer,
-	}
-
-	_, err = cc.GateWay.ConnectionOpenConfirm(context.Background(), msg)
-	if err != nil {
-		return nil, err
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenInit(info provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
@@ -530,47 +397,7 @@ func transformMsgConnectionOpenInit(msg *conntypes.MsgConnectionOpenInit) *pbcon
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenTry(msgOpenInit provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-
-	csAny, err := clienttypes.PackClientState(proof.ClientState)
-	if err != nil {
-		return nil, err
-	}
-
-	counterparty := conntypes.Counterparty{
-		ClientId:     msgOpenInit.ClientID,
-		ConnectionId: msgOpenInit.ConnID,
-		Prefix:       defaultChainPrefix,
-	}
-
-	msg := &conntypes.MsgConnectionOpenTry{
-		ClientId:             msgOpenInit.CounterpartyClientID,
-		PreviousConnectionId: msgOpenInit.CounterpartyConnID,
-		ClientState:          csAny,
-		Counterparty:         counterparty,
-		DelayPeriod:          defaultDelayPeriod,
-		CounterpartyVersions: conntypes.ExportedVersionsToProto(conntypes.GetCompatibleVersions()),
-		ProofHeight:          proof.ProofHeight,
-		ProofInit:            proof.ConnectionStateProof,
-		ProofClient:          proof.ClientStateProof,
-		ProofConsensus:       proof.ConsensusStateProof,
-		ConsensusHeight:      proof.ClientState.GetLatestHeight().(clienttypes.Height),
-		Signer:               signer,
-	}
-
-	//res, err := cc.GateWay.ConnectionOpenTry(context.Background(), msg)
-	_, err = cc.GateWay.ConnectionOpenTry(context.Background(), msg)
-	if err != nil {
-		return nil, err
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 // MsgCreateClient creates an sdk.Msg to update the client on src with consensus state from dst
@@ -651,68 +478,27 @@ func transformMsgRecvPacket(msg *chantypes.MsgRecvPacket) *pbchannel.MsgRecvPack
 			TimeoutHeight:      &msg.Packet.TimeoutHeight,
 			TimeoutTimestamp:   msg.Packet.TimeoutTimestamp,
 		},
-		Signer: msg.Signer,
+		ProofCommitment: msg.ProofCommitment,
+		ProofHeight:     &msg.ProofHeight,
+		Signer:          msg.Signer,
 	}
 }
 
 // MsgRegisterCounterpartyPayee creates an sdk.Msg to broadcast the counterparty address
 func (cc *CardanoProvider) MsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee string) (provider.RelayerMessage, error) {
-	msg := feetypes.NewMsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee)
-	return NewCardanoMessage(msg, nil, nil), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgSubmitMisbehaviour(clientID string, misbehaviour ibcexported.ClientMessage) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-
-	msg, err := clienttypes.NewMsgSubmitMisbehaviour(clientID, misbehaviour, signer)
-	if err != nil {
-		return nil, err
-	}
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
-		msg.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgSubmitQueryResponse(chainID string, queryID provider.ClientICQQueryID, proof provider.ICQProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	msg := &strideicqtypes.MsgSubmitQueryResponse{
-		ChainId:     chainID,
-		QueryId:     string(queryID),
-		Result:      proof.Result,
-		ProofOps:    proof.ProofOps,
-		Height:      proof.Height,
-		FromAddress: signer,
-	}
-
-	submitQueryRespMsg := NewCardanoMessage(msg, nil, nil).(CardanoMessage)
-	submitQueryRespMsg.FeegrantDisabled = true
-	return submitQueryRespMsg, nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) MsgTimeoutOnClose(msgTransfer provider.PacketInfo, proof provider.PacketProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	assembled := &chantypes.MsgTimeoutOnClose{
-		Packet:           msgTransfer.Packet(),
-		ProofUnreceived:  proof.Proof,
-		ProofHeight:      proof.ProofHeight,
-		NextSequenceRecv: msgTransfer.Sequence,
-		Signer:           signer,
-	}
-
-	return NewCardanoMessage(assembled, nil, func(signer string) {
-		assembled.Signer = signer
-	}), nil
+	return nil, nil
 }
 
 // MsgTransfer creates a new transfer message
@@ -721,15 +507,27 @@ func (cc *CardanoProvider) MsgTransfer(
 	amount sdk.Coin,
 	info provider.PacketInfo,
 ) (provider.RelayerMessage, error) {
-	acc, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
+		return nil, err
+	}
+
+	// TODO: update proto
+	senderAddress, err := echovl.NewAddress(signer)
+	if err != nil {
+		return nil, err
+	}
+	senderPublicKeyHash := hex.EncodeToString(senderAddress.Payment.Hash())
+
+	if err != nil {
+		cc.log.Error("Fail to load signer from tx-cardano", zap.Error(err))
 		return nil, err
 	}
 	msg := &transfertypes.MsgTransfer{
 		SourcePort:       info.SourcePort,
 		SourceChannel:    info.SourceChannel,
 		Token:            amount,
-		Sender:           acc,
+		Sender:           senderPublicKeyHash,
 		Receiver:         dstAddr,
 		TimeoutTimestamp: info.TimeoutTimestamp,
 	}
@@ -738,10 +536,32 @@ func (cc *CardanoProvider) MsgTransfer(
 	if info.TimeoutHeight.RevisionHeight != 0 {
 		msg.TimeoutHeight = info.TimeoutHeight
 	}
-
-	msgTransfer := NewCardanoMessage(msg, nil, nil).(CardanoMessage)
+	res, err := cc.GateWay.Transfer(context.Background(), tranMsgTransferToGWMsgTransfer(msg))
+	if err != nil {
+		return nil, err
+	}
+	msgTransfer := NewCardanoMessage(msg, res.UnsignedTx, nil).(CardanoMessage)
 	msgTransfer.FeegrantDisabled = true
 	return msgTransfer, nil
+}
+
+func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer) *pbchannel.MsgTransfer {
+	return &pbchannel.MsgTransfer{
+		SourcePort:    msg.SourcePort,
+		SourceChannel: msg.SourceChannel,
+		Token: &pbchannel.Coin{
+			Denom:  msg.Token.Denom,
+			Amount: uint64(msg.Token.Amount.Int64()),
+		},
+		Sender:   msg.Sender,
+		Receiver: msg.Receiver,
+		TimeoutHeight: &clienttypes.Height{
+			RevisionNumber: msg.TimeoutHeight.RevisionNumber,
+			RevisionHeight: msg.TimeoutHeight.RevisionHeight,
+		},
+		TimeoutTimestamp: msg.TimeoutTimestamp,
+	}
+
 }
 
 func (cc *CardanoProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexported.ClientMessage) (provider.RelayerMessage, error) {
@@ -813,29 +633,8 @@ func (cc *CardanoProvider) MsgUpdateClientHeader(latestHeader provider.IBCHeader
 }
 
 func (cc *CardanoProvider) MsgUpgradeClient(srcClientId string, consRes *clienttypes.QueryConsensusStateResponse, clientRes *clienttypes.QueryClientStateResponse) (provider.RelayerMessage, error) {
-	var (
-		acc string
-		err error
-	)
-	if acc, err = cc.Address(); err != nil {
-		return nil, err
-	}
-
-	msgUpgradeClient := &clienttypes.MsgUpgradeClient{
-		ClientId:                   srcClientId,
-		ClientState:                clientRes.ClientState,
-		ConsensusState:             consRes.ConsensusState,
-		ProofUpgradeClient:         consRes.GetProof(),
-		ProofUpgradeConsensusState: consRes.ConsensusState.Value,
-		Signer:                     acc}
-
-	return NewCardanoMessage(msgUpgradeClient, nil, func(signer string) {
-		msgUpgradeClient.Signer = signer
-	}), nil
+	return nil, nil
 }
-
-// DefaultUpgradePath is the default IBC upgrade path set for an on-chain light client
-var defaultUpgradePath = []string{"upgrade", "upgradedIBCState"}
 
 // NewClientState creates a new tendermint client state tracking the dst chain.
 func (cc *CardanoProvider) NewClientState(
@@ -846,25 +645,7 @@ func (cc *CardanoProvider) NewClientState(
 	allowUpdateAfterExpiry,
 	allowUpdateAfterMisbehaviour bool,
 ) (ibcexported.ClientState, error) {
-	revisionNumber := clienttypes.ParseChainID(dstChainID)
-
-	// Create the ClientState we want on 'c' tracking 'dst'
-	return &tmclient.ClientState{
-		ChainId:         dstChainID,
-		TrustLevel:      tmclient.NewFractionFromTm(light.DefaultTrustLevel),
-		TrustingPeriod:  dstTrustingPeriod,
-		UnbondingPeriod: dstUbdPeriod,
-		MaxClockDrift:   time.Minute * 10,
-		FrozenHeight:    clienttypes.ZeroHeight(),
-		LatestHeight: clienttypes.Height{
-			RevisionNumber: revisionNumber,
-			RevisionHeight: dstUpdateHeader.Height(),
-		},
-		ProofSpecs:                   commitmenttypes.GetSDKSpecs(),
-		UpgradePath:                  defaultUpgradePath,
-		AllowUpdateAfterExpiry:       allowUpdateAfterExpiry,
-		AllowUpdateAfterMisbehaviour: allowUpdateAfterMisbehaviour,
-	}, nil
+	return nil, nil
 }
 
 // NextSeqRecv queries for the appropriate Tendermint proof required to prove the next expected packet sequence number
@@ -875,16 +656,7 @@ func (cc *CardanoProvider) NextSeqRecv(
 	msgTransfer provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	key := host.NextSequenceRecvKey(msgTransfer.DestPort, msgTransfer.DestChannel)
-	_, proof, proofHeight, err := cc.QueryTendermintProof(ctx, int64(height), key)
-	if err != nil {
-		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for next sequence receive: %w", err)
-	}
-
-	return provider.PacketProof{
-		Proof:       proof,
-		ProofHeight: proofHeight,
-	}, nil
+	return provider.PacketProof{}, nil
 }
 
 func (cc *CardanoProvider) PacketAcknowledgement(
@@ -918,8 +690,7 @@ func (cc *CardanoProvider) PacketCommitment(
 	msgTransfer provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	key := host.PacketCommitmentKey(msgTransfer.SourcePort, msgTransfer.SourceChannel, msgTransfer.Sequence)
-	commitment, proof, proofHeight, err := cc.QueryTendermintProof(ctx, int64(height), key)
+	commitment, proof, proofHeight, err := cc.QueryPacketCommitmentGW(ctx, msgTransfer)
 	if err != nil {
 		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for packet commitment: %w", err)
 	}
@@ -939,16 +710,7 @@ func (cc *CardanoProvider) PacketReceipt(
 	msgTransfer provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	key := host.PacketReceiptKey(msgTransfer.DestPort, msgTransfer.DestChannel, msgTransfer.Sequence)
-	_, proof, proofHeight, err := cc.QueryTendermintProof(ctx, int64(height), key)
-	if err != nil {
-		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for packet receipt: %w", err)
-	}
-
-	return provider.PacketProof{
-		Proof:       proof,
-		ProofHeight: proofHeight,
-	}, nil
+	return provider.PacketProof{}, nil
 }
 
 // broadcastTx broadcasts a transaction with the given raw bytes and then, in an async goroutine, waits for the tx to be included in the block.
@@ -964,55 +726,11 @@ func (cc *CardanoProvider) broadcastTx(
 	asyncTimeout time.Duration, // timeout for waiting for block inclusion
 	asyncCallbacks []func(*provider.RelayerTxResponse, error), // callback for success/fail of the wait for block inclusion
 ) error {
-	res, err := cc.RPCClient.BroadcastTxSync(ctx, tx)
-	isErr := err != nil
-	isFailed := res != nil && res.Code != 0
-	if isErr || isFailed {
-		if isErr && res == nil {
-			// There are some cases where BroadcastTxSync will return an error but the associated
-			// ResultBroadcastTx will be nil.
-			return err
-		}
-		rlyResp := &provider.RelayerTxResponse{
-			TxHash:    res.Hash.String(),
-			Codespace: res.Codespace,
-			Code:      res.Code,
-			Data:      res.Data.String(),
-		}
-		if isFailed {
-			err = cc.sdkError(res.Codespace, res.Code)
-			if err == nil {
-				err = fmt.Errorf("transaction failed to execute")
-			}
-		}
-		cc.LogFailedTx(rlyResp, err, msgs)
-		return err
-	}
-	address, err := cc.Address()
-	if err != nil {
-		cc.log.Error(
-			"failed to get relayer bech32 wallet addresss",
-			zap.Error(err),
-		)
-	}
-	cc.UpdateFeesSpent(cc.ChainId(), cc.Key(), address, fees)
-
-	// TODO: maybe we need to check if the node has tx indexing enabled?
-	// if not, we need to find a new way to block until inclusion in a block
-
-	go cc.waitForTx(asyncCtx, res.Hash, msgs, asyncTimeout, asyncCallbacks)
-
 	return nil
 }
 
 // sdkError will return the Cosmos SDK registered error for a given codespace/code combo if registered, otherwise nil.
 func (cc *CardanoProvider) sdkError(codespace string, code uint32) error {
-	// ABCIError will return an error other than "unknown" if syncRes.Code is a registered error in syncRes.Codespace
-	// This catches all of the sdk errors https://github.com/cosmos/cosmos-sdk/blob/f10f5e5974d2ecbf9efc05bc0bfe1c99fdeed4b6/types/errors/errors.go
-	err := errors.Unwrap(sdkerrors.ABCIError(codespace, code, "error broadcasting transaction"))
-	if err.Error() != errUnknown {
-		return err
-	}
 	return nil
 }
 
@@ -1055,32 +773,19 @@ func parseEventsFromTxResponse(resp *sdk.TxResponse) []provider.RelayerEvent {
 }
 
 func (cc *CardanoProvider) UpdateFeesSpent(chain, key, address string, fees sdk.Coins) {
-	// Don't set the metrics in testing
-	if cc.metrics == nil {
-		return
-	}
-
-	cc.totalFeesMu.Lock()
-	cc.TotalFees = cc.TotalFees.Add(fees...)
-	cc.totalFeesMu.Unlock()
-
-	for _, fee := range cc.TotalFees {
-		// Convert to a big float to get a float64 for metrics
-		f, _ := big.NewFloat(0.0).SetInt(fee.Amount.BigInt()).Float64()
-		cc.metrics.SetFeesSpent(chain, cc.PCfg.GasPrices, key, address, fee.GetDenom(), f)
-	}
+	return
 }
 
 // waitForTx waits for a transaction to be included in a block, logs success/fail, then invokes callback.
 // This is intended to be called as an async goroutine.
 func (cc *CardanoProvider) waitForTx(
 	ctx context.Context,
-	txHash []byte,
+	txHash string,
 	msgs []provider.RelayerMessage, // used for logging only
 	waitTimeout time.Duration,
 	callbacks []func(*provider.RelayerTxResponse, error),
 ) {
-	_, err := cc.waitForBlockInclusion(ctx, txHash, waitTimeout)
+	res, err := cc.waitForBlockInclusion(ctx, txHash, waitTimeout)
 	if err != nil {
 		cc.log.Error("Failed to wait for block inclusion", zap.Error(err))
 		if len(callbacks) > 0 {
@@ -1101,12 +806,14 @@ func (cc *CardanoProvider) waitForTx(
 		}
 	}
 
+	cc.LogSuccessTx(res, msgs)
+
 }
 
 // waitForBlockInclusion will wait for a transaction to be included in a block, up to waitTimeout or context cancellation.
 func (cc *CardanoProvider) waitForBlockInclusion(
 	ctx context.Context,
-	txHash []byte,
+	txHash string,
 	waitTimeout time.Duration,
 ) (*sdk.TxResponse, error) {
 	exitAfter := time.After(waitTimeout)
@@ -1116,7 +823,19 @@ func (cc *CardanoProvider) waitForBlockInclusion(
 			return nil, fmt.Errorf("timed out after: %d; %w", waitTimeout, ErrTimeoutAfterWaitingForTxBroadcast)
 		// This fixed poll is fine because it's only for logging and updating prometheus metrics currently.
 		case <-time.After(time.Millisecond * 100):
-			return nil, nil
+			res, err := cc.GateWay.QueryTransactionByHash(ctx, &ibcclient.QueryTransactionByHashRequest{
+				Hash: txHash,
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			return &sdk.TxResponse{
+				TxHash:  res.Hash,
+				Height:  int64(res.Height),
+				GasUsed: int64(res.GasFee),
+				Info:    fmt.Sprintf("tx_size %v", res.TxSize),
+			}, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
@@ -1125,53 +844,16 @@ func (cc *CardanoProvider) waitForBlockInclusion(
 
 // mkTxResult decodes a comet transaction into an SDK TxResponse.
 func (cc *CardanoProvider) mkTxResult(resTx *coretypes.ResultTx) (*sdk.TxResponse, error) {
-	txbz, err := cc.Cdc.TxConfig.TxDecoder()(resTx.Tx)
-	if err != nil {
-		return nil, err
-	}
-	p, ok := txbz.(intoAny)
-	if !ok {
-		return nil, fmt.Errorf("expecting a type implementing intoAny, got: %T", txbz)
-	}
-	any := p.AsAny()
-	return sdk.NewResponseResultTx(resTx, any, ""), nil
+	return nil, nil
 }
 
 // QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
 func (cc *CardanoProvider) QueryIBCHeader(ctx context.Context, h int64) (provider.IBCHeader, error) {
-	if h == 0 {
-		return nil, fmt.Errorf("height cannot be 0")
-	}
-
-	lightBlock, err := cc.LightProvider.LightBlock(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-
-	return provider.TendermintIBCHeader{
-		SignedHeader: lightBlock.SignedHeader,
-		ValidatorSet: lightBlock.ValidatorSet,
-	}, nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) QueryICQWithProof(ctx context.Context, path string, request []byte, height uint64) (provider.ICQProof, error) {
-	slashSplit := strings.Split(path, "/")
-	req := abci.RequestQuery{
-		Path:   path,
-		Height: int64(height),
-		Data:   request,
-		Prove:  slashSplit[len(slashSplit)-1] == "key",
-	}
-
-	res, err := cc.QueryABCI(ctx, req)
-	if err != nil {
-		return provider.ICQProof{}, fmt.Errorf("failed to execute interchain query: %w", err)
-	}
-	return provider.ICQProof{
-		Result:   res.Value,
-		ProofOps: res.ProofOps,
-		Height:   res.Height,
-	}, nil
+	return provider.ICQProof{}, nil
 }
 
 // RelayPacketFromSequence relays a packet with a given seq on src and returns recvPacket msgs, timeoutPacketmsgs and error
@@ -1181,27 +863,43 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	srch, dsth, seq uint64,
 	srcChanID, srcPortID string,
 	order chantypes.Order,
+	srcClientId, dstClientId string,
 ) (provider.RelayerMessage, provider.RelayerMessage, error) {
 	msgTransfer, err := src.QuerySendPacket(ctx, srcChanID, srcPortID, seq)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	dstTime, err := cc.BlockTime(ctx, int64(dsth))
+	blockData, err := cc.QueryBlockData(ctx, int64(dsth))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := cc.ValidatePacket(msgTransfer, provider.LatestBlock{
 		Height: dsth,
-		Time:   dstTime,
+		Time:   time.Unix(int64(blockData.Timestamp), 0),
 	}); err != nil {
 		switch err.(type) {
 		case *provider.TimeoutHeightError, *provider.TimeoutTimestampError, *provider.TimeoutOnCloseError:
 			var pp provider.PacketProof
 			switch order {
 			case chantypes.UNORDERED:
-				pp, err = cc.PacketReceipt(ctx, msgTransfer, dsth)
+				pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				srcBlockData, err := cc.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+				if err != nil {
+					return nil, nil, err
+				}
+
+				msgUpdateClient, err := src.MsgUpdateClient(srcClientId, srcBlockData)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				err = src.SendMessagesToMempool(ctx, []provider.RelayerMessage{msgUpdateClient}, "", context.Background(), nil)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1233,6 +931,34 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	if err != nil {
 		return nil, nil, err
 	}
+
+	// Update client before build MsgRecvPacket to cosmos
+	srcClientState, err := cc.QueryClientState(ctx, int64(srch), dstClientId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dstHeader, err := src.QueryIBCHeader(ctx, int64(pp.ProofHeight.RevisionHeight))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	srcTrustedHeader, err := src.QueryIBCHeader(ctx, int64(srcClientState.GetLatestHeight().GetRevisionHeight())+1)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	updateHeader, err := src.MsgUpdateClientHeader(dstHeader, srcClientState.GetLatestHeight().(clienttypes.Height), srcTrustedHeader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, updateHeader)
+	err = cc.SendMessagesToMempool(ctx, []provider.RelayerMessage{msgUpdateClient}, "", context.Background(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	// End Update Client
 
 	packet, err := cc.MsgRecvPacket(msgTransfer, pp)
 	if err != nil {
@@ -1309,6 +1035,7 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 	asyncCtx context.Context,
 	asyncCallbacks []func(*provider.RelayerTxResponse, error),
 ) error {
+	txHashes := []string{}
 	for _, msg := range msgs {
 		if msg == nil {
 			continue
@@ -1325,87 +1052,25 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 			cc.LogFailedTx(rlyResp, err, msgs)
 			return err
 		}
-
-		txResp := &sdk.TxResponse{
-			TxHash: txHash,
-		}
-
-		cc.LogSuccessTx(txResp, []provider.RelayerMessage{msg})
+		txHashes = append(txHashes, txHash)
 	}
+	for _, hash := range txHashes {
 
-	go cc.waitForTx(asyncCtx, []byte{}, msgs, defaultBroadcastWaitTimeout, asyncCallbacks)
+		go cc.waitForTx(asyncCtx, hash, msgs, defaultBroadcastWaitTimeout, asyncCallbacks)
+
+	}
 
 	return nil
 }
 
 var seqGuardSingleton sync.Mutex
 
-// Gets the sequence guard. If it doesn't exist, initialized and returns it.
-func ensureSequenceGuard(cc *CardanoProvider, key string) *WalletState {
-	seqGuardSingleton.Lock()
-	defer seqGuardSingleton.Unlock()
-
-	if cc.walletStateMap == nil {
-		cc.walletStateMap = map[string]*WalletState{}
-	}
-
-	sequenceGuard, ok := cc.walletStateMap[key]
-	if !ok {
-		cc.walletStateMap[key] = &WalletState{}
-		return cc.walletStateMap[key]
-	}
-
-	return sequenceGuard
-}
-
 func (cc *CardanoProvider) buildSignerConfig(msgs []provider.RelayerMessage) (
 	txSignerKey string,
 	feegranterKey string,
 	err error,
 ) {
-	//Guard against race conditions when choosing a signer/feegranter
-	cc.feegrantMu.Lock()
-	defer cc.feegrantMu.Unlock()
-
-	//Some messages have feegranting disabled. If any message in the TX disables feegrants, then the TX will not be feegranted.
-	isFeegrantEligible := cc.PCfg.FeeGrants != nil
-
-	for _, curr := range msgs {
-		if cMsg, ok := curr.(CardanoMessage); ok {
-			if cMsg.FeegrantDisabled {
-				isFeegrantEligible = false
-			}
-		}
-	}
-
-	//By default, we should sign TXs with the provider's default key
-	txSignerKey = cc.PCfg.Key
-
-	if isFeegrantEligible {
-		txSignerKey, feegranterKey = cc.GetTxFeeGrant()
-		signerAcc, addrErr := cc.GetKeyAddressForKey(txSignerKey)
-		if addrErr != nil {
-			err = addrErr
-			return
-		}
-
-		signerAccAddr, encodeErr := cc.EncodeBech32AccAddr(signerAcc)
-		if encodeErr != nil {
-			err = encodeErr
-			return
-		}
-
-		//Overwrite the 'Signer' field in any Msgs that provide an 'optionalSetSigner' callback
-		for _, curr := range msgs {
-			if cMsg, ok := curr.(CardanoMessage); ok {
-				if cMsg.SetSigner != nil {
-					cMsg.SetSigner(signerAccAddr)
-				}
-			}
-		}
-	}
-
-	return
+	return "", "", err
 }
 
 func (cc *CardanoProvider) ValidatePacket(msgTransfer provider.PacketInfo, latest provider.LatestBlock) error {
@@ -1449,160 +1114,19 @@ func (cc *CardanoProvider) buildMessages(
 	fees sdk.Coins,
 	err error,
 ) {
-	done := cc.SetSDKContext()
-	defer done()
-
-	cMsgs := CosmosMsgs(msgs...)
-
-	txf, err := cc.PrepareFactory(cc.TxFactory(), txSignerKey)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	if memo != "" {
-		txf = txf.WithMemo(memo)
-	}
-
-	sequence = txf.Sequence()
-	cc.updateNextAccountSequence(sequenceGuard, sequence)
-	if sequence < sequenceGuard.NextAccountSequence {
-		sequence = sequenceGuard.NextAccountSequence
-		txf = txf.WithSequence(sequence)
-	}
-
-	adjusted := gas
-
-	if gas == 0 {
-		_, adjusted, err = cc.CalculateGas(ctx, txf, txSignerKey, cMsgs...)
-
-		if err != nil {
-			return nil, 0, sdk.Coins{}, err
-		}
-	}
-
-	//Cannot feegrant your own TX
-	if txSignerKey != feegranterKey && feegranterKey != "" {
-		granterAddr, err := cc.GetKeyAddressForKey(feegranterKey)
-		if err != nil {
-			return nil, 0, sdk.Coins{}, err
-		}
-
-		txf = txf.WithFeeGranter(granterAddr)
-	}
-
-	// Set the gas amount on the transaction factory
-	txf = txf.WithGas(adjusted)
-
-	// Build the transaction builder
-	txb, err := txf.BuildUnsignedTx(cMsgs...)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	if err = tx.Sign(txf, txSignerKey, txb, false); err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	tx := txb.GetTx()
-	fees = tx.GetFee()
-
-	// Generate the transaction bytes
-	txBytes, err = cc.Cdc.TxConfig.TxEncoder()(tx)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	return txBytes, txf.Sequence(), fees, nil
+	return nil, 0, nil, err
 }
 
 // handleAccountSequenceMismatchError will parse the error string, e.g.:
 // "account sequence mismatch, expected 10, got 9: incorrect account sequence"
 // and update the next account sequence with the expected value.
 func (cc *CardanoProvider) handleAccountSequenceMismatchError(sequenceGuard *WalletState, err error) {
-	if sequenceGuard == nil {
-		panic("sequence guard not configured")
-	}
-
-	matches := accountSeqRegex.FindStringSubmatch(err.Error())
-	if len(matches) == 0 {
-		return
-	}
-	nextSeq, err := strconv.ParseUint(matches[1], 10, 64)
-	if err != nil {
-		return
-	}
-	sequenceGuard.NextAccountSequence = nextSeq
+	return
 }
 
 // PrepareFactory mutates the tx factory with the appropriate account number, sequence number, and min gas settings.
 func (cc *CardanoProvider) PrepareFactory(txf tx.Factory, signingKey string) (tx.Factory, error) {
-	var (
-		err      error
-		from     sdk.AccAddress
-		num, seq uint64
-	)
-
-	// Get key address and retry if fail
-	if err = retry.Do(func() error {
-		from, err = cc.GetKeyAddressForKey(signingKey)
-		if err != nil {
-			return err
-		}
-		return err
-	}, rtyAtt, rtyDel, rtyErr); err != nil {
-		return tx.Factory{}, err
-	}
-
-	cliCtx := client.Context{}.WithClient(cc.RPCClient).
-		WithInterfaceRegistry(cc.Cdc.InterfaceRegistry).
-		WithChainID(cc.PCfg.ChainID).
-		WithCodec(cc.Cdc.Marshaler).
-		WithFromAddress(from)
-
-	// Set the account number and sequence on the transaction factory and retry if fail
-	if err = retry.Do(func() error {
-		if err = txf.AccountRetriever().EnsureExists(cliCtx, from); err != nil {
-			return err
-		}
-		return err
-	}, rtyAtt, rtyDel, rtyErr); err != nil {
-		return txf, err
-	}
-
-	// TODO: why this code? this may potentially require another query when we don't want one
-	initNum, initSeq := txf.AccountNumber(), txf.Sequence()
-	if initNum == 0 || initSeq == 0 {
-		if err = retry.Do(func() error {
-			num, seq, err = txf.AccountRetriever().GetAccountNumberSequence(cliCtx, from)
-			if err != nil {
-				return err
-			}
-			return err
-		}, rtyAtt, rtyDel, rtyErr); err != nil {
-			return txf, err
-		}
-
-		if initNum == 0 {
-			txf = txf.WithAccountNumber(num)
-		}
-
-		if initSeq == 0 {
-			txf = txf.WithSequence(seq)
-		}
-	}
-
-	if cc.PCfg.MinGasAmount != 0 {
-		txf = txf.WithGas(cc.PCfg.MinGasAmount)
-	}
-
-	if cc.PCfg.MaxGasAmount != 0 {
-		txf = txf.WithGas(cc.PCfg.MaxGasAmount)
-	}
-	txf, err = cc.SetWithExtensionOptions(txf)
-	if err != nil {
-		return tx.Factory{}, err
-	}
-	return txf, nil
+	return tx.Factory{}, nil
 }
 
 // SetWithExtensionOptions sets the dynamic fee extension options on the given
@@ -1613,147 +1137,35 @@ func (cc *CardanoProvider) PrepareFactory(txf tx.Factory, signingKey string) (tx
 // extension options or an error if the serialization fails or an invalid option
 // value is encountered.
 func (cc *CardanoProvider) SetWithExtensionOptions(txf tx.Factory) (tx.Factory, error) {
-	extOpts := make([]*types.Any, 0, len(cc.PCfg.ExtensionOptions))
-	for _, opt := range cc.PCfg.ExtensionOptions {
-		max, ok := sdk.NewIntFromString(opt.Value)
-		if !ok {
-			return txf, fmt.Errorf("invalid opt value")
-		}
-		extensionOption := ethermint.ExtensionOptionDynamicFeeTx{
-			MaxPriorityPrice: max,
-		}
-		extBytes, err := extensionOption.Marshal()
-		if err != nil {
-			return txf, err
-		}
-		extOpts = append(extOpts, &types.Any{
-			TypeUrl: "/ethermint.types.v1.ExtensionOptionDynamicFeeTx",
-			Value:   extBytes,
-		})
-	}
-	return txf.WithExtensionOptions(extOpts...), nil
+	return tx.Factory{}, nil
 }
 
 // TxFactory instantiates a new tx factory with the appropriate configuration settings for this chain.
 func (cc *CardanoProvider) TxFactory() tx.Factory {
-	return tx.Factory{}.
-		WithAccountRetriever(cc).
-		WithChainID(cc.PCfg.ChainID).
-		WithTxConfig(cc.Cdc.TxConfig).
-		WithGasAdjustment(cc.PCfg.GasAdjustment).
-		WithGasPrices(cc.PCfg.GasPrices).
-		WithKeybase(cc.Keybase).
-		WithSignMode(cc.PCfg.SignMode())
+	return tx.Factory{}
 }
 
 // CalculateGas simulates a tx to generate the appropriate gas settings before broadcasting a tx.
 func (cc *CardanoProvider) CalculateGas(ctx context.Context, txf tx.Factory, signingKey string, msgs ...sdk.Msg) (txtypes.SimulateResponse, uint64, error) {
-	keyInfo, err := cc.Keybase.Key(signingKey)
-	if err != nil {
-		return txtypes.SimulateResponse{}, 0, err
-	}
-
-	var txBytes []byte
-	if err := retry.Do(func() error {
-		var err error
-		txBytes, err = BuildSimTx(keyInfo, txf, msgs...)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr); err != nil {
-		return txtypes.SimulateResponse{}, 0, err
-	}
-
-	simQuery := abci.RequestQuery{
-		Path: "/cosmos.tx.v1beta1.Service/Simulate",
-		Data: txBytes,
-	}
-
-	var res abci.ResponseQuery
-	if err := retry.Do(func() error {
-		var err error
-		res, err = cc.QueryABCI(ctx, simQuery)
-		if err != nil {
-			return err
-		}
-		return nil
-	}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr); err != nil {
-		return txtypes.SimulateResponse{}, 0, err
-	}
-
-	var simRes txtypes.SimulateResponse
-	if err := simRes.Unmarshal(res.Value); err != nil {
-		return txtypes.SimulateResponse{}, 0, err
-	}
-	gas, err := cc.AdjustEstimatedGas(simRes.GasInfo.GasUsed)
-	return simRes, gas, err
+	return txtypes.SimulateResponse{}, 0, nil
 }
 
 // BuildSimTx creates an unsigned tx with an empty single signature and returns
 // the encoded transaction or an error if the unsigned transaction cannot be built.
 func BuildSimTx(info *keyring.Record, txf tx.Factory, msgs ...sdk.Msg) ([]byte, error) {
-	txb, err := txf.BuildUnsignedTx(msgs...)
-	if err != nil {
-		return nil, err
-	}
-
-	var pk cryptotypes.PubKey = &secp256k1.PubKey{} // use default public key type
-
-	pk, err = info.GetPubKey()
-	if err != nil {
-		return nil, err
-	}
-
-	// Create an empty signature literal as the ante handler will populate with a
-	// sentinel pubkey.
-	sig := signing.SignatureV2{
-		PubKey: pk,
-		Data: &signing.SingleSignatureData{
-			SignMode: txf.SignMode(),
-		},
-		Sequence: txf.Sequence(),
-	}
-	if err := txb.SetSignatures(sig); err != nil {
-		return nil, err
-	}
-
-	protoProvider, ok := txb.(protoTxProvider)
-	if !ok {
-		return nil, fmt.Errorf("cannot simulate amino tx")
-	}
-
-	simReq := txtypes.SimulateRequest{Tx: protoProvider.GetProtoTx()}
-	return simReq.Marshal()
+	panic("")
 }
 
 // SignMode returns the SDK sign mode type reflective of the specified sign mode in the config file.
-func (pc *CardanoProviderConfig) SignMode() signing.SignMode {
-	signMode := signing.SignMode_SIGN_MODE_UNSPECIFIED
-	switch pc.SignModeStr {
-	case "direct":
-		signMode = signing.SignMode_SIGN_MODE_DIRECT
-	case "amino-json":
-		signMode = signing.SignMode_SIGN_MODE_LEGACY_AMINO_JSON
-	}
-	return signMode
+func (pc *CardanoProvider) SignMode() signing.SignMode {
+	return 0
 }
 
 // AdjustEstimatedGas adjusts the estimated gas usage by multiplying it by the gas adjustment factor
 // and return estimated gas is higher than max gas error. If the gas usage is zero, the adjusted gas
 // is also zero.
 func (cc *CardanoProvider) AdjustEstimatedGas(gasUsed uint64) (uint64, error) {
-	if gasUsed == 0 {
-		return gasUsed, nil
-	}
-	if cc.PCfg.MaxGasAmount > 0 && gasUsed > cc.PCfg.MaxGasAmount {
-		return 0, fmt.Errorf("estimated gas %d is higher than max gas %d", gasUsed, cc.PCfg.MaxGasAmount)
-	}
-	gas := cc.PCfg.GasAdjustment * float64(gasUsed)
-	if math.IsInf(gas, 1) {
-		return 0, fmt.Errorf("infinite gas used")
-	}
-	return uint64(gas), nil
+	return 0, nil
 }
 
 // protoTxProvider is a type which can provide a proto transaction. It is a
@@ -1763,7 +1175,7 @@ type protoTxProvider interface {
 }
 
 func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof provider.PacketProof) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
 	if err != nil {
 		return nil, err
 	}
@@ -1775,8 +1187,56 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 		Signer:           signer,
 	}
 
-	return NewCardanoMessage(assembled, nil, func(signer string) {
+	req := &pbchannel.MsgTimeout{
+		Packet: &pbchannel.Packet{
+			Sequence:           msgTransfer.Sequence,
+			SourcePort:         msgTransfer.SourcePort,
+			SourceChannel:      msgTransfer.SourceChannel,
+			DestinationPort:    msgTransfer.DestPort,
+			DestinationChannel: msgTransfer.DestChannel,
+			Data:               msgTransfer.Data,
+			TimeoutHeight: &clienttypes.Height{
+				RevisionNumber: msgTransfer.TimeoutHeight.RevisionNumber,
+				RevisionHeight: msgTransfer.TimeoutHeight.RevisionHeight,
+			},
+			TimeoutTimestamp: msgTransfer.TimeoutTimestamp,
+		},
+		ProofUnreceived: proof.Proof,
+		ProofHeight: &clienttypes.Height{
+			RevisionNumber: proof.ProofHeight.RevisionNumber,
+			RevisionHeight: proof.ProofHeight.RevisionHeight,
+		},
+		NextSequenceRecv: msgTransfer.Sequence,
+		Signer:           signer,
+	}
+
+	res, err := cc.GateWay.PacketTimeout(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(assembled, res.UnsignedTx, func(signer string) {
 		assembled.Signer = signer
+	}), nil
+}
+
+func (cc *CardanoProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
+	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	if err != nil {
+		return nil, err
+	}
+
+	req := &pbchannel.MsgTimeoutRefresh{
+		ChannelId: channelId,
+		Signer:    signer,
+	}
+
+	res, err := cc.GateWay.TimeoutRefresh(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(nil, res.UnsignedTx, func(signer string) {
 	}), nil
 }
 
@@ -1822,17 +1282,16 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 	if err != nil {
 		return nil, "", err
 	}
-	tx_id, err := cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
-	if err != nil {
-		return nil, "", err
-	}
+	//tx_id, err := cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
+	//if err != nil {
+	//	return nil, "", err
+	//}
 
-	return NewCardanoMessage(msg, nil, func(signer string) {
-		msg.Signer = tx_id
+	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+		msg.Signer = signer
 	}), res.ClientId, nil
 }
 
 func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
-	//TODO implement me
-	panic("implement me")
+	return nil, nil
 }

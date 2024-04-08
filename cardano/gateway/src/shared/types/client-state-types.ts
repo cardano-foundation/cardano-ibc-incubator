@@ -1,4 +1,4 @@
-// import { type Data } from 'lucid-cardano';
+// import { type Data } from '@dinhbx/lucid-custom';
 import { Height } from './height';
 import { ProofSpec } from './proof-specs';
 export type ClientState = {

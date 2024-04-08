@@ -1,7 +1,7 @@
 import * as transaction_pb from "../proto/protoc/transaction";
 import * as grpc from "@grpc/grpc-js"
 import * as keys from "../relayer-config/keys"
-import { InitLucidKupmios, InitLucidBlockfrost, InitLucid, GetPrivateKeyDefault } from "../util/common";
+import { InitLucidKupmios, InitLucidBlockfrost, InitLucid} from "../util/common";
 import { logger } from "../logger/logger";
 import { toHex } from "lucid-cardano";
 
@@ -16,7 +16,6 @@ export class Transaction extends transaction_pb.tx.UnimplementedTransactionServi
             }
             // init lucid
             const lucid = await InitLucid()
-            // const initTx = lucid.selectWalletFromPrivateKey(GetPrivateKeyDefault())
             const initTx = lucid.selectWalletFromSeed(keys.GetMnemonicKeyUse(chainId), {addressType:"Enterprise"})
             const tx = initTx.fromTx(toHex(txHexStr))
             // sign tx
@@ -24,6 +23,10 @@ export class Transaction extends transaction_pb.tx.UnimplementedTransactionServi
             
             // submit tx
             const tx_id = await signedTx.submit()
+
+            // TODO: check timeout
+            // wait for transaction to be included in block
+            await lucid.awaitTx(tx_id)
 
             const res =  new transaction_pb.tx.SignAndSubmitTxResponse()
             res.transaction_id = tx_id

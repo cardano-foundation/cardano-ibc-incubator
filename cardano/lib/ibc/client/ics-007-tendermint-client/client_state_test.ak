@@ -242,9 +242,10 @@ test test_get_timestamp_at_height() {
     }
   client_state.get_timestamp_at_height(
     mock_client_state,
-    mock_consensus_state,
+    dict.new()
+      |> dict.insert(mock_height, mock_consensus_state, height.compare),
     mock_height,
-  ) == mock_timestamp
+  ) == Some(mock_timestamp)
 }
 
 test test_get_latest_height() {

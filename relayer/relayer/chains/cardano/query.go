@@ -2,12 +2,12 @@ package cardano
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tendermint "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
@@ -16,26 +16,18 @@ import (
 	pbconnection "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
-	"github.com/cardano/relayer/v1/relayer/chains"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
-	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	querytypes "github.com/cosmos/cosmos-sdk/types/query"
-	bankTypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/cosmos-sdk/x/params/types/proposal"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
-	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
@@ -45,8 +37,53 @@ import (
 const PaginationDelay = 10 * time.Millisecond
 
 // queryIBCMessages returns an array of IBC messages given a tag
-func (cc *CardanoProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, page, limit int, query string, base64Encoded bool) ([]chains.IbcMessage, error) {
-	var ibcMsgs []chains.IbcMessage
+func (cc *CardanoProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, srcChanID, srcPortID, sequence string, page, limit int, base64Encoded bool) ([]ibcMessage, error) {
+	if page <= 0 {
+		return nil, errors.New("page must greater than 0")
+	}
+
+	if limit <= 0 {
+		return nil, errors.New("limit must greater than 0")
+	}
+
+	var eg errgroup.Group
+	chainID := cc.ChainId()
+	var ibcMsgs []ibcMessage
+	var mu sync.Mutex
+
+	eg.Go(func() error {
+		res, err := cc.GateWay.QueryBlockSearch(ctx, srcChanID, "", sequence, uint64(limit), uint64(page))
+		if err != nil {
+			return err
+		}
+
+		var nestedEg errgroup.Group
+
+		for _, b := range res.Blocks {
+			b := b
+			nestedEg.Go(func() error {
+				block, err := cc.QueryBlockResults(ctx, b.Block.Height)
+				if err != nil {
+					return err
+				}
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				for _, tx := range block.TxsResults {
+					ibcMsgs = append(ibcMsgs, ibcMessagesFromEvents(log, tx.Events, chainID, 0, base64Encoded)...)
+				}
+
+				return nil
+			})
+		}
+		return nestedEg.Wait()
+	})
+
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+
 	return ibcMsgs, nil
 }
 
@@ -105,30 +142,7 @@ func transformChannel(channel *pbchannel.Channel) *chantypes.Channel {
 }
 
 func (cc *CardanoProvider) queryChannelABCI(ctx context.Context, height int64, portID, channelID string) (*chantypes.QueryChannelResponse, error) {
-	key := host.ChannelKey(portID, channelID)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	// check if channel exists
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrapf(chantypes.ErrChannelNotFound, "portID (%s), channelID (%s)", portID, channelID)
-	}
-
-	cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
-
-	var channel chantypes.Channel
-	if err := cdc.Unmarshal(value, &channel); err != nil {
-		return nil, err
-	}
-
-	return &chantypes.QueryChannelResponse{
-		Channel:     &channel,
-		Proof:       proofBz,
-		ProofHeight: proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryTendermintProof performs an ABCI query with the given key and returns
@@ -141,46 +155,7 @@ func (cc *CardanoProvider) queryChannelABCI(ctx context.Context, height int64, p
 // at the latest state available.
 // Issue: https://github.com/cosmos/cosmos-sdk/issues/6567
 func (cc *CardanoProvider) QueryTendermintProof(ctx context.Context, height int64, key []byte) ([]byte, []byte, clienttypes.Height, error) {
-	// ABCI queries at heights 1, 2 or less than or equal to 0 are not supported.
-	// Base app does not support queries for height less than or equal to 1.
-	// Therefore, a query at height 2 would be equivalent to a query at height 3.
-	// A height of 0 will query with the lastest state.
-	if height != 0 && height <= 2 {
-		return nil, nil, clienttypes.Height{}, fmt.Errorf("proof queries at height <= 2 are not supported")
-	}
-
-	// Use the IAVL height if a valid tendermint height is passed in.
-	// A height of 0 will query with the latest state.
-	if height != 0 {
-		height--
-	}
-
-	req := abci.RequestQuery{
-		Path:   fmt.Sprintf("store/%s/key", ibcexported.StoreKey),
-		Height: height,
-		Data:   key,
-		Prove:  true,
-	}
-
-	res, err := cc.QueryABCI(ctx, req)
-	if err != nil {
-		return nil, nil, clienttypes.Height{}, err
-	}
-
-	merkleProof, err := commitmenttypes.ConvertProofs(res.ProofOps)
-	if err != nil {
-		return nil, nil, clienttypes.Height{}, err
-	}
-
-	cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
-
-	proofBz, err := cdc.Marshal(&merkleProof)
-	if err != nil {
-		return nil, nil, clienttypes.Height{}, err
-	}
-
-	revision := clienttypes.ParseChainID(cc.PCfg.ChainID)
-	return res.Value, proofBz, clienttypes.NewHeight(revision, uint64(res.Height)+1), nil
+	return nil, nil, clienttypes.Height{}, nil
 }
 
 // GenerateConnHandshakeProof generates all the proofs needed to prove the existence of the
@@ -356,67 +331,17 @@ func (cc *CardanoProvider) QueryConnection(ctx context.Context, height int64, co
 }
 
 func (cc *CardanoProvider) queryConnectionABCI(ctx context.Context, height int64, connectionID string) (*conntypes.QueryConnectionResponse, error) {
-	key := host.ConnectionKey(connectionID)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	// check if connection exists
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrap(conntypes.ErrConnectionNotFound, connectionID)
-	}
-
-	cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
-
-	var connection conntypes.ConnectionEnd
-	if err := cdc.Unmarshal(value, &connection); err != nil {
-		return nil, err
-	}
-
-	return &conntypes.QueryConnectionResponse{
-		Connection:  &connection,
-		Proof:       proofBz,
-		ProofHeight: proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryBalance returns the amount of coins in the relayer account
 func (cc *CardanoProvider) QueryBalance(ctx context.Context, keyName string) (sdk.Coins, error) {
-	addr, err := cc.ShowAddress(keyName)
-	if err != nil {
-		return nil, err
-	}
-
-	return cc.QueryBalanceWithAddress(ctx, addr)
+	return nil, nil
 }
 
 // QueryBalanceWithAddress returns the amount of coins in the relayer account with address as input
 func (cc *CardanoProvider) QueryBalanceWithAddress(ctx context.Context, address string) (sdk.Coins, error) {
-	qc := bankTypes.NewQueryClient(cc)
-	p := DefaultPageRequest()
-	coins := sdk.Coins{}
-
-	for {
-		res, err := qc.AllBalances(ctx, &bankTypes.QueryAllBalancesRequest{
-			Address:    address,
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		coins = append(coins, res.Balances...)
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return coins, nil
+	return nil, nil
 }
 
 func DefaultPageRequest() *querytypes.PageRequest {
@@ -430,15 +355,7 @@ func DefaultPageRequest() *querytypes.PageRequest {
 
 // QueryChannelClient returns the client state of the client supporting a given channel
 func (cc *CardanoProvider) QueryChannelClient(ctx context.Context, height int64, channelid, portid string) (*clienttypes.IdentifiedClientState, error) {
-	qc := chantypes.NewQueryClient(cc)
-	cState, err := qc.ChannelClientState(ctx, &chantypes.QueryChannelClientStateRequest{
-		PortId:    portid,
-		ChannelId: channelid,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return cState.IdentifiedClientState, nil
+	return nil, nil
 }
 
 // QueryChannels returns all the channels that are registered on a chain
@@ -526,53 +443,11 @@ func (cc *CardanoProvider) QueryClientState(ctx context.Context, height int64, c
 
 // QueryUnbondingPeriod returns the unbonding period of the chain
 func (cc *CardanoProvider) QueryUnbondingPeriod(ctx context.Context) (time.Duration, error) {
-
-	// Attempt ICS query
-	consumerUnbondingPeriod, consumerErr := cc.queryParamsSubspaceTime(ctx, "ccvconsumer", "UnbondingPeriod")
-	if consumerErr == nil {
-		return consumerUnbondingPeriod, nil
-	}
-
-	//Attempt Staking query.
-	unbondingPeriod, stakingParamsErr := cc.queryParamsSubspaceTime(ctx, "staking", "UnbondingTime")
-	if stakingParamsErr == nil {
-		return unbondingPeriod, nil
-	}
-
-	// Fallback
-	req := stakingtypes.QueryParamsRequest{}
-	queryClient := stakingtypes.NewQueryClient(cc)
-	res, err := queryClient.Params(ctx, &req)
-	if err == nil {
-		return res.Params.UnbondingTime, nil
-
-	}
-
-	return 0,
-		fmt.Errorf("failed to query unbonding period from ccvconsumer, staking & fallback : %w: %s : %s", consumerErr, stakingParamsErr.Error(), err.Error())
+	return 0, nil
 }
 
 func (cc *CardanoProvider) queryParamsSubspaceTime(ctx context.Context, subspace string, key string) (time.Duration, error) {
-	queryClient := proposal.NewQueryClient(cc)
-
-	params := proposal.QueryParamsRequest{Subspace: subspace, Key: key}
-
-	res, err := queryClient.Params(ctx, &params)
-
-	if err != nil {
-		return 0, fmt.Errorf("failed to make %s params request: %w", subspace, err)
-	}
-
-	if res.Param.Value == "" {
-		return 0, fmt.Errorf("%s %s is empty", subspace, key)
-	}
-
-	unbondingValue, err := strconv.ParseUint(strings.ReplaceAll(res.Param.Value, `"`, ""), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse %s from %s param: %w", key, subspace, err)
-	}
-
-	return time.Duration(unbondingValue), nil
+	return 0, nil
 }
 
 // Query current node status
@@ -586,28 +461,7 @@ func (cc *CardanoProvider) QueryStatus(ctx context.Context) (*coretypes.ResultSt
 
 // QueryClients queries all the clients!
 func (cc *CardanoProvider) QueryClients(ctx context.Context) (clienttypes.IdentifiedClientStates, error) {
-	qc := clienttypes.NewQueryClient(cc)
-	p := DefaultPageRequest()
-	clients := clienttypes.IdentifiedClientStates{}
-
-	for {
-		res, err := qc.ClientStates(ctx, &clienttypes.QueryClientStatesRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		clients = append(clients, res.ClientStates...)
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return clients, nil
+	return nil, nil
 }
 
 // QueryConnectionChannels queries the channels associated with a connection
@@ -697,33 +551,7 @@ func transformIdentifiedConnection(ic *pbconnection.IdentifiedConnection) *connt
 
 // QueryConnectionsUsingClient gets any connections that exist between chain and counterparty
 func (cc *CardanoProvider) QueryConnectionsUsingClient(ctx context.Context, height int64, clientid string) (*conntypes.QueryConnectionsResponse, error) {
-	qc := conntypes.NewQueryClient(cc)
-	p := DefaultPageRequest()
-	connections := &conntypes.QueryConnectionsResponse{}
-
-	for {
-		res, err := qc.Connections(ctx, &conntypes.QueryConnectionsRequest{
-			Pagination: p,
-		})
-		if err != nil || res == nil {
-			return nil, err
-		}
-
-		for _, conn := range res.Connections {
-			if conn.ClientId == clientid {
-				connections.Connections = append(connections.Connections, conn)
-			}
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return connections, nil
+	return nil, nil
 }
 
 // QueryConsensusState returns a consensus state for a given chain to be used as a
@@ -752,41 +580,12 @@ func (cc *CardanoProvider) QueryConsensusState(ctx context.Context, height int64
 
 // QueryDenomTrace takes a denom from IBC and queries the information about it
 func (cc *CardanoProvider) QueryDenomTrace(ctx context.Context, denom string) (*transfertypes.DenomTrace, error) {
-	transfers, err := transfertypes.NewQueryClient(cc).DenomTrace(ctx,
-		&transfertypes.QueryDenomTraceRequest{
-			Hash: denom,
-		})
-	if err != nil {
-		return nil, err
-	}
-	return transfers.DenomTrace, nil
+	return nil, nil
 }
 
 // QueryDenomTraces returns all the denom traces from a given chain
 func (cc *CardanoProvider) QueryDenomTraces(ctx context.Context, offset, limit uint64, height int64) ([]transfertypes.DenomTrace, error) {
-	qc := transfertypes.NewQueryClient(cc)
-	p := DefaultPageRequest()
-	transfers := []transfertypes.DenomTrace{}
-	for {
-		res, err := qc.DenomTraces(ctx,
-			&transfertypes.QueryDenomTracesRequest{
-				Pagination: p,
-			})
-
-		if err != nil || res == nil {
-			return nil, err
-		}
-
-		transfers = append(transfers, res.DenomTraces...)
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return transfers, nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) QueryLatestHeight(ctx context.Context) (int64, error) {
@@ -803,77 +602,25 @@ func (cc *CardanoProvider) QueryLatestHeight(ctx context.Context) (int64, error)
 
 // QueryNextSeqAck returns the next seqAck for a configured channel
 func (cc *CardanoProvider) QueryNextSeqAck(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	key := host.NextSequenceAckKey(portid, channelid)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	// check if next sequence receive exists
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrapf(chantypes.ErrChannelNotFound, "portID (%s), channelID (%s)", portid, channelid)
-	}
-
-	sequence := binary.BigEndian.Uint64(value)
-
-	return &chantypes.QueryNextSequenceReceiveResponse{
-		NextSequenceReceive: sequence,
-		Proof:               proofBz,
-		ProofHeight:         proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryNextSeqRecv returns the next seqRecv for a configured channel
 func (cc *CardanoProvider) QueryNextSeqRecv(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	key := host.NextSequenceRecvKey(portid, channelid)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	// check if next sequence receive exists
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrapf(chantypes.ErrChannelNotFound, "portID (%s), channelID (%s)", portid, channelid)
-	}
-
-	sequence := binary.BigEndian.Uint64(value)
-
-	return &chantypes.QueryNextSequenceReceiveResponse{
-		NextSequenceReceive: sequence,
-		Proof:               proofBz,
-		ProofHeight:         proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryPacketAcknowledgement returns the packet ack proof at a given height
 func (cc *CardanoProvider) QueryPacketAcknowledgement(ctx context.Context, height int64, channelid, portid string, seq uint64) (ackRes *chantypes.QueryPacketAcknowledgementResponse, err error) {
-	key := host.PacketAcknowledgementKey(portid, channelid, seq)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrapf(chantypes.ErrInvalidAcknowledgement, "portID (%s), channelID (%s), sequence (%d)", portid, channelid, seq)
-	}
-
-	return &chantypes.QueryPacketAcknowledgementResponse{
-		Acknowledgement: value,
-		Proof:           proofBz,
-		ProofHeight:     proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryPacketAcknowledgements returns an array of packet acks
 func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, height uint64, channelid, portid string) ([]*chantypes.PacketState, error) {
-	qc := chantypes.NewQueryClient(cc)
 	p := DefaultPageRequest()
 	acknowledgements := []*chantypes.PacketState{}
 	for {
-		res, err := qc.PacketAcknowledgements(ctx, &chantypes.QueryPacketAcknowledgementsRequest{
+		res, err := cc.GateWay.QueryPacketAcknowledgements(ctx, &pbchannel.QueryPacketAcknowledgementsRequest{
 			PortId:     portid,
 			ChannelId:  channelid,
 			Pagination: p,
@@ -882,7 +629,15 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 			return nil, err
 		}
 
-		acknowledgements = append(acknowledgements, res.Acknowledgements...)
+		for _, val := range res.Acknowledgements {
+			temp := &chantypes.PacketState{
+				PortId:    val.PortId,
+				ChannelId: val.ChannelId,
+				Sequence:  val.Sequence,
+				Data:      val.Data,
+			}
+			acknowledgements = append(acknowledgements, temp)
+		}
 		next := res.GetPagination().GetNextKey()
 		if len(next) == 0 {
 			break
@@ -895,25 +650,25 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 	return acknowledgements, nil
 }
 
+func (cc *CardanoProvider) QueryPacketCommitmentGW(ctx context.Context, msgTransfer provider.PacketInfo) ([]byte, []byte, clienttypes.Height, error) {
+	req := &pbchannel.QueryPacketCommitmentRequest{
+		PortId:    msgTransfer.SourcePort,
+		ChannelId: msgTransfer.SourceChannel,
+		Sequence:  msgTransfer.Sequence,
+	}
+	res, err := cc.GateWay.PacketCommitment(ctx, req)
+	if err != nil {
+		return nil, nil, clienttypes.Height{}, err
+	}
+	return res.Commitment, res.Proof, clienttypes.Height{
+		RevisionNumber: res.ProofHeight.RevisionNumber,
+		RevisionHeight: res.ProofHeight.RevisionHeight,
+	}, nil
+}
+
 // QueryPacketCommitment returns the packet commitment proof at a given height
 func (cc *CardanoProvider) QueryPacketCommitment(ctx context.Context, height int64, channelid, portid string, seq uint64) (comRes *chantypes.QueryPacketCommitmentResponse, err error) {
-	key := host.PacketCommitmentKey(portid, channelid, seq)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	// check if packet commitment exists
-	if len(value) == 0 {
-		return nil, sdkerrors.Wrapf(chantypes.ErrPacketCommitmentNotFound, "portID (%s), channelID (%s), sequence (%d)", portid, channelid, seq)
-	}
-
-	return &chantypes.QueryPacketCommitmentResponse{
-		Commitment:  value,
-		Proof:       proofBz,
-		ProofHeight: proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryPacketCommitments returns an array of packet commitments
@@ -961,18 +716,7 @@ func transformCommitment(commitment *pbchannel.PacketState) *chantypes.PacketSta
 
 // QueryPacketReceipt returns the packet receipt proof at a given height
 func (cc *CardanoProvider) QueryPacketReceipt(ctx context.Context, height int64, channelid, portid string, seq uint64) (recRes *chantypes.QueryPacketReceiptResponse, err error) {
-	key := host.PacketReceiptKey(portid, channelid, seq)
-
-	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	if err != nil {
-		return nil, err
-	}
-
-	return &chantypes.QueryPacketReceiptResponse{
-		Received:    value != nil,
-		Proof:       proofBz,
-		ProofHeight: proofHeight,
-	}, nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) QueryRecvPacket(
@@ -981,21 +725,16 @@ func (cc *CardanoProvider) QueryRecvPacket(
 	dstPortID string,
 	sequence uint64,
 ) (provider.PacketInfo, error) {
-	status, err := cc.QueryStatus(ctx)
-	if err != nil {
-		return provider.PacketInfo{}, err
-	}
-
 	q := writeAcknowledgementQuery(dstChanID, dstPortID, sequence)
-	ibcMsgs, err := cc.queryIBCMessages(ctx, cc.log, 1, 1000, q, cc.legacyEncodedEvents(zap.NewNop(), status.NodeInfo.Version))
+	ibcMsgs, err := cc.queryIBCMessages(ctx, cc.log, dstChanID, dstPortID, strconv.FormatUint(sequence, 10), 1, 100, false)
 	if err != nil {
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeWriteAck {
+		if msg.eventType != chantypes.EventTypeWriteAck {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.DestChannel == dstChanID && pi.DestPort == dstPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -1018,21 +757,17 @@ func (cc *CardanoProvider) QuerySendPacket(
 	srcPortID string,
 	sequence uint64,
 ) (provider.PacketInfo, error) {
-	status, err := cc.QueryStatus(ctx)
-	if err != nil {
-		return provider.PacketInfo{}, err
-	}
-
 	q := sendPacketQuery(srcChanID, srcPortID, sequence)
-	ibcMsgs, err := cc.queryIBCMessages(ctx, cc.log, 1, 1000, q, cc.legacyEncodedEvents(zap.NewNop(), status.NodeInfo.Version))
+
+	ibcMsgs, err := cc.queryIBCMessages(ctx, cc.log, srcChanID, srcPortID, strconv.FormatUint(sequence, 10), 1, 1000, false)
 	if err != nil {
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeSendPacket {
+		if msg.eventType != chantypes.EventTypeSendPacket {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.SourceChannel == srcChanID && pi.SourcePort == srcPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -1051,84 +786,17 @@ func sendPacketQuery(channelID string, portID string, seq uint64) string {
 
 // QueryTx takes a transaction hash and returns the transaction
 func (cc *CardanoProvider) QueryTx(ctx context.Context, hashHex string) (*provider.RelayerTxResponse, error) {
-	hash, err := hex.DecodeString(hashHex)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := cc.RPCClient.Tx(ctx, hash, true)
-	if err != nil {
-		return nil, err
-	}
-
-	events := parseEventsFromResponseDeliverTx(resp.TxResult)
-
-	return &provider.RelayerTxResponse{
-		Height: resp.Height,
-		TxHash: string(hash),
-		Code:   resp.TxResult.Code,
-		Data:   string(resp.TxResult.Data),
-		Events: events,
-	}, nil
-}
-
-// parseEventsFromResponseDeliverTx parses the events from a ResponseDeliverTx and builds a slice
-// of provider.RelayerEvent's.
-func parseEventsFromResponseDeliverTx(resp abci.ResponseDeliverTx) []provider.RelayerEvent {
-	var events []provider.RelayerEvent
-
-	for _, event := range resp.Events {
-		attributes := make(map[string]string)
-		for _, attribute := range event.Attributes {
-			attributes[string(attribute.Key)] = string(attribute.Value)
-		}
-		events = append(events, provider.RelayerEvent{
-			EventType:  event.Type,
-			Attributes: attributes,
-		})
-	}
-	return events
+	return nil, nil
 }
 
 // QueryTxs returns an array of transactions given a tag
 func (cc *CardanoProvider) QueryTxs(ctx context.Context, page, limit int, events []string) ([]*provider.RelayerTxResponse, error) {
-	if len(events) == 0 {
-		return nil, errors.New("must declare at least one event to search")
-	}
-
-	if page <= 0 {
-		return nil, errors.New("page must greater than 0")
-	}
-
-	if limit <= 0 {
-		return nil, errors.New("limit must greater than 0")
-	}
-
-	res, err := cc.RPCClient.TxSearch(ctx, strings.Join(events, " AND "), true, &page, &limit, "")
-	if err != nil {
-		return nil, err
-	}
-
-	// Currently, we only call QueryTxs() in two spots and in both of them we are expecting there to only be,
-	// at most, one tx in the response. Because of this we don't want to initialize the slice with an initial size.
-	var txResps []*provider.RelayerTxResponse
-	for _, tx := range res.Txs {
-		relayerEvents := parseEventsFromResponseDeliverTx(tx.TxResult)
-		txResps = append(txResps, &provider.RelayerTxResponse{
-			Height: tx.Height,
-			TxHash: string(tx.Hash),
-			Code:   tx.TxResult.Code,
-			Data:   string(tx.TxResult.Data),
-			Events: relayerEvents,
-		})
-	}
-	return txResps, nil
+	return nil, nil
 }
 
 // QueryUnreceivedAcknowledgements returns a list of unrelayed packet acks
 func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	qc := chantypes.NewQueryClient(cc)
-	res, err := qc.UnreceivedAcks(ctx, &chantypes.QueryUnreceivedAcksRequest{
+	res, err := cc.GateWay.QueryUnreceivedAcknowledgements(ctx, &pbchannel.QueryUnreceivedAcksRequest{
 		PortId:             portid,
 		ChannelId:          channelid,
 		PacketAckSequences: seqs,
@@ -1141,12 +809,13 @@ func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, 
 
 // QueryUnreceivedPackets returns a list of unrelayed packet commitments
 func (cc *CardanoProvider) QueryUnreceivedPackets(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	qc := chantypes.NewQueryClient(cc)
-	res, err := qc.UnreceivedPackets(ctx, &chantypes.QueryUnreceivedPacketsRequest{
+	req := &pbchannel.QueryUnreceivedPacketsRequest{
 		PortId:                    portid,
 		ChannelId:                 channelid,
 		PacketCommitmentSequences: seqs,
-	})
+	}
+
+	res, err := cc.GateWay.QueryUnreceivedPackets(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1155,90 +824,18 @@ func (cc *CardanoProvider) QueryUnreceivedPackets(ctx context.Context, height ui
 
 // QueryUpgradedClient returns upgraded client info
 func (cc *CardanoProvider) QueryUpgradedClient(ctx context.Context, height int64) (*clienttypes.QueryClientStateResponse, error) {
-	req := clienttypes.QueryUpgradedClientStateRequest{}
-
-	queryClient := clienttypes.NewQueryClient(cc)
-
-	res, err := queryClient.UpgradedClientState(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-
-	if res == nil || res.UpgradedClientState == nil {
-		return nil, fmt.Errorf("upgraded client state plan does not exist at height %d", height)
-	}
-
-	proof, proofHeight, err := cc.QueryUpgradeProof(ctx, upgradetypes.UpgradedClientKey(height), uint64(height))
-	if err != nil {
-		return nil, err
-	}
-
-	return &clienttypes.QueryClientStateResponse{
-		ClientState: res.UpgradedClientState,
-		Proof:       proof,
-		ProofHeight: proofHeight,
-	}, nil
+	return nil, nil
 }
 
 // QueryUpgradeProof performs an abci query with the given key and returns the proto encoded merkle proof
 // for the query and the height at which the proof will succeed on a tendermint verifier.
 func (cc *CardanoProvider) QueryUpgradeProof(ctx context.Context, key []byte, height uint64) ([]byte, clienttypes.Height, error) {
-	res, err := cc.QueryABCI(ctx, abci.RequestQuery{
-		Path:   "store/upgrade/key",
-		Height: int64(height - 1),
-		Data:   key,
-		Prove:  true,
-	})
-	if err != nil {
-		return nil, clienttypes.Height{}, err
-	}
-
-	merkleProof, err := commitmenttypes.ConvertProofs(res.ProofOps)
-	if err != nil {
-		return nil, clienttypes.Height{}, err
-	}
-
-	proof, err := cc.Cdc.Marshaler.Marshal(&merkleProof)
-	if err != nil {
-		return nil, clienttypes.Height{}, err
-	}
-
-	revision := clienttypes.ParseChainID(cc.PCfg.ChainID)
-
-	// proof height + 1 is returned as the proof created corresponds to the height the proof
-	// was created in the IAVL tree. Tendermint and subsequently the clients that rely on it
-	// have heights 1 above the IAVL tree. Thus we return proof height + 1
-	return proof, clienttypes.Height{
-		RevisionNumber: revision,
-		RevisionHeight: uint64(res.Height + 1),
-	}, nil
+	return nil, clienttypes.Height{}, nil
 }
 
 // QueryUpgradedConsState returns upgraded consensus state and height of client
 func (cc *CardanoProvider) QueryUpgradedConsState(ctx context.Context, height int64) (*clienttypes.QueryConsensusStateResponse, error) {
-	req := clienttypes.QueryUpgradedConsensusStateRequest{}
-
-	queryClient := clienttypes.NewQueryClient(cc)
-
-	res, err := queryClient.UpgradedConsensusState(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-
-	if res == nil || res.UpgradedConsensusState == nil {
-		return nil, fmt.Errorf("upgraded consensus state plan does not exist at height %d", height)
-	}
-
-	proof, proofHeight, err := cc.QueryUpgradeProof(ctx, upgradetypes.UpgradedConsStateKey(height), uint64(height))
-	if err != nil {
-		return nil, err
-	}
-
-	return &clienttypes.QueryConsensusStateResponse{
-		ConsensusState: res.UpgradedConsensusState,
-		Proof:          proof,
-		ProofHeight:    proofHeight,
-	}, nil
+	return nil, nil
 }
 
 func (cc *CardanoProvider) QueryCardanoLatestHeight(ctx context.Context) (int64, error) {
@@ -1314,5 +911,25 @@ func (cc *CardanoProvider) QueryBlockResults(ctx context.Context, h int64) (*cty
 	return &ctypes.ResultBlockResults{
 		Height:     int64(res.BlockResults.Height.RevisionHeight),
 		TxsResults: txResults,
+	}, nil
+}
+
+func (cc *CardanoProvider) QueryProofUnreceivedPackets(ctx context.Context, channelId, portId string, sequence, revisionHeight uint64) (provider.PacketProof, error) {
+	req := &pbchannel.QueryProofUnreceivedPacketsRequest{
+		ChannelId:      channelId,
+		PortId:         portId,
+		Sequence:       sequence,
+		RevisionHeight: revisionHeight,
+	}
+	res, err := cc.GateWay.ProofUnreceivedPackets(ctx, req)
+	if err != nil {
+		return provider.PacketProof{}, err
+	}
+	return provider.PacketProof{
+		Proof: res.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: res.ProofHeight.RevisionNumber,
+			RevisionHeight: res.ProofHeight.RevisionHeight,
+		},
 	}, nil
 }

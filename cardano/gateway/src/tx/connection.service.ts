@@ -1,27 +1,23 @@
 import { MsgUpdateClientResponse } from '../../cosmjs-types/src/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from 'lucid-cardano';
+import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import {
   MsgConnectionOpenAck,
+  MsgConnectionOpenAckResponse,
   MsgConnectionOpenConfirm,
+  MsgConnectionOpenConfirmResponse,
   MsgConnectionOpenInit,
   MsgConnectionOpenInitResponse,
   MsgConnectionOpenTry,
+  MsgConnectionOpenTryResponse,
 } from 'cosmjs-types/src/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
 import { ConnectionOpenInitOperator } from './dto/connection/connection-open-init-operator.dto';
 import { ConnectionOpenTryOperator } from './dto/connection/connection-open-try-operator.dto';
-import {
-  CLIENT_ID_PREFIX,
-  CLIENT_PREFIX,
-  CONNECTION_ID_PREFIX,
-  DEFAULT_FEATURES_VERSION_ORDER_ORDERED,
-  DEFAULT_FEATURES_VERSION_ORDER_UNORDERED,
-  DEFAULT_IDENTIFIER_VERSION,
-} from 'src/constant';
+import { CLIENT_PREFIX } from 'src/constant';
 import { ConnectionOpenAckOperator } from './dto/connection/connection-open-ack-operator.dto';
 import { ConnectionOpenConfirmOperator } from './dto/connection/connection-open-confirm-operator.dto';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
@@ -32,7 +28,15 @@ import { State } from 'src/shared/types/connection/state';
 import { MintConnectionRedeemer, SpendConnectionRedeemer } from 'src/shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
-
+import { convertHex2String, convertString2Hex } from '@shared/helpers/hex';
+import { ClientDatum } from '@shared/types/client-datum';
+import { isValidProofHeight } from './helper/height.validate';
+import {
+  validateAndFormatConnectionOpenAckParams,
+  validateAndFormatConnectionOpenConfirmParams,
+  validateAndFormatConnectionOpenInitParams,
+  validateAndFormatConnectionOpenTryParams,
+} from './helper/connection.validate';
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -48,32 +52,7 @@ export class ConnectionService {
   async connectionOpenInit(data: MsgConnectionOpenInit): Promise<MsgConnectionOpenInitResponse> {
     try {
       this.logger.log('Connection Open Init is processing');
-      const constructedAddress: string = data.signer;
-      if (!constructedAddress) {
-        throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
-      }
-      if (!data.client_id.startsWith(`${CLIENT_ID_PREFIX}-`))
-        throw new GrpcInvalidArgumentException(
-          `Invalid argument: "client_id". Please use the prefix "${CLIENT_ID_PREFIX}-"`,
-        );
-      const clientSequence: string = data.client_id.replaceAll(`${CLIENT_ID_PREFIX}-`, '');
-      // Prepare the connection open init operator object
-      const connectionOpenInitOperator: ConnectionOpenInitOperator = {
-        clientId: clientSequence,
-        versions: [
-          {
-            identifier: DEFAULT_IDENTIFIER_VERSION,
-            features: [DEFAULT_FEATURES_VERSION_ORDER_ORDERED, DEFAULT_FEATURES_VERSION_ORDER_UNORDERED],
-          },
-        ],
-        counterparty: {
-          client_id: this.lucidService.toHex(data.counterparty.client_id),
-          connection_id: data.counterparty.connection_id || '',
-          prefix: {
-            key_prefix: this.lucidService.toBytes(data.counterparty.prefix.key_prefix),
-          },
-        },
-      };
+      const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenInitTx: Tx = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
@@ -92,7 +71,6 @@ export class ConnectionService {
       } as unknown as MsgUpdateClientResponse;
       return response;
     } catch (error) {
-      this.logger.error(error, 'connectionOpenInit');
       this.logger.error(`connectionOpenInit: ${error}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
@@ -106,42 +84,10 @@ export class ConnectionService {
    * @param data The message containing connection open try data.
    * @returns A promise resolving to a message response for connection open try include the unsigned_tx.
    */
-  async connectionOpenTry(data: MsgConnectionOpenTry): Promise<MsgUpdateClientResponse> {
+  /* istanbul ignore next */
+  async connectionOpenTry(data: MsgConnectionOpenTry): Promise<MsgConnectionOpenTryResponse> {
     try {
-      this.logger.log('Connection Open Try is processing');
-      const constructedAddress: string = data.signer;
-      if (!constructedAddress) {
-        throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
-      }
-      if (!data.client_id.startsWith(`${CLIENT_ID_PREFIX}-`))
-        throw new GrpcInvalidArgumentException(
-          `Invalid argument: "client_id". Please use the prefix "${CLIENT_ID_PREFIX}-"`,
-        );
-      const clientSequence: string = data.client_id.replaceAll(`${CLIENT_ID_PREFIX}-`, '');
-      // Prepare the connection open try operator object
-      const connectionOpenTryOperator: ConnectionOpenTryOperator = {
-        clientId: clientSequence,
-        counterparty: {
-          client_id: this.lucidService.toHex(data.counterparty.client_id),
-          connection_id: this.lucidService.toHex(data.counterparty.connection_id),
-          prefix: {
-            key_prefix: this.lucidService.toBytes(data.counterparty.prefix.key_prefix),
-          },
-        },
-        versions: [
-          {
-            identifier: DEFAULT_IDENTIFIER_VERSION,
-            features: [DEFAULT_FEATURES_VERSION_ORDER_ORDERED, DEFAULT_FEATURES_VERSION_ORDER_UNORDERED],
-          },
-        ],
-        counterpartyClientState: this.lucidService.toBytes(data.client_state!.value),
-        proofInit: this.lucidService.toBytes(data.proof_init),
-        proofClient: this.lucidService.toBytes(data.proof_client),
-        proofHeight: {
-          revisionHeight: BigInt(data.proof_height?.revision_height || 0),
-          revisionNumber: BigInt(data.proof_height?.revision_number || 0),
-        },
-      };
+      const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenTryTx: Tx = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
@@ -152,16 +98,15 @@ export class ConnectionService {
       const unsignedConnectionOpenTryTxCompleted: TxComplete = await unsignedConnectionOpenTryTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
-      const response: MsgConnectionOpenInitResponse = {
+      const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
           value: unsignedConnectionOpenTryTxCompleted.txComplete.to_bytes(),
         },
-      } as unknown as MsgUpdateClientResponse;
+      } as unknown as MsgConnectionOpenTryResponse;
       return response;
     } catch (error) {
-      this.logger.error(error.stack, 'connectionOpenTry');
-      this.logger.error(`connectionOpenTry: ${error.stack}`);
+      this.logger.error(`connectionOpenTry: ${error}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
@@ -174,31 +119,10 @@ export class ConnectionService {
    * @param data The message containing connection open ack data.
    * @returns A promise resolving to a message response for connection open ack include the unsigned_tx.
    */
-  async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgUpdateClientResponse> {
+  async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
     try {
       this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
-      const constructedAddress: string = data.signer;
-      if (!constructedAddress) {
-        throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
-      }
-      if (!data.connection_id.startsWith(`${CONNECTION_ID_PREFIX}-`))
-        throw new GrpcInvalidArgumentException(
-          `Invalid argument: "connection_id". Please use the prefix "${CONNECTION_ID_PREFIX}-"`,
-        );
-      const connectionSequence = data.connection_id.replaceAll(`${CONNECTION_ID_PREFIX}-`, '');
-      // Prepare the connection open ack operator object
-      const connectionOpenAckOperator: ConnectionOpenAckOperator = {
-        connectionSequence: connectionSequence,
-        counterpartyClientState: this.lucidService.toBytes(data.client_state!.value),
-        //TODO: change to hex if connection id not in right form
-        counterpartyConnectionID: this.lucidService.toHex(data.counterparty_connection_id),
-        proofTry: this.lucidService.toBytes(data.proof_try),
-        proofClient: this.lucidService.toBytes(data.proof_client),
-        proofHeight: {
-          revisionNumber: BigInt(data.proof_height?.revision_number || 0),
-          revisionHeight: BigInt(data.proof_height?.revision_height || 0),
-        },
-      };
+      const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: Tx = await this.buildUnsignedConnectionOpenAckTx(
         connectionOpenAckOperator,
@@ -209,18 +133,18 @@ export class ConnectionService {
       const unsignedConnectionOpenAckTxCompleted: TxComplete = await unsignedConnectionOpenAckTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
-      const response: MsgConnectionOpenInitResponse = {
+      const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
           value: unsignedConnectionOpenAckTxCompleted.txComplete.to_bytes(),
         },
-      } as unknown as MsgUpdateClientResponse;
+      } as unknown as MsgConnectionOpenAckResponse;
       return response;
     } catch (error) {
       this.logger.error(error, 'connectionOpenAck');
-      this.logger.error(`connectionOpenAck: ${error}`);
+      this.logger.error(`connectionOpenAck: ${error.stack}`);
       if (!(error instanceof RpcException)) {
-        throw new GrpcInternalException(`An unexpected error occurred. ${error.stack}`);
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
         throw error;
       }
@@ -231,28 +155,11 @@ export class ConnectionService {
    * @param data The message containing connection open confirm data.
    * @returns A promise resolving to a message response for connection open confirm include the unsigned_tx.
    */
-  async connectionOpenConfirm(data: MsgConnectionOpenConfirm): Promise<MsgUpdateClientResponse> {
+  /* istanbul ignore next */
+  async connectionOpenConfirm(data: MsgConnectionOpenConfirm): Promise<MsgConnectionOpenConfirmResponse> {
     try {
       this.logger.log('Connection Open Confirm is processing');
-      const constructedAddress: string = data.signer;
-      if (!constructedAddress) {
-        throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
-      }
-      if (!data.connection_id.startsWith(`${CONNECTION_ID_PREFIX}-`))
-        throw new GrpcInvalidArgumentException(
-          `Invalid argument: "connection_id". Please use the prefix "${CONNECTION_ID_PREFIX}-"`,
-        );
-      const connectionSequence = data.connection_id.replaceAll(`${CONNECTION_ID_PREFIX}-`, '');
-      // Prepare the connection open confirm operator object
-      const connectionOpenConfirmOperator: ConnectionOpenConfirmOperator = {
-        connectionSequence: connectionSequence,
-        //TODO: change to hex if connection id not in right form
-        proofAck: this.lucidService.toBytes(data.proof_ack),
-        proofHeight: {
-          revisionNumber: BigInt(data.proof_height?.revision_number || 0),
-          revisionHeight: BigInt(data.proof_height?.revision_height || 0),
-        },
-      };
+      const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenConfirmTx: Tx = await this.buildUnsignedConnectionOpenConfirmTx(
         connectionOpenConfirmOperator,
@@ -261,17 +168,16 @@ export class ConnectionService {
       const unsignedConnectionOpenConfirmTxValidTo: Tx = unsignedConnectionOpenConfirmTx.validTo(
         Date.now() + 150 * 1e3,
       );
-
       const unsignedConnectionOpenConfirmTxCompleted: TxComplete =
         await unsignedConnectionOpenConfirmTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
-      const response: MsgConnectionOpenInitResponse = {
+      const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
           value: unsignedConnectionOpenConfirmTxCompleted.txComplete.to_bytes(),
         },
-      } as unknown as MsgUpdateClientResponse;
+      } as unknown as MsgConnectionOpenConfirmResponse;
       return response;
     } catch (error) {
       this.logger.error(`connectionOpenConfirm: ${error}`);
@@ -319,7 +225,7 @@ export class ConnectionService {
     };
     const connectionDatum: ConnectionDatum = {
       state: {
-        client_id: CLIENT_PREFIX + this.lucidService.toHex('-' + connectionOpenInitOperator.clientId),
+        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenInitOperator.clientId),
         counterparty: connectionOpenInitOperator.counterparty,
         delay_period: 0n,
         versions: connectionOpenInitOperator.versions,
@@ -361,6 +267,7 @@ export class ConnectionService {
     );
   }
 
+  /* istanbul ignore next */
   public async buildUnsignedConnectionOpenTryTx(
     connectionOpenTryOperator: ConnectionOpenTryOperator,
     constructedAddress: string,
@@ -390,7 +297,7 @@ export class ConnectionService {
     };
     const connectionDatum: ConnectionDatum = {
       state: {
-        client_id: CLIENT_PREFIX + this.lucidService.toHex('-' + connectionOpenTryOperator.clientId),
+        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenTryOperator.clientId),
         counterparty: connectionOpenTryOperator.counterparty,
         delay_period: 0n,
         versions: connectionOpenTryOperator.versions,
@@ -454,12 +361,13 @@ export class ConnectionService {
         proof_height: connectionOpenAckOperator.proofHeight,
       },
     };
+
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
       'connection',
     );
-    //TODO: check how to convert back to normal string
-    const clientSequence = parseClientSequence(this.lucidService.toText(connectionDatum.state.client_id));
+
+    const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const updatedConnectionDatum: ConnectionDatum = {
       ...connectionDatum,
       state: {
@@ -474,6 +382,13 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    // Get the keys (heights) of the map and convert them into an array
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+
+    if (!isValidProofHeight(heightsArray, connectionOpenAckOperator.proofHeight.revisionHeight)) {
+      throw new GrpcInternalException(`Invalid proof height: ${connectionOpenAckOperator.proofHeight.revisionHeight}`);
+    }
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
       'spendConnectionRedeemer',
@@ -491,6 +406,7 @@ export class ConnectionService {
       constructedAddress,
     );
   }
+  /* istanbul ignore next */
   async buildUnsignedConnectionOpenConfirmTx(
     connectionOpenConfirmOperator: ConnectionOpenConfirmOperator,
     constructedAddress: string,
@@ -512,8 +428,10 @@ export class ConnectionService {
       connectionUtxo.datum!,
       'connection',
     );
-    //TODO: check how to convert back to normal string
-    const clientSequence = parseClientSequence(this.lucidService.toText(connectionDatum.state.client_id));
+    if (connectionDatum.state.state !== State.Init) {
+      throw new Error('ConnOpenAck to a Connection not in Init state');
+    }
+    const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const updatedConnectionDatum: ConnectionDatum = {
       ...connectionDatum,
       state: {

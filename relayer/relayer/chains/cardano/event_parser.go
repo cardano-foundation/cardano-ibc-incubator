@@ -378,10 +378,13 @@ func parseIBCMessageFromEvent(
 	chainID string,
 	height uint64,
 ) *ibcMessage {
+
 	switch event.Type {
 	case chantypes.EventTypeSendPacket, chantypes.EventTypeRecvPacket, chantypes.EventTypeWriteAck,
 		chantypes.EventTypeAcknowledgePacket, chantypes.EventTypeTimeoutPacket,
 		chantypes.EventTypeTimeoutPacketOnClose:
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		pi := &packetInfo{Height: height}
 		pi.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -391,6 +394,8 @@ func parseIBCMessageFromEvent(
 	case chantypes.EventTypeChannelOpenInit, chantypes.EventTypeChannelOpenTry,
 		chantypes.EventTypeChannelOpenAck, chantypes.EventTypeChannelOpenConfirm,
 		chantypes.EventTypeChannelCloseInit, chantypes.EventTypeChannelCloseConfirm:
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &channelInfo{Height: height}
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -399,6 +404,8 @@ func parseIBCMessageFromEvent(
 		}
 	case conntypes.EventTypeConnectionOpenInit, conntypes.EventTypeConnectionOpenTry,
 		conntypes.EventTypeConnectionOpenAck, conntypes.EventTypeConnectionOpenConfirm:
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &connectionInfo{Height: height}
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -408,6 +415,8 @@ func parseIBCMessageFromEvent(
 	case clienttypes.EventTypeCreateClient, clienttypes.EventTypeUpdateClient,
 		clienttypes.EventTypeUpgradeClient, clienttypes.EventTypeSubmitMisbehaviour,
 		clienttypes.EventTypeUpdateClientProposal:
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &clientInfo{}
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -416,6 +425,8 @@ func parseIBCMessageFromEvent(
 		}
 
 	case string(processor.ClientICQTypeRequest), string(processor.ClientICQTypeResponse):
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &clientICQInfo{
 			Height: height,
 			Source: chainID,
@@ -427,6 +438,8 @@ func parseIBCMessageFromEvent(
 		}
 
 	case RegisterSPO, UnRegisterSPO:
+		log.Info("Cardano event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		return &ibcMessage{
 			eventType: event.Type,
 			info: &spoInfo{

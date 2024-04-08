@@ -1,35 +1,158 @@
-import { Kupmios, Lucid } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Data, fromText, Kupmios, Lucid } from "npm:@dinhbx/lucid-custom";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
-import { Data } from "https://deno.land/x/lucid@0.10.7/mod.ts";
-import { ClientDatum } from "./types/client_datum.ts";
+import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
+import { DeploymentTemplate } from "./template.ts";
+import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
+import {
+  generateTokenName,
+  parseChannelSequence,
+  parseClientSequence,
+  parseConnectionSequence,
+} from "./utils.ts";
+import { ClientDatum } from "../lucid-types/ibc/client/ics_007_tendermint_client/client_datum/ClientDatum.ts";
+import { ConnectionDatum } from "../lucid-types/ibc/core/ics_003_connection_semantics/connection_datum/ConnectionDatum.ts";
+import { ChannelDatum } from "../lucid-types/ibc/core/ics_004/channel_datum/ChannelDatum.ts";
 
-let spendClientAddress = Deno.args[0];
+const env = await load({ allowEmptyValues: true });
 
-if (Deno.args.length < 1) {
-  spendClientAddress =
-    "addr_test1wppdu5hwndn4dxdz37te8a5qyyvpcydd24a97wxxs4hw4ecddq98k";
-} else {
-  spendClientAddress = Deno.args[0];
+const kupoUrl = env["KUPO_URL"] ? env["KUPO_URL"] : "";
+const ogmiosUrl = env["OGMIOS_URL"] ? env["OGMIOS_URL"] : "";
+
+await (new Command()
+  .name("cardano-ibc")
+  .version("0.1.0")
+  .description("Query Cardano IBC info")
+  .action(function () {
+    this.showHelp();
+  })
+  .globalOption("-k, --kupo <url:string>", "Kupo URL", {
+    default: kupoUrl,
+  })
+  .globalOption("-o, --ogmios <url:string>", "Ogmios URL", {
+    default: ogmiosUrl,
+  })
+  .globalOption("-ha, --handler <path:string>", "Path to handler.json file", {
+    default: "./deployments/handler.json",
+  })
+  .command("client", "Query client, eg: ibc_client-0")
+  .arguments("<value:string>")
+  .action(async ({ handler, kupo, ogmios }, id) => {
+    console.log("Query client with id:", id);
+    const deploymentInfo = await loadDeploymentInfo(handler);
+
+    const handlerToken: AuthToken = {
+      policy_id: deploymentInfo.handlerAuthToken.policyId,
+      name: deploymentInfo.handlerAuthToken.name,
+    };
+
+    const clientTokenPolicyId = deploymentInfo.validators.mintClient.scriptHash;
+
+    const clientSequence = parseClientSequence(id);
+
+    const clientTokenName = generateTokenName(
+      handlerToken,
+      fromText("ibc_client"),
+      clientSequence,
+    );
+
+    const lucid = await setupLucid(kupo, ogmios);
+
+    try {
+      const clientUtxo = await lucid.utxoByUnit(
+        clientTokenPolicyId + clientTokenName,
+      );
+
+      const clientDatum = Data.from(clientUtxo.datum!, ClientDatum);
+      console.dir(clientDatum, { depth: 100 });
+    } catch (_error) {
+      console.log("Failed to query client");
+    }
+  })
+  .command("connection", "Query connection, eg: connection-0")
+  .arguments("<value:string>")
+  .action(async ({ handler, kupo, ogmios }, id) => {
+    console.log("Query connection with id:", id);
+    const deploymentInfo = await loadDeploymentInfo(handler);
+
+    const handlerToken: AuthToken = {
+      policy_id: deploymentInfo.handlerAuthToken.policyId,
+      name: deploymentInfo.handlerAuthToken.name,
+    };
+
+    const tokenPolicyId = deploymentInfo.validators.mintConnection.scriptHash;
+
+    const sequence = parseConnectionSequence(id);
+
+    const tokenName = generateTokenName(
+      handlerToken,
+      fromText("connection"),
+      sequence,
+    );
+
+    const lucid = await setupLucid(kupo, ogmios);
+
+    try {
+      const utxo = await lucid.utxoByUnit(
+        tokenPolicyId + tokenName,
+      );
+
+      const datum = Data.from(utxo.datum!, ConnectionDatum);
+      console.dir(datum, { depth: 100 });
+    } catch (_error) {
+      console.log("Failed to query connection");
+    }
+  })
+  .command("channel", "Query channel, eg: channel-0")
+  .arguments("<value:string>")
+  .action(async ({ handler, kupo, ogmios }, id) => {
+    console.log("Query channel with id:", id);
+    const deploymentInfo = await loadDeploymentInfo(handler);
+
+    const handlerToken: AuthToken = {
+      policy_id: deploymentInfo.handlerAuthToken.policyId,
+      name: deploymentInfo.handlerAuthToken.name,
+    };
+
+    const tokenPolicyId = deploymentInfo.validators.mintChannel.scriptHash;
+
+    const sequence = parseChannelSequence(id);
+
+    const tokenName = generateTokenName(
+      handlerToken,
+      fromText("channel"),
+      sequence,
+    );
+
+    const lucid = await setupLucid(kupo, ogmios);
+
+    try {
+      const utxo = await lucid.utxoByUnit(
+        tokenPolicyId + tokenName,
+      );
+
+      const datum = Data.from(utxo.datum!, ChannelDatum);
+      console.dir(datum, { depth: 100 });
+    } catch (_error) {
+      console.log("Failed to query channel");
+    }
+  })
+  .parse(Deno.args));
+
+async function setupLucid(kupoUrl: string, ogmiosUrl: string) {
+  if (!kupoUrl || !ogmiosUrl) {
+    throw new Error(`Invalid provider url: ${kupoUrl} ${ogmiosUrl}`);
+  }
+
+  console.log("Provider:", `Kupo->${kupoUrl}`, `Ogmios->${ogmiosUrl}`);
+
+  const provider = new Kupmios(kupoUrl, ogmiosUrl);
+  const lucid = await Lucid.new(provider, "Preview");
+  return lucid;
 }
 
-const env = await load();
-
-const deployerSk = env["DEPLOYER_SK"];
-const kupoUrl = env["KUPO_URL"];
-const ogmiosUrl = env["OGMIOS_URL"];
-
-console.log(deployerSk, kupoUrl, ogmiosUrl);
-
-if (!deployerSk || !kupoUrl || !ogmiosUrl) {
-  throw new Error("Unable to load environment variables");
+async function loadDeploymentInfo(handler: string) {
+  const deploymentInfo: DeploymentTemplate = JSON.parse(
+    await Deno.readTextFile(handler),
+  );
+  return deploymentInfo;
 }
-
-const provider = new Kupmios(kupoUrl, ogmiosUrl);
-const lucid = await Lucid.new(provider, "Preview");
-lucid.selectWalletFromPrivateKey(deployerSk);
-
-const clientUtxos = await lucid.utxosAt(spendClientAddress);
-
-clientUtxos.forEach((utxo) => {
-  console.log(Data.from(utxo.datum!, ClientDatum));
-});

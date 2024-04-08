@@ -19,13 +19,11 @@ type TxCardanoService interface {
 type TxCardano struct {
 	TransactionClient pb.TransactionServiceClient
 	KeyClient         pb.KeyServiceClient
+	ConfigClient      pb.ConfigServiceClient
 }
 
 func NewTxCardanoService() (*TxCardano, error) {
-	err := godotenv.Load()
-	if err != nil {
-		return nil, err
-	}
+	godotenv.Load()
 
 	host := os.Getenv("TX_CARDANO_HOST")
 	port := os.Getenv("TX_CARDANO_PORT")
@@ -41,10 +39,12 @@ func NewTxCardanoService() (*TxCardano, error) {
 
 	transactionClient := pb.NewTransactionServiceClient(conn)
 	keyClient := pb.NewKeyServiceClient(conn)
+	configClient := pb.NewConfigServiceClient(conn)
 
 	return &TxCardano{
 		TransactionClient: transactionClient,
 		KeyClient:         keyClient,
+		ConfigClient:      configClient,
 	}, nil
 }
 
@@ -156,4 +156,26 @@ func (txc *TxCardano) RestoreKey(ctx context.Context, keyName, chainId, mnemonic
 		return "", err
 	}
 	return res.Address, nil
+}
+
+func (txc *TxCardano) UpdateConfig(ctx context.Context, newPath string) error {
+	req := &pb.UpdatePathConfigRequest{
+		Path: newPath,
+	}
+
+	_, err := txc.ConfigClient.UpdatePathConfig(ctx, req)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (txc *TxCardano) ShowConfig(ctx context.Context) (string, error) {
+	req := &pb.ShowPathConfigRequest{}
+
+	res, err := txc.ConfigClient.ShowPathConfig(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return res.Path, nil
 }

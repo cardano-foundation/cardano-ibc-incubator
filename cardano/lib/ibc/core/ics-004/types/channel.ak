@@ -1,6 +1,13 @@
+use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb.{
+  CLOSED, Channel as ChannelProto, Counterparty as CounterpartyProto, INIT, NONE,
+  OPEN, ORDERED, Order as OrderProto, State as StateProto, TRYOPEN,
+  UNINITIALIZED, UNORDERED,
+}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
-use ibc/core/ics_004/types/order.{Order, Ordered, Unordered}
-use ibc/core/ics_004/types/state.{ChannelState, Uninitialized}
+use ibc/core/ics_004/types/order.{None, Order, Ordered, Unordered}
+use ibc/core/ics_004/types/state.{
+  ChannelState, Closed, Init, Open, TryOpen, Uninitialized,
+}
 use ibc/core/ics_024_host_requirements/validate
 
 /// Channel defines pipeline for exactly-once packet delivery between specific
@@ -20,6 +27,44 @@ pub type Channel {
   version: ByteArray,
 }
 
+pub fn convert_to_channel_proto(channel: Channel) -> ChannelProto {
+  ChannelProto {
+    state: convert_to_state_proto(channel.state),
+    ordering: convert_to_order_proto(channel.ordering),
+    counterparty: convert_to_counterparty_proto(channel.counterparty),
+    connection_hops: channel.connection_hops,
+    version: channel.version,
+    upgrade_sequence: 0,
+  }
+}
+
+pub fn convert_to_state_proto(state: ChannelState) -> StateProto {
+  when state is {
+    Uninitialized -> UNINITIALIZED
+    Init -> INIT
+    TryOpen -> TRYOPEN
+    Open -> OPEN
+    Closed -> CLOSED
+  }
+}
+
+pub fn convert_to_order_proto(order: Order) -> OrderProto {
+  when order is {
+    None -> NONE
+    Unordered -> UNORDERED
+    Ordered -> ORDERED
+  }
+}
+
+pub fn convert_to_counterparty_proto(
+  counterparty: ChannelCounterparty,
+) -> CounterpartyProto {
+  CounterpartyProto {
+    port_id: counterparty.port_id,
+    channel_id: counterparty.channel_id,
+  }
+}
+
 pub fn validate_basic(ch: Channel) -> Bool {
   expect ch.state != Uninitialized
 
@@ -32,4 +77,25 @@ pub fn validate_basic(ch: Channel) -> Bool {
   expect counterparty.validate_basic(ch.counterparty)
 
   True
+}
+
+/// return a new Channel with all fields set to zero.
+pub fn null_channel() -> Channel {
+  Channel {
+    state: Uninitialized,
+    ordering: None,
+    counterparty: ChannelCounterparty { port_id: "", channel_id: "" },
+    connection_hops: [],
+    version: "",
+  }
+}
+
+pub fn new(
+  state: ChannelState,
+  ordering: Order,
+  counterparty: ChannelCounterparty,
+  connection_hops: List<ByteArray>,
+  version: ByteArray,
+) -> Channel {
+  Channel { state, ordering, counterparty, connection_hops, version }
 }

@@ -34,8 +34,23 @@ import {
   QueryPacketCommitmentResponse,
   QueryPacketCommitmentsRequest,
   QueryPacketCommitmentsResponse,
+  QueryPacketReceiptRequest,
+  QueryPacketReceiptResponse,
+  QueryUnreceivedPacketsRequest,
+  QueryUnreceivedPacketsResponse,
+  QueryUnreceivedAcksRequest,
+  QueryUnreceivedAcksResponse,
+  QueryProofUnreceivedPacketsRequest,
+  QueryProofUnreceivedPacketsResponse,
 } from '@cosmjs-types/src/ibc/core/channel/v1/query';
-import { QueryBlockResultsRequest, QueryBlockResultsResponse } from '@cosmjs-types/src/ibc/core/types/v1/query';
+import {
+  QueryBlockResultsRequest,
+  QueryBlockResultsResponse,
+  QueryBlockSearchRequest,
+  QueryBlockSearchResponse,
+  QueryTransactionByHashRequest,
+  QueryTransactionByHashResponse,
+} from '@cosmjs-types/src/ibc/core/types/v1/query';
 import { QueryService } from './services/query.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
@@ -142,5 +157,39 @@ export class QueryController {
   async queryPacketCommitments(request: QueryPacketCommitmentsRequest): Promise<QueryPacketCommitmentsResponse> {
     const response: QueryPacketCommitmentsResponse = await this.packetService.queryPacketCommitments(request);
     return response as unknown as QueryPacketCommitmentsResponse;
+  }
+
+  @GrpcMethod('Query', 'PacketReceipt')
+  async queryPacketReceipt(request: QueryPacketReceiptRequest): Promise<QueryPacketReceiptResponse> {
+    const response: QueryPacketReceiptResponse = await this.packetService.queryPacketReceipt(request);
+    return response as unknown as QueryPacketReceiptResponse;
+  }
+  // write api query UnreceivedPackets
+  @GrpcMethod('Query', 'UnreceivedPackets')
+  async queryUnreceivedPackets(request: QueryUnreceivedPacketsRequest): Promise<QueryUnreceivedPacketsResponse> {
+    const response: QueryUnreceivedPacketsResponse = await this.packetService.queryUnreceivedPackets(request);
+    return response as unknown as QueryUnreceivedPacketsResponse;
+  }
+  @GrpcMethod('Query', 'UnreceivedAcks')
+  async queryUnreceivedAcknowledgements(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse> {
+    const response: QueryUnreceivedAcksResponse = await this.packetService.queryUnreceivedAcks(request);
+    return response as unknown as QueryUnreceivedAcksResponse;
+  }
+  @GrpcMethod('Query', 'BlockSearch')
+  async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
+    const response: QueryBlockSearchResponse = await this.queryService.queryBlockSearch(request);
+    return response as unknown as QueryBlockSearchResponse;
+  }
+  @GrpcMethod('Query', 'TransactionByHash')
+  async queryTransactionByHash(request: QueryTransactionByHashRequest): Promise<QueryTransactionByHashResponse> {
+    const response: QueryTransactionByHashResponse = await this.queryService.queryTransactionByHash(request);
+    return response as unknown as QueryTransactionByHashResponse;
+  }
+  @GrpcMethod('Query', 'ProofUnreceivedPackets')
+  async queryProofUnreceivedPackets(
+    request: QueryProofUnreceivedPacketsRequest,
+  ): Promise<QueryProofUnreceivedPacketsResponse> {
+    const response: QueryProofUnreceivedPacketsResponse = await this.packetService.queryProofUnreceivedPackets(request);
+    return response as unknown as QueryProofUnreceivedPacketsResponse;
   }
 }

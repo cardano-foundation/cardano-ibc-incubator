@@ -22,6 +22,13 @@ export interface ResultBlockResults {
   /** txs result in blocks */
   txs_results: ResponseDeliverTx[];
 }
+export interface BlockInfo {
+  height: bigint;
+}
+export interface ResultBlockSearch {
+  block_id: bigint;
+  block?: BlockInfo;
+}
 function createBaseEventAttribute(): EventAttribute {
   return {
     key: "",
@@ -267,6 +274,114 @@ export const ResultBlockResults = {
       message.height = Height.fromPartial(object.height);
     }
     message.txs_results = object.txs_results?.map(e => ResponseDeliverTx.fromPartial(e)) || [];
+    return message;
+  }
+};
+function createBaseBlockInfo(): BlockInfo {
+  return {
+    height: BigInt(0)
+  };
+}
+export const BlockInfo = {
+  typeUrl: "/ibc.core.types.v1.BlockInfo",
+  encode(message: BlockInfo, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.height !== BigInt(0)) {
+      writer.uint32(8).int64(message.height);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BlockInfo {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBlockInfo();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.height = reader.int64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BlockInfo {
+    const obj = createBaseBlockInfo();
+    if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    return obj;
+  },
+  toJSON(message: BlockInfo): unknown {
+    const obj: any = {};
+    message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BlockInfo>, I>>(object: I): BlockInfo {
+    const message = createBaseBlockInfo();
+    if (object.height !== undefined && object.height !== null) {
+      message.height = BigInt(object.height.toString());
+    }
+    return message;
+  }
+};
+function createBaseResultBlockSearch(): ResultBlockSearch {
+  return {
+    block_id: BigInt(0),
+    block: undefined
+  };
+}
+export const ResultBlockSearch = {
+  typeUrl: "/ibc.core.types.v1.ResultBlockSearch",
+  encode(message: ResultBlockSearch, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.block_id !== BigInt(0)) {
+      writer.uint32(8).uint64(message.block_id);
+    }
+    if (message.block !== undefined) {
+      BlockInfo.encode(message.block, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ResultBlockSearch {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseResultBlockSearch();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.block_id = reader.uint64();
+          break;
+        case 2:
+          message.block = BlockInfo.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ResultBlockSearch {
+    const obj = createBaseResultBlockSearch();
+    if (isSet(object.block_id)) obj.block_id = BigInt(object.block_id.toString());
+    if (isSet(object.block)) obj.block = BlockInfo.fromJSON(object.block);
+    return obj;
+  },
+  toJSON(message: ResultBlockSearch): unknown {
+    const obj: any = {};
+    message.block_id !== undefined && (obj.block_id = (message.block_id || BigInt(0)).toString());
+    message.block !== undefined && (obj.block = message.block ? BlockInfo.toJSON(message.block) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ResultBlockSearch>, I>>(object: I): ResultBlockSearch {
+    const message = createBaseResultBlockSearch();
+    if (object.block_id !== undefined && object.block_id !== null) {
+      message.block_id = BigInt(object.block_id.toString());
+    }
+    if (object.block !== undefined && object.block !== null) {
+      message.block = BlockInfo.fromPartial(object.block);
+    }
     return message;
   }
 };

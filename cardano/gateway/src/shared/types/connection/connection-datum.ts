@@ -1,4 +1,4 @@
-import { Data } from 'lucid-cardano';
+import { Data } from '@dinhbx/lucid-custom';
 import { AuthToken } from '../auth-token';
 import { ConnectionEnd } from './connection-end';
 
@@ -7,7 +7,10 @@ export type ConnectionDatum = {
   token: AuthToken;
 };
 
-export async function encodeConnectionDatum(connectionDatum: ConnectionDatum, Lucid: typeof import('lucid-cardano')) {
+export async function encodeConnectionDatum(
+  connectionDatum: ConnectionDatum,
+  Lucid: typeof import('@dinhbx/lucid-custom'),
+) {
   const { Data } = Lucid;
 
   const VersionSchema = Data.Object({
@@ -53,7 +56,7 @@ export async function encodeConnectionDatum(connectionDatum: ConnectionDatum, Lu
   return Data.to(connectionDatum, TConnectionDatum);
 }
 
-export async function decodeConnectionDatum(connectionDatum: string, Lucid: typeof import('lucid-cardano')) {
+export async function decodeConnectionDatum(connectionDatum: string, Lucid: typeof import('@dinhbx/lucid-custom')) {
   const { Data } = Lucid;
 
   const VersionSchema = Data.Object({

@@ -98,6 +98,10 @@ service Query {
     option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
                                    "ports/{port_id}/next_sequence";
   }
+  rpc ProofUnreceivedPackets(QueryProofUnreceivedPacketsRequest) returns (QueryProofUnreceivedPacketsResponse) {
+    option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
+                                   "ports/{port_id}/sequence/{sequence_id}/height/{revision_height}";
+  }
 }
 
 // QueryChannelRequest is the request type for the Query/Channel RPC method
@@ -373,4 +377,15 @@ message QueryNextSequenceReceiveResponse {
   bytes proof = 2;
   // height at which the proof was retrieved
   ibc.core.client.v1.Height proof_height = 3 [(gogoproto.nullable) = false];
+}
+
+message QueryProofUnreceivedPacketsRequest {
+  string channel_id = 1;
+  string port_id = 2;
+  uint64 sequence = 3;
+  uint64 revision_height = 4;
+}
+message QueryProofUnreceivedPacketsResponse {
+  bytes proof = 1;
+  ibc.core.client.v1.Height proof_height = 2 [(gogoproto.nullable) = false];
 }

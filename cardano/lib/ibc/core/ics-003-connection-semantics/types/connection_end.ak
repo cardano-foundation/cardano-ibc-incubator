@@ -1,6 +1,12 @@
 use aiken/list
+use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb.{
+  ConnectionEnd as ConnectionEndProto, INIT, OPEN, State as StateProto, TRYOPEN,
+  UNINITIALIZED,
+}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
-use ibc/core/ics_003_connection_semantics/types/state.{State}
+use ibc/core/ics_003_connection_semantics/types/state.{
+  Init, Open, State, TryOpen, Uninitialized,
+}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_024_host_requirements/validate
 
@@ -21,6 +27,30 @@ pub fn new_connection_end(
   delay_period: Int,
 ) -> ConnectionEnd {
   ConnectionEnd { client_id, versions, state, counterparty, delay_period }
+}
+
+pub fn convert_to_connection_end_proto(
+  connection_end: ConnectionEnd,
+) -> ConnectionEndProto {
+  ConnectionEndProto {
+    client_id: connection_end.client_id,
+    versions: list.indexed_map(
+      connection_end.versions,
+      fn(i, _v) { list.at(connection_end.versions, i) },
+    ),
+    state: convert_to_state_proto(connection_end.state),
+    counterparty: connection_end.counterparty,
+    delay_period: connection_end.delay_period,
+  }
+}
+
+pub fn convert_to_state_proto(state: State) -> StateProto {
+  when state is {
+    Uninitialized -> UNINITIALIZED
+    Init -> INIT
+    TryOpen -> TRYOPEN
+    Open -> OPEN
+  }
 }
 
 /// get_client_id implements the Connection interface

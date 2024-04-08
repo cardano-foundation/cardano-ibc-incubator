@@ -40,3 +40,14 @@ message ResultBlockResults {
   // txs result in blocks
   repeated ResponseDeliverTx txs_results = 2;
 }
+
+message BlockInfo {
+  option (gogoproto.goproto_getters) = false;
+  int64 height = 1;
+}
+
+message ResultBlockSearch {
+  option (gogoproto.goproto_getters) = false;
+  uint64 block_id = 1;
+  BlockInfo block = 2;
+}

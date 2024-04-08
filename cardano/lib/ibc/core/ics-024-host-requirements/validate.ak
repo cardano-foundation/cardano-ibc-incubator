@@ -30,7 +30,7 @@ fn default_identifier_validator(id: ByteArray, min: Int, max: Int) -> Bool {
   }
 }
 
-pub fn is_valid_id(id: ByteArray) -> Bool {
+fn is_valid_id(id: ByteArray) -> Bool {
   id
     |> bytearray.reduce(
          True,

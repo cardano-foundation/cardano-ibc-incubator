@@ -61,7 +61,7 @@ fn handler_callback(
   let Transaction { outputs, redeemers, inputs, .. } = transaction
 
   expect Some(updated_module_output) =
-    validator_utils.validate_token_remain(spent_output, outputs)
+    validator_utils.validate_token_remain(spent_output, outputs, [])
   expect updated_module_datum: MockModuleDatum =
     validator_utils.get_inline_datum(updated_module_output)
 
@@ -179,7 +179,7 @@ fn handler_callback(
 
       True
     }
-    OnRecvPacket { channel_id, acknowledgement } -> {
+    OnRecvPacket { channel_id, acknowledgement, data: _ } -> {
       expect Some(packet) =
         validate_channel_recv_packet(
           inputs,
@@ -203,6 +203,7 @@ fn handler_callback(
 
       True
     }
+    _ -> True
   }
 }
 
@@ -227,7 +228,8 @@ fn validate_channel_open_init(
   expect chan_handler_token == handler_token
 
   // validate and extract channel outputs
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  expect Some(channel_sequence) =
+    channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -272,7 +274,8 @@ fn validate_channel_open_try(
   expect chan_handler_token == handler_token
 
   // validate and extract channel outputs
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  expect Some(channel_sequence) =
+    channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -306,7 +309,8 @@ fn validate_channel_open_ack(
   port_id: ByteArray,
   channel_id: ByteArray,
 ) -> Option<(Channel, ByteArray)> {
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  expect Some(channel_sequence) =
+    channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -351,7 +355,8 @@ fn validate_channel_open_confirm(
   port_id: ByteArray,
   channel_id: ByteArray,
 ) -> Option<Channel> {
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  expect Some(channel_sequence) =
+    channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -396,7 +401,8 @@ fn validate_channel_recv_packet(
   port_id: ByteArray,
   channel_id: ByteArray,
 ) -> Option<Packet> {
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  expect Some(channel_sequence) =
+    channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,

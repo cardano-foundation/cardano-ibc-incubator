@@ -2,11 +2,14 @@ version: "3.9"
 
 services:
   sidechain-node-prod:
-    build: 
+    container_name: sidechain-node-prod
+    build:
       context: .
       dockerfile: Dockerfile
     entrypoint: /entrypoint.sh
     ports:
       - "26657:26657"
+      - "26656:26656"
       - "4500:4500"
       - "1317:1317"
+    restart: always

@@ -1,4 +1,4 @@
-import { type Data } from 'lucid-cardano';
+import { type Data } from '@dinhbx/lucid-custom';
 import { AuthToken } from './auth-token';
 import { ClientDatumState } from './client-datum-state';
 
@@ -8,7 +8,7 @@ export type ClientDatum = {
 };
 export async function encodeClientDatum(
   clientDatum: ClientDatum,
-  Lucid: typeof import('lucid-cardano'),
+  Lucid: typeof import('@dinhbx/lucid-custom'),
 ): Promise<string> {
   const { Data } = Lucid;
 
@@ -82,7 +82,7 @@ export async function encodeClientDatum(
 
 export async function decodeClientDatum(
   clientDatum: string,
-  Lucid: typeof import('lucid-cardano'),
+  Lucid: typeof import('@dinhbx/lucid-custom'),
 ): Promise<ClientDatum> {
   const { Data } = Lucid;
 

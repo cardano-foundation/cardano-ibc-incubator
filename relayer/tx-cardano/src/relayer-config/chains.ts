@@ -1,12 +1,11 @@
-import { homedir } from 'os'
 import YAML from 'js-yaml'
 import fs from 'fs'
+import { GetPathConfig } from './config'
 
-const userHomeDir = homedir()
-const pathConfig = '/.relayer/config/config.yaml'
+const pathConfig = '/config/config.yaml'
 
 export function GetRelayerConfigPath() {
-    return userHomeDir + pathConfig;
+    return GetPathConfig() + pathConfig;
 }
 
 export function GetListChains() {

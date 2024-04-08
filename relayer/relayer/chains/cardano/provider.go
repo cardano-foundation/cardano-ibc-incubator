@@ -10,10 +10,6 @@ import (
 	"time"
 
 	"github.com/cardano/relayer/v1/package/services"
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
-	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-
 	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
 	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -113,13 +109,23 @@ func (pc CardanoProviderConfig) NewProvider(log *zap.Logger, homepath string, de
 	if err != nil {
 		return nil, err
 	}
+	// update Home Path
+	path, err := txCardano.ShowConfig(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if path != homepath {
+		err = txCardano.UpdateConfig(context.Background(), homepath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// new Gateway Service
 	gateway := services.Gateway{}
 	err = gateway.NewGateWayService(pc.RPCAddr)
 	if err != nil {
 		return nil, err
 	}
-
 	cp := &CardanoProvider{
 		log:            log,
 		TxCardano:      *txCardano,
@@ -389,26 +395,4 @@ func NewRPCClient(addr string, timeout time.Duration) (*rpchttp.HTTP, error) {
 		return nil, err
 	}
 	return rpcClient, nil
-}
-
-type CardanoIBCHeader struct {
-	CardanoBlockData *module.BlockData
-}
-
-func (h CardanoIBCHeader) Height() uint64 {
-	return uint64(h.CardanoBlockData.Height.RevisionHeight)
-}
-
-func (h CardanoIBCHeader) ConsensusState() ibcexported.ConsensusState {
-	return &tmclient.ConsensusState{
-		Timestamp: time.Unix(int64(h.CardanoBlockData.Timestamp), 0),
-		Root:      commitmenttypes.NewMerkleRoot([]byte(h.CardanoBlockData.Hash)),
-		// TODO: fill data
-		NextValidatorsHash: []byte(""),
-	}
-}
-
-func (h CardanoIBCHeader) NextValidatorsHash() []byte {
-	// TODO: fill data
-	return []byte("")
 }

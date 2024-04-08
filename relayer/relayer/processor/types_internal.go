@@ -30,7 +30,7 @@ type pathEndMessages struct {
 type ibcMessage interface {
 	// assemble executes the appropriate proof query function,
 	// then, if successful, assembles the message for the destination.
-	assemble(ctx context.Context, src, dst *pathEndRuntime) (provider.RelayerMessage, error)
+	assemble(ctx context.Context, src, dst *PathEndRuntime) (provider.RelayerMessage, error)
 
 	// tracker creates a message tracker for message status
 	tracker(assembled provider.RelayerMessage) messageToTrack
@@ -53,7 +53,7 @@ type packetIBCMessage struct {
 // then, if successful, assembles the packet message for the destination.
 func (msg packetIBCMessage) assemble(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (provider.RelayerMessage, error) {
 	var packetProof func(context.Context, provider.PacketInfo, uint64) (provider.PacketProof, error)
 	var assembleMessage func(provider.PacketInfo, provider.PacketProof) (provider.RelayerMessage, error)
@@ -83,7 +83,7 @@ func (msg packetIBCMessage) assemble(
 	default:
 		return nil, fmt.Errorf("unexepected packet message eventType for message assembly: %s", msg.eventType)
 	}
-	if src.clientState.ClientID == ibcexported.LocalhostClientID {
+	if src.ClientState.ClientID == ibcexported.LocalhostClientID {
 		packetProof = src.localhostSentinelProofPacket
 	}
 
@@ -149,7 +149,7 @@ type channelIBCMessage struct {
 // then, if successful, assembles the message for the destination.
 func (msg channelIBCMessage) assemble(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (provider.RelayerMessage, error) {
 	var chanProof func(context.Context, provider.ChannelInfo, uint64) (provider.ChannelProof, error)
 	var assembleMessage func(provider.ChannelInfo, provider.ChannelProof) (provider.RelayerMessage, error)
@@ -175,7 +175,7 @@ func (msg channelIBCMessage) assemble(
 	default:
 		return nil, fmt.Errorf("unexepected channel message eventType for message assembly: %s", msg.eventType)
 	}
-	if src.clientState.ClientID == ibcexported.LocalhostClientID {
+	if src.ClientState.ClientID == ibcexported.LocalhostClientID {
 		chanProof = src.localhostSentinelProofChannel
 	}
 
@@ -225,14 +225,17 @@ type connectionIBCMessage struct {
 	info      provider.ConnectionInfo
 }
 
+var p provider.ConnectionProof
+
 // assemble executes the appropriate proof query function,
 // then, if successful, assembles the message for the destination.
 func (msg connectionIBCMessage) assemble(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (provider.RelayerMessage, error) {
 	var connProof func(context.Context, provider.ConnectionInfo, uint64) (provider.ConnectionProof, error)
 	var assembleMessage func(provider.ConnectionInfo, provider.ConnectionProof) (provider.RelayerMessage, error)
+
 	switch msg.eventType {
 	case conntypes.EventTypeConnectionOpenInit:
 		// don't need proof for this message
@@ -251,7 +254,6 @@ func (msg connectionIBCMessage) assemble(
 	default:
 		return nil, fmt.Errorf("unexepected connection message eventType for message assembly: %s", msg.eventType)
 	}
-
 	var proof provider.ConnectionProof
 	var err error
 	if connProof != nil {
@@ -305,7 +307,7 @@ type clientICQMessage struct {
 // then, if successful, assembles the response message for the destination.
 func (msg clientICQMessage) assemble(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (provider.RelayerMessage, error) {
 	ctx, cancel := context.WithTimeout(ctx, interchainQueryTimeout)
 	defer cancel()
@@ -392,8 +394,8 @@ type clientICQProcessingCache map[provider.ClientICQQueryID]processingMessage
 // contains MsgRecvPacket from counterparty
 // entire packet flow
 type pathEndPacketFlowMessages struct {
-	Src                   *pathEndRuntime
-	Dst                   *pathEndRuntime
+	Src                   *PathEndRuntime
+	Dst                   *PathEndRuntime
 	ChannelKey            ChannelKey
 	SrcPreTransfer        PacketSequenceCache
 	SrcMsgTransfer        PacketSequenceCache
@@ -404,8 +406,8 @@ type pathEndPacketFlowMessages struct {
 }
 
 type pathEndConnectionHandshakeMessages struct {
-	Src                         *pathEndRuntime
-	Dst                         *pathEndRuntime
+	Src                         *PathEndRuntime
+	Dst                         *PathEndRuntime
 	SrcMsgConnectionPreInit     ConnectionMessageCache
 	SrcMsgConnectionOpenInit    ConnectionMessageCache
 	DstMsgConnectionOpenTry     ConnectionMessageCache
@@ -414,8 +416,8 @@ type pathEndConnectionHandshakeMessages struct {
 }
 
 type pathEndChannelHandshakeMessages struct {
-	Src                      *pathEndRuntime
-	Dst                      *pathEndRuntime
+	Src                      *PathEndRuntime
+	Dst                      *PathEndRuntime
 	SrcMsgChannelPreInit     ChannelMessageCache
 	SrcMsgChannelOpenInit    ChannelMessageCache
 	DstMsgChannelOpenTry     ChannelMessageCache
@@ -424,8 +426,8 @@ type pathEndChannelHandshakeMessages struct {
 }
 
 type pathEndChannelCloseMessages struct {
-	Src                       *pathEndRuntime
-	Dst                       *pathEndRuntime
+	Src                       *PathEndRuntime
+	Dst                       *PathEndRuntime
 	SrcMsgChannelPreInit      ChannelMessageCache
 	SrcMsgChannelCloseInit    ChannelMessageCache
 	DstMsgChannelCloseConfirm ChannelMessageCache

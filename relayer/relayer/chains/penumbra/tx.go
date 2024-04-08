@@ -1664,6 +1664,7 @@ func (cc *PenumbraProvider) RelayPacketFromSequence(
 	srch, dsth, seq uint64,
 	srcChanID, srcPortID string,
 	order chantypes.Order,
+	srcClientId, dstClientId string,
 ) (provider.RelayerMessage, provider.RelayerMessage, error) {
 	msgTransfer, err := src.QuerySendPacket(ctx, srcChanID, srcPortID, seq)
 	if err != nil {
@@ -1726,23 +1727,23 @@ func (cc *PenumbraProvider) RelayPacketFromSequence(
 }
 
 // AcknowledgementFromSequence relays an acknowledgement with a given seq on src, source is the sending chain, destination is the receiving chain
-func (cc *PenumbraProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, error) {
+func (cc *PenumbraProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, uint64, error) {
 	txs, err := dst.QueryTxs(ctx, 1, 1000, ackPacketQuery(dstChanId, int(seq)))
 	switch {
 	case err != nil:
-		return nil, err
+		return nil, 0, err
 	case len(txs) == 0:
-		return nil, fmt.Errorf("no transactions returned with query")
+		return nil, 0, fmt.Errorf("no transactions returned with query")
 	case len(txs) > 1:
-		return nil, fmt.Errorf("more than one transaction returned with query")
+		return nil, 0, fmt.Errorf("more than one transaction returned with query")
 	}
 
 	acks, err := cc.acknowledgementsFromResultTx(dstChanId, dstPortId, srcChanId, srcPortId, txs[0])
 	switch {
 	case err != nil:
-		return nil, err
+		return nil, 0, err
 	case len(acks) == 0:
-		return nil, fmt.Errorf("no ack msgs created from query response")
+		return nil, 0, fmt.Errorf("no ack msgs created from query response")
 	}
 
 	var out provider.RelayerMessage
@@ -1752,11 +1753,11 @@ func (cc *PenumbraProvider) AcknowledgementFromSequence(ctx context.Context, dst
 		}
 		msg, err := cc.MsgRelayAcknowledgement(ctx, dst, dstChanId, dstPortId, srcChanId, srcPortId, int64(dsth), ack)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = msg
 	}
-	return out, nil
+	return out, 0, nil
 }
 
 func rcvPacketQuery(channelID string, seq int) []string {
@@ -2304,6 +2305,11 @@ func (cc *PenumbraProvider) SendMessagesToMempool(ctx context.Context, msgs []pr
 
 // MsgRegisterCounterpartyPayee creates an sdk.Msg to broadcast the counterparty address
 func (cc *PenumbraProvider) MsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee string) (provider.RelayerMessage, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
 	//TODO implement me
 	panic("implement me")
 }

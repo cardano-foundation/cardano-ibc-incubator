@@ -35,8 +35,10 @@
     "@nestjs/typeorm": "^10.0.1",
     "axios": "^1.6.6",
     "camelcase-keys": "^7.0.1",
+    "crypto": "^1.0.1",
     "google-proto-files": "^4.0.0",
     "google-protobuf": "^3.21.2",
+    "js-sha256": "^0.11.0",
     "js-sha3": "^0.9.3",
     "kafkajs": "^2.2.4",
     "lucid-cardano": "^0.10.7",
@@ -93,10 +95,26 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "coveragePathIgnorePatterns": [
+      "node_modules",
+      "test-config",
+      "interfaces",
+      "jestGlobalMocks.ts",
+      ".module.ts",
+      "<rootDir>/src/app/main.ts",
+      ".mock.ts",
+      "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.module.ts",
+      "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.service.ts",
+      "<rootDir>/src/query/services/db-sync.service.ts",
+      "<rootDir>/src/shared/modules/lucid/lucid.service.ts"
+    ],
     "collectCoverageFrom": [
-      "**/*.(t|j)s",
-      "!**/*.module.(t|j)s",
-      "!<rootDir>/main.ts"
+      "**/*.controller.ts",
+      "**/client.service.ts",
+      "**/connection.service.ts",
+      "**/channel.service.ts",
+      "**/packet.service.ts",
+      "**/query.service.ts"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",

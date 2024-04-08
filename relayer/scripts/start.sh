@@ -14,5 +14,10 @@ fi
 # Can build program binary when start up
 # go build -o bin/rly
 cd ../
-${DOCKER_COMPOSE_CMD} build
-${DOCKER_COMPOSE_CMD} up -d 
+
+cp .env.example .env
+cp tx-cardano/.env.example tx-cardano/.env
+
+# ${DOCKER_COMPOSE_CMD} build
+${DOCKER_COMPOSE_CMD} stop
+${DOCKER_COMPOSE_CMD} up -d --build

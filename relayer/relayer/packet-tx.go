@@ -23,7 +23,7 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 		timeoutHeight    uint64
 		timeoutTimestamp uint64
 	)
-
+	c.log.Info("Start SendTransferMsg", zap.Time("time", time.Now()))
 	// get header representing dst to check timeouts
 	srch, dsth, err := QueryLatestHeights(ctx, c, dst)
 	if err != nil {
@@ -123,5 +123,7 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 			)
 		}
 	}
+
+	c.log.Info("Finish SendTransferMsg", zap.Time("time", time.Now()))
 	return nil
 }

@@ -29,6 +29,9 @@ func (c *Chain) CreateOpenConnections(
 	// }
 	//srcClientId := c.PathEnd.ClientID
 	//dstClientId := dst.ClientID()
+
+	c.log.Info("Start CreateOpenConnections", zap.Time("time", time.Now()))
+
 	c.PathEnd.ClientID = strings.TrimPrefix(c.PathEnd.ClientID, "07-tendermint-")
 
 	dst.PathEnd.ClientID = strings.TrimPrefix(dst.PathEnd.ClientID, "07-tendermint-")
@@ -91,7 +94,7 @@ func (c *Chain) CreateOpenConnections(
 				EventType: conntypes.EventTypeConnectionOpenConfirm,
 				Info: provider.ConnectionInfo{
 					ClientID:                     dst.PathEnd.ClientID,
-					CounterpartyClientID:         "ibc_client-" + c.PathEnd.ClientID,
+					CounterpartyClientID:         c.PathEnd.ClientID,
 					CounterpartyCommitmentPrefix: c.ChainProvider.CommitmentPrefix(),
 				},
 			},

@@ -41,6 +41,12 @@ service Msg {
 
   // Acknowledgement defines a rpc handler method for MsgAcknowledgement.
   rpc Acknowledgement(MsgAcknowledgement) returns (MsgAcknowledgementResponse);
+
+  // Transfer defines a rpc handler method for MsgTransfer.
+  rpc Transfer(MsgTransfer) returns (MsgTransferResponse);
+
+  // TimeoutRefresh defines a rpc handler method for MsgTimeoutRefresh.
+  rpc TimeoutRefresh(MsgTimeoutRefresh) returns (MsgTimeoutRefreshResponse);
 }
 
 // ResponseResultType defines the possible outcomes of the execution of a message
@@ -211,6 +217,7 @@ message MsgTimeoutResponse {
   option (gogoproto.goproto_getters) = false;
 
   ResponseResultType result = 1;
+  google.protobuf.Any unsigned_tx = 2;
 }
 
 // MsgTimeoutOnClose timed-out packet upon counterparty channel closure.
@@ -232,6 +239,7 @@ message MsgTimeoutOnCloseResponse {
   option (gogoproto.goproto_getters) = false;
 
   ResponseResultType result = 1;
+  google.protobuf.Any unsigned_tx = 2;
 }
 
 // MsgAcknowledgement receives incoming IBC acknowledgement
@@ -252,4 +260,44 @@ message MsgAcknowledgementResponse {
   option (gogoproto.goproto_getters) = false;
 
   ResponseResultType result = 1;
+  google.protobuf.Any unsigned_tx = 2;
+}
+
+// MsgTransfer send packet
+message MsgTransfer {
+  option (gogoproto.equal)           = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string                            source_port       = 1 [(gogoproto.nullable) = false];
+  string                            source_channel    = 2 [(gogoproto.nullable) = false];
+  Coin                              token     = 3 [(gogoproto.moretags) = "yaml:\"token\"", (gogoproto.nullable) = false];
+  string                            sender    = 4 [(gogoproto.moretags) = "yaml:\"proof_height\"", (gogoproto.nullable) = false];
+  string                            receiver = 5;
+  ibc.core.client.v1.Height         timeout_height = 6;
+  uint64                            timeout_timestamp = 7;
+  string                            memo = 8;
+}
+
+// MsgTransferResponse defines the Msg/Transfer response type.
+message MsgTransferResponse {
+  option (gogoproto.goproto_getters) = false;
+
+  ResponseResultType result = 1;
+  google.protobuf.Any unsigned_tx = 2;
+}
+
+// MsgChannelOpenConfirm defines a msg sent by a Relayer to Chain B to
+// acknowledge the change of channel state to OPEN on Chain A.
+message MsgTimeoutRefresh {
+  option (gogoproto.equal)           = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string                    channel_id      = 1 [(gogoproto.moretags) = "yaml:\"channel_id\""];
+  string signer = 2;
+}
+
+// MsgChannelOpenConfirmResponse defines the Msg/ChannelOpenConfirm response
+// type.
+message MsgTimeoutRefreshResponse {
+  google.protobuf.Any unsigned_tx = 1;
 }

@@ -331,3 +331,66 @@ func (gw *Gateway) PacketTimeoutOnClose(ctx context.Context, msg *pbchannel.MsgT
 	}
 	return res, nil
 }
+
+func (gw *Gateway) Transfer(ctx context.Context, msg *pbchannel.MsgTransfer) (*pbchannel.MsgTransferResponse, error) {
+	res, err := gw.ChannelMsgService.Transfer(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryUnreceivedPackets(ctx context.Context, in *pbchannel.QueryUnreceivedPacketsRequest) (*pbchannel.QueryUnreceivedPacketsResponse, error) {
+	res, err := gw.ChannelQueryService.UnreceivedPackets(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryTransactionByHash(ctx context.Context, in *ibcclient.QueryTransactionByHashRequest) (*ibcclient.QueryTransactionByHashResponse, error) {
+	res, err := gw.TypeProvider.TransactionByHash(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryBlockSearch(ctx context.Context, packetSrcChannel, packetDstChannel, packetSequence string, limit, page uint64) (*ibcclient.QueryBlockSearchResponse, error) {
+	req := &ibcclient.QueryBlockSearchRequest{
+		PacketSrcChannel: packetSrcChannel,
+		PacketDstChannel: packetDstChannel,
+		PacketSequence:   packetSequence,
+		Limit:            limit,
+		Page:             page,
+	}
+	res, err := gw.TypeProvider.BlockSearch(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) TimeoutRefresh(ctx context.Context, req *pbchannel.MsgTimeoutRefresh) (*pbchannel.MsgTimeoutRefreshResponse, error) {
+	res, err := gw.ChannelMsgService.TimeoutRefresh(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ProofUnreceivedPackets(ctx context.Context, req *pbchannel.QueryProofUnreceivedPacketsRequest) (*pbchannel.QueryProofUnreceivedPacketsResponse, error) {
+	res, err := gw.ChannelQueryService.ProofUnreceivedPackets(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbchannel.QueryUnreceivedAcksRequest) (*pbchannel.QueryUnreceivedAcksResponse, error) {
+	res, err := gw.ChannelQueryService.UnreceivedAcks(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}

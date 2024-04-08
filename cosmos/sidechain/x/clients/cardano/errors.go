@@ -31,4 +31,5 @@ var (
 	ErrInvalidEpochNo              = errorsmod.Register(ModuleName, 24, "invalid epoch number")
 	ErrInvalidBlockData            = errorsmod.Register(ModuleName, 25, "invalid block data")
 	ErrInvalidSPOsNewEpoch         = errorsmod.Register(ModuleName, 26, "invalid validator set for new epoch")
+	ErrInvalidConsensus            = errorsmod.Register(ModuleName, 27, "invalid consensus state")
 )

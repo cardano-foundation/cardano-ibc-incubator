@@ -38,9 +38,17 @@ import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { normalizeBlockDataFromOuroboros } from '@shared/helpers/block-data';
 import { GrpcInternalException } from 'nestjs-grpc-exceptions';
-import { QueryBlockResultsRequest, QueryBlockResultsResponse } from '@cosmjs-types/src/ibc/core/types/v1/query';
+import {
+  QueryBlockResultsRequest,
+  QueryBlockResultsResponse,
+  QueryBlockSearchRequest,
+  QueryBlockSearchResponse,
+  QueryTransactionByHashRequest,
+  QueryTransactionByHashResponse,
+} from '@cosmjs-types/src/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
+  CHANNEL_ID_PREFIX,
   CHANNEL_TOKEN_PREFIX,
   CLIENT_PREFIX,
   CONNECTION_TOKEN_PREFIX,
@@ -60,12 +68,12 @@ import {
   normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromModuleRedeemer,
 } from '@shared/helpers/block-results';
-import { ResponseDeliverTx, ResultBlockResults } from '@cosmjs-types/src/ibc/core/types/v1/block';
+import { ResponseDeliverTx, ResultBlockResults, ResultBlockSearch } from '@cosmjs-types/src/ibc/core/types/v1/block';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
-import { UTxO } from 'lucid-cardano';
+import { UTxO } from '@dinhbx/lucid-custom';
 import { bytesFromBase64 } from '@cosmjs-types/src/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { HttpService } from '@nestjs/axios';
@@ -76,6 +84,8 @@ import {
   decodeSpendConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
+import { Packet } from '@shared/types/channel/packet';
+import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 
 @Injectable()
 export class QueryService {
@@ -170,11 +180,12 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    const blockHeight = await (await this.getStateQueryClient()).blockHeight();
+    // const blockHeight = await (await this.getStateQueryClient()).blockHeight();
+    const latestBlockNo = await this.dbService.queryLatestBlockNo();
     const latestHeightResponse = {
-      height: blockHeight == 'origin' ? 0 : blockHeight,
+      height: latestBlockNo,
     };
-    this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
+    // this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
@@ -321,18 +332,18 @@ export class QueryService {
     try {
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
       const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-      const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+      const mintChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
 
       // connection +channel
       const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(request.height.toString()));
       const txsResults = await Promise.all(
         utxosInBlock
-          .filter((utxo) => [mintConnScriptHash, minChannelScriptHash].includes(utxo.assetsPolicy))
+          .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
           .map(async (utxo) => {
             switch (utxo.assetsPolicy) {
               case mintConnScriptHash:
                 return await this._parseEventConnection(utxo, handlerAuthToken);
-              case minChannelScriptHash:
+              case mintChannelScriptHash:
                 return await this._parseEventChannel(utxo, handlerAuthToken);
             }
           }),
@@ -429,6 +440,12 @@ export class QueryService {
           default:
         }
       });
+    console.dir(
+      {
+        txsResult,
+      },
+      { depth: 10 },
+    );
     return txsResult as unknown as ResponseDeliverTx;
   }
 
@@ -447,6 +464,7 @@ export class QueryService {
       mintScriptHash,
       spendAddress,
     );
+
     redeemers = redeemers.filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10);
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
@@ -458,43 +476,61 @@ export class QueryService {
           break;
         case REDEEMER_TYPE.SPEND:
           const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+
           if (spendRedeemer.hasOwnProperty('ChanOpenAck')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_ACK;
           if (spendRedeemer.hasOwnProperty('ChanOpenConfirm'))
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_CONFIRM;
-          if (spendRedeemer.hasOwnProperty('RecvPacket')) {
+          if (spendRedeemer.hasOwnProperty('RecvPacket') || spendRedeemer.hasOwnProperty('SendPacket')) {
             // find redeemer module recv packet -> get packet ack
-            const spendMockModuleAddress = this.configService.get('deployment').validators.spendMockModule.address;
+            const spendTransferModuleAddress = this.configService.get('deployment').modules.transfer.address;
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
+            if (spendRedeemer.hasOwnProperty('SendPacket')) break;
 
             const moduleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
               utxo.txId.toString(),
               '',
-              spendMockModuleAddress,
+              spendTransferModuleAddress,
             );
-            const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
-              moduleRedeemer[0].data,
-              this.lucidService.LucidImporter,
-            );
-            const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-              moduleRedeemerDecoded,
-              spendRedeemer,
-              channelDatumDecoded,
-            );
-            txsResult.events.push(...writeAckTxsResult.events);
+            if (moduleRedeemer.length > 0) {
+              const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
+                moduleRedeemer[0].data,
+                this.lucidService.LucidImporter,
+              );
+              const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                moduleRedeemerDecoded,
+                spendRedeemer,
+                channelDatumDecoded,
+              );
+              txsResult.events.push(...writeAckTxsResult.events);
+            }
+          }
+          if (spendRedeemer.hasOwnProperty('AcknowledgePacket')) {
+            const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
+            txsResult.events = packetEvent.events;
+          }
+          if (spendRedeemer.hasOwnProperty('TimeoutPacket')) {
+            const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
+            txsResult.events = packetEvent.events;
           }
           break;
         default:
       }
     }
 
-    console.dir(txsResult, { depth: 10 });
+    console.dir(
+      {
+        txsResult,
+      },
+      { depth: 10 },
+    );
 
     return txsResult as unknown as ResponseDeliverTx;
   }
 
   private async _parseEventClient(utxos: UtxoDto[]): Promise<ResponseDeliverTx[]> {
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const spendClientAddress = this.configService.get('deployment').validators.spendClient.address;
     const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
     const hasHandlerUtxo = utxos.find((utxo) => utxo.assetsPolicy === handlerAuthToken.policyId);
 
@@ -505,10 +541,136 @@ export class QueryService {
           const eventClient = hasHandlerUtxo ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const clientId = getIdByTokenName(clientUtxo.assetsName, handlerAuthToken, CLIENT_PREFIX);
           const clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
-          const txsResult = normalizeTxsResultFromClientDatum(clientDatum, eventClient, clientId);
+
+          const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
+            clientUtxo.txId.toString(),
+            mintClientScriptHash,
+            spendClientAddress,
+          );
+          const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
+          let spendClientRedeemerData = null;
+          if (spendClientRedeemer) {
+            spendClientRedeemerData = decodeSpendClientRedeemer(
+              spendClientRedeemer.data,
+              this.lucidService.LucidImporter,
+            );
+          }
+
+          const txsResult = normalizeTxsResultFromClientDatum(
+            clientDatum,
+            eventClient,
+            clientId,
+            spendClientRedeemerData,
+          );
           return txsResult as unknown as ResponseDeliverTx;
         }),
     );
+    console.dir(
+      {
+        txsResults,
+      },
+      { depth: 10 },
+    );
+
     return txsResults;
+  }
+
+  async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
+    this.logger.log('', 'QueryBlockSearch');
+    try {
+      const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
+      const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
+      const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+      const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
+      if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
+        throw new GrpcInvalidArgumentException(
+          `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+        );
+      const channelId = srcChannelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+
+      const channelTokenName = this.lucidService.generateTokenName(
+        handlerAuthToken,
+        CHANNEL_TOKEN_PREFIX,
+        BigInt(channelId),
+      );
+      const utxosOfChannel = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
+        minChannelScriptHash,
+        channelTokenName,
+      );
+      let blockResults: ResultBlockSearch[] = await Promise.all(
+        utxosOfChannel.map(async (utxo) => {
+          let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
+            utxo.txId.toString(),
+            minChannelScriptHash,
+            spendAddress,
+          );
+          redeemers = redeemers.filter(
+            (redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10,
+          );
+          let isMatched = false;
+          for (const redeemer of redeemers) {
+            if (redeemer.type !== REDEEMER_TYPE.SPEND) continue;
+            const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            let packet: Packet = null;
+            if (spendRedeemer['RecvPacket']) packet = spendRedeemer['RecvPacket']?.packet as unknown as Packet;
+            if (spendRedeemer['AcknowledgePacket'])
+              packet = spendRedeemer['AcknowledgePacket']?.packet as unknown as Packet;
+            if (spendRedeemer['TimeoutPacket']) packet = spendRedeemer['TimeoutPacket']?.packet as unknown as Packet;
+            if (spendRedeemer['SendPacket']) packet = spendRedeemer['SendPacket']?.packet as unknown as Packet;
+            if (!packet) continue;
+            if (packet.sequence === BigInt(packet_sequence)) {
+              isMatched = true;
+              break;
+            }
+          }
+          if (!isMatched) return null;
+
+          return {
+            block_id: utxo.blockId,
+            block: {
+              height: utxo.blockNo,
+            },
+          } as unknown as ResultBlockSearch;
+        }),
+      );
+      blockResults = blockResults.filter((e) => e);
+      let blockResultsResp = blockResults;
+      if (blockResults.length > limit) {
+        const offset = page <= 0 ? 0 : limit * (page - 1n);
+        const from = parseInt(offset.toString());
+        const to = parseInt(offset.toString()) + parseInt(limit.toString());
+        blockResultsResp = blockResults.slice(from, to);
+      }
+
+      const responseBlockSearch: QueryBlockSearchResponse = {
+        blocks: blockResultsResp,
+        total_count: blockResults.length,
+      } as unknown as QueryBlockSearchResponse;
+
+      return responseBlockSearch;
+    } catch (error) {
+      console.error(error);
+
+      this.logger.error(error.message, 'queryChannel');
+      throw new GrpcInternalException(error.message);
+    }
+  }
+
+  async queryTransactionByHash(request: QueryTransactionByHashRequest): Promise<QueryTransactionByHashResponse> {
+    this.logger.log(`hash = ${request.hash}`, 'queryTransactionByHash');
+    const { hash } = request;
+    if (!hash) throw new GrpcInvalidArgumentException(`Invalid argument: "hash" must be provided`);
+
+    const tx = await this.dbService.findTxByHash(hash);
+    if (!tx) {
+      throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
+    }
+    const response: QueryTransactionByHashResponse = {
+      hash: tx.hash,
+      height: tx.height,
+      gas_fee: tx.gas_fee,
+      tx_size: tx.tx_size,
+    } as unknown as QueryTransactionByHashResponse;
+    return response;
   }
 }

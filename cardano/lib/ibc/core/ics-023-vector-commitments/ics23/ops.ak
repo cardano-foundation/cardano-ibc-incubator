@@ -94,13 +94,13 @@ fn validate_iavl_ops_leaf_op(op: LeafOp, b: Int) -> Bool {
     True
   } else {
     // The corresponding code in the Golang version:
-    // 		if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
-    //	    return fmt.Errorf("invalid op")
+    //    if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
+    //      return fmt.Errorf("invalid op")
     //    }
-    // 		if op.GetHash()^1 != 0 {
-    // 	    return fmt.Errorf("invalid op")
+    //    if op.GetHash()^1 != 0 {
+    //      return fmt.Errorf("invalid op")
     //    }
-    expect r2 == 1 || r2 == 34
+    expect !(r2 == 1 || r2 == 34)
     expect op.hash == 1
     True
   }
@@ -130,13 +130,13 @@ fn validate_iavl_ops_inner_op(op: InnerOp, b: Int) -> Bool {
     True
   } else {
     // The corresponding code in the Golang version:
-    // 		if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
-    //	    return fmt.Errorf("invalid op")
+    //    if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
+    //      return fmt.Errorf("invalid op")
     //    }
-    // 		if op.GetHash()^1 != 0 {
-    // 	    return fmt.Errorf("invalid op")
+    //    if op.GetHash()^1 != 0 {
+    //      return fmt.Errorf("invalid op")
     //    }
-    expect r2 == 1 || r2 == 34
+    expect !(r2 == 1 || r2 == 34)
     expect op.hash == 1
     True
   }
@@ -151,7 +151,7 @@ fn prepare_leaf_data(
   do_length_op(length_op, hdata)
 }
 
-fn do_hash_or_no_op(hash_op: HashOp, preimage: ByteArray) -> ByteArray {
+pub fn do_hash_or_no_op(hash_op: HashOp, preimage: ByteArray) -> ByteArray {
   if hash_op == hash_op_no_hash {
     preimage
   } else {
@@ -178,7 +178,7 @@ fn do_hash(hash_op: HashOp, preimage: ByteArray) -> ByteArray {
 }
 
 /// do_length_op() will calculate the proper prefix and return it prepended
-///	doLengthOp(op, data) -> length(data) || data
+/// doLengthOp(op, data) -> length(data) || data
 fn do_length_op(length_op: LengthOp, data: ByteArray) -> ByteArray {
   let data_len = bytearray.length(data)
   expect length_op >= 0 && length_op <= 8
@@ -217,6 +217,8 @@ fn encode_varint_proto(v: Int) -> ByteArray {
   )
 }
 
+//--------------------------------------Test Internal Function--------------------------------------
+
 test test_encode_varint_proto() {
   encode_varint_proto(300) == #[172, 2]
 }
@@ -235,4 +237,13 @@ test test_do_length_op() {
     iterator
       |> list.reduce(#[], fn(accum, _i) { bytearray.concat(accum, #[0]) })
   do_length_op(1, test_bytes) == bytearray.concat(#[172, 2], test_bytes)
+}
+
+test test_prepare_leaf_data() {
+  expect prepare_leaf_data(0, 0, "Zm9v") == "Zm9v"
+  prepare_leaf_data(0, 0, "YmFy") == "YmFy"
+}
+
+test test_validate_spec() {
+  validate_spec(proofs.iavl_spec())
 }

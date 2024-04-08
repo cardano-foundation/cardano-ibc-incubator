@@ -346,7 +346,9 @@ func (suite *CardanoTestSuite) TestVerifyNonMembership() {
 			channelPortID := "dummychannelportid"
 			channelCounterpartyChannelId := "channel-123"
 			sequence := uint64(0)
-
+			// fake channel
+			utxoChannelKey := []byte(cardano.ClientUTXOIBCPath(height, cardano.KeyUTXOChannelStatePrefix, txHashDummy, fmt.Sprint(txIndexDummy)) + "/" + channelPortID + "/" + channelCounterpartyChannelId)
+			clientStore.Set(utxoChannelKey, []byte{1})
 			// update merkle path
 			merklePathPacketReceipt := commitmenttypes.NewMerklePath(host.PacketReceiptPath(channelPortID, channelCounterpartyChannelId, sequence))
 			commitmentPrefix := commitmenttypes.NewMerklePrefix([]byte("ibc"))

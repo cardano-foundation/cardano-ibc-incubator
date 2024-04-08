@@ -15,8 +15,13 @@ service Query {
   rpc BlockResults(QueryBlockResultsRequest) returns (QueryBlockResultsResponse) {
     option (google.api.http).get = "/ibc/core/types/v1/block_results";
   }
+  rpc BlockSearch(QueryBlockSearchRequest) returns (QueryBlockSearchResponse) {
+    option (google.api.http).get = "/ibc/core/types/v1/block_results";
+  }
+  rpc TransactionByHash(QueryTransactionByHashRequest) returns (QueryTransactionByHashResponse) {
+    option (google.api.http).get = "/ibc/core/types/v1/transaction_by_hash";
+  }
 }
-
 
 // QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
 message QueryBlockResultsRequest {
@@ -27,4 +32,32 @@ message QueryBlockResultsRequest {
 message QueryBlockResultsResponse {
   // params defines the parameters of the module.
   ResultBlockResults block_results = 1;
+}
+
+// QueryBlockSearchRequest is the request type for the Query/BlockSearch RPC method.
+message QueryBlockSearchRequest {
+  string packet_src_channel = 1 [(gogoproto.nullable) = true];
+  string packet_dst_channel = 2 [(gogoproto.nullable) = true];
+  string packet_sequence = 3;
+  uint64 limit = 4;
+  uint64 page = 5;
+}
+
+// QueryBlockSearchResponse is the response type for the Query/BlockSearch RPC method.
+message QueryBlockSearchResponse {
+  // params defines the parameters of the module.
+  repeated  ResultBlockSearch blocks = 1;
+	uint64    total_count              = 2;
+}
+
+// QueryTransactionByHashRequest is the response type for the Query/BlockSearch RPC method.
+message QueryTransactionByHashRequest {
+  string hash = 1; // Transaction hash in hex format
+}
+
+message QueryTransactionByHashResponse {
+  string hash = 1; // Whether the transaction existed on the blockchain
+  uint64 height = 2;
+  uint64 gas_fee = 3;
+  uint64 tx_size = 4;
 }

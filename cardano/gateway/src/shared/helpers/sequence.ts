@@ -21,3 +21,15 @@ export function parseConnectionSequence(connectionId: string): bigint {
 
   return BigInt(fragments.pop()!);
 }
+
+export function parseChannelSequence(connectionId: string): bigint {
+  const fragments = connectionId.split('-');
+
+  if (fragments.length != 2) throw new Error('Invalid connection id format');
+
+  if (!(fragments.slice(0, -1).join('') === 'channel')) {
+    throw new Error('Invalid channel id format');
+  }
+
+  return BigInt(fragments.pop()!);
+}

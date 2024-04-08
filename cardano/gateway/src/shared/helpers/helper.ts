@@ -72,3 +72,53 @@ export const insertSortMapWithNumberKey = <K, V>(
   inputMap.set(newKey, newValue);
   return sortByNumberKey(inputMap, reverse);
 };
+
+export const deleteSortMap = <K, V>(
+  sortedMap: Map<K, V>,
+  keyToDelete: K,
+  keyComparator?: (a: K, b: K) => number,
+): Map<K, V> => {
+  // Convert the sorted map to an array of key-value pairs
+  const entriesArray: [K, V][] = Array.from(sortedMap.entries());
+
+  // Find the index of the key to delete
+  const indexToDelete = entriesArray.findIndex(([key]) =>
+    keyComparator ? keyComparator(key, keyToDelete) === 0 : key === keyToDelete,
+  );
+
+  // If the key is found, remove it from the array
+  if (indexToDelete !== -1) {
+    entriesArray.splice(indexToDelete, 1);
+  }
+
+  // Create a new Map from the modified array
+  const updatedMap = new Map<K, V>(entriesArray);
+
+  return updatedMap;
+};
+
+export function getDenomPrefix(portId: string, channelId: string): string {
+  return `${portId}/${channelId}/`;
+}
+
+// write function delete key of sort map by typescript
+export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K, V> => {
+  if (inputMap.has(deleteKey)) {
+    inputMap.delete(deleteKey);
+  }
+  return inputMap;
+};
+export function sortedStringify(obj) {
+  if (typeof obj !== 'object' || obj === null) {
+    return JSON.stringify(obj);
+  }
+
+  const sortedObj = {};
+  Object.keys(obj)
+    .sort()
+    .forEach((key) => {
+      sortedObj[key] = obj[key];
+    });
+
+  return JSON.stringify(sortedObj);
+}

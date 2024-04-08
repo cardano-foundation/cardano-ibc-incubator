@@ -3,6 +3,7 @@ use aiken/int
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
+use ibc/core/ics_004/types/order
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as channel_state
 
@@ -170,17 +171,33 @@ pub fn validate_recv_packet(
   packet: Packet,
   ack: ByteArray,
 ) -> Bool {
+  let (expected_packet_receipt, expected_next_sequence_recv) =
+    when input_datum.state.channel.ordering is {
+      order.Ordered ->
+        (
+          input_datum.state.packet_receipt,
+          input_datum.state.next_sequence_recv + 1,
+        )
+      order.Unordered ->
+        (
+          dict.insert(
+            input_datum.state.packet_receipt,
+            packet.sequence,
+            "",
+            int.compare,
+          ),
+          input_datum.state.next_sequence_recv,
+        )
+      _ -> fail
+    }
+
   let expected_datum =
     ChannelDatum {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_receipt: dict.insert(
-          input_datum.state.packet_receipt,
-          packet.sequence,
-          "",
-          int.compare,
-        ),
+        next_sequence_recv: expected_next_sequence_recv,
+        packet_receipt: expected_packet_receipt,
         packet_acknowledgement: dict.insert(
           input_datum.state.packet_acknowledgement,
           packet.sequence,
@@ -191,4 +208,94 @@ pub fn validate_recv_packet(
     }
 
   expected_datum == output_datum
+}
+
+pub fn validate_send_packet(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+  packet: Packet,
+  commitment: ByteArray,
+) -> Bool {
+  let expected_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        next_sequence_send: input_datum.state.next_sequence_send + 1,
+        packet_commitment: dict.insert(
+          input_datum.state.packet_commitment,
+          packet.sequence,
+          commitment,
+          int.compare,
+        ),
+      },
+    }
+
+  expected_datum == output_datum
+}
+
+pub fn validate_timeout_packet(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+  packet: Packet,
+) -> Bool {
+  let expected_channel_state =
+    if input_datum.state.channel.ordering == order.Ordered {
+      channel_state.Closed
+    } else {
+      channel_state.Open
+    }
+
+  let expected_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel {
+          ..input_datum.state.channel,
+          state: expected_channel_state,
+        },
+        packet_commitment: dict.delete(
+          input_datum.state.packet_commitment,
+          packet.sequence,
+        ),
+      },
+    }
+
+  expected_datum == output_datum
+}
+
+pub fn validate_acknowledge_packet(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+  packet: Packet,
+) -> Bool {
+  let expected_next_seq_ack =
+    if input_datum.state.channel.ordering == order.Ordered {
+      input_datum.state.next_sequence_ack + 1
+    } else {
+      input_datum.state.next_sequence_ack
+    }
+
+  let expected_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        packet_commitment: dict.delete(
+          input_datum.state.packet_commitment,
+          packet.sequence,
+        ),
+        next_sequence_ack: expected_next_seq_ack,
+      },
+    }
+
+  expected_datum == output_datum
+}
+
+pub fn validate_refresh_utxo(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+) -> Bool {
+  input_datum == output_datum
 }

@@ -1,4 +1,4 @@
-import { type Data } from 'lucid-cardano';
+import { type Data } from '@dinhbx/lucid-custom';
 import { Height } from './height';
 
 export type HandlerOperator =
@@ -9,7 +9,10 @@ export type HandlerOperator =
   | 'HandlerChanOpenTry'
   | 'HandlerBindPort';
 
-export async function encodeHandlerOperator(handlerDatum: HandlerOperator, Lucid: typeof import('lucid-cardano')) {
+export async function encodeHandlerOperator(
+  handlerDatum: HandlerOperator,
+  Lucid: typeof import('@dinhbx/lucid-custom'),
+) {
   const { Data } = Lucid;
   const HandlerOperatorSchema = Data.Enum([
     Data.Literal('CreateClient'),

@@ -8,7 +8,7 @@ use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-  batch_verify_threshold, block_id_flag_commit,
+   block_id_flag_commit,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
@@ -36,7 +36,7 @@ fn verify_commit_light_internal(
   let voting_power_needed = validator_set.total_voting_power(vals) * 2 / 3
 
   let ignore =
-    fn(c: CommitSig) -> Bool { c.block_id_flag == block_id_flag_commit }
+    fn(c: CommitSig) -> Bool { c.block_id_flag != block_id_flag_commit }
   let count =
     fn(_c: CommitSig) -> Bool { True }
 
@@ -95,7 +95,7 @@ fn verify_commit_light_trusting_internal(
       trust_level,
     )
   let ignore =
-    fn(c: CommitSig) -> Bool { c.block_id_flag == block_id_flag_commit }
+    fn(c: CommitSig) -> Bool { c.block_id_flag != block_id_flag_commit }
   let count =
     fn(_c: CommitSig) -> Bool { True }
   if should_batch_verify(vals, commit) {
@@ -137,16 +137,15 @@ fn verify_basic_vals_and_commit(
   True
 }
 
-// This function is always return False because we haven't implemented 
-// BatchVerifier implements batch verification for pubkey
-fn should_batch_verify(_vals: ValidatorSet, commit: Commit) -> Bool {
-  expect list.length(commit.signatures) >= batch_verify_threshold
-  // expect batch.supports_batch_verifier(vals.get_proposer().pubkey)
+/// This function is always return False because we haven't implemented 
+/// BatchVerifier implements batch verification for pubkey
+fn should_batch_verify(_vals: ValidatorSet, _commit: Commit) -> Bool {
+  // list.length(commit.signatures) >= batch_verify_threshold && batch.supports_batch_verifier(vals.get_proposer().pubkey) 
   False
 }
 
-//TODO: Need to verify signature for val.pubkey 
-// Note: Default to using verify_ed25519_signature to verify the validator operator's signature
+/// Single Verification
+/// Note: Default to using verify_ed25519_signature to verify the validator operator's signature
 fn verify_commit_single(
   chain_id: ByteArray,
   vals: ValidatorSet,
@@ -220,7 +219,8 @@ fn verify_commit_single(
   True
 }
 
-//TODO: Need to implement batch verification for ed25519 and sr25519 pubkey
+/// Batch verification
+/// TODO: Need to implement batch verification for ed25519 and sr25519 pubkey
 fn verify_commit_batch(
   _chain_id: ByteArray,
   _vals: ValidatorSet,

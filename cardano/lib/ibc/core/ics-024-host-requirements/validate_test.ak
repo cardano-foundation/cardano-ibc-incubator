@@ -34,5 +34,7 @@ test test_default_identifier_validator() {
     |> list.all(fn(case) { and {
              validate.client_identifier_validator(case.1st) == case.2nd,
              validate.connection_identifier_validator(case.1st) == case.2nd,
+             validate.channel_identifier_validator(case.1st) == case.2nd,
+             validate.port_identifier_validator(case.1st) == case.2nd,
            } })
 }

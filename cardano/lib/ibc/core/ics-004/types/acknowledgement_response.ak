@@ -1,8 +1,4 @@
 pub type AcknowledgementResponse {
-  AcknowledgementResult {
-    result: ByteArray
-  }
-  AcknowledgementError {
-    err: ByteArray
-  }
+  AcknowledgementResult { result: ByteArray }
+  AcknowledgementError { err: ByteArray }
 }

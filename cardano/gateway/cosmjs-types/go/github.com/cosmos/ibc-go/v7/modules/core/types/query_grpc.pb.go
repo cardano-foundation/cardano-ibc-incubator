@@ -19,7 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Query_BlockResults_FullMethodName = "/ibc.core.types.v1.Query/BlockResults"
+	Query_BlockResults_FullMethodName      = "/ibc.core.types.v1.Query/BlockResults"
+	Query_BlockSearch_FullMethodName       = "/ibc.core.types.v1.Query/BlockSearch"
+	Query_TransactionByHash_FullMethodName = "/ibc.core.types.v1.Query/TransactionByHash"
 )
 
 // QueryClient is the client API for Query service.
@@ -27,6 +29,8 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type QueryClient interface {
 	BlockResults(ctx context.Context, in *QueryBlockResultsRequest, opts ...grpc.CallOption) (*QueryBlockResultsResponse, error)
+	BlockSearch(ctx context.Context, in *QueryBlockSearchRequest, opts ...grpc.CallOption) (*QueryBlockSearchResponse, error)
+	TransactionByHash(ctx context.Context, in *QueryTransactionByHashRequest, opts ...grpc.CallOption) (*QueryTransactionByHashResponse, error)
 }
 
 type queryClient struct {
@@ -46,11 +50,31 @@ func (c *queryClient) BlockResults(ctx context.Context, in *QueryBlockResultsReq
 	return out, nil
 }
 
+func (c *queryClient) BlockSearch(ctx context.Context, in *QueryBlockSearchRequest, opts ...grpc.CallOption) (*QueryBlockSearchResponse, error) {
+	out := new(QueryBlockSearchResponse)
+	err := c.cc.Invoke(ctx, Query_BlockSearch_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) TransactionByHash(ctx context.Context, in *QueryTransactionByHashRequest, opts ...grpc.CallOption) (*QueryTransactionByHashResponse, error) {
+	out := new(QueryTransactionByHashResponse)
+	err := c.cc.Invoke(ctx, Query_TransactionByHash_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
 type QueryServer interface {
 	BlockResults(context.Context, *QueryBlockResultsRequest) (*QueryBlockResultsResponse, error)
+	BlockSearch(context.Context, *QueryBlockSearchRequest) (*QueryBlockSearchResponse, error)
+	TransactionByHash(context.Context, *QueryTransactionByHashRequest) (*QueryTransactionByHashResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -60,6 +84,12 @@ type UnimplementedQueryServer struct {
 
 func (UnimplementedQueryServer) BlockResults(context.Context, *QueryBlockResultsRequest) (*QueryBlockResultsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BlockResults not implemented")
+}
+func (UnimplementedQueryServer) BlockSearch(context.Context, *QueryBlockSearchRequest) (*QueryBlockSearchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BlockSearch not implemented")
+}
+func (UnimplementedQueryServer) TransactionByHash(context.Context, *QueryTransactionByHashRequest) (*QueryTransactionByHashResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TransactionByHash not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -92,6 +122,42 @@ func _Query_BlockResults_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_BlockSearch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryBlockSearchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).BlockSearch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_BlockSearch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).BlockSearch(ctx, req.(*QueryBlockSearchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_TransactionByHash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryTransactionByHashRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).TransactionByHash(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_TransactionByHash_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).TransactionByHash(ctx, req.(*QueryTransactionByHashRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -102,6 +168,14 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BlockResults",
 			Handler:    _Query_BlockResults_Handler,
+		},
+		{
+			MethodName: "BlockSearch",
+			Handler:    _Query_BlockSearch_Handler,
+		},
+		{
+			MethodName: "TransactionByHash",
+			Handler:    _Query_TransactionByHash_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

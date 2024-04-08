@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package config;
+
+message UpdatePathConfigRequest {
+    string path = 1;
+}
+
+message UpdatePathConfigResponse {
+}
+
+message ShowPathConfigRequest {
+}
+
+message ShowPathConfigResponse {
+    string path =1;
+}
+
+service ConfigService {
+    rpc UpdatePathConfig(UpdatePathConfigRequest) returns (UpdatePathConfigResponse) {};
+    rpc ShowPathConfig(ShowPathConfigRequest) returns (ShowPathConfigResponse) {};
+}

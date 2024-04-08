@@ -994,7 +994,7 @@ func (cc *CosmosProvider) ConnectionHandshakeProof(
 	msgOpenInit provider.ConnectionInfo,
 	height uint64,
 ) (provider.ConnectionProof, error) {
-	clientState, clientStateProof, consensusStateProof, connStateProof, proofHeight, err := cc.GenerateConnHandshakeProof(ctx, int64(height)+1, msgOpenInit.ClientID, msgOpenInit.ConnID)
+	clientState, clientStateProof, consensusStateProof, connStateProof, proofHeight, err := cc.GenerateConnHandshakeProof(ctx, int64(height), msgOpenInit.ClientID, msgOpenInit.ConnID)
 	if err != nil {
 		return provider.ConnectionProof{}, err
 	}
@@ -1361,6 +1361,7 @@ func (cc *CosmosProvider) RelayPacketFromSequence(
 	srch, dsth, seq uint64,
 	srcChanID, srcPortID string,
 	order chantypes.Order,
+	srcClientId, dstClientId string,
 ) (provider.RelayerMessage, provider.RelayerMessage, error) {
 	msgTransfer, err := src.QuerySendPacket(ctx, srcChanID, srcPortID, seq)
 	if err != nil {
@@ -1414,6 +1415,22 @@ func (cc *CosmosProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
+	// Update Client To Cosmos
+	srcBlockData, err := src.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, srcBlockData)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = cc.SendMessagesToMempool(ctx, []provider.RelayerMessage{msgUpdateClient}, "", context.Background(), nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	packet, err := cc.MsgRecvPacket(msgTransfer, pp)
 	if err != nil {
 		return nil, nil, err
@@ -1423,21 +1440,21 @@ func (cc *CosmosProvider) RelayPacketFromSequence(
 }
 
 // AcknowledgementFromSequence relays an acknowledgement with a given seq on src, source is the sending chain, destination is the receiving chain
-func (cc *CosmosProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, error) {
+func (cc *CosmosProvider) AcknowledgementFromSequence(ctx context.Context, dst provider.ChainProvider, dsth, seq uint64, dstChanId, dstPortId, srcChanId, srcPortId string) (provider.RelayerMessage, uint64, error) {
 	msgRecvPacket, err := dst.QueryRecvPacket(ctx, dstChanId, dstPortId, seq)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	pp, err := dst.PacketAcknowledgement(ctx, msgRecvPacket, dsth)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	msg, err := cc.MsgAcknowledgement(msgRecvPacket, pp)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return msg, nil
+	return msg, pp.ProofHeight.RevisionHeight, nil
 }
 
 // QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
@@ -1930,4 +1947,9 @@ func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.Cli
 	return NewCosmosMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
+}
+
+func (cc *CosmosProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
+	//TODO implement me
+	panic("implement me")
 }

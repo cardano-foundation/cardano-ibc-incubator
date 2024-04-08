@@ -60,7 +60,7 @@ var (
 	ChainIDPrefix = "testchain"
 	// to disable revision format, set ChainIDSuffix to ""
 	ChainIDSuffix   = "-1"
-	globalStartTime = time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)
+	globalStartTime = time.Date(2024, 2, 5, 8, 45, 54, 0, time.UTC)
 	TimeIncrement   = time.Second * 5
 )
 
@@ -312,10 +312,10 @@ func (suite *CardanoTestSuite) SetupTest() {
 
 	// now is the time of the current chain, must be after the updating header
 	// mocks ctx.BlockTime()
-	suite.now = time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)
-	suite.clientTime = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	suite.now = time.Date(2024, 2, 5, 8, 45, 54, 0, time.UTC)
+	suite.clientTime = time.Date(2024, 2, 5, 8, 45, 54, 0, time.UTC)
 	// Header time is intended to be time for any new header used for updates
-	suite.headerTime = time.Date(2020, 1, 2, 0, 0, 0, 0, time.UTC)
+	suite.headerTime = time.Date(2024, 2, 5, 8, 46, 54, 0, time.UTC)
 
 	suite.privVal = ibctestingmock.NewPV()
 

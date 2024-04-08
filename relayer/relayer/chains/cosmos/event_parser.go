@@ -96,6 +96,8 @@ func parseIBCMessageFromEvent(
 	case chantypes.EventTypeSendPacket, chantypes.EventTypeRecvPacket, chantypes.EventTypeWriteAck,
 		chantypes.EventTypeAcknowledgePacket, chantypes.EventTypeTimeoutPacket,
 		chantypes.EventTypeTimeoutPacketOnClose:
+		log.Info("Cosmos event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		pi := &packetInfo{Height: height}
 		pi.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -105,6 +107,8 @@ func parseIBCMessageFromEvent(
 	case chantypes.EventTypeChannelOpenInit, chantypes.EventTypeChannelOpenTry,
 		chantypes.EventTypeChannelOpenAck, chantypes.EventTypeChannelOpenConfirm,
 		chantypes.EventTypeChannelCloseInit, chantypes.EventTypeChannelCloseConfirm:
+		log.Info("Cosmos event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &channelInfo{Height: height}
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -113,6 +117,8 @@ func parseIBCMessageFromEvent(
 		}
 	case conntypes.EventTypeConnectionOpenInit, conntypes.EventTypeConnectionOpenTry,
 		conntypes.EventTypeConnectionOpenAck, conntypes.EventTypeConnectionOpenConfirm:
+		log.Info("Cosmos event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &connectionInfo{Height: height}
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -122,6 +128,8 @@ func parseIBCMessageFromEvent(
 	case clienttypes.EventTypeCreateClient, clienttypes.EventTypeUpdateClient,
 		clienttypes.EventTypeUpgradeClient, clienttypes.EventTypeSubmitMisbehaviour,
 		clienttypes.EventTypeUpdateClientProposal:
+		log.Info("Cosmos event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := new(clientInfo)
 		ci.parseAttrs(log, event.Attributes)
 		return &ibcMessage{
@@ -130,6 +138,8 @@ func parseIBCMessageFromEvent(
 		}
 
 	case string(processor.ClientICQTypeRequest), string(processor.ClientICQTypeResponse):
+		log.Info("Cosmos event", zap.String("height", strconv.FormatUint(height, 10)), zap.String("event-type", event.Type))
+
 		ci := &clientICQInfo{
 			Height: height,
 			Source: chainID,

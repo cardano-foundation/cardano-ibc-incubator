@@ -16,3 +16,11 @@ pub fn get_root(cs: ConsensusState) -> MerkleRoot {
 pub fn get_timestamp(cs: ConsensusState) -> Int {
   cs.timestamp
 }
+
+pub fn null_consensus_state() -> ConsensusState {
+  ConsensusState {
+    timestamp: 0,
+    next_validators_hash: #"",
+    root: MerkleRoot { hash: #"" },
+  }
+}
