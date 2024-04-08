@@ -1,4 +1,4 @@
-import { type Data } from 'lucid-cardano';
+import { type Data } from '@dinhbx/lucid-custom';
 
 export type MintClientOperator =
   | 'MintConsensusState'
@@ -12,7 +12,7 @@ export type MintClientOperator =
     };
 export async function encodeMintClientOperator(
   mintClientOperator: MintClientOperator,
-  Lucid: typeof import('lucid-cardano'),
+  Lucid: typeof import('@dinhbx/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({

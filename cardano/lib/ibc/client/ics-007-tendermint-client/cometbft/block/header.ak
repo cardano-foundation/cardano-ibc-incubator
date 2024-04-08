@@ -26,6 +26,17 @@ pub fn validate_basic(header: TmHeader) -> Bool {
   True
 }
 
+pub fn null_tm_header() -> TmHeader {
+  TmHeader {
+    chain_id: #"",
+    height: 0,
+    time: 0,
+    validators_hash: #"",
+    next_validators_hash: #"",
+    app_hash: #"",
+  }
+}
+
 fn validate_hash(h: ByteArray) -> Bool {
   let len = h |> bytearray.length()
   len == 0 || len == tm_hash_size

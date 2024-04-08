@@ -11,3 +11,5 @@ plutus.json
 deployments
 .vscode
 .env
+lucid-types/
+gateway/src/deployment/

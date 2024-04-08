@@ -1,67 +1,41 @@
-# Use Golang Docker Image
-FROM golang:1.21 as build-env
+# Use the latest Go version as the builder stage
+FROM golang:latest as builder
 
-# Set working dir
-WORKDIR /home/relayer
+# Set the working directory inside the builder stage
+WORKDIR /app
 
-# copy code
+# Copy the source code into the image
 COPY . .
 
-COPY .env.example .env
+# Build the application binary using the provided Makefile
+RUN make build
 
-RUN make build -o bin/rly
+# Start a new stage from a smaller base image to reduce final image size
+FROM frolvlad/alpine-glibc:latest
 
+# Install openssl, required for secure network communications
+RUN apk add --no-cache openssl
 
-FROM golang:1.21 as run-env
+# Set the version for Dockerize, a utility to wait for services
+ENV DOCKERIZE_VERSION v0.6.1
 
-RUN apt-get update -y \
-    && apt-get upgrade -y \
-    && apt-get install -y nano jq
+# Download and install Dockerize to facilitate service dependency waiting
+RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && tar -C /usr/local/bin -xzvf dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && rm dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz
 
-# Set working dir
-WORKDIR /home/relayer
+# Install bash and jq for scripting and JSON processing
+RUN apk add --no-cache bash jq nano
 
-# copy bin
-COPY --from=build-env /home/relayer/bin/rly /bin
+# Set the working directory in the final image
+WORKDIR /root/
 
-# copy .env
-COPY --from=build-env /home/relayer/.env /home/relayer
+# Copy the built application binary and scripts from the builder stage
+COPY --from=builder /app/bin/rly ./bin/
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/examples ./examples
 
-# # Copy configs
-# COPY --from=build-env /home/relayer/configs /home/relayer/configs
+# Use Dockerize to wait for the Node.js service to be ready before starting the application
+#CMD dockerize -wait tcp://0.0.0.0:26657 -timeout 60s ./scripts/relayer-start.sh
 
-# # Copy paths
-# COPY --from=build-env /home/relayer/paths /home/relayer/paths
-
-# Copy data
-COPY --from=build-env /home/relayer/data /home/relayer/data
-
-# Copy examples
-COPY --from=build-env /home/relayer/examples /home/relayer/examples
-
-# Copy entrypoint script
-COPY --from=build-env /home/relayer/scripts/relayer-start.sh /home/relayer
-COPY --from=build-env /home/relayer/scripts/xtransfer.sh /home/relayer
-
-# COPY --from=build-env /home/relayer/scripts/update-client.sh /home/relayer
-
-# COPY --from=build-env /home/relayer/scripts/create-connection.sh /home/relayer
-
-# COPY --from=build-env /home/relayer/scripts/create-channel.sh /home/relayer
-
-# COPY --from=build-env /home/relayer/scripts/relay-packet.sh /home/relayer
-
-# Set permission
-RUN chmod +x /home/relayer/relayer-start.sh
-RUN chmod +x /home/relayer/xtransfer.sh
-
-# RUN chmod +x /home/relayer/update-client.sh
-
-# RUN chmod +x /home/relayer/create-connection.sh
-
-# RUN chmod +x /home/relayer/create-channel.sh
-
-# RUN chmod +x /home/relayer/relay-packet.sh
-
-# Run entrypoint script
 CMD ["sleep", "infinity"]

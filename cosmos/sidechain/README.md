@@ -32,6 +32,38 @@ Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states" -H 
 
 ```
 
+### Test Misbehaviour Client
+
+```sh
+Create new client:
+sidechaind tx ibc client create ./exampleCall/testMisbehaviour/client.json ./exampleCall/testMisbehaviour/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+
+will return:
+...
+tx: null
+txhash: <TX_HASH_HERE>
+...
+
+
+Query created client using: sidechaind q tx <TX_HASH_HERE> | grep "099-cardano-"
+will return:
+...
+    value: <CLIENT_ID_HERE>
+...
+
+Update client, using CLIENT_ID from above:
+sidechaind tx ibc client update <CLIENT_ID_HERE> ./exampleCall/testMisbehaviour/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+
+Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states/<CLIENT_ID_HERE>" -H  "accept: application/json"
+
+Now submit misbehavior:
+sidechaind tx ibc client update <CLIENT_ID_HERE> ./exampleCall/testMisbehaviour/misbehavior.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+
+Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states/<CLIENT_ID_HERE>" -H  "accept: application/json"
+Notice that *frozen_height* of this client changed from 0 to 1, that mark this client being frozen
+
+```
+
 ## Debug with vs code
 
 <https://docs.ignite.com/guide/debug#visual-studio-code>
@@ -79,5 +111,3 @@ Verify: curl -X GET "http://localhost:1317/cosmos/tx/v1beta1/txs/{tx id got from
 
 Check if there is a key: register-cert or unregister-cert
 ```
-
-## Check on the Mainchain: TBD

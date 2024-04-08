@@ -11,11 +11,16 @@ DBSYNCDATADIR="db-sync-data"
 POSTGRESDIR="postgres"
 BASEINFODIR="baseinfo"
 
-[ -d "$TARGETDIR" ] && { echo "Cleaning up directory $TARGETDIR" ; sudo rm -r $TARGETDIR ; }
-[ -d "$KUPODBDIR" ] && { echo "Cleaning up directory $KUPODBDIR" ; sudo rm -r $KUPODBDIR ; }
-[ -d "$DBSYNCDATADIR" ] && { echo "Cleaning up directory $DBSYNCDATADIR" ; sudo rm -r $DBSYNCDATADIR ; }
-[ -d "$POSTGRESDIR" ] && { echo "Cleaning up directory $POSTGRESDIR" ; sudo rm -r $POSTGRESDIR ; }
-[ -d "$BASEINFODIR" ] && { echo "Cleaning up directory $BASEINFODIR" ; sudo rm -r $BASEINFODIR ; }
+SUDO=""
+if sudo --version > /dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
+[ -d "$TARGETDIR" ] && { echo "Cleaning up directory $TARGETDIR" ; ${SUDO} rm -r $TARGETDIR ; }
+[ -d "$KUPODBDIR" ] && { echo "Cleaning up directory $KUPODBDIR" ; ${SUDO} rm -r $KUPODBDIR ; }
+[ -d "$DBSYNCDATADIR" ] && { echo "Cleaning up directory $DBSYNCDATADIR" ; ${SUDO} rm -r $DBSYNCDATADIR ; }
+[ -d "$POSTGRESDIR" ] && { echo "Cleaning up directory $POSTGRESDIR" ; ${SUDO} rm -r $POSTGRESDIR ; }
+[ -d "$BASEINFODIR" ] && { echo "Cleaning up directory $BASEINFODIR" ; ${SUDO} rm -r $BASEINFODIR ; }
 
 cp -af "$BASEDIR/chains/config/devnet/" "$TARGETDIR"
 cp -af "$BASEDIR/chains/config/credentials" "$TARGETDIR"

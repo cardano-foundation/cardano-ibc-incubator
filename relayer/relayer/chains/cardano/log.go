@@ -3,6 +3,7 @@ package cardano
 import (
 	"errors"
 	"reflect"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -65,7 +66,7 @@ func (cc *CardanoProvider) LogFailedTx(res *provider.RelayerTxResponse, err erro
 		// Make a copy since we may continue to the warning
 		errorFields := append(fields, zap.Error(err))
 		cc.log.Error(
-			"Failed sending cosmos transaction",
+			"Failed sending cardano transaction",
 			errorFields...,
 		)
 
@@ -124,6 +125,7 @@ func (cc *CardanoProvider) LogSuccessTx(res *sdk.TxResponse, msgs []provider.Rel
 		zap.Int64("height", res.Height),
 		msgTypesField(msgs),
 		zap.String("tx_hash", res.TxHash),
+		zap.Time("time", time.Now()),
 	)
 
 	// Log the successful transaction with fields

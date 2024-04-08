@@ -11,3 +11,6 @@ export const LOCAL_ENV = "local";
 
 export const MOCK_MODULE_PORT = 99n;
 export const MOCK_MODULE_VERSION = "ics20-1"; // 69637332302d31
+
+export const TRANSFER_MODULE_PORT = 100n;
+export const TRANSFER_MODULE_VERSION = "ics20-1"; // 69637332302d31

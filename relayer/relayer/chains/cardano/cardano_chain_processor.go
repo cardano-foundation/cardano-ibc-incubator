@@ -198,7 +198,6 @@ func (ccp *CardanoChainProcessor) initializeConnectionState(ctx context.Context)
 func (ccp *CardanoChainProcessor) initializeChannelState(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	//TODO: update to calling gateway
 	channels, err := ccp.chainProvider.QueryChannels(ctx)
 	if err != nil {
 		return fmt.Errorf("error querying channels: %w", err)
@@ -265,7 +264,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 	pp := ccp.pathProcessors[0]
 	src, dst := pp.PathEnd1, pp.PathEnd2
 
-	if src.ChainProvider.Type() == "cosmos" {
+	if src.ChainProvider.Type() != "cardano" {
 		src, dst = dst, src
 	}
 
@@ -292,7 +291,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 			break
 		}
 
-		latestHeader = CardanoIBCHeader{
+		latestHeader = provider.CardanoIBCHeader{
 			CardanoBlockData: cardanoBlockData,
 		}
 
@@ -392,7 +391,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 }
 
 func (ccp *CardanoChainProcessor) clientState(ctx context.Context, clientID string) (provider.ClientState, error) {
-	if state, ok := ccp.latestClientState[clientID]; ok {
+	if state, ok := ccp.latestClientState[clientID]; ok && state.TrustingPeriod > 0 {
 		return state, nil
 	}
 	cs, err := ccp.chainProvider.QueryClientState(ctx, int64(ccp.latestBlock.Height), clientID)

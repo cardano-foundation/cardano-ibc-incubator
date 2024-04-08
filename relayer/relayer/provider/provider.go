@@ -20,6 +20,7 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tendermint "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
+	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -466,6 +467,8 @@ type ChainProvider interface {
 	// i.e. the chain where the MsgTransfer was committed.
 	MsgTimeout(msgTransfer PacketInfo, proofUnreceived PacketProof) (RelayerMessage, error)
 
+	MsgTimeoutRefresh(channelId string) (RelayerMessage, error)
+
 	// MsgTimeoutOnClose takes the packet information from a MsgTransfer along
 	// with the packet receipt to prove that the packet was never relayed,
 	// i.e. that the MsgRecvPacket was never written to the counterparty chain,
@@ -564,8 +567,8 @@ type ChainProvider interface {
 
 	// Query heavy relay methods. Only used for flushing old packets.
 
-	RelayPacketFromSequence(ctx context.Context, src ChainProvider, srch, dsth, seq uint64, srcChanID, srcPortID string, order chantypes.Order) (RelayerMessage, RelayerMessage, error)
-	AcknowledgementFromSequence(ctx context.Context, dst ChainProvider, dsth, seq uint64, dstChanID, dstPortID, srcChanID, srcPortID string) (RelayerMessage, error)
+	RelayPacketFromSequence(ctx context.Context, src ChainProvider, srch, dsth, seq uint64, srcChanID, srcPortID string, order chantypes.Order, srcClientId, dstClientId string) (RelayerMessage, RelayerMessage, error)
+	AcknowledgementFromSequence(ctx context.Context, dst ChainProvider, dsth, seq uint64, dstChanID, dstPortID, srcChanID, srcPortID string) (RelayerMessage, uint64, error)
 
 	SendMessage(ctx context.Context, msg RelayerMessage, memo string) (*RelayerTxResponse, bool, error)
 	SendMessages(ctx context.Context, msgs []RelayerMessage, memo string) (*RelayerTxResponse, bool, error)
@@ -761,4 +764,26 @@ func (h TendermintIBCHeader) TMHeader() (*tendermint.Header, error) {
 type ExtensionOption struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
+}
+
+type CardanoIBCHeader struct {
+	CardanoBlockData *module.BlockData
+}
+
+func (h CardanoIBCHeader) Height() uint64 {
+	return uint64(h.CardanoBlockData.Height.RevisionHeight)
+}
+
+func (h CardanoIBCHeader) ConsensusState() ibcexported.ConsensusState {
+	return &tmclient.ConsensusState{
+		Timestamp: time.Unix(int64(h.CardanoBlockData.Timestamp), 0),
+		Root:      commitmenttypes.NewMerkleRoot([]byte(h.CardanoBlockData.Hash)),
+		// TODO: fill data
+		NextValidatorsHash: []byte(""),
+	}
+}
+
+func (h CardanoIBCHeader) NextValidatorsHash() []byte {
+	// TODO: fill data
+	return []byte("")
 }

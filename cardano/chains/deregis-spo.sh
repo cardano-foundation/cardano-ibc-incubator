@@ -39,6 +39,11 @@ else
   DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+SUDO=""
+if sudo --version > /dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
 # Invoke cardano-cli in running cardano-node container or via provided cardano-cli
 function ccli() {
   ccli_ ${@} --testnet-magic ${NETWORK_ID}
@@ -61,7 +66,7 @@ epochLength=$(cat $HOST_DEVNET_DIR/genesis-shelley.json | jq -r .epochLength)
 epoch=$(( (${currentTimeSec}-${startTimeSec}) / ${epochLength} ))
 echo current epoch: ${epoch}
 
-poolRetireMaxEpoch=$(sudo cat $HOST_SPO_DIR/params.json | jq -r '.poolRetireMaxEpoch')
+poolRetireMaxEpoch=$(${SUDO} cat $HOST_SPO_DIR/params.json | jq -r '.poolRetireMaxEpoch')
 echo poolRetireMaxEpoch: ${poolRetireMaxEpoch}
 
 minRetirementEpoch=$(( ${epoch} + 1 ))
@@ -77,7 +82,7 @@ ccli_ stake-pool deregistration-certificate \
     --epoch $retirementEpoch \
     --out-file $DOCKER_COLDKEY_DIR/pool.dereg
 
-paymentAddress=$(sudo cat $HOST_COLDKEY_DIR/payment.addr)
+paymentAddress=$(${SUDO} cat $HOST_COLDKEY_DIR/payment.addr)
 
 ccli query utxo \
     --address $paymentAddress > $HOST_COLDKEY_DIR/fullUtxo.out

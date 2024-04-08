@@ -28,7 +28,7 @@ const (
 func (pp *PathProcessor) getMessagesToSend(
 	ctx context.Context,
 	msgs []packetIBCMessage,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (srcMsgs []packetIBCMessage, dstMsgs []packetIBCMessage) {
 	if len(msgs) == 0 {
 		return
@@ -670,7 +670,7 @@ func (pp *PathProcessor) unrelayedChannelCloseMessages(
 	return res
 }
 
-func (pp *PathProcessor) getUnrelayedClientICQMessages(pathEnd *pathEndRuntime, queryMessages, responseMessages ClientICQMessageCache) (res []clientICQMessage) {
+func (pp *PathProcessor) getUnrelayedClientICQMessages(pathEnd *PathEndRuntime, queryMessages, responseMessages ClientICQMessageCache) (res []clientICQMessage) {
 ClientICQLoop:
 	for queryID, queryMsg := range queryMessages {
 		for resQueryID := range responseMessages {
@@ -699,19 +699,19 @@ ClientICQLoop:
 
 // updateClientTrustedState combines the counterparty chains trusted IBC header
 // with the latest client state, which will be used for constructing MsgUpdateClient messages.
-func (pp *PathProcessor) updateClientTrustedState(src *pathEndRuntime, dst *pathEndRuntime) {
-	if src.clientTrustedState.ClientState.ConsensusHeight.GTE(src.clientState.ConsensusHeight) {
+func (pp *PathProcessor) updateClientTrustedState(src *PathEndRuntime, dst *PathEndRuntime) {
+	if src.ClientTrustedState.ClientState.ConsensusHeight.GTE(src.ClientState.ConsensusHeight) {
 		// current height already trusted
 		return
 	}
 	// need to assemble new trusted state
-	ibcHeader, ok := dst.ibcHeaderCache[src.clientState.ConsensusHeight.RevisionHeight+1]
+	ibcHeader, ok := dst.ibcHeaderCache[src.ClientState.ConsensusHeight.RevisionHeight+1]
 	if !ok {
-		if ibcHeaderCurrent, ok := dst.ibcHeaderCache[src.clientState.ConsensusHeight.RevisionHeight]; ok &&
-			dst.clientTrustedState.IBCHeader != nil &&
-			bytes.Equal(dst.clientTrustedState.IBCHeader.NextValidatorsHash(), ibcHeaderCurrent.NextValidatorsHash()) {
-			src.clientTrustedState = provider.ClientTrustedState{
-				ClientState: src.clientState,
+		if ibcHeaderCurrent, ok := dst.ibcHeaderCache[src.ClientState.ConsensusHeight.RevisionHeight]; ok &&
+			dst.ClientTrustedState.IBCHeader != nil &&
+			bytes.Equal(dst.ClientTrustedState.IBCHeader.NextValidatorsHash(), ibcHeaderCurrent.NextValidatorsHash()) {
+			src.ClientTrustedState = provider.ClientTrustedState{
+				ClientState: src.ClientState,
 				IBCHeader:   ibcHeaderCurrent,
 			}
 			return
@@ -719,13 +719,13 @@ func (pp *PathProcessor) updateClientTrustedState(src *pathEndRuntime, dst *path
 		pp.log.Debug("No cached IBC header for client trusted height",
 			zap.String("chain_id", src.Info.ChainID),
 			zap.String("client_id", src.Info.ClientID),
-			zap.Uint64("height", src.clientState.ConsensusHeight.RevisionHeight+1),
+			zap.Uint64("height", src.ClientState.ConsensusHeight.RevisionHeight+1),
 		)
 		return
 
 	}
-	src.clientTrustedState = provider.ClientTrustedState{
-		ClientState: src.clientState,
+	src.ClientTrustedState = provider.ClientTrustedState{
+		ClientState: src.ClientState,
 		IBCHeader:   ibcHeader,
 	}
 }
@@ -1175,7 +1175,7 @@ func (pp *PathProcessor) packetMessagesToSend(
 
 func queryPacketCommitments(
 	ctx context.Context,
-	pathEnd *pathEndRuntime,
+	pathEnd *PathEndRuntime,
 	k ChannelKey,
 	commitments map[ChannelKey][]uint64,
 	mu sync.Locker,
@@ -1209,7 +1209,7 @@ type skippedPackets struct {
 // queuePendingRecvAndAcks returns the number of packets skipped during a flush (nil if none).
 func (pp *PathProcessor) queuePendingRecvAndAcks(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	k ChannelKey,
 	seqs []uint64,
 	srcCache ChannelPacketMessagesCache,

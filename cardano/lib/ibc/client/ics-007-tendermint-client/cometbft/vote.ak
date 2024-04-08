@@ -1,7 +1,10 @@
 use aiken/list
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
-use ibc/client/ics_007_tendermint_client/cometbft/canonical.{CanonicalVote}
+use ibc/client/ics_007_tendermint_client/cometbft/canonical
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{precommit_type}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
+  CanonicalVote as CanonicalVoteProto,
+}
 use ibc/client/ics_007_tendermint_client/cometbft/types.{SignedMsgType}
 use ibc/utils/time.{Time}
 
@@ -38,20 +41,20 @@ pub fn get_vote(commit: Commit, val_idx: Int) -> Vote {
   }
 }
 
-pub fn canonicalize_vote(chain_id: ByteArray, vote: Vote) -> CanonicalVote {
-  CanonicalVote {
-    vote_type: vote.vote_type,
+pub fn canonicalize_vote(chain_id: ByteArray, vote: Vote) -> CanonicalVoteProto {
+  CanonicalVoteProto {
+    v_type: vote.vote_type,
     height: vote.height,
     round: vote.round,
-    block_id: canonical.canonicalize_block_id(vote.block_id),
+    block_id: Some(canonical.canonicalize_block_id(vote.block_id)),
     timestamp: vote.timestamp,
     chain_id,
   }
 }
 
-pub fn vote_sign_bytes(_chain_id: ByteArray, _vote: Vote) -> ByteArray {
-  // let pb = canonicalize_vote(chain_id, vote)
-  #[]
+pub fn vote_sign_bytes(chain_id: ByteArray, vote: Vote) -> ByteArray {
+  let pb = canonicalize_vote(chain_id, vote)
+  canonical_pb.marshal_delimited_for_vote(Some(pb))
 }
 
 pub fn vote_sign_bytes_for_commit(

@@ -10,10 +10,18 @@ import {
   QueryPacketCommitmentResponse,
   QueryPacketCommitmentsRequest,
   QueryPacketCommitmentsResponse,
+  QueryPacketReceiptRequest,
+  QueryPacketReceiptResponse,
+  QueryUnreceivedPacketsRequest,
+  QueryUnreceivedPacketsResponse,
+  QueryUnreceivedAcksRequest,
+  QueryUnreceivedAcksResponse,
+  QueryProofUnreceivedPacketsRequest,
+  QueryProofUnreceivedPacketsResponse,
 } from '@cosmjs-types/src/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
-import { CHANNEL_TOKEN_PREFIX } from '../../constant';
+import { CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
@@ -23,10 +31,15 @@ import {
   validQueryPacketAcknowledgementsParam,
   validQueryPacketCommitmentParam,
   validQueryPacketCommitmentsParam,
+  validQueryPacketReceiptParam,
+  validQueryUnreceivedPacketsParam,
+  validQueryUnreceivedAcksParam,
+  validQueryProofUnreceivedPacketsParam,
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '../../../cosmjs-types/src/ibc/core/channel/v1/channel';
+import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 
 @Injectable()
 export class PacketService {
@@ -56,7 +69,7 @@ export class PacketService {
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetAcknowledgement =
-      channelDatumDecoded.state.packet_acknowledgement.get(sequence) || JSON.stringify({ result: '01' });
+      channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence)) || JSON.stringify({ result: '01' });
     const ackData = {
       result: Buffer.from('01').toString('base64'),
     } as unknown as Acknowledgement;
@@ -131,9 +144,9 @@ export class PacketService {
         /** channel port identifier. */
         port_id: convertHex2String(channelDatumDecoded.port),
         /** channel unique identifier. */
-        channel_id: request.channel_id,
+        channel_id: `${CHANNEL_ID_PREFIX}-${request.channel_id}`,
         /** packet sequence. */
-        sequence: seq,
+        sequence: seq.toString(),
         /** embedded data that represents packet state. */
         data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)),
       })),
@@ -170,7 +183,7 @@ export class PacketService {
     const channelTokenUnit = minChannelScriptHash + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetCommitment = channelDatumDecoded.state.packet_commitment.get(sequence) || '';
+    const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
     // if (!packetCommitment) throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
 
     const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
@@ -180,7 +193,7 @@ export class PacketService {
     );
 
     const response: QueryPacketCommitmentResponse = {
-      commitment: bytesFromBase64(packetCommitment),
+      commitment: packetCommitment,
       proof: bytesFromBase64(btoa(`0-${proof.blockNo}/commitments/${proof.txHash}/${proof.index}`)),
       proof_height: {
         revision_number: 0,
@@ -239,11 +252,11 @@ export class PacketService {
         /** channel port identifier. */
         port_id: convertHex2String(channelDatumDecoded.port),
         /** channel unique identifier. */
-        channel_id: request.channel_id,
+        channel_id: `${CHANNEL_ID_PREFIX}-${request.channel_id}`,
         /** packet sequence. */
-        sequence: seq,
+        sequence: seq.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)),
+        data: bytesFromBase64(channelDatumDecoded.state.packet_commitment.get(seq)),
       })),
       /** pagination response */
       pagination: {
@@ -256,6 +269,177 @@ export class PacketService {
         revision_height: BigInt(0), // TODO
       },
     } as unknown as QueryPacketCommitmentsResponse;
+    return response;
+  }
+
+  // write api service logic api grpc PacketReceiptb with request params QueryPacketReceiptRequest and return Promise QueryPacketReceiptResponse
+  async queryPacketReceipt(request: QueryPacketReceiptRequest): Promise<QueryPacketReceiptResponse> {
+    const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketReceiptParam(request);
+    this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketReceiptRequest');
+
+    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
+    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+
+    const channelTokenName = this.lucidService.generateTokenName(
+      handlerAuthToken,
+      CHANNEL_TOKEN_PREFIX,
+      BigInt(channelId),
+    );
+
+    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
+
+    // if (!packetReceipt) throw new GrpcNotFoundException("Not found: 'Packet Receipt' not found");
+
+    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
+      minChannelScriptHash,
+      channelTokenName,
+      channelDatumDecoded.state.channel.state,
+    );
+
+    const response: QueryPacketReceiptResponse = {
+      received: !!packetReceipt,
+      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/receipts/${proof.txHash}/${proof.index}`)),
+      proof_height: {
+        revision_number: 0,
+        revision_height: proof.blockNo, // TODO
+      },
+    } as unknown as QueryPacketReceiptResponse;
+    return response;
+  }
+
+  // write logic service function queryUnreceivedPackets
+  async queryUnreceivedPackets(request: QueryUnreceivedPacketsRequest): Promise<QueryUnreceivedPacketsResponse> {
+    const {
+      channel_id: channelId,
+      port_id: portId,
+      packet_commitment_sequences: packetCommitmentSequences,
+    } = validQueryUnreceivedPacketsParam(request);
+    this.logger.log(
+      `channelId = ${channelId}, portId = ${portId}, packetCommitmentSequences=${packetCommitmentSequences}`,
+      'QueryUnreceivedPacketsRequest',
+    );
+
+    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
+    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+
+    const channelTokenName = this.lucidService.generateTokenName(
+      handlerAuthToken,
+      CHANNEL_TOKEN_PREFIX,
+      BigInt(channelId),
+    );
+
+    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
+    const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
+
+    const response: QueryUnreceivedPacketsResponse = {
+      /** list of unreceived packet sequences */
+      sequences: sequences,
+      /** query block height */
+      height: {
+        revision_number: BigInt(0), // TODO
+        revision_height: BigInt(0), // TODO
+      },
+    } as unknown as QueryUnreceivedPacketsResponse;
+    return response;
+  }
+
+  async queryUnreceivedAcks(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse> {
+    const {
+      channel_id: channelId,
+      port_id: portId,
+      packet_ack_sequences: packetAcksSequences,
+    } = validQueryUnreceivedAcksParam(request);
+    this.logger.log(
+      `channelId = ${channelId}, portId = ${portId}, packetAcksSequences=${packetAcksSequences}`,
+      'QueryUnreceivedAcksRequest',
+    );
+
+    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
+    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+
+    const channelTokenName = this.lucidService.generateTokenName(
+      handlerAuthToken,
+      CHANNEL_TOKEN_PREFIX,
+      BigInt(channelId),
+    );
+
+    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
+    const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
+
+    const response: QueryUnreceivedAcksResponse = {
+      /** list of unreceived packet sequences */
+      sequences: sequences,
+      /** query block height */
+      height: {
+        revision_number: BigInt(0), // TODO
+        revision_height: BigInt(0), // TODO
+      },
+    } as unknown as QueryUnreceivedAcksResponse;
+    return response;
+  }
+  async queryProofUnreceivedPackets(
+    request: QueryProofUnreceivedPacketsRequest,
+  ): Promise<QueryProofUnreceivedPacketsResponse> {
+    const {
+      channel_id: channelId,
+      port_id: portId,
+      sequence,
+      revision_height: revisionHeight,
+    } = validQueryProofUnreceivedPacketsParam(request);
+    this.logger.log(
+      `channelId = ${channelId}, portId = ${portId}, sequence=${sequence}, revisionHeight=${revisionHeight}`,
+      'QueryProofUnreceivedPacketsRequest',
+    );
+
+    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
+    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+
+    const channelTokenName = this.lucidService.generateTokenName(
+      handlerAuthToken,
+      CHANNEL_TOKEN_PREFIX,
+      BigInt(channelId),
+    );
+
+    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    if (convertHex2String(channelDatumDecoded.port) !== portId) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid port, found port ${channelDatumDecoded.port} instead of ${portId} in datum`,
+      );
+    }
+    if (channelDatumDecoded.state.packet_receipt.has(sequence)) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid sequence, sequence ${sequence} already exists in packet_receipt map`,
+      );
+    }
+
+    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
+      minChannelScriptHash,
+      channelTokenName,
+      channelDatumDecoded.state.channel.state,
+    );
+    // if (BigInt(proof.blockNo) > revisionHeight) {
+    //   throw new GrpcInvalidArgumentException(
+    //     `Invalid proof height, revision height ${revisionHeight} not match with proof height ${proof.blockNo}`,
+    //   );
+    // }
+    const response: QueryPacketAcknowledgementResponse = {
+      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/receipts/${proof.txHash}/${proof.index}`)),
+      proof_height: {
+        revision_number: 0,
+        revision_height: proof.blockNo,
+      },
+    } as unknown as QueryPacketAcknowledgementResponse;
     return response;
   }
 }

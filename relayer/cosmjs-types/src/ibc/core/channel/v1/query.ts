@@ -301,6 +301,16 @@ export interface QueryNextSequenceReceiveResponse {
   /** height at which the proof was retrieved */
   proof_height: Height;
 }
+export interface QueryProofUnreceivedPacketsRequest {
+  channel_id: string;
+  port_id: string;
+  sequence: bigint;
+  revision_height: bigint;
+}
+export interface QueryProofUnreceivedPacketsResponse {
+  proof: Uint8Array;
+  proof_height: Height;
+}
 function createBaseQueryChannelRequest(): QueryChannelRequest {
   return {
     port_id: "",
@@ -2108,6 +2118,144 @@ export const QueryNextSequenceReceiveResponse = {
     return message;
   }
 };
+function createBaseQueryProofUnreceivedPacketsRequest(): QueryProofUnreceivedPacketsRequest {
+  return {
+    channel_id: "",
+    port_id: "",
+    sequence: BigInt(0),
+    revision_height: BigInt(0)
+  };
+}
+export const QueryProofUnreceivedPacketsRequest = {
+  typeUrl: "/ibc.core.channel.v1.QueryProofUnreceivedPacketsRequest",
+  encode(message: QueryProofUnreceivedPacketsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.channel_id !== "") {
+      writer.uint32(10).string(message.channel_id);
+    }
+    if (message.port_id !== "") {
+      writer.uint32(18).string(message.port_id);
+    }
+    if (message.sequence !== BigInt(0)) {
+      writer.uint32(24).uint64(message.sequence);
+    }
+    if (message.revision_height !== BigInt(0)) {
+      writer.uint32(32).uint64(message.revision_height);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryProofUnreceivedPacketsRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryProofUnreceivedPacketsRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.channel_id = reader.string();
+          break;
+        case 2:
+          message.port_id = reader.string();
+          break;
+        case 3:
+          message.sequence = reader.uint64();
+          break;
+        case 4:
+          message.revision_height = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryProofUnreceivedPacketsRequest {
+    const obj = createBaseQueryProofUnreceivedPacketsRequest();
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.port_id)) obj.port_id = String(object.port_id);
+    if (isSet(object.sequence)) obj.sequence = BigInt(object.sequence.toString());
+    if (isSet(object.revision_height)) obj.revision_height = BigInt(object.revision_height.toString());
+    return obj;
+  },
+  toJSON(message: QueryProofUnreceivedPacketsRequest): unknown {
+    const obj: any = {};
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.port_id !== undefined && (obj.port_id = message.port_id);
+    message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
+    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryProofUnreceivedPacketsRequest>, I>>(object: I): QueryProofUnreceivedPacketsRequest {
+    const message = createBaseQueryProofUnreceivedPacketsRequest();
+    message.channel_id = object.channel_id ?? "";
+    message.port_id = object.port_id ?? "";
+    if (object.sequence !== undefined && object.sequence !== null) {
+      message.sequence = BigInt(object.sequence.toString());
+    }
+    if (object.revision_height !== undefined && object.revision_height !== null) {
+      message.revision_height = BigInt(object.revision_height.toString());
+    }
+    return message;
+  }
+};
+function createBaseQueryProofUnreceivedPacketsResponse(): QueryProofUnreceivedPacketsResponse {
+  return {
+    proof: new Uint8Array(),
+    proof_height: Height.fromPartial({})
+  };
+}
+export const QueryProofUnreceivedPacketsResponse = {
+  typeUrl: "/ibc.core.channel.v1.QueryProofUnreceivedPacketsResponse",
+  encode(message: QueryProofUnreceivedPacketsResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.proof.length !== 0) {
+      writer.uint32(10).bytes(message.proof);
+    }
+    if (message.proof_height !== undefined) {
+      Height.encode(message.proof_height, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryProofUnreceivedPacketsResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryProofUnreceivedPacketsResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.proof = reader.bytes();
+          break;
+        case 2:
+          message.proof_height = Height.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryProofUnreceivedPacketsResponse {
+    const obj = createBaseQueryProofUnreceivedPacketsResponse();
+    if (isSet(object.proof)) obj.proof = bytesFromBase64(object.proof);
+    if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
+    return obj;
+  },
+  toJSON(message: QueryProofUnreceivedPacketsResponse): unknown {
+    const obj: any = {};
+    message.proof !== undefined && (obj.proof = base64FromBytes(message.proof !== undefined ? message.proof : new Uint8Array()));
+    message.proof_height !== undefined && (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryProofUnreceivedPacketsResponse>, I>>(object: I): QueryProofUnreceivedPacketsResponse {
+    const message = createBaseQueryProofUnreceivedPacketsResponse();
+    message.proof = object.proof ?? new Uint8Array();
+    if (object.proof_height !== undefined && object.proof_height !== null) {
+      message.proof_height = Height.fromPartial(object.proof_height);
+    }
+    return message;
+  }
+};
 /** Query provides defines the gRPC querier service */
 export interface Query {
   /** Channel queries an IBC Channel. */
@@ -2160,6 +2308,7 @@ export interface Query {
   UnreceivedAcks(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse>;
   /** NextSequenceReceive returns the next receive sequence for a given channel. */
   NextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse>;
+  ProofUnreceivedPackets(request: QueryProofUnreceivedPacketsRequest): Promise<QueryProofUnreceivedPacketsResponse>;
 }
 export class QueryClientImpl implements Query {
   private readonly rpc: Rpc;
@@ -2178,6 +2327,7 @@ export class QueryClientImpl implements Query {
     this.UnreceivedPackets = this.UnreceivedPackets.bind(this);
     this.UnreceivedAcks = this.UnreceivedAcks.bind(this);
     this.NextSequenceReceive = this.NextSequenceReceive.bind(this);
+    this.ProofUnreceivedPackets = this.ProofUnreceivedPackets.bind(this);
   }
   Channel(request: QueryChannelRequest): Promise<QueryChannelResponse> {
     const data = QueryChannelRequest.encode(request).finish();
@@ -2245,5 +2395,10 @@ export class QueryClientImpl implements Query {
     const data = QueryNextSequenceReceiveRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.channel.v1.Query", "NextSequenceReceive", data);
     return promise.then(data => QueryNextSequenceReceiveResponse.decode(new BinaryReader(data)));
+  }
+  ProofUnreceivedPackets(request: QueryProofUnreceivedPacketsRequest): Promise<QueryProofUnreceivedPacketsResponse> {
+    const data = QueryProofUnreceivedPacketsRequest.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.channel.v1.Query", "ProofUnreceivedPackets", data);
+    return promise.then(data => QueryProofUnreceivedPacketsResponse.decode(new BinaryReader(data)));
   }
 }

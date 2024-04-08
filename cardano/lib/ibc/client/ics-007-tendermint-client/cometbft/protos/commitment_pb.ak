@@ -6,20 +6,9 @@ use aiken/builtin.{
 }
 use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
+use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/bits.{band, bor, len64, shl, shr}
 use ibc/utils/int.{Int64, uint64}
-
-pub type MerkleRoot {
-  hash: ByteArray,
-}
-
-pub type MerklePrefix {
-  key_prefix: ByteArray,
-}
-
-pub type MerklePath {
-  key_path: List<ByteArray>,
-}
 
 pub fn marshal_for_merkle_prefix(
   merkle_prefix_opt: Option<MerklePrefix>,

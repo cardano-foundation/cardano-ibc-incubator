@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"context"
+	"cosmossdk.io/math"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -935,15 +937,25 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 			if err != nil {
 				return err
 			}
-
 			var path *relayer.Path
 			if path, err = setPathsFromArgs(a, src, dst, pathString); err != nil {
 				return err
 			}
 
-			amount, err := sdk.ParseCoinNormalized(args[2])
-			if err != nil {
-				return err
+			var amount sdk.Coin
+			if src.ChainProvider.Type() == "cardano" {
+				coinString := strings.Split(args[2], "-")
+				number, err := strconv.ParseInt(coinString[0], 10, 64)
+				if err != nil {
+					return err
+				}
+				amount.Denom = coinString[1]
+				amount.Amount = math.NewInt(number)
+			} else {
+				amount, err = sdk.ParseCoinNormalized(args[2])
+				if err != nil {
+					return err
+				}
 			}
 
 			srch, err := src.ChainProvider.QueryLatestHeight(cmd.Context())
@@ -982,14 +994,16 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 					srcChannelID, src, pathConnectionID)
 			}
 
-			dts, err := src.ChainProvider.QueryDenomTraces(cmd.Context(), 0, 100, srch)
-			if err != nil {
-				return err
-			}
+			if src.ChainProvider.Type() == "cosmos" {
+				dts, err := src.ChainProvider.QueryDenomTraces(cmd.Context(), 0, 100, srch)
+				if err != nil {
+					return err
+				}
 
-			for _, d := range dts {
-				if amount.Denom == d.GetFullDenomPath() {
-					amount = sdk.NewCoin(d.IBCDenom(), amount.Amount)
+				for _, d := range dts {
+					if amount.Denom == d.GetFullDenomPath() {
+						amount = sdk.NewCoin(d.IBCDenom(), amount.Amount)
+					}
 				}
 			}
 

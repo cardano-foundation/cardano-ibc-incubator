@@ -37,6 +37,11 @@ else
   DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
+SUDO=""
+if sudo --version > /dev/null 2>&1; then
+  SUDO="sudo"
+fi
+
 # Invoke cardano-cli in running cardano-node container or via provided cardano-cli
 function ccli() {
   ccli_ ${@} --testnet-magic ${NETWORK_ID}
@@ -80,7 +85,7 @@ ccli_ node key-gen-VRF \
     --verification-key-file $DOCKER_COLDKEY_DIR/vrf.vkey \
     --signing-key-file $DOCKER_COLDKEY_DIR/vrf.skey
 
-sudo chmod 400 $HOST_COLDKEY_DIR/vrf.skey
+${SUDO} chmod 400 $HOST_COLDKEY_DIR/vrf.skey
 
 
 ##########################
@@ -108,7 +113,7 @@ ccli address build \
     --stake-verification-key-file $DOCKER_COLDKEY_DIR/stake.vkey \
     --out-file $DOCKER_COLDKEY_DIR/payment.addr
 
-paymentAddress=$(sudo cat $HOST_COLDKEY_DIR/payment.addr)
+paymentAddress=$(${SUDO} cat $HOST_COLDKEY_DIR/payment.addr)
 
 #fund for this account
 . seed-devnet.sh $paymentAddress $FUND_AMOUNT
@@ -155,7 +160,7 @@ echo Total available ADA balance: ${total_balance}
 echo Number of UTXOs: ${txcnt}
 
 
-stakeAddressDeposit=$(sudo cat $HOST_SPO_DIR/params.json | jq -r '.stakeAddressDeposit')
+stakeAddressDeposit=$(${SUDO} cat $HOST_SPO_DIR/params.json | jq -r '.stakeAddressDeposit')
 echo stakeAddressDeposit : $stakeAddressDeposit
 
 ccli_ transaction build-raw \
@@ -209,7 +214,7 @@ done
 # Registering Your Stake Pool
 # https://www.coincashew.com/coins/overview-ada/guide-how-to-build-a-haskell-stakepool-node/part-iii-operation/registering-your-stake-pool
 
-sudo cat > $HOST_SPO_DIR/md.json << EOF
+${SUDO} cat > $HOST_SPO_DIR/md.json << EOF
 {
 "name": "MyPoolName",
 "description": "My pool description",
@@ -220,10 +225,10 @@ EOF
 
 ccli_ stake-pool metadata-hash --pool-metadata-file $DOCKER_SPO_DIR/md.json > $HOST_SPO_DIR/poolMetaDataHash.txt
 
-minPoolCost=$(sudo cat $HOST_SPO_DIR/params.json | jq -r .minPoolCost)
+minPoolCost=$(${SUDO} cat $HOST_SPO_DIR/params.json | jq -r .minPoolCost)
 echo minPoolCost: ${minPoolCost}
 
-poolMetaDataHash=$(sudo cat $HOST_SPO_DIR/poolMetaDataHash.txt)
+poolMetaDataHash=$(${SUDO} cat $HOST_SPO_DIR/poolMetaDataHash.txt)
 
 ccli stake-pool registration-certificate \
     --cold-verification-key-file $DOCKER_COLDKEY_DIR/node.vkey \
@@ -274,7 +279,7 @@ txcnt=$(cat $HOST_COLDKEY_DIR/balance.out | wc -l)
 echo Total available ADA balance: ${total_balance}
 echo Number of UTXOs: ${txcnt}
 
-stakePoolDeposit=$(sudo cat $HOST_SPO_DIR/params.json | jq -r '.stakePoolDeposit')
+stakePoolDeposit=$(${SUDO} cat $HOST_SPO_DIR/params.json | jq -r '.stakePoolDeposit')
 echo stakePoolDeposit: $stakePoolDeposit
 
 ccli_ transaction build-raw \

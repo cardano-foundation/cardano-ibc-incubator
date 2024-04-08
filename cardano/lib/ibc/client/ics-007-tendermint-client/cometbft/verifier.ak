@@ -4,6 +4,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/utils/time.{Duration, Time}
+use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
 pub fn verify(
   trusted_header: SignedHeader,
@@ -11,7 +12,7 @@ pub fn verify(
   untrusted_header: SignedHeader,
   untrusted_vals: ValidatorSet,
   trusting_period: Duration,
-  now: Time,
+  tx_time: TxTime,
   max_clock_drift: Duration,
   trust_level: Rational,
 ) -> Bool {
@@ -22,7 +23,7 @@ pub fn verify(
       untrusted_header,
       untrusted_vals,
       trusting_period,
-      now,
+      tx_time,
       max_clock_drift,
       trust_level,
     )
@@ -32,7 +33,7 @@ pub fn verify(
       untrusted_header,
       untrusted_vals,
       trusting_period,
-      now,
+      tx_time,
       max_clock_drift,
     )
   }
@@ -43,19 +44,19 @@ pub fn verify_adjacent(
   untrusted_header: SignedHeader,
   untrusted_vals: ValidatorSet,
   trusting_period: Duration,
-  now: Time,
+  tx_time: TxTime,
   max_clock_drift: Duration,
 ) -> Bool {
   expect untrusted_header.header.height == trusted_header.header.height + 1
 
-  expect !header_expired(trusted_header, trusting_period, now)
+  expect !header_expired(trusted_header, trusting_period, tx_time.valid_to)
 
   expect
     verify_new_header_and_vals(
       untrusted_header,
       untrusted_vals,
       trusted_header,
-      now,
+      tx_time.valid_from,
       max_clock_drift,
     )
 
@@ -82,20 +83,20 @@ pub fn verify_non_adjacent(
   untrusted_header: SignedHeader,
   untrusted_vals: ValidatorSet,
   trusting_period: Duration,
-  now: Time,
+  tx_time: TxTime,
   max_clock_drift: Duration,
   trust_level: Rational,
 ) -> Bool {
   expect untrusted_header.header.height != trusted_header.header.height + 1
 
-  expect !header_expired(trusted_header, trusting_period, now)
+  expect !header_expired(trusted_header, trusting_period, tx_time.valid_to)
 
   expect
     verify_new_header_and_vals(
       untrusted_header,
       untrusted_vals,
       trusted_header,
-      now,
+      tx_time.valid_from,
       max_clock_drift,
     )
 
@@ -143,9 +144,5 @@ fn verify_new_header_and_vals(
     untrusted_header.header.validators_hash == validator_set.hash(
       untrusted_vals,
     )
-
-  expect
-    untrusted_header.header.validators_hash == trusted_header.header.next_validators_hash
-
   True
 }

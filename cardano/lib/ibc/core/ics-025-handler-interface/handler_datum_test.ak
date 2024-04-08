@@ -113,3 +113,117 @@ test validate_create_client_fail_with_invalid_state() {
   let new = HandlerDatum { state: new_handler_state, token: auth_token }
   handler_datum.validate_create_client(old, new) == False
 }
+
+//===========================validate_create_connection============================
+fn setup_validate_create_connection() -> (HandlerDatum, HandlerDatum) {
+  let old_datum =
+    HandlerDatum {
+      state: HandlerState {
+        next_client_sequence,
+        next_connection_sequence,
+        next_channel_sequence,
+        bound_port: dict.new(),
+      },
+      token: AuthToken { policy_id: policy_id_sample, name: name_sample },
+    }
+
+  let new_datum =
+    HandlerDatum {
+      state: HandlerState {
+        next_client_sequence,
+        next_connection_sequence: old_datum.state.next_connection_sequence + 1,
+        next_channel_sequence,
+        bound_port: dict.new(),
+      },
+      token: AuthToken { policy_id: policy_id_sample, name: name_sample },
+    }
+
+  (old_datum, new_datum)
+}
+
+test validate_create_connection_succeed() {
+  let (old_datum, new_datum) = setup_validate_create_connection()
+
+  handler_datum.validate_create_connection(old_datum, new_datum)
+}
+
+test validate_create_connection_fail_if_next_conn_seq_not_updated() {
+  let (old_datum, new_datum) = setup_validate_create_connection()
+
+  let new_datum =
+    HandlerDatum {
+      ..new_datum,
+      state: HandlerState {
+        ..new_datum.state,
+        next_connection_sequence: old_datum.state.next_connection_sequence,
+      },
+    }
+
+  handler_datum.validate_create_connection(old_datum, new_datum) == False
+}
+
+//===========================validate_create_channel============================
+fn setup_validate_create_channel() -> (HandlerDatum, HandlerDatum) {
+  let old_datum =
+    HandlerDatum {
+      state: HandlerState {
+        next_client_sequence,
+        next_connection_sequence,
+        next_channel_sequence,
+        bound_port: dict.new(),
+      },
+      token: AuthToken { policy_id: policy_id_sample, name: name_sample },
+    }
+
+  let new_datum =
+    HandlerDatum {
+      state: HandlerState {
+        next_client_sequence,
+        next_connection_sequence,
+        next_channel_sequence: old_datum.state.next_channel_sequence + 1,
+        bound_port: dict.new(),
+      },
+      token: AuthToken { policy_id: policy_id_sample, name: name_sample },
+    }
+
+  (old_datum, new_datum)
+}
+
+test validate_create_channel_succeed() {
+  let (old_datum, new_datum) = setup_validate_create_channel()
+
+  handler_datum.validate_create_channel(old_datum, new_datum)
+}
+
+test validate_create_channel_fail_if_next_chan_seq_not_updated() {
+  let (old_datum, new_datum) = setup_validate_create_channel()
+
+  let new_datum =
+    HandlerDatum {
+      ..new_datum,
+      state: HandlerState {
+        ..new_datum.state,
+        next_channel_sequence: old_datum.state.next_channel_sequence,
+      },
+    }
+
+  handler_datum.validate_create_channel(old_datum, new_datum) == False
+}
+
+//==========================is_initialized_valid============================
+test is_initialized_valid_succeed() {
+  let token = AuthToken { policy_id: policy_id_sample, name: name_sample }
+
+  let datum =
+    HandlerDatum {
+      state: HandlerState {
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: dict.new(),
+      },
+      token,
+    }
+
+  handler_datum.is_initialized_valid(datum, token)
+}

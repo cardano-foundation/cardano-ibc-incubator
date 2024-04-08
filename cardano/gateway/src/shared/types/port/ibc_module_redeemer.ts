@@ -1,4 +1,4 @@
-import { Data } from 'lucid-cardano';
+import { Data } from '@dinhbx/lucid-custom';
 import { Acknowledgement } from '../channel/acknowledgement';
 export type IBCModuleCallback =
   | {
@@ -25,6 +25,20 @@ export type IBCModuleCallback =
       OnRecvPacket: {
         channel_id: string;
         acknowledgement: Acknowledgement;
+        data: any;
+      };
+    }
+  | {
+      OnTimeoutPacket: {
+        channel_id: string;
+        data: any;
+      };
+    }
+  | {
+      OnAcknowledgementPacket: {
+        channel_id: string;
+        acknowledgement: Acknowledgement;
+        data: any;
       };
     };
 
@@ -37,7 +51,7 @@ export type IBCModuleRedeemer =
     };
 export async function encodeIBCModuleRedeemer(
   ibcModuleRedeemer: IBCModuleRedeemer,
-  Lucid: typeof import('lucid-cardano'),
+  Lucid: typeof import('@dinhbx/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const AcknowledgementResponseSchema = Data.Enum([
@@ -80,6 +94,20 @@ export async function encodeIBCModuleRedeemer(
       OnRecvPacket: Data.Object({
         channel_id: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
+        data: Data.Any(),
+      }),
+    }),
+    Data.Object({
+      OnTimeoutPacket: Data.Object({
+        channel_id: Data.Bytes(),
+        data: Data.Any(),
+      }),
+    }),
+    Data.Object({
+      OnAcknowledgementPacket: Data.Object({
+        channel_id: Data.Bytes(),
+        acknowledgement: AcknowledgementSchema,
+        data: Data.Any(),
       }),
     }),
   ]);
@@ -91,12 +119,35 @@ export async function encodeIBCModuleRedeemer(
       Operator: Data.Tuple([Data.Any()]),
     }),
   ]);
+
+  if (ibcModuleRedeemer.hasOwnProperty('Operator')) {
+    const FungibleTokenPacketDataSchema = Data.Object({
+      denom: Data.Bytes(),
+      amount: Data.Bytes(),
+      sender: Data.Bytes(),
+      receiver: Data.Bytes(),
+      memo: Data.Bytes(),
+    });
+
+    const TransferModuleRedeemerSchema = Data.Enum([
+      Data.Object({
+        Transfer: Data.Object({
+          channel_id: Data.Bytes(),
+          data: FungibleTokenPacketDataSchema,
+        }),
+      }),
+
+      Data.Literal('OtherTransferOp'),
+    ]);
+    ibcModuleRedeemer['Operator'] = [Data.castTo(ibcModuleRedeemer['Operator'][0], TransferModuleRedeemerSchema)];
+  }
+
   type TIBCModuleRedeemer = Data.Static<typeof IBCModuleRedeemerSchema>;
   const TIBCModuleRedeemer = IBCModuleRedeemerSchema as unknown as IBCModuleRedeemer;
   return Data.to(ibcModuleRedeemer, TIBCModuleRedeemer);
 }
 
-export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('lucid-cardano')) {
+export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('@dinhbx/lucid-custom')) {
   const { Data } = Lucid;
   const AcknowledgementResponseSchema = Data.Enum([
     Data.Object({
@@ -138,6 +189,20 @@ export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof
       OnRecvPacket: Data.Object({
         channel_id: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
+        data: Data.Any(),
+      }),
+    }),
+    Data.Object({
+      OnTimeoutPacket: Data.Object({
+        channel_id: Data.Bytes(),
+        data: Data.Any(),
+      }),
+    }),
+    Data.Object({
+      OnAcknowledgementPacket: Data.Object({
+        channel_id: Data.Bytes(),
+        acknowledgement: AcknowledgementSchema,
+        data: Data.Any(),
       }),
     }),
   ]);

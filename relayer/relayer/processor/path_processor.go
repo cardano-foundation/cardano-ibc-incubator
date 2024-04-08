@@ -58,8 +58,8 @@ const (
 type PathProcessor struct {
 	log *zap.Logger
 
-	PathEnd1 *pathEndRuntime
-	PathEnd2 *pathEndRuntime
+	PathEnd1 *PathEndRuntime
+	PathEnd2 *PathEndRuntime
 
 	memo string
 
@@ -357,13 +357,13 @@ func (pp *PathProcessor) Run(ctx context.Context, cancel func()) {
 			continue
 		}
 
-		if pp.shouldFlush() && !pp.initialFlushComplete {
-			pp.handleFlush(ctx)
-			pp.initialFlushComplete = true
-		} else if pp.shouldTerminateForFlushComplete() {
-			cancel()
-			return
-		}
+		//if pp.shouldFlush() && !pp.initialFlushComplete {
+		//	pp.handleFlush(ctx)
+		//	pp.initialFlushComplete = true
+		//} else if pp.shouldTerminateForFlushComplete() {
+		//	cancel()
+		//	return
+		//}
 
 		// process latest message cache state from both pathEnds
 		if err := pp.processLatestMessages(ctx, cancel); err != nil {

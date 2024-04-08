@@ -1,6 +1,7 @@
 use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/math/rational.{Rational}
+use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{max_chain_id_len}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -93,10 +94,11 @@ pub fn get_latest_height(cs: ClientState) -> Height {
 /// as a "method" of ClientState struct.
 pub fn get_timestamp_at_height(
   _cs: ClientState,
-  cons_state: ConsensusState,
-  _height: Height,
-) -> Int {
-  cons_state.timestamp
+  consensus_states: Dict<Height, ConsensusState>,
+  height: Height,
+) -> Option<Int> {
+  dict.get(consensus_states, height)
+    |> option.map(fn(cons_state) { cons_state.timestamp })
 }
 
 pub fn is_expired(cs: ClientState, latest_timestamp: Time, now: Time) -> Bool {
@@ -152,6 +154,21 @@ pub fn verify_membership(
   expect
     verify_delay_period_passed(height, delay_time_period, delay_block_period)
   merkle.verify_membership(proof, cs.proof_specs, cons_state.root, path, value)
+}
+
+pub fn verify_non_membership(
+  cs: ClientState,
+  cons_state: ConsensusState,
+  height: Height,
+  delay_time_period: Int,
+  delay_block_period: Int,
+  proof: MerkleProof,
+  path: MerklePath,
+) -> Bool {
+  expect height.compare(get_latest_height(cs), height) != Less
+  expect
+    verify_delay_period_passed(height, delay_time_period, delay_block_period)
+  merkle.verify_non_membership(proof, cs.proof_specs, cons_state.root, path)
 }
 
 fn verify_delay_period_passed(

@@ -3,6 +3,7 @@ package cosmos
 import (
 	"errors"
 	"reflect"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -124,6 +125,7 @@ func (cc *CosmosProvider) LogSuccessTx(res *sdk.TxResponse, msgs []provider.Rela
 		zap.Int64("height", res.Height),
 		msgTypesField(msgs),
 		zap.String("tx_hash", res.TxHash),
+		zap.Time("time", time.Now()),
 	)
 
 	// Log the succesful transaction with fields

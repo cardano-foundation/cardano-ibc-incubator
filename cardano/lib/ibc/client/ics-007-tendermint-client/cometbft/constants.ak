@@ -2,6 +2,11 @@ pub const max_chain_id_len = 50
 
 pub const tm_hash_size = 32
 
+// 20 hex bytes
+pub const address_size = 20
+
+pub const max_signature_size = 64
+
 pub const batch_verify_threshold = 2
 
 pub const block_id_flag_unknown = 0

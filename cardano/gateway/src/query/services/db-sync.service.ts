@@ -14,6 +14,7 @@ import { EpochParamDto } from '../dtos/epoch-param.dto';
 import { MinimumActiveEpoch } from '../../config/constant.config';
 import { ValidatorDto } from '../dtos/validator.dto';
 import { RedeemerDto } from '../dtos/redeemer';
+import { TxDto } from '../dtos/tx.dto';
 
 @Injectable()
 export class DbSyncService {
@@ -22,25 +23,28 @@ export class DbSyncService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @InjectEntityManager() private entityManager: EntityManager,
-  ) {}
+  ) { }
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
     const query = `
       SELECT 
         tx_out.address AS address, 
         generating_tx.hash AS tx_hash, 
+        generating_tx.id AS tx_id,
         tx_out.index AS output_index, 
         datum.hash AS datum_hash, 
         datum.bytes AS datum,
         ma.policy AS assets_policy, 
-        ma.name AS assets_name
+        ma.name AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
       FROM tx_out
       INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
       INNER JOIN multi_asset ma on mto.ident = ma.id 
       INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
       INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
       INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
-      WHERE ma.policy = $1 AND ma.name like $2::bytea||'%'
+      WHERE ma.policy = $1 AND position($2::bytea in ma.name) > 0
       ORDER BY block_no DESC;
     `;
     const utxos = await this.entityManager.query(query, [`\\x${policyId}`, `\\x${prefixTokenName}`]);
@@ -49,11 +53,14 @@ export class DbSyncService {
         <UtxoDto>{
           address: e.address,
           txHash: toHexString(e.tx_hash),
+          txId: e.tx_id,
           outputIndex: e.output_index,
           datum: toHexString(e.datum),
           datumHash: toHexString(e.datum_hash),
           assetsName: toHexString(e.assets_name),
           assetsPolicy: toHexString(e.assets_policy),
+          blockId: e.block_id,
+          blockNo: e.block_no,
         },
     );
   }
@@ -183,6 +190,7 @@ export class DbSyncService {
       SELECT 
         tx_out.address AS address, 
         generating_tx.hash AS tx_hash, 
+        generating_tx.id AS tx_id, 
         tx_out.index AS output_index, 
         datum.hash AS datum_hash, 
         datum.bytes AS datum,
@@ -196,30 +204,39 @@ export class DbSyncService {
       INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
       INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
       INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
-      WHERE generating_block.block_no = $1 AND (ma.policy = $2 OR (ma.policy = $3 AND ma.name like $4::bytea||'%'));
+      WHERE generating_block.block_no = $1 AND (ma.policy = $2 OR ma.policy = $3);
     `;
     // ma.policy = ANY($2);
     const utxos = await this.entityManager.query(query, [
       height,
       `\\x${handlerAuthToken.policyId}`,
       `\\x${mintClientScriptHash}`,
-      `\\x${clientTokenName}`,
+      // `\\x${clientTokenName}`,
     ]);
 
-    return utxos.map(
-      (e) =>
-        <UtxoDto>{
-          address: e.address,
-          txHash: toHexString(e.tx_hash),
-          outputIndex: e.output_index,
-          datum: toHexString(e.datum),
-          datumHash: toHexString(e.datum_hash),
-          assetsName: toHexString(e.assets_name),
-          assetsPolicy: toHexString(e.assets_policy),
-          blockNo: e.block_no,
-          index: e.index,
-        },
-    );
+    return utxos
+      .map(
+        (e) =>
+          <UtxoDto>{
+            address: e.address,
+            txHash: toHexString(e.tx_hash),
+            txId: e.tx_id,
+            outputIndex: e.output_index,
+            datum: toHexString(e.datum),
+            datumHash: toHexString(e.datum_hash),
+            assetsName: toHexString(e.assets_name),
+            assetsPolicy: toHexString(e.assets_policy),
+            blockNo: e.block_no,
+            index: e.index,
+          },
+      )
+      .filter((utxo) => {
+        if ([handlerAuthToken.policyId].includes(utxo.assetsPolicy)) return true;
+        if ([mintClientScriptHash].includes(utxo.assetsPolicy) && utxo.assetsName.startsWith(clientTokenName))
+          return true;
+
+        return false;
+      });
   }
 
   async findBlockByHeight(height: bigint): Promise<BlockDto> {
@@ -326,5 +343,43 @@ export class DbSyncService {
             data: toHexString(e.redeemer_data),
           },
       );
+  }
+
+  async findTxByHash(hash: string): Promise<TxDto> {
+    const query = `
+    SELECT
+      generating_block.block_no AS height,
+      generating_tx.id as tx_id,
+      generating_tx.hash AS tx_hash,
+      generating_tx.fee as gas_fee,
+      generating_tx."size" as tx_size
+    FROM tx AS generating_tx
+    INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+    WHERE generating_tx.hash = $1;`;
+
+    const results = await this.entityManager.query(query, [`\\x${hash}`]);
+    return results.length > 0
+      ? {
+        hash: toHexString(results[0].tx_hash),
+        tx_id: results[0].tx_id,
+        gas_fee: results[0].gas_fee,
+        tx_size: results[0].tx_size,
+        height: results[0].height,
+      }
+      : null;
+  }
+
+  async queryLatestBlockNo(): Promise<number> {
+    const query = `
+    select block_no 
+    from block 
+    where block_no is not null
+    order by block_no desc limit 1 ;
+    `;
+    const results = await this.entityManager.query(query, []);
+    if (results.length <= 0) {
+      throw new GrpcNotFoundException(`Not found: No blocks found.`);
+    }
+    return results.length > 0 ? results[0].block_no : 0;
   }
 }

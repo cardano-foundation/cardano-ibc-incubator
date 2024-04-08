@@ -33,7 +33,7 @@ func (c *Chain) CreateOpenChannels(
 	// if err := ValidateChannelParams(srcPortID, dstPortID, order); err != nil {
 	// 	return err
 	// }
-
+	c.log.Info("Start CreateOpenChannels", zap.Time("time", time.Now()))
 	if !override {
 		channel, err := QueryPortChannel(ctx, c, srcPortID)
 		if err == nil && channel != nil {

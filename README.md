@@ -23,6 +23,7 @@ This repository is subdivided into three main folders:
 - [Aiken](https://aiken-lang.org/installation-instructions)
 - [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
 - [jq](https://jqlang.github.io/jq/download/)
+- [git-lfs](https://git-lfs.com/)
 
 ### Cardano developer ecosystem components used
 The current implementation leverages a number of frameworks maintained by the Cardano developer community. We list them here for appreciation and transparency. Without tools like those listed and others, projects like this would not be possible:
@@ -34,7 +35,7 @@ The current implementation leverages a number of frameworks maintained by the Ca
 
 ### Build from source
 ```sh
-./build.sh
+git lfs pull && ./build.sh
 ```
 
 ### Running a test environment on a local machine
@@ -92,8 +93,8 @@ aiken check
 
 ### Creating IBC clients, connections and channels
 ```sh
-docker exec -it relayer /bin/bash # Access to relayer container
-cd /home/relayer && bash relayer-start.sh
+docker exec -it relayer sh # Access to relayer container
+cd /root && ./scripts/relayer-start.sh
 ```
 
 The relayer will automatically create a new client, connection and channel.
@@ -124,10 +125,10 @@ The relayer will automatically create a new client, connection and channel.
 2024-03-04T09:25:44.547784Z	info	Successfully created new channel
 ```
 
-### Sending a message from Cosmos to Cardano
+### Sending tokens from Cosmos to Cardano and vice versa
 ```sh
-docker exec -it relayer /bin/bash # Access to relayer container
-cd /home/relayer && bash xtransfer.sh # Start submit transfer packet
+docker exec -it relayer sh # Access to relayer container
+cd /root && ./scripts/xtransfer.sh # Start submit transfer packet
 ```
 
 After running `xtransfer.sh`, the relayer will capture the packet, relay a message to Cardano, call Ack on Cosmos, and by that complete the cycle.
@@ -136,6 +137,54 @@ After running `xtransfer.sh`, the relayer will capture the packet, relay a messa
 2024-03-04T09:26:53.779140Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgRecvPacket"], "tx_hash": "a35bc010a9e5e78c88469707aa10c3501bf19e51e0539b4720d70479d44fc3bc"}
 ...
 2024-03-04T09:27:01.748158Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "packet_src_channel": "channel-7", "packet_dst_channel": "channel-7", "gas_used": 55261, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8573, "msg_types": ["/ibc.core.channel.v1.MsgAcknowledgement"], "tx_hash": "D162CC2356A09F09C80D616987FE4BE965FDEA7C3C93AC0F2D1D5BE4589C8A46"}
+```
+
+You can query balance using this endpoint:
+#### Cosmos:
+```sh
+http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
+```
+Notice that you will have voucher token with prefix: "ibc/"
+Example:
+```json
+{
+  "balances": [
+    {
+      "denom": "ibc/018463FA736C852FA78B23CE6CAE123B9182D18658E0F323B130BB4B1FBB6A52",
+      "amount": "13578"
+    }
+  ]
+}
+```
+
+#### Cardano:
+```sh
+http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
+```
+Notice that you will have UTXO, asset with amount 2000:
+Example:
+```json
+[
+  {
+    "transaction_index": 0,
+    "transaction_id": "4ceee14cffdf8a03bba53e058bc02f0ed5e3cc1169d1e45963c02b780694b1af",
+    "output_index": 2,
+    "address": "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql",
+    "value": {
+      "coins": 1150770,
+      "assets": {
+        "901a270744d7eee7a2ef5e0199a29ca2636b3ede7e6fa520aba1a1c1.84916548b2860f827f717b20796c9ddd4742325677e9534cd5e92c8ca260c553": 2000
+      }
+    },
+    "datum_hash": null,
+    "script_hash": null,
+    "created_at": {
+      "slot_no": 4202,
+      "header_hash": "3d2e1690468685cf5c95364b7200812f7252994d6a9620be0cc1f74991656020"
+    },
+    "spent_at": null
+  }
+]
 ```
 
 ### Register a new stake pool on the local Cardano blockchain
@@ -180,6 +229,39 @@ Stop the running script above, then wait for about 100 blocks (~2 mins), then ch
 ```sh
 curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
 ```
+
+### Test timeout packet
+After successful create clients, connections, channels, terminate that terminal(A).
+
+```sh
+Access this url to check current balance in Cardano: http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
+
+Access this url to check current balance in Cosmos: http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
+
+```
+Update script `/scripts/xtransfer.sh`, `timeout-time-offset` from `1h` to `10s`
+
+Open another terminal(B) and run:
+```sh
+docker exec -it relayer sh
+cd /root && ./scripts/xtransfer.sh
+```
+
+Recheck you current balance, notice that your balance will be deduct.
+```sh
+Access this url to check current balance in Cardano: http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
+
+Access this url to check current balance in Cosmos: http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
+
+```
+
+In the terminal A, run this to execute timeout
+```sh
+cd /root && ./bin/rly start demo --processor legacy
+```
+
+After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you current balance, notice that your token will be return back.
+
 
 ## :blue_heart: Contributing
 All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.

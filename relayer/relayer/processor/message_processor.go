@@ -10,6 +10,7 @@ import (
 
 	"github.com/cardano/relayer/v1/relayer/provider"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"go.uber.org/zap"
@@ -89,21 +90,25 @@ func newMessageProcessor(
 func (mp *messageProcessor) processMessages(
 	ctx context.Context,
 	messages pathEndMessages,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) error {
 	var needsClientUpdate bool
 
 	// Localhost IBC does not permit client updates
-	if src.clientState.ClientID != ibcexported.LocalhostClientID && dst.clientState.ClientID != ibcexported.LocalhostConnectionID {
-		var err error
-		needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
-		if err != nil {
-			return err
-		}
+	// if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID {
+	// 	var err error
+	// 	needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
+	// 		return err
+	// 	}
+	// }
 
-		if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
-			return err
-		}
+	if src.ChainProvider.Type() == "cosmos" &&
+		len(messages.channelMessages)+len(messages.connectionMessages)+len(messages.packetMessages) > 0 {
+		updateClient(ctx, src, dst, src.latestHeader.(provider.TendermintIBCHeader))
 	}
 
 	mp.assembleMessages(ctx, messages, src, dst)
@@ -111,35 +116,78 @@ func (mp *messageProcessor) processMessages(
 	return mp.trackAndSendMessages(ctx, src, dst, needsClientUpdate)
 }
 
+func updateClient(ctx context.Context, src, dst *PathEndRuntime, latestHeader provider.TendermintIBCHeader) error {
+	if latestHeader.Height() == dst.ClientState.ConsensusHeight.RevisionHeight {
+		return nil
+	}
+
+	var msgUpdateClientHeader ibcexported.ClientMessage
+
+	dstClientId := dst.Info.ClientID
+
+	dsth := dst.latestBlock.Height
+
+	dstClientState, err := dst.ChainProvider.QueryClientState(ctx, int64(dsth), dstClientId)
+	if err != nil {
+		return err
+	}
+
+	dstTrustedHeader, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dstClientState.GetLatestHeight().GetRevisionHeight()))
+	if err != nil {
+		return err
+	}
+
+	msgUpdateClientHeader, err = dst.ChainProvider.MsgUpdateClientHeader(
+		latestHeader,
+		dstClientState.GetLatestHeight().(clienttypes.Height),
+		dstTrustedHeader,
+	)
+	if err != nil {
+		return err
+	}
+
+	msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(dstClientId, msgUpdateClientHeader)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+	dst.ChainProvider.SendMessages(ctx, []provider.RelayerMessage{
+		msgUpdateClient,
+	}, "")
+	return nil
+}
+
 // shouldUpdateClientNow determines if an update client message should be sent
 // even if there are no messages to be sent now. It will not be attempted if
 // there has not been enough blocks since the last client update attempt.
 // Otherwise, it will be attempted if either 2/3 of the trusting period
 // or the configured client update threshold duration has passed.
-func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst *pathEndRuntime) (bool, error) {
+func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst *PathEndRuntime) (bool, error) {
 	if src.ChainProvider.Type() == "cardano" {
 		return false, nil
 	}
 
 	var consensusHeightTime time.Time
 
-	clientConsensusHeight := dst.clientState.ConsensusHeight
-	trustedConsensusHeight := dst.clientTrustedState.ClientState.ConsensusHeight
+	clientConsensusHeight := dst.ClientState.ConsensusHeight
+	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
 	if trustedConsensusHeight.EQ(clientConsensusHeight) {
 		return false, nil
 	}
 
-	if dst.clientState.ConsensusTime.IsZero() {
+	if dst.ClientState.ConsensusTime.IsZero() {
 		var timestamp uint64
 		switch src.ChainProvider.Type() {
 		case "cardano":
-			srcBlockData, err := src.ChainProvider.QueryBlockData(context.Background(), int64(dst.clientState.ConsensusHeight.RevisionHeight))
+			srcBlockData, err := src.ChainProvider.QueryBlockData(context.Background(), int64(dst.ClientState.ConsensusHeight.RevisionHeight))
 			if err != nil {
 				return false, fmt.Errorf("failed to get header height: %w", err)
 			}
 			timestamp = srcBlockData.Timestamp
 		case "cosmos":
-			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.clientState.ConsensusHeight.RevisionHeight))
+			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
 			if err != nil {
 				return false, fmt.Errorf("failed to get header height: %w", err)
 			}
@@ -147,7 +195,7 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 		}
 		consensusHeightTime = time.Unix(0, int64(timestamp))
 	} else {
-		consensusHeightTime = dst.clientState.ConsensusTime
+		consensusHeightTime = dst.ClientState.ConsensusTime
 	}
 
 	clientUpdateThresholdMs := mp.clientUpdateThresholdTime.Milliseconds()
@@ -156,10 +204,10 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 	enoughBlocksPassed := (dst.latestBlock.Height - blocksToRetrySendAfter) > dst.lastClientUpdateHeight
 	dst.lastClientUpdateHeightMu.Unlock()
 
-	twoThirdsTrustingPeriodMs := float64(dst.clientState.TrustingPeriod.Milliseconds()) * 2 / 3
+	twoThirdsTrustingPeriodMs := float64(dst.ClientState.TrustingPeriod.Milliseconds()) * 2 / 3
 	timeSinceLastClientUpdateMs := float64(time.Since(consensusHeightTime).Milliseconds())
 
-	pastTwoThirdsTrustingPeriod := dst.clientState.TrustingPeriod > 0 &&
+	pastTwoThirdsTrustingPeriod := dst.ClientState.TrustingPeriod > 0 &&
 		timeSinceLastClientUpdateMs > twoThirdsTrustingPeriodMs
 
 	pastConfiguredClientUpdateThreshold := clientUpdateThresholdMs > 0 &&
@@ -168,9 +216,9 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 	shouldUpdateClientNow := enoughBlocksPassed && (pastTwoThirdsTrustingPeriod || pastConfiguredClientUpdateThreshold)
 
 	if mp.metrics != nil {
-		timeToExpiration := dst.clientState.TrustingPeriod - time.Since(consensusHeightTime)
-		mp.metrics.SetClientExpiration(src.Info.PathName, dst.Info.ChainID, dst.clientState.ClientID, fmt.Sprint(dst.clientState.TrustingPeriod.String()), timeToExpiration)
-		mp.metrics.SetClientTrustingPeriod(src.Info.PathName, dst.Info.ChainID, dst.Info.ClientID, time.Duration(dst.clientState.TrustingPeriod))
+		timeToExpiration := dst.ClientState.TrustingPeriod - time.Since(consensusHeightTime)
+		mp.metrics.SetClientExpiration(src.Info.PathName, dst.Info.ChainID, dst.ClientState.ClientID, fmt.Sprint(dst.ClientState.TrustingPeriod.String()), timeToExpiration)
+		mp.metrics.SetClientTrustingPeriod(src.Info.PathName, dst.Info.ChainID, dst.Info.ClientID, time.Duration(dst.ClientState.TrustingPeriod))
 	}
 
 	if shouldUpdateClientNow {
@@ -178,7 +226,7 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 			zap.String("path_name", src.Info.PathName),
 			zap.String("chain_id", dst.Info.ChainID),
 			zap.String("client_id", dst.Info.ClientID),
-			zap.Int64("trusting_period", dst.clientState.TrustingPeriod.Milliseconds()),
+			zap.Int64("trusting_period", dst.ClientState.TrustingPeriod.Milliseconds()),
 			zap.Int64("time_since_client_update", time.Since(consensusHeightTime).Milliseconds()),
 			zap.Int64("client_threshold_time", mp.clientUpdateThresholdTime.Milliseconds()),
 		)
@@ -188,7 +236,7 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 }
 
 // assembleMessages will assemble all messages in parallel. This typically involves proof queries for each.
-func (mp *messageProcessor) assembleMessages(ctx context.Context, messages pathEndMessages, src, dst *pathEndRuntime) {
+func (mp *messageProcessor) assembleMessages(ctx context.Context, messages pathEndMessages, src, dst *PathEndRuntime) {
 	var wg sync.WaitGroup
 
 	if !mp.isLocalhost {
@@ -239,10 +287,11 @@ func (mp *messageProcessor) assembledCount() int {
 func (mp *messageProcessor) assembleMessage(
 	ctx context.Context,
 	msg ibcMessage,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	i int,
 	wg *sync.WaitGroup,
 ) {
+
 	assembled, err := msg.assemble(ctx, src, dst)
 	mp.trackMessage(msg.tracker(assembled), i)
 	wg.Done()
@@ -258,15 +307,15 @@ func (mp *messageProcessor) assembleMessage(
 
 // assembleMsgUpdateClient uses the ChainProvider from both pathEnds to assemble the client update header
 // from the source and then assemble the update client message in the correct format for the destination.
-func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, dst *pathEndRuntime) error {
+func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, dst *PathEndRuntime) error {
 	clientID := dst.Info.ClientID
-	clientConsensusHeight := dst.clientState.ConsensusHeight
-	trustedConsensusHeight := dst.clientTrustedState.ClientState.ConsensusHeight
+	clientConsensusHeight := dst.ClientState.ConsensusHeight
+	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
 	var trustedNextValidatorsHash []byte
 	//TODO: remove this comment and below
 	// check clientTrustedState.IBCHeader
-	if dst.clientTrustedState.IBCHeader != nil {
-		trustedNextValidatorsHash = dst.clientTrustedState.IBCHeader.NextValidatorsHash()
+	if dst.ClientTrustedState.IBCHeader != nil {
+		trustedNextValidatorsHash = dst.ClientTrustedState.IBCHeader.NextValidatorsHash()
 	}
 
 	var counterpartyHeader ibcexported.ClientMessage
@@ -288,6 +337,7 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
 					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
 			}
+
 			//counterpartyHeader = blockData
 			//TODO: check this condition
 			//if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
@@ -309,8 +359,8 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
 					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
 			}
-			dst.clientTrustedState = provider.ClientTrustedState{
-				ClientState: dst.clientState,
+			dst.ClientTrustedState = provider.ClientTrustedState{
+				ClientState: dst.ClientState,
 				IBCHeader:   header,
 			}
 			trustedConsensusHeight = clientConsensusHeight
@@ -324,7 +374,7 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 			msgUpdateClientHeader, err := src.ChainProvider.MsgUpdateClientHeader(
 				src.latestHeader,
 				trustedConsensusHeight,
-				dst.clientTrustedState.IBCHeader,
+				dst.ClientTrustedState.IBCHeader,
 			)
 			if err != nil {
 				return fmt.Errorf("error assembling new client header: %w", err)
@@ -356,7 +406,7 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 // in a previous batch.
 func (mp *messageProcessor) trackAndSendMessages(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	needsClientUpdate bool,
 ) error {
 	broadcastBatch := dst.ChainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
@@ -401,7 +451,7 @@ func (mp *messageProcessor) trackAndSendMessages(
 // sendClientUpdate will send an isolated client update message.
 func (mp *messageProcessor) sendClientUpdate(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) {
 	broadcastCtx, cancel := context.WithTimeout(ctx, messageSendTimeout)
 	defer cancel()
@@ -450,7 +500,7 @@ var PathProcMessageCollector chan *PathProcessorMessageResp
 // then increment metrics counters for successful packet messages.
 func (mp *messageProcessor) sendBatchMessages(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	batch []messageToTrack,
 ) {
 	broadcastCtx, cancel := context.WithTimeout(ctx, messageSendTimeout)
@@ -554,7 +604,7 @@ func (mp *messageProcessor) sendBatchMessages(
 // sendSingleMessage will send an isolated message.
 func (mp *messageProcessor) sendSingleMessage(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	tracker messageToTrack,
 ) {
 	var msgs []provider.RelayerMessage

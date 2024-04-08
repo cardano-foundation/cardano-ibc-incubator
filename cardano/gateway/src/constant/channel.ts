@@ -36,3 +36,7 @@ export const ORDER_MAPPING_CHANNEL = {
 };
 
 export const CHANNEL_ID_PREFIX = 'channel';
+
+export const PORT_ID_PREFIX = 'port';
+
+export const TRANSFER_MODULE_PORT = 100;

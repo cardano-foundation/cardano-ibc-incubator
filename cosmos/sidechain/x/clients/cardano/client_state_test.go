@@ -107,7 +107,7 @@ func CreateClientCardano(endpoint *ibctesting.Endpoint) (err error) {
 				RevisionNumber: 0,
 				RevisionHeight: 0,
 			},
-			ValidAfter:       0,
+			ValidAfter:       7200,
 			GenesisTime:      1705895324,
 			CurrentEpoch:     2,
 			EpochLength:      423000,

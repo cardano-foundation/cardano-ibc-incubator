@@ -1,10 +1,12 @@
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import blueprint from "../plutus.json" with { type: "json" };
 import {
+  Address,
+  applyParamsToScript,
   Blockfrost,
-  C,
   Data,
   Emulator,
+  Exact,
   fromHex,
   fromText,
   Kupmios,
@@ -12,27 +14,58 @@ import {
   PROTOCOL_PARAMETERS_DEFAULT,
   Provider,
   Script,
+  ScriptHash,
   SLOT_CONFIG_NETWORK,
   toHex,
   Tx,
-  TxComplete,
-} from "https://deno.land/x/lucid@0.10.7/mod.ts";
+  UTxO,
+} from "npm:@dinhbx/lucid-custom";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
   KUPMIOS_ENV,
   LOCAL_ENV,
 } from "./constants.ts";
-import { AuthToken } from "./types/auth_token.ts";
 import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
-import { OutputReference } from "./types/common/output_reference.ts";
+import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
+import { OutputReference } from "../lucid-types/aiken/transaction/OutputReference.ts";
 
-export const readValidator = (title: string) => {
-  const validator = blueprint.validators.find((v) => v.title === title);
-  if (!validator) {
+export const readValidator = <T extends unknown[] = Data[]>(
+  title: string,
+  lucid: Lucid,
+  params?: Exact<[...T]>,
+  type?: T,
+): [Script, ScriptHash, Address] => {
+  const rawValidator = blueprint.validators.find((v) => v.title === title);
+  if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
-  return toHex(cbor.encode(fromHex(validator.compiledCode)));
+  const encodedValidator = toHex(
+    cbor.encode(fromHex(rawValidator.compiledCode)),
+  );
+
+  let validator: Script;
+
+  if (params === undefined) {
+    validator = {
+      type: "PlutusV2",
+      script: encodedValidator,
+    };
+  } else {
+    validator = {
+      type: "PlutusV2",
+      script: applyParamsToScript(
+        encodedValidator,
+        params,
+        type,
+      ),
+    };
+  }
+
+  const scriptHash = lucid.utils.validatorToScriptHash(validator);
+  const address = lucid.utils.validatorToAddress(validator);
+
+  return [validator, scriptHash, address];
 };
 
 export const submitTx = async (
@@ -83,46 +116,6 @@ export const formatTimestamp = (timestampInMilliseconds: number): string => {
   return formattedDate;
 };
 
-export const queryUtxoByAuthToken = async (
-  lucid: Lucid,
-  address: string,
-  authTokenUnit: string,
-) => {
-  const foundUtxos = await lucid.utxosAt(address);
-  const utxo = foundUtxos.find((utxo) => authTokenUnit in utxo.assets);
-  if (!utxo) {
-    throw new Error(
-      `Unable to find UTXO with address: ${address} - token: ${authTokenUnit}`,
-    );
-  }
-
-  return utxo;
-};
-
-export const increaseExUnits = (txComplete: TxComplete) => {
-  const tx = JSON.parse(txComplete.txComplete.to_json());
-  const newRedeemers = tx.witness_set.redeemers.map(
-    (red: {
-      ex_units: {
-        mem: string;
-        steps: string;
-      };
-    }) => ({
-      ...red,
-      ex_units: {
-        mem: ((BigInt(red.ex_units.mem) * 110n) / 100n).toString(),
-        steps: ((BigInt(red.ex_units.steps) * 110n) / 100n).toString(),
-      },
-    }),
-  );
-  tx.witness_set.redeemers = newRedeemers;
-  const newTxJson = JSON.stringify(tx);
-  const newTx = C.Transaction.from_json(newTxJson);
-  const newTxBytes = toHex(newTx.to_bytes());
-
-  return newTxBytes;
-};
-
 export type Signer = {
   sk: string;
   address: string;
@@ -141,7 +134,7 @@ export const setUp = async (
     provider = new Emulator([
       { address: signer.address, assets: { lovelace: 3000000000000n } },
       { address: signer.address, assets: { lovelace: 3000000000000n } },
-    ], { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 30000 });
+    ], { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 900000 });
   } else if (mode == KUPMIOS_ENV) {
     const kupo = "http://192.168.10.136:1442";
     const ogmios = "ws://192.168.10.136:1337";
@@ -187,10 +180,11 @@ export const generateTokenName = (
 
   if (postfix.length > 16) throw new Error("postfix size > 8 bytes");
 
-  const baseTokenPart = hashSha3_256(baseToken.policyId + baseToken.name).slice(
-    0,
-    40,
-  );
+  const baseTokenPart = hashSha3_256(baseToken.policy_id + baseToken.name)
+    .slice(
+      0,
+      40,
+    );
 
   const prefixPart = hashSha3_256(prefix).slice(0, 8);
 
@@ -199,7 +193,7 @@ export const generateTokenName = (
   return fullName;
 };
 
-const hashSha3_256 = (data: string) => {
+export const hashSha3_256 = (data: string) => {
   const sha3Hasher = createHash("sha3-256");
   const hash = sha3Hasher.update(
     fromHex(data),
@@ -303,16 +297,26 @@ export const parseConnectionSequence = (connectionId: string): bigint => {
 
   return BigInt(fragments.pop()!);
 };
+export const parseChannelSequence = (channelId: string): bigint => {
+  const fragments = channelId.split("-");
+
+  if (fragments.length != 2) throw new Error("Invalid channel id format");
+
+  if (!(fragments.slice(0, -1).join("") === "channel")) {
+    throw new Error("Invalid channel id format");
+  }
+
+  return BigInt(fragments.pop()!);
+};
 
 export const createReferenceScriptUtxo = async (
   lucid: Lucid,
   referredScript: Script,
 ) => {
-  const referenceScript: Script = {
-    type: "PlutusV2",
-    script: readValidator("reference_validator.refer_only"),
-  };
-  const referenceAddress = lucid.utils.validatorToAddress(referenceScript);
+  const [, , referenceAddress] = readValidator(
+    "reference_validator.refer_only",
+    lucid,
+  );
 
   const tx = lucid.newTx().payToContract(referenceAddress, {
     inline: Data.void(),
@@ -335,13 +339,6 @@ export const generateIdentifierTokenName = (outRef: OutputReference) => {
   return hashSha3_256(serializedData);
 };
 
-console.log(
-  generateIdentifierTokenName({
-    transaction_id: { hash: "1234" },
-    output_index: 0n,
-  }),
-);
-
 export const insertSortMap = <K, V>(
   inputMap: Map<K, V>,
   newKey: K,
@@ -358,11 +355,51 @@ export const insertSortMap = <K, V>(
   entriesArray.sort((entry1, entry2) =>
     keyComparator
       ? keyComparator(entry1[0], entry2[0])
-      : Number(entry1[0]) - Number(entry2[0])  
+      : Number(entry1[0]) - Number(entry2[0])
   );
 
   // Create a new Map from the sorted array
   const sortedMap = new Map<K, V>(entriesArray);
 
   return sortedMap;
+};
+
+export const deleteSortMap = <K, V>(
+  sortedMap: Map<K, V>,
+  keyToDelete: K,
+  keyComparator?: (a: K, b: K) => number,
+): Map<K, V> => {
+  // Convert the sorted map to an array of key-value pairs
+  const entriesArray: [K, V][] = Array.from(sortedMap.entries());
+
+  // Find the index of the key to delete
+  const indexToDelete = entriesArray.findIndex(([key]) =>
+    keyComparator ? keyComparator(key, keyToDelete) === 0 : key === keyToDelete
+  );
+
+  // If the key is found, remove it from the array
+  if (indexToDelete !== -1) {
+    entriesArray.splice(indexToDelete, 1);
+  }
+
+  // Create a new Map from the modified array
+  const updatedMap = new Map<K, V>(entriesArray);
+
+  return updatedMap;
+};
+
+export const getNonceOutRef = async (
+  lucid: Lucid,
+): Promise<[UTxO, OutputReference]> => {
+  const signerUtxos = await lucid.wallet.getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO founded");
+  const NONCE_UTXO = signerUtxos[0];
+  const outputReference: OutputReference = {
+    transaction_id: {
+      hash: NONCE_UTXO.txHash,
+    },
+    output_index: BigInt(NONCE_UTXO.outputIndex),
+  };
+
+  return [NONCE_UTXO, outputReference];
 };

@@ -1,22 +1,20 @@
-FROM node
+# Start from the latest Node.js base image
+FROM node:latest
 
+# Set the working directory inside the container
 WORKDIR /app
 
-COPY package.json .
+# Copy package.json and package-lock.json for npm install
+COPY ./package*.json ./
 
-RUN npm install --legacy-peer-deps
+# Install dependencies based on the package.json files
+RUN npm install
 
+# Copy the rest of the application's source code to the container
 COPY . .
 
-COPY .env.example .env
-
-# RUN npm run gen-sk-addr
-# RUN npm i ts-node
-
-# RUN node --loader ts-node/esm src/util/generate-credentials.ts
-
-# RUN npm run ts-node --esm src/util/generate-credentials.ts
-
+# Expose port 4884 to the outside once the container has launched
 EXPOSE 4884
 
-CMD [ "npm", "start" ]
+# Define the command to run the application
+CMD ["npm", "run", "start"]

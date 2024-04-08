@@ -8,5 +8,6 @@ export class UtxoDto {
   datumHash?: string;
   datum?: string | null;
   blockNo: number;
+  blockId: number;
   index: number;
 }

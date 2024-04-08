@@ -22,6 +22,7 @@ import (
 )
 
 // VerifyClientMessage checks if the clientMessage is of type Header or Misbehaviour and verifies the message
+// Called by clientState.VerifyClientMessage, before clientState.CheckForMisbehaviour
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
 	clientMsg exported.ClientMessage,
@@ -29,8 +30,8 @@ func (cs *ClientState) VerifyClientMessage(
 	switch msg := clientMsg.(type) {
 	case *BlockData:
 		return cs.verifyBlockData(ctx, clientStore, cdc, msg)
-	// case *Misbehaviour:
-	// 	return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
+	case *Misbehaviour:
+		return cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	default:
 		return clienttypes.ErrInvalidClientType
 	}
@@ -233,6 +234,7 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, blockData.GetHeight())
 	setConsensusMetadata(ctx, clientStore, blockData.GetHeight())
+	SetConsensusStateBlockHash(clientStore, blockData.GetHeight(), blockData.Hash)
 
 	blockOutput := ExtractBlockDataOutput(ExtractBlockData(blockData.BodyCbor))
 
@@ -294,23 +296,3 @@ func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.Binar
 
 	clientStore.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, &cs))
 }
-
-// checkTrustedBlockHeader checks that consensus state matches trusted fields of Header
-//func checkTrustedBlockHeader(header *Header, consState *ConsensusState) error {
-//	tmTrustedValidators, err := tmtypes.ValidatorSetFromProto(header.TrustedValidators)
-//	if err != nil {
-//		return errorsmod.Wrap(err, "trusted validator set in not cardano validator set type")
-//	}
-//
-//	// assert that trustedVals is NextValidators of last trusted header
-//	// to do this, we check that trustedVals.Hash() == consState.NextValidatorsHash
-//	tvalHash := tmTrustedValidators.Hash()
-//	if !bytes.Equal(consState.NextValidatorsHash, tvalHash) {
-//		return errorsmod.Wrapf(
-//			ErrInvalidValidatorSet,
-//			"trusted validators %s, does not hash to latest trusted validators. Expected: %X, got: %X",
-//			header.TrustedValidators, consState.NextValidatorsHash, tvalHash,
-//		)
-//	}
-//	return nil
-//}

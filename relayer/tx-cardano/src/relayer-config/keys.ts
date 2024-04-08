@@ -1,195 +1,221 @@
-import { homedir } from 'os'
-import { Lucid } from 'lucid-cardano'
-import fs from "fs"
+import { Lucid } from "lucid-cardano";
+import fs from "fs";
 import * as chains from "./chains";
-import { key } from '../proto/protoc/key'
+import { GetPathConfig } from "./config";
+import path from "path";
 
-const userHomeDir = homedir()
-const pathConfig = '/.relayer/config/config.yaml'
-const pathKeys = '/.relayer/keys/'
+const pathConfig = "/config/config.yaml";
+const pathKeys = "/keys/";
 
 export function GetRelayerConfigPath() {
-    return userHomeDir + pathConfig;
+  return GetPathConfig() + pathConfig;
 }
 
-export function GetKeysPathWithKeyName(chainId:string, keyName:string) {
-    return userHomeDir + pathKeys + chainId + '/keyring-test/' + keyName + '.info'
+export function GetKeysPathWithKeyName(chainId: string, keyName: string) {
+  return (
+    GetPathConfig() + pathKeys + chainId + "/keyring-test/" + keyName + ".info"
+  );
 }
 
-export function GetKeysPathWithAddress(chainId:string, address:string) {
-    return userHomeDir + pathKeys + chainId + '/keyring-test/' + address + '.address'
+export function GetKeysPathWithAddress(chainId: string, address: string) {
+  return (
+    GetPathConfig() +
+    pathKeys +
+    chainId +
+    "/keyring-test/" +
+    address +
+    ".address"
+  );
 }
 
-export function KeyExist(chainId:string, keyName:string) {
-    try {
-        const path = GetKeysPathWithKeyName(chainId, keyName)
-        if(fs.existsSync(path)) {
-            return true;
-        } else {
-            return false;
-        }
-    } catch (err) {
-        console.log(err);
-        throw Error(err);
+export function KeyExist(chainId: string, keyName: string) {
+  try {
+    const path = GetKeysPathWithKeyName(chainId, keyName);
+    if (fs.existsSync(path)) {
+      return true;
+    } else {
+      return false;
     }
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }
 
-export async function GenerateKey(chainId:string, keyName:string) {
-    try {
-        const lucid = await Lucid.new(undefined,"Preview");
+export async function GenerateKey(chainId: string, keyName: string) {
+  try {
+    const lucid = await Lucid.new(undefined, "Preview");
 
-        const mnemonic = lucid.utils.generateSeedPhrase();
-        const address = await lucid.selectWalletFromSeed(mnemonic,{addressType:"Enterprise"}).wallet.address();
+    const mnemonic = lucid.utils.generateSeedPhrase();
+    const address = await lucid
+      .selectWalletFromSeed(mnemonic, { addressType: "Enterprise" })
+      .wallet.address();
 
-        const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
+    const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
 
-        const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
-        const keyPathAddress = GetKeysPathWithAddress(chainId, address);
-        
-        fs.writeFileSync(keyPathName,data);
-        fs.writeFileSync(keyPathAddress, data);
+    const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
+    const keyPathAddress = GetKeysPathWithAddress(chainId, address);
 
-        return [address,mnemonic]
-    } catch (err) {
-        console.log(err);
-        throw Error(err);
-    }
+    fs.writeFileSync(keyPathName, data);
+    fs.writeFileSync(keyPathAddress, data);
+
+    return [address, mnemonic];
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }
 
-export function GetKey(chainId:string, keyName:string) {
-    try {
-        const path = GetKeysPathWithKeyName(chainId, keyName);
+export function GetKey(chainId: string, keyName: string) {
+  try {
+    const path = GetKeysPathWithKeyName(chainId, keyName);
 
-        const data = fs.readFileSync(path, 'utf-8')
-        
-        const lines = data.split('\n');
-        const keyValuePairs = lines.map(line => line.split('='));
+    const data = fs.readFileSync(path, "utf-8");
 
-        const keyObject = keyValuePairs.reduce((acc, [key, value]) => ({ ...acc, [key]: (value || "").trim() }), {});
+    const lines = data.split("\n");
+    const keyValuePairs = lines.map((line) => line.split("="));
 
-        return keyObject
-    
-    } catch (err) {
-        console.log(err);
-        throw Error(err);
-    }
+    const keyObject = keyValuePairs.reduce(
+      (acc, [key, value]) => ({ ...acc, [key]: (value || "").trim() }),
+      {}
+    );
+
+    return keyObject;
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }
 
-export async function DeleteKey(chainId:string, keyName:string) {
-    try {
-        const pathName = GetKeysPathWithKeyName(chainId, keyName)
-        const key = await GetKey(chainId, keyName)
-        const pathAddress = GetKeysPathWithAddress(chainId,key['ADDRESS'])
+export async function DeleteKey(chainId: string, keyName: string) {
+  try {
+    const pathName = GetKeysPathWithKeyName(chainId, keyName);
+    const key = await GetKey(chainId, keyName);
+    const pathAddress = GetKeysPathWithAddress(chainId, key["ADDRESS"]);
 
-        // delete file <key_name>.info
-        fs.unlinkSync(pathName)
-        // delete file <address>.address
-        // TODO: rever file <key_name>.info if err
-        fs.unlinkSync(pathAddress)
-    } catch (err) {
-        console.log(err);
-        throw Error(err)
-    }
+    // delete file <key_name>.info
+    fs.unlinkSync(pathName);
+    // delete file <address>.address
+    // TODO: rever file <key_name>.info if err
+    fs.unlinkSync(pathAddress);
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }
 
-export async function GetListKey(chainId:string) {
-    try {
-        const pathFolder = homedir + pathKeys + chainId
+export async function GetListKey(chainId: string) {
+  try {
+    const pathFolder = GetPathConfig() + pathKeys + chainId;
 
-        if(!fs.existsSync(pathFolder)) {
-            fs.mkdirSync(pathFolder)
-        }
-
-        const path = pathFolder+ '/keyring-test/'
-        // fs.accessSync
-        if(!fs.existsSync(path)) {
-            fs.mkdirSync(path)
-        }
-
-        const files = fs.readdirSync(path, {});
-
-        let listKeyName: string[] = [];
-        files.forEach(file => {
-            if(file.endsWith('.info')) {
-                const name = file.split('.')[0];
-                listKeyName.push(name)
-            }
-        });
-        
-        const keys = await Promise.all(listKeyName.map(keyName => GetKey(chainId, keyName))).catch(() => []) || []
-        return keys
-    } catch (err) {
-        console.log(err);
-        throw Error(err);
+    if (!fs.existsSync(pathFolder)) {
+      fs.mkdirSync(pathFolder, { recursive: true });
     }
+
+    const path = pathFolder + "/keyring-test/";
+    // fs.accessSync
+    if (!fs.existsSync(path)) {
+      fs.mkdirSync(path, { recursive: true });
+    }
+
+    const files = fs.readdirSync(path, {});
+
+    let listKeyName: string[] = [];
+    files.forEach((file) => {
+      if (file.endsWith(".info")) {
+        const name = file.split(".")[0];
+        listKeyName.push(name);
+      }
+    });
+
+    const keys =
+      (await Promise.all(
+        listKeyName.map((keyName) => GetKey(chainId, keyName))
+      ).catch(() => [])) || [];
+    return keys;
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }
 
-export function KeyFromKeyOrAddress(chainId:string, keyNamOrAddress: string) {
-    try{
-        if(KeyExist(chainId, keyNamOrAddress)) {
-            return keyNamOrAddress
-        }
-        const path = GetKeysPathWithAddress(chainId, keyNamOrAddress)
-
-        if(fs.existsSync(path)) {
-            const data = fs.readFileSync(path, 'utf-8')
-        
-            const lines = data.split('\n');
-            const keyValuePairs = lines.map(line => line.split('='));
-
-            const keyObject = keyValuePairs.reduce((acc, [key, value]) => ({ ...acc, [key]: value.trim() }), {});
-
-            return keyObject['NAME']
-        }
-
-        return ""
-    } catch(err) {
-        console.log(err);
-        throw Error
+export function KeyFromKeyOrAddress(chainId: string, keyNamOrAddress: string) {
+  try {
+    if (KeyExist(chainId, keyNamOrAddress)) {
+      return keyNamOrAddress;
     }
+    const path = GetKeysPathWithAddress(chainId, keyNamOrAddress);
+
+    if (fs.existsSync(path)) {
+      const data = fs.readFileSync(path, "utf-8");
+
+      const lines = data.split("\n");
+      const keyValuePairs = lines.map((line) => line.split("="));
+
+      const keyObject = keyValuePairs.reduce(
+        (acc, [key, value]) => ({ ...acc, [key]: value.trim() }),
+        {}
+      );
+
+      return keyObject["NAME"];
+    }
+
+    return "";
+  } catch (err) {
+    console.log(err);
+    throw Error;
+  }
 }
 
 export function GetPrivateKeyUse(chainId: string) {
-    try{
-        // get chain
-        const chain = chains.GetChainConfig(chainId)
-        // get key use
-        const key = GetKey(chainId, chain.value.key)
-        return key['PRIVATEKEY']
-    } catch(err) {
-        throw Error
-    }
+  try {
+    // get chain
+    const chain = chains.GetChainConfig(chainId);
+    // get key use
+    const key = GetKey(chainId, chain.value.key);
+    return key["PRIVATEKEY"];
+  } catch (err) {
+    throw Error;
+  }
 }
 
 export function GetMnemonicKeyUse(chainId: string) {
-    try{
-        // get chain
-        const chain = chains.GetChainConfig(chainId)
-        // get key use
-        const key = GetKey(chainId, chain.value.key)
-        return key['MNEMONIC']
-    } catch(err) {
-        throw Error
-    }
+  try {
+    // get chain
+    const chain = chains.GetChainConfig(chainId);
+    // get key use
+    const key = GetKey(chainId, chain.value.key);
+    return key["MNEMONIC"];
+  } catch (err) {
+    throw Error;
+  }
 }
 
-export async function RestoreKey(chainId: string, mnemonic:string , keyName: string) {
-    try {
-        const lucid = await Lucid.new(undefined,"Preview");
+export async function RestoreKey(
+  chainId: string,
+  mnemonic: string,
+  keyName: string
+) {
+  try {
+    const lucid = await Lucid.new(undefined, "Preview");
 
-        const address = await lucid.selectWalletFromSeed(mnemonic,{addressType:"Enterprise"}).wallet.address();
+    const address = await lucid
+      .selectWalletFromSeed(mnemonic, { addressType: "Enterprise" })
+      .wallet.address();
 
-        const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
+    const data = `MNEMONIC=${mnemonic}\nADDRESS=${address}\nNAME=${keyName}`;
 
-        const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
-        const keyPathAddress = GetKeysPathWithAddress(chainId, address);
-        
-        fs.writeFileSync(keyPathName,data);
-        fs.writeFileSync(keyPathAddress, data);
+    const keyPathName = GetKeysPathWithKeyName(chainId, keyName);
+    const keyPathAddress = GetKeysPathWithAddress(chainId, address);
 
-        return address
-    } catch (err) {
-        console.log(err);
-        throw Error(err);
-    }
+    fs.mkdirSync(path.dirname(keyPathName), { recursive: true });
+    fs.writeFileSync(keyPathName, data);
+    fs.mkdirSync(path.dirname(keyPathAddress), { recursive: true });
+    fs.writeFileSync(keyPathAddress, data);
+
+    return address;
+  } catch (err) {
+    console.log(err);
+    throw Error(err);
+  }
 }

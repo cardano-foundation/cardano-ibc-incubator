@@ -33,6 +33,10 @@ pub fn shr(a: Int, shift: Int) -> Int {
   a / pow2(shift)
 }
 
+pub fn len(x: Int) -> Int {
+  len64(x)
+}
+
 pub fn len64(x: Int) -> Int {
   if x >= ( 1 |> shl(32) ) {
     let x = x |> shr(32)
@@ -58,6 +62,18 @@ pub fn put_uint64(v: Int) -> ByteArray {
     |> push(v |> shr(16))
     |> push(v |> shr(8))
     |> push(v)
+}
+
+pub fn put_uint64_big_endian(v: Int) -> ByteArray {
+  #[]
+    |> push(v)
+    |> push(v |> shr(8))
+    |> push(v |> shr(16))
+    |> push(v |> shr(24))
+    |> push(v |> shr(32))
+    |> push(v |> shr(40))
+    |> push(v |> shr(48))
+    |> push(v |> shr(56))
 }
 
 fn recursive_bitwise_operation(

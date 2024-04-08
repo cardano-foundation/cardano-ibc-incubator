@@ -147,7 +147,7 @@ func (ccp *CardanoChainProcessor) handleConnectionMessage(eventType string, ci p
 
 func (ccp *CardanoChainProcessor) handleClientMessage(ctx context.Context, eventType string, ci clientInfo) {
 	ccp.latestClientState.update(ctx, ci, ccp)
-	ccp.log.With(zap.String(eventType, "implement me"))
+	ccp.logObservedIBCMessage(eventType, zap.String("client_id", ci.clientID))
 }
 
 func (ccp *CardanoChainProcessor) logConnectionMessage(message string, ci provider.ConnectionInfo) {

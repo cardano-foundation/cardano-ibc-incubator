@@ -1,7 +1,7 @@
 use aiken/list
 use aiken/transaction.{NoDatum, Output}
 use aiken/transaction/credential
-use aiken/transaction/value
+use aiken/transaction/value.{MintedValue}
 use ibc/auth.{AuthToken}
 
 test test_contain_auth_token() {
@@ -197,4 +197,32 @@ test test_extract_token_sequence() {
     ]
   test_cases
     |> list.all(fn(case) { auth.extract_token_sequence(case.1st) == case.2nd })
+}
+
+//===================================mint_auth_token==================================
+fn setup_mint_auth_token() -> (AuthToken, MintedValue) {
+  let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
+
+  let mint =
+    value.from_asset(token.policy_id, token.name, 1) |> value.to_minted_value()
+
+  (token, mint)
+}
+
+test mint_auth_token_succeed() {
+  let (token, mint) = setup_mint_auth_token()
+
+  auth.mint_auth_token(mint, token)
+}
+
+test mint_auth_token_fail() fail {
+  let (token, mint) = setup_mint_auth_token()
+
+  let mint =
+    mint
+      |> value.from_minted_value()
+      |> value.add(token.policy_id, token.name, 1)
+      |> value.to_minted_value()
+
+  auth.mint_auth_token(mint, token)
 }

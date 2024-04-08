@@ -128,8 +128,13 @@ RUN chmod +x /entrypoint.sh
 # RUN bash -c "cd /root/sidechain/workspace2/sidechain && DO_NOT_TRACK=1 ignite chain serve"
 
 EXPOSE 26657
+EXPOSE 26656
 EXPOSE 4500
 EXPOSE 1317
+
+# RUN bash -c "source /root/.bashrc"
+# WORKDIR "/root/sidechain/workspace2/sidechain"
+# RUN bash -c "DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' C_INCLUDE_PATH="/root/.ghcup/ghc/8.10.7/lib/ghc-8.10.7/include:$C_INCLUDE_PATH" ignite chain build -y && ignite chain init -y "
 
 ENTRYPOINT ["/entrypoint.sh"]
 # CMD "ignite chain serve --help"

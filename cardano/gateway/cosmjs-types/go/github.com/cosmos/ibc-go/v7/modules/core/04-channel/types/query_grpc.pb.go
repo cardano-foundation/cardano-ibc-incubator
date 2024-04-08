@@ -32,6 +32,7 @@ const (
 	Query_UnreceivedPackets_FullMethodName      = "/ibc.core.channel.v1.Query/UnreceivedPackets"
 	Query_UnreceivedAcks_FullMethodName         = "/ibc.core.channel.v1.Query/UnreceivedAcks"
 	Query_NextSequenceReceive_FullMethodName    = "/ibc.core.channel.v1.Query/NextSequenceReceive"
+	Query_ProofUnreceivedPackets_FullMethodName = "/ibc.core.channel.v1.Query/ProofUnreceivedPackets"
 )
 
 // QueryClient is the client API for Query service.
@@ -72,6 +73,7 @@ type QueryClient interface {
 	UnreceivedAcks(ctx context.Context, in *QueryUnreceivedAcksRequest, opts ...grpc.CallOption) (*QueryUnreceivedAcksResponse, error)
 	// NextSequenceReceive returns the next receive sequence for a given channel.
 	NextSequenceReceive(ctx context.Context, in *QueryNextSequenceReceiveRequest, opts ...grpc.CallOption) (*QueryNextSequenceReceiveResponse, error)
+	ProofUnreceivedPackets(ctx context.Context, in *QueryProofUnreceivedPacketsRequest, opts ...grpc.CallOption) (*QueryProofUnreceivedPacketsResponse, error)
 }
 
 type queryClient struct {
@@ -199,6 +201,15 @@ func (c *queryClient) NextSequenceReceive(ctx context.Context, in *QueryNextSequ
 	return out, nil
 }
 
+func (c *queryClient) ProofUnreceivedPackets(ctx context.Context, in *QueryProofUnreceivedPacketsRequest, opts ...grpc.CallOption) (*QueryProofUnreceivedPacketsResponse, error) {
+	out := new(QueryProofUnreceivedPacketsResponse)
+	err := c.cc.Invoke(ctx, Query_ProofUnreceivedPackets_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -237,6 +248,7 @@ type QueryServer interface {
 	UnreceivedAcks(context.Context, *QueryUnreceivedAcksRequest) (*QueryUnreceivedAcksResponse, error)
 	// NextSequenceReceive returns the next receive sequence for a given channel.
 	NextSequenceReceive(context.Context, *QueryNextSequenceReceiveRequest) (*QueryNextSequenceReceiveResponse, error)
+	ProofUnreceivedPackets(context.Context, *QueryProofUnreceivedPacketsRequest) (*QueryProofUnreceivedPacketsResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -282,6 +294,9 @@ func (UnimplementedQueryServer) UnreceivedAcks(context.Context, *QueryUnreceived
 }
 func (UnimplementedQueryServer) NextSequenceReceive(context.Context, *QueryNextSequenceReceiveRequest) (*QueryNextSequenceReceiveResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NextSequenceReceive not implemented")
+}
+func (UnimplementedQueryServer) ProofUnreceivedPackets(context.Context, *QueryProofUnreceivedPacketsRequest) (*QueryProofUnreceivedPacketsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ProofUnreceivedPackets not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -530,6 +545,24 @@ func _Query_NextSequenceReceive_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_ProofUnreceivedPackets_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryProofUnreceivedPacketsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).ProofUnreceivedPackets(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_ProofUnreceivedPackets_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).ProofUnreceivedPackets(ctx, req.(*QueryProofUnreceivedPacketsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -588,6 +621,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NextSequenceReceive",
 			Handler:    _Query_NextSequenceReceive_Handler,
+		},
+		{
+			MethodName: "ProofUnreceivedPackets",
+			Handler:    _Query_ProofUnreceivedPackets_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

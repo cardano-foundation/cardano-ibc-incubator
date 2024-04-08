@@ -8,27 +8,18 @@ use aiken/bytearray.{concat, length, push}
 use aiken/list
 use aiken/option.{is_none}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/commitment_pb.{
-  MerklePrefix, marshal_for_merkle_prefix, size_for_merkle_prefix,
+  marshal_for_merkle_prefix, size_for_merkle_prefix,
 }
+use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
+use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/utils/bits.{band, bor, len64, shl, shr}
 use ibc/utils/int.{Int32, Int64, Uint64, uint64}
-
-pub type Version {
-  identifier: ByteArray,
-  features: List<ByteArray>,
-}
 
 pub type State {
   UNINITIALIZED
   INIT
   TRYOPEN
   OPEN
-}
-
-pub type Counterparty {
-  client_id: ByteArray,
-  connection_id: ByteArray,
-  prefix: MerklePrefix,
 }
 
 pub type ConnectionEnd {

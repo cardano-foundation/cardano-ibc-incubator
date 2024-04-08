@@ -2,7 +2,9 @@ import { ClientState as ClientStateTendermint } from '@cosmjs-types/src/ibc/ligh
 import { bytesFromBase64, toDuration } from '@cosmjs-types/src/helpers';
 import { hashOpFromJSON, lengthOpFromJSON } from '@cosmjs-types/src/cosmos/ics23/v1/proofs';
 import { ClientState } from '../types/client-state-types';
-
+import { convertHex2String, convertString2Hex } from './hex';
+import { convertToProofType } from './proof_types';
+import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 export function normalizeClientStateFromDatum(clientState: ClientState): ClientStateTendermint {
   const clientStateTendermint: ClientStateTendermint = {
     chain_id: clientState.chainId,
@@ -74,4 +76,97 @@ function convertProofSpec(proofSpec: any): any {
     max_depth: Number(proofSpec.max_depth),
     min_depth: Number(proofSpec.min_depth),
   };
+}
+// Convert client state operator to a structured ClientState object for submit on cardano
+export function initializeClientState(clientStateMsg: ClientStateTendermint): ClientState {
+  // Helper function to convert numbers to BigInt
+  const convertToBigInt = (value: any): bigint | null => value;
+
+  const convertHeight = (height: any): { revisionNumber: bigint | null; revisionHeight: bigint | null } => ({
+    revisionNumber: convertToBigInt(height?.revision_number),
+    revisionHeight: convertToBigInt(height?.revision_height),
+  });
+  // Build the client state object
+  const clientState: ClientState = {
+    chainId: convertString2Hex(clientStateMsg.chain_id),
+    trustLevel: {
+      //TODO: remove hardcode 2n
+      numerator: convertToBigInt(clientStateMsg.trust_level?.numerator),
+      denominator: convertToBigInt(clientStateMsg.trust_level?.denominator),
+    },
+    trustingPeriod: convertToBigInt(clientStateMsg.trusting_period.seconds * 10n ** 9n),
+    unbondingPeriod: convertToBigInt(clientStateMsg.unbonding_period.seconds * 10n ** 9n),
+    maxClockDrift: convertToBigInt(clientStateMsg.max_clock_drift.seconds * 10n ** 9n),
+    frozenHeight: convertHeight(clientStateMsg.frozen_height),
+    latestHeight: convertHeight(clientStateMsg.latest_height),
+    proofSpecs: convertToProofType(clientStateMsg.proof_specs),
+  };
+
+  return clientState;
+}
+
+// Validate the structure and values of the client state
+export function validateClientState(clientState: ClientState): GrpcInvalidArgumentException {
+  if (clientState.chainId?.length === 0) {
+    return new GrpcInvalidArgumentException('chain id cannot be empty string');
+  }
+  const chainIdUtf8 = convertHex2String(clientState.chainId);
+  if (chainIdUtf8?.length > 50) {
+    return new GrpcInvalidArgumentException(`chainID is too long; got: ${chainIdUtf8.length}, max: 50`);
+  }
+  // ValidateTrustLevel checks that trustLevel is within the allowed range [1/3,
+  // 1]. If not, it returns an error. 1/3 is the minimum amount of trust needed
+  // which does not break the security model.
+  if (
+    (clientState.trustLevel?.numerator !== null &&
+      clientState.trustLevel?.denominator !== null &&
+      BigInt(clientState.trustLevel?.numerator) * BigInt(3) < clientState.trustLevel?.denominator) || // < 1/3
+    clientState.trustLevel?.numerator > clientState.trustLevel?.denominator || // > 1
+    (clientState.trustLevel?.numerator !== null &&
+      clientState.trustLevel?.numerator > clientState.trustLevel?.denominator) || // ? This condition seems incorrect. Did you mean denominator?
+    clientState.trustLevel?.denominator === null ||
+    clientState.trustLevel?.denominator === BigInt(0)
+  ) {
+    return new GrpcInvalidArgumentException('trustLevel must be within [1/3, 1]');
+  }
+  if (clientState.trustingPeriod <= 0) {
+    return new GrpcInvalidArgumentException('trusting period must be greater than zero');
+  }
+  if (clientState.unbondingPeriod <= 0) {
+    return new GrpcInvalidArgumentException('unbonding period must be greater than zero');
+  }
+  if (clientState.maxClockDrift <= 0) {
+    return new GrpcInvalidArgumentException('max clock drift must be greater than zero');
+  }
+  // the latest height revision number must match the chain id revision number
+  if (chainIdUtf8.includes('-')) {
+    const [_, chainIdRevision] = chainIdUtf8?.split('-');
+    const isValidRevisionNumber =
+      !chainIdRevision || clientState.latestHeight?.revisionNumber.toString() === chainIdRevision;
+
+    if (!isValidRevisionNumber) {
+      throw new GrpcInvalidArgumentException('Latest height revision number must match chain ID revision number');
+    }
+  }
+  if (clientState.latestHeight?.revisionHeight == BigInt(0)) {
+    return new GrpcInvalidArgumentException('tendermint clients latest height revision height cannot be zero');
+  }
+  if (clientState.trustingPeriod >= clientState.unbondingPeriod) {
+    return new GrpcInvalidArgumentException(
+      `trusting period ${clientState.trustingPeriod} should be < unbonding period ${clientState.unbondingPeriod}`,
+    );
+  }
+  //
+  // for (let i = 0; i < clientState.proofSpecs?.length; i++) {
+  //   const spec = clientState.proofSpecs[i];
+  //   if (spec === null) {
+  //     throw new GrpcInvalidArgumentException(`proof spec cannot be null at index: ${i}`);
+  //   }
+  // }
+  //
+}
+
+export function isExpired(cs: ClientState, latestTimestamp: bigint, now: bigint): boolean {
+  const expirationTime = latestTimestamp + cs.trustingPeriod;
+  return expirationTime < now;
 }

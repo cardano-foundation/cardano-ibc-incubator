@@ -52,12 +52,15 @@ pub type NonExistenceProof {
   right: ExistenceProof,
 }
 
-pub type CommitmentProof {
-  proof: CommitmentProof_Exist,
+pub type CommitmentProof_Proof {
+  CommitmentProof_Exist { exist: ExistenceProof }
+  CommitmentProof_Nonexist { non_exist: NonExistenceProof }
+  CommitmentProof_Batch
+  CommitmentProof_Compressed
 }
 
-pub type CommitmentProof_Exist {
-  exist: ExistenceProof,
+pub type CommitmentProof {
+  proof: CommitmentProof_Proof,
 }
 
 pub type CommitmentRoot =
@@ -89,6 +92,14 @@ pub fn null_inner_op() -> InnerOp {
 
 pub fn null_existance_proof() -> ExistenceProof {
   ExistenceProof { key: #[], value: #[], leaf: null_leaf_op(), path: [] }
+}
+
+pub fn null_non_existance_proof() -> NonExistenceProof {
+  NonExistenceProof {
+    key: #[],
+    left: null_existance_proof(),
+    right: null_existance_proof(),
+  }
 }
 
 pub fn null_commitment_proof() -> CommitmentProof {
@@ -155,6 +166,31 @@ pub fn iavl_spec() -> ProofSpec {
   }
 }
 
-pub fn spec_equals(_p: ProofSpec, _spec: ProofSpec) -> Bool {
-  True
+/// tendermint_spec() constructs a tendermint spec that constrains the format from proofs-tendermint (crypto/merkle SimpleProof)
+pub fn tendermint_spec() -> ProofSpec {
+  ProofSpec {
+    leaf_spec: LeafOp {
+      hash: hash_op_sha256,
+      prehash_key: hash_op_no_hash,
+      prehash_value: hash_op_sha256,
+      length: length_op_var_proto,
+      prefix: #[0],
+    },
+    inner_spec: InnerSpec {
+      child_order: [0, 1],
+      min_prefix_length: 1,
+      max_prefix_length: 1,
+      child_size: 32,
+      empty_child: #[],
+      hash: hash_op_sha256,
+    },
+    max_depth: 0,
+    min_depth: 0,
+    prehash_key_before_comparison: False,
+  }
+}
+
+//TODO: Need to implement over-declares equality
+pub fn spec_equals(p: ProofSpec, spec: ProofSpec) -> Bool {
+  p == spec
 }

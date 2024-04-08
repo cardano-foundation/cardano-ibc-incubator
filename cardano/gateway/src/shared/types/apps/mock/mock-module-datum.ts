@@ -1,10 +1,10 @@
-import { Data } from 'lucid-cardano';
+import { Data } from '@dinhbx/lucid-custom';
 export type MockModuleDatum = {
   opened_channels: Map<string, boolean>;
   received_packets: string[];
 };
 
-export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: typeof import('lucid-cardano')) {
+export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: typeof import('@dinhbx/lucid-custom')) {
   const { Data } = Lucid;
 
   const MockModuleDatumSchema = Data.Object({
@@ -17,7 +17,10 @@ export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: type
   return Data.from(mockModuleDatum, TMockModuleDatum);
 }
 
-export async function encodeMockModuleDatum(mockModuleDatum: MockModuleDatum, Lucid: typeof import('lucid-cardano')) {
+export async function encodeMockModuleDatum(
+  mockModuleDatum: MockModuleDatum,
+  Lucid: typeof import('@dinhbx/lucid-custom'),
+) {
   const { Data } = Lucid;
 
   const MockModuleDatumSchema = Data.Object({

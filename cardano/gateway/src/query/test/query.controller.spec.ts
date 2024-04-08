@@ -15,7 +15,7 @@ import {
   QueryLatestHeightRequest,
   QueryNewClientRequest,
 } from '@cosmjs-types/src/ibc/core/client/v1/query';
-import { QueryBlockResultsRequest } from '@cosmjs-types/src/ibc/core/types/v1/query';
+import { QueryBlockResultsRequest, QueryTransactionByHashRequest } from '@cosmjs-types/src/ibc/core/types/v1/query';
 import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
@@ -31,10 +31,18 @@ import { dbServiceMock } from './mock/db-sync';
 import { connectionDatumMock } from './mock/connection-datum';
 import {
   block_results as blockResults,
+  block_results_has_client_event as blockResultsHasClientEvent,
+  block_results_has_connection_event as blockResultsHasConnectionEvent,
+  block_results_has_channel_event as blockResultsHasChannelEvent,
   query_connections_expected as queryConnectionsExpected,
   query_connection_expected as queryConnectionExpected,
   query_channels_expected as queryChannelsExpected,
   query_channel_expected as queryChannelExpected,
+  query_packet_acknowledgement_expected as queryPacketAcknowledgementExpected,
+  query_packet_acknowledgements_expected as queryPacketAcknowledgementsExpected,
+  query_packet_commitment_expected as queryPacketCommitmentExpected,
+  query_packet_receipt_expected as queryPacketReceiptExpected,
+  query_proof_unreceipt_expected as queryProofUnreceiptExpected,
 } from './mock/expected_data';
 import { QueryConnectionRequest, QueryConnectionsRequest } from '@cosmjs-types/src/ibc/core/connection/v1/query';
 import { PageRequest } from '@cosmjs-types/src/cosmos/base/query/v1beta1/pagination';
@@ -43,6 +51,14 @@ import {
   QueryChannelRequest,
   QueryChannelsRequest,
   QueryConnectionChannelsRequest,
+  QueryPacketAcknowledgementRequest,
+  QueryPacketAcknowledgementsRequest,
+  QueryPacketCommitmentRequest,
+  QueryPacketCommitmentsRequest,
+  QueryPacketReceiptRequest,
+  QueryProofUnreceivedPacketsRequest,
+  QueryUnreceivedAcksRequest,
+  QueryUnreceivedPacketsRequest,
 } from '../../../cosmjs-types/src/ibc/core/channel/v1/query';
 import { channelDatumMock } from './mock/channel-datum';
 
@@ -105,6 +121,12 @@ const mockDbService = {
   }),
   getRedeemersByTxIdAndMintScriptOrSpendAddr: jest.fn().mockImplementation(() => {
     return new Promise((resolve) => resolve(dbServiceMock.getRedeemersByTxIdAndMintScriptOrSpendAddr));
+  }),
+  queryLatestBlockNo: jest.fn().mockImplementation(() => {
+    return new Promise((resolve) => resolve(dbServiceMock.queryLatestBlockNo));
+  }),
+  findTxByHash: jest.fn().mockImplementation(() => {
+    return new Promise((resolve) => resolve(dbServiceMock.findTxByHash));
   }),
 };
 jest.mock('@shared/types/handler-datum', () => {
@@ -346,16 +368,11 @@ describe('QueryController', () => {
     });
 
     it('QueryLatestHeigh should be called failed', async () => {
-      const expectMessage = 'blockHeight';
-      createStateQueryClientMock.mockImplementationOnce(() => {
-        return new Promise((resolve) =>
-          resolve({
-            blockHeight: jest
-              .fn()
-              .mockImplementation(() => new Promise((resolve, reject) => reject(new Error(expectMessage)))),
-          } as unknown as StateQueryClient),
-        );
+      const expectMessage = '{"error":"Not found: No blocks found.","type":"string","exceptionName":"RpcException"}';
+      jest.spyOn(mockDbService, 'queryLatestBlockNo').mockImplementationOnce(() => {
+        throw new GrpcNotFoundException(`Not found: No blocks found.`);
       });
+
       try {
         const data = await controller.LatestHeight(<QueryLatestHeightRequest>{});
         expect(data).toBe(expectMessage);
@@ -401,13 +418,71 @@ describe('QueryController', () => {
   });
 
   describe('Test QueryBlockResults', () => {
-    it('QueryBlockResults should be called successfully', async () => {
+    it('QueryBlockResults with client event should be called successfully', async () => {
+      jest.spyOn(mockDbService, 'findUtxosByBlockNo').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve([]));
+      });
+      jest.spyOn(mockDbService, 'findUtxoClientOrAuthHandler').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve(dbServiceMock.findUtxoClientOrAuthHandlerTrusted));
+      });
       const data = await controller.BlockResults(<QueryBlockResultsRequest>{
         height: 650879n,
       });
 
-      expect(data).toMatchObject(blockResults);
+      expect(data).toMatchObject(blockResultsHasClientEvent);
     });
+
+    it('QueryBlockResults with connection event should be called successfully', async () => {
+      jest.spyOn(mockDbService, 'findUtxosByBlockNo').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve(dbServiceMock.findUtxosByBlockNoHasConnectionEvent));
+      });
+      jest.spyOn(mockDbService, 'findUtxoClientOrAuthHandler').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve([]));
+      });
+      const data = await controller.BlockResults(<QueryBlockResultsRequest>{
+        height: 650879n,
+      });
+
+      expect(data).toMatchObject(blockResultsHasConnectionEvent);
+    });
+
+    it('QueryBlockResults with channel event should be called successfully', async () => {
+      jest.spyOn(mockDbService, 'findUtxosByBlockNo').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve(dbServiceMock.findUtxosByBlockNoHasChannelEvent));
+      });
+      jest.spyOn(mockDbService, 'findUtxoClientOrAuthHandler').mockImplementationOnce(() => {
+        return new Promise((resolve) => resolve([]));
+      });
+
+      const data = await controller.BlockResults(<QueryBlockResultsRequest>{
+        height: 650879n,
+      });
+
+      expect(data).toMatchObject(blockResultsHasChannelEvent);
+    });
+
+    // it('QueryBlockResults with send packet event should be called successfully', async () => {
+    //   jest.mock('@shared/types/channel/channel-datum', () => {
+    //     return {
+    //       decodeChannelDatum: jest.fn().mockImplementation((data) => {
+    //         return new Promise((resolve) => resolve(null));
+    //       }),
+    //     };
+    //   });
+    //   jest.spyOn(mockDbService, 'findUtxosByBlockNo').mockImplementationOnce(() => {
+    //     return new Promise((resolve) => resolve(dbServiceMock.findUtxosByBlockNoHasSendPacketEvent));
+    //   });
+    //   jest.spyOn(mockDbService, 'findUtxoClientOrAuthHandler').mockImplementationOnce(() => {
+    //     return new Promise((resolve) => resolve([]));
+    //   });
+
+    //   const data = await controller.BlockResults(<QueryBlockResultsRequest>{
+    //     height: 650879n,
+    //   });
+    //   console.dir(data, { depth: 10 });
+
+    //   expect(data).toMatchObject(blockResultsHasChannelEvent);
+    // });
 
     it('QueryBlockResults should be called failed with invalid params', async () => {
       const expectMessage =
@@ -692,6 +767,455 @@ describe('QueryController', () => {
         expect(data).toBe(expectMessage);
       } catch (error) {
         expect(error.message).toContain(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryPacketAcknowledgement', () => {
+    it('QueryPacketAcknowledgement should be called successfully', async () => {
+      const data = await controller.queryPacketAcknowledgement(<QueryPacketAcknowledgementRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-1',
+        /** packet sequence */
+        sequence: 0n,
+      });
+
+      expect(data.acknowledgement).toBe(queryPacketAcknowledgementExpected.acknowledgement);
+      expect(Buffer.from(data.proof).toString('base64')).toBe(queryPacketAcknowledgementExpected.proof);
+      expect(data.proof_height).toMatchObject(queryPacketAcknowledgementExpected.proof_height);
+    });
+
+    it('QueryPacketAcknowledgement should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgement(<QueryPacketAcknowledgementRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+
+    it('QueryPacketAcknowledgement should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgement(<QueryPacketAcknowledgementRequest>{
+          channel_id: 'channel-1',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+
+    it('QueryPacketAcknowledgement should be called failed because the parameter `sequence` is less than 0', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"sequence\\" must be greater than 0","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgement(<QueryPacketAcknowledgementRequest>{
+          channel_id: 'channel-1',
+          port_id: 'port-99',
+          sequence: -1n,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryPacketAcknowledgements', () => {
+    it('QueryPacketAcknowledgements should be called successfully', async () => {
+      const data = await controller.queryPacketAcknowledgements(<QueryPacketAcknowledgementsRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        pagination: {
+          offset: 0,
+          limit: 5,
+        } as unknown as PageRequest,
+        /** list of packet sequences */
+        packet_commitment_sequences: [],
+      });
+      expect(data.acknowledgements.length).toBe(5);
+      expect(data.acknowledgements[0].channel_id).toBe('channel-0');
+      expect(data.acknowledgements[0].port_id).toBe('port-99');
+      // expect(data.acknowledgements[0].sequence).toBe(0n);
+    });
+    it('QueryPacketAcknowledgements should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgements(<QueryPacketAcknowledgementsRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketAcknowledgements should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgements(<QueryPacketAcknowledgementsRequest>{
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketAcknowledgements should be called failed because the parameter `limit` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"pagination.limit\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketAcknowledgements(<QueryPacketAcknowledgementsRequest>{
+          channel_id: 'channel-0',
+          port_id: 'port-99',
+          pagination: {
+            offset: 0,
+          } as unknown as PageRequest,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryPacketCommitment', () => {
+    it('QueryPacketCommitment should be called successfully', async () => {
+      const data = await controller.queryPacketCommitment(<QueryPacketCommitmentRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        /** packet sequence */
+        sequence: 1n,
+      });
+
+      expect(data.commitment).toBe(queryPacketCommitmentExpected.commitment);
+      expect(Buffer.from(data.proof).toString('base64')).toBe(queryPacketCommitmentExpected.proof);
+      expect(data.proof_height).toMatchObject(queryPacketCommitmentExpected.proof_height);
+    });
+    it('QueryPacketCommitment should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitment(<QueryPacketCommitmentRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketCommitment should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitment(<QueryPacketCommitmentRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketCommitment should be called failed because the parameter `sequence` is less than 0', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"sequence\\" must be greater than 0","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitment(<QueryPacketCommitmentRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+          port_id: 'port-99',
+          sequence: -1n,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryPacketCommitments', () => {
+    it('QueryPacketCommitments should be called successfully', async () => {
+      const data = await controller.queryPacketCommitments(<QueryPacketCommitmentsRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        pagination: {
+          offset: 0,
+          limit: 5,
+        } as unknown as PageRequest,
+      });
+      expect(data.commitments.length).toBe(1);
+      expect(data.commitments[0].channel_id).toBe('channel-0');
+      expect(data.commitments[0].port_id).toBe('port-99');
+      // expect(data.acknowledgements[0].sequence).toBe(0n);
+    });
+
+    it('QueryPacketCommitments should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitments(<QueryPacketCommitmentsRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketCommitments should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitments(<QueryPacketCommitmentsRequest>{
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketCommitments should be called failed because the parameter `limit` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"pagination.limit\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketCommitments(<QueryPacketCommitmentsRequest>{
+          channel_id: 'channel-0',
+          port_id: 'port-99',
+          pagination: {
+            offset: 0,
+          } as unknown as PageRequest,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryPacketReceipt', () => {
+    it('QueryPacketReceipt should be called successfully', async () => {
+      const data = await controller.queryPacketReceipt(<QueryPacketReceiptRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        /** packet sequence */
+        sequence: 0n,
+      });
+
+      expect(data.received).toBe(queryPacketReceiptExpected.received);
+      expect(Buffer.from(data.proof).toString('base64')).toBe(queryPacketReceiptExpected.proof);
+      expect(data.proof_height).toMatchObject(queryPacketReceiptExpected.proof_height);
+    });
+    it('QueryPacketReceipt should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketReceipt(<QueryPacketReceiptRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketReceipt should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketReceipt(<QueryPacketReceiptRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryPacketReceipt should be called failed because the parameter `sequence` is less than 0', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"sequence\\" must be greater than 0","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryPacketReceipt(<QueryPacketReceiptRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+          port_id: 'port-99',
+          sequence: -1n,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryUnreceivedPackets', () => {
+    it('QueryUnreceivedPackets should be called successfully', async () => {
+      const data = await controller.queryUnreceivedPackets(<QueryUnreceivedPacketsRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        /** list of packet sequences */
+        packet_commitment_sequences: [1n, 2n, 3n, 4n, 5n],
+      });
+      expect(data.sequences.length).toBe(3);
+      // expect(data.sequences[0].channel_id).toBe('channel-0');
+    });
+    it('QueryUnreceivedPackets should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryUnreceivedPackets(<QueryUnreceivedPacketsRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryUnreceivedPackets should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryUnreceivedPackets(<QueryUnreceivedPacketsRequest>{
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryUnreceivedAcks', () => {
+    it('QueryUnreceivedAcks should be called successfully', async () => {
+      const data = await controller.queryUnreceivedAcknowledgements(<QueryUnreceivedAcksRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        /** list of packet sequences */
+        packet_ack_sequences: [1n, 2n, 3n, 4n, 5n],
+      });
+      expect(data.sequences.length).toBe(1);
+      // expect(data.sequences[0].channel_id).toBe('channel-0');
+    });
+    it('QueryUnreceivedAcks should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryUnreceivedAcknowledgements(<QueryUnreceivedAcksRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryUnreceivedAcks should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryUnreceivedAcknowledgements(<QueryUnreceivedAcksRequest>{
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryTransactionByHash', () => {
+    it('QueryTransactionByHash should be called successfully', async () => {
+      const data = await controller.queryTransactionByHash(<QueryTransactionByHashRequest>{
+        hash: 'f2d0fb3fe4ae1fdb41cf17fb249b3ec5dbdc122772ca12a3c94a61b60857ec22',
+      });
+      expect(data.hash).toBe('f2d0fb3fe4ae1fdb41cf17fb249b3ec5dbdc122772ca12a3c94a61b60857ec22');
+      expect(data.gas_fee).toBe('1009496');
+      expect(data.tx_size).toBe('10379');
+      expect(data.height).toBe('5719');
+    });
+    it('QueryTransactionByHash should be called failed because the parameter `hash` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"hash\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryTransactionByHash(<QueryTransactionByHashRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it("QueryTransactionByHash should be called failed because it's not found", async () => {
+      jest.spyOn(mockDbService, 'findTxByHash').mockImplementationOnce(() => {
+        return null;
+      });
+      const expectMessage =
+        '{"error":"Not found: \\"hash\\" f2d0fb3fe4ae1fdb41cf17fb249b3ec5dbdc122772ca12a3c94a61b60857ec23 not found","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryTransactionByHash(<QueryTransactionByHashRequest>{
+          hash: 'f2d0fb3fe4ae1fdb41cf17fb249b3ec5dbdc122772ca12a3c94a61b60857ec23',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+  });
+
+  describe('Test QueryProofUnreceivedPackets', () => {
+    it('QueryProofUnreceivedPackets should be called successfully', async () => {
+      const data = await controller.queryProofUnreceivedPackets(<QueryProofUnreceivedPacketsRequest>{
+        /** port unique identifier */
+        port_id: 'port-99',
+        /** channel unique identifier */
+        channel_id: 'channel-0',
+        /** packet sequence */
+        sequence: 1n,
+        revision_height: 650879n,
+      });
+
+      expect(Buffer.from(data.proof).toString('base64')).toBe(queryProofUnreceiptExpected.proof);
+      expect(data.proof_height).toMatchObject(queryProofUnreceiptExpected.proof_height);
+    });
+    it('QueryProofUnreceivedPackets should be called failed because the parameter `channel_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"channel_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryProofUnreceivedPackets(<QueryProofUnreceivedPacketsRequest>{});
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryProofUnreceivedPackets should be called failed because the parameter `port_id` was missing.', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"port_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryProofUnreceivedPackets(<QueryProofUnreceivedPacketsRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
+      }
+    });
+    it('QueryProofUnreceivedPackets should be called failed because the parameter `sequence` is less than 0', async () => {
+      const expectMessage =
+        '{"error":"Invalid argument: \\"sequence\\" must be greater than 0","type":"string","exceptionName":"RpcException"}';
+      try {
+        const data = await controller.queryProofUnreceivedPackets(<QueryProofUnreceivedPacketsRequest>{
+          /** channel unique identifier */
+          channel_id: 'channel-0',
+          port_id: 'port-99',
+          sequence: -1n,
+        });
+        expect(data).toBe(expectMessage);
+      } catch (error) {
+        expect(error.message).toBe(expectMessage);
       }
     });
   });

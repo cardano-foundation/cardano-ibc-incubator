@@ -160,3 +160,10 @@ message Acknowledgement {
     string error  = 22;
   }
 }
+
+message Coin {
+  option (gogoproto.goproto_getters) = false;
+
+  string denom = 1 [(gogoproto.moretags) = "yaml:\"denom\""];
+  uint64 amount = 2 [(gogoproto.moretags) = "yaml:\"amount\""]; 
+}

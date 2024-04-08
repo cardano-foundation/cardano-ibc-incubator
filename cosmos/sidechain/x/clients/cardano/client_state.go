@@ -435,7 +435,7 @@ func VerifyNonMembershipProof(proofPath []byte, merklePath commitmenttypes.Merkl
 		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, "please ensure the proof path and expectedValue is correct")
 	}
 
-	proofPathString := string(proofPath[:])
+	proofPathString := strings.ToLower(string(proofPath[:]))
 	switch true {
 	case strings.Contains(proofPathString, "/receipts/"):
 		merklePathData := merklePath.KeyPath[1]
@@ -443,7 +443,19 @@ func VerifyNonMembershipProof(proofPath []byte, merklePath commitmenttypes.Merkl
 		portId := merklePathArray[2]
 		channelId := merklePathArray[4]
 		sequence := merklePathArray[6]
-		proofDataInStore := clientStore.Get([]byte(KeyUTXOsPrefix + "/" + proofPathString + "/" + portId + "/" + channelId + "/" + sequence))
+
+		pathKey := KeyUTXOsPrefix + "/" + proofPathString + "/" + portId + "/" + channelId
+		pathData := pathKey + "/" + sequence
+
+		pathChannel := strings.ReplaceAll(pathKey, "/receipts/", "/channel/")
+		// Channel must existed
+		channelDataInStore := clientStore.Get([]byte(pathChannel))
+		if channelDataInStore == nil {
+			return errorsmod.Wrap(clienttypes.ErrFailedNonMembershipVerification, "VerifyPacketReceiptAbsence: Channel not existed")
+		}
+
+		// Data must not existed
+		proofDataInStore := clientStore.Get([]byte(pathData))
 		// compare value
 		if proofDataInStore != nil {
 			return errorsmod.Wrap(clienttypes.ErrFailedNonMembershipVerification, "VerifyPacketReceiptAbsence: Path existed")

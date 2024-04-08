@@ -68,6 +68,32 @@ func (r *RelayMsgs) PrependMsgUpdateClient(
 	return eg.Wait()
 }
 
+func (r *RelayMsgs) PrependMsgUpdateClientBeforeBuildMsg(
+	ctx context.Context,
+	src, dst *Chain,
+	srch, dsth int64,
+) error {
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		srcMsgUpdateClient, err := MsgUpdateClient(egCtx, dst, src, dsth, srch)
+		if err != nil {
+			return err
+		}
+		r.Src = append([]provider.RelayerMessage{srcMsgUpdateClient}, r.Src...)
+		return nil
+	})
+	eg.Go(func() error {
+		dstMsgUpdateClient, err := MsgUpdateClient(egCtx, src, dst, srch, dsth)
+		if err != nil {
+			return err
+		}
+		r.Dst = append([]provider.RelayerMessage{dstMsgUpdateClient}, r.Dst...)
+		return nil
+	})
+
+	return eg.Wait()
+}
+
 func (r *RelayMsgs) IsMaxTx(msgLen, txSize uint64) bool {
 	return (r.MaxMsgLength != 0 && msgLen > r.MaxMsgLength) ||
 		(r.MaxTxSize != 0 && txSize > r.MaxTxSize)

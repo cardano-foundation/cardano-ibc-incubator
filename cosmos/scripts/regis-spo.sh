@@ -104,7 +104,7 @@ cat > $SCRIPT_DIR/$name-validator.json << EOF
         "key": "${pubKeyNode}"
     },
     "amount": "1000000stake",
-    "moniker": "${name}",
+    "moniker": "${newKey}",
     "commission-rate": "0.1",
     "commission-max-rate": "0.2",
     "commission-max-change-rate": "0.01",
@@ -116,7 +116,7 @@ $DOCKER_COMPOSE_CMD cp "$SCRIPT_DIR/$name-validator.json" $CONTAINER_SERVICE_NAM
 
 rm -f $SCRIPT_DIR/$name-validator.json
 
-cliSidechaind tx staking create-validator $DOCKER_HOME/.$name/config/validator.json --from="$newKey" --chain-id="${CHAIN_ID}" -y
+cliSidechaind tx staking create-validator $DOCKER_HOME/.$name/config/validator.json --from="$newKey" --chain-id="${CHAIN_ID}" -y --home="$DOCKER_HOME/.sidechain/"
 
 # Start node and run sync 
 cliSidechaind start --x-crisis-skip-assert-invariants --home="$DOCKER_HOME/.$name"

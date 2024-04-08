@@ -29,6 +29,8 @@ const (
 	Msg_Timeout_FullMethodName             = "/ibc.core.channel.v1.Msg/Timeout"
 	Msg_TimeoutOnClose_FullMethodName      = "/ibc.core.channel.v1.Msg/TimeoutOnClose"
 	Msg_Acknowledgement_FullMethodName     = "/ibc.core.channel.v1.Msg/Acknowledgement"
+	Msg_Transfer_FullMethodName            = "/ibc.core.channel.v1.Msg/Transfer"
+	Msg_TimeoutRefresh_FullMethodName      = "/ibc.core.channel.v1.Msg/TimeoutRefresh"
 )
 
 // MsgClient is the client API for Msg service.
@@ -56,6 +58,10 @@ type MsgClient interface {
 	TimeoutOnClose(ctx context.Context, in *MsgTimeoutOnClose, opts ...grpc.CallOption) (*MsgTimeoutOnCloseResponse, error)
 	// Acknowledgement defines a rpc handler method for MsgAcknowledgement.
 	Acknowledgement(ctx context.Context, in *MsgAcknowledgement, opts ...grpc.CallOption) (*MsgAcknowledgementResponse, error)
+	// Transfer defines a rpc handler method for MsgTransfer.
+	Transfer(ctx context.Context, in *MsgTransfer, opts ...grpc.CallOption) (*MsgTransferResponse, error)
+	// TimeoutRefresh defines a rpc handler method for MsgTimeoutRefresh.
+	TimeoutRefresh(ctx context.Context, in *MsgTimeoutRefresh, opts ...grpc.CallOption) (*MsgTimeoutRefreshResponse, error)
 }
 
 type msgClient struct {
@@ -156,6 +162,24 @@ func (c *msgClient) Acknowledgement(ctx context.Context, in *MsgAcknowledgement,
 	return out, nil
 }
 
+func (c *msgClient) Transfer(ctx context.Context, in *MsgTransfer, opts ...grpc.CallOption) (*MsgTransferResponse, error) {
+	out := new(MsgTransferResponse)
+	err := c.cc.Invoke(ctx, Msg_Transfer_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) TimeoutRefresh(ctx context.Context, in *MsgTimeoutRefresh, opts ...grpc.CallOption) (*MsgTimeoutRefreshResponse, error) {
+	out := new(MsgTimeoutRefreshResponse)
+	err := c.cc.Invoke(ctx, Msg_TimeoutRefresh_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 // All implementations must embed UnimplementedMsgServer
 // for forward compatibility
@@ -181,6 +205,10 @@ type MsgServer interface {
 	TimeoutOnClose(context.Context, *MsgTimeoutOnClose) (*MsgTimeoutOnCloseResponse, error)
 	// Acknowledgement defines a rpc handler method for MsgAcknowledgement.
 	Acknowledgement(context.Context, *MsgAcknowledgement) (*MsgAcknowledgementResponse, error)
+	// Transfer defines a rpc handler method for MsgTransfer.
+	Transfer(context.Context, *MsgTransfer) (*MsgTransferResponse, error)
+	// TimeoutRefresh defines a rpc handler method for MsgTimeoutRefresh.
+	TimeoutRefresh(context.Context, *MsgTimeoutRefresh) (*MsgTimeoutRefreshResponse, error)
 	mustEmbedUnimplementedMsgServer()
 }
 
@@ -217,6 +245,12 @@ func (UnimplementedMsgServer) TimeoutOnClose(context.Context, *MsgTimeoutOnClose
 }
 func (UnimplementedMsgServer) Acknowledgement(context.Context, *MsgAcknowledgement) (*MsgAcknowledgementResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Acknowledgement not implemented")
+}
+func (UnimplementedMsgServer) Transfer(context.Context, *MsgTransfer) (*MsgTransferResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Transfer not implemented")
+}
+func (UnimplementedMsgServer) TimeoutRefresh(context.Context, *MsgTimeoutRefresh) (*MsgTimeoutRefreshResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method TimeoutRefresh not implemented")
 }
 func (UnimplementedMsgServer) mustEmbedUnimplementedMsgServer() {}
 
@@ -411,6 +445,42 @@ func _Msg_Acknowledgement_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_Transfer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgTransfer)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).Transfer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_Transfer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).Transfer(ctx, req.(*MsgTransfer))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_TimeoutRefresh_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgTimeoutRefresh)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).TimeoutRefresh(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Msg_TimeoutRefresh_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).TimeoutRefresh(ctx, req.(*MsgTimeoutRefresh))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Msg_ServiceDesc is the grpc.ServiceDesc for Msg service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -457,6 +527,14 @@ var Msg_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Acknowledgement",
 			Handler:    _Msg_Acknowledgement_Handler,
+		},
+		{
+			MethodName: "Transfer",
+			Handler:    _Msg_Transfer_Handler,
+		},
+		{
+			MethodName: "TimeoutRefresh",
+			Handler:    _Msg_TimeoutRefresh_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

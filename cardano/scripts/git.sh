@@ -11,7 +11,7 @@ if [ "$current_branch" != "dev" ]; then
 fi
 
 # Define an array of branches
-branches=("feature/isc-5" "feature/isc-7" "feature/isc-11" "feature/isc-9" "feature/isc-17" "feature/isc-139")
+branches=("feature/isc-5" "feature/isc-7" "feature/isc-11" "feature/isc-9" "feature/isc-13" "feature/isc-17" "feature/isc-139")
 
 # Fetch the latest info from remote
 echo "Fetching the latest information from remote..."

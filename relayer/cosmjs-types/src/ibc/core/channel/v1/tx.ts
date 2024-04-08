@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { Channel, Packet } from "./channel";
+import { Channel, Packet, Coin } from "./channel";
 import { Height } from "../../client/v1/client";
 import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
@@ -167,6 +167,7 @@ export interface MsgTimeout {
 /** MsgTimeoutResponse defines the Msg/Timeout response type. */
 export interface MsgTimeoutResponse {
   result: ResponseResultType;
+  unsigned_tx?: Any;
 }
 /** MsgTimeoutOnClose timed-out packet upon counterparty channel closure. */
 export interface MsgTimeoutOnClose {
@@ -180,6 +181,7 @@ export interface MsgTimeoutOnClose {
 /** MsgTimeoutOnCloseResponse defines the Msg/TimeoutOnClose response type. */
 export interface MsgTimeoutOnCloseResponse {
   result: ResponseResultType;
+  unsigned_tx?: Any;
 }
 /** MsgAcknowledgement receives incoming IBC acknowledgement */
 export interface MsgAcknowledgement {
@@ -192,6 +194,38 @@ export interface MsgAcknowledgement {
 /** MsgAcknowledgementResponse defines the Msg/Acknowledgement response type. */
 export interface MsgAcknowledgementResponse {
   result: ResponseResultType;
+  unsigned_tx?: Any;
+}
+/** MsgTransfer send packet */
+export interface MsgTransfer {
+  source_port: string;
+  source_channel: string;
+  token: Coin;
+  sender: string;
+  receiver: string;
+  timeout_height?: Height;
+  timeout_timestamp: bigint;
+  memo: string;
+}
+/** MsgTransferResponse defines the Msg/Transfer response type. */
+export interface MsgTransferResponse {
+  result: ResponseResultType;
+  unsigned_tx?: Any;
+}
+/**
+ * MsgChannelOpenConfirm defines a msg sent by a Relayer to Chain B to
+ * acknowledge the change of channel state to OPEN on Chain A.
+ */
+export interface MsgTimeoutRefresh {
+  channel_id: string;
+  signer: string;
+}
+/**
+ * MsgChannelOpenConfirmResponse defines the Msg/ChannelOpenConfirm response
+ * type.
+ */
+export interface MsgTimeoutRefreshResponse {
+  unsigned_tx?: Any;
 }
 function createBaseMsgChannelOpenInit(): MsgChannelOpenInit {
   return {
@@ -1245,7 +1279,8 @@ export const MsgTimeout = {
 };
 function createBaseMsgTimeoutResponse(): MsgTimeoutResponse {
   return {
-    result: 0
+    result: 0,
+    unsigned_tx: undefined
   };
 }
 export const MsgTimeoutResponse = {
@@ -1253,6 +1288,9 @@ export const MsgTimeoutResponse = {
   encode(message: MsgTimeoutResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.result !== 0) {
       writer.uint32(8).int32(message.result);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(18).fork()).ldelim();
     }
     return writer;
   },
@@ -1266,6 +1304,9 @@ export const MsgTimeoutResponse = {
         case 1:
           message.result = (reader.int32() as any);
           break;
+        case 2:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1276,16 +1317,21 @@ export const MsgTimeoutResponse = {
   fromJSON(object: any): MsgTimeoutResponse {
     const obj = createBaseMsgTimeoutResponse();
     if (isSet(object.result)) obj.result = responseResultTypeFromJSON(object.result);
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
   toJSON(message: MsgTimeoutResponse): unknown {
     const obj: any = {};
     message.result !== undefined && (obj.result = responseResultTypeToJSON(message.result));
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgTimeoutResponse>, I>>(object: I): MsgTimeoutResponse {
     const message = createBaseMsgTimeoutResponse();
     message.result = object.result ?? 0;
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   }
 };
@@ -1393,7 +1439,8 @@ export const MsgTimeoutOnClose = {
 };
 function createBaseMsgTimeoutOnCloseResponse(): MsgTimeoutOnCloseResponse {
   return {
-    result: 0
+    result: 0,
+    unsigned_tx: undefined
   };
 }
 export const MsgTimeoutOnCloseResponse = {
@@ -1401,6 +1448,9 @@ export const MsgTimeoutOnCloseResponse = {
   encode(message: MsgTimeoutOnCloseResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.result !== 0) {
       writer.uint32(8).int32(message.result);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(18).fork()).ldelim();
     }
     return writer;
   },
@@ -1414,6 +1464,9 @@ export const MsgTimeoutOnCloseResponse = {
         case 1:
           message.result = (reader.int32() as any);
           break;
+        case 2:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1424,16 +1477,21 @@ export const MsgTimeoutOnCloseResponse = {
   fromJSON(object: any): MsgTimeoutOnCloseResponse {
     const obj = createBaseMsgTimeoutOnCloseResponse();
     if (isSet(object.result)) obj.result = responseResultTypeFromJSON(object.result);
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
   toJSON(message: MsgTimeoutOnCloseResponse): unknown {
     const obj: any = {};
     message.result !== undefined && (obj.result = responseResultTypeToJSON(message.result));
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgTimeoutOnCloseResponse>, I>>(object: I): MsgTimeoutOnCloseResponse {
     const message = createBaseMsgTimeoutOnCloseResponse();
     message.result = object.result ?? 0;
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   }
 };
@@ -1529,7 +1587,8 @@ export const MsgAcknowledgement = {
 };
 function createBaseMsgAcknowledgementResponse(): MsgAcknowledgementResponse {
   return {
-    result: 0
+    result: 0,
+    unsigned_tx: undefined
   };
 }
 export const MsgAcknowledgementResponse = {
@@ -1537,6 +1596,9 @@ export const MsgAcknowledgementResponse = {
   encode(message: MsgAcknowledgementResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.result !== 0) {
       writer.uint32(8).int32(message.result);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(18).fork()).ldelim();
     }
     return writer;
   },
@@ -1550,6 +1612,9 @@ export const MsgAcknowledgementResponse = {
         case 1:
           message.result = (reader.int32() as any);
           break;
+        case 2:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1560,16 +1625,305 @@ export const MsgAcknowledgementResponse = {
   fromJSON(object: any): MsgAcknowledgementResponse {
     const obj = createBaseMsgAcknowledgementResponse();
     if (isSet(object.result)) obj.result = responseResultTypeFromJSON(object.result);
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
   toJSON(message: MsgAcknowledgementResponse): unknown {
     const obj: any = {};
     message.result !== undefined && (obj.result = responseResultTypeToJSON(message.result));
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgAcknowledgementResponse>, I>>(object: I): MsgAcknowledgementResponse {
     const message = createBaseMsgAcknowledgementResponse();
     message.result = object.result ?? 0;
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    return message;
+  }
+};
+function createBaseMsgTransfer(): MsgTransfer {
+  return {
+    source_port: "",
+    source_channel: "",
+    token: Coin.fromPartial({}),
+    sender: "",
+    receiver: "",
+    timeout_height: undefined,
+    timeout_timestamp: BigInt(0),
+    memo: ""
+  };
+}
+export const MsgTransfer = {
+  typeUrl: "/ibc.core.channel.v1.MsgTransfer",
+  encode(message: MsgTransfer, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.source_port !== "") {
+      writer.uint32(10).string(message.source_port);
+    }
+    if (message.source_channel !== "") {
+      writer.uint32(18).string(message.source_channel);
+    }
+    if (message.token !== undefined) {
+      Coin.encode(message.token, writer.uint32(26).fork()).ldelim();
+    }
+    if (message.sender !== "") {
+      writer.uint32(34).string(message.sender);
+    }
+    if (message.receiver !== "") {
+      writer.uint32(42).string(message.receiver);
+    }
+    if (message.timeout_height !== undefined) {
+      Height.encode(message.timeout_height, writer.uint32(50).fork()).ldelim();
+    }
+    if (message.timeout_timestamp !== BigInt(0)) {
+      writer.uint32(56).uint64(message.timeout_timestamp);
+    }
+    if (message.memo !== "") {
+      writer.uint32(66).string(message.memo);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgTransfer {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgTransfer();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.source_port = reader.string();
+          break;
+        case 2:
+          message.source_channel = reader.string();
+          break;
+        case 3:
+          message.token = Coin.decode(reader, reader.uint32());
+          break;
+        case 4:
+          message.sender = reader.string();
+          break;
+        case 5:
+          message.receiver = reader.string();
+          break;
+        case 6:
+          message.timeout_height = Height.decode(reader, reader.uint32());
+          break;
+        case 7:
+          message.timeout_timestamp = reader.uint64();
+          break;
+        case 8:
+          message.memo = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgTransfer {
+    const obj = createBaseMsgTransfer();
+    if (isSet(object.source_port)) obj.source_port = String(object.source_port);
+    if (isSet(object.source_channel)) obj.source_channel = String(object.source_channel);
+    if (isSet(object.token)) obj.token = Coin.fromJSON(object.token);
+    if (isSet(object.sender)) obj.sender = String(object.sender);
+    if (isSet(object.receiver)) obj.receiver = String(object.receiver);
+    if (isSet(object.timeout_height)) obj.timeout_height = Height.fromJSON(object.timeout_height);
+    if (isSet(object.timeout_timestamp)) obj.timeout_timestamp = BigInt(object.timeout_timestamp.toString());
+    if (isSet(object.memo)) obj.memo = String(object.memo);
+    return obj;
+  },
+  toJSON(message: MsgTransfer): unknown {
+    const obj: any = {};
+    message.source_port !== undefined && (obj.source_port = message.source_port);
+    message.source_channel !== undefined && (obj.source_channel = message.source_channel);
+    message.token !== undefined && (obj.token = message.token ? Coin.toJSON(message.token) : undefined);
+    message.sender !== undefined && (obj.sender = message.sender);
+    message.receiver !== undefined && (obj.receiver = message.receiver);
+    message.timeout_height !== undefined && (obj.timeout_height = message.timeout_height ? Height.toJSON(message.timeout_height) : undefined);
+    message.timeout_timestamp !== undefined && (obj.timeout_timestamp = (message.timeout_timestamp || BigInt(0)).toString());
+    message.memo !== undefined && (obj.memo = message.memo);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgTransfer>, I>>(object: I): MsgTransfer {
+    const message = createBaseMsgTransfer();
+    message.source_port = object.source_port ?? "";
+    message.source_channel = object.source_channel ?? "";
+    if (object.token !== undefined && object.token !== null) {
+      message.token = Coin.fromPartial(object.token);
+    }
+    message.sender = object.sender ?? "";
+    message.receiver = object.receiver ?? "";
+    if (object.timeout_height !== undefined && object.timeout_height !== null) {
+      message.timeout_height = Height.fromPartial(object.timeout_height);
+    }
+    if (object.timeout_timestamp !== undefined && object.timeout_timestamp !== null) {
+      message.timeout_timestamp = BigInt(object.timeout_timestamp.toString());
+    }
+    message.memo = object.memo ?? "";
+    return message;
+  }
+};
+function createBaseMsgTransferResponse(): MsgTransferResponse {
+  return {
+    result: 0,
+    unsigned_tx: undefined
+  };
+}
+export const MsgTransferResponse = {
+  typeUrl: "/ibc.core.channel.v1.MsgTransferResponse",
+  encode(message: MsgTransferResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.result !== 0) {
+      writer.uint32(8).int32(message.result);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgTransferResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgTransferResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.result = (reader.int32() as any);
+          break;
+        case 2:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgTransferResponse {
+    const obj = createBaseMsgTransferResponse();
+    if (isSet(object.result)) obj.result = responseResultTypeFromJSON(object.result);
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    return obj;
+  },
+  toJSON(message: MsgTransferResponse): unknown {
+    const obj: any = {};
+    message.result !== undefined && (obj.result = responseResultTypeToJSON(message.result));
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgTransferResponse>, I>>(object: I): MsgTransferResponse {
+    const message = createBaseMsgTransferResponse();
+    message.result = object.result ?? 0;
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    return message;
+  }
+};
+function createBaseMsgTimeoutRefresh(): MsgTimeoutRefresh {
+  return {
+    channel_id: "",
+    signer: ""
+  };
+}
+export const MsgTimeoutRefresh = {
+  typeUrl: "/ibc.core.channel.v1.MsgTimeoutRefresh",
+  encode(message: MsgTimeoutRefresh, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.channel_id !== "") {
+      writer.uint32(10).string(message.channel_id);
+    }
+    if (message.signer !== "") {
+      writer.uint32(18).string(message.signer);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgTimeoutRefresh {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgTimeoutRefresh();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.channel_id = reader.string();
+          break;
+        case 2:
+          message.signer = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgTimeoutRefresh {
+    const obj = createBaseMsgTimeoutRefresh();
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    return obj;
+  },
+  toJSON(message: MsgTimeoutRefresh): unknown {
+    const obj: any = {};
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.signer !== undefined && (obj.signer = message.signer);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgTimeoutRefresh>, I>>(object: I): MsgTimeoutRefresh {
+    const message = createBaseMsgTimeoutRefresh();
+    message.channel_id = object.channel_id ?? "";
+    message.signer = object.signer ?? "";
+    return message;
+  }
+};
+function createBaseMsgTimeoutRefreshResponse(): MsgTimeoutRefreshResponse {
+  return {
+    unsigned_tx: undefined
+  };
+}
+export const MsgTimeoutRefreshResponse = {
+  typeUrl: "/ibc.core.channel.v1.MsgTimeoutRefreshResponse",
+  encode(message: MsgTimeoutRefreshResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgTimeoutRefreshResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgTimeoutRefreshResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgTimeoutRefreshResponse {
+    const obj = createBaseMsgTimeoutRefreshResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    return obj;
+  },
+  toJSON(message: MsgTimeoutRefreshResponse): unknown {
+    const obj: any = {};
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgTimeoutRefreshResponse>, I>>(object: I): MsgTimeoutRefreshResponse {
+    const message = createBaseMsgTimeoutRefreshResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   }
 };
@@ -1598,6 +1952,10 @@ export interface Msg {
   TimeoutOnClose(request: MsgTimeoutOnClose): Promise<MsgTimeoutOnCloseResponse>;
   /** Acknowledgement defines a rpc handler method for MsgAcknowledgement. */
   Acknowledgement(request: MsgAcknowledgement): Promise<MsgAcknowledgementResponse>;
+  /** Transfer defines a rpc handler method for MsgTransfer. */
+  Transfer(request: MsgTransfer): Promise<MsgTransferResponse>;
+  /** TimeoutRefresh defines a rpc handler method for MsgTimeoutRefresh. */
+  TimeoutRefresh(request: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse>;
 }
 export class MsgClientImpl implements Msg {
   private readonly rpc: Rpc;
@@ -1613,6 +1971,8 @@ export class MsgClientImpl implements Msg {
     this.Timeout = this.Timeout.bind(this);
     this.TimeoutOnClose = this.TimeoutOnClose.bind(this);
     this.Acknowledgement = this.Acknowledgement.bind(this);
+    this.Transfer = this.Transfer.bind(this);
+    this.TimeoutRefresh = this.TimeoutRefresh.bind(this);
   }
   ChannelOpenInit(request: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     const data = MsgChannelOpenInit.encode(request).finish();
@@ -1663,5 +2023,15 @@ export class MsgClientImpl implements Msg {
     const data = MsgAcknowledgement.encode(request).finish();
     const promise = this.rpc.request("ibc.core.channel.v1.Msg", "Acknowledgement", data);
     return promise.then(data => MsgAcknowledgementResponse.decode(new BinaryReader(data)));
+  }
+  Transfer(request: MsgTransfer): Promise<MsgTransferResponse> {
+    const data = MsgTransfer.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.channel.v1.Msg", "Transfer", data);
+    return promise.then(data => MsgTransferResponse.decode(new BinaryReader(data)));
+  }
+  TimeoutRefresh(request: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
+    const data = MsgTimeoutRefresh.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.channel.v1.Msg", "TimeoutRefresh", data);
+    return promise.then(data => MsgTimeoutRefreshResponse.decode(new BinaryReader(data)));
   }
 }

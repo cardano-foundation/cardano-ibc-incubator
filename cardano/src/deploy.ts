@@ -1,8 +1,4 @@
-import {
-  Kupmios,
-  Lucid,
-  SLOT_CONFIG_NETWORK,
-} from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { Kupmios, Lucid, SLOT_CONFIG_NETWORK } from "npm:@dinhbx/lucid-custom";
 import { createDeployment } from "./create_deployment.ts";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { querySystemStart } from "./utils.ts";

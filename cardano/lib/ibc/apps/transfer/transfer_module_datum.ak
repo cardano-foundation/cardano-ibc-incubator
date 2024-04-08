@@ -1,0 +1,2 @@
+pub type TransferModuleDatum =
+  Void

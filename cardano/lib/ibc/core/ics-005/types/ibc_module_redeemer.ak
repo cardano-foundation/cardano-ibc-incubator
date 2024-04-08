@@ -5,7 +5,17 @@ pub type IBCModuleCallback {
   OnChanOpenTry { channel_id: ByteArray }
   OnChanOpenAck { channel_id: ByteArray }
   OnChanOpenConfirm { channel_id: ByteArray }
-  OnRecvPacket { channel_id: ByteArray, acknowledgement: Acknowledgement }
+  OnRecvPacket {
+    channel_id: ByteArray,
+    acknowledgement: Acknowledgement,
+    data: Data,
+  }
+  OnTimeoutPacket { channel_id: ByteArray, data: Data }
+  OnAcknowledgementPacket {
+    channel_id: ByteArray,
+    acknowledgement: Acknowledgement,
+    data: Data,
+  }
 }
 
 pub type IBCModuleRedeemer {

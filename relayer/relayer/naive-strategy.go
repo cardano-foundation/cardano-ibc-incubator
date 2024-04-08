@@ -3,13 +3,12 @@ package relayer
 import (
 	"context"
 	"fmt"
-	"sync"
-
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"sync"
 )
 
 // UnrelayedSequences returns the unrelayed sequence numbers between two chains
@@ -105,7 +104,6 @@ func UnrelayedSequences(ctx context.Context, src, dst *Chain, srcChannel *chanty
 			)
 			return
 		}
-
 		for _, pc := range res.Commitments {
 			dstPacketSeq = append(dstPacketSeq, pc.Sequence)
 		}
@@ -388,8 +386,30 @@ func RelayAcknowledgements(ctx context.Context, log *zap.Logger, src, dst *Chain
 		return err
 	}
 
+	msgs := &RelayMsgs{}
+
+	if err := msgs.PrependMsgUpdateClientBeforeBuildMsg(ctx, src, dst, srch, dsth); err != nil {
+		return err
+	}
+
+	// send messages to their respective chains
+	result := msgs.Send(ctx, log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
+	if err := result.Error(); err != nil {
+		if result.PartiallySent() {
+			log.Info(
+				"Partial success when relaying acknowledgements",
+				zap.String("src_chain_id", src.ChainID()),
+				zap.String("src_port_id", srcChannel.PortId),
+				zap.String("dst_chain_id", dst.ChainID()),
+				zap.String("dst_port_id", srcChannel.Counterparty.PortId),
+				zap.Error(err),
+			)
+		}
+		return err
+	}
+
 	// set the maximum relay transaction constraints
-	msgs := &RelayMsgs{
+	msgs = &RelayMsgs{
 		Src:          []provider.RelayerMessage{},
 		Dst:          []provider.RelayerMessage{},
 		MaxTxSize:    maxTxSize,
@@ -401,11 +421,10 @@ func RelayAcknowledgements(ctx context.Context, log *zap.Logger, src, dst *Chain
 		// dst wrote the ack. acknowledgementFromSequence will query the acknowledgement
 		// from the counterparty chain (second chain provided in the arguments). The message
 		// should be sent to src.
-		relayAckMsgs, err := src.ChainProvider.AcknowledgementFromSequence(ctx, dst.ChainProvider, uint64(dsth), seq, srcChannel.Counterparty.ChannelId, srcChannel.Counterparty.PortId, srcChannel.ChannelId, srcChannel.PortId)
+		relayAckMsgs, _, err := src.ChainProvider.AcknowledgementFromSequence(ctx, dst.ChainProvider, uint64(dsth), seq, srcChannel.Counterparty.ChannelId, srcChannel.Counterparty.PortId, srcChannel.ChannelId, srcChannel.PortId)
 		if err != nil {
 			return err
 		}
-
 		// Do not allow nil messages to the queued, or else we will panic in send()
 		if relayAckMsgs != nil {
 			msgs.Src = append(msgs.Src, relayAckMsgs)
@@ -417,8 +436,32 @@ func RelayAcknowledgements(ctx context.Context, log *zap.Logger, src, dst *Chain
 		// src wrote the ack. acknowledgementFromSequence will query the acknowledgement
 		// from the counterparty chain (second chain provided in the arguments). The message
 		// should be sent to dst.
-		relayAckMsgs, err := dst.ChainProvider.AcknowledgementFromSequence(ctx, src.ChainProvider, uint64(srch), seq, srcChannel.ChannelId, srcChannel.PortId, srcChannel.Counterparty.ChannelId, srcChannel.Counterparty.PortId)
+		relayAckMsgs, proofHeight, err := dst.ChainProvider.AcknowledgementFromSequence(ctx, src.ChainProvider, uint64(srch), seq, srcChannel.ChannelId, srcChannel.PortId, srcChannel.Counterparty.ChannelId, srcChannel.Counterparty.PortId)
 		if err != nil {
+			return err
+		}
+
+		// update client cosmos
+		msgUpdateClient, err := MsgUpdateClient(ctx, src, dst, int64(proofHeight), dsth)
+		if err != nil {
+			return err
+		}
+
+		clients := &RelayMsgs{
+			Dst: []provider.RelayerMessage{msgUpdateClient},
+		}
+
+		// Send to both chains
+		result := clients.Send(ctx, src.log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
+		if err := result.Error(); err != nil {
+			if result.PartiallySent() {
+				src.log.Info(
+					"Partial success when updating clients",
+					zap.String("src_chain_id", src.ChainID()),
+					zap.String("dst_chain_id", dst.ChainID()),
+					zap.Object("send_result", result),
+				)
+			}
 			return err
 		}
 
@@ -439,12 +482,8 @@ func RelayAcknowledgements(ctx context.Context, log *zap.Logger, src, dst *Chain
 		return nil
 	}
 
-	if err := msgs.PrependMsgUpdateClient(ctx, src, dst, srch, dsth); err != nil {
-		return err
-	}
-
 	// send messages to their respective chains
-	result := msgs.Send(ctx, log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
+	result = msgs.Send(ctx, log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
 	if err := result.Error(); err != nil {
 		if result.PartiallySent() {
 			log.Info(
@@ -471,8 +510,50 @@ func RelayAcknowledgements(ctx context.Context, log *zap.Logger, src, dst *Chain
 
 // RelayPackets creates transactions to relay packets from src to dst and from dst to src
 func RelayPackets(ctx context.Context, log *zap.Logger, src, dst *Chain, sp RelaySequences, maxTxSize, maxMsgLength uint64, memo string, srcChannel *chantypes.IdentifiedChannel) error {
+	msgs := &RelayMsgs{}
+	// call MsgTimeoutRefresh
+	msgTimeoutRefresh, err := src.ChainProvider.MsgTimeoutRefresh(srcChannel.ChannelId)
+	if err != nil {
+		return err
+	}
+
+	msgs.Src = append([]provider.RelayerMessage{msgTimeoutRefresh}, msgs.Src...)
+
+	resultMsgTimeoutRefresh := msgs.Send(ctx, log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
+	if err := resultMsgTimeoutRefresh.Error(); err != nil {
+		if resultMsgTimeoutRefresh.PartiallySent() {
+			log.Info(
+				"Partial success when send Msg Timeout Refresh",
+				zap.String("src_chain_id", src.ChainID()),
+				zap.String("src_port_id", srcChannel.PortId),
+				zap.String("dst_chain_id", dst.ChainID()),
+				zap.String("dst_port_id", srcChannel.Counterparty.PortId),
+				zap.Error(err),
+			)
+		}
+		return err
+	}
 	srch, dsth, err := QueryLatestHeights(ctx, src, dst)
 	if err != nil {
+		return err
+	}
+	msgs = &RelayMsgs{}
+
+	if err := msgs.PrependMsgUpdateClientBeforeBuildMsg(ctx, src, dst, srch, dsth); err != nil {
+		return err
+	}
+	resultMsgUpdateClient := msgs.Send(ctx, log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
+	if err := resultMsgUpdateClient.Error(); err != nil {
+		if resultMsgUpdateClient.PartiallySent() {
+			log.Info(
+				"Partial success when update client before send message timeout relaying packets",
+				zap.String("src_chain_id", src.ChainID()),
+				zap.String("src_port_id", srcChannel.PortId),
+				zap.String("dst_chain_id", dst.ChainID()),
+				zap.String("dst_port_id", srcChannel.Counterparty.PortId),
+				zap.Error(err),
+			)
+		}
 		return err
 	}
 
@@ -496,7 +577,7 @@ func RelayPackets(ctx context.Context, log *zap.Logger, src, dst *Chain, sp Rela
 	}
 
 	// set the maximum relay transaction constraints
-	msgs := &RelayMsgs{
+	msgs = &RelayMsgs{
 		Src:          append(msgsSrc1, msgsSrc2...),
 		Dst:          append(msgsDst1, msgsDst2...),
 		MaxTxSize:    maxTxSize,
@@ -512,10 +593,6 @@ func RelayPackets(ctx context.Context, log *zap.Logger, src, dst *Chain, sp Rela
 			zap.String("dst_port_id", srcChannel.Counterparty.PortId),
 		)
 		return nil
-	}
-
-	if err := msgs.PrependMsgUpdateClient(ctx, src, dst, srch, dsth); err != nil {
-		return err
 	}
 
 	// send messages to their respective chains
@@ -542,7 +619,6 @@ func RelayPackets(ctx context.Context, log *zap.Logger, src, dst *Chain, sp Rela
 	}
 
 	return nil
-
 }
 
 // AddMessagesForSequences constructs RecvMsgs and TimeoutMsgs from sequence numbers on a src chain
@@ -564,6 +640,8 @@ func AddMessagesForSequences(
 			seq,
 			srcChanID, srcPortID,
 			order,
+			src.ClientID(),
+			dst.ClientID(),
 		)
 		if err != nil {
 			src.log.Info(

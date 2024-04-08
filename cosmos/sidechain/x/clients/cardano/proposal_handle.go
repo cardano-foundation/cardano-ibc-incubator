@@ -27,60 +27,61 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore,
 	substituteClientStore storetypes.KVStore, substituteClient exported.ClientState,
 ) error {
-	substituteClientState, ok := substituteClient.(*ClientState)
-	if !ok {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "expected type %T, got %T", &ClientState{}, substituteClient)
-	}
+	return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "CheckSubstituteAndUpdateState: not implemented")
+	// substituteClientState, ok := substituteClient.(*ClientState)
+	// if !ok {
+	// 	return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "expected type %T, got %T", &ClientState{}, substituteClient)
+	// }
 
-	if !IsMatchingClientState(cs, *substituteClientState) {
-		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "subject client state does not match substitute client state")
-	}
+	// if !IsMatchingClientState(cs, *substituteClientState) {
+	// 	return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "subject client state does not match substitute client state")
+	// }
 
-	if cs.Status(ctx, subjectClientStore, cdc) == exported.Frozen {
-		// unfreeze the client
-		zeroHeight := ZeroHeight()
-		cs.FrozenHeight = &zeroHeight
-	}
+	// if cs.Status(ctx, subjectClientStore, cdc) == exported.Frozen {
+	// 	// unfreeze the client
+	// 	zeroHeight := ZeroHeight()
+	// 	cs.FrozenHeight = &zeroHeight
+	// }
 
-	// copy consensus states and processed time from substitute to subject
-	// starting from initial height and ending on the latest height (inclusive)
-	height := substituteClientState.GetLatestHeight()
+	// // copy consensus states and processed time from substitute to subject
+	// // starting from initial height and ending on the latest height (inclusive)
+	// height := substituteClientState.GetLatestHeight()
 
-	consensusState, found := GetConsensusState(substituteClientStore, cdc, height)
-	if !found {
-		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "unable to retrieve latest consensus state for substitute client")
-	}
+	// consensusState, found := GetConsensusState(substituteClientStore, cdc, height)
+	// if !found {
+	// 	return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "unable to retrieve latest consensus state for substitute client")
+	// }
 
-	setConsensusState(subjectClientStore, cdc, consensusState, height)
+	// setConsensusState(subjectClientStore, cdc, consensusState, height)
 
-	// set metadata stored for the substitute consensus state
-	processedHeight, found := GetProcessedHeight(substituteClientStore, height)
-	if !found {
-		return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed height for substitute client latest height")
-	}
+	// // set metadata stored for the substitute consensus state
+	// processedHeight, found := GetProcessedHeight(substituteClientStore, height)
+	// if !found {
+	// 	return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed height for substitute client latest height")
+	// }
 
-	processedTime, found := GetProcessedTime(substituteClientStore, height)
-	if !found {
-		return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed time for substitute client latest height")
-	}
+	// processedTime, found := GetProcessedTime(substituteClientStore, height)
+	// if !found {
+	// 	return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed time for substitute client latest height")
+	// }
 
-	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
+	// setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
 
-	cs.LatestHeight = substituteClientState.LatestHeight
-	cs.ChainId = substituteClientState.ChainId
+	// cs.LatestHeight = substituteClientState.LatestHeight
+	// cs.ChainId = substituteClientState.ChainId
 
-	// set new trusting period based on the substitute client state
-	cs.TrustingPeriod = substituteClientState.TrustingPeriod
+	// // set new trusting period based on the substitute client state
+	// cs.TrustingPeriod = substituteClientState.TrustingPeriod
 
-	// no validation is necessary since the substitute is verified to be Active
-	// in 02-client.
-	setClientState(subjectClientStore, cdc, &cs)
+	// // no validation is necessary since the substitute is verified to be Active
+	// // in 02-client.
+	// setClientState(subjectClientStore, cdc, &cs)
 
-	return nil
+	// return nil
 }
 
-// IsMatchingClientState returns true if all the client state parameters match
-// except for frozen height, latest height, trusting period, chain-id.
-func IsMatchingClientState(subject, substitute ClientState) bool {
-	return true
-}
+// // IsMatchingClientState returns true if all the client state parameters match
+// // except for frozen height, latest height, trusting period, chain-id.
+// func IsMatchingClientState(subject, substitute ClientState) bool {
+// 	return true
+// }

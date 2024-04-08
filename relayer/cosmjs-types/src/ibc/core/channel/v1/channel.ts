@@ -224,6 +224,10 @@ export interface Acknowledgement {
   result?: Uint8Array;
   error?: string;
 }
+export interface Coin {
+  denom: string;
+  amount: bigint;
+}
 function createBaseChannel(): Channel {
   return {
     state: 0,
@@ -805,6 +809,64 @@ export const Acknowledgement = {
     const message = createBaseAcknowledgement();
     message.result = object.result ?? undefined;
     message.error = object.error ?? undefined;
+    return message;
+  }
+};
+function createBaseCoin(): Coin {
+  return {
+    denom: "",
+    amount: BigInt(0)
+  };
+}
+export const Coin = {
+  typeUrl: "/ibc.core.channel.v1.Coin",
+  encode(message: Coin, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.denom !== "") {
+      writer.uint32(10).string(message.denom);
+    }
+    if (message.amount !== BigInt(0)) {
+      writer.uint32(16).uint64(message.amount);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): Coin {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCoin();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.denom = reader.string();
+          break;
+        case 2:
+          message.amount = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): Coin {
+    const obj = createBaseCoin();
+    if (isSet(object.denom)) obj.denom = String(object.denom);
+    if (isSet(object.amount)) obj.amount = BigInt(object.amount.toString());
+    return obj;
+  },
+  toJSON(message: Coin): unknown {
+    const obj: any = {};
+    message.denom !== undefined && (obj.denom = message.denom);
+    message.amount !== undefined && (obj.amount = (message.amount || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<Coin>, I>>(object: I): Coin {
+    const message = createBaseCoin();
+    message.denom = object.denom ?? "";
+    if (object.amount !== undefined && object.amount !== null) {
+      message.amount = BigInt(object.amount.toString());
+    }
     return message;
   }
 };

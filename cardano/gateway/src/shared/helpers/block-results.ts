@@ -22,6 +22,10 @@ import { Packet } from '../types/channel/packet';
 import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_redeemer';
 import { Acknowledgement } from '../../../cosmjs-types/src/ibc/core/channel/v1/channel';
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
+import { SpendClientRedeemer } from '../types/client-redeemer';
+import { convertHeaderToTendermint } from '../types/header';
+import { Header } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@cosmjs-types/src/google/protobuf/any';
 
 export function normalizeEventConnection(evtType: ConnectionState): string {
   switch (evtType) {
@@ -139,8 +143,23 @@ export function normalizeTxsResultFromClientDatum(
   ClientDatum: ClientDatum,
   clientEvent: string,
   clientId: string,
+  spendClientRedeemer: SpendClientRedeemer,
 ): ResponseDeliverTx {
   const [latestHeight] = [...ClientDatum.state.consensusStates].at(-1);
+  let header = '';
+
+  if (spendClientRedeemer && spendClientRedeemer.hasOwnProperty('UpdateClient')) {
+    const clientMessage = spendClientRedeemer['UpdateClient'].msg;
+
+    if (clientMessage && clientMessage.hasOwnProperty('HeaderCase')) {
+      const msgUpdateClient = convertHeaderToTendermint(clientMessage['HeaderCase'][0]);
+      const headerAny: Any = {
+        type_url: '/ibc.lightclients.tendermint.v1.Header',
+        value: Header.encode(msgUpdateClient).finish(),
+      };
+      header = toHex(Any.encode(headerAny).finish());
+    }
+  }
 
   return {
     code: 0,
@@ -158,7 +177,7 @@ export function normalizeTxsResultFromClientDatum(
           },
           {
             key: ATTRIBUTE_KEY_CLIENT.HEADER,
-            value: '',
+            value: header,
           },
         ].map(
           (attr) =>
@@ -175,6 +194,9 @@ export function normalizeTxsResultFromClientDatum(
 
 function getEventPacketChannel(channelRedeemer: SpendChannelRedeemer): string {
   if (channelRedeemer.hasOwnProperty('RecvPacket')) return EVENT_TYPE_PACKET.RECV_PACKET;
+  if (channelRedeemer.hasOwnProperty('SendPacket')) return EVENT_TYPE_PACKET.SEND_PACKET;
+  if (channelRedeemer.hasOwnProperty('AcknowledgePacket')) return EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET;
+  if (channelRedeemer.hasOwnProperty('TimeoutPacket')) return EVENT_TYPE_PACKET.TIMEOUT_PACKET;
   return '';
 }
 
@@ -182,7 +204,19 @@ export function normalizeTxsResultFromChannelRedeemer(
   channelRedeemer: SpendChannelRedeemer,
   channelDatum: ChannelDatum,
 ): ResponseDeliverTx {
-  const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  let packetData: Packet;
+  let acknowledgement = '';
+  if (channelRedeemer.hasOwnProperty('RecvPacket'))
+    packetData = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  if (channelRedeemer.hasOwnProperty('SendPacket'))
+    packetData = channelRedeemer['SendPacket']?.packet as unknown as Packet;
+  if (channelRedeemer.hasOwnProperty('AcknowledgePacket')) {
+    packetData = channelRedeemer['AcknowledgePacket']?.packet as unknown as Packet;
+    acknowledgement = channelRedeemer['AcknowledgePacket']?.acknowledgement;
+  }
+  if (channelRedeemer.hasOwnProperty('TimeoutPacket'))
+    packetData = channelRedeemer['TimeoutPacket']?.packet as unknown as Packet;
+
   return {
     code: 0,
     events: [
@@ -195,7 +229,7 @@ export function normalizeTxsResultFromChannelRedeemer(
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_ACK,
-            value: '',
+            value: acknowledgement,
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX,
@@ -203,7 +237,7 @@ export function normalizeTxsResultFromChannelRedeemer(
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX,
-            value: '',
+            value: acknowledgement,
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_TIMEOUT_HEIGHT,

@@ -1,6 +1,9 @@
 use aiken/bytearray
+use aiken/cbor
+use aiken/hash
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_024_host_requirements/validate
+use ibc/utils/bits.{put_uint64_big_endian}
 
 /// Packet defines a type that carries data across different chains through IBC
 pub type Packet {
@@ -70,7 +73,16 @@ pub fn validate_basic(p: Packet) -> Bool {
   True
 }
 
-pub fn commit_packet(_packet: Packet) -> ByteArray {
-  // TODO: add more logic
-  ""
+pub fn commit_packet(packet: Packet) -> ByteArray {
+  let Packet { data, timeout_height, timeout_timestamp, .. } = packet
+
+  let buf =
+    #[]
+      |> bytearray.concat(put_uint64_big_endian(timeout_timestamp))
+      |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_number))
+      |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_height))
+      |> bytearray.concat(hash.sha2_256(data))
+
+  trace cbor.diagnostic(buf)
+  hash.sha2_256(buf)
 }

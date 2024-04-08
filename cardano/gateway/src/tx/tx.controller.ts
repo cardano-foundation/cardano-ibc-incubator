@@ -17,6 +17,8 @@ import {
   MsgConnectionOpenTryResponse,
 } from '../../cosmjs-types/src/ibc/core/connection/v1/tx';
 import {
+  MsgAcknowledgement,
+  MsgAcknowledgementResponse,
   MsgChannelOpenAck,
   MsgChannelOpenAckResponse,
   MsgChannelOpenConfirm,
@@ -27,6 +29,12 @@ import {
   MsgChannelOpenTryResponse,
   MsgRecvPacket,
   MsgRecvPacketResponse,
+  MsgTimeout,
+  MsgTimeoutRefresh,
+  MsgTimeoutRefreshResponse,
+  MsgTimeoutResponse,
+  MsgTransfer,
+  MsgTransferResponse,
 } from '../../cosmjs-types/src/ibc/core/channel/v1/tx';
 import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
@@ -57,19 +65,21 @@ export class TxController {
     const response: MsgUpdateClientResponse = await this.connectionService.connectionOpenInit(data);
     return response;
   }
+  /* istanbul ignore next */
   @GrpcMethod('Msg', 'ConnectionOpenTry')
   async ConnectionOpenTry(data: MsgConnectionOpenTry): Promise<MsgConnectionOpenTryResponse> {
-    const response: MsgUpdateClientResponse = await this.connectionService.connectionOpenTry(data);
+    const response: MsgConnectionOpenTryResponse = await this.connectionService.connectionOpenTry(data);
     return response;
   }
   @GrpcMethod('Msg', 'ConnectionOpenAck')
   async ConnectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
-    const response: MsgUpdateClientResponse = await this.connectionService.connectionOpenAck(data);
+    const response: MsgConnectionOpenAckResponse = await this.connectionService.connectionOpenAck(data);
     return response;
   }
+  /* istanbul ignore next */
   @GrpcMethod('Msg', 'ConnectionOpenConfirm')
   async ConnectionOpenConfirm(data: MsgConnectionOpenConfirm): Promise<MsgConnectionOpenConfirmResponse> {
-    const response: MsgUpdateClientResponse = await this.connectionService.connectionOpenConfirm(data);
+    const response: MsgConnectionOpenConfirmResponse = await this.connectionService.connectionOpenConfirm(data);
     return response;
   }
   @GrpcMethod('Msg', 'ChannelOpenInit')
@@ -77,6 +87,7 @@ export class TxController {
     const response: MsgChannelOpenInitResponse = await this.channelService.channelOpenInit(data);
     return response;
   }
+  /* istanbul ignore next */
   @GrpcMethod('Msg', 'ChannelOpenTry')
   async ChannelChannelOpenTry(data: MsgChannelOpenTry): Promise<MsgChannelOpenTryResponse> {
     const response: MsgChannelOpenTryResponse = await this.channelService.channelOpenTry(data);
@@ -87,6 +98,7 @@ export class TxController {
     const response: MsgChannelOpenAckResponse = await this.channelService.channelOpenAck(data);
     return response;
   }
+  /* istanbul ignore next */
   @GrpcMethod('Msg', 'ChannelOpenConfirm')
   async ChannelOpenConfirm(data: MsgChannelOpenConfirm): Promise<MsgChannelOpenConfirmResponse> {
     const response: MsgChannelOpenConfirmResponse = await this.channelService.channelOpenConfirm(data);
@@ -95,6 +107,26 @@ export class TxController {
   @GrpcMethod('Msg', 'RecvPacket')
   async RecvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     const response: MsgRecvPacketResponse = await this.packetService.recvPacket(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'Transfer')
+  async Transfer(data: MsgTransfer): Promise<MsgTransferResponse> {
+    const response: MsgTransferResponse = await this.packetService.sendPacket(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'Acknowledgement')
+  async Acknowledgement(data: MsgAcknowledgement): Promise<MsgAcknowledgementResponse> {
+    const response: MsgAcknowledgementResponse = await this.packetService.acknowledgementPacket(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'Timeout')
+  async Timeout(data: MsgTimeout): Promise<MsgTimeoutResponse> {
+    const response: MsgTimeoutResponse = await this.packetService.timeoutPacket(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'TimeoutRefresh')
+  async TimeoutRefresh(data: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
+    const response: MsgTimeoutRefreshResponse = await this.packetService.timeoutRefresh(data);
     return response;
   }
 }

@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	ModuleName              = "099-cardano"
-	KeyClientSPOsPrefix     = "clientSPOs"
-	KeySPOStatePrefix       = "SPOState"
-	KeyRegisterCertPrefix   = "registerCert"
-	KeyUnregisterCertPrefix = "unregisterCert"
-	KeyUTXOsPrefix          = "utxos"
+	ModuleName                       = "099-cardano"
+	KeyClientSPOsPrefix              = "clientSPOs"
+	KeySPOStatePrefix                = "SPOState"
+	KeyRegisterCertPrefix            = "registerCert"
+	KeyUnregisterCertPrefix          = "unregisterCert"
+	KeyUTXOsPrefix                   = "utxos"
+	KeyConsensusStateBlockHashPrefix = "consensusStatesBlockHash"
 
 	KeyUTXOClientStatePrefix      = "client"
 	KeyUTXOConsensusStatePrefix   = "consensus"
@@ -92,4 +93,16 @@ func IBCTokenPrefix(handlerTokenUnit, ibcType string) string {
 	_, _ = hash.Write([]byte(handlerTokenUnitBytes))
 	sha3 := hash.Sum(nil)
 	return hex.EncodeToString(sha3[:20]) + hex.EncodeToString(sha3Prefix[:4])
+}
+
+// ConsensusStatePath returns the suffix store key for the consensus state at a
+// particular height stored in a client prefixed store.
+func ConsensusStateBlockHashPath(height exported.Height) string {
+	return fmt.Sprintf("%s/%s", KeyConsensusStateBlockHashPrefix, height)
+}
+
+// ConsensusStateKey returns the store key for a the consensus state of a particular
+// client stored in a client prefixed store.
+func ConsensusStateBlockHashKey(height exported.Height) []byte {
+	return []byte(ConsensusStateBlockHashPath(height))
 }

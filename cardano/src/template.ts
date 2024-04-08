@@ -1,4 +1,4 @@
-import { UTxO } from "https://deno.land/x/lucid@0.10.7/mod.ts";
+import { UTxO } from "npm:@dinhbx/lucid-custom";
 
 type Validator =
   | "spendHandler"
@@ -10,9 +10,13 @@ type Validator =
   | "spendChannel"
   | "mintPort"
   | "mintIdentifier"
-  | "spendMockModule";
+  | "spendMockModule"
+  | "spendTransferModule"
+  | "mintVoucher";
 
-type Module = "handler" | "mock";
+type Module = "handler" | "mock" | "transfer";
+
+type Tokens = "mock";
 
 export type DeploymentTemplate = {
   validators: Record<
@@ -35,5 +39,9 @@ export type DeploymentTemplate = {
       identifier: string;
       address: string;
     }
+  >;
+  tokens: Record<
+    Tokens,
+    string
   >;
 };
