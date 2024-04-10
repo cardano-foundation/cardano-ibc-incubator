@@ -128,7 +128,7 @@ test test_create_valid_client() {
         next_client_sequence: mock_client_id,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: mock_handler_auth_token,
     }

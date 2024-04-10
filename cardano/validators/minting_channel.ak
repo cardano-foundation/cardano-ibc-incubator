@@ -344,7 +344,7 @@ fn setup() -> MockData {
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: channel_sequence,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: handler_token,
     }
@@ -626,9 +626,9 @@ test succeed_chan_open_init() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: channel_token,
@@ -665,20 +665,20 @@ test succeed_chan_open_init() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.channel_minting_policy_id),
-           mint_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.channel_minting_policy_id),
+          mint_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -733,7 +733,10 @@ test succeed_chan_open_try() {
     Channel {
       state: channel_state.TryOpen,
       ordering: Ordered,
-      counterparty: ChannelCounterparty { port_id: "port-1", channel_id: "channel-0" },
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
     }
@@ -745,9 +748,9 @@ test succeed_chan_open_try() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: channel_token,
@@ -883,20 +886,20 @@ test succeed_chan_open_try() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.channel_minting_policy_id),
-           mint_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.channel_minting_policy_id),
+          mint_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =

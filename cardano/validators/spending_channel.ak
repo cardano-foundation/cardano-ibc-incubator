@@ -322,7 +322,11 @@ validator(
             channel_order.Unordered -> {
               trace @"spend_channel: channel ordering is  Unordered"
 
-              expect !dict.has_key(cur_packet_receipt, packet.sequence)
+              expect
+                (
+                  dict.from_list(cur_packet_receipt, int.compare)
+                    |> dict.has_key(packet.sequence)
+                ) == False
               trace @"spend_channel: packet not relayed yet"
 
               True
@@ -341,7 +345,11 @@ validator(
             }
           }
 
-        expect !dict.has_key(cur_packet_acknowledgement, packet.sequence)
+        expect
+          (
+            dict.from_list(cur_packet_acknowledgement, int.compare)
+              |> dict.has_key(packet.sequence)
+          ) == False
         trace @"spend_channel: acknowledgement not relayed yet"
 
         let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
@@ -517,7 +525,8 @@ validator(
         trace @"spend_channel: packet is timeout"
 
         expect Some(commitment) =
-          dict.get(cur_packet_commitment, packet.sequence)
+          dict.from_list(cur_packet_commitment, int.compare)
+            |> dict.get(packet.sequence)
         trace @"spend_channel: packet commitment existed"
 
         let packet_commitment = packet_mod.commit_packet(packet)
@@ -642,7 +651,8 @@ validator(
         trace @"spend_channel: client status is active"
 
         expect Some(commitment) =
-          dict.get(cur_packet_commitment, packet.sequence)
+          dict.from_list(cur_packet_commitment, int.compare)
+            |> dict.get(packet.sequence)
         trace @"spend_channel: packet commitment existed"
 
         let packet_commitment = packet_mod.commit_packet(packet)
@@ -1143,12 +1153,12 @@ fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum {
     state: ChannelDatumState {
       ..channel_datum.state,
       next_sequence_send: channel_datum.state.next_sequence_send + 1,
-      packet_commitment: dict.insert(
+      packet_commitment: dict.from_list(
         channel_datum.state.packet_commitment,
-        packet.sequence,
-        commitment,
         int.compare,
-      ),
+      )
+        |> dict.insert(packet.sequence, commitment, int.compare)
+        |> dict.to_list(),
     },
   }
 }
@@ -1173,9 +1183,9 @@ test succeed_chan_open_ack() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1225,9 +1235,9 @@ test succeed_chan_open_ack() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1344,15 +1354,15 @@ test succeed_chan_open_ack() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1401,9 +1411,9 @@ test succeed_chan_open_confirm() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1555,15 +1565,15 @@ test succeed_chan_open_confirm() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1612,9 +1622,9 @@ test succeed_recv_packet() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1666,18 +1676,18 @@ test succeed_recv_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_receipt: dict.insert(
+        packet_receipt: dict.from_list(
           input_channel_datum.state.packet_receipt,
-          packet.sequence,
-          "",
           int.compare,
-        ),
-        packet_acknowledgement: dict.insert(
+        )
+          |> dict.insert(packet.sequence, "", int.compare)
+          |> dict.to_list(),
+        packet_acknowledgement: dict.from_list(
           input_channel_datum.state.packet_acknowledgement,
-          packet.sequence,
-          commit_ack,
           int.compare,
-        ),
+        )
+          |> dict.insert(packet.sequence, commit_ack, int.compare)
+          |> dict.to_list(),
       },
     }
 
@@ -1803,15 +1813,15 @@ test succeed_recv_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1872,9 +1882,9 @@ test succeed_send_packet() {
         next_sequence_send: packet.sequence,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1910,12 +1920,12 @@ test succeed_send_packet() {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.insert(
+        packet_commitment: dict.from_list(
           input_channel_datum.state.packet_commitment,
-          packet.sequence,
-          commitment,
           int.compare,
-        ),
+        )
+          |> dict.insert(packet.sequence, commitment, int.compare)
+          |> dict.to_list(),
       },
     }
 
@@ -1936,15 +1946,15 @@ test succeed_send_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -2007,9 +2017,9 @@ test succeed_timeout_packet() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -2051,10 +2061,12 @@ test succeed_timeout_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.delete(
+        packet_commitment: dict.from_list(
           input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
+          int.compare,
+        )
+          |> dict.delete(packet.sequence)
+          |> dict.to_list(),
       },
     }
 
@@ -2196,15 +2208,15 @@ test succeed_timeout_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -2265,9 +2277,9 @@ test succeed_acknowledge_packet() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -2305,10 +2317,12 @@ test succeed_acknowledge_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.delete(
+        packet_commitment: dict.from_list(
           input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
+          int.compare,
+        )
+          |> dict.delete(packet.sequence)
+          |> dict.to_list(),
       },
     }
 
@@ -2439,15 +2453,15 @@ test succeed_acknowledge_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =

@@ -48,9 +48,10 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
         next_sequence_recv: 1,
         next_sequence_ack: 1,
         packet_commitment: dict.new()
-          |> dict.insert(packet.sequence, commitment, int.compare),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+          |> dict.insert(packet.sequence, commitment, int.compare)
+          |> dict.to_list(),
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -61,10 +62,12 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.delete(
+        packet_commitment: dict.from_list(
           input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
+          int.compare,
+        )
+          |> dict.delete(packet.sequence)
+          |> dict.to_list(),
       },
     }
 

@@ -47,9 +47,9 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -61,12 +61,12 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.insert(
+        packet_commitment: dict.from_list(
           input_channel_datum.state.packet_commitment,
-          packet.sequence,
-          commitment,
           int.compare,
-        ),
+        )
+          |> dict.insert(packet.sequence, commitment, int.compare)
+          |> dict.to_list(),
       },
     }
 

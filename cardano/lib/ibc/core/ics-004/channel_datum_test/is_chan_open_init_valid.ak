@@ -1,5 +1,3 @@
-use aiken/dict
-use aiken/int
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
@@ -28,9 +26,9 @@ fn setup() -> (ChannelDatum, AuthToken) {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -143,14 +141,12 @@ test fail_if_next_sequence_ack_is_not_1() fail {
 test fail_if_packet_commitment_is_not_empty() fail {
   let (chan_datum, auth_token) = setup()
 
-  let nonempty_dict = dict.new() |> dict.insert(1, "", int.compare)
-
   let chan_datum =
     ChannelDatum {
       ..chan_datum,
       state: ChannelDatumState {
         ..chan_datum.state,
-        packet_commitment: nonempty_dict,
+        packet_commitment: [(1, "")],
       },
     }
 
@@ -160,15 +156,10 @@ test fail_if_packet_commitment_is_not_empty() fail {
 test fail_if_packet_receipt_is_not_empty() fail {
   let (chan_datum, auth_token) = setup()
 
-  let nonempty_dict = dict.new() |> dict.insert(1, "", int.compare)
-
   let chan_datum =
     ChannelDatum {
       ..chan_datum,
-      state: ChannelDatumState {
-        ..chan_datum.state,
-        packet_receipt: nonempty_dict,
-      },
+      state: ChannelDatumState { ..chan_datum.state, packet_receipt: [(1, "")] },
     }
 
   channel_datum_mod.is_chan_open_init_valid(chan_datum, auth_token)
@@ -177,14 +168,12 @@ test fail_if_packet_receipt_is_not_empty() fail {
 test fail_if_packet_acknowledgement_is_not_empty() fail {
   let (chan_datum, auth_token) = setup()
 
-  let nonempty_dict = dict.new() |> dict.insert(1, "", int.compare)
-
   let chan_datum =
     ChannelDatum {
       ..chan_datum,
       state: ChannelDatumState {
         ..chan_datum.state,
-        packet_acknowledgement: nonempty_dict,
+        packet_acknowledgement: [(1, "")],
       },
     }
 

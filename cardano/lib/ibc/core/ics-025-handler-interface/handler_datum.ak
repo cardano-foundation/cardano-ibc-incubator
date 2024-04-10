@@ -1,5 +1,5 @@
-use aiken/dict
 use aiken/int
+use aiken/list
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 
@@ -19,7 +19,7 @@ pub fn is_initialized_valid(datum: HandlerDatum, auth_token: AuthToken) -> Bool 
 
   expect state.next_channel_sequence == 0
 
-  expect state.bound_port == dict.new()
+  expect state.bound_port == []
 
   expect token == auth_token
 
@@ -62,16 +62,18 @@ pub fn validate_bind_port(
   port: Int,
 ) -> Bool {
   expect
-    when dict.get(old.state.bound_port, port) is {
-      Some(val) -> val == False
-      None -> True
+    if list.has(old.state.bound_port, port) {
+      False
+    } else {
+      True
     }
 
   HandlerDatum {
     ..old,
     state: HandlerState {
       ..old.state,
-      bound_port: dict.insert(old.state.bound_port, port, True, int.compare),
+      bound_port: list.push(old.state.bound_port, port)
+        |> list.sort(int.compare),
     },
   } == new
 }

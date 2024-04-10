@@ -762,7 +762,7 @@ fn setup_validate_handler_redeemer() -> (
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: handler_token,
     }
