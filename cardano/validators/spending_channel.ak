@@ -16,6 +16,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client as client_status
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -40,7 +41,7 @@ use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as channel_state
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnAcknowledgementPacket, OnChanOpenAck, OnChanOpenConfirm,
-  OnRecvPacket, OnTimeoutPacket, Operator,
+  OnRecvPacket, OnTimeoutPacket, Operator, OtherModuleData, OtherModuleOperator
 }
 use ibc/core/ics_005/types/keys as port_keys_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -50,7 +51,6 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -1379,15 +1379,15 @@ test succeed_chan_open_ack() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -1590,15 +1590,15 @@ test succeed_chan_open_confirm() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -1828,25 +1828,21 @@ test succeed_recv_packet() {
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
     Callback(
-      OnRecvPacket {
-        channel_id,
-        acknowledgement: ack,
-        data: "mock fungible packet data in Data",
-      },
+      OnRecvPacket { channel_id, acknowledgement: ack, data: OtherModuleData },
     )
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -1966,20 +1962,20 @@ test succeed_send_packet() {
   //========================arrange redeemers=======================
   let spend_channel_redeemer = SendPacket { packet }
 
-  let module_redeemer: Redeemer = Operator("mock fungible packet data in Data")
+  let module_redeemer: Redeemer = Operator(OtherModuleOperator)
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -2227,21 +2223,21 @@ test succeed_timeout_packet() {
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
     Callback(
-      OnTimeoutPacket { channel_id, data: "mock fungible packet data in Data" },
+      OnTimeoutPacket { channel_id, data: OtherModuleData },
     )
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -2470,7 +2466,7 @@ test succeed_acknowledge_packet() {
     Callback(
       OnAcknowledgementPacket {
         channel_id,
-        data: "mock fungible packet data in Data",
+        data: OtherModuleData,
         acknowledgement: acknowledgement_mod.new_result_acknowledgement(#"01"),
       },
     )
@@ -2478,15 +2474,15 @@ test succeed_acknowledge_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(channel_input.output_reference),
+           spend_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =

@@ -1,4 +1,11 @@
+use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/core/ics_004/types/acknowledgement.{Acknowledgement}
+use ibc/apps/transfer/transfer_module_redeemer.{TransferModuleRedeemer}
+
+pub type IBCModulePacketData {
+  TransferModuleData(FungibleTokenPacketData)
+  OtherModuleData
+}
 
 pub type IBCModuleCallback {
   OnChanOpenInit { channel_id: ByteArray }
@@ -8,17 +15,22 @@ pub type IBCModuleCallback {
   OnRecvPacket {
     channel_id: ByteArray,
     acknowledgement: Acknowledgement,
-    data: Data,
+    data: IBCModulePacketData,
   }
-  OnTimeoutPacket { channel_id: ByteArray, data: Data }
+  OnTimeoutPacket { channel_id: ByteArray, data: IBCModulePacketData }
   OnAcknowledgementPacket {
     channel_id: ByteArray,
     acknowledgement: Acknowledgement,
-    data: Data,
+    data: IBCModulePacketData,
   }
+}
+
+pub type IBCModuleOperator {
+  TransferModuleOperator(TransferModuleRedeemer)
+  OtherModuleOperator
 }
 
 pub type IBCModuleRedeemer {
   Callback(IBCModuleCallback)
-  Operator(Data)
+  Operator(IBCModuleOperator)
 }

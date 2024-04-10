@@ -15,7 +15,7 @@ use ibc/apps/transfer/mint_voucher_redeemer.{
 }
 use ibc/apps/transfer/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/transfer_module_redeemer.{
-  OtherTransferOp, Transfer, TransferModuleRedeemer,
+  OtherTransferOp, Transfer,
 }
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
@@ -37,9 +37,10 @@ use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, IBCModuleCallback, IBCModuleRedeemer, OnAcknowledgementPacket,
-  OnChanOpenAck, OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket,
-  OnTimeoutPacket, Operator,
+  Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
+  OnAcknowledgementPacket, OnChanOpenAck, OnChanOpenConfirm, OnChanOpenInit,
+  OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator, TransferModuleData,
+  TransferModuleOperator,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
@@ -199,7 +200,7 @@ fn handler_callback(
       expect transfer_ibc_module.validate_on_chan_recv_packet(acknowledgement)
       trace @"spend_transfer_module: acknowledgement is valid"
 
-      expect data: FungibleTokenPacketData = data
+      expect TransferModuleData(data) = data
       expect fungible_token_packet_data.validate_basic(data)
       trace @"spend_transfer_module: redeemer data is valid"
 
@@ -344,7 +345,7 @@ fn handler_callback(
       expect TimeoutPacket { packet, .. } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect data: FungibleTokenPacketData = data
+      expect TransferModuleData(data) = data
       expect fungible_token_packet_data.get_bytes(data) == packet.data
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
@@ -374,7 +375,7 @@ fn handler_callback(
         channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect data: FungibleTokenPacketData = data
+      expect TransferModuleData(data) = data
       expect fungible_token_packet_data.get_bytes(data) == packet.data
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
@@ -400,14 +401,14 @@ fn handler_callback(
 }
 
 fn handler_operator(
-  op: Data,
+  op: IBCModuleOperator,
   handler_token: AuthToken,
   context: ScriptContext,
   updated_output: Output,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect op: TransferModuleRedeemer = op
+  expect TransferModuleOperator(op) = op
   let (spent_output, transaction) =
     validator_utils.extract_spending_context(context)
   let Transaction { redeemers, inputs, .. } = transaction
@@ -1250,9 +1251,15 @@ test on_recv_packet_mint_voucher_succeed() {
       mock.channel_id,
     )
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
     Callback(
-      OnRecvPacket { channel_id: mock.channel_id, acknowledgement, data: ftpd },
+      OnRecvPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: packet_data,
+      },
     )
 
   let channel_redeemer: Redeemer =
@@ -1374,9 +1381,15 @@ test on_recv_packet_unescrow_succeed() {
       mock.channel_id,
     )
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
     Callback(
-      OnRecvPacket { channel_id: mock.channel_id, acknowledgement, data: ftpd },
+      OnRecvPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: packet_data,
+      },
     )
 
   let channel_redeemer: Redeemer =
@@ -1468,7 +1481,11 @@ test transfer_escrow_succeed() {
     )
 
   let module_redeemer: Redeemer =
-    Operator(Transfer { channel_id: mock.channel_id, data: ftpd })
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
 
   let channel_redeemer: Redeemer = SendPacket { packet }
 
@@ -1570,7 +1587,11 @@ test transfer_burn_voucher_succeed() {
     )
 
   let module_redeemer: Redeemer =
-    Operator(Transfer { channel_id: mock.channel_id, data: ftpd })
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
 
   let channel_redeemer: Redeemer = SendPacket { packet }
 
@@ -1658,8 +1679,10 @@ test on_timeout_packet_mint_voucher_succeed() {
       "channel-0",
     )
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: ftpd })
+    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -1775,8 +1798,10 @@ test on_timeout_packet_unescrow_succeed() {
       mock.channel_id,
     )
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: ftpd })
+    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -1861,12 +1886,14 @@ test on_acknowledgement_packet_result_succeed() {
 
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
         acknowledgement,
-        data: ftpd,
+        data: packet_data,
       },
     )
 
@@ -1955,12 +1982,14 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
         acknowledgement,
-        data: ftpd,
+        data: packet_data,
       },
     )
 
@@ -2082,12 +2111,14 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
 
+  let packet_data = TransferModuleData(ftpd)
+
   let module_redeemer: Redeemer =
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
         acknowledgement,
-        data: ftpd,
+        data: packet_data,
       },
     )
 
