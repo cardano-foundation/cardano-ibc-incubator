@@ -1,7 +1,6 @@
 use aiken/dict
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
   TransactionId,
@@ -29,6 +28,7 @@ use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/update as update_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_023_vector_commitments/merkle
@@ -311,7 +311,7 @@ test update_client_misbehaviour_conflict_header() {
     }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let trusted_height = Height { revision_number: 1, revision_height: 1 }
 
@@ -543,7 +543,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
     }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let trusted_height = Height { revision_number: 1, revision_height: 1 }
 
@@ -776,7 +776,7 @@ test update_client_verify_adjacent_succeed() {
     Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let client_state =
     ClientState {
@@ -999,7 +999,7 @@ test update_client_verify_non_adjacent_succeed() {
     Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let client_state =
     ClientState {

@@ -3,7 +3,6 @@ use aiken/hash.{Blake2b_224, Hash}
 use aiken/int
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -51,6 +50,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/validator_utils
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -940,7 +940,7 @@ fn setup() -> MockData {
       },
     }
 
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let proof_specs =
     [

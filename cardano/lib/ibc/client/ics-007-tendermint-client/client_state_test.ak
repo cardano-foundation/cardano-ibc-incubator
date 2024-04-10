@@ -1,9 +1,9 @@
 use aiken/dict.{Dict}
 use aiken/list
-use aiken/math/rational
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{
   Active, Expired, Frozen, Status,
 }
@@ -25,7 +25,7 @@ test test_validate_success() {
       // valid client
       client_state.new_client_state(
         "sidechain-0",
-        rational.from_int(1),
+        unchecked_rational.from_int(1),
         1000,
         1500,
         10,
@@ -35,7 +35,7 @@ test test_validate_success() {
       // valid chain id
       client_state.new_client_state(
         fifty_char_chain_id,
-        rational.from_int(1),
+        unchecked_rational.from_int(1),
         1000,
         1500,
         10,
@@ -58,7 +58,7 @@ test test_validate_fail_empty_chain_id() fail {
   let cs =
     client_state.new_client_state(
       empty_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       10,
@@ -73,7 +73,7 @@ test test_validate_fail_chain_id_too_long() fail {
   let cs =
     client_state.new_client_state(
       fifty_one_char_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       10,
@@ -85,7 +85,7 @@ test test_validate_fail_chain_id_too_long() fail {
 
 // invalid trust level
 test test_validate_fail_invalid_trust_level() fail {
-  expect Some(invalid_trust_level) = rational.new(1, 4)
+  let invalid_trust_level = unchecked_rational.new(1, 4)
   let cs =
     client_state.new_client_state(
       "sidechain-0",
@@ -104,7 +104,7 @@ test test_validate_fail_zero_trusting_period() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       0,
       1500,
       10,
@@ -119,7 +119,7 @@ test test_validate_fail_negative_trusting_period() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       -1,
       1500,
       10,
@@ -134,7 +134,7 @@ test test_validate_zero_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       0,
       10,
@@ -149,7 +149,7 @@ test test_validate_fail_negative_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       -1,
       10,
@@ -164,7 +164,7 @@ test test_validate_fail_zero_max_clock_drift() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       0,
@@ -179,7 +179,7 @@ test test_validate_fail_negative_max_clock_drift() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       -1,
@@ -194,7 +194,7 @@ test test_validate_fail_invalid_revision_height() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       10,
@@ -209,7 +209,7 @@ test test_validate_fail_trusting_period_not_less_than_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1501,
       1500,
       10,
@@ -227,7 +227,7 @@ test test_get_timestamp_at_height() {
   let mock_client_state =
     client_state.new_client_state(
       "sidechain-0",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       10,
@@ -249,7 +249,7 @@ test test_get_timestamp_at_height() {
 }
 
 test test_get_latest_height() {
-  expect Some(trust_level) = rational.new(1, 1)
+  let trust_level = unchecked_rational.new(1, 1)
 
   let cs =
     ClientState {
@@ -272,7 +272,7 @@ test test_get_latest_height() {
 // Tests the correctness of the new_client_state method.
 test new_client_state() {
   // Defining parameters for the client state
-  expect Some(trust_level) = rational.new(3, 2)
+  let trust_level = unchecked_rational.new(3, 2)
   let chain_id = "cosmoshub"
   let trusting_period = 1000
   let unbonding_period = 1001
@@ -311,7 +311,7 @@ test test_get_chain_id() {
   let mock_client_state =
     client_state.new_client_state(
       mock_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1000,
       1500,
       10,
@@ -322,7 +322,7 @@ test test_get_chain_id() {
 }
 
 test test_is_expired() {
-  expect Some(trust_level) = rational.new(3, 2)
+  let trust_level = unchecked_rational.new(3, 2)
   // Creating the client state using the defined parameters
   let mock_client_state =
     ClientState {
@@ -364,15 +364,15 @@ test test_is_expired() {
 
   test_cases
     |> list.all(
-         fn(case) {
-           client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }
 
 // Tests the correctness of the new_client_state method.
 test status() {
-  expect Some(trust_level) = rational.new(3, 2)
+  let trust_level = unchecked_rational.new(3, 2)
   let sample_root =
     MerkleRoot {
       hash: #"92dad9443e4dd6d70a7f11872101ebff87e21798e4fbb26fa4bf590eb440e71b",
@@ -407,14 +407,14 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 0,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+              latest_height,
+              ConsensusState {
+                timestamp: 0,
+                next_validators_hash,
+                root: sample_root,
+              },
+              height.compare,
+            ),
         Frozen,
       ),
       // Expired when consensus state is not found
@@ -448,14 +448,14 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 9999000,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+              latest_height,
+              ConsensusState {
+                timestamp: 9999000,
+                next_validators_hash,
+                root: sample_root,
+              },
+              height.compare,
+            ),
         Expired,
       ),
       //Active consensus state time + trusting period > now
@@ -473,21 +473,21 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 10000000,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+              latest_height,
+              ConsensusState {
+                timestamp: 10000000,
+                next_validators_hash,
+                root: sample_root,
+              },
+              height.compare,
+            ),
         Active,
       ),
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           client_state.status(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          client_state.status(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }

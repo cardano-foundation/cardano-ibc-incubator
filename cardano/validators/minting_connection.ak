@@ -1,7 +1,6 @@
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -41,6 +40,7 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerConnOpenInit, HandlerConnOpenTry,
 }
 use ibc/utils/validator_utils
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -356,7 +356,7 @@ fn setup() -> MockData {
   let client_state =
     ClientState {
       chain_id: "testchain1-1",
-      trust_level: rational.from_int(1),
+      trust_level: unchecked_rational.from_int(1),
       trusting_period: 1209600000000000,
       unbonding_period: 1814400000000000,
       max_clock_drift: 10000000000,

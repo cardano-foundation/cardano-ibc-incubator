@@ -1,5 +1,4 @@
 use aiken/dict
-use aiken/math/rational
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -16,6 +15,7 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_023_vector_commitments/merkle
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 const mock_chain_id = "sidechain-0"
 
@@ -99,7 +99,7 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
   let mock_client_state =
     client_state.new_client_state(
       mock_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       mock_trusting_period,
       mock_unbonding_period,
       mock_max_clock_drift,
@@ -138,7 +138,7 @@ test test_is_initialized_valid_success() {
   let mock_client_state =
     client_state.new_client_state(
       mock_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       mock_trusting_period,
       mock_unbonding_period,
       mock_max_clock_drift,
@@ -183,7 +183,7 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
   let mock_client_state =
     client_state.new_client_state(
       invalid_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       mock_trusting_period,
       mock_unbonding_period,
       mock_max_clock_drift,
@@ -224,7 +224,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
   let mock_client_state =
     client_state.new_client_state(
       mock_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       mock_trusting_period,
       mock_unbonding_period,
       mock_max_clock_drift,
@@ -255,7 +255,7 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
   let mock_client_state =
     client_state.new_client_state(
       mock_chain_id,
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       mock_trusting_period,
       mock_unbonding_period,
       mock_max_clock_drift,

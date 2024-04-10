@@ -2,7 +2,6 @@ use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
   Publish, Redeemer, ScriptContext, ScriptPurpose, Spend, Transaction,
@@ -38,6 +37,7 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient, HandlerConnOpenInit, HandlerOperator,
 }
 use ibc/utils/validator_utils
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 const hash_sample =
   #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
@@ -944,7 +944,7 @@ fn setup_validate_referred_client() -> (
   let mock_client_state =
     client_state.new_client_state(
       "",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1,
       1,
       1,

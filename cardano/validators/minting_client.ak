@@ -2,7 +2,6 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId,
@@ -28,6 +27,7 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient as HandlerCreateClient, HandlerOperator,
 }
 use ibc/utils/validator_utils
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
   fn mint_client(redeemer: MintClientRedeemer, context: ScriptContext) -> Bool {
@@ -171,7 +171,7 @@ test test_create_valid_client() {
   let new_client_state =
     client_state.new_client_state(
       chain_id: "cosmoshub",
-      trust_level: rational.from_int(1),
+      trust_level: unchecked_rational.from_int(1),
       trusting_period: 1_000_000_000_000,
       unbonding_period: 1_000_000_000_001,
       max_clock_drift: 1,

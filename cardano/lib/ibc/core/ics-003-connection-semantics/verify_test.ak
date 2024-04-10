@@ -1,5 +1,4 @@
 use aiken/dict
-use aiken/math/rational
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -19,6 +18,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 test succeed_verify_channel_state() {
   let cons_state =
@@ -30,7 +30,7 @@ test succeed_verify_channel_state() {
       },
     }
 
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let proof_specs =
     [

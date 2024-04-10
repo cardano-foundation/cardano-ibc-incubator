@@ -1,7 +1,6 @@
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -50,6 +49,7 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerChanOpenInit, HandlerChanOpenTry,
 }
 use ibc/utils/validator_utils
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -219,7 +219,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"mint_channel: client status is active\n"
 
@@ -439,7 +442,7 @@ fn setup() -> MockData {
       },
     }
 
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let proof_specs =
     [
@@ -519,7 +522,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare) |> dict.to_list(),
+          |> dict.insert(proof_height, cons_state, height_mod.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }
