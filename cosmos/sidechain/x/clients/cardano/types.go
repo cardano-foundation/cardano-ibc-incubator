@@ -226,20 +226,20 @@ type ChannelDatumWithPort struct {
 	Token  TokenDatum
 }
 
-func (blockOutput *ExtractBlockOutput) GetListRegisCertPoolId() []string {
+func GetListRegisCertPoolId(regisCerts []RegisCert) []string {
 	poolId := make([]string, 0)
-	if len(blockOutput.RegisCerts) > 0 {
-		for _, cert := range blockOutput.RegisCerts {
+	if len(regisCerts) > 0 {
+		for _, cert := range regisCerts {
 			poolId = append(poolId, cert.RegisPoolId)
 		}
 	}
 	return poolId
 }
 
-func (blockOutput *ExtractBlockOutput) GetListUnregisCertPoolId() []string {
+func GetListUnregisCertPoolId(deRegisCerts []DeRegisCert) []string {
 	poolId := make([]string, 0)
-	if len(blockOutput.DeRegisCerts) > 0 {
-		for _, cert := range blockOutput.DeRegisCerts {
+	if len(deRegisCerts) > 0 {
+		for _, cert := range deRegisCerts {
 			poolId = append(poolId, cert.DeRegisPoolId)
 		}
 	}
