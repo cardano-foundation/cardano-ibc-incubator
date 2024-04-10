@@ -1,4 +1,5 @@
-use aiken/dict.{Dict}
+use aiken/dict
+use aiken/list
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -12,7 +13,7 @@ pub type ClientDatum {
 
 pub type ClientDatumState {
   client_state: ClientState,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: List<(Height, ConsensusState)>,
 }
 
 pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
@@ -24,8 +25,9 @@ pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
 
   // validate consensus states
   let latest_height = client_state_mod.get_latest_height(client_state)
-  expect dict.size(consensus_states) == 1
-  expect Some(_consensus_state) = dict.get(consensus_states, latest_height)
+  expect list.length(consensus_states) == 1
+  expect Some(_consensus_state) =
+    dict.from_list(consensus_states, height.compare) |> dict.get(latest_height)
   // TODO: add consensus_state.validate_basic()
   expect token == auth_token
 
@@ -40,7 +42,10 @@ pub fn update_state(
 ) -> Bool {
   let header_height = header_mod.get_height(header)
 
-  expect !dict.has_key(input_datum.state.consensus_states, header_height)
+  let input_datum_cons_state =
+    dict.from_list(input_datum.state.consensus_states, height.compare)
+
+  expect !dict.has_key(input_datum_cons_state, header_height)
 
   let latest_height = {
     let input_height =
@@ -59,7 +64,7 @@ pub fn update_state(
 
   let expected_cons_state =
     dict.filter(
-      input_datum.state.consensus_states,
+      input_datum_cons_state,
       fn(_key, val) {
         !client_state_mod.is_expired(
           input_datum.state.client_state,
@@ -82,7 +87,7 @@ pub fn update_state(
       ..input_datum,
       state: ClientDatumState {
         client_state: expected_client_state,
-        consensus_states: expected_cons_state,
+        consensus_states: expected_cons_state |> dict.to_list(),
       },
     }
 

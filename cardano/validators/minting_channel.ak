@@ -124,7 +124,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"mint_channel: client status is active\n"
 
@@ -216,7 +219,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(client_datum.state.consensus_states, height_mod.compare),
           ) == Active
         trace @"mint_channel: client status is active\n"
 
@@ -516,7 +519,7 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare),
+          |> dict.insert(proof_height, cons_state, height_mod.compare) |> dict.to_list(),
       },
       token: client_token,
     }

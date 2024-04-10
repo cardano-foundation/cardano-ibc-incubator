@@ -42,10 +42,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     expect Some(handler_input) =
       inputs
         |> list.find(
-             fn(input) {
-               input.output |> auth.contain_auth_token(handler_auth_token)
-             },
-           )
+            fn(input) {
+              input.output |> auth.contain_auth_token(handler_auth_token)
+            },
+          )
 
     // spent handler redeemer is CreateClient operator
     expect Some(spent_handler_redeemer) =
@@ -92,7 +92,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
         client_output_datum.state.client_state,
         // posix time in cardano is millisecond while time of cosmos tendermint is nanosecond
         tx_valid_to * 1_000_000,
-        client_output_datum.state.consensus_states,
+        dict.from_list(
+          client_output_datum.state.consensus_states,
+          height.compare,
+        ),
       ) == Active
 
     True
@@ -191,7 +194,8 @@ test test_create_valid_client() {
       state: ClientDatumState {
         client_state: new_client_state,
         consensus_states: dict.new()
-          |> dict.insert(mock_latest_height, new_consensus_state, height.compare),
+          |> dict.insert(mock_latest_height, new_consensus_state, height.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }

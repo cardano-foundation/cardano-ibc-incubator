@@ -10,6 +10,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/params
+use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/channel_keys
@@ -17,7 +18,6 @@ use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/math
-use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 
 pub fn verify_connection_state(
   client_datum_state: ClientDatumState,
@@ -34,7 +34,8 @@ pub fn verify_connection_state(
       ),
     )
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -66,7 +67,8 @@ pub fn verify_client_state(
       ),
     )
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -101,7 +103,8 @@ pub fn verify_channel_state(
       merkle.new_merkle_path([channel_keys.channel_path(port_id, channel_id)]),
     )
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -137,7 +140,8 @@ pub fn verify_packet_commitment(
     )
   trace cbor.diagnostic(merkle_path)
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -171,7 +175,8 @@ pub fn verify_packet_acknowledgement(
     )
 
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
@@ -206,7 +211,8 @@ pub fn verify_packet_receipt_absence(
       ),
     )
   expect Some(consensus_state) =
-    dict.get(client_datum_state.consensus_states, proof_height)
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
   client_state.verify_non_membership(
     client_datum_state.client_state,
     consensus_state,

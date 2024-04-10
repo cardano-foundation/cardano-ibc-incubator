@@ -74,7 +74,7 @@ validator {
           client_state_mod.status(
             datum.state.client_state,
             tx_valid_to * 1_000_000,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
           ) == client_status_mod.Active
         trace @"spend_client: client status is Active"
 
@@ -87,7 +87,7 @@ validator {
           update_mod.verify_client_message(
             datum.state.client_state,
             tx_time,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
             msg,
           )
         trace @"spend_client: verify client msg succeeded"
@@ -95,7 +95,7 @@ validator {
         let found_misbehaviour =
           misbehaviour_handle_mod.check_for_misbehaviour(
             msg,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
           )
 
         if found_misbehaviour {
@@ -350,7 +350,10 @@ test update_client_misbehaviour_conflict_header() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -583,7 +586,10 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -767,12 +773,7 @@ test update_client_verify_adjacent_succeed() {
     }
 
   let header =
-    Header {
-      signed_header,
-      validator_set,
-      trusted_height,
-      trusted_validators,
-    }
+    Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
   expect Some(trust_level) = rational.new(1, 3)
@@ -802,7 +803,10 @@ test update_client_verify_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -826,10 +830,11 @@ test update_client_verify_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             ),
+              header_mod.get_height(header),
+              header_mod.consensus_state(header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
 
@@ -991,12 +996,7 @@ test update_client_verify_non_adjacent_succeed() {
     }
 
   let header =
-    Header {
-      signed_header,
-      validator_set,
-      trusted_height,
-      trusted_validators,
-    }
+    Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
   expect Some(trust_level) = rational.new(1, 3)
@@ -1026,7 +1026,10 @@ test update_client_verify_non_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -1050,10 +1053,11 @@ test update_client_verify_non_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             ),
+              header_mod.get_height(header),
+              header_mod.consensus_state(header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
 

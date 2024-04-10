@@ -211,7 +211,8 @@ test succeed_verify_channel_state() {
     ClientDatumState {
       client_state,
       consensus_states: dict.new()
-        |> dict.insert(proof_height, cons_state, height_mod.compare),
+        |> dict.insert(proof_height, cons_state, height_mod.compare)
+        |> dict.to_list(),
     }
 
   verify_mod.verify_channel_state(

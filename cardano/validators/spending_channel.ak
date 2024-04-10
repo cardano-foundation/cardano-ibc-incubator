@@ -134,7 +134,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active\n"
 
@@ -201,7 +204,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active\n"
 
@@ -282,7 +288,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active"
 
@@ -410,7 +419,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active"
 
@@ -426,7 +438,10 @@ validator(
         expect Some(latest_timestamp) =
           client_state.get_timestamp_at_height(
             client_datum.state.client_state,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
             latest_height,
           )
         expect
@@ -505,14 +520,20 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active"
 
         expect Some(proof_timestamp) =
           client_state.get_timestamp_at_height(
             client_datum.state.client_state,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
             proof_height,
           )
         expect or {
@@ -646,7 +667,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == client_status.Active
         trace @"spend_channel: client status is active"
 
@@ -996,7 +1020,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare),
+          |> dict.insert(proof_height, cons_state, height_mod.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }
@@ -1125,12 +1150,12 @@ fn update_client(
           ..client_datum.state.client_state,
           latest_height: latest_height,
         },
-        consensus_states: dict.insert(
+        consensus_states: dict.from_list(
           client_datum.state.consensus_states,
-          height,
-          consensus_state,
           height_mod.compare,
-        ),
+        )
+          |> dict.insert(height, consensus_state, height_mod.compare)
+          |> dict.to_list(),
       },
     }
 

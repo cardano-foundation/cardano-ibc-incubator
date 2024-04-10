@@ -109,14 +109,14 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-           latest_height,
-           ConsensusState {
-             timestamp: mock_timestamp,
-             next_validators_hash: mock_next_validators_hash,
-             root: merkle.new_merkle_root(mock_app_hash),
-           },
-           height.compare,
-         )
+          latest_height,
+          ConsensusState {
+            timestamp: mock_timestamp,
+            next_validators_hash: mock_next_validators_hash,
+            root: merkle.new_merkle_root(mock_app_hash),
+          },
+          height.compare,
+        )
   let mock_auth_token =
     AuthToken {
       policy_id: mock_auth_token_policy_id,
@@ -125,7 +125,7 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
   ClientDatum {
     state: ClientDatumState {
       client_state: mock_client_state,
-      consensus_states: mock_consensus_states,
+      consensus_states: mock_consensus_states |> dict.to_list(),
     },
     token: mock_auth_token,
   }
@@ -148,14 +148,14 @@ test test_is_initialized_valid_success() {
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-           mock_latest_height,
-           ConsensusState {
-             timestamp: mock_timestamp,
-             next_validators_hash: mock_next_validators_hash,
-             root: merkle.new_merkle_root(mock_app_hash),
-           },
-           height.compare,
-         )
+          mock_latest_height,
+          ConsensusState {
+            timestamp: mock_timestamp,
+            next_validators_hash: mock_next_validators_hash,
+            root: merkle.new_merkle_root(mock_app_hash),
+          },
+          height.compare,
+        )
   let mock_auth_token =
     AuthToken {
       policy_id: mock_auth_token_policy_id,
@@ -165,7 +165,7 @@ test test_is_initialized_valid_success() {
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states,
+        consensus_states: mock_consensus_states |> dict.to_list(),
       },
       token: mock_auth_token,
     }
@@ -193,14 +193,14 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-           mock_latest_height,
-           ConsensusState {
-             timestamp: mock_timestamp,
-             next_validators_hash: mock_next_validators_hash,
-             root: merkle.new_merkle_root(mock_app_hash),
-           },
-           height.compare,
-         )
+          mock_latest_height,
+          ConsensusState {
+            timestamp: mock_timestamp,
+            next_validators_hash: mock_next_validators_hash,
+            root: merkle.new_merkle_root(mock_app_hash),
+          },
+          height.compare,
+        )
   let mock_auth_token =
     AuthToken {
       policy_id: mock_auth_token_policy_id,
@@ -210,7 +210,7 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states,
+        consensus_states: mock_consensus_states |> dict.to_list(),
       },
       token: mock_auth_token,
     }
@@ -241,7 +241,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states,
+        consensus_states: mock_consensus_states |> dict.to_list(),
       },
       token: mock_auth_token,
     }
@@ -265,14 +265,14 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-           mock_latest_height,
-           ConsensusState {
-             timestamp: mock_timestamp,
-             next_validators_hash: mock_next_validators_hash,
-             root: merkle.new_merkle_root(mock_app_hash),
-           },
-           height.compare,
-         )
+          mock_latest_height,
+          ConsensusState {
+            timestamp: mock_timestamp,
+            next_validators_hash: mock_next_validators_hash,
+            root: merkle.new_merkle_root(mock_app_hash),
+          },
+          height.compare,
+        )
   let mock_auth_token =
     AuthToken {
       policy_id: mock_auth_token_policy_id,
@@ -287,7 +287,7 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states,
+        consensus_states: mock_consensus_states |> dict.to_list(),
       },
       token: mock_invalid_auth_token,
     }
@@ -312,12 +312,16 @@ test test_update_state_succeed_01() {
     ClientDatum {
       ..mock_client_datum,
       state: ClientDatumState {
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
         client_state: ClientState {
           ..mock_client_datum.state.client_state,
           latest_height: mock_header_lastest_height,
@@ -349,12 +353,16 @@ test test_update_state_succeed_02() {
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
   client_datum.update_state(
@@ -385,12 +393,16 @@ test test_update_state_succeed_03() {
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               Height { revision_number: 0, revision_height: 88 },
-               pruned_cons_state,
-               height.compare,
-             ),
+              Height { revision_number: 0, revision_height: 88 },
+              pruned_cons_state,
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
   let tx_valid_from =
@@ -399,21 +411,21 @@ test test_update_state_succeed_03() {
     ) / 1_000_000 - 100000000
 
   let expected_cons_state =
-    mock_client_datum.state.consensus_states
+    dict.from_list(mock_client_datum.state.consensus_states, height.compare)
       |> dict.filter(
-           fn(_key, val) {
-             !client_state.is_expired(
-               mock_client_datum.state.client_state,
-               val.timestamp,
-               tx_valid_from * 1_000_000,
-             )
-           },
-         )
+          fn(_key, val) {
+            !client_state.is_expired(
+              mock_client_datum.state.client_state,
+              val.timestamp,
+              tx_valid_from * 1_000_000,
+            )
+          },
+        )
       |> dict.insert(
-           header.get_height(mock_header),
-           header.consensus_state(mock_header),
-           height.compare,
-         )
+          header.get_height(mock_header),
+          header.consensus_state(mock_header),
+          height.compare,
+        )
 
   let input_client_datum = mock_client_datum
   let output_client_datum =
@@ -421,7 +433,7 @@ test test_update_state_succeed_03() {
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: expected_cons_state,
+        consensus_states: expected_cons_state |> dict.to_list(),
       },
     }
   client_datum.update_state(
@@ -446,12 +458,16 @@ test test_update_state_return_false_01() {
     ClientDatum {
       ..mock_client_datum,
       state: ClientDatumState {
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
         client_state: ClientState {
           ..mock_client_datum.state.client_state,
           latest_height: mock_header_lastest_height,
@@ -481,12 +497,16 @@ test test_update_state_return_false_02() {
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
   !client_datum.update_state(
@@ -510,12 +530,16 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
   let output_client_datum =
@@ -523,12 +547,16 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
       ..mock_client_datum,
       state: ClientDatumState {
         ..mock_client_datum.state,
-        consensus_states: mock_client_datum.state.consensus_states
+        consensus_states: dict.from_list(
+          mock_client_datum.state.consensus_states,
+          height.compare,
+        )
           |> dict.insert(
-               header.get_height(mock_header),
-               header.consensus_state(mock_header),
-               height.compare,
-             ),
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+              height.compare,
+            )
+          |> dict.to_list(),
       },
     }
   client_datum.update_state(
