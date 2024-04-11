@@ -1,4 +1,4 @@
-import { MsgTimeoutRefresh } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgTimeoutRefresh } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgTimeoutRefreshMockBuilder {
   private msgTimeoutRefreshMock: MsgTimeoutRefresh;

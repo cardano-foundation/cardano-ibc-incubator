@@ -1,5 +1,5 @@
-import { BinaryWriter } from '@cosmjs-types/src/binary';
-import { ClientState } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { BinaryWriter } from '@plus/proto-types/build/binary';
+import { ClientState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 class ClientStateTendermintMockBuilder {
   private clientState: ClientState;

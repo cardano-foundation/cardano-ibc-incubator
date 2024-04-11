@@ -17,7 +17,7 @@ import {
   MsgChannelOpenAckResponse,
   MsgChannelOpenInit,
   MsgChannelOpenInitResponse,
-} from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import msgChannelOpenInitMockBuilder from './mock/msg-channel-open-int';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { convertString2Hex } from '@shared/helpers/hex';

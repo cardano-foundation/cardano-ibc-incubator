@@ -1,4 +1,4 @@
-import { QueryConnectionRequest } from '@cosmjs-types/src/ibc/core/connection/v1/query';
+import { QueryConnectionRequest } from '@plus/proto-types/build/ibc/core/connection/v1/query';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { CONNECTION_ID_PREFIX } from '../../constant';
 

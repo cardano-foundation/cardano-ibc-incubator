@@ -11,13 +11,13 @@ import {
   QueryNewClientResponse,
   QueryBlockDataRequest,
   QueryBlockDataResponse,
-} from '@cosmjs-types/src/ibc/core/client/v1/query';
+} from '@plus/proto-types/build/ibc/core/client/v1/query';
 import {
   QueryConnectionRequest,
   QueryConnectionResponse,
   QueryConnectionsRequest,
   QueryConnectionsResponse,
-} from '@cosmjs-types/src/ibc/core/connection/v1/query';
+} from '@plus/proto-types/build/ibc/core/connection/v1/query';
 
 import {
   QueryChannelRequest,
@@ -42,7 +42,7 @@ import {
   QueryUnreceivedAcksResponse,
   QueryProofUnreceivedPacketsRequest,
   QueryProofUnreceivedPacketsResponse,
-} from '@cosmjs-types/src/ibc/core/channel/v1/query';
+} from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import {
   QueryBlockResultsRequest,
   QueryBlockResultsResponse,
@@ -50,7 +50,7 @@ import {
   QueryBlockSearchResponse,
   QueryTransactionByHashRequest,
   QueryTransactionByHashResponse,
-} from '@cosmjs-types/src/ibc/core/types/v1/query';
+} from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { QueryService } from './services/query.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';

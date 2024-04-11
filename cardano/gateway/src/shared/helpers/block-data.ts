@@ -1,4 +1,4 @@
-import { BlockData } from '../../../cosmjs-types/src/ibc/lightclients/ouroboros/ouroboros';
+import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 
 export function normalizeBlockDataFromOuroboros(blockDataRes: any): BlockData {
   const blockdata: BlockData = {

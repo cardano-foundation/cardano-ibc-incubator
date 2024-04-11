@@ -1,4 +1,4 @@
-import { MsgUpdateClientResponse } from '../../cosmjs-types/src/ibc/core/client/v1/tx';
+import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
 import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -13,7 +13,7 @@ import {
   MsgConnectionOpenInitResponse,
   MsgConnectionOpenTry,
   MsgConnectionOpenTryResponse,
-} from 'cosmjs-types/src/ibc/core/connection/v1/tx';
+} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
 import { ConnectionOpenInitOperator } from './dto/connection/connection-open-init-operator.dto';
 import { ConnectionOpenTryOperator } from './dto/connection/connection-open-try-operator.dto';

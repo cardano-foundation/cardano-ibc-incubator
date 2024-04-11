@@ -16,7 +16,7 @@ import {
   MsgConnectionOpenAckResponse,
   MsgConnectionOpenInit,
   MsgConnectionOpenInitResponse,
-} from '@cosmjs-types/src/ibc/core/connection/v1/tx';
+} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import msgConnectionOpenInitMockBuilder from './mock/msg-connection-open-int';
 import msgConnectionOpenAckMockBuilder from './mock/msg-connection-open-ack';
 import connectionDatumMockBuilder from './mock/connection-datum';
@@ -31,7 +31,7 @@ import {
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
-} from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import msgRecvPacketMockBuilder from './mock/msg-recv-packet';
 import channelDatumMockBuilder from './mock/channel-datum';
 import msgSendPacketMockBuilder from './mock/msg-send-packet';

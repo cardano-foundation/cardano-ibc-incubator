@@ -1,4 +1,4 @@
-import { ConsensusState } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { ConsensusState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 class ConsensusStateTendermintMockBuilder {
   private consensusState: ConsensusState;

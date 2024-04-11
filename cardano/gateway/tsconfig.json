@@ -22,11 +22,14 @@
     "paths": {
       "~@/*": ["src/*"],
       "@shared/*": ["src/shared/*"],
-      "@cosmjs-types/*": ["cosmjs-types/*"],
       "@utils/*": ["src/utils/*"],
       "@config/*": ["src/config/*"],
     }
   },
   "include": ["src/**/*", "handler.json", "src/deployment/handler.json"],
-  "exclude": ["*.test.ts", "*.spec.ts"]
+  "exclude": ["*.test.ts", "*.spec.ts"],
+  "rootDirs": [
+    "src",
+    "../../proto-types"
+  ],
 }

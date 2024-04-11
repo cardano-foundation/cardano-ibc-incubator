@@ -1,4 +1,4 @@
-import { MsgCreateClient, MsgUpdateClient } from '@cosmjs-types/src/ibc/core/client/v1/tx';
+import { MsgCreateClient, MsgUpdateClient } from '@plus/proto-types/build/ibc/core/client/v1/tx';
 import { decodeClientState, decodeConsensusState } from './helper';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { initializeClientState, validateClientState } from '@shared/helpers/client-state';
@@ -6,7 +6,7 @@ import { initializeConsensusState, validateConsensusState } from '@shared/helper
 import {
   ClientState as ClientStateMsg,
   ConsensusState as ConsensusStateMsg,
-} from 'cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { ClientState } from '@shared/types/client-state-types';
 import { ConsensusState } from '@shared/types/consensus-state';
 import { CLIENT_ID_PREFIX } from 'src/constant';

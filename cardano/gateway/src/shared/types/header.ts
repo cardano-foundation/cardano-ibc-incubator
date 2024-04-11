@@ -1,16 +1,16 @@
-import { ValidatorSet as ValidatorSetMsg } from '@cosmjs-types/src/tendermint/types/validator';
+import { ValidatorSet as ValidatorSetMsg } from '@plus/proto-types/build/tendermint/types/validator';
 import { ValidatorSet, validatorSetFromProto } from './cometbft/validator-set';
 import { SignedHeader, validateBasic as validateSignedHeaderBasic } from './cometbft/signed-header';
 import { Height } from './height';
-import { Header as HeaderMsg } from '../../../cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { fromHex, toHex } from '../helpers/hex';
 import { Rational } from './rational';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { TmHeader } from './cometbft/header';
 import { ConsensusState } from './consensus-state';
 import { ClientDatum } from './client-datum';
-import { Timestamp } from '@cosmjs-types/src/google/protobuf/timestamp';
-import { blockIDFlagFromJSON } from '@cosmjs-types/src/tendermint/types/types';
+import { Timestamp } from '@plus/proto-types/build/google/protobuf/timestamp';
+import { blockIDFlagFromJSON } from '@plus/proto-types/build/tendermint/types/types';
 import { EPOCH_DIFF_BTW_GO_JS } from '../../constant/block';
 import { safeAddClip } from '../helpers/number';
 

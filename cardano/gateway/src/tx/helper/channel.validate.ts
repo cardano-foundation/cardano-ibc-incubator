@@ -4,12 +4,12 @@ import {
   MsgChannelOpenConfirm,
   MsgChannelOpenInit,
   MsgChannelOpenTry,
-} from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { ChannelOpenInitOperator } from '../dto/channel/channel-open-init-operator.dto';
 import { Order } from 'src/shared/types/channel/order';
 import { ChannelOpenTryOperator } from '../dto/channel/channel-open-try-operator.dto';
 import { decodeMerkleProof } from './helper';
-import { MerkleProof } from '@cosmjs-types/src/ibc/core/commitment/v1/commitment';
+import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ChannelOpenAckOperator } from '../dto/channel/channel-open-ack-operator.dto';
 import { CHANNEL_ID_PREFIX } from 'src/constant';

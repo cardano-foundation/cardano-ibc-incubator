@@ -1,4 +1,4 @@
-import { MsgAcknowledgement } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgAcknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgAcknowledgePacketMockBuilder {
   private msgAcknowledgePacket: MsgAcknowledgement;

@@ -3,7 +3,7 @@ import {
   MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from '../../cosmjs-types/src/ibc/core/client/v1/tx';
+} from '@plus/proto-types/build/ibc/core/client/v1/tx';
 import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';

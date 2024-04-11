@@ -1,4 +1,4 @@
-import { PageRequest } from '@cosmjs-types/src/cosmos/base/query/v1beta1/pagination';
+import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 
 export function validPagination(pagination: PageRequest): PageRequest {

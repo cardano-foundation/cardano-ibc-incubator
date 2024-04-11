@@ -1,7 +1,9 @@
 version: '3.8'
 services:
   app:
-    build: .
+    build: 
+      context: ../..
+      dockerfile: cardano/gateway/Dockerfile
     network_mode: "host"
     env_file:
       - .env

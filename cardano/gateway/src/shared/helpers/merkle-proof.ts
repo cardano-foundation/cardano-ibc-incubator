@@ -1,10 +1,10 @@
 import { CommitmentProof, ExistenceProof, MerkleProof, NonExistenceProof } from '../types/isc-23/merkle';
-import { MerkleProof as MerkleProofMsg } from '@cosmjs-types/src/ibc/core/commitment/v1/commitment';
+import { MerkleProof as MerkleProofMsg } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import { toHex } from './hex';
 import {
   ExistenceProof as ExistenceProofMsg,
   NonExistenceProof as NonExistenceProofMsg,
-} from '@cosmjs-types/src/cosmos/ics23/v1/proofs';
+} from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
 
 export function initializeMerkleProof(merkleProofMsg: MerkleProofMsg): MerkleProof {
   const proofs: CommitmentProof[] = merkleProofMsg.proofs.map((commitmentProof) => {

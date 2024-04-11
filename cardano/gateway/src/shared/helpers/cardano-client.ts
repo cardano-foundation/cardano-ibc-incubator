@@ -1,4 +1,4 @@
-import { ClientState as ClientStateOuroboros } from 'cosmjs-types/src/ibc/lightclients/ouroboros/ouroboros';
+import { ClientState as ClientStateOuroboros } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { CardanoClientState } from '../types/cardano';
 import { convertString2Hex } from './hex';
 

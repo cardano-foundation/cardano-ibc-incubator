@@ -11,12 +11,12 @@ import {
   QueryLatestHeightResponse,
   QueryNewClientRequest,
   QueryNewClientResponse,
-} from '@cosmjs-types/src/ibc/core/client/v1/query';
-import { BlockData, ClientState, ConsensusState } from '@cosmjs-types/src/ibc/lightclients/ouroboros/ouroboros';
+} from '@plus/proto-types/build/ibc/core/client/v1/query';
+import { BlockData, ClientState, ConsensusState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
-} from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import {
   InteractionContext,
   WebSocketCloseHandler,
@@ -28,7 +28,7 @@ import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import { BlockDto } from '../dtos/block.dto';
 import { connectionConfig } from '@config/kupmios.config';
-import { Any } from '@cosmjs-types/src/google/protobuf/any';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { decodeHandlerDatum } from '@shared/types/handler-datum';
@@ -45,7 +45,7 @@ import {
   QueryBlockSearchResponse,
   QueryTransactionByHashRequest,
   QueryTransactionByHashResponse,
-} from '@cosmjs-types/src/ibc/core/types/v1/query';
+} from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
   CHANNEL_ID_PREFIX,
@@ -68,13 +68,13 @@ import {
   normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromModuleRedeemer,
 } from '@shared/helpers/block-results';
-import { ResponseDeliverTx, ResultBlockResults, ResultBlockSearch } from '@cosmjs-types/src/ibc/core/types/v1/block';
+import { ResponseDeliverTx, ResultBlockResults, ResultBlockSearch } from '@plus/proto-types/build/ibc/core/types/v1/block';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@dinhbx/lucid-custom';
-import { bytesFromBase64 } from '@cosmjs-types/src/helpers';
+import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { HttpService } from '@nestjs/axios';
 import { lastValueFrom } from 'rxjs';

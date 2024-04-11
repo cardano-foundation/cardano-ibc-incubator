@@ -16,7 +16,7 @@ import {
   MsgConnectionOpenAckResponse,
   MsgConnectionOpenInit,
   MsgConnectionOpenInitResponse,
-} from '@cosmjs-types/src/ibc/core/connection/v1/tx';
+} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import msgConnectionOpenInitMockBuilder from './mock/msg-connection-open-int';
 import msgConnectionOpenAckMockBuilder from './mock/msg-connection-open-ack';
 import connectionDatumMockBuilder from './mock/connection-datum';

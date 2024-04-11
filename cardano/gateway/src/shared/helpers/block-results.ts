@@ -1,4 +1,4 @@
-import { Event, EventAttribute, ResponseDeliverTx } from '../../../cosmjs-types/src/ibc/core/types/v1/block';
+import { Event, EventAttribute, ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
 import {
   EVENT_TYPE_CONNECTION,
   ATTRIBUTE_KEY_CONNECTION,
@@ -20,12 +20,12 @@ import { convertHex2String, toHex } from './hex';
 import { SpendChannelRedeemer } from '../types/channel/channel-redeemer';
 import { Packet } from '../types/channel/packet';
 import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_redeemer';
-import { Acknowledgement } from '../../../cosmjs-types/src/ibc/core/channel/v1/channel';
+import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
 import { SpendClientRedeemer } from '../types/client-redeemer';
 import { convertHeaderToTendermint } from '../types/header';
-import { Header } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
-import { Any } from '@cosmjs-types/src/google/protobuf/any';
+import { Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 
 export function normalizeEventConnection(evtType: ConnectionState): string {
   switch (evtType) {

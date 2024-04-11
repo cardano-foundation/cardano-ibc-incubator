@@ -44,6 +44,7 @@
     "lucid-cardano": "^0.10.7",
     "nestjs-grpc-exceptions": "^0.2.1",
     "pg": "^8.11.3",
+    "@plus/proto-types": "file:../../proto-types",
     "protobufjs": "^7.2.5",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.1",

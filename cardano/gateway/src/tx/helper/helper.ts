@@ -1,11 +1,11 @@
-import { ClientState, ConsensusState, Header } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { ClientState, ConsensusState, Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
-import { MerkleProof } from '@cosmjs-types/src/ibc/core/commitment/v1/commitment';
+import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import {
   ClientState as ClientStateOuroboros,
   Misbehaviour,
-} from 'cosmjs-types/src/ibc/lightclients/ouroboros/ouroboros';
+} from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
   denom = denom.trim();

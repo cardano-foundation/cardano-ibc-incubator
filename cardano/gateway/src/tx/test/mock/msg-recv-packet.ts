@@ -1,4 +1,4 @@
-import { MsgRecvPacket } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgRecvPacket } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgRecvPacketMockBuilder {
   private msgRecvPacketMock: MsgRecvPacket;

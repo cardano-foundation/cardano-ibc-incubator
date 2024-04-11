@@ -1,4 +1,4 @@
-import { Header } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
+import { Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 class HeaderMockBuilder {
   private headerMock: Header;

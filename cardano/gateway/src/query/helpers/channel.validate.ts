@@ -11,7 +11,7 @@ import {
   QueryUnreceivedPacketsRequest,
   QueryUnreceivedAcksRequest,
   QueryProofUnreceivedPacketsRequest,
-} from '@cosmjs-types/src/ibc/core/channel/v1/query';
+} from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { validPagination } from './helper';
 
 export function validQueryChannelParam(request: QueryChannelRequest): QueryChannelRequest {

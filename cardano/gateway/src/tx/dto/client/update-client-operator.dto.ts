@@ -2,7 +2,7 @@ import { UTxO } from '@dinhbx/lucid-custom';
 import { ClientDatum } from '../../../shared/types/client-datum';
 import { Misbehaviour } from '../../../shared/types/misbehaviour/misbehaviour';
 import { Header } from '../../../shared/types/header';
-import { Any } from '../../../../cosmjs-types/src/google/protobuf/any';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 
 export type UpdateClientOperatorDto = {
   clientId: string;

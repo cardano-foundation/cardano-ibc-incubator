@@ -14,8 +14,8 @@ import {
   QueryConsensusStateRequest,
   QueryLatestHeightRequest,
   QueryNewClientRequest,
-} from '@cosmjs-types/src/ibc/core/client/v1/query';
-import { QueryBlockResultsRequest, QueryTransactionByHashRequest } from '@cosmjs-types/src/ibc/core/types/v1/query';
+} from '@plus/proto-types/build/ibc/core/client/v1/query';
+import { QueryBlockResultsRequest, QueryTransactionByHashRequest } from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
@@ -44,8 +44,8 @@ import {
   query_packet_receipt_expected as queryPacketReceiptExpected,
   query_proof_unreceipt_expected as queryProofUnreceiptExpected,
 } from './mock/expected_data';
-import { QueryConnectionRequest, QueryConnectionsRequest } from '@cosmjs-types/src/ibc/core/connection/v1/query';
-import { PageRequest } from '@cosmjs-types/src/cosmos/base/query/v1beta1/pagination';
+import { QueryConnectionRequest, QueryConnectionsRequest } from '@plus/proto-types/build/ibc/core/connection/v1/query';
+import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
 import { PacketService } from '../services/packet.service';
 import {
   QueryChannelRequest,
@@ -59,7 +59,7 @@ import {
   QueryProofUnreceivedPacketsRequest,
   QueryUnreceivedAcksRequest,
   QueryUnreceivedPacketsRequest,
-} from '../../../cosmjs-types/src/ibc/core/channel/v1/query';
+} from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { channelDatumMock } from './mock/channel-datum';
 
 const { block_data: blockData, expected_data: queryBlockDataExpected } = blockDataMock;

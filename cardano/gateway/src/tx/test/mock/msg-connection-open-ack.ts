@@ -1,4 +1,4 @@
-import { MsgConnectionOpenAck } from '@cosmjs-types/src/ibc/core/connection/v1/tx';
+import { MsgConnectionOpenAck } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 
 class MsgConnectionOpenAckMockBuilder {
   private msg: MsgConnectionOpenAck;

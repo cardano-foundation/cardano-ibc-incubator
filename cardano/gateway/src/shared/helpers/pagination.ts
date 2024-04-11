@@ -1,5 +1,5 @@
-import { PageRequest } from '../../../cosmjs-types/src/cosmos/base/query/v1beta1/pagination';
-import { PageRequestParams, Params, bytesFromBase64, setPaginationParams } from '../../../cosmjs-types/src/helpers';
+import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
+import { PageRequestParams, Params, bytesFromBase64, setPaginationParams } from '@plus/proto-types/build/helpers';
 import { PaginationKeyDto } from '../../query/dtos/pagination.dto';
 
 export function generatePaginationKey(key: PaginationKeyDto): Uint8Array {

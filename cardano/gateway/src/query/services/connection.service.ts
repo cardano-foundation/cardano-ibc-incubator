@@ -9,7 +9,7 @@ import {
   QueryConnectionResponse,
   QueryConnectionsRequest,
   QueryConnectionsResponse,
-} from '../../../cosmjs-types/src/ibc/core/connection/v1/query';
+} from '@plus/proto-types/build/ibc/core/connection/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { AuthToken } from '../../shared/types/auth-token';
@@ -18,10 +18,10 @@ import {
   IdentifiedConnection,
   State as StateConnectionEnd,
   stateFromJSON,
-} from '../../../cosmjs-types/src/ibc/core/connection/v1/connection';
+} from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
 import { DbSyncService } from './db-sync.service';
-import { bytesFromBase64 } from '../../../cosmjs-types/src/helpers';
+import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String } from '../../shared/helpers/hex';

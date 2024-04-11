@@ -1,4 +1,4 @@
-import { MsgTimeout } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgTimeout } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgTimeOutPacketMockBuilder {
   private msgTimeOutPacket: MsgTimeout;

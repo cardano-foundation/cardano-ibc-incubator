@@ -12,7 +12,7 @@ import {
   MsgCreateClientResponse,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from '@cosmjs-types/src/ibc/core/client/v1/tx';
+} from '@plus/proto-types/build/ibc/core/client/v1/tx';
 import handlerDatumMockBuilder from './mock/handler-datum';
 import handlerUtxoMockBuilder from './mock/handler-utxo';
 import { configHandler } from './mock/handler';
