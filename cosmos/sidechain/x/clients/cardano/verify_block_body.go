@@ -30,9 +30,19 @@ func VerifyBlockBody(data string, blockBodyHash string) bool {
 	if err != nil {
 		return false
 	}
+
 	blockBodyHashByte, _ := hex.DecodeString(blockBodyHash)
-	calculateBlockBodyHash := CalculateBlockBodyHash(txsRaw)
-	calculateBlockBodyHashByte := blake2b.Sum256(calculateBlockBodyHash)
+
+	var calculateBlockBodyHashByte [32]byte
+	if len(txsRaw) == 0 {
+		zeroTxHashHex := "29571d16f081709b3c48651860077bebf9340abb3fc7133443c54f1f5a5edcf1"
+		zeroTxHash, _ := hex.DecodeString(zeroTxHashHex)
+		copy(calculateBlockBodyHashByte[:], zeroTxHash[:32])
+	} else {
+		calculateBlockBodyHash := CalculateBlockBodyHash(txsRaw)
+		calculateBlockBodyHashByte = blake2b.Sum256(calculateBlockBodyHash)
+	}
+
 	return bytes.Equal(calculateBlockBodyHashByte[:32], blockBodyHashByte)
 }
 
