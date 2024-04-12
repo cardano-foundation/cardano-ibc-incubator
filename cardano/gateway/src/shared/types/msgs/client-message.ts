@@ -1,8 +1,8 @@
 import {
   Header as HeaderMsg,
   Misbehaviour as MisbehaviourMsg,
-} from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
-import { Any } from '@cosmjs-types/src/google/protobuf/any';
+} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 
 import {
   Misbehaviour,

@@ -13,7 +13,7 @@ import {
   MsgChannelOpenInitResponse,
   MsgChannelOpenTry,
   MsgChannelOpenTryResponse,
-} from 'cosmjs-types/src/ibc/core/channel/v1/tx';
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { ChannelOpenInitOperator } from './dto/channel/channel-open-init-operator.dto';
 import { ChannelOpenConfirmOperator } from './dto/channel/channel-open-confirm-operator.dto';
 import { ChannelOpenAckOperator } from './dto/channel/channel-open-ack-operator.dto';

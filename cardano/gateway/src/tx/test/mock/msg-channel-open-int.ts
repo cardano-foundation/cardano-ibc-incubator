@@ -1,4 +1,4 @@
-import { MsgChannelOpenInit } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgChannelOpenInit } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgChannelOpenInitMockBuilder {
   private msgChannelOpenInit: MsgChannelOpenInit;

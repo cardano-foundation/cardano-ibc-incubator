@@ -6,15 +6,15 @@ import {
   DEFAULT_FEATURES_VERSION_ORDER_UNORDERED,
   DEFAULT_IDENTIFIER_VERSION,
 } from 'src/constant';
-import { MerkleProof as MerkleProofMsg } from '@cosmjs-types/src/ibc/core/commitment/v1/commitment';
+import { MerkleProof as MerkleProofMsg } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenConfirm,
   MsgConnectionOpenInit,
   MsgConnectionOpenTry,
-} from 'cosmjs-types/src/ibc/core/connection/v1/tx';
+} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
-import { ClientState as ClientStateMsg } from 'cosmjs-types/src/ibc/lightclients/ouroboros/ouroboros';
+import { ClientState as ClientStateMsg } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { CardanoClientState } from '@shared/types/cardano';
 import { initializeCardanoClientState } from '@shared/helpers/cardano-client';

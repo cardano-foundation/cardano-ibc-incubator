@@ -13,8 +13,8 @@ import {
   MsgTransfer,
   MsgTransferResponse,
   ResponseResultType,
-} from 'cosmjs-types/src/ibc/core/channel/v1/tx';
-import { MerkleProof as MerkleProofMsg } from '@cosmjs-types/src/ibc/core/commitment/v1/commitment';
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MerkleProof as MerkleProofMsg } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { RecvPacketOperator } from './dto/packet/recv-packet-operator.dto';
 import { Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';

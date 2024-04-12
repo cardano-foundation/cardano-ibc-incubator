@@ -1,4 +1,4 @@
-import { MsgTransfer } from '@cosmjs-types/src/ibc/core/channel/v1/tx';
+import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgSendPacketMockBuilder {
   private msgSendPacket: MsgTransfer;

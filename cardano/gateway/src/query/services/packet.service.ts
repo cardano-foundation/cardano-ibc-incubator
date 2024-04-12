@@ -18,14 +18,14 @@ import {
   QueryUnreceivedAcksResponse,
   QueryProofUnreceivedPacketsRequest,
   QueryProofUnreceivedPacketsResponse,
-} from '@cosmjs-types/src/ibc/core/channel/v1/query';
+} from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { bytesFromBase64 } from '@cosmjs-types/src/helpers';
+import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import {
   validQueryPacketAcknowledgementParam,
   validQueryPacketAcknowledgementsParam,
@@ -38,7 +38,7 @@ import {
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, toHex } from '../../shared/helpers/hex';
-import { Acknowledgement } from '../../../cosmjs-types/src/ibc/core/channel/v1/channel';
+import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 
 @Injectable()

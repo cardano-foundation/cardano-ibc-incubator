@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ConsensusState as ConsensusStateTendermint } from '@cosmjs-types/src/ibc/lightclients/tendermint/v1/tendermint';
-import { Timestamp } from '@cosmjs-types/src/google/protobuf/timestamp';
-import { bytesFromBase64 } from '@cosmjs-types/src/helpers';
+import { ConsensusState as ConsensusStateTendermint } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Timestamp } from '@plus/proto-types/build/google/protobuf/timestamp';
+import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { ConsensusState } from '../types/consensus-state';
 import { Height } from '../types/height';
 import { toHex } from './hex';
