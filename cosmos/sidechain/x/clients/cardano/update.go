@@ -43,15 +43,15 @@ func (cs *ClientState) verifyBlockData(
 	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	blockData *BlockData,
 ) error {
-	isValid, vrfHex, blockNo, slotNo := VerifyBlock(BlockHexCbor{
+	verifyError, isValid, vrfHex, blockNo, slotNo := VerifyBlock(BlockHexCbor{
 		HeaderCbor:    blockData.HeaderCbor,
 		Eta0:          blockData.EpochNonce,
 		Spk:           int(cs.SlotPerKesPeriod),
 		BlockBodyCbor: blockData.BodyCbor,
 	})
 
-	if len(vrfHex) == 0 {
-		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data, data not valid")
+	if verifyError != nil {
+		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data, data not valid, %v", verifyError.Error())
 	}
 
 	if !isValid {
@@ -203,14 +203,16 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 		Slot:      blockData.Slot,
 	}
 
-	// set client state, consensus state and asssociated metadata
+	// set client state, consensus state and associated metadata
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, blockData.GetHeight())
 	setConsensusMetadata(ctx, clientStore, blockData.GetHeight())
 	SetConsensusStateBlockHash(clientStore, blockData.GetHeight(), blockData.Hash)
 
-	uTXOOutput, regisCerts, deRegisCerts := ExtractBlockData(blockData.BodyCbor)
-
+	uTXOOutput, regisCerts, deRegisCerts, extractBlockError := ExtractBlockData(blockData.BodyCbor)
+	if extractBlockError != nil {
+		panic(fmt.Errorf("extractBlockError: %v", extractBlockError.Error()))
+	}
 	// update register cert
 	UpdateRegisterCert(clientStore, regisCerts, blockData.EpochNo+2, blockData.Height.RevisionHeight)
 	// update unregister cert
