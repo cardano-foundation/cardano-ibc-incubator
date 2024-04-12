@@ -177,7 +177,6 @@ func (r *RelayMsgs) Send(ctx context.Context, log *zap.Logger, src, dst RelayMsg
 		wg     sync.WaitGroup
 		result SendMsgsResult
 	)
-	// TODO: sonhs comment
 	if len(r.Src) > 0 {
 		wg.Add(1)
 		go r.send(ctx, log, &wg, src, r.Src, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)

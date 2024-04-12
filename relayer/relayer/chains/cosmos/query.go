@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/cardano/relayer/v1/relayer/provider"

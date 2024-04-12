@@ -2,7 +2,7 @@ package services_mock
 
 import (
 	"context"
-	pbconnection "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
+	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
 	client_type "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"

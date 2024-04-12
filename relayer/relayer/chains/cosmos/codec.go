@@ -1,7 +1,7 @@
 package cosmos
 
 import (
-	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"

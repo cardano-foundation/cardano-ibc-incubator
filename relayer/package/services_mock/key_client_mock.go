@@ -2,7 +2,7 @@ package services_mock
 
 import (
 	"context"
-	pb "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/tx-cardano"
+	pb "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/tx-cardano"
 	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
 )

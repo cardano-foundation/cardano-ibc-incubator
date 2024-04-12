@@ -3,7 +3,7 @@ package relayer
 import (
 	"context"
 	"fmt"
-	"github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	"github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"github.com/cardano/relayer/v1/package/services"
 	"github.com/cardano/relayer/v1/package/services_mock"
 	"github.com/cardano/relayer/v1/relayer/chains/cardano"

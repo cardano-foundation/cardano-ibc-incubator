@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	pb "github.com/cardano/relayer/v1/cosmjs-types/go/github.com/cosmos/ibc-go/tx-cardano"
+	pb "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/tx-cardano"
 	"github.com/cardano/relayer/v1/package/services_mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
