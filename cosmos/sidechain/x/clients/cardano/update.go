@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/big"
 	"sort"
-	"strconv"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -17,7 +16,6 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
 	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
-	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -37,26 +35,6 @@ func (cs *ClientState) VerifyClientMessage(
 	}
 }
 
-func UnpackVerifyBlockOutput(s string) VerifyBlockOutput {
-	data, _ := hex.DecodeString(s)
-	var vOutput VerifyBlockOutput
-	err2 := cbor.Unmarshal(data, &vOutput)
-	if err2 != nil {
-		fmt.Println("error:", err2)
-	}
-	return vOutput
-}
-
-func ExtractBlockDataOutput(s string) ExtractBlockOutput {
-	data, _ := hex.DecodeString(s)
-	var vOutput ExtractBlockOutput
-	err2 := cbor.Unmarshal(data, &vOutput)
-	if err2 != nil {
-		fmt.Println("error:", err2)
-	}
-	return vOutput
-}
-
 // verifyBlockData returns an error if:
 // - signature is not valid
 // - vrf key hash is not in SPO list
@@ -65,25 +43,20 @@ func (cs *ClientState) verifyBlockData(
 	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	blockData *BlockData,
 ) error {
-	// TODO: extract block number and slot, compare with ClientMsg
-	vOutput := VerifyBlock(BlockHexCbor{
+	verifyError, isValid, vrfHex, blockNo, slotNo := VerifyBlock(BlockHexCbor{
 		HeaderCbor:    blockData.HeaderCbor,
 		Eta0:          blockData.EpochNonce,
 		Spk:           int(cs.SlotPerKesPeriod),
 		BlockBodyCbor: blockData.BodyCbor,
 	})
 
-	if len(vOutput) == 0 {
-		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data, data not valid")
+	if verifyError != nil {
+		return errorsmod.Wrapf(ErrInvalidBlockData, "Verify: Invalid block data, data not valid, %v", verifyError.Error())
 	}
-	vOutputObj := UnpackVerifyBlockOutput(vOutput)
 
-	if !vOutputObj.IsValid {
+	if !isValid {
 		return errorsmod.Wrap(ErrInvalidBlockData, "Verify: Invalid block data, signature not valid")
 	}
-
-	blockNo, _ := strconv.ParseUint(vOutputObj.BlockNo, 10, 64)
-	slotNo, _ := strconv.ParseUint(vOutputObj.SlotNo, 10, 64)
 
 	if slotNo != blockData.Slot || blockNo != blockData.Height.RevisionHeight {
 		return errorsmod.Wrap(ErrInvalidBlockData, "Verify: Invalid block data, slot or block not valid")
@@ -94,7 +67,7 @@ func (cs *ClientState) verifyBlockData(
 		newValidatorSet := CalValidatorsNewEpoch(clientStore, cs.CurrentEpoch, blockData.EpochNo)
 
 		// verify
-		if !newValidatorSetIsValid(newValidatorSet, vOutputObj.VrfKHexString) {
+		if !newValidatorSetIsValid(newValidatorSet, vrfHex) {
 			return errorsmod.Wrap(ErrInvalidSPOsNewEpoch, "Verify: Invalid signature")
 		}
 
@@ -104,7 +77,7 @@ func (cs *ClientState) verifyBlockData(
 		oldValidatorSetBytes := clientStore.Get(ClientSPOsKey(cs.CurrentEpoch))
 		oldValidatorSet := MustUnmarshalClientSPOs(oldValidatorSetBytes)
 		// verify
-		if !newValidatorSetIsValid(oldValidatorSet, vOutputObj.VrfKHexString) {
+		if !newValidatorSetIsValid(oldValidatorSet, vrfHex) {
 			return errorsmod.Wrap(ErrInvalidSPOsNewEpoch, "Verify: Invalid signature")
 		}
 	}
@@ -230,27 +203,29 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 		Slot:      blockData.Slot,
 	}
 
-	// set client state, consensus state and asssociated metadata
+	// set client state, consensus state and associated metadata
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, blockData.GetHeight())
 	setConsensusMetadata(ctx, clientStore, blockData.GetHeight())
 	SetConsensusStateBlockHash(clientStore, blockData.GetHeight(), blockData.Hash)
 
-	blockOutput := ExtractBlockDataOutput(ExtractBlockData(blockData.BodyCbor))
-
+	uTXOOutput, regisCerts, deRegisCerts, extractBlockError := ExtractBlockData(blockData.BodyCbor)
+	if extractBlockError != nil {
+		panic(fmt.Errorf("extractBlockError: %v", extractBlockError.Error()))
+	}
 	// update register cert
-	UpdateRegisterCert(clientStore, blockOutput.RegisCerts, blockData.EpochNo+2, blockData.Height.RevisionHeight)
+	UpdateRegisterCert(clientStore, regisCerts, blockData.EpochNo+2, blockData.Height.RevisionHeight)
 	// update unregister cert
-	UpdateUnregisterCert(clientStore, blockOutput.DeRegisCerts, blockData.Height.RevisionHeight)
+	UpdateUnregisterCert(clientStore, deRegisCerts, blockData.Height.RevisionHeight)
 
 	// set UTXOs
-	setUTXOs(ctx, *cs.TokenConfigs, clientStore, blockOutput.Outputs, blockData.GetHeight())
+	setUTXOs(ctx, *cs.TokenConfigs, clientStore, uTXOOutput, blockData.GetHeight())
 
 	// emit event update validators set
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent("validators-set-updated",
-			sdk.NewAttribute("register-cert", strings.Join(blockOutput.GetListRegisCertPoolId(), ",")),
-			sdk.NewAttribute("unregister-cert", strings.Join(blockOutput.GetListUnregisCertPoolId(), ",")),
+			sdk.NewAttribute("register-cert", strings.Join(GetListRegisCertPoolId(regisCerts), ",")),
+			sdk.NewAttribute("unregister-cert", strings.Join(GetListUnregisCertPoolId(deRegisCerts), ",")),
 		),
 	)
 	return []exported.Height{height}
