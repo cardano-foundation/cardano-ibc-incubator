@@ -17,7 +17,7 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), Data.Boolean()),
+    bound_port: Data.Array(Data.Integer()),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
@@ -38,7 +38,7 @@ export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof imp
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), Data.Boolean()),
+    bound_port: Data.Array(Data.Integer()),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
