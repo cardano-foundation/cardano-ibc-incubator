@@ -19,4 +19,3 @@ pub fn parse_client_id_sequence(client_id: ByteArray) -> Int {
 
   id
 }
-

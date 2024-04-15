@@ -1,6 +1,6 @@
+use ibc/apps/transfer/transfer_module_redeemer.{TransferModuleRedeemer}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/core/ics_004/types/acknowledgement.{Acknowledgement}
-use ibc/apps/transfer/transfer_module_redeemer.{TransferModuleRedeemer}
 
 pub type IBCModulePacketData {
   TransferModuleData(FungibleTokenPacketData)

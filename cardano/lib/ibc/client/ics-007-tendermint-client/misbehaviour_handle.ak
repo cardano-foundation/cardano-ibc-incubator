@@ -12,8 +12,8 @@ use ibc/client/ics_007_tendermint_client/msgs.{
   ClientMessage, HeaderCase, MisbehaviourCase,
 }
 use ibc/client/ics_007_tendermint_client/store
-use ibc/utils/tx_time.{TxTime} as tx_time_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
 // check_for_misbehaviour() detects duplicate height misbehaviour and BFT time violation misbehaviour
 // in a submitted Header message and verifies the correctness of a submitted Misbehaviour ClientMessage

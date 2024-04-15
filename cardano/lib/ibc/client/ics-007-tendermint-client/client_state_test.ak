@@ -364,10 +364,10 @@ test test_is_expired() {
 
   test_cases
     |> list.all(
-        fn(case) {
-          client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
-        },
-      )
+         fn(case) {
+           client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
+         },
+       )
 }
 
 // Tests the correctness of the new_client_state method.
@@ -407,14 +407,14 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-              latest_height,
-              ConsensusState {
-                timestamp: 0,
-                next_validators_hash,
-                root: sample_root,
-              },
-              height.compare,
-            ),
+               latest_height,
+               ConsensusState {
+                 timestamp: 0,
+                 next_validators_hash,
+                 root: sample_root,
+               },
+               height.compare,
+             ),
         Frozen,
       ),
       // Expired when consensus state is not found
@@ -448,14 +448,14 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-              latest_height,
-              ConsensusState {
-                timestamp: 9999000,
-                next_validators_hash,
-                root: sample_root,
-              },
-              height.compare,
-            ),
+               latest_height,
+               ConsensusState {
+                 timestamp: 9999000,
+                 next_validators_hash,
+                 root: sample_root,
+               },
+               height.compare,
+             ),
         Expired,
       ),
       //Active consensus state time + trusting period > now
@@ -473,21 +473,21 @@ test status() {
         10000000,
         dict.new()
           |> dict.insert(
-              latest_height,
-              ConsensusState {
-                timestamp: 10000000,
-                next_validators_hash,
-                root: sample_root,
-              },
-              height.compare,
-            ),
+               latest_height,
+               ConsensusState {
+                 timestamp: 10000000,
+                 next_validators_hash,
+                 root: sample_root,
+               },
+               height.compare,
+             ),
         Active,
       ),
     ]
   test_cases
     |> list.all(
-        fn(case) {
-          client_state.status(case.1st, case.2nd, case.3rd) == case.4th
-        },
-      )
+         fn(case) {
+           client_state.status(case.1st, case.2nd, case.3rd) == case.4th
+         },
+       )
 }

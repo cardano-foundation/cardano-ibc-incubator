@@ -17,6 +17,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -37,7 +38,6 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient, HandlerConnOpenInit, HandlerOperator,
 }
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 const hash_sample =
   #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
@@ -532,10 +532,10 @@ fn setup_extract_module_redeemer() -> (
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(out_ref),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(out_ref),
+           module_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -628,10 +628,10 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(module_input.output_reference),
-          invalid_module_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(module_input.output_reference),
+           invalid_module_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -783,10 +783,10 @@ fn setup_validate_handler_redeemer() -> (
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(out_ref),
-          handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(out_ref),
+           handler_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   expect handler_redeemer: HandlerOperator = handler_redeemer
 
@@ -844,10 +844,10 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fai
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(handler_input.output_reference),
-          invalid_handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(handler_input.output_reference),
+           invalid_handler_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -868,10 +868,10 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(handler_input.output_reference),
-          invalid_handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(handler_input.output_reference),
+           invalid_handler_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -954,14 +954,14 @@ fn setup_validate_referred_client() -> (
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-          height.zero_height(),
-          ConsensusState {
-            timestamp: 1,
-            next_validators_hash: "mock_next_validators_hash",
-            root: merkle.new_merkle_root("mock_app_hash"),
-          },
-          height.compare,
-        )
+           height.zero_height(),
+           ConsensusState {
+             timestamp: 1,
+             next_validators_hash: "mock_next_validators_hash",
+             root: merkle.new_merkle_root("mock_app_hash"),
+           },
+           height.compare,
+         )
 
   let client_datum =
     ClientDatum {

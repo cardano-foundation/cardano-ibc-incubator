@@ -14,9 +14,7 @@ use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
 use ibc/apps/transfer/transfer_module_datum.{TransferModuleDatum}
-use ibc/apps/transfer/transfer_module_redeemer.{
-  OtherTransferOp, Transfer,
-}
+use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/keys as transfer_module_keys

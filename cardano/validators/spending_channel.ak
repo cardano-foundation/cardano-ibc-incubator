@@ -41,7 +41,7 @@ use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as channel_state
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnAcknowledgementPacket, OnChanOpenAck, OnChanOpenConfirm,
-  OnRecvPacket, OnTimeoutPacket, Operator, OtherModuleData, OtherModuleOperator
+  OnRecvPacket, OnTimeoutPacket, Operator, OtherModuleData, OtherModuleOperator,
 }
 use ibc/core/ics_005/types/keys as port_keys_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -2222,9 +2222,7 @@ test succeed_timeout_packet() {
   let channel_id =
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
-    Callback(
-      OnTimeoutPacket { channel_id, data: OtherModuleData },
-    )
+    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()

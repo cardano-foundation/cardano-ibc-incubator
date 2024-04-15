@@ -16,6 +16,7 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
@@ -27,7 +28,6 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient as HandlerCreateClient, HandlerOperator,
 }
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
   fn mint_client(redeemer: MintClientRedeemer, context: ScriptContext) -> Bool {
@@ -42,10 +42,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     expect Some(handler_input) =
       inputs
         |> list.find(
-            fn(input) {
-              input.output |> auth.contain_auth_token(handler_auth_token)
-            },
-          )
+             fn(input) {
+               input.output |> auth.contain_auth_token(handler_auth_token)
+             },
+           )
 
     // spent handler redeemer is CreateClient operator
     expect Some(spent_handler_redeemer) =

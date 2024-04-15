@@ -21,7 +21,6 @@ import {
 import {
   EMULATOR_ENV,
   HANDLER_TOKEN_NAME,
-  MOCK_MODULE_PORT,
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
@@ -39,7 +38,6 @@ import {
   OutputReferenceSchema,
 } from "../lucid-types/aiken/transaction/OutputReference.ts";
 import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
-import { insertSortMap } from "./utils.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -537,7 +535,8 @@ const deployTransferModule = async (
       //   portNumber,
       //   true,
       // ),
-      bound_port: [...currentHandlerDatum.state.bound_port, portNumber].toSorted(),
+      bound_port: [...currentHandlerDatum.state.bound_port, portNumber]
+        .toSorted(),
     },
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";

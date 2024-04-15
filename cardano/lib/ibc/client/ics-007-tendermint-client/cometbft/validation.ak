@@ -8,7 +8,7 @@ use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
-   block_id_flag_commit,
+  block_id_flag_commit,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}

@@ -14,6 +14,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -49,7 +50,6 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerChanOpenInit, HandlerChanOpenTry,
 }
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -672,20 +672,20 @@ test succeed_chan_open_init() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.handler_input.output_reference),
+           handler_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Mint(mock_data.channel_minting_policy_id),
-          mint_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Mint(mock_data.channel_minting_policy_id),
+           mint_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =
@@ -893,20 +893,20 @@ test succeed_chan_open_try() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock_data.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.handler_input.output_reference),
+           handler_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Mint(mock_data.channel_minting_policy_id),
-          mint_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Mint(mock_data.channel_minting_policy_id),
+           mint_channel_redeemer,
+           validator_utils.compare_script_purpose,
+         )
       |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(mock_data.module_input.output_reference),
+           module_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   //==========================arrange context=========================
   let context =

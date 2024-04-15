@@ -16,6 +16,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -40,7 +41,6 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerConnOpenInit, HandlerConnOpenTry,
 }
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(
   client_minting_policy_id: PolicyId,
@@ -388,7 +388,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare) |> dict.to_list(),
+          |> dict.insert(proof_height, cons_state, height_mod.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }
@@ -492,15 +493,15 @@ test conn_open_init_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(mock.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Spend(mock.handler_input.output_reference),
+           handler_redeemer,
+           validator_utils.compare_purpose,
+         )
       |> dict.insert(
-          Mint(mock.connection_minting_policy_id),
-          mint_conn_redeemer,
-          validator_utils.compare_purpose,
-        )
+           Mint(mock.connection_minting_policy_id),
+           mint_conn_redeemer,
+           validator_utils.compare_purpose,
+         )
 
   //==========================arrange context=========================
   let context =

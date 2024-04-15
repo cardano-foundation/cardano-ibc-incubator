@@ -830,10 +830,10 @@ test update_client_verify_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-              header_mod.get_height(header),
-              header_mod.consensus_state(header),
-              height.compare,
-            )
+               header_mod.get_height(header),
+               header_mod.consensus_state(header),
+               height.compare,
+             )
           |> dict.to_list(),
       },
     }
@@ -1053,10 +1053,10 @@ test update_client_verify_non_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-              header_mod.get_height(header),
-              header_mod.consensus_state(header),
-              height.compare,
-            )
+               header_mod.get_height(header),
+               header_mod.consensus_state(header),
+               height.compare,
+             )
           |> dict.to_list(),
       },
     }

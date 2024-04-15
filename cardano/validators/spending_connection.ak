@@ -19,6 +19,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -39,7 +40,6 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/validator_utils
-use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 
 validator(client_minting_policy_id: PolicyId) {
   fn spend_connection(
@@ -870,10 +870,10 @@ test conn_open_ack_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-          Spend(conn_input.output_reference),
-          connection_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+           Spend(conn_input.output_reference),
+           connection_redeemer,
+           validator_utils.compare_script_purpose,
+         )
 
   expect connection_redeemer: SpendConnectionRedeemer = connection_redeemer
 
