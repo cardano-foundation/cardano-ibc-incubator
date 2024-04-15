@@ -9,6 +9,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/verifier
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
 pub fn verify_header(
@@ -24,6 +25,8 @@ pub fn verify_header(
     header_mod.get_height(header).revision_number == header.trusted_height.revision_number
   expect
     height.compare(header_mod.get_height(header), header.trusted_height) == Greater
+
+  expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
 
   expect
     verifier.verify(
@@ -45,7 +48,7 @@ pub fn verify_header(
       cs.trusting_period,
       tx_time,
       cs.max_clock_drift,
-      cs.trust_level,
+      cs_trust_level,
     )
 
   True

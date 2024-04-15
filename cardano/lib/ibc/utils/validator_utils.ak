@@ -75,7 +75,6 @@ pub fn get_tx_valid_to(validity_range: ValidityRange) -> PosixTime {
 
   // TODO: unable to set this value with Lucid
   // expect upper_bound.is_inclusive
-
   expect Finite(valid_to) = upper_bound.bound_type
 
   valid_to

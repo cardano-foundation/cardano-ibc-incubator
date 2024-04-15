@@ -2,7 +2,6 @@ use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
   Publish, Redeemer, ScriptContext, ScriptPurpose, Spend, Transaction,
@@ -18,6 +17,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -762,7 +762,7 @@ fn setup_validate_handler_redeemer() -> (
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: handler_token,
     }
@@ -944,7 +944,7 @@ fn setup_validate_referred_client() -> (
   let mock_client_state =
     client_state.new_client_state(
       "",
-      rational.from_int(1),
+      unchecked_rational.from_int(1),
       1,
       1,
       1,
@@ -967,7 +967,7 @@ fn setup_validate_referred_client() -> (
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states,
+        consensus_states: mock_consensus_states |> dict.to_list(),
       },
       token: client_token,
     }

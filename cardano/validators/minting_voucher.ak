@@ -13,15 +13,14 @@ use aiken/transaction/value.{PolicyId}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
-use ibc/apps/transfer/transfer_module_redeemer.{Transfer,
-  TransferModuleRedeemer}
+use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/acknowledgement
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnRecvPacket,
-  OnTimeoutPacket, Operator,
+  OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
@@ -45,7 +44,7 @@ validator(module_token: AuthToken) {
           expect Callback(ibc_module_callback) =
             extract_module_redeemer(inputs, redeemers, module_token)
           expect OnRecvPacket { data, .. } = ibc_module_callback
-          expect data: FungibleTokenPacketData = data
+          expect TransferModuleData(data) = data
           trace @"mint_voucher: module redeemer is valid"
 
           expect
@@ -131,7 +130,7 @@ validator(module_token: AuthToken) {
 
           expect Operator(ibc_module_operator) =
             extract_module_redeemer(inputs, redeemers, module_token)
-          expect ibc_module_operator: TransferModuleRedeemer =
+          expect TransferModuleOperator(ibc_module_operator) =
             ibc_module_operator
           expect Transfer { data, .. } = ibc_module_operator
           trace @"mint_voucher: module redeemer is valid"
@@ -170,7 +169,7 @@ validator(module_token: AuthToken) {
               OnAcknowledgementPacket { data, .. } -> data
               _ -> fail
             }
-          expect data: FungibleTokenPacketData = data
+          expect TransferModuleData(data) = data
           trace @"mint_voucher: module redeemer is valid"
 
           expect
@@ -327,7 +326,7 @@ test test_mint_voucher() {
   let receiver =
     #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
 
-  let packet_data =
+  let ftpd =
     FungibleTokenPacketData {
       denom: "ibc/usdt",
       amount: string.from_int(transfer_amount) |> string.to_bytearray(),
@@ -335,6 +334,8 @@ test test_mint_voucher() {
       receiver,
       memo: "",
     }
+
+  let packet_data = TransferModuleData(ftpd)
 
   let spend_module_redeemer =
     Callback(
@@ -366,7 +367,7 @@ test test_mint_voucher() {
 
   let source_prefix =
     transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
-  let prefixed_denom = bytearray.concat(source_prefix, packet_data.denom)
+  let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
   let token_name = hash.sha3_256(prefixed_denom)
 
   let token_value =
@@ -428,7 +429,11 @@ test test_burn_voucher() {
     }
 
   let spend_module_redeemer =
-    Operator(Transfer { channel_id: packet_source_channel, data: packet_data })
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: packet_source_channel, data: packet_data },
+      ),
+    )
 
   let purpose = Mint(mock_data.voucher_minting_policy_id)
 
@@ -487,17 +492,17 @@ test test_refund_voucher() {
   let sender =
     #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
 
-  let packet_data =
+  let ftpd =
     FungibleTokenPacketData {
       denom: prefixed_denom,
       amount: string.from_int(transfer_amount) |> string.to_bytearray(),
-      sender: sender,
+      sender,
       receiver: "cosmos address",
       memo: "",
     }
 
   //==================================arrange output============================
-  let token_name = hash.sha3_256(packet_data.denom)
+  let token_name = hash.sha3_256(ftpd.denom)
 
   let token_value =
     value.from_asset(
@@ -525,6 +530,8 @@ test test_refund_voucher() {
   let mint_voucher_redeemer =
     RefundVoucher { packet_source_port, packet_source_channel }
   let purpose = Mint(mock_data.voucher_minting_policy_id)
+
+  let packet_data = TransferModuleData(ftpd)
 
   let spend_module_redeemer =
     Callback(

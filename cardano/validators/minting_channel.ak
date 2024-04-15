@@ -1,7 +1,6 @@
 use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -15,6 +14,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -124,7 +124,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"mint_channel: client status is active\n"
 
@@ -216,7 +219,10 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"mint_channel: client status is active\n"
 
@@ -344,7 +350,7 @@ fn setup() -> MockData {
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: channel_sequence,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: handler_token,
     }
@@ -436,7 +442,7 @@ fn setup() -> MockData {
       },
     }
 
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let proof_specs =
     [
@@ -516,7 +522,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare),
+          |> dict.insert(proof_height, cons_state, height_mod.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }
@@ -626,9 +633,9 @@ test succeed_chan_open_init() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: channel_token,
@@ -733,7 +740,10 @@ test succeed_chan_open_try() {
     Channel {
       state: channel_state.TryOpen,
       ordering: Ordered,
-      counterparty: ChannelCounterparty { port_id: "port-1", channel_id: "channel-0" },
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
       connection_hops: [mock_data.connection_id],
       version: "mock-version",
     }
@@ -745,9 +755,9 @@ test succeed_chan_open_try() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: channel_token,

@@ -47,9 +47,9 @@ fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) 
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -60,18 +60,18 @@ fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) 
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_receipt: dict.insert(
+        packet_receipt: dict.from_list(
           input_channel_datum.state.packet_receipt,
-          packet.sequence,
-          "",
           int.compare,
-        ),
-        packet_acknowledgement: dict.insert(
+        )
+          |> dict.insert(packet.sequence, "", int.compare)
+          |> dict.to_list(),
+        packet_acknowledgement: dict.from_list(
           input_channel_datum.state.packet_acknowledgement,
-          packet.sequence,
-          ack,
           int.compare,
-        ),
+        )
+          |> dict.insert(packet.sequence, ack, int.compare)
+          |> dict.to_list(),
       },
     }
 
@@ -115,9 +115,9 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -129,12 +129,12 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_recv: input_channel_datum.state.next_sequence_recv + 1,
-        packet_acknowledgement: dict.insert(
+        packet_acknowledgement: dict.from_list(
           input_channel_datum.state.packet_acknowledgement,
-          packet.sequence,
-          ack,
           int.compare,
-        ),
+        )
+          |> dict.insert(packet.sequence, ack, int.compare)
+          |> dict.to_list(),
       },
     }
 

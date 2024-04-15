@@ -1,10 +1,13 @@
 use aiken/bytearray
 use aiken/dict.{Dict}
-use aiken/math/rational.{Rational}
+use aiken/math/rational
 use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{max_chain_id_len}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
+  UncheckedRational,
+}
 use ibc/core/ics_002_client_semantics/types/client.{
   Active, Expired, Frozen, Status,
 }
@@ -15,7 +18,7 @@ use ibc/utils/time.{Duration, Time}
 
 pub type ClientState {
   chain_id: ByteArray,
-  trust_level: Rational,
+  trust_level: UncheckedRational,
   trusting_period: Duration,
   unbonding_period: Duration,
   max_clock_drift: Duration,
@@ -27,7 +30,7 @@ pub type ClientState {
 /// NewClientState creates a new ClientState instance
 pub fn new_client_state(
   chain_id: ByteArray,
-  trust_level: Rational,
+  trust_level: UncheckedRational,
   trusting_period: Duration,
   unbonding_period: Duration,
   max_clock_drift: Duration,
@@ -60,9 +63,10 @@ pub fn validate(cs: ClientState) -> Bool {
   // trustLevel must be within [1/3, 1]
   expect Some(min_trusted_level) = rational.new(1, 3)
   expect Some(max_trusted_level) = rational.new(1, 1)
+  expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
   expect
-    rational.compare_with(cs.trust_level, >=, min_trusted_level) && rational.compare_with(
-      cs.trust_level,
+    rational.compare_with(cs_trust_level, >=, min_trusted_level) && rational.compare_with(
+      cs_trust_level,
       <=,
       max_trusted_level,
     )

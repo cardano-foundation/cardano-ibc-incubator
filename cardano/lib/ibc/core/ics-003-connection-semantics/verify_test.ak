@@ -1,9 +1,9 @@
 use aiken/dict
-use aiken/math/rational
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/state.{Open} as conn_state_mod
@@ -30,7 +30,7 @@ test succeed_verify_channel_state() {
       },
     }
 
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let proof_specs =
     [
@@ -211,7 +211,8 @@ test succeed_verify_channel_state() {
     ClientDatumState {
       client_state,
       consensus_states: dict.new()
-        |> dict.insert(proof_height, cons_state, height_mod.compare),
+        |> dict.insert(proof_height, cons_state, height_mod.compare)
+        |> dict.to_list(),
     }
 
   verify_mod.verify_channel_state(

@@ -1,7 +1,6 @@
 use aiken/dict
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
   TransactionId,
@@ -29,6 +28,7 @@ use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_handle_mod
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/update as update_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_023_vector_commitments/merkle
@@ -74,7 +74,7 @@ validator {
           client_state_mod.status(
             datum.state.client_state,
             tx_valid_to * 1_000_000,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
           ) == client_status_mod.Active
         trace @"spend_client: client status is Active"
 
@@ -87,7 +87,7 @@ validator {
           update_mod.verify_client_message(
             datum.state.client_state,
             tx_time,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
             msg,
           )
         trace @"spend_client: verify client msg succeeded"
@@ -95,7 +95,7 @@ validator {
         let found_misbehaviour =
           misbehaviour_handle_mod.check_for_misbehaviour(
             msg,
-            datum.state.consensus_states,
+            dict.from_list(datum.state.consensus_states, height.compare),
           )
 
         if found_misbehaviour {
@@ -311,7 +311,7 @@ test update_client_misbehaviour_conflict_header() {
     }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let trusted_height = Height { revision_number: 1, revision_height: 1 }
 
@@ -350,7 +350,10 @@ test update_client_misbehaviour_conflict_header() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -540,7 +543,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
     }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let trusted_height = Height { revision_number: 1, revision_height: 1 }
 
@@ -583,7 +586,10 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -767,15 +773,10 @@ test update_client_verify_adjacent_succeed() {
     }
 
   let header =
-    Header {
-      signed_header,
-      validator_set,
-      trusted_height,
-      trusted_validators,
-    }
+    Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let client_state =
     ClientState {
@@ -802,7 +803,10 @@ test update_client_verify_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -829,7 +833,8 @@ test update_client_verify_adjacent_succeed() {
                header_mod.get_height(header),
                header_mod.consensus_state(header),
                height.compare,
-             ),
+             )
+          |> dict.to_list(),
       },
     }
 
@@ -991,15 +996,10 @@ test update_client_verify_non_adjacent_succeed() {
     }
 
   let header =
-    Header {
-      signed_header,
-      validator_set,
-      trusted_height,
-      trusted_validators,
-    }
+    Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
-  expect Some(trust_level) = rational.new(1, 3)
+  let trust_level = unchecked_rational.new(1, 3)
 
   let client_state =
     ClientState {
@@ -1026,7 +1026,10 @@ test update_client_verify_non_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states: consensus_states |> dict.to_list(),
+      },
       token: mock.client_token,
     }
 
@@ -1053,7 +1056,8 @@ test update_client_verify_non_adjacent_succeed() {
                header_mod.get_height(header),
                header_mod.consensus_state(header),
                height.compare,
-             ),
+             )
+          |> dict.to_list(),
       },
     }
 

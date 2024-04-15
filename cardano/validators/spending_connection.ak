@@ -2,7 +2,6 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -20,6 +19,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -98,7 +98,10 @@ validator(client_minting_policy_id: PolicyId) {
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"spend_connection: client status is active"
 
@@ -136,7 +139,10 @@ validator(client_minting_policy_id: PolicyId) {
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
+            dict.from_list(
+              client_datum.state.consensus_states,
+              height_mod.compare,
+            ),
           ) == Active
         trace @"spend_connection: client status is active"
 
@@ -321,7 +327,7 @@ fn setup() -> MockData {
   let client_state =
     ClientState {
       chain_id: "testchain1-1",
-      trust_level: rational.from_int(1),
+      trust_level: unchecked_rational.from_int(1),
       trusting_period: 1209600000000000,
       unbonding_period: 1814400000000000,
       max_clock_drift: 10000000000,
@@ -353,7 +359,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare),
+          |> dict.insert(proof_height, cons_state, height_mod.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }
@@ -457,12 +464,12 @@ fn update_client(
           ..client_datum.state.client_state,
           latest_height: latest_height,
         },
-        consensus_states: dict.insert(
+        consensus_states: dict.from_list(
           client_datum.state.consensus_states,
-          height,
-          consensus_state,
           height_mod.compare,
-        ),
+        )
+          |> dict.insert(height, consensus_state, height_mod.compare)
+          |> dict.to_list(),
       },
     }
 

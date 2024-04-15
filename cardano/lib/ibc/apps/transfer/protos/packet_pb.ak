@@ -1,9 +1,7 @@
 // DO NOT EDIT.
 // source: ibc/applications/transfer/v2/packet.proto
 
-use aiken/builtin.{
-  if_then_else as ite,
-}
+use aiken/builtin.{if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
 use ibc/utils/bits.{band, bor, shl, shr}
@@ -159,7 +157,6 @@ fn encode_varint_packet(v: Int64) -> ByteArray {
     #[] |> push(v),
   )
 }
-
 // fn sov_packet(x: Int64) -> Int {
 //   x |> bor(1) |> len64() |> add(6) |> div(7)
 // }

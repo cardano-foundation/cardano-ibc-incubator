@@ -12,6 +12,7 @@ use ibc/client/ics_007_tendermint_client/msgs.{
   ClientMessage, HeaderCase, MisbehaviourCase,
 }
 use ibc/client/ics_007_tendermint_client/store
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
 // check_for_misbehaviour() detects duplicate height misbehaviour and BFT time violation misbehaviour
@@ -128,10 +129,13 @@ fn check_misbehaviour_header(
 ) -> Bool {
   expect header_handle_mod.check_trusted_header(h, cons_state)
   expect current_timestamp - cons_state.timestamp < cs.trusting_period
+
+  expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
+
   validation.verify_commit_light_trusting(
     cs.chain_id,
     h.trusted_validators,
     h.signed_header.commit,
-    cs.trust_level,
+    cs_trust_level,
   )
 }

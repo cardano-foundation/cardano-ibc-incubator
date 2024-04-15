@@ -1,6 +1,6 @@
 use aiken/int
-use ibc/utils/string
 use aiken/list
+use ibc/utils/string
 
 pub type Height {
   // the revision that the client is currently on

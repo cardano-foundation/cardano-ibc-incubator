@@ -2,7 +2,6 @@ use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
-use aiken/math/rational
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId,
@@ -17,6 +16,7 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
@@ -92,7 +92,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
         client_output_datum.state.client_state,
         // posix time in cardano is millisecond while time of cosmos tendermint is nanosecond
         tx_valid_to * 1_000_000,
-        client_output_datum.state.consensus_states,
+        dict.from_list(
+          client_output_datum.state.consensus_states,
+          height.compare,
+        ),
       ) == Active
 
     True
@@ -128,7 +131,7 @@ test test_create_valid_client() {
         next_client_sequence: mock_client_id,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: dict.new(),
+        bound_port: [],
       },
       token: mock_handler_auth_token,
     }
@@ -168,7 +171,7 @@ test test_create_valid_client() {
   let new_client_state =
     client_state.new_client_state(
       chain_id: "cosmoshub",
-      trust_level: rational.from_int(1),
+      trust_level: unchecked_rational.from_int(1),
       trusting_period: 1_000_000_000_000,
       unbonding_period: 1_000_000_000_001,
       max_clock_drift: 1,
@@ -191,7 +194,8 @@ test test_create_valid_client() {
       state: ClientDatumState {
         client_state: new_client_state,
         consensus_states: dict.new()
-          |> dict.insert(mock_latest_height, new_consensus_state, height.compare),
+          |> dict.insert(mock_latest_height, new_consensus_state, height.compare)
+          |> dict.to_list(),
       },
       token: client_token,
     }

@@ -1,4 +1,3 @@
-use aiken/dict
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
@@ -27,9 +26,9 @@ fn setup() -> (ChannelDatum, ChannelDatum) {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new(),
-        packet_receipt: dict.new(),
-        packet_acknowledgement: dict.new(),
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
