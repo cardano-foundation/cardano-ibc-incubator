@@ -1,13 +1,11 @@
 // DO NOT EDIT.
 // source: tendermint/crypto/keys.proto
 
-use aiken/builtin.{
-  add_integer as add, divide_integer as div, if_then_else as ite,
-}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
-use ibc/utils/bits.{band, bor, len64, shl, shr}
-use ibc/utils/int.{Int64, uint64}
+use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/int.{uint64}
 
 pub type PublicKey {
   PublicKey_Ed25519 { sum: ByteArray }
@@ -57,7 +55,7 @@ pub fn marshal_for_ed25519(pk_opt: Option<PublicKey>) -> ByteArray {
                sum
                  |> length()
                  |> uint64()
-                 |> encode_varint_keys()
+                 |> encode_varint()
                  |> concat(sum)
                  |> push(10),
              ),
@@ -78,7 +76,7 @@ pub fn size_for_ed25519(pk_opt: Option<PublicKey>) -> Int {
         0,
         {
           let l = length(sum)
-          l |> uint64() |> sov_keys() |> add(l + 1)
+          l |> uint64() |> sov() |> add(l + 1)
         },
       )
     },
@@ -100,7 +98,7 @@ pub fn marshal_for_secp256k1(pk_opt: Option<PublicKey>) -> ByteArray {
                sum
                  |> length()
                  |> uint64()
-                 |> encode_varint_keys()
+                 |> encode_varint()
                  |> concat(sum)
                  |> push(0x12),
              ),
@@ -121,28 +119,9 @@ pub fn size_for_secp256k1(pk_opt: Option<PublicKey>) -> Int {
         0,
         {
           let l = length(sum)
-          l |> uint64() |> sov_keys() |> add(l + 1)
+          l |> uint64() |> sov() |> add(l + 1)
         },
       )
     },
-  )
-}
-
-fn sov_keys(x: Int64) -> Int {
-  x |> bor(1) |> len64() |> add(6) |> div(7)
-}
-
-fn encode_varint_keys(v: Int64) -> ByteArray {
-  ite(
-    v >= ( 1 |> shl(7) ),
-    v
-      |> shr(7)
-      |> encode_varint_keys()
-      |> push(
-           v
-             |> band(0x7f)
-             |> bor(0x80),
-         ),
-    #[] |> push(v),
   )
 }
