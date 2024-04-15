@@ -1,11 +1,12 @@
 # Use the latest Go version as the builder stage
 FROM golang:latest as builder
-
+ARG MAIN_CONTEX=relayer
 # Set the working directory inside the builder stage
 WORKDIR /app
 
 # Copy the source code into the image
-COPY . .
+COPY ${MAIN_CONTEX} .
+COPY ./proto-types ./../proto-types
 
 # Build the application binary using the provided Makefile
 RUN make build

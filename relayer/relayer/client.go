@@ -9,7 +9,7 @@ import (
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/avast/retry-go/v4"
-	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"

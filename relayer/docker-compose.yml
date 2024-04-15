@@ -15,8 +15,8 @@ services:
   relayer-service:
     container_name: relayer
     build:
-      context: .
-      dockerfile: ./Dockerfile
+      context: ../
+      dockerfile: ./relayer/Dockerfile
     volumes:
       - ~/.relayer:/root/.relayer
     depends_on:

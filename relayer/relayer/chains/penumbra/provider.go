@@ -8,7 +8,7 @@ import (
 	"path"
 	"time"
 
-	pbclientstruct "github.com/cardano/relayer/v1/cosmjs-types/go/sidechain/x/clients/cardano"
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	module2 "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 
