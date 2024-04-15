@@ -405,7 +405,9 @@ export class PacketService {
         {
           OnRecvPacket: {
             channel_id: channelId,
-            data: castToFungibleTokenPacket(fTokenPacketData, this.lucidService.LucidImporter),
+            data: {
+              TransferModuleData: [fTokenPacketData],
+            },
             acknowledgement: {
               response: { AcknowledgementResult: { result: ACK_RESULT } },
             },
@@ -562,16 +564,17 @@ export class PacketService {
         {
           OnTimeoutPacket: {
             channel_id: packet.source_channel,
-            data: castToFungibleTokenPacket(
-              {
-                denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
-                amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
-                sender: convertString2Hex(senderPublicKeyHash),
-                receiver: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.receiver),
-                memo: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.memo),
-              },
-              this.lucidService.LucidImporter,
-            ),
+            data: {
+              TransferModuleData: [
+                {
+                  denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
+                  amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
+                  sender: convertString2Hex(senderPublicKeyHash),
+                  receiver: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.receiver),
+                  memo: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.memo),
+                },
+              ],
+            },
           },
         },
       ],
@@ -749,7 +752,11 @@ export class PacketService {
       },
     };
     const spendTransferModuleRedeemer: IBCModuleRedeemer = {
-      Operator: [transferModuleRedeemer, this.lucidService.LucidImporter], //TODO
+      Operator: [
+        {
+          TransferModuleOperator: [transferModuleRedeemer],
+        },
+      ],
     };
 
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
@@ -983,7 +990,9 @@ export class PacketService {
         {
           OnAcknowledgementPacket: {
             channel_id: channelId,
-            data: castToFungibleTokenPacket(fTokenPacketData, this.lucidService.LucidImporter),
+            data: {
+              TransferModuleData: [fTokenPacketData],
+            },
             acknowledgement: { response: acknowledgementResponse },
           },
         },
