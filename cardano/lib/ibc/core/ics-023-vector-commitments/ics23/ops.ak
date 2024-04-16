@@ -5,9 +5,7 @@ use ibc/core/ics_023_vector_commitments/ics23/constants.{hash_op_no_hash}
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   HashOp, InnerOp, LeafOp, LengthOp, ProofSpec,
 }
-use ibc/utils/bytes.{
-  encode_varint, has_prefix, new_reader, read_varint, reader_len,
-}
+use ibc/utils/bytes.{encode_varint, has_prefix}
 
 /// apply_leaf_op() will calculate the leaf hash given the key and value being proven
 pub fn apply_leaf_op(op: LeafOp, key: ByteArray, value: ByteArray) -> ByteArray {
@@ -73,26 +71,21 @@ fn validate_spec(spec: ProofSpec) -> Bool {
 
 /// validate_iavl_ops_leaf_op() validates the IAVL Ops with op type is LeafOp
 fn validate_iavl_ops_leaf_op(op: LeafOp, b: Int) -> Bool {
-  let r = new_reader(proofs.get_prefix_leaf_op(op))
-  let iterator =
-    [0, 1, 2]
-  let (values, updated_r) =
-    list.reduce(
-      iterator,
-      ([], r),
-      fn(accum, _i) {
-        let (u_r, var_int) = read_varint(accum.2nd)
-        let next_accum_value = list.concat(accum.1st, [var_int])
-        expect var_int >= 0
-        (next_accum_value, u_r)
-      },
-    )
-  expect Some(values_first_ele) = list.at(values, 0)
+  let r = proofs.get_prefix_leaf_op(op)
+
+  let (values_first_ele, updated_pos) = bytes.read_varint(r, 0)
+  expect values_first_ele >= 0
+  let (value2, updated_pos) = bytes.read_varint(r, updated_pos)
+  expect value2 >= 0
+  let (value3, updated_pos) = bytes.read_varint(r, updated_pos)
+  expect value3 >= 0
+
   expect values_first_ele >= b
-  let r2 = reader_len(updated_r)
+
+  let r2 = bytearray.length(r) - updated_pos
+
   if b == 0 {
-    expect r2 == 0
-    True
+    r2 == 0
   } else {
     // The corresponding code in the Golang version:
     //    if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
@@ -101,34 +94,27 @@ fn validate_iavl_ops_leaf_op(op: LeafOp, b: Int) -> Bool {
     //    if op.GetHash()^1 != 0 {
     //      return fmt.Errorf("invalid op")
     //    }
-    expect !(r2 == 1 || r2 == 34)
-    expect op.hash == 1
-    True
+    ( r2 == 1 || r2 == 34 ) && op.hash == 1
   }
 }
 
 /// validate_iavl_ops_inner_op() validates the IAVL Ops with op type is InnerOp
 fn validate_iavl_ops_inner_op(op: InnerOp, b: Int) -> Bool {
-  let r = new_reader(proofs.get_prefix_inner_op(op))
-  let iterator =
-    [0, 1, 2]
-  let (values, updated_r) =
-    list.reduce(
-      iterator,
-      ([], r),
-      fn(accum, _i) {
-        let (u_r, var_int) = read_varint(accum.2nd)
-        let next_accum_value = list.concat(accum.1st, [var_int])
-        expect var_int >= 0
-        (next_accum_value, u_r)
-      },
-    )
-  expect Some(values_first_ele) = list.at(values, 0)
+  let r = proofs.get_prefix_inner_op(op)
+
+  let (values_first_ele, updated_pos) = bytes.read_varint(r, 0)
+  expect values_first_ele >= 0
+  let (value2, updated_pos) = bytes.read_varint(r, updated_pos)
+  expect value2 >= 0
+  let (value3, updated_pos) = bytes.read_varint(r, updated_pos)
+  expect value3 >= 0
+
   expect values_first_ele >= b
-  let r2 = reader_len(updated_r)
+
+  let r2 = bytearray.length(r) - updated_pos
+
   if b == 0 {
-    expect r2 == 0
-    True
+    r2 == 0
   } else {
     // The corresponding code in the Golang version:
     //    if !(r2^(0xff&0x01) == 0 || r2 == (0xde+int('v'))/10) {
@@ -137,9 +123,7 @@ fn validate_iavl_ops_inner_op(op: InnerOp, b: Int) -> Bool {
     //    if op.GetHash()^1 != 0 {
     //      return fmt.Errorf("invalid op")
     //    }
-    expect !(r2 == 1 || r2 == 34)
-    expect op.hash == 1
-    True
+    ( r2 == 1 || r2 == 34 ) && op.hash == 1
   }
 }
 
