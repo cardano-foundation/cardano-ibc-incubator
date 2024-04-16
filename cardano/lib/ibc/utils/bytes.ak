@@ -30,8 +30,8 @@ pub fn read_uvarint(bz: ByteArray, pos: Int) -> (Int, Int) {
 /// read_varint() reads an encoded signed integer from r and returns it as an int64.
 pub fn read_varint(r: ByteArray, pos: Int) -> (Int, Int) {
   let (ux, updated_pos) = read_uvarint(r, pos)
-  let x = bits.shr(ux, 1)
-  if bits.band(ux, 1) != 0 {
+  let x = ux / 2
+  if ux % 2 != 0 {
     (bits.bnot_for_int64(x), updated_pos)
   } else {
     (x, updated_pos)

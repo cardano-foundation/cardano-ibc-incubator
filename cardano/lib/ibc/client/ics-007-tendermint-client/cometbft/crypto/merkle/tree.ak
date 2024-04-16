@@ -1,4 +1,5 @@
 use aiken/list
+use aiken/math
 use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash
 use ibc/utils/bits
@@ -24,9 +25,9 @@ pub fn hash_from_byte_slices_sha2_256(items: List<ByteArray>) -> ByteArray {
 fn get_split_point(length: Int) -> Int {
   expect length >= 1
   let bit_len = bits.len(length)
-  let k = bits.shl(1, bit_len - 1)
+  let k = math.pow2(bit_len - 1)
   if k == length {
-    bits.shr(k, 1)
+    k / 2
   } else {
     k
   }
