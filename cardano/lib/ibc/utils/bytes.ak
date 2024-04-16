@@ -1,7 +1,11 @@
-use aiken/builtin
-use aiken/bytearray
+use aiken/builtin.{
+  add_integer as add, divide_integer as div, if_then_else as ite,
+  index_bytearray,
+}
+use aiken/bytearray.{compare, length, push, slice}
 use aiken/list
-use ibc/utils/bits
+use ibc/utils/bits.{band, bnot_for_int64, bor, len64, shl, shr}
+use ibc/utils/int.{Int64}
 
 pub const max_varint_len64: Int = 10
 
@@ -14,10 +18,10 @@ pub type Reader {
 }
 
 pub fn reader_len(r: Reader) -> Int {
-  if r.i >= bytearray.length(r.s) {
+  if r.i >= length(r.s) {
     0
   } else {
-    bytearray.length(r.s) - r.i
+    length(r.s) - r.i
   }
 }
 
@@ -26,9 +30,9 @@ pub fn new_reader(b: ByteArray) -> Reader {
 }
 
 pub fn read_byte(r: Reader) -> (Reader, Int) {
-  if r.i < bytearray.length(r.s) {
+  if r.i < length(r.s) {
     let updated_r = Reader { s: r.s, i: r.i + 1, prev_rune: -1 }
-    let b = builtin.index_bytearray(r.s, r.i)
+    let b = index_bytearray(r.s, r.i)
     (updated_r, b)
   } else {
     // EOF
@@ -54,14 +58,14 @@ pub fn read_uvarint(r: Reader) -> (Reader, Int) {
             expect !(i == max_varint_len64 - 1 && b > 1)
             (
               // x | uint64(b)<<s
-              bits.bor(accum.1st, bits.shl(b, accum.2nd)),
+              bor(accum.1st, shl(b, accum.2nd)),
               0,
               new_reader(#[]),
             )
           } else {
             (
               // x |= uint64(b&0x7f) << s
-              bits.bor(accum.1st, bits.shl(bits.band(b, 127), accum.2nd)),
+              bor(accum.1st, shl(band(b, 127), accum.2nd)),
               accum.2nd + 7,
               temp_updated_r,
             )
@@ -76,18 +80,32 @@ pub fn read_uvarint(r: Reader) -> (Reader, Int) {
 /// read_varint() reads an encoded signed integer from r and returns it as an int64.
 pub fn read_varint(r: Reader) -> (Reader, Int) {
   let (updated_r, ux) = read_uvarint(r)
-  let x = bits.shr(ux, 1)
-  if bits.band(ux, 1) != 0 {
-    (updated_r, bits.bnot_for_int64(x))
+  let x = shr(ux, 1)
+  if band(ux, 1) != 0 {
+    (updated_r, bnot_for_int64(x))
   } else {
     (updated_r, x)
   }
 }
 
 pub fn has_prefix(s: ByteArray, prefix: ByteArray) -> Bool {
-  let p_length = bytearray.length(prefix)
-  expect bytearray.length(s) >= p_length
-  bytearray.compare(bytearray.slice(s, 0, p_length - 1), prefix) == Equal
+  let p_length = length(prefix)
+  expect length(s) >= p_length
+  compare(slice(s, 0, p_length - 1), prefix) == Equal
+}
+
+pub fn encode_varint(v: Int64) -> ByteArray {
+  ite(
+    v >= 128,
+    v / 128
+      |> encode_varint()
+      |> push(v % 128 + 128),
+    #[] |> push(v),
+  )
+}
+
+pub fn sov(x: Int64) -> Int {
+  x |> len64() |> add(6) |> div(7)
 }
 
 //--------------------------------------Test--------------------------------------

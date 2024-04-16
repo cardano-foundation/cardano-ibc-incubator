@@ -1,14 +1,12 @@
 // DO NOT EDIT.
 // source: ibc/clients/cardano/v1/cardano.proto
 
-use aiken/builtin.{
-  add_integer as add, divide_integer as div, if_then_else as ite,
-}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/list
 use aiken/option.{is_none}
-use ibc/utils/bits.{band, bor, len64, shl, shr}
-use ibc/utils/int.{Int64, Uint64, uint64}
+use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/int.{Uint64, uint64}
 
 pub type CardanoHeight {
   revision_number: Uint64,
@@ -70,7 +68,7 @@ pub fn marshal_for_any_client_state(
                type_url
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(type_url)
                  |> push(10),
              ),
@@ -82,7 +80,7 @@ pub fn marshal_for_any_client_state(
                value
                  |> size_for_client_state()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(marshal_for_client_state(value))
                  |> push(0x12),
              ),
@@ -103,7 +101,7 @@ pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
              ite(
                revision_number == 0,
                #[],
-               revision_number |> uint64() |> encode_varint_cardano() |> push(8),
+               revision_number |> uint64() |> encode_varint() |> push(8),
              ),
            )
         |> concat(
@@ -112,7 +110,7 @@ pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
                #[],
                revision_height
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> push(0x10),
              ),
            )
@@ -132,14 +130,14 @@ pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
              ite(
                revision_number == 0,
                0,
-               revision_number |> uint64() |> sov_cardano() |> add(1),
+               revision_number |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
              ite(
                revision_height == 0,
                0,
-               revision_height |> uint64() |> sov_cardano() |> add(1),
+               revision_height |> uint64() |> sov() |> add(1),
              ),
            )
     },
@@ -160,14 +158,14 @@ pub fn marshal_for_consensus_state(
              ite(
                timestamp == 0,
                #[],
-               timestamp |> uint64() |> encode_varint_cardano() |> push(8),
+               timestamp |> uint64() |> encode_varint() |> push(8),
              ),
            )
         |> concat(
              ite(
                slot == 0,
                #[],
-               slot |> uint64() |> encode_varint_cardano() |> push(0x10),
+               slot |> uint64() |> encode_varint() |> push(0x10),
              ),
            )
     },
@@ -184,14 +182,8 @@ pub fn size_for_consensus_state(
       expect Some(consensus_state) = consensus_state_opt
       let CardanoConsensusState { timestamp, slot } = consensus_state
       0
-        |> add(
-             ite(
-               timestamp == 0,
-               0,
-               timestamp |> uint64() |> sov_cardano() |> add(1),
-             ),
-           )
-        |> add(ite(slot == 0, 0, slot |> uint64() |> sov_cardano() |> add(1)))
+        |> add(ite(timestamp == 0, 0, timestamp |> uint64() |> sov() |> add(1)))
+        |> add(ite(slot == 0, 0, slot |> uint64() |> sov() |> add(1)))
     },
   )
 }
@@ -213,7 +205,7 @@ pub fn marshal_for_validator(
                vrf_key_hash
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(vrf_key_hash)
                  |> push(10),
              ),
@@ -225,7 +217,7 @@ pub fn marshal_for_validator(
                pool_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(pool_id)
                  |> push(0x12),
              ),
@@ -248,7 +240,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
                0,
                {
                  let l = length(vrf_key_hash)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -258,7 +250,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
                0,
                {
                  let l = length(pool_id)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -288,7 +280,7 @@ pub fn marshal_for_token_configs(
                handler_token_unit
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(handler_token_unit)
                  |> push(10),
              ),
@@ -300,7 +292,7 @@ pub fn marshal_for_token_configs(
                client_policy_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(client_policy_id)
                  |> push(0x12),
              ),
@@ -312,7 +304,7 @@ pub fn marshal_for_token_configs(
                connection_policy_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(connection_policy_id)
                  |> push(0x1a),
              ),
@@ -324,7 +316,7 @@ pub fn marshal_for_token_configs(
                channel_policy_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(channel_policy_id)
                  |> push(0x22),
              ),
@@ -352,7 +344,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
                0,
                {
                  let l = length(handler_token_unit)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -362,7 +354,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
                0,
                {
                  let l = length(client_policy_id)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -372,7 +364,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
                0,
                {
                  let l = length(connection_policy_id)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -382,7 +374,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
                0,
                {
                  let l = length(channel_policy_id)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -421,7 +413,7 @@ pub fn marshal_for_client_state(
                chain_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(chain_id)
                  |> push(10),
              ),
@@ -433,7 +425,7 @@ pub fn marshal_for_client_state(
                latest_height
                  |> size_for_height()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(marshal_for_height(latest_height))
                  |> push(0x12),
              ),
@@ -445,7 +437,7 @@ pub fn marshal_for_client_state(
                frozen_height
                  |> size_for_height()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(marshal_for_height(frozen_height))
                  |> push(0x1a),
              ),
@@ -454,14 +446,14 @@ pub fn marshal_for_client_state(
              ite(
                valid_after == 0,
                #[],
-               valid_after |> uint64() |> encode_varint_cardano() |> push(0x20),
+               valid_after |> uint64() |> encode_varint() |> push(0x20),
              ),
            )
         |> concat(
              ite(
                genesis_time == 0,
                #[],
-               genesis_time |> uint64() |> encode_varint_cardano() |> push(0x28),
+               genesis_time |> uint64() |> encode_varint() |> push(0x28),
              ),
            )
         |> concat(
@@ -470,7 +462,7 @@ pub fn marshal_for_client_state(
                #[],
                current_epoch
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> push(0x30),
              ),
            )
@@ -478,7 +470,7 @@ pub fn marshal_for_client_state(
              ite(
                epoch_length == 0,
                #[],
-               epoch_length |> uint64() |> encode_varint_cardano() |> push(0x38),
+               epoch_length |> uint64() |> encode_varint() |> push(0x38),
              ),
            )
         |> concat(
@@ -487,7 +479,7 @@ pub fn marshal_for_client_state(
                #[],
                slot_per_kes_period
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> push(0x40),
              ),
            )
@@ -504,7 +496,7 @@ pub fn marshal_for_client_state(
                                validator_opt
                                  |> size_for_validator()
                                  |> uint64()
-                                 |> encode_varint_cardano()
+                                 |> encode_varint()
                                  |> concat(marshal_for_validator(validator_opt)),
                              )
                       },
@@ -525,7 +517,7 @@ pub fn marshal_for_client_state(
                                validator_opt
                                  |> size_for_validator()
                                  |> uint64()
-                                 |> encode_varint_cardano()
+                                 |> encode_varint()
                                  |> concat(marshal_for_validator(validator_opt)),
                              )
                       },
@@ -539,7 +531,7 @@ pub fn marshal_for_client_state(
                #[],
                trusting_period
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> push(0x58),
              ),
            )
@@ -556,7 +548,7 @@ pub fn marshal_for_client_state(
                                up
                                  |> length()
                                  |> uint64()
-                                 |> encode_varint_cardano()
+                                 |> encode_varint()
                                  |> concat(up)
                                  |> push(0x62),
                              )
@@ -571,7 +563,7 @@ pub fn marshal_for_client_state(
                token_configs
                  |> size_for_token_configs()
                  |> uint64()
-                 |> encode_varint_cardano()
+                 |> encode_varint()
                  |> concat(marshal_for_token_configs(token_configs))
                  |> push(0x6a),
              ),
@@ -610,7 +602,7 @@ pub fn size_for_client_state(
                0,
                {
                  let l = length(chain_id)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -620,7 +612,7 @@ pub fn size_for_client_state(
                0,
                {
                  let l = size_for_height(latest_height)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -630,7 +622,7 @@ pub fn size_for_client_state(
                0,
                {
                  let l = size_for_height(frozen_height)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -638,35 +630,35 @@ pub fn size_for_client_state(
              ite(
                valid_after == 0,
                0,
-               valid_after |> uint64() |> sov_cardano() |> add(1),
+               valid_after |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
              ite(
                genesis_time == 0,
                0,
-               genesis_time |> uint64() |> sov_cardano() |> add(1),
+               genesis_time |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
              ite(
                current_epoch == 0,
                0,
-               current_epoch |> uint64() |> sov_cardano() |> add(1),
+               current_epoch |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
              ite(
                epoch_length == 0,
                0,
-               epoch_length |> uint64() |> sov_cardano() |> add(1),
+               epoch_length |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
              ite(
                slot_per_kes_period == 0,
                0,
-               epoch_length |> uint64() |> sov_cardano() |> add(1),
+               epoch_length |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
@@ -680,7 +672,7 @@ pub fn size_for_client_state(
                         let l = size_for_validator(validator_opt)
                         l
                           |> uint64()
-                          |> sov_cardano()
+                          |> sov()
                           |> add(l + 1 + sz)
                       },
                     ),
@@ -697,7 +689,7 @@ pub fn size_for_client_state(
                         let l = size_for_validator(validator_opt)
                         l
                           |> uint64()
-                          |> sov_cardano()
+                          |> sov()
                           |> add(l + 1 + sz)
                       },
                     ),
@@ -707,7 +699,7 @@ pub fn size_for_client_state(
              ite(
                trusting_period == 0,
                0,
-               trusting_period |> uint64() |> sov_cardano() |> add(1),
+               trusting_period |> uint64() |> sov() |> add(1),
              ),
            )
         |> add(
@@ -721,7 +713,7 @@ pub fn size_for_client_state(
                         let l = length(up)
                         l
                           |> uint64()
-                          |> sov_cardano()
+                          |> sov()
                           |> add(l + 1 + sz)
                       },
                     ),
@@ -733,29 +725,10 @@ pub fn size_for_client_state(
                0,
                {
                  let l = size_for_token_configs(token_configs)
-                 l |> uint64() |> sov_cardano() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
     },
   )
-}
-
-fn encode_varint_cardano(v: Int64) -> ByteArray {
-  ite(
-    v >= ( 1 |> shl(7) ),
-    v
-      |> shr(7)
-      |> encode_varint_cardano()
-      |> push(
-           v
-             |> band(0x7f)
-             |> bor(0x80),
-         ),
-    #[] |> push(v),
-  )
-}
-
-fn sov_cardano(x: Int64) -> Int {
-  x |> bor(1) |> len64() |> add(6) |> div(7)
 }

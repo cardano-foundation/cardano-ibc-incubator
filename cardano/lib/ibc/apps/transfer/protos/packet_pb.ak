@@ -4,8 +4,8 @@
 use aiken/builtin.{if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
-use ibc/utils/bits.{band, bor, shl, shr}
-use ibc/utils/int.{Int64, uint64}
+use ibc/utils/bytes.{encode_varint}
+use ibc/utils/int.{uint64}
 
 pub type FungibleTokenPacketDataPb {
   denom: ByteArray,
@@ -86,7 +86,7 @@ pub fn marshal_for_fungbile_token_packet_data(
                denom
                  |> length()
                  |> uint64()
-                 |> encode_varint_packet()
+                 |> encode_varint()
                  |> concat(denom)
                  |> push(10),
              ),
@@ -98,7 +98,7 @@ pub fn marshal_for_fungbile_token_packet_data(
                amount
                  |> length()
                  |> uint64()
-                 |> encode_varint_packet()
+                 |> encode_varint()
                  |> concat(amount)
                  |> push(0x12),
              ),
@@ -110,7 +110,7 @@ pub fn marshal_for_fungbile_token_packet_data(
                sender
                  |> length()
                  |> uint64()
-                 |> encode_varint_packet()
+                 |> encode_varint()
                  |> concat(sender)
                  |> push(0x1a),
              ),
@@ -122,7 +122,7 @@ pub fn marshal_for_fungbile_token_packet_data(
                receiver
                  |> length()
                  |> uint64()
-                 |> encode_varint_packet()
+                 |> encode_varint()
                  |> concat(receiver)
                  |> push(0x22),
              ),
@@ -134,7 +134,7 @@ pub fn marshal_for_fungbile_token_packet_data(
                memo
                  |> length()
                  |> uint64()
-                 |> encode_varint_packet()
+                 |> encode_varint()
                  |> concat(memo)
                  |> push(0x2a),
              ),
@@ -142,21 +142,3 @@ pub fn marshal_for_fungbile_token_packet_data(
     },
   )
 }
-
-fn encode_varint_packet(v: Int64) -> ByteArray {
-  ite(
-    v >= ( 1 |> shl(7) ),
-    v
-      |> shr(7)
-      |> encode_varint_packet()
-      |> push(
-           v
-             |> band(0x7f)
-             |> bor(0x80),
-         ),
-    #[] |> push(v),
-  )
-}
-// fn sov_packet(x: Int64) -> Int {
-//   x |> bor(1) |> len64() |> add(6) |> div(7)
-// }

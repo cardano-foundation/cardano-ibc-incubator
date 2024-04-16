@@ -1,9 +1,7 @@
 // DO NOT EDIT.
 // source: ibc/core/connection/v1/connection.proto
 
-use aiken/builtin.{
-  add_integer as add, divide_integer as div, if_then_else as ite,
-}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/list
 use aiken/option.{is_none}
@@ -12,8 +10,8 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/commitment_pb.{
 }
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/utils/bits.{band, bor, len64, shl, shr}
-use ibc/utils/int.{Int32, Int64, Uint64, uint64}
+use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/int.{Int32, Uint64, uint64}
 
 pub type State {
   UNINITIALIZED
@@ -55,7 +53,7 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
                  let l = length(identifier)
                  l
                    |> uint64()
-                   |> encode_varint_connection()
+                   |> encode_varint()
                    |> concat(identifier)
                    |> push(10)
                },
@@ -74,7 +72,7 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
                                feature
                                  |> length()
                                  |> uint64()
-                                 |> encode_varint_connection()
+                                 |> encode_varint()
                                  |> concat(feature)
                                  |> push(0x12),
                              )
@@ -100,7 +98,7 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
                0,
                {
                  let l = length(identifier)
-                 l |> uint64() |> sov_connection() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -115,7 +113,7 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
                         let l = length(feature)
                         l
                           |> uint64()
-                          |> sov_connection()
+                          |> sov()
                           |> add(l + 1 + sz)
                       },
                     ),
@@ -142,7 +140,7 @@ pub fn marshal_for_counterparty(
                client_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_connection()
+                 |> encode_varint()
                  |> concat(client_id)
                  |> push(10),
              ),
@@ -154,7 +152,7 @@ pub fn marshal_for_counterparty(
                connection_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_connection()
+                 |> encode_varint()
                  |> concat(connection_id)
                  |> push(0x12),
              ),
@@ -164,7 +162,7 @@ pub fn marshal_for_counterparty(
                |> Some()
                |> size_for_merkle_prefix()
                |> uint64()
-               |> encode_varint_connection()
+               |> encode_varint()
                |> concat(marshal_for_merkle_prefix(Some(prefix)))
                |> push(0x1a),
            )
@@ -186,7 +184,7 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
                0,
                {
                  let l = length(client_id)
-                 l |> uint64() |> sov_connection() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -196,14 +194,14 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
                0,
                {
                  let l = length(connection_id)
-                 l |> uint64() |> sov_connection() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
         |> add(
              {
                let l = size_for_merkle_prefix(Some(prefix))
-               l |> uint64() |> sov_connection() |> add(l + 1)
+               l |> uint64() |> sov() |> add(l + 1)
              },
            )
     },
@@ -233,7 +231,7 @@ pub fn marshal_for_connection_end(
                client_id
                  |> length()
                  |> uint64()
-                 |> encode_varint_connection()
+                 |> encode_varint()
                  |> concat(client_id)
                  |> push(10),
              ),
@@ -251,7 +249,7 @@ pub fn marshal_for_connection_end(
                                version_opt
                                  |> size_for_version()
                                  |> uint64()
-                                 |> encode_varint_connection()
+                                 |> encode_varint()
                                  |> concat(marshal_for_version(version_opt))
                                  |> push(0x12),
                              )
@@ -266,7 +264,7 @@ pub fn marshal_for_connection_end(
                state
                  |> state_to_int32()
                  |> uint64()
-                 |> encode_varint_connection()
+                 |> encode_varint()
                  |> push(0x18),
              ),
            )
@@ -275,7 +273,7 @@ pub fn marshal_for_connection_end(
                |> Some()
                |> size_for_counterparty()
                |> uint64()
-               |> encode_varint_connection()
+               |> encode_varint()
                |> concat(marshal_for_counterparty(Some(counterparty)))
                |> push(0x22),
            )
@@ -285,7 +283,7 @@ pub fn marshal_for_connection_end(
                #[],
                delay_period
                  |> uint64()
-                 |> encode_varint_connection()
+                 |> encode_varint()
                  |> push(0x28),
              ),
            )
@@ -313,7 +311,7 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
                0,
                {
                  let l = length(client_id)
-                 l |> uint64() |> sov_connection() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -331,7 +329,7 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
                                  let l = size_for_version(version)
                                  l
                                    |> uint64()
-                                   |> sov_connection()
+                                   |> sov()
                                    |> add(l + 1)
                                },
                              )
@@ -346,42 +344,23 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
                state
                  |> state_to_int32()
                  |> uint64()
-                 |> sov_connection()
+                 |> sov()
                  |> add(1),
              ),
            )
         |> add(
              {
                let l = counterparty |> Some() |> size_for_counterparty()
-               l |> uint64() |> sov_connection() |> add(l + 1)
+               l |> uint64() |> sov() |> add(l + 1)
              },
            )
         |> add(
              ite(
                delay_period == 0,
                0,
-               delay_period |> uint64() |> sov_connection() |> add(1),
+               delay_period |> uint64() |> sov() |> add(1),
              ),
            )
     },
   )
-}
-
-fn encode_varint_connection(v: Int64) -> ByteArray {
-  ite(
-    v >= ( 1 |> shl(7) ),
-    v
-      |> shr(7)
-      |> encode_varint_connection()
-      |> push(
-           v
-             |> band(0x7f)
-             |> bor(0x80),
-         ),
-    #[] |> push(v),
-  )
-}
-
-fn sov_connection(x: Int64) -> Int {
-  x |> bor(1) |> len64() |> add(6) |> div(7)
 }

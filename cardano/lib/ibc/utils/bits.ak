@@ -1,7 +1,6 @@
-use aiken/builtin.{if_then_else, index_bytearray}
+use aiken/builtin.{if_then_else}
 use aiken/bytearray.{push}
-use aiken/math.{pow2}
-use ibc/utils/bits_table.{len8tab}
+use aiken/math.{log, pow2}
 
 pub type BitwiseOperator {
   AND
@@ -38,18 +37,7 @@ pub fn len(x: Int) -> Int {
 }
 
 pub fn len64(x: Int) -> Int {
-  if x >= ( 1 |> shl(32) ) {
-    let x = x |> shr(32)
-    32 + len64(x)
-  } else if x >= ( 1 |> shl(16) ) {
-    let x = x |> shr(16)
-    16 + len64(x)
-  } else if x >= ( 1 |> shl(8) ) {
-    let x = x |> shr(8)
-    8 + len64(x)
-  } else {
-    index_bytearray(len8tab, x)
-  }
+  log(x, 2) + 1
 }
 
 pub fn put_uint64(v: Int) -> ByteArray {

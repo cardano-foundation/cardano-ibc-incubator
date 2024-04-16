@@ -1,15 +1,13 @@
 // DO NOT EDIT.
 // source: tendermint/types/validator.proto
 
-use aiken/builtin.{
-  add_integer as add, divide_integer as div, if_then_else as ite,
-}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/bytearray.{concat, push}
 use aiken/option.{is_none}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/keys_pb.{
   PublicKey, marshal_for_public_key, size_for_public_key,
 }
-use ibc/utils/bits.{band, bor, len64, shl, shr}
+use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int64, uint64}
 
 pub type SimpleValidator {
@@ -34,7 +32,7 @@ pub fn marshal_for_simple_validator(
                pub_key
                  |> size_for_public_key()
                  |> uint64()
-                 |> encode_varint_validator()
+                 |> encode_varint()
                  |> concat(marshal_for_public_key(pub_key))
                  |> push(10),
              ),
@@ -45,7 +43,7 @@ pub fn marshal_for_simple_validator(
                #[],
                voting_power
                  |> uint64()
-                 |> encode_varint_validator()
+                 |> encode_varint()
                  |> push(0x10),
              ),
            )
@@ -67,7 +65,7 @@ pub fn size_for_simple_validator(sv_opt: Option<SimpleValidator>) -> Int {
                0,
                {
                  let l = size_for_public_key(pub_key)
-                 l |> uint64() |> sov_validator() |> add(l + 1)
+                 l |> uint64() |> sov() |> add(l + 1)
                },
              ),
            )
@@ -75,28 +73,9 @@ pub fn size_for_simple_validator(sv_opt: Option<SimpleValidator>) -> Int {
              ite(
                voting_power == 0,
                0,
-               voting_power |> uint64() |> sov_validator() |> add(1),
+               voting_power |> uint64() |> sov() |> add(1),
              ),
            )
     },
-  )
-}
-
-fn sov_validator(x: Int64) -> Int {
-  x |> bor(1) |> len64() |> add(6) |> div(7)
-}
-
-fn encode_varint_validator(v: Int64) -> ByteArray {
-  ite(
-    v >= ( 1 |> shl(7) ),
-    v
-      |> shr(7)
-      |> encode_varint_validator()
-      |> push(
-           v
-             |> band(0x7f)
-             |> bor(0x80),
-         ),
-    #[] |> push(v),
   )
 }
