@@ -27,12 +27,12 @@ pub fn verify_existence_proof(
   key: ByteArray,
   value: ByteArray,
 ) -> Bool {
-  expect check_against_spec(p, spec)
-  expect bytearray.compare(key, p.key) == Equal
-  expect bytearray.compare(value, p.value) == Equal
-  let calc = calculate_exist_internal(p, spec)
-  expect bytearray.compare(root, calc) == Equal
-  True
+  and {
+    check_against_spec(p, spec),
+    key == p.key,
+    value == p.value,
+    root == calculate_exist_internal(p, spec),
+  }
 }
 
 /// Verify does all checks to ensure the proof has valid non-existence proofs,
@@ -270,10 +270,7 @@ pub fn is_left_neighbor(
                expect Some(t_left) = accum.3rd
                expect Some(t_right) = accum.4th
                if
-               bytearray.compare(t_left.prefix, t_right.prefix) == Equal && bytearray.compare(
-                 t_left.suffix,
-                 t_right.suffix,
-               ) == Equal{
+               t_left.prefix == t_right.prefix && t_left.suffix == t_right.suffix{
                
                  if list.length(accum.1st) < 2 && list.length(accum.2nd) < 2 {
                    (
@@ -384,10 +381,11 @@ fn left_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
                  let idx = get_position(spec.child_order, i)
                  let from = actual_prefix + idx * spec.child_size
                  if
-                 !(bytearray.compare(
-                   spec.empty_child,
-                   bytearray.slice(op.prefix, from, from + spec.child_size - 1),
-                 ) == Equal){
+                 !(spec.empty_child == bytearray.slice(
+                   op.prefix,
+                   from,
+                   from + spec.child_size - 1,
+                 )){
                  
                    (False, True)
                  } else {
@@ -421,10 +419,11 @@ fn right_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
                  let idx = get_position(spec.child_order, i)
                  let from = idx * spec.child_size
                  if
-                 !(bytearray.compare(
-                   spec.empty_child,
-                   bytearray.slice(op.suffix, from, from + spec.child_size - 1),
-                 ) == Equal){
+                 !(spec.empty_child == bytearray.slice(
+                   op.suffix,
+                   from,
+                   from + spec.child_size - 1,
+                 )){
                  
                    (False, True)
                  } else {

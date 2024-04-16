@@ -25,7 +25,7 @@ fn get_exist_proof_for_key(
   expect comm_proof != proofs.null_commitment_proof()
   when comm_proof.proof is {
     CommitmentProof_Exist { exist } ->
-      if bytearray.compare(exist.key, key) == Equal {
+      if exist.key == key {
         exist
       } else {
         proofs.null_existance_proof()
