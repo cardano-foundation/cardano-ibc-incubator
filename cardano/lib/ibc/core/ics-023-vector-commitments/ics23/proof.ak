@@ -138,18 +138,38 @@ fn calculate_exist_internal(
 
 /// check_against_spec() will verify the leaf and all path steps are in the format defined in spec
 pub fn check_against_spec(p: ExistenceProof, spec: ProofSpec) -> Bool {
+  expect spec != proofs.null_proof_spec()
+  expect spec.leaf_spec != proofs.null_leaf_op()
+
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
   let leaf = get_leaf_existence_proof(p)
   expect leaf != proofs.null_leaf_op()
-  expect ops.check_against_spec_leaf_op(leaf, spec)
+  expect ops.check_against_spec_leaf_op(leaf, spec, is_iavl_spec)
   expect !(spec.min_depth > 0 && list.length(p.path) < spec.min_depth)
   expect !(spec.max_depth > 0 && list.length(p.path) > spec.max_depth)
+
+  let inner_spec = spec.inner_spec
+  expect inner_spec != proofs.null_inner_spec()
+
+  let max_op_prefix_length =
+    ( list.length(inner_spec.child_order) - 1 ) * inner_spec.child_size + inner_spec.max_prefix_length
+
   let layer_num = 1
   let accum_layer_num =
     list.reduce(
       p.path,
       layer_num,
       fn(accum_layer_num, inner) {
-        expect ops.check_against_spec_inner_op(inner, spec, layer_num)
+        expect
+          ops.check_against_spec_inner_op(
+            inner,
+            spec,
+            layer_num,
+            inner_spec,
+            max_op_prefix_length,
+            is_iavl_spec,
+          )
         accum_layer_num + 1
       },
     )

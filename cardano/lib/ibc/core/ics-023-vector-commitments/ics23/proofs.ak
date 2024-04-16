@@ -67,19 +67,11 @@ pub type CommitmentRoot =
   ByteArray
 
 pub fn get_prefix_leaf_op(m: LeafOp) -> ByteArray {
-  if m != null_leaf_op() {
-    m.prefix
-  } else {
-    #[]
-  }
+  m.prefix
 }
 
 pub fn get_prefix_inner_op(m: InnerOp) -> ByteArray {
-  if m != null_inner_op() {
-    m.prefix
-  } else {
-    #[]
-  }
+  m.prefix
 }
 
 pub fn null_leaf_op() -> LeafOp {

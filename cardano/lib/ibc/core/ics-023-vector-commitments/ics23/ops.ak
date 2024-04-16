@@ -3,7 +3,7 @@ use aiken/bytearray
 use aiken/list
 use ibc/core/ics_023_vector_commitments/ics23/constants.{hash_op_no_hash}
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
-  HashOp, InnerOp, LeafOp, LengthOp, ProofSpec,
+  HashOp, InnerOp, InnerSpec, LeafOp, LengthOp, ProofSpec,
 }
 use ibc/utils/bytes.{encode_varint, has_prefix}
 
@@ -25,16 +25,18 @@ pub fn apply_inner_op(op: InnerOp, child: ByteArray) -> ByteArray {
 }
 
 /// check_against_spec_leaf_op() will verify the LeafOp is in the format defined in spec
-pub fn check_against_spec_leaf_op(op: LeafOp, spec: ProofSpec) -> Bool {
-  expect spec != proofs.null_proof_spec()
+pub fn check_against_spec_leaf_op(
+  op: LeafOp,
+  spec: ProofSpec,
+  is_iavl_spec: Bool,
+) -> Bool {
   let lspec = spec.leaf_spec
-  expect lspec != proofs.null_leaf_op()
   expect op.hash == lspec.hash
   expect op.prehash_key == lspec.prehash_key
   expect op.prehash_value == lspec.prehash_value
   expect op.length == lspec.length
   expect has_prefix(op.prefix, lspec.prefix)
-  if validate_spec(spec) {
+  if is_iavl_spec {
     expect validate_iavl_ops_leaf_op(op, 0)
     True
   } else {
@@ -43,23 +45,24 @@ pub fn check_against_spec_leaf_op(op: LeafOp, spec: ProofSpec) -> Bool {
 }
 
 /// check_against_spec_inner_op() will verify the InnerOp is in the format defined in spec
-pub fn check_against_spec_inner_op(op: InnerOp, spec: ProofSpec, b: Int) -> Bool {
-  expect spec != proofs.null_proof_spec()
-  expect spec.inner_spec != proofs.null_inner_spec()
-  expect spec.leaf_spec != proofs.null_leaf_op()
-  expect op.hash == spec.inner_spec.hash
-  let leaf_prefix = spec.leaf_spec.prefix
-  expect !has_prefix(op.prefix, leaf_prefix)
-  expect bytearray.length(op.prefix) >= spec.inner_spec.min_prefix_length
-  let max_left_child_bytes =
-    ( list.length(spec.inner_spec.child_order) - 1 ) * spec.inner_spec.child_size
-  expect
-    bytearray.length(op.prefix) <= spec.inner_spec.max_prefix_length + max_left_child_bytes
-  expect spec.inner_spec.child_size >= 1
-  expect bytearray.length(op.suffix) % spec.inner_spec.child_size == 0
-  if validate_spec(spec) {
-    expect validate_iavl_ops_inner_op(op, b)
-    True
+pub fn check_against_spec_inner_op(
+  op: InnerOp,
+  spec: ProofSpec,
+  b: Int,
+  inner_spec: InnerSpec,
+  max_op_prefix_length: Int,
+  is_iavl_spec: Bool,
+) -> Bool {
+  expect op.hash == inner_spec.hash
+
+  expect !has_prefix(op.prefix, spec.leaf_spec.prefix)
+
+  expect bytearray.length(op.prefix) >= inner_spec.min_prefix_length
+  expect bytearray.length(op.prefix) <= max_op_prefix_length
+  expect bytearray.length(op.suffix) % inner_spec.child_size == 0
+
+  if is_iavl_spec {
+    validate_iavl_ops_inner_op(op, b)
   } else {
     True
   }
