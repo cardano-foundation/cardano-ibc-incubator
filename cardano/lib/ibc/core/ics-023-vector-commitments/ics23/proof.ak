@@ -27,12 +27,12 @@ pub fn verify_existence_proof(
   key: ByteArray,
   value: ByteArray,
 ) -> Bool {
-  expect check_against_spec(p, spec)
-  expect bytearray.compare(key, p.key) == Equal
-  expect bytearray.compare(value, p.value) == Equal
-  let calc = calculate_exist_internal(p, spec)
-  expect bytearray.compare(root, calc) == Equal
-  True
+  and {
+    check_against_spec(p, spec),
+    key == p.key,
+    value == p.value,
+    root == calculate_exist_internal(p, spec),
+  }
 }
 
 /// Verify does all checks to ensure the proof has valid non-existence proofs,
@@ -138,18 +138,38 @@ fn calculate_exist_internal(
 
 /// check_against_spec() will verify the leaf and all path steps are in the format defined in spec
 pub fn check_against_spec(p: ExistenceProof, spec: ProofSpec) -> Bool {
+  expect spec != proofs.null_proof_spec()
+  expect spec.leaf_spec != proofs.null_leaf_op()
+
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
   let leaf = get_leaf_existence_proof(p)
   expect leaf != proofs.null_leaf_op()
-  expect ops.check_against_spec_leaf_op(leaf, spec)
+  expect ops.check_against_spec_leaf_op(leaf, spec, is_iavl_spec)
   expect !(spec.min_depth > 0 && list.length(p.path) < spec.min_depth)
   expect !(spec.max_depth > 0 && list.length(p.path) > spec.max_depth)
+
+  let inner_spec = spec.inner_spec
+  expect inner_spec != proofs.null_inner_spec()
+
+  let max_op_prefix_length =
+    ( list.length(inner_spec.child_order) - 1 ) * inner_spec.child_size + inner_spec.max_prefix_length
+
   let layer_num = 1
   let accum_layer_num =
     list.reduce(
       p.path,
       layer_num,
       fn(accum_layer_num, inner) {
-        expect ops.check_against_spec_inner_op(inner, spec, layer_num)
+        expect
+          ops.check_against_spec_inner_op(
+            inner,
+            spec,
+            layer_num,
+            inner_spec,
+            max_op_prefix_length,
+            is_iavl_spec,
+          )
         accum_layer_num + 1
       },
     )
@@ -250,10 +270,7 @@ pub fn is_left_neighbor(
                expect Some(t_left) = accum.3rd
                expect Some(t_right) = accum.4th
                if
-               bytearray.compare(t_left.prefix, t_right.prefix) == Equal && bytearray.compare(
-                 t_left.suffix,
-                 t_right.suffix,
-               ) == Equal{
+               t_left.prefix == t_right.prefix && t_left.suffix == t_right.suffix{
                
                  if list.length(accum.1st) < 2 && list.length(accum.2nd) < 2 {
                    (
@@ -364,10 +381,11 @@ fn left_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
                  let idx = get_position(spec.child_order, i)
                  let from = actual_prefix + idx * spec.child_size
                  if
-                 !(bytearray.compare(
-                   spec.empty_child,
-                   bytearray.slice(op.prefix, from, from + spec.child_size - 1),
-                 ) == Equal){
+                 !(spec.empty_child == bytearray.slice(
+                   op.prefix,
+                   from,
+                   from + spec.child_size - 1,
+                 )){
                  
                    (False, True)
                  } else {
@@ -401,10 +419,11 @@ fn right_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
                  let idx = get_position(spec.child_order, i)
                  let from = idx * spec.child_size
                  if
-                 !(bytearray.compare(
-                   spec.empty_child,
-                   bytearray.slice(op.suffix, from, from + spec.child_size - 1),
-                 ) == Equal){
+                 !(spec.empty_child == bytearray.slice(
+                   op.suffix,
+                   from,
+                   from + spec.child_size - 1,
+                 )){
                  
                    (False, True)
                  } else {

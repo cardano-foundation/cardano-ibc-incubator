@@ -1,7 +1,7 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
-use aiken/bytearray.{compare, length, push, slice}
+use aiken/bytearray.{push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64}
 
@@ -30,8 +30,8 @@ pub fn read_uvarint(bz: ByteArray, pos: Int) -> (Int, Int) {
 /// read_varint() reads an encoded signed integer from r and returns it as an int64.
 pub fn read_varint(r: ByteArray, pos: Int) -> (Int, Int) {
   let (ux, updated_pos) = read_uvarint(r, pos)
-  let x = bits.shr(ux, 1)
-  if bits.band(ux, 1) != 0 {
+  let x = ux / 2
+  if ux % 2 != 0 {
     (bits.bnot_for_int64(x), updated_pos)
   } else {
     (x, updated_pos)
@@ -39,9 +39,7 @@ pub fn read_varint(r: ByteArray, pos: Int) -> (Int, Int) {
 }
 
 pub fn has_prefix(s: ByteArray, prefix: ByteArray) -> Bool {
-  let p_length = length(prefix)
-  expect length(s) >= p_length
-  compare(slice(s, 0, p_length - 1), prefix) == Equal
+  bytearray.take(s, bytearray.length(prefix)) == prefix
 }
 
 pub fn encode_varint(v: Int64) -> ByteArray {

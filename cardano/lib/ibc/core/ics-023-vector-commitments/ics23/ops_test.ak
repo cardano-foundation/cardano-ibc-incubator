@@ -1,3 +1,4 @@
+use aiken/list
 use ibc/core/ics_023_vector_commitments/ics23/ops
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
@@ -223,7 +224,11 @@ test test_check_against_spec_leaf_op_success() {
       length: 1,
       prefix: #"000202",
     }
-  ops.check_against_spec_leaf_op(leaf, proofs.iavl_spec())
+
+  let spec = proofs.iavl_spec()
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
+  ops.check_against_spec_leaf_op(leaf, spec, is_iavl_spec)
 }
 
 test test_check_against_spec_leaf_op_fail_with_other_spec() fail {
@@ -235,7 +240,11 @@ test test_check_against_spec_leaf_op_fail_with_other_spec() fail {
       length: 1,
       prefix: #"000202",
     }
-  ops.check_against_spec_leaf_op(leaf, proofs.iavl_spec())
+
+  let spec = proofs.iavl_spec()
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
+  ops.check_against_spec_leaf_op(leaf, spec, is_iavl_spec)
 }
 
 test test_check_against_spec_inner_op_success() {
@@ -245,7 +254,22 @@ test test_check_against_spec_inner_op_success() {
       prefix: #"04060220",
       suffix: #"20afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
     }
-  ops.check_against_spec_inner_op(inner_op, proofs.iavl_spec(), 1)
+
+  let spec = proofs.iavl_spec()
+  let inner_spec = spec.inner_spec
+  let max_op_prefix_length =
+    ( list.length(inner_spec.child_order) - 1 ) * inner_spec.child_size + inner_spec.max_prefix_length
+
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
+  ops.check_against_spec_inner_op(
+    inner_op,
+    spec,
+    1,
+    spec.inner_spec,
+    max_op_prefix_length,
+    is_iavl_spec,
+  )
 }
 
 test test_check_against_spec_inner_op_fail_with_other_spec() fail {
@@ -255,7 +279,21 @@ test test_check_against_spec_inner_op_fail_with_other_spec() fail {
       prefix: #"04060220",
       suffix: #"20afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
     }
-  ops.check_against_spec_inner_op(inner_op, proofs.tendermint_spec(), 1)
+  let spec = proofs.tendermint_spec()
+  let inner_spec = spec.inner_spec
+  let max_op_prefix_length =
+    ( list.length(inner_spec.child_order) - 1 ) * inner_spec.child_size + inner_spec.max_prefix_length
+
+  let is_iavl_spec = proofs.spec_equals(spec, proofs.iavl_spec())
+
+  ops.check_against_spec_inner_op(
+    inner_op,
+    spec,
+    1,
+    spec.inner_spec,
+    max_op_prefix_length,
+    is_iavl_spec,
+  )
 }
 
 test test_apply_leaf_op_success_with_only_hash() {
