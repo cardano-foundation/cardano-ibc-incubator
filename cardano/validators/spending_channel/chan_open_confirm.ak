@@ -62,7 +62,7 @@ validator(
 
     expect ChanOpenConfirm { proof_ack, proof_height } = channel_redeemer
 
-    trace @"spend_channel: ChanOpenConfirm branch"
+    trace @"chan_open_confirm: tx context extracted"
 
     expect Some(connection_datum) =
       validator_utils.validate_referred_connection(
@@ -71,16 +71,16 @@ validator(
         connection_minting_policy_id,
         connection_id,
       )
-    trace @"spend_channel: reference_inputs contain Connection utxo\n"
+    trace @"chan_open_confirm: reference_inputs contain Connection utxo"
 
     expect connection_datum.state.state == conn_state_mod.Open
-    trace @"spend_channel: Connection is open\n"
+    trace @"chan_open_confirm: Connection is open"
 
     expect [connection_version] = connection_datum.state.versions
     expect
       chan_order_mod.string(datum.state.channel.ordering)
         |> version_mod.verify_supported_feature(connection_version, _)
-    trace @"spend_channel: connection support channel ordering\n"
+    trace @"chan_open_confirm: connection support channel ordering"
 
     expect Some(client_datum) =
       validator_utils.validate_referred_client(
@@ -89,7 +89,7 @@ validator(
         client_minting_policy_id,
         connection_datum.state.client_id,
       )
-    trace @"spend_channel: validator_utils.validate_referred_client\n"
+    trace @"chan_open_confirm: validator_utils.validate_referred_client"
 
     expect
       client_state_mod.status(
@@ -97,10 +97,10 @@ validator(
         tx_valid_to * 1_000_000,
         dict.from_list(client_datum.state.consensus_states, height_mod.compare),
       ) == client_status_mod.Active
-    trace @"spend_channel: client status is active\n"
+    trace @"chan_open_confirm: client status is active"
 
     expect channel_datum_mod.is_channel_open_confirm_valid(datum, updated_datum)
-    trace @"spend_channel: output datum is updated valid\n"
+    trace @"chan_open_confirm: output datum is updated valid"
 
     expect
       validate_chan_open_confirm_proof(
@@ -111,7 +111,7 @@ validator(
         proof_ack,
         proof_height,
       )
-    trace @"spend_channel: channel proof is valid\n"
+    trace @"chan_open_confirm: channel proof is valid"
 
     expect Some(ibc_module_redeemer) =
       validator_utils.extract_module_redeemer(
@@ -123,7 +123,7 @@ validator(
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanOpenConfirm { channel_id }
-    trace @"spend_channel: ibc module callback is valid\n"
+    trace @"chan_open_confirm: ibc module callback is valid"
 
     True
   }

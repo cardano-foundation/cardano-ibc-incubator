@@ -63,6 +63,8 @@ validator(
     expect ChanOpenAck { counterparty_version, proof_try, proof_height } =
       channel_redeemer
 
+    trace @"chan_open_ack: tx context extracted"
+
     expect Some(connection_datum) =
       validator_utils.validate_referred_connection(
         reference_inputs,
@@ -70,13 +72,16 @@ validator(
         connection_minting_policy_id,
         connection_id,
       )
+    trace @"chan_open_ack: reference_inputs contain Connection utxo"
 
     expect connection_datum.state.state == conn_state_mod.Open
+    trace @"chan_open_ack: Connection is open"
 
     expect [connection_version] = connection_datum.state.versions
     expect
       chan_order_mod.string(datum.state.channel.ordering)
         |> version_mod.verify_supported_feature(connection_version, _)
+    trace @"chan_open_ack: connection support channel ordering"
 
     expect Some(client_datum) =
       validator_utils.validate_referred_client(
@@ -85,6 +90,7 @@ validator(
         client_minting_policy_id,
         connection_datum.state.client_id,
       )
+    trace @"chan_open_ack: validator_utils.validate_referred_client"
 
     expect
       client_state_mod.status(
@@ -92,8 +98,10 @@ validator(
         tx_valid_to * 1_000_000,
         dict.from_list(client_datum.state.consensus_states, height_mod.compare),
       ) == client_status_mod.Active
+    trace @"chan_open_ack: client status is active"
 
     expect channel_datum_mod.is_channel_open_ack_valid(datum, updated_datum)
+    trace @"chan_open_ack: output datum is updated valid"
 
     expect
       validate_chan_open_ack_proof(
@@ -105,6 +113,7 @@ validator(
         proof_try,
         proof_height,
       )
+    trace @"chan_open_ack: channel proof is valid"
 
     expect Some(ibc_module_redeemer) =
       validator_utils.extract_module_redeemer(
@@ -116,6 +125,7 @@ validator(
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanOpenAck { channel_id }
+    trace @"chan_open_ack: ibc module callback is valid"
 
     True
   }

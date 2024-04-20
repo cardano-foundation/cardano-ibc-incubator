@@ -58,6 +58,7 @@ validator(
   port_minting_policy_id: PolicyId,
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
+  recv_packet_policy_id: PolicyId,
 ) {
   fn spend_channel(
     datum: ChannelDatum,
@@ -119,140 +120,12 @@ validator(
 
         redeemer == datum.token
       }
-      RecvPacket { packet, proof_commitment, proof_height } -> {
-        trace @"spend_channel: RecvPacket branch"
+      RecvPacket { .. } -> {
+        expect Some(redeemer) = dict.get(redeemers, Mint(recv_packet_policy_id))
 
-        let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-        let ChannelDatumState {
-          channel: cur_channel,
-          packet_receipt: cur_packet_receipt,
-          packet_acknowledgement: cur_packet_acknowledgement,
-          next_sequence_recv,
-          ..
-        } = cur_channel_state
+        expect redeemer: AuthToken = redeemer
 
-        expect packet_mod.validate_basic(packet)
-        trace @"spend_channel: packet validated basic"
-
-        expect
-          packet.destination_port == port_id && packet.destination_channel == channel_id
-        expect
-          packet.source_port == cur_channel.counterparty.port_id && packet.source_channel == cur_channel.counterparty.channel_id
-        trace @"spend_channel: packet ports and channels matched"
-
-        expect cur_channel.state == channel_state.Open
-        trace @"spend_channel: channel state is open"
-
-        expect Some(connection_datum) =
-          validator_utils.validate_referred_connection(
-            reference_inputs,
-            datum.token.name,
-            connection_minting_policy_id,
-            connection_id,
-          )
-        trace @"spend_channel: reference_inputs contain Connection utxo"
-        expect connection_datum.state.state == connection_state.Open
-        trace @"spend_channel: Connection is open"
-
-        expect Some(client_datum) =
-          validator_utils.validate_referred_client(
-            reference_inputs,
-            datum.token.name,
-            client_minting_policy_id,
-            connection_datum.state.client_id,
-          )
-        trace @"spend_channel: validator_utils.validate_referred_client"
-
-        expect
-          client_state.status(
-            client_datum.state.client_state,
-            tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
-          ) == client_status.Active
-        trace @"spend_channel: client status is active"
-
-        expect
-          packet.timeout_timestamp != 0 && tx_valid_to * 1_000_000 < packet.timeout_timestamp
-        trace @"spend_channel: packet timeout_timestamp is not over"
-
-        expect
-          validate_recv_packet_proof(
-            connection_datum.state,
-            client_datum.state,
-            proof_height,
-            proof_commitment,
-            packet,
-          )
-        trace @"spend_channel: packet proof is valid"
-
-        expect Some(ibc_module_redeemer) =
-          validator_utils.extract_module_redeemer(
-            inputs,
-            redeemers,
-            datum.token.name,
-            port_minting_policy_id,
-            datum.port_id,
-          )
-        expect Callback(ibc_module_callback) = ibc_module_redeemer
-        expect OnRecvPacket {
-          channel_id: module_chan_id,
-          acknowledgement,
-          data: _,
-        } = ibc_module_callback
-        expect module_chan_id == channel_id
-        trace @"spend_channel: ibc module callback is valid"
-
-        expect
-          when cur_channel.ordering is {
-            channel_order.Unordered -> {
-              trace @"spend_channel: channel ordering is  Unordered"
-
-              expect
-                (
-                  dict.from_list(cur_packet_receipt, int.compare)
-                    |> dict.has_key(packet.sequence)
-                ) == False
-              trace @"spend_channel: packet not relayed yet"
-
-              True
-            }
-            channel_order.Ordered -> {
-              trace @"spend_channel: channel ordering is  Ordered"
-
-              expect packet.sequence == next_sequence_recv
-              trace @"spend_channel: packet sequence match next sequence recv"
-
-              True
-            }
-            _ -> {
-              trace @"spend_channel: other channel order"
-              False
-            }
-          }
-
-        expect
-          (
-            dict.from_list(cur_packet_acknowledgement, int.compare)
-              |> dict.has_key(packet.sequence)
-          ) == False
-        trace @"spend_channel: acknowledgement not relayed yet"
-
-        let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-        let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
-
-        expect
-          channel_datum_mod.validate_recv_packet(
-            datum,
-            updated_datum,
-            packet,
-            commit_ack,
-          )
-        trace @"spend_channel: channel datum is updated valid"
-
-        True
+        redeemer == datum.token
       }
       SendPacket { packet } -> {
         trace @"spend_channel: SendPacket branch"
@@ -617,30 +490,6 @@ validator(
   }
 }
 
-fn validate_recv_packet_proof(
-  connection_end: ConnectionEnd,
-  client_datum_state: ClientDatumState,
-  proof_height: Height,
-  proof_commitment: MerkleProof,
-  packet: Packet,
-) -> Bool {
-  let commitment = packet_mod.commit_packet(packet)
-
-  expect
-    verify.verify_packet_commitment(
-      client_datum_state,
-      connection_end,
-      proof_height,
-      proof_commitment,
-      packet.source_port,
-      packet.source_channel,
-      packet.sequence,
-      commitment,
-    )
-
-  True
-}
-
 //==========================================Test================================================
 
 type MockData {
@@ -651,6 +500,7 @@ type MockData {
   channel_minting_policy_id: PolicyId,
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
+  recv_packet_policy_id: PolicyId,
   channel_sequence: Int,
   channel_token: AuthToken,
   handler_token: AuthToken,
@@ -893,6 +743,7 @@ fn setup() -> MockData {
     channel_minting_policy_id,
     chan_open_ack_policy_id: "mock chan_open_ack_policy_id",
     chan_open_confirm_policy_id: "mock chan_open_confirm_policy_id",
+    recv_packet_policy_id: "mock recv_packet_policy_id",
     channel_sequence,
     channel_token,
     handler_token,
@@ -1193,20 +1044,20 @@ test succeed_chan_open_ack() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.chan_open_ack_policy_id),
-           mock_data.channel_token,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.chan_open_ack_policy_id),
+          mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1228,6 +1079,7 @@ test succeed_chan_open_ack() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1411,20 +1263,20 @@ test succeed_chan_open_confirm() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.chan_open_confirm_policy_id),
-           mock_data.channel_token,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.chan_open_confirm_policy_id),
+          mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1446,6 +1298,7 @@ test succeed_chan_open_confirm() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1662,15 +1515,20 @@ test succeed_recv_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
+      |> dict.insert(
+          Mint(mock_data.recv_packet_policy_id),
+          mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1692,6 +1550,7 @@ test succeed_recv_packet() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1797,15 +1656,15 @@ test succeed_send_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1827,6 +1686,7 @@ test succeed_send_packet() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -2059,15 +1919,15 @@ test succeed_timeout_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -2089,6 +1949,7 @@ test succeed_timeout_packet() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -2306,15 +2167,15 @@ test succeed_acknowledge_packet() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(channel_input.output_reference),
-           spend_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -2336,6 +2197,7 @@ test succeed_acknowledge_packet() {
     mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.recv_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
