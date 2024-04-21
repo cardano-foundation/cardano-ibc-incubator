@@ -60,6 +60,7 @@ validator(
   chan_open_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
+  timeout_packet_policy_id: PolicyId,
 ) {
   fn spend_channel(
     datum: ChannelDatum,
@@ -135,153 +136,12 @@ validator(
 
         redeemer == datum.token
       }
-      TimeoutPacket {
-        packet,
-        proof_unreceived,
-        proof_height,
-        next_sequence_recv,
-      } -> {
-        trace @"spend_channel: TimeoutPacket branch"
+      TimeoutPacket { .. } -> {
+        expect Some(redeemer) = dict.get(redeemers, Mint(timeout_packet_policy_id))
 
-        let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-        let ChannelDatumState {
-          channel: cur_channel,
-          packet_commitment: cur_packet_commitment,
-          ..
-        } = cur_channel_state
+        expect redeemer: AuthToken = redeemer
 
-        expect cur_channel.state == channel_state.Open
-        trace @"spend_channel: channel state is open"
-
-        expect and {
-            packet.source_port == port_id,
-            packet.source_channel == channel_id,
-            packet.destination_port == cur_channel.counterparty.port_id,
-            packet.destination_channel == cur_channel.counterparty.channel_id,
-          }
-        trace @"spend_channel: packet info matched channel state"
-
-        expect Some(connection_datum) =
-          validator_utils.validate_referred_connection(
-            reference_inputs,
-            datum.token.name,
-            connection_minting_policy_id,
-            connection_id,
-          )
-        trace @"spend_channel: reference_inputs contain Connection utxo"
-
-        expect Some(client_datum) =
-          validator_utils.validate_referred_client(
-            reference_inputs,
-            datum.token.name,
-            client_minting_policy_id,
-            connection_datum.state.client_id,
-          )
-        trace @"spend_channel: reference_inputs contain Client utxo"
-
-        expect
-          client_state.status(
-            client_datum.state.client_state,
-            tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
-          ) == client_status.Active
-        trace @"spend_channel: client status is active"
-
-        expect Some(proof_timestamp) =
-          client_state.get_timestamp_at_height(
-            client_datum.state.client_state,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
-            proof_height,
-          )
-        expect or {
-            !height_mod.is_zero(packet.timeout_height) && !(height_mod.compare(
-              proof_height,
-              packet.timeout_height,
-            ) == Less),
-            packet.timeout_timestamp != 0 && proof_timestamp >= packet.timeout_timestamp,
-          }
-        trace @"spend_channel: packet is timeout"
-
-        expect Some(commitment) =
-          dict.from_list(cur_packet_commitment, int.compare)
-            |> dict.get(packet.sequence)
-        trace @"spend_channel: packet commitment existed"
-
-        let packet_commitment = packet_mod.commit_packet(packet)
-        expect commitment == packet_commitment
-        trace @"spend_channel: timeout packet match commit packet"
-
-        expect
-          when cur_channel.ordering is {
-            channel_order.Unordered -> {
-              trace @"spend_channel: channel ordering is  Unordered"
-
-              expect
-                verify.verify_packet_receipt_absence(
-                  client_datum.state,
-                  connection_datum.state,
-                  proof_height,
-                  proof_unreceived,
-                  packet.destination_port,
-                  packet.destination_channel,
-                  packet.sequence,
-                )
-              trace @"spend_channel: packet proof is valid"
-
-              True
-            }
-            channel_order.Ordered -> {
-              trace @"spend_channel: channel ordering is not Unordered"
-
-              expect next_sequence_recv <= packet.sequence
-              trace @"spend_channel: packet not received yet"
-
-              expect
-                verify.verify_next_sequence_recv(
-                  client_datum.state,
-                  connection_datum.state,
-                  proof_height,
-                  proof_unreceived,
-                  packet.destination_port,
-                  packet.destination_channel,
-                  next_sequence_recv,
-                )
-              trace @"spend_channel: packet proof is valid"
-
-              True
-            }
-            _ -> False
-          }
-
-        expect
-          channel_datum_mod.validate_timeout_packet(
-            datum,
-            updated_datum,
-            packet,
-          )
-        trace @"spend_channel: channel datum is updated valid"
-
-        expect Some(ibc_module_redeemer) =
-          validator_utils.extract_module_redeemer(
-            inputs,
-            redeemers,
-            datum.token.name,
-            port_minting_policy_id,
-            datum.port_id,
-          )
-        expect Callback(ibc_module_callback) = ibc_module_redeemer
-        expect OnTimeoutPacket { channel_id: module_chan_id, .. } =
-          ibc_module_callback
-        expect module_chan_id == channel_id
-        trace @"spend_channel: ibc module callback is valid"
-
-        True
+        redeemer == datum.token
       }
       AcknowledgePacket { packet, acknowledgement, proof_acked, proof_height } -> {
         trace @"spend_channel: AcknowledgePacket branch"
@@ -413,6 +273,7 @@ type MockData {
   chan_open_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
+  timeout_packet_policy_id: PolicyId,
   channel_sequence: Int,
   channel_token: AuthToken,
   handler_token: AuthToken,
@@ -657,6 +518,7 @@ fn setup() -> MockData {
     chan_open_confirm_policy_id: "mock chan_open_confirm_policy_id",
     recv_packet_policy_id: "mock recv_packet_policy_id",
     send_packet_policy_id: "mock send_packet_policy_id",
+    timeout_packet_policy_id: "mock timeout_packet_policy_id",
     channel_sequence,
     channel_token,
     handler_token,
@@ -994,6 +856,7 @@ test succeed_chan_open_ack() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1214,6 +1077,7 @@ test succeed_chan_open_confirm() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1467,6 +1331,7 @@ test succeed_recv_packet() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1598,6 +1463,7 @@ test succeed_send_packet() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1839,6 +1705,11 @@ test succeed_timeout_packet() {
           spend_channel_redeemer,
           validator_utils.compare_script_purpose,
         )
+      |> dict.insert(
+          Mint(mock_data.timeout_packet_policy_id),
+          mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1862,6 +1733,7 @@ test succeed_timeout_packet() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -2111,6 +1983,7 @@ test succeed_acknowledge_packet() {
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
+    mock_data.timeout_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
