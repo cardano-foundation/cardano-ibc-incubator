@@ -17,7 +17,6 @@ use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
-use ibc/core/ics_002_client_semantics/types/client as client_status
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -25,7 +24,6 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as c
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_003_connection_semantics/verify
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
@@ -53,14 +51,12 @@ use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/validator_utils
 
 validator(
-  client_minting_policy_id: PolicyId,
-  connection_minting_policy_id: PolicyId,
-  port_minting_policy_id: PolicyId,
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
+  acknowledge_packet_policy_id: PolicyId,
 ) {
   fn spend_channel(
     datum: ChannelDatum,
@@ -69,40 +65,7 @@ validator(
   ) -> Bool {
     let (spent_output, transaction) =
       validator_utils.extract_spending_context(context)
-    let Transaction {
-      outputs,
-      reference_inputs,
-      validity_range,
-      inputs,
-      redeemers,
-      ..
-    } = transaction
-
-    expect auth.contain_auth_token(spent_output, datum.token)
-    trace @"spend_channel: input contains auth token"
-
-    expect [updated_output] =
-      list.filter(
-        outputs,
-        fn(output) { output.address == spent_output.address },
-      )
-    expect updated_datum: ChannelDatum =
-      validator_utils.get_inline_datum(updated_output)
-    trace @"spend_channel: found updated output"
-
-    expect auth.contain_auth_token(updated_output, datum.token)
-    trace @"spend_channel: output contains auth token"
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    trace @"spend_channel: extract tx valid_to"
-
-    expect [connection_id] = datum.state.channel.connection_hops
-    trace @"spend_channel: extract connection_id"
-
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
-    let channel_id = channel_keys.format_channel_identifier(channel_sequence)
-    trace @"spend_channel: extract channel_id"
+    let Transaction { redeemers, .. } = transaction
 
     when redeemer is {
       ChanOpenAck { .. } -> {
@@ -137,123 +100,35 @@ validator(
         redeemer == datum.token
       }
       TimeoutPacket { .. } -> {
-        expect Some(redeemer) = dict.get(redeemers, Mint(timeout_packet_policy_id))
+        expect Some(redeemer) =
+          dict.get(redeemers, Mint(timeout_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
         redeemer == datum.token
       }
-      AcknowledgePacket { packet, acknowledgement, proof_acked, proof_height } -> {
-        trace @"spend_channel: AcknowledgePacket branch"
+      AcknowledgePacket { .. } -> {
+        expect Some(redeemer) =
+          dict.get(redeemers, Mint(acknowledge_packet_policy_id))
 
-        let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-        let ChannelDatumState {
-          channel: cur_channel,
-          packet_commitment: cur_packet_commitment,
-          next_sequence_ack,
-          ..
-        } = cur_channel_state
+        expect redeemer: AuthToken = redeemer
 
-        expect cur_channel.state == channel_state.Open
-        trace @"spend_channel: channel state is open"
-
-        expect and {
-            packet.source_port == port_id,
-            packet.source_channel == channel_id,
-            packet.destination_port == cur_channel.counterparty.port_id,
-            packet.destination_channel == cur_channel.counterparty.channel_id,
-          }
-        trace @"spend_channel: packet info matched channel state"
-
-        expect Some(connection_datum) =
-          validator_utils.validate_referred_connection(
-            reference_inputs,
-            datum.token.name,
-            connection_minting_policy_id,
-            connection_id,
-          )
-        trace @"spend_channel: reference_inputs contain Connection utxo"
-
-        expect connection_datum.state.state == connection_state.Open
-        trace @"spend_channel: connection state is open"
-
-        expect Some(client_datum) =
-          validator_utils.validate_referred_client(
-            reference_inputs,
-            datum.token.name,
-            client_minting_policy_id,
-            connection_datum.state.client_id,
-          )
-        trace @"spend_channel: reference_inputs contain Client utxo"
-
-        expect
-          client_state.status(
-            client_datum.state.client_state,
-            tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
-          ) == client_status.Active
-        trace @"spend_channel: client status is active"
-
-        expect Some(commitment) =
-          dict.from_list(cur_packet_commitment, int.compare)
-            |> dict.get(packet.sequence)
-        trace @"spend_channel: packet commitment existed"
-
-        let packet_commitment = packet_mod.commit_packet(packet)
-        expect commitment == packet_commitment
-        trace @"spend_channel: ack packet match commit packet"
-
-        expect
-          verify.verify_packet_acknowledgement(
-            client_datum.state,
-            connection_datum.state,
-            proof_height,
-            proof_acked,
-            packet.destination_port,
-            packet.destination_channel,
-            packet.sequence,
-            acknowledgement,
-          )
-        trace @"spend_channel: packet proof is valid"
-
-        expect cur_channel.ordering != channel_order.Ordered || {
-            expect packet.sequence == next_sequence_ack
-            trace @"spend_channel: packet sequence matched next_sequence_ack"
-            True
-          }
-
-        expect
-          channel_datum_mod.validate_acknowledge_packet(
-            datum,
-            updated_datum,
-            packet,
-          )
-        trace @"spend_channel: channel datum is updated valid"
-
-        expect Some(ibc_module_redeemer) =
-          validator_utils.extract_module_redeemer(
-            inputs,
-            redeemers,
-            datum.token.name,
-            port_minting_policy_id,
-            datum.port_id,
-          )
-        expect Callback(ibc_module_callback) = ibc_module_redeemer
-        expect OnAcknowledgementPacket { channel_id: module_chan_id, .. } =
-          ibc_module_callback
-        expect module_chan_id == channel_id
-        trace @"spend_channel: ibc module callback is valid\n"
-
-        True
+        redeemer == datum.token
       }
       RefreshUtxo -> {
-        trace @"spend_channel: RefreshUtxo branch"
+        expect auth.contain_auth_token(spent_output, datum.token)
+
+        expect [updated_output] =
+          list.filter(
+            transaction.outputs,
+            fn(output) { output.address == spent_output.address },
+          )
+        expect updated_datum: ChannelDatum =
+          validator_utils.get_inline_datum(updated_output)
+
+        expect auth.contain_auth_token(updated_output, datum.token)
 
         expect channel_datum_mod.validate_refresh_utxo(datum, updated_datum)
-        trace @"spend_channel: channel datum is updated valid"
 
         True
       }
@@ -274,6 +149,7 @@ type MockData {
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
+  acknowledge_packet_policy_id: PolicyId,
   channel_sequence: Int,
   channel_token: AuthToken,
   handler_token: AuthToken,
@@ -519,6 +395,7 @@ fn setup() -> MockData {
     recv_packet_policy_id: "mock recv_packet_policy_id",
     send_packet_policy_id: "mock send_packet_policy_id",
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
+    acknowledge_packet_policy_id: "mock acknowledge_packet_policy_id",
     channel_sequence,
     channel_token,
     handler_token,
@@ -849,14 +726,12 @@ test succeed_chan_open_ack() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1070,14 +945,12 @@ test succeed_chan_open_confirm() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1324,14 +1197,12 @@ test succeed_recv_packet() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1456,14 +1327,12 @@ test succeed_send_packet() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1726,14 +1595,12 @@ test succeed_timeout_packet() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
@@ -1960,6 +1827,11 @@ test succeed_acknowledge_packet() {
           spend_channel_redeemer,
           validator_utils.compare_script_purpose,
         )
+      |> dict.insert(
+          Mint(mock_data.acknowledge_packet_policy_id),
+          mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -1976,14 +1848,12 @@ test succeed_acknowledge_packet() {
     }
 
   spend_channel(
-    mock_data.client_minting_policy_id,
-    mock_data.connection_minting_policy_id,
-    mock_data.port_minting_policy_id,
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
+    mock_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,
