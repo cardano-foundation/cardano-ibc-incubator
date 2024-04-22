@@ -10,7 +10,7 @@ import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-oper
 import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
 import { decodeClientDatum } from '../../types/client-datum';
 import { SpendClientRedeemer, encodeSpendClientRedeemer } from '../../types/client-redeemer';
-import { AuthToken } from '../../types/auth-token';
+import { AuthToken, encodeAuthToken } from '../../types/auth-token';
 import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from '../../types/connection/connection-datum';
 import {
   MintConnectionRedeemer,
@@ -490,7 +490,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.chanOpenAckRefUtxo])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -509,6 +509,13 @@ export class LucidService {
           inline: this.LucidImporter.Data.void(),
         },
         dto.transferModuleUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.chanOpenAckPolicyId]: 0n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter)
+        ,
       );
 
     return tx;

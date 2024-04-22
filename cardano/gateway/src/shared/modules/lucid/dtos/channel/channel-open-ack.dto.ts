@@ -1,4 +1,5 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId, UTxO } from "@dinhbx/lucid-custom";
+import { AuthToken } from "~@/shared/types/auth-token";
 
 export type UnsignedConnectionOpenAckDto = {
   channelUtxo: UTxO;
@@ -12,4 +13,7 @@ export type UnsignedConnectionOpenAckDto = {
   channelTokenUnit: string;
   encodedUpdatedChannelDatum: string;
   constructedAddress: string;
+  chanOpenAckPolicyId: PolicyId;
+  chanOpenAckRefUtxo: UTxO;
+  channelToken: AuthToken
 };

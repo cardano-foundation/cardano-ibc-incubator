@@ -528,6 +528,16 @@ export class ChannelService {
       spendMockModuleRedeemer,
       'iBCModuleRedeemer',
     );
+    const chanOpenAckPolicyId =
+      this.configService.get('deployment').validators.spendChannel.refValidator.chan_open_ack.scriptHash;
+
+    const chanOpenAckRefUtxo =
+      this.configService.get('deployment').validators.spendChannel.refValidator.chan_open_ack.refUtxo;
+
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
     // const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
     //   mockModuleUtxo.datum!,
     //   'mockModule',
@@ -551,6 +561,9 @@ export class ChannelService {
       channelTokenUnit,
       encodedUpdatedChannelDatum,
       constructedAddress,
+      chanOpenAckPolicyId,
+      chanOpenAckRefUtxo,
+      channelToken
     };
     return this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
   }
