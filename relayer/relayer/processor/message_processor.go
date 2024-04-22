@@ -95,16 +95,16 @@ func (mp *messageProcessor) processMessages(
 	var needsClientUpdate bool
 
 	// Localhost IBC does not permit client updates
-	// if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID {
-	// 	var err error
-	// 	needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
-	// 		return err
-	// 	}
-	// }
+	if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID {
+		var err error
+		needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
+		if err != nil {
+			return err
+		}
+		if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
+			return err
+		}
+	}
 
 	if src.ChainProvider.Type() == "cosmos" &&
 		len(messages.channelMessages)+len(messages.connectionMessages)+len(messages.packetMessages) > 0 {
@@ -165,9 +165,6 @@ func updateClient(ctx context.Context, src, dst *PathEndRuntime, latestHeader pr
 // Otherwise, it will be attempted if either 2/3 of the trusting period
 // or the configured client update threshold duration has passed.
 func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst *PathEndRuntime) (bool, error) {
-	if src.ChainProvider.Type() == "cardano" {
-		return false, nil
-	}
 
 	var consensusHeightTime time.Time
 
@@ -186,14 +183,15 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 				return false, fmt.Errorf("failed to get header height: %w", err)
 			}
 			timestamp = srcBlockData.Timestamp
+			consensusHeightTime = time.Unix(int64(timestamp), 0)
 		case "cosmos":
 			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
 			if err != nil {
 				return false, fmt.Errorf("failed to get header height: %w", err)
 			}
 			timestamp = h.ConsensusState().GetTimestamp()
+			consensusHeightTime = time.Unix(0, int64(timestamp))
 		}
-		consensusHeightTime = time.Unix(0, int64(timestamp))
 	} else {
 		consensusHeightTime = dst.ClientState.ConsensusTime
 	}

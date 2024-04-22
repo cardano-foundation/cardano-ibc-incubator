@@ -844,12 +844,20 @@ func (cc *CardanoProvider) QueryCardanoLatestHeight(ctx context.Context) (int64,
 }
 
 func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
-	res, _ := cc.GateWay.QueryCardanoState(uint64(height))
+	res, err := cc.GateWay.QueryCardanoState(uint64(height))
+	if err != nil {
+		return nil, nil, err
+	}
 	var clientState = pbclientstruct.ClientState{}
 	var consensusState = pbclientstruct.ConsensusState{}
-	_ = res.GetClientState().UnmarshalTo(&clientState)
-	_ = res.GetConsensusState().UnmarshalTo(&consensusState)
-	clientState.TrustingPeriod = 1200
+	err = res.GetClientState().UnmarshalTo(&clientState)
+	if err != nil {
+		return nil, nil, err
+	}
+	err = res.GetConsensusState().UnmarshalTo(&consensusState)
+	if err != nil {
+		return nil, nil, err
+	}
 	return &clientState, &consensusState, nil
 }
 
