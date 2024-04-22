@@ -26,6 +26,10 @@ export type DeploymentTemplate = {
       scriptHash: string;
       address: string;
       refUtxo: UTxO;
+      refValidator?: Record<
+        string,
+        { script: string; scriptHash: string; refUtxo: UTxO }
+      >;
     }
   >;
   handlerAuthToken: {

@@ -4,6 +4,7 @@ import {
   Lucid,
   type MintingPolicy,
   OutRef,
+  PolicyId,
   Provider,
   type Script,
   ScriptHash,
@@ -25,7 +26,7 @@ import {
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
 import { DeploymentTemplate } from "./template.ts";
-import { ensureDir } from "https://deno.land/std@0.212.0/fs/ensure_dir.ts";
+import { ensureDir } from "https://deno.land/std@0.212.0/fs/mod.ts";
 import { submitTx } from "./utils.ts";
 import {
   AuthToken,
@@ -95,13 +96,18 @@ export const createDeployment = async (
   referredValidators.push(mintConnectionValidator);
 
   // load spend channel validator
-  const [spendChannelValidator, spendChannelScriptHash, spendChannelAddress] =
-    readValidator("spending_channel.spend_channel", lucid, [
-      mintClientPolicyId,
-      mintConnectionPolicyId,
-      mintPortPolicyId,
-    ]);
-  referredValidators.push(spendChannelValidator);
+  const spendingChannel = await deploySpendChannel(
+    lucid,
+    mintClientPolicyId,
+    mintConnectionPolicyId,
+    mintPortPolicyId,
+  );
+  referredValidators.push(
+    spendingChannel.base.script,
+    ...Object.values(spendingChannel.referredValidators).map((val) =>
+      val.script
+    ),
+  );
 
   // load mint channel validator
   const [mintChannelValidator, mintChannelPolicyId] = readValidator(
@@ -111,7 +117,7 @@ export const createDeployment = async (
       mintClientPolicyId,
       mintConnectionPolicyId,
       mintPortPolicyId,
-      spendChannelScriptHash,
+      spendingChannel.base.hash,
     ],
   );
   referredValidators.push(mintChannelValidator);
@@ -168,6 +174,23 @@ export const createDeployment = async (
 
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
+  const spendChannelRefValidator = Object.entries(
+    spendingChannel.referredValidators,
+  ).reduce<
+    Record<
+      string,
+      { script: string; scriptHash: string; refUtxo: UTxO }
+    >
+  >((acc, [name, val]) => {
+    acc[name] = {
+      script: val.script.script,
+      scriptHash: val.hash,
+      refUtxo: refUtxosInfo[val.hash],
+    };
+
+    return acc;
+  }, {});
+
   console.log("Deployment info created!");
 
   const deploymentInfo: DeploymentTemplate = {
@@ -216,10 +239,11 @@ export const createDeployment = async (
       },
       spendChannel: {
         title: "spending_channel.spend_channel",
-        script: spendChannelValidator.script,
-        scriptHash: spendChannelScriptHash,
-        address: spendChannelAddress,
-        refUtxo: refUtxosInfo[spendChannelScriptHash],
+        script: spendingChannel.base.script.script,
+        scriptHash: spendingChannel.base.hash,
+        address: spendingChannel.base.address,
+        refUtxo: refUtxosInfo[spendingChannel.base.hash],
+        refValidator: spendChannelRefValidator,
       },
       mintPort: {
         title: "minting_port.mint_port",
@@ -351,7 +375,12 @@ async function createReferenceUtxos(
       {},
     );
 
-    return submitTx(tx, curLucid, undefined, false);
+    return submitTx(
+      tx,
+      curLucid,
+      lucid.utils.validatorToScriptHash(validator),
+      true,
+    );
   });
 
   const txHash = await Promise.all(createRefUtxoTxs);
@@ -530,11 +559,6 @@ const deployTransferModule = async (
     ...currentHandlerDatum,
     state: {
       ...currentHandlerDatum.state,
-      // bound_port: insertSortMap(
-      //   currentHandlerDatum.state.bound_port,
-      //   portNumber,
-      //   true,
-      // ),
       bound_port: [...currentHandlerDatum.state.bound_port, portNumber]
         .toSorted(),
     },
@@ -604,6 +628,75 @@ const deployTransferModule = async (
   };
 };
 
+const deploySpendChannel = async (
+  lucid: Lucid,
+  mintClientPolicyId: PolicyId,
+  mintConnectionPolicyId: PolicyId,
+  mintPortPolicyId: PolicyId,
+) => {
+  const knownReferredValidatorsName = [
+    "chan_open_ack",
+    "chan_open_confirm",
+    "recv_packet",
+    "send_packet",
+    "timeout_packet",
+    "acknowledge_packet",
+  ] as const;
+
+  const referredValidatorsName =
+    (await Array.fromAsync(Deno.readDir("./validators/spending_channel")))
+      .filter((val) => val.isFile)
+      .map((val) => {
+        const name = val.name.split(".").slice(0, -1).join(".");
+        // deno-lint-ignore no-explicit-any
+        if (!knownReferredValidatorsName.includes(name as any)) {
+          throw new Error(
+            `Unknown referred validator of spending_channel, expected ${knownReferredValidatorsName}, found: ${name}`,
+          );
+        }
+        return name;
+      });
+
+  const referredValidators = referredValidatorsName.reduce<
+    Record<
+      string,
+      { script: Script; hash: string }
+    >
+  >((acc, name) => {
+    const [script, hash] = readValidator(
+      `spending_channel/${name}.${name}`,
+      lucid,
+      [
+        mintClientPolicyId,
+        mintConnectionPolicyId,
+        mintPortPolicyId,
+      ],
+    );
+
+    acc[name] = {
+      script,
+      hash,
+    };
+
+    return acc;
+  }, {});
+
+  const [script, hash, address] = readValidator(
+    "spending_channel.spend_channel",
+    lucid,
+    knownReferredValidatorsName.map((name) => referredValidators[name].hash),
+  );
+
+  return {
+    base: {
+      script,
+      hash,
+      address,
+    },
+    referredValidators,
+  };
+};
+
 const main = async () => {
   if (Deno.args.length < 1) throw new Error("Missing script params");
 
@@ -611,7 +704,9 @@ const main = async () => {
 
   const { lucid, provider } = await setUp(MODE);
 
-  console.log(await createDeployment(lucid, provider, MODE));
+  const deploymentInfo = await createDeployment(lucid, provider, MODE);
+
+  console.log(deploymentInfo);
 };
 
 if (import.meta.main) {
