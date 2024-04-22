@@ -1549,13 +1549,16 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 	}
 	//TODO: find out better solution
 	// current use only for trustingPeriod and LatestHeight
-	return &tmclient.ClientState{
-		TrustingPeriod: time.Duration(clientState.TrustingPeriod),
+	res := &tmclient.ClientState{
+		TrustingPeriod: time.Duration(clientState.TrustingPeriod) * time.Second,
+		// side chain return time in second format
 		LatestHeight: clienttypes.Height{
 			RevisionNumber: clientState.LatestHeight.RevisionNumber,
 			RevisionHeight: clientState.LatestHeight.RevisionHeight,
 		},
-	}, nil
+	}
+
+	return res, nil
 }
 
 // queryLocalhostClientState retrieves the latest consensus state for a client in state at a given height
@@ -1926,7 +1929,6 @@ func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.Cli
 	if err != nil {
 		return nil, err
 	}
-	clientState.TrustingPeriod = 1200
 	anyClientState, err := PackClientState(clientState)
 	if err != nil {
 		return nil, err

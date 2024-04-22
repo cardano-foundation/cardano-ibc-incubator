@@ -140,6 +140,10 @@ func CreateClient(
 			return "", err
 		}
 		mainClientState, mainConsensusState, err = cardanoChain.ChainProvider.QueryCardanoState(ctx, srcHeight)
+		if customClientTrustingPeriod != 0 {
+			mainClientState.TrustingPeriod = uint64(customClientTrustingPeriod.Seconds())
+			//	side chain take second as input
+		}
 		if err != nil {
 			return "", err
 		}
