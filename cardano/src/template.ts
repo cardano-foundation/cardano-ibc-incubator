@@ -11,7 +11,8 @@ type Validator =
   | "mintPort"
   | "mintIdentifier"
   | "spendTransferModule"
-  | "mintVoucher";
+  | "mintVoucher"
+  | "verifyProof";
 
 type Module = "handler" | "transfer";
 

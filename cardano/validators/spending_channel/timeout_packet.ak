@@ -1,7 +1,7 @@
 use aiken/dict
 use aiken/int
 use aiken/list
-use aiken/transaction.{Output, ScriptContext, Transaction}
+use aiken/transaction.{Mint, Output, ScriptContext, Transaction}
 use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
@@ -10,6 +10,9 @@ use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
+use ibc/core/ics_003_connection_semantics/verify_proof_redeemer.{
+  VerifyPacketReceiptAbsence, VerifyProofRedeemer,
+}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{TimeoutPacket}
@@ -26,6 +29,7 @@ validator(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
 ) {
   fn timeout_packet(channel_token: AuthToken, context: ScriptContext) -> Bool {
     let Transaction {
@@ -142,16 +146,20 @@ validator(
         chan_order_mod.Unordered -> {
           trace @"timeout_packet: channel ordering is  Unordered"
 
+          expect Some(verify_proof_redeemer) =
+            dict.get(redeemers, Mint(verify_proof_policy_id))
+          expect verify_proof_redeemer: VerifyProofRedeemer =
+            verify_proof_redeemer
           expect
-            verify_mod.verify_packet_receipt_absence(
-              client_datum.state,
-              connection_datum.state,
+            verify_proof_redeemer == VerifyPacketReceiptAbsence {
+              client_datum_state: client_datum.state,
+              connection: connection_datum.state,
               proof_height,
-              proof_unreceived,
-              packet.destination_port,
-              packet.destination_channel,
-              packet.sequence,
-            )
+              proof: proof_unreceived,
+              port_id: packet.destination_port,
+              channel_id: packet.destination_channel,
+              sequence: packet.sequence,
+            }
           trace @"timeout_packet: packet proof is valid"
 
           True

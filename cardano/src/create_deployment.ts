@@ -95,12 +95,19 @@ export const createDeployment = async (
   );
   referredValidators.push(mintConnectionValidator);
 
+  const [verifyProofValidator, verifyProofScriptHash] = readValidator(
+    "verifying_proof.verify_proof",
+    lucid,
+  );
+  referredValidators.push(verifyProofValidator);
+
   // load spend channel validator
   const spendingChannel = await deploySpendChannel(
     lucid,
     mintClientPolicyId,
     mintConnectionPolicyId,
     mintPortPolicyId,
+    verifyProofScriptHash,
   );
   referredValidators.push(
     spendingChannel.base.script,
@@ -272,6 +279,13 @@ export const createDeployment = async (
         scriptHash: mintVoucher.policyId,
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
+      },
+      verifyProof: {
+        title: "verifying_proof.verify_proof",
+        script: verifyProofValidator.script,
+        scriptHash: verifyProofScriptHash,
+        address: "",
+        refUtxo: refUtxosInfo[verifyProofScriptHash],
       },
     },
     handlerAuthToken: {
@@ -633,6 +647,7 @@ const deploySpendChannel = async (
   mintClientPolicyId: PolicyId,
   mintConnectionPolicyId: PolicyId,
   mintPortPolicyId: PolicyId,
+  verifyProofScriptHash: PolicyId,
 ) => {
   const knownReferredValidatorsName = [
     "chan_open_ack",
@@ -663,14 +678,20 @@ const deploySpendChannel = async (
       { script: Script; hash: string }
     >
   >((acc, name) => {
+    const args = [
+      mintClientPolicyId,
+      mintConnectionPolicyId,
+      mintPortPolicyId,
+    ];
+
+    if (name == "timeout_packet") {
+      args.push(verifyProofScriptHash);
+    }
+
     const [script, hash] = readValidator(
       `spending_channel/${name}.${name}`,
       lucid,
-      [
-        mintClientPolicyId,
-        mintConnectionPolicyId,
-        mintPortPolicyId,
-      ],
+      args,
     );
 
     acc[name] = {
