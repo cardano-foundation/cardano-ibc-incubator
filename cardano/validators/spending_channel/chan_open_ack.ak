@@ -41,6 +41,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
 validator(
@@ -449,83 +450,6 @@ fn setup() -> MockData {
   }
 }
 
-fn build_channel_output(
-  channel_datum: ChannelDatum,
-  channel_token: AuthToken,
-) -> Output {
-  let channel_output =
-    Output {
-      address: credential.from_script("mock spend channel script hash"),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
-      datum: InlineDatum(channel_datum),
-      reference_script: None,
-    }
-
-  channel_output
-}
-
-fn build_channel_input(
-  channel_datum: ChannelDatum,
-  channel_token: AuthToken,
-) -> Input {
-  let channel_output = build_channel_output(channel_datum, channel_token)
-
-  let channel_input =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock spent channel tx hash" },
-        output_index: 0,
-      },
-      output: channel_output,
-    }
-
-  channel_input
-}
-
-fn update_client(
-  height: Height,
-  consensus_state: ConsensusState,
-  client_input: Input,
-) -> Input {
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
-
-  let latest_height = {
-    let input_height =
-      client_state_mod.get_latest_height(client_datum.state.client_state)
-    if height_mod.compare(height, input_height) == Greater {
-      height
-    } else {
-      input_height
-    }
-  }
-
-  let client_datum =
-    ClientDatum {
-      ..client_datum,
-      state: ClientDatumState {
-        client_state: ClientState {
-          ..client_datum.state.client_state,
-          latest_height: latest_height,
-        },
-        consensus_states: dict.from_list(
-          client_datum.state.consensus_states,
-          height_mod.compare,
-        )
-          |> dict.insert(height, consensus_state, height_mod.compare)
-          |> dict.to_list(),
-      },
-    }
-
-  let updated_input =
-    Input {
-      ..client_input,
-      output: Output { ..client_input.output, datum: InlineDatum(client_datum) },
-    }
-
-  updated_input
-}
-
 test succeed_chan_open_ack() {
   let mock_data = setup()
 
@@ -555,7 +479,7 @@ test succeed_chan_open_ack() {
     }
 
   let channel_input =
-    build_channel_input(input_channel_datum, mock_data.channel_token)
+    test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
   let inputs =
     [mock_data.module_input, channel_input]
@@ -573,7 +497,7 @@ test succeed_chan_open_ack() {
     }
 
   let client_input =
-    update_client(proof_height, cons_state, mock_data.client_input)
+    test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
   let reference_inputs =
     [mock_data.connection_input, client_input]
@@ -607,7 +531,10 @@ test succeed_chan_open_ack() {
     }
 
   let channel_output =
-    build_channel_output(output_channel_datum, mock_data.channel_token)
+    test_utils.build_channel_output(
+      output_channel_datum,
+      mock_data.channel_token,
+    )
 
   let outputs =
     [channel_output]

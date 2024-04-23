@@ -46,7 +46,6 @@ pub fn validate_prefixed_denom(denom: ByteArray) -> Bool {
         if paths_len % 2 != 0 {
           False
         } else {
-          // trace cbor.diagnostic(paths)
           list.indexed_foldr(
             paths,
             True,

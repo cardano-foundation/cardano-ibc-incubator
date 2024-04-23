@@ -41,6 +41,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
 validator(
@@ -447,39 +448,6 @@ fn setup() -> MockData {
   }
 }
 
-fn build_channel_output(
-  channel_datum: ChannelDatum,
-  channel_token: AuthToken,
-) -> Output {
-  let channel_output =
-    Output {
-      address: credential.from_script("mock spend channel script hash"),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
-      datum: InlineDatum(channel_datum),
-      reference_script: None,
-    }
-
-  channel_output
-}
-
-fn build_channel_input(
-  channel_datum: ChannelDatum,
-  channel_token: AuthToken,
-) -> Input {
-  let channel_output = build_channel_output(channel_datum, channel_token)
-
-  let channel_input =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock spent channel tx hash" },
-        output_index: 0,
-      },
-      output: channel_output,
-    }
-
-  channel_input
-}
-
 test succeed_send_packet() {
   let mock_data = setup()
 
@@ -524,7 +492,7 @@ test succeed_send_packet() {
     }
 
   let channel_input =
-    build_channel_input(input_channel_datum, mock_data.channel_token)
+    test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
   let inputs =
     [mock_data.module_input, channel_input]
@@ -552,7 +520,10 @@ test succeed_send_packet() {
     }
 
   let channel_output =
-    build_channel_output(output_channel_datum, mock_data.channel_token)
+    test_utils.build_channel_output(
+      output_channel_datum,
+      mock_data.channel_token,
+    )
 
   let outputs =
     [channel_output]

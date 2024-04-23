@@ -1,4 +1,3 @@
-use aiken/cbor
 use aiken/dict
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
@@ -78,7 +77,6 @@ validator {
               ],
             ),
           )
-        trace cbor.diagnostic(merkle_path)
         expect Some(consensus_state) =
           dict.from_list(client_datum_state.consensus_states, height.compare)
             |> dict.get(proof_height)
