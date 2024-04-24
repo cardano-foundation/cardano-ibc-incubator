@@ -1,4 +1,6 @@
 import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId } from 'lucid-cardano';
+import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedAckPacketMintDto = {
   channelUtxo: UTxO;
@@ -20,4 +22,8 @@ export type UnsignedAckPacketMintDto = {
   senderAddress: string;
   denomToken: string;
   constructedAddress: string;
+
+  ackPacketRefUTxO: UTxO;
+  ackPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
 };

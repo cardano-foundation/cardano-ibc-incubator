@@ -1,4 +1,5 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId, UTxO } from '@dinhbx/lucid-custom';
+import { AuthToken } from '@shared/types/auth-token';
 
 export type UnsignedSendPacketEscrowDto = {
   channelUTxO: UTxO;
@@ -20,4 +21,8 @@ export type UnsignedSendPacketEscrowDto = {
   channelTokenUnit: string;
   transferModuleAddress: string;
   denomToken: string;
+
+  sendPacketRefUTxO: UTxO;
+  sendPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
 };

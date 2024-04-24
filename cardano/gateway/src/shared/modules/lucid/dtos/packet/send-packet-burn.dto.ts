@@ -1,4 +1,5 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId, UTxO } from '@dinhbx/lucid-custom';
+import { AuthToken } from '@shared/types/auth-token';
 
 export type UnsignedSendPacketBurnDto = {
   channelUTxO: UTxO;
@@ -22,4 +23,8 @@ export type UnsignedSendPacketBurnDto = {
   receiverAddress: string;
   transferAmount: bigint;
   denomToken: string;
+
+  sendPacketRefUTxO: UTxO;
+  sendPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
 };

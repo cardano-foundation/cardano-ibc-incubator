@@ -1,4 +1,6 @@
 import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId } from 'lucid-cardano';
+import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedTimeoutPacketMintDto = {
   spendChannelRefUtxo: UTxO;
@@ -22,4 +24,13 @@ export type UnsignedTimeoutPacketMintDto = {
   transferModuleAddress: string;
   voucherTokenUnit: string;
   constructedAddress: string;
+
+  timeoutPacketRefUTxO: UTxO;
+  timeoutPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
+
+  verifyProofRefUTxO: UTxO;
+  verifyProofPolicyId: PolicyId;
+
+  encodedVerifyProofRedeemer: string;
 };
