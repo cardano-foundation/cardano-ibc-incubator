@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardano/relayer/v1/constant"
+
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/avast/retry-go/v4"
@@ -140,12 +142,14 @@ func CreateClient(
 			return "", err
 		}
 		mainClientState, mainConsensusState, err = cardanoChain.ChainProvider.QueryCardanoState(ctx, srcHeight)
+		if err != nil {
+			return "", err
+		}
 		if customClientTrustingPeriod != 0 {
 			mainClientState.TrustingPeriod = uint64(customClientTrustingPeriod.Seconds())
 			//	side chain take second as input
-		}
-		if err != nil {
-			return "", err
+		} else {
+			mainClientState.TrustingPeriod = uint64(constant.ClientTrustingPeriod.Seconds())
 		}
 		createMsg, err := cosmosChain.ChainProvider.MsgCreateCardanoClient(mainClientState, mainConsensusState)
 		if err != nil {
