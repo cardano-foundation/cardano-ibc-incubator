@@ -121,15 +121,11 @@ export class LucidService {
   public getChannelPolicyId(): string {
     return this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
-  public getClientAuthTokenUnit(handlerDatum: HandlerDatum): string {
+  public getClientAuthTokenUnit(handlerDatum: HandlerDatum, clientId: bigint): string {
     const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
     // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence - 1n);
     const baseToken = handlerDatum.token;
-    const clientStateTokenName = this.generateTokenName(
-      baseToken,
-      CLIENT_PREFIX,
-      handlerDatum.state.next_client_sequence - 1n,
-    );
+    const clientStateTokenName = this.generateTokenName(baseToken, CLIENT_PREFIX, clientId);
     return mintClientPolicyId + clientStateTokenName;
   }
 

@@ -5,7 +5,7 @@ import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { ConsensusState } from '../types/consensus-state';
 import { Height } from '../types/height';
 import { toHex } from './hex';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 
 export function normalizeConsensusStateFromDatum(
   consensusStateDatum: Map<Height, ConsensusState>,
@@ -18,7 +18,7 @@ export function normalizeConsensusStateFromDatum(
       consensusState = consensusState_;
     }
   }
-  if (!consensusState) return undefined; // Return undefined if no matching entry is found
+  if (!consensusState) throw new GrpcNotFoundException(`Unable to find Consensus State at height ${requestHeight}`); // Return undefined if no matching entry is found
   const consensus: ConsensusStateTendermint = {
     timestamp: Timestamp.fromPartial({
       seconds: BigInt(Math.round(Number(consensusState.timestamp) / 1e9)),
