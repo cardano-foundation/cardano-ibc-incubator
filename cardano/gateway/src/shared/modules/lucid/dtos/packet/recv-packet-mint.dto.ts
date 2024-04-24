@@ -1,4 +1,5 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId, UTxO } from '@dinhbx/lucid-custom';
+import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedRecvPacketMintDto = {
   channelUtxo: UTxO;
@@ -19,4 +20,8 @@ export type UnsignedRecvPacketMintDto = {
   transferAmount: bigint;
   receiverAddress: string;
   constructedAddress: string;
+
+  recvPacketRefUTxO: UTxO;
+  recvPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
 };

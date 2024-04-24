@@ -512,10 +512,9 @@ export class LucidService {
       )
       .mintAssets(
         {
-          [dto.chanOpenAckPolicyId]: 0n,
+          [dto.chanOpenAckPolicyId]: 1n,
         },
-        encodeAuthToken(dto.channelToken, this.LucidImporter)
-        ,
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
 
     return tx;
@@ -565,7 +564,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.recvPacketRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -590,7 +589,13 @@ export class LucidService {
       )
       .payToAddress(dto.receiverAddress, {
         lovelace: dto.transferAmount,
-      });
+      })
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
 
     return tx;
   }
@@ -598,7 +603,12 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.mintVoucherRefUtxo])
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleRefUtxo,
+      dto.mintVoucherRefUtxo,
+      dto.recvPacketRefUTxO,
+    ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -628,7 +638,13 @@ export class LucidService {
       )
       .payToAddress(dto.receiverAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
-      });
+      })
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
 
     return tx;
   }
@@ -636,7 +652,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -657,6 +673,12 @@ export class LucidService {
         {
           ...dto.transferModuleUtxo.assets,
         },
+      )
+      .mintAssets(
+        {
+          [dto.ackPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
 
     return tx;
@@ -665,7 +687,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -694,7 +716,13 @@ export class LucidService {
       )
       .payToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
-      });
+      })
+      .mintAssets(
+        {
+          [dto.ackPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
 
     return tx;
   }
@@ -702,7 +730,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.mintVoucherRefUtxo])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.mintVoucherRefUtxo, dto.ackPacketRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -737,14 +765,20 @@ export class LucidService {
       )
       .payToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
-      });
+      })
+      .mintAssets(
+        {
+          [dto.ackPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
 
     return tx;
   }
 
   public createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowDto): Tx {
     const tx: Tx = this.txFromWallet(dto.senderAddress);
-    tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO])
+    tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
@@ -770,87 +804,22 @@ export class LucidService {
             dto.denomToken,
           ),
         },
+      )
+      .mintAssets(
+        {
+          [dto.sendPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
 
     return tx;
   }
-  public createUnsignedTimeoutPacketMintTx(dto: UnsignedTimeoutPacketMintDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.mintVoucherRefUtxo])
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .mintAssets(
-        {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        },
-        dto.encodedMintVoucherRedeemer,
-      )
-      .payToContract(
-        dto.spendChannelAddress,
-        {
-          inline: dto.encodedUpdatedChannelDatum,
-        },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
-      )
-      .payToContract(
-        dto.transferModuleAddress,
-        {
-          inline: this.LucidImporter.Data.void(),
-        },
-        {
-          ...dto.transferModuleUtxo.assets,
-          lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
-        },
-      )
-      .payToAddress(dto.senderAddress, {
-        [dto.voucherTokenUnit]: dto.transferAmount,
-      });
 
-    return tx;
-  }
-  public createUnsignedTimeoutPacketUnescrowTx(dto: UnsignedTimeoutPacketUnescrowDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleUtxo])
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
-        dto.spendChannelAddress,
-        {
-          inline: dto.encodedUpdatedChannelDatum,
-        },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
-      )
-      .payToContract(
-        dto.transferModuleAddress,
-        {
-          inline: this.LucidImporter.Data.void(),
-        },
-        {
-          ...dto.transferModuleUtxo.assets,
-          [dto.denomToken]: calculateTransferToken(
-            dto.transferModuleUtxo.assets,
-            0n - BigInt(dto.transferAmount),
-            dto.denomToken,
-          ),
-        },
-      )
-      .payToAddress(dto.senderAddress, {
-        [dto.denomToken]: dto.transferAmount,
-      });
-
-    return tx;
-  }
   public createUnsignedSendPacketBurnTx(dto: UnsignedSendPacketBurnDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.senderAddress);
-    tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.mintVoucherRefUtxo])
+    tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.mintVoucherRefUtxo, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
       .collectFrom([dto.senderVoucherTokenUtxo])
@@ -883,6 +852,120 @@ export class LucidService {
             dto.voucherTokenUnit,
           ),
         },
+      )
+      .mintAssets(
+        {
+          [dto.sendPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
+
+    return tx;
+  }
+
+  public createUnsignedTimeoutPacketMintTx(dto: UnsignedTimeoutPacketMintDto): Tx {
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleRefUtxo,
+      dto.mintVoucherRefUtxo,
+      dto.timeoutPacketRefUTxO,
+      dto.verifyProofRefUTxO,
+    ])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .mintAssets(
+        {
+          [dto.voucherTokenUnit]: dto.transferAmount,
+        },
+        dto.encodedMintVoucherRedeemer,
+      )
+      .payToContract(
+        dto.spendChannelAddress,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        dto.transferModuleAddress,
+        {
+          inline: this.LucidImporter.Data.void(),
+        },
+        {
+          ...dto.transferModuleUtxo.assets,
+          lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
+        },
+      )
+      .payToAddress(dto.senderAddress, {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+      })
+      .mintAssets(
+        {
+          [dto.timeoutPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+  public createUnsignedTimeoutPacketUnescrowTx(dto: UnsignedTimeoutPacketUnescrowDto): Tx {
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleUtxo,
+      dto.timeoutPacketRefUTxO,
+      dto.verifyProofRefUTxO,
+    ])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        dto.spendChannelAddress,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        dto.transferModuleAddress,
+        {
+          inline: this.LucidImporter.Data.void(),
+        },
+        {
+          ...dto.transferModuleUtxo.assets,
+          [dto.denomToken]: calculateTransferToken(
+            dto.transferModuleUtxo.assets,
+            0n - BigInt(dto.transferAmount),
+            dto.denomToken,
+          ),
+        },
+      )
+      .payToAddress(dto.senderAddress, {
+        [dto.denomToken]: dto.transferAmount,
+      })
+      .mintAssets(
+        {
+          [dto.timeoutPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;

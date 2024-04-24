@@ -563,7 +563,7 @@ export class ChannelService {
       constructedAddress,
       chanOpenAckPolicyId,
       chanOpenAckRefUtxo,
-      channelToken
+      channelToken,
     };
     return this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
   }
