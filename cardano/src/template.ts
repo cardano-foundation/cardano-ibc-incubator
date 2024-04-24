@@ -11,7 +11,8 @@ type Validator =
   | "mintPort"
   | "mintIdentifier"
   | "spendTransferModule"
-  | "mintVoucher";
+  | "mintVoucher"
+  | "verifyProof";
 
 type Module = "handler" | "transfer";
 
@@ -26,6 +27,10 @@ export type DeploymentTemplate = {
       scriptHash: string;
       address: string;
       refUtxo: UTxO;
+      refValidator?: Record<
+        string,
+        { script: string; scriptHash: string; refUtxo: UTxO }
+      >;
     }
   >;
   handlerAuthToken: {

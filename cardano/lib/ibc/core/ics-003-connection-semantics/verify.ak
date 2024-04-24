@@ -1,4 +1,3 @@
-use aiken/cbor
 use aiken/dict
 use ibc/client/cardano_client/protos/cardano_pb.{
   AnyCardanoClientState, CardanoClientState,
@@ -138,7 +137,6 @@ pub fn verify_packet_commitment(
         [packet_keys.packet_commitment_path(port_id, channel_id, sequence)],
       ),
     )
-  trace cbor.diagnostic(merkle_path)
   expect Some(consensus_state) =
     dict.from_list(client_datum_state.consensus_states, height.compare)
       |> dict.get(proof_height)

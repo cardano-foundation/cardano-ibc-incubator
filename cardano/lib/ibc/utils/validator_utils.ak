@@ -2,6 +2,7 @@ use aiken/bytearray
 use aiken/dict.{Dict}
 use aiken/interval.{Finite}
 use aiken/list
+use aiken/option
 use aiken/time.{PosixTime}
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, Redeemer, ScriptContext, ScriptPurpose,
@@ -13,6 +14,8 @@ use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
+use ibc/core/ics_004/channel_datum.{ChannelDatum}
+use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
@@ -50,14 +53,14 @@ pub fn quantity_token_output(
 ) -> Int {
   outputs
     |> list.reduce(
-         0,
-         fn(prev, cur) {
-           prev + (
-             cur.value
-               |> value.quantity_of(policy_id, asset_name)
-           )
-         },
-       )
+        0,
+        fn(prev, cur) {
+          prev + (
+            cur.value
+              |> value.quantity_of(policy_id, asset_name)
+          )
+        },
+      )
 }
 
 pub fn quantity_token_input(
@@ -301,4 +304,34 @@ pub fn compare_script_purpose(
   _key2: ScriptPurpose,
 ) -> Ordering {
   Greater
+}
+
+pub fn extract_channel(
+  inputs: List<Input>,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  channel_token: AuthToken,
+) -> Option<(ChannelDatum, SpendChannelRedeemer, Output)> {
+  when
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
+    )
+  is {
+    [channel_input] -> {
+      expect channel_datum: ChannelDatum =
+        get_inline_datum(channel_input.output)
+
+      dict.get(redeemers, Spend(channel_input.output_reference))
+        |> option.map(
+            fn(spend_channel_redeemer) {
+              expect spend_channel_redeemer: SpendChannelRedeemer =
+                spend_channel_redeemer
+
+              (channel_datum, spend_channel_redeemer, channel_input.output)
+            },
+          )
+    }
+
+    _ -> None
+  }
 }
