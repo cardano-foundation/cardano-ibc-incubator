@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	CardanoRPCAddr      = "http://192.168.10.32:5001"
+	CardanoRPCAddr      = "http://0.0.0.0:5001"
 	CardanoChainName    = "cardano"
 	CardanoChainID      = "cardano"
 	CardanoPortTransfer = "port-100"
 
-	CosmosRPCAddr      = "http://192.168.11.48:26657"
+	CosmosRPCAddr      = "http://0.0.0.0:26657"
 	CosmosChainName    = "cosmos"
 	CosmosChainID      = "sidechain" // -> need to change later
 	CosmosPortTransfer = "transfer"
