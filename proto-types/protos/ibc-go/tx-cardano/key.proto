@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package key;
 
+option go_package = "github.com/cosmos/ibc-go/tx-cardano";
+
 message AddKeyRequest {
   string key_name = 1;
   string chain_id = 2;

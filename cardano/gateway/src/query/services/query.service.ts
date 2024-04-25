@@ -68,7 +68,11 @@ import {
   normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromModuleRedeemer,
 } from '@shared/helpers/block-results';
-import { ResponseDeliverTx, ResultBlockResults, ResultBlockSearch } from '@plus/proto-types/build/ibc/core/types/v1/block';
+import {
+  ResponseDeliverTx,
+  ResultBlockResults,
+  ResultBlockSearch,
+} from '@plus/proto-types/build/ibc/core/types/v1/block';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
@@ -86,6 +90,7 @@ import {
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 
 @Injectable()
 export class QueryService {
@@ -204,14 +209,14 @@ export class QueryService {
     return await createStateQueryClient(interactionContext);
   }
 
-  private async getClientDatum(): Promise<[ClientDatum, UTxO]> {
+  private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
     // Get handlerUTXO
     const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
     const handlerAuthTokenUnit = handlerAuthToken.policyId + handlerAuthToken.name;
     const handlerUtxo = await this.lucidService.findUtxoByUnit(handlerAuthTokenUnit);
     const handlerDatum = await decodeHandlerDatum(handlerUtxo.datum, this.lucidService.LucidImporter);
 
-    const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(handlerDatum);
+    const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(handlerDatum, BigInt(clientId));
     const spendClientUTXO = await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
 
     const clientDatum = await decodeClientDatum(spendClientUTXO.datum, this.lucidService.LucidImporter);
@@ -219,11 +224,13 @@ export class QueryService {
   }
 
   async queryClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
+    this.logger.log(request.client_id, 'queryClientState');
+    const { client_id: clientId } = validQueryClientStateParam(request);
     const { height } = request;
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum();
+    const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
 
     const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
@@ -245,8 +252,9 @@ export class QueryService {
   }
 
   async queryConsensusState(request: QueryConsensusStateRequest): Promise<QueryConsensusStateResponse> {
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum();
-    const { height } = request;
+    this.logger.log(`client_id = ${request.client_id}, height = ${request.height}`, 'queryConsensusState');
+    const { client_id: clientId, height } = validQueryConsensusStateParam(request);
+    const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }

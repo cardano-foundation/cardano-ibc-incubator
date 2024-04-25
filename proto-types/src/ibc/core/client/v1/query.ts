@@ -14,10 +14,8 @@ export interface QueryLatestHeightResponse {
  * method
  */
 export interface QueryClientStateRequest {
-  /**
-   * client state unique identifier
-   * string client_id = 1;
-   */
+  /** client state unique identifier */
+  client_id: string;
   height: bigint;
 }
 /**
@@ -57,9 +55,9 @@ export interface QueryClientStatesResponse {
  * from which the proof was retrieved.
  */
 export interface QueryConsensusStateRequest {
+  /** client identifier */
+  client_id: string;
   /**
-   * client identifier
-   * string client_id = 1;
    * consensus state revision number
    * uint64 revision_number = 2;
    * consensus state revision height
@@ -279,14 +277,18 @@ export const QueryLatestHeightResponse = {
 };
 function createBaseQueryClientStateRequest(): QueryClientStateRequest {
   return {
+    client_id: "",
     height: BigInt(0)
   };
 }
 export const QueryClientStateRequest = {
   typeUrl: "/ibc.core.client.v1.QueryClientStateRequest",
   encode(message: QueryClientStateRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.client_id !== "") {
+      writer.uint32(10).string(message.client_id);
+    }
     if (message.height !== BigInt(0)) {
-      writer.uint32(8).uint64(message.height);
+      writer.uint32(16).uint64(message.height);
     }
     return writer;
   },
@@ -298,6 +300,9 @@ export const QueryClientStateRequest = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
+          message.client_id = reader.string();
+          break;
+        case 2:
           message.height = reader.uint64();
           break;
         default:
@@ -309,16 +314,19 @@ export const QueryClientStateRequest = {
   },
   fromJSON(object: any): QueryClientStateRequest {
     const obj = createBaseQueryClientStateRequest();
+    if (isSet(object.client_id)) obj.client_id = String(object.client_id);
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     return obj;
   },
   toJSON(message: QueryClientStateRequest): unknown {
     const obj: any = {};
+    message.client_id !== undefined && (obj.client_id = message.client_id);
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryClientStateRequest>, I>>(object: I): QueryClientStateRequest {
     const message = createBaseQueryClientStateRequest();
+    message.client_id = object.client_id ?? "";
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
@@ -507,14 +515,18 @@ export const QueryClientStatesResponse = {
 };
 function createBaseQueryConsensusStateRequest(): QueryConsensusStateRequest {
   return {
+    client_id: "",
     height: BigInt(0)
   };
 }
 export const QueryConsensusStateRequest = {
   typeUrl: "/ibc.core.client.v1.QueryConsensusStateRequest",
   encode(message: QueryConsensusStateRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.client_id !== "") {
+      writer.uint32(10).string(message.client_id);
+    }
     if (message.height !== BigInt(0)) {
-      writer.uint32(8).uint64(message.height);
+      writer.uint32(16).uint64(message.height);
     }
     return writer;
   },
@@ -526,6 +538,9 @@ export const QueryConsensusStateRequest = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
+          message.client_id = reader.string();
+          break;
+        case 2:
           message.height = reader.uint64();
           break;
         default:
@@ -537,16 +552,19 @@ export const QueryConsensusStateRequest = {
   },
   fromJSON(object: any): QueryConsensusStateRequest {
     const obj = createBaseQueryConsensusStateRequest();
+    if (isSet(object.client_id)) obj.client_id = String(object.client_id);
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     return obj;
   },
   toJSON(message: QueryConsensusStateRequest): unknown {
     const obj: any = {};
+    message.client_id !== undefined && (obj.client_id = message.client_id);
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryConsensusStateRequest>, I>>(object: I): QueryConsensusStateRequest {
     const message = createBaseQueryConsensusStateRequest();
+    message.client_id = object.client_id ?? "";
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }

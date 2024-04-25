@@ -86,8 +86,8 @@ message QueryLatestHeightResponse {
 // method
 message QueryClientStateRequest {
   // client state unique identifier
-  // string client_id = 1;
-  uint64 height = 1;
+  string client_id = 1;
+  uint64 height = 2;
 }
 
 // QueryClientStateResponse is the response type for the Query/ClientState RPC
@@ -124,7 +124,7 @@ message QueryClientStatesResponse {
 // from which the proof was retrieved.
 message QueryConsensusStateRequest {
   // client identifier
-  // string client_id = 1;
+  string client_id = 1;
   // consensus state revision number
   // uint64 revision_number = 2;
   // consensus state revision height
@@ -132,7 +132,7 @@ message QueryConsensusStateRequest {
   // latest_height overrrides the height field and queries the latest stored
   // ConsensusState
   // bool latest_height = 4;
-  uint64 height = 1;
+  uint64 height = 2;
 }
 
 // QueryConsensusStateResponse is the response type for the Query/ConsensusState
