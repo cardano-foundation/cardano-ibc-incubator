@@ -10,6 +10,7 @@ export type SendPacketOperator = {
   token: Coin;
   sender: string;
   receiver: string;
+  signer: string;
   timeoutHeight: Height;
   timeoutTimestamp: bigint;
   memo: string;

@@ -773,7 +773,7 @@ export class LucidService {
   }
 
   public createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.senderAddress);
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
@@ -814,7 +814,7 @@ export class LucidService {
   public createUnsignedSendPacketBurnTx(dto: UnsignedSendPacketBurnDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.senderAddress);
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.mintVoucherRefUtxo, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)

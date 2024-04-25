@@ -24,6 +24,8 @@ export type UnsignedSendPacketBurnDto = {
   transferAmount: bigint;
   denomToken: string;
 
+  constructedAddress: string;
+
   sendPacketRefUTxO: UTxO;
   sendPacketPolicyId: PolicyId;
   channelToken: AuthToken;

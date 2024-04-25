@@ -18,10 +18,10 @@ export const LucidClient = {
     //   new Lucid.Blockfrost('https://cardano-preview.blockfrost.io/api/v0', 'preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC'),
     //   'Preview',
     // );
-    const defaultSigner = configService.get('signer').address;
-    lucid.selectWalletFrom({
-      address: defaultSigner,
-    });
+    // const defaultSigner = configService.get('signer').address;
+    // lucid.selectWalletFrom({
+    //   address: defaultSigner,
+    // });
     // lucid.selectWalletFromPrivateKey(configService.get('signer').sk);
 
     return lucid;

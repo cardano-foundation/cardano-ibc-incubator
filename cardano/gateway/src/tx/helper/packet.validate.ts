@@ -5,7 +5,12 @@ import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/comm
 import { RecvPacketOperator } from '../dto/packet/recv-packet-operator.dto';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
-import { MsgAcknowledgement, MsgRecvPacket, MsgTimeout, MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import {
+  MsgAcknowledgement,
+  MsgRecvPacket,
+  MsgTimeout,
+  MsgTransfer,
+} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { SendPacketOperator } from '../dto/packet/send-packet-operator.dto';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TimeoutPacketOperator } from '../dto/packet/time-out-packet-operator.dto';
@@ -58,6 +63,9 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "source_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
+  if (!data.signer) {
+    throw new GrpcInvalidArgumentException('Invalid constructed address: signer is not valid');
+  }
 
   // Prepare the Recv packet operator object
   const sendPacketOperator: SendPacketOperator = {
@@ -69,6 +77,7 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
     },
     sender: data.sender,
     receiver: data.receiver,
+    signer: data.signer,
     timeoutHeight: {
       revisionHeight: BigInt(data.timeout_height?.revision_height || 0),
       revisionNumber: BigInt(data.timeout_height?.revision_number || 0),
