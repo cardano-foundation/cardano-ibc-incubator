@@ -57,9 +57,10 @@ func (gw *Gateway) GetLastHeight() (uint64, error) {
 	return res.Height, nil
 }
 
-func (gw *Gateway) QueryClientState(height uint64) (*pbclient.QueryClientStateResponse, error) {
+func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
 	req := &pbclient.QueryClientStateRequest{
-		Height: height,
+		ClientId: clientId,
+		Height:   height,
 	}
 	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
 	if err != nil {
@@ -68,9 +69,10 @@ func (gw *Gateway) QueryClientState(height uint64) (*pbclient.QueryClientStateRe
 	return res, nil
 }
 
-func (gw *Gateway) QueryConsensusState(height uint64) (*pbclient.QueryConsensusStateResponse, error) {
+func (gw *Gateway) QueryConsensusState(clientId string, height uint64) (*pbclient.QueryConsensusStateResponse, error) {
 	req := &pbclient.QueryConsensusStateRequest{
-		Height: height,
+		ClientId: clientId,
+		Height:   height,
 	}
 	res, err := gw.ClientQueryService.ConsensusState(context.Background(), req)
 	if err != nil {

@@ -168,8 +168,6 @@ func (cc *CardanoProvider) GenerateConnHandshakeProof(ctx context.Context, heigh
 		eg                 = new(errgroup.Group)
 	)
 
-	clientId = hex.EncodeToString([]byte(clientId))
-
 	// query for the client state for the proof and get the height to query the consensus state at.
 	clientStateRes, err = cc.QueryClientStateResponse(ctx, height, clientId)
 	if err != nil {
@@ -208,7 +206,7 @@ func (cc *CardanoProvider) QueryClientStateResponse(ctx context.Context, height 
 	if err != nil {
 		return nil, err
 	}
-	clienStateRes, err := cc.GateWay.QueryClientState(uint64(height))
+	clienStateRes, err := cc.GateWay.QueryClientState(srcClientId, uint64(height))
 	if err != nil {
 		return nil, err
 	}
@@ -242,31 +240,24 @@ func (cc *CardanoProvider) QueryClientStateResponse(ctx context.Context, height 
 
 // QueryClientConsensusState retrieves the latest consensus state for a client in state at a given height
 func (cc *CardanoProvider) QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
-	//key := host.FullConsensusStateKey(clientid, clientHeight)
-	//
-	//value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, chainHeight, key)
-	value, height, err := cc.QueryConsensusState(ctx, int64(clientHeight.GetRevisionHeight()))
-	if err != nil {
-		return nil, err
-	}
-	consensusStateRes, err := cc.GateWay.QueryConsensusState(clientHeight.GetRevisionHeight())
+	consensusStateRes, err := cc.GateWay.QueryConsensusState(clientid, clientHeight.GetRevisionHeight())
 	if err != nil {
 		return nil, err
 	}
 
-	// check if consensus state exists
-	//if len(value) == 0 {
-	//	return nil, sdkerrors.Wrap(clienttypes.ErrConsensusStateNotFound, clientid)
-	//}
-	//
-	//cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
-	//
-	//cs, err := clienttypes.UnmarshalConsensusState(cdc, value.va)
-	//if err != nil {
-	//	return nil, err
-	//}
-	println(height)
-	anyConsensusState, err := clienttypes.PackConsensusState(value)
+	var consensusState = tendermint.ConsensusState{}
+	err = consensusStateRes.GetConsensusState().UnmarshalTo(&consensusState)
+	if err != nil {
+		return nil, err
+	}
+	timeStampSeconds := consensusState.Timestamp.Seconds / 1e6
+	state := &tmclient.ConsensusState{
+		Timestamp:          time.Unix(timeStampSeconds, int64(0)).UTC(),
+		Root:               *consensusState.Root,
+		NextValidatorsHash: consensusState.NextValidatorsHash,
+	}
+
+	anyConsensusState, err := clienttypes.PackConsensusState(state)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +396,7 @@ func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chant
 // QueryClientState retrieves the latest consensus state for a client in state at a given height
 // and unpacks it to exported client state interface
 func (cc *CardanoProvider) QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error) {
-	clientStateRes, err := cc.GateWay.QueryClientState(uint64(height))
+	clientStateRes, err := cc.GateWay.QueryClientState(clientid, uint64(height))
 	if err != nil {
 		return nil, err
 	}
@@ -557,25 +548,8 @@ func (cc *CardanoProvider) QueryConnectionsUsingClient(ctx context.Context, heig
 // QueryConsensusState returns a consensus state for a given chain to be used as a
 // client in another chain, fetches latest height when passed 0 as arg
 func (cc *CardanoProvider) QueryConsensusState(ctx context.Context, height int64) (ibcexported.ConsensusState, int64, error) {
-	consensusStateRes, err := cc.GateWay.QueryConsensusState(uint64(height))
-	if err != nil {
-		return &tmclient.ConsensusState{}, 0, err
-	}
-
-	var consensusState = tendermint.ConsensusState{}
-	err = consensusStateRes.GetConsensusState().UnmarshalTo(&consensusState)
-	if err != nil {
-		return &tmclient.ConsensusState{}, 0, err
-	}
-	timeStampSeconds := consensusState.Timestamp.Seconds / 1e6
-	timea := time.Unix(timeStampSeconds, int64(0))
-	state := &tmclient.ConsensusState{
-		Timestamp:          timea.UTC(),
-		Root:               *consensusState.Root,
-		NextValidatorsHash: consensusState.NextValidatorsHash,
-	}
-
-	return state, height, nil
+	//not implemented
+	return nil, 0, nil
 }
 
 // QueryDenomTrace takes a denom from IBC and queries the information about it
