@@ -1,6 +1,7 @@
 use aiken/builtin
 use aiken/bytearray
 use aiken/list
+use aiken/string
 
 pub const slash_char = 47
 
@@ -107,6 +108,10 @@ pub fn hex_string_to_bytes(str: ByteArray) -> Option<ByteArray> {
   } else {
     None
   }
+}
+
+pub fn int_to_string(n: Int) -> ByteArray {
+  string.from_int(n) |> string.to_bytearray()
 }
 
 fn hex_char_to_dec(char: Int) -> Option<Int> {

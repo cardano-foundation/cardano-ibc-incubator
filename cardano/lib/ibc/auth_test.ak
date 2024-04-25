@@ -38,8 +38,8 @@ test test_contain_auth_token() {
 
   test_cases
     |> list.all(
-         fn(case) { auth.contain_auth_token(case.1st, case.2nd) == case.3rd },
-       )
+        fn(case) { auth.contain_auth_token(case.1st, case.2nd) == case.3rd },
+      )
 }
 
 test test_generate_token_name() {
@@ -96,10 +96,10 @@ test test_generate_token_name() {
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           auth.generate_token_name(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          auth.generate_token_name(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }
 
 test test_generate_token_name_from_another() {
@@ -136,10 +136,10 @@ test test_generate_token_name_from_another() {
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           auth.generate_token_name_from_another(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          auth.generate_token_name_from_another(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }
 
 test test_extract_token_base() {
@@ -184,16 +184,15 @@ test test_extract_token_prefix() {
 }
 
 test test_extract_token_sequence() {
-  let test_cases: List<(ByteArray, Option<Int>)> =
+  let test_cases: List<(ByteArray, Option<ByteArray>)> =
     [
       (
-        #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b30",
-        //take 20 to 23
-        Some(0),
+        // length <= 24
+        #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b",
+        None,
       ),
-      (#"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031", Some(1)),
-      (#"f3b58dc840a819f86dc3477508463d4c3141e119239b722032", Some(2)),
-      (#"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33", Some(3)),
+      (#"f3b58dc840a819f86dc3477508463d4c3141e119239b722032", Some(#"32")),
+      (#"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33", Some(#"33")),
     ]
   test_cases
     |> list.all(fn(case) { auth.extract_token_sequence(case.1st) == case.2nd })

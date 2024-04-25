@@ -48,6 +48,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/utils/string as string_utils
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -731,7 +732,8 @@ test succeed_timeout_packet() {
     }
 
   let channel_id =
-    chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> chan_keys_mod.format_channel_identifier()
   let module_redeemer: Redeemer =
     Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
 

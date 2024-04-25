@@ -1,8 +1,6 @@
 use aiken/bytearray
 use aiken/dict
 use aiken/hash
-use aiken/int
-use aiken/option
 use aiken/string
 use aiken/transaction.{Output}
 use aiken/transaction/value.{AssetName, MintedValue, PolicyId}
@@ -78,8 +76,6 @@ pub fn generate_token_name_from_another(
       |> bytearray.concat(prefix_part)
       |> bytearray.concat(postfix)
 
-  expect is_valid_token_name(full_name)?
-
   full_name
 }
 
@@ -93,21 +89,14 @@ pub fn extract_token_prefix(token_name: ByteArray) -> ByteArray {
   token_name |> bytearray.slice(20, 23)
 }
 
-pub fn extract_token_sequence(token_name: ByteArray) -> Option<Int> {
-  expect is_valid_token_name(token_name)?
-  let len = bytearray.length(token_name)
-  let postfix = bytearray.slice(token_name, 24, len - 1)
+pub fn extract_token_sequence(token_name: ByteArray) -> Option<ByteArray> {
+  if is_valid_token_name(token_name) {
+    let postfix = bytearray.drop(token_name, 24)
 
-  int.from_utf8(postfix)
-    |> option.and_then(
-         fn(sequence) {
-           if sequence >= 0 {
-             Some(sequence)
-           } else {
-             None
-           }
-         },
-       )
+    Some(postfix)
+  } else {
+    None
+  }
 }
 
 fn is_valid_token_name(token_name: ByteArray) -> Bool {

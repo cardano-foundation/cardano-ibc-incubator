@@ -1,7 +1,6 @@
 use aiken/bytearray
 use aiken/int
 use aiken/option
-use aiken/string
 
 pub const channel_prefix = "channel"
 
@@ -9,10 +8,7 @@ const channel_prefix_with_separator = "channel-"
 
 const channel_prefix_with_separator_len = 8
 
-pub fn format_channel_identifier(sequence: Int) -> ByteArray {
-  expect sequence >= 0
-
-  let sequence = string.from_int(sequence) |> string.to_bytearray()
+pub fn format_channel_identifier(sequence: ByteArray) -> ByteArray {
   bytearray.concat(channel_prefix_with_separator, sequence)
 }
 

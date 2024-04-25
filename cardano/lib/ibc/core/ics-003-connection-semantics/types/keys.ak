@@ -1,6 +1,5 @@
 use aiken/bytearray
 use aiken/int
-use aiken/string
 
 pub const connection_prefix = "connection"
 
@@ -8,8 +7,7 @@ const connection_prefix_with_separator = "connection-"
 
 const connection_prefix_with_separator_len = 11
 
-pub fn format_connection_identifier(sequence: Int) -> ByteArray {
-  let sequence = string.from_int(sequence) |> string.to_bytearray()
+pub fn format_connection_identifier(sequence: ByteArray) -> ByteArray {
   bytearray.concat(connection_prefix_with_separator, sequence)
 }
 

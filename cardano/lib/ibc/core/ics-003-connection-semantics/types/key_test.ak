@@ -1,7 +1,7 @@
 use ibc/core/ics_003_connection_semantics/types/keys
 
 test test_format_connection_identifier() {
-  let mock_sequence = 100
+  let mock_sequence = #"313030"
   keys.format_connection_identifier(mock_sequence) == "connection-100"
 }
 

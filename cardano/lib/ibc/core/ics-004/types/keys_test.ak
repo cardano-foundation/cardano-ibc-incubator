@@ -1,12 +1,8 @@
 use ibc/core/ics_004/types/keys as keys_mod
 
 //============================format_channel_identifier====================================
-test test_format_channel_identifier_fail_with_negative_sequence() fail {
-  keys_mod.format_channel_identifier(-1) == ""
-}
-
 test test_format_channel_identifier() {
-  keys_mod.format_channel_identifier(98) == "channel-98"
+  keys_mod.format_channel_identifier(#"3938") == "channel-98"
 }
 
 //============================parse_channel_id_sequence====================================
