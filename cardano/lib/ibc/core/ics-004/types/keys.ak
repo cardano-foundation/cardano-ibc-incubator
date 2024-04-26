@@ -1,6 +1,7 @@
 use aiken/bytearray
 use aiken/int
 use aiken/option
+use ibc/utils/string as string_utils
 
 pub const channel_prefix = "channel"
 
@@ -35,8 +36,11 @@ pub fn parse_channel_id_sequence(channel_id: ByteArray) -> Option<Int> {
 }
 
 pub fn is_valid_channel_id(channel_id: ByteArray) -> Bool {
-  when parse_channel_id_sequence(channel_id) is {
-    Some(_) -> True
-    None -> False
+  let prefix = bytearray.take(channel_id, channel_prefix_with_separator_len)
+  if prefix == channel_prefix_with_separator {
+    let str_id = bytearray.drop(channel_id, channel_prefix_with_separator_len)
+    string_utils.is_uint_string(str_id)
+  } else {
+    False
   }
 }

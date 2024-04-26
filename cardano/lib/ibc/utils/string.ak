@@ -114,6 +114,24 @@ pub fn int_to_string(n: Int) -> ByteArray {
   string.from_int(n) |> string.to_bytearray()
 }
 
+/// Custom function for checking whether a string in ids is a valid
+/// unsigned integer
+pub fn is_uint_string(n: ByteArray) -> Bool {
+  if bytearray.length(n) == 0 {
+    False
+  } else if n == "0" {
+    True
+  } else if builtin.index_bytearray(n, 0) == 0x30 {
+    False
+  } else {
+    bytearray.foldr(
+      n,
+      True,
+      fn(byte, acc) { acc && byte >= 0x30 && byte <= 0x39 },
+    )
+  }
+}
+
 fn hex_char_to_dec(char: Int) -> Option<Int> {
   if 97 <= char && char <= 102 {
     Some(char - 87)
@@ -163,4 +181,33 @@ test test_hex_string_to_bytes() {
     [("abcd1234", Some(#"abcd1234")), ("123x", None)]
 
   list.all(test_cases, fn(case) { hex_string_to_bytes(case.1st) == case.2nd })
+}
+
+test test_is_int_string() {
+  let test_cases =
+    [
+      // Valid unsigned integers
+      ("1234", True),
+      // Single-character string "0" is valid
+      ("0", True),
+      // Leading zeros are not allowed
+      ("0123", False),
+      // All-zero string is not valid
+      ("00000", False),
+      // Non-digit characters are not allowed
+      ("abc", False),
+      // Empty string is not valid
+      ("", False),
+      // Negative integers are not allowed
+      ("-1", False),
+      // Positive sign is not allowed
+      ("+1", False),
+      // Floating-point and scientific notation cases
+      ("3.14", False),
+      // Floating-point numbers are not allowed
+      ("1e6", False),
+    ]
+
+  // Scientific notation is not allowed
+  list.all(test_cases, fn(case) { is_uint_string(case.1st) == case.2nd })
 }

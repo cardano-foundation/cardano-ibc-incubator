@@ -1,5 +1,6 @@
 use aiken/bytearray
 use aiken/int
+use ibc/utils/string as string_utils
 
 pub const client_prefix = "ibc_client"
 
@@ -20,4 +21,14 @@ pub fn parse_client_id_sequence(client_id: ByteArray) -> Int {
   expect id >= 0
 
   id
+}
+
+pub fn is_valid_client_id(client_id: ByteArray) -> Bool {
+  let prefix = bytearray.take(client_id, client_prefix_with_separator_len)
+  if prefix == client_prefix_with_separator {
+    let str_id = bytearray.drop(client_id, client_prefix_with_separator_len)
+    string_utils.is_uint_string(str_id)
+  } else {
+    False
+  }
 }

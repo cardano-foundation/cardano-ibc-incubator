@@ -1,6 +1,7 @@
 use aiken/bytearray
 use aiken/int
 use aiken/string
+use ibc/utils/string as string_utils
 
 pub const port_prefix = "port"
 
@@ -27,4 +28,14 @@ pub fn parse_port_id_number(port_id: ByteArray) -> Int {
   expect id >= 0
 
   id
+}
+
+pub fn is_valid_port_id(port_id: ByteArray) -> Bool {
+  let prefix = bytearray.take(port_id, port_prefix_with_separator_len)
+  if prefix == port_prefix_with_separator {
+    let str_id = bytearray.drop(port_id, port_prefix_with_separator_len)
+    string_utils.is_uint_string(str_id)
+  } else {
+    False
+  }
 }
