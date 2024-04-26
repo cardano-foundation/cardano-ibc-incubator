@@ -3,12 +3,12 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb.{
   ConnectionEnd as ConnectionEndProto, INIT, OPEN, State as StateProto, TRYOPEN,
   UNINITIALIZED,
 }
+use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/state.{
   Init, Open, State, TryOpen, Uninitialized,
 }
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_024_host_requirements/validate
 
 pub type ConnectionEnd {
   client_id: ByteArray,
@@ -78,10 +78,12 @@ pub fn get_delay_period(c: ConnectionEnd) -> Int {
   c.delay_period
 }
 
-/// validate_basic implements the Connection interface.
+/// Validate basic for ConnectionEnd's props.
+/// client_id must be a valid Cardano IBC client ID.
+/// counterparty' IDs only need to be validated basic.
 pub fn validate_basic(c: ConnectionEnd) -> Bool {
   and {
-    validate.client_identifier_validator(c.client_id),
+    client_keys_mod.is_valid_client_id(c.client_id),
     list.length(c.versions) > 0,
     list.all(c.versions, fn(ver) { version.validate_version(ver) }),
     counterparty.validate_basic(c.counterparty),
