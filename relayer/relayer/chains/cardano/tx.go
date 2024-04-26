@@ -512,7 +512,6 @@ func (cc *CardanoProvider) MsgTransfer(
 		return nil, err
 	}
 
-	// TODO: update proto
 	senderAddress, err := echovl.NewAddress(signer)
 	if err != nil {
 		return nil, err
@@ -536,7 +535,7 @@ func (cc *CardanoProvider) MsgTransfer(
 	if info.TimeoutHeight.RevisionHeight != 0 {
 		msg.TimeoutHeight = info.TimeoutHeight
 	}
-	res, err := cc.GateWay.Transfer(context.Background(), tranMsgTransferToGWMsgTransfer(msg))
+	res, err := cc.GateWay.Transfer(context.Background(), tranMsgTransferToGWMsgTransfer(msg, signer))
 	if err != nil {
 		return nil, err
 	}
@@ -545,7 +544,7 @@ func (cc *CardanoProvider) MsgTransfer(
 	return msgTransfer, nil
 }
 
-func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer) *pbchannel.MsgTransfer {
+func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer, signer string) *pbchannel.MsgTransfer {
 	return &pbchannel.MsgTransfer{
 		SourcePort:    msg.SourcePort,
 		SourceChannel: msg.SourceChannel,
@@ -560,6 +559,7 @@ func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer) *pbchannel.M
 			RevisionHeight: msg.TimeoutHeight.RevisionHeight,
 		},
 		TimeoutTimestamp: msg.TimeoutTimestamp,
+		Signer:           signer,
 	}
 
 }
