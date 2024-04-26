@@ -15,6 +15,7 @@ use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerBindPort, HandlerOperator,
 }
+use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator {
@@ -43,11 +44,8 @@ validator {
     trace @"mint_port: handler redeemer is valid"
 
     let port_token_name =
-      auth.generate_token_name(
-        handler_token,
-        port_keys.port_prefix,
-        port_number,
-      )
+      string_utils.int_to_string(port_number)
+        |> auth.generate_token_name(handler_token, port_keys.port_prefix, _)
     let port_token =
       AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
     expect auth.mint_auth_token(mint, port_token)
@@ -112,7 +110,8 @@ fn setup() -> MockData {
     }
 
   let port_token_name =
-    auth.generate_token_name(handler_token, port_keys.port_prefix, port_number)
+    string_utils.int_to_string(port_number)
+      |> auth.generate_token_name(handler_token, port_keys.port_prefix, _)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
@@ -166,15 +165,15 @@ test mint_port_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.port_minting_policy_id),
-           redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.port_minting_policy_id),
+          redeemer,
+          validator_utils.compare_purpose,
+        )
 
   //==========================arrange context=========================
   let context =

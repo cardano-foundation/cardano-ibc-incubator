@@ -41,7 +41,6 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/utils/string as string_utils
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -200,7 +199,7 @@ type MockData {
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
-  channel_sequence: Int,
+  channel_sequence: ByteArray,
   channel_token: AuthToken,
   handler_token: AuthToken,
   connection_id: ByteArray,
@@ -219,7 +218,7 @@ fn setup() -> MockData {
     }
 
   //========================Channel============================
-  let channel_sequence = 0
+  let channel_sequence = "0"
   let channel_minting_policy_id = "mock channel_minting_policy_id"
 
   let channel_token_name =
@@ -632,8 +631,7 @@ test succeed_chan_open_confirm() {
   let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
 
   let channel_id =
-    string_utils.int_to_string(mock_data.channel_sequence)
-      |> chan_keys_mod.format_channel_identifier()
+    chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer = Callback(OnChanOpenConfirm { channel_id })
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =

@@ -47,7 +47,7 @@ test test_generate_token_name() {
   //2nd: prefix
   //3rd: sequence
   //4th: expected token name
-  let test_cases: List<(AuthToken, ByteArray, Int, ByteArray)> =
+  let test_cases: List<(AuthToken, ByteArray, ByteArray, ByteArray)> =
     [
       (
         AuthToken {
@@ -57,7 +57,7 @@ test test_generate_token_name() {
         },
         //fromText("ibc_client")
         #"6962635f636c69656e74",
-        0,
+        "0",
         #"94051031ba171ddc7783efe491f76b4d2f1ba640f2c9db6430",
       ),
       (
@@ -68,7 +68,7 @@ test test_generate_token_name() {
         },
         //fromText("connection")
         #"636f6e6e656374696f6e",
-        1,
+        "1",
         #"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031",
       ),
       (
@@ -79,7 +79,7 @@ test test_generate_token_name() {
         },
         //fromText("channel")
         #"6368616e6e656c",
-        2,
+        "2",
         #"f3b58dc840a819f86dc3477508463d4c3141e119239b722032",
       ),
       (
@@ -90,7 +90,7 @@ test test_generate_token_name() {
         },
         //fromText("package")
         #"7061636b616765",
-        3,
+        "3",
         #"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33",
       ),
     ]
@@ -103,34 +103,34 @@ test test_generate_token_name() {
 }
 
 test test_generate_token_name_from_another() {
-  let test_cases: List<(ByteArray, ByteArray, Int, ByteArray)> =
+  let test_cases: List<(ByteArray, ByteArray, ByteArray, ByteArray)> =
     [
       (
         #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b30",
         //fromText("ibc_client")
         #"6962635f636c69656e74",
-        0,
+        "0",
         #"3f334ddd52c8f52f0ada7cce104ba1ba315cf092f2c9db6430",
       ),
       (
         #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b30",
         //fromText("connection")
         #"636f6e6e656374696f6e",
-        1,
+        "1",
         #"3f334ddd52c8f52f0ada7cce104ba1ba315cf09219dd9b3031",
       ),
       (
         #"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031",
         //fromText("channel")
         #"6368616e6e656c",
-        2,
+        "2",
         #"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f239b722032",
       ),
       (
         #"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031",
         //fromText("package")
         #"7061636b616765",
-        3,
+        "3",
         #"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f27b1b82e33",
       ),
     ]

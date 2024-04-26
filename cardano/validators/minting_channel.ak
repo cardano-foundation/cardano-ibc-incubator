@@ -133,13 +133,14 @@ validator(
         trace @"mint_channel: client status is active\n"
 
         expect Some(channel_token) =
-          validator_utils.validate_mint(
-            mint,
-            channel_minting_policy_id,
-            handler_token,
-            channel_keys.channel_prefix,
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> validator_utils.validate_mint(
+                mint,
+                channel_minting_policy_id,
+                handler_token,
+                channel_keys.channel_prefix,
+                _,
+              )
         trace @"mint_channel: validator_utils.validate_mint\n"
 
         expect auth.contain_auth_token(channel_output, channel_token)
@@ -227,13 +228,14 @@ validator(
         trace @"mint_channel: client status is active\n"
 
         expect Some(channel_token) =
-          validator_utils.validate_mint(
-            mint,
-            channel_minting_policy_id,
-            handler_token,
-            channel_keys.channel_prefix,
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> validator_utils.validate_mint(
+                mint,
+                channel_minting_policy_id,
+                handler_token,
+                channel_keys.channel_prefix,
+                _,
+              )
         trace @"mint_channel: validator_utils.validate_mint\n"
 
         expect auth.contain_auth_token(channel_output, channel_token)
@@ -605,11 +607,12 @@ test succeed_chan_open_init() {
 
   //========================arrange outputs=======================
   let channel_token_name =
-    auth.generate_token_name(
-      mock_data.handler_token,
-      channel_keys.channel_prefix,
-      mock_data.channel_sequence,
-    )
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> auth.generate_token_name(
+          mock_data.handler_token,
+          channel_keys.channel_prefix,
+          _,
+        )
   let channel_token =
     AuthToken {
       policy_id: mock_data.channel_minting_policy_id,
@@ -725,11 +728,12 @@ test succeed_chan_open_try() {
 
   //========================arrange outputs=======================
   let channel_token_name =
-    auth.generate_token_name(
-      mock_data.handler_token,
-      channel_keys.channel_prefix,
-      mock_data.channel_sequence,
-    )
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> auth.generate_token_name(
+          mock_data.handler_token,
+          channel_keys.channel_prefix,
+          _,
+        )
   let channel_token =
     AuthToken {
       policy_id: mock_data.channel_minting_policy_id,

@@ -1,7 +1,6 @@
 use aiken/bytearray
 use aiken/dict
 use aiken/hash
-use aiken/string
 use aiken/transaction.{Output}
 use aiken/transaction/value.{AssetName, MintedValue, PolicyId}
 
@@ -29,11 +28,9 @@ pub fn mint_auth_token(mint: MintedValue, token: AuthToken) -> Bool {
 pub fn generate_token_name(
   base_token: AuthToken,
   prefix: ByteArray,
-  sequence: Int,
+  sequence: ByteArray,
 ) -> ByteArray {
-  expect sequence >= 0
-
-  let postfix = string.from_int(sequence) |> string.to_bytearray()
+  let postfix = sequence
 
   expect (bytearray.length(postfix) <= 8)?
 
@@ -59,11 +56,9 @@ pub fn generate_token_name(
 pub fn generate_token_name_from_another(
   another_token_name: ByteArray,
   prefix: ByteArray,
-  sequence: Int,
+  sequence: ByteArray,
 ) -> ByteArray {
-  expect sequence >= 0
-
-  let postfix = string.from_int(sequence) |> string.to_bytearray()
+  let postfix = sequence
 
   expect (bytearray.length(postfix) <= 8)?
 

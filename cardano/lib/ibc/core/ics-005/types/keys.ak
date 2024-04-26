@@ -1,5 +1,4 @@
 use aiken/bytearray
-use aiken/int
 use aiken/string
 use ibc/utils/string as string_utils
 
@@ -15,19 +14,9 @@ pub fn format_port_identifier(port_number: Int) -> ByteArray {
 }
 
 /// Parse number of a port_id.
-/// The port_id should be validated basic before.
-pub fn parse_port_id_number(port_id: ByteArray) -> Int {
-  // "port".length = 4
-  let prefix = bytearray.take(port_id, port_prefix_with_separator_len)
-  expect prefix == port_prefix_with_separator
-
-  let str_id = bytearray.drop(port_id, port_prefix_with_separator_len)
-
-  expect Some(id) = int.from_utf8(str_id)
-
-  expect id >= 0
-
-  id
+/// The port_id should be a valid Cardano IBC port ID (validated with is_valid_port_id()).
+pub fn parse_port_id_number(port_id: ByteArray) -> ByteArray {
+  bytearray.drop(port_id, port_prefix_with_separator_len)
 }
 
 pub fn is_valid_port_id(port_id: ByteArray) -> Bool {
