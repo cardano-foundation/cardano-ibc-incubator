@@ -7,6 +7,8 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as channel_state
+use ibc/core/ics_005/types/keys as port_keys_mod
+use ibc/core/ics_024_host_requirements/validate as host_validate_mod
 
 pub type ChannelDatum {
   state: ChannelDatumState,
@@ -28,7 +30,7 @@ pub fn is_chan_open_init_valid(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
-  let ChannelDatum { state, token, .. } = datum
+  let ChannelDatum { state, port_id, token } = datum
 
   let ChannelDatumState {
     channel,
@@ -62,6 +64,8 @@ pub fn is_chan_open_init_valid(
       list.is_empty(packet_acknowledgement),
     }
 
+  expect port_keys_mod.is_valid_port_id(port_id)
+
   True
 }
 
@@ -69,7 +73,7 @@ pub fn is_chan_open_try_valid(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
-  let ChannelDatum { state, token, .. } = datum
+  let ChannelDatum { state, port_id, token } = datum
 
   let ChannelDatumState {
     channel,
@@ -103,6 +107,8 @@ pub fn is_chan_open_try_valid(
       list.is_empty(packet_acknowledgement),
     }
 
+  expect port_keys_mod.is_valid_port_id(port_id)
+
   True
 }
 
@@ -119,9 +125,9 @@ pub fn is_channel_open_ack_valid(
 
   // output's Channel is updated correctly
   let output_counterpary_chan_id = output_chan.counterparty.channel_id
-  expect output_counterpary_chan_id != ""
 
-  expect channel.validate_basic(output_chan)
+  expect
+    host_validate_mod.channel_identifier_validator(output_counterpary_chan_id)
 
   let expected_datum =
     ChannelDatum {
@@ -148,8 +154,6 @@ pub fn is_channel_open_confirm_valid(
 ) -> Bool {
   // input's Channel is Init state
   expect input_datum.state.channel.state == channel_state.TryOpen
-
-  expect channel.validate_basic(output_datum.state.channel)
 
   let expected_datum =
     ChannelDatum {

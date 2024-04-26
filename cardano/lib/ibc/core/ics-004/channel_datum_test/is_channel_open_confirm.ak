@@ -66,27 +66,6 @@ test fail_if_input_channel_state_is_not_tryopen() fail {
   channel_datum_mod.is_channel_open_confirm_valid(input_datum, output_datum)
 }
 
-test fail_if_output_channel_validate_basic_invalid() fail {
-  let (input_datum, output_datum) = setup()
-
-  let output_datum =
-    ChannelDatum {
-      ..output_datum,
-      state: ChannelDatumState {
-        ..output_datum.state,
-        channel: Channel {
-          ..output_datum.state.channel,
-          counterparty: ChannelCounterparty {
-            ..output_datum.state.channel.counterparty,
-            channel_id: "invalid char id %$&",
-          },
-        },
-      },
-    }
-
-  channel_datum_mod.is_channel_open_confirm_valid(input_datum, output_datum)
-}
-
 test fail_if_output_channel_state_is_not_open() fail {
   let (input_datum, output_datum) = setup()
 

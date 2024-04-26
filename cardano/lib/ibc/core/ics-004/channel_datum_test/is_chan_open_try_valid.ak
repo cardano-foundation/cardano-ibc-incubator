@@ -182,3 +182,11 @@ test fail_if_packet_acknowledgement_is_not_empty() fail {
 
   channel_datum_mod.is_chan_open_try_valid(chan_datum, auth_token)
 }
+
+test fail_if_port_id_is_invalid() fail {
+  let (chan_datum, auth_token) = setup()
+
+  let chan_datum = ChannelDatum { ..chan_datum, port_id: "port-abc" }
+
+  channel_datum_mod.is_chan_open_try_valid(chan_datum, auth_token)
+}
