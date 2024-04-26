@@ -894,6 +894,8 @@ export class PacketService {
         senderAddress,
         receiverAddress: sendPacketOperator.receiver,
 
+        constructedAddress: sendPacketOperator.signer,
+
         channelTokenUnit,
         voucherTokenUnit,
         denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
@@ -922,6 +924,8 @@ export class PacketService {
       transferAmount: BigInt(sendPacketOperator.token.amount),
       senderAddress: sendPacketOperator.sender,
       receiverAddress: sendPacketOperator.receiver,
+
+      constructedAddress: sendPacketOperator.signer,
 
       spendChannelAddress: deploymentConfig.validators.spendChannel.address,
       channelTokenUnit: channelTokenUnit,

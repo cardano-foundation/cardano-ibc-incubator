@@ -22,6 +22,8 @@ export type UnsignedSendPacketEscrowDto = {
   transferModuleAddress: string;
   denomToken: string;
 
+  constructedAddress: string;
+
   sendPacketRefUTxO: UTxO;
   sendPacketPolicyId: PolicyId;
   channelToken: AuthToken;

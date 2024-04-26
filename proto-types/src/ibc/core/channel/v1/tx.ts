@@ -206,6 +206,7 @@ export interface MsgTransfer {
   timeout_height?: Height;
   timeout_timestamp: bigint;
   memo: string;
+  signer: string;
 }
 /** MsgTransferResponse defines the Msg/Transfer response type. */
 export interface MsgTransferResponse {
@@ -1652,7 +1653,8 @@ function createBaseMsgTransfer(): MsgTransfer {
     receiver: "",
     timeout_height: undefined,
     timeout_timestamp: BigInt(0),
-    memo: ""
+    memo: "",
+    signer: ""
   };
 }
 export const MsgTransfer = {
@@ -1681,6 +1683,9 @@ export const MsgTransfer = {
     }
     if (message.memo !== "") {
       writer.uint32(66).string(message.memo);
+    }
+    if (message.signer !== "") {
+      writer.uint32(74).string(message.signer);
     }
     return writer;
   },
@@ -1715,6 +1720,9 @@ export const MsgTransfer = {
         case 8:
           message.memo = reader.string();
           break;
+        case 9:
+          message.signer = reader.string();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1732,6 +1740,7 @@ export const MsgTransfer = {
     if (isSet(object.timeout_height)) obj.timeout_height = Height.fromJSON(object.timeout_height);
     if (isSet(object.timeout_timestamp)) obj.timeout_timestamp = BigInt(object.timeout_timestamp.toString());
     if (isSet(object.memo)) obj.memo = String(object.memo);
+    if (isSet(object.signer)) obj.signer = String(object.signer);
     return obj;
   },
   toJSON(message: MsgTransfer): unknown {
@@ -1744,6 +1753,7 @@ export const MsgTransfer = {
     message.timeout_height !== undefined && (obj.timeout_height = message.timeout_height ? Height.toJSON(message.timeout_height) : undefined);
     message.timeout_timestamp !== undefined && (obj.timeout_timestamp = (message.timeout_timestamp || BigInt(0)).toString());
     message.memo !== undefined && (obj.memo = message.memo);
+    message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgTransfer>, I>>(object: I): MsgTransfer {
@@ -1762,6 +1772,7 @@ export const MsgTransfer = {
       message.timeout_timestamp = BigInt(object.timeout_timestamp.toString());
     }
     message.memo = object.memo ?? "";
+    message.signer = object.signer ?? "";
     return message;
   }
 };

@@ -276,6 +276,7 @@ message MsgTransfer {
   ibc.core.client.v1.Height         timeout_height = 6;
   uint64                            timeout_timestamp = 7;
   string                            memo = 8;
+  string                            signer = 9;
 }
 
 // MsgTransferResponse defines the Msg/Transfer response type.
