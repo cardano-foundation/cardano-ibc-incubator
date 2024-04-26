@@ -242,9 +242,9 @@ export class LucidService {
   ): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(constructedAddress);
-
+    const clientRefUTxO: UTxO = deploymentConfig.validators.spendClient.refUtxo;
     tx.collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendClient.script))
+      .readFrom([clientRefUTxO])
       .payToContract(
         deploymentConfig.validators.spendClient.address,
         { inline: encodedNewClientDatum },
@@ -269,14 +269,13 @@ export class LucidService {
     const tx: Tx = this.txFromWallet(constructedAddress);
 
     tx.collectFrom([handlerUtxo], encodedHandlerOperator)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
+      .readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintClient.refUtxo])
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
         },
         encodedMintClientOperator,
-      )
-      .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintClient.script));
+      );
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.payToContract(address, { inline }, token);
@@ -303,15 +302,14 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
+    tx.readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintConnection.refUtxo])
+      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
           [connectionTokenUnit]: 1n,
         },
         encodedMintConnectionRedeemer,
       )
-      .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintConnection.script))
       .readFrom([clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
@@ -338,15 +336,14 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendHandler.script))
+    tx.readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintConnection.refUtxo])
+      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
           [connectionTokenUnit]: 1n,
         },
         encodedMintConnectionRedeemer,
       )
-      .attachMintingPolicy(this.getMintingPolicy(deploymentConfig.validators.mintConnection.script))
       .readFrom([clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
@@ -371,8 +368,8 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendConnection.script))
+    tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo])
+      .collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
       .readFrom([clientUtxo])
       .payToContract(
         deploymentConfig.validators.spendConnection.address,
@@ -394,8 +391,8 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
-      .attachSpendingValidator(this.getSpendingValidator(deploymentConfig.validators.spendConnection.script))
+    tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo])
+      .collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
       .readFrom([clientUtxo])
       .payToContract(
         deploymentConfig.validators.spendConnection.address,
