@@ -250,9 +250,9 @@ func (cc *CardanoProvider) QueryClientConsensusState(ctx context.Context, chainH
 	if err != nil {
 		return nil, err
 	}
-	timeStampSeconds := consensusState.Timestamp.Seconds / 1e6
+
 	state := &tmclient.ConsensusState{
-		Timestamp:          time.Unix(timeStampSeconds, int64(0)).UTC(),
+		Timestamp:          time.Unix(consensusState.Timestamp.Seconds, int64(consensusState.Timestamp.Nanos)).UTC(),
 		Root:               *consensusState.Root,
 		NextValidatorsHash: consensusState.NextValidatorsHash,
 	}
