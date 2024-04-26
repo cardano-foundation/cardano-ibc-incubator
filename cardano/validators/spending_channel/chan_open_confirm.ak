@@ -199,7 +199,7 @@ type MockData {
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
-  channel_sequence: Int,
+  channel_sequence: ByteArray,
   channel_token: AuthToken,
   handler_token: AuthToken,
   connection_id: ByteArray,
@@ -218,7 +218,7 @@ fn setup() -> MockData {
     }
 
   //========================Channel============================
-  let channel_sequence = 0
+  let channel_sequence = "0"
   let channel_minting_policy_id = "mock channel_minting_policy_id"
 
   let channel_token_name =

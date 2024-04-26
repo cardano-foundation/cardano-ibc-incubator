@@ -410,7 +410,7 @@ test test_validate_mint_succeed() {
     #"ae402aa242a85d03dde0913882ec6cb0f36edec61ccd501692de1472"
   let mock_minting_token_name = #"68616e646c6572"
   let token_name_prefix = #"6368616e6e656c"
-  let sequence = 0
+  let sequence = "0"
 
   let handler_token =
     AuthToken {
@@ -447,7 +447,7 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
     #"ae402aa242a85d03dde0913882ec6cb0f36edec61ccd501692de1472"
   let mock_minting_token_name = #"68616e646c6572"
   let token_name_prefix = #"6368616e6e656c"
-  let sequence = 0
+  let sequence = "0"
 
   let handler_token =
     AuthToken {
@@ -494,7 +494,7 @@ fn setup_extract_module_redeemer() -> (
         name: "mock handler name",
       },
       channel_keys.channel_prefix,
-      1,
+      "1",
     )
 
   let port_id = "port-100"
@@ -532,10 +532,10 @@ fn setup_extract_module_redeemer() -> (
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(out_ref),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(out_ref),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -628,10 +628,10 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(module_input.output_reference),
-           invalid_module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(module_input.output_reference),
+          invalid_module_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -783,10 +783,10 @@ fn setup_validate_handler_redeemer() -> (
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(out_ref),
-           handler_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(out_ref),
+          handler_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   expect handler_redeemer: HandlerOperator = handler_redeemer
 
@@ -844,10 +844,10 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fai
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(handler_input.output_reference),
-           invalid_handler_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(handler_input.output_reference),
+          invalid_handler_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -868,10 +868,10 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(handler_input.output_reference),
-           invalid_handler_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(handler_input.output_reference),
+          invalid_handler_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -916,7 +916,7 @@ fn setup_validate_referred_client() -> (
         name: "mock handler name",
       },
       channel_keys.channel_prefix,
-      1,
+      "1",
     )
 
   let client_id = "ibc_client-0"
@@ -954,14 +954,14 @@ fn setup_validate_referred_client() -> (
   let mock_consensus_states =
     dict.new()
       |> dict.insert(
-           height.zero_height(),
-           ConsensusState {
-             timestamp: 1,
-             next_validators_hash: "mock_next_validators_hash",
-             root: merkle.new_merkle_root("mock_app_hash"),
-           },
-           height.compare,
-         )
+          height.zero_height(),
+          ConsensusState {
+            timestamp: 1,
+            next_validators_hash: "mock_next_validators_hash",
+            root: merkle.new_merkle_root("mock_app_hash"),
+          },
+          height.compare,
+        )
 
   let client_datum =
     ClientDatum {
@@ -1074,7 +1074,7 @@ fn setup_validate_referred_connection() -> (
         name: "mock handler name",
       },
       channel_keys.channel_prefix,
-      1,
+      "1",
     )
 
   let connection_id = "connection-0"

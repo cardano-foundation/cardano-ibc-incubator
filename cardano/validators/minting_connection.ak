@@ -40,6 +40,7 @@ use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerConnOpenInit, HandlerConnOpenTry,
 }
+use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator(
@@ -105,13 +106,16 @@ validator(
         trace @"mint_connection: client status is active"
 
         expect Some(connection_token) =
-          validator_utils.validate_mint(
-            mint,
-            connection_minting_policy_id,
-            handler_auth_token,
-            conn_keys.connection_prefix,
+          string_utils.int_to_string(
             handler_datum.state.next_connection_sequence,
           )
+            |> validator_utils.validate_mint(
+                mint,
+                connection_minting_policy_id,
+                handler_auth_token,
+                conn_keys.connection_prefix,
+                _,
+              )
         trace @"mint_connection: validator_utils.validate_mint"
 
         expect auth.contain_auth_token(connection_output, connection_token)
@@ -165,13 +169,16 @@ validator(
         trace @"mint_connection: client status is active\n"
 
         expect Some(connection_token) =
-          validator_utils.validate_mint(
-            mint,
-            connection_minting_policy_id,
-            handler_auth_token,
-            conn_keys.connection_prefix,
+          string_utils.int_to_string(
             handler_datum.state.next_connection_sequence,
           )
+            |> validator_utils.validate_mint(
+                mint,
+                connection_minting_policy_id,
+                handler_auth_token,
+                conn_keys.connection_prefix,
+                _,
+              )
         trace @"mint_connection: validator_utils.validate_mint\n"
 
         expect auth.contain_auth_token(connection_output, connection_token)
@@ -439,11 +446,12 @@ test conn_open_init_succeed() {
 
   //====================arrange outputs==================================
   let conn_token_name =
-    auth.generate_token_name(
-      mock.handler_token,
-      conn_keys.connection_prefix,
-      mock.connection_sequence,
-    )
+    string_utils.int_to_string(mock.connection_sequence)
+      |> auth.generate_token_name(
+          mock.handler_token,
+          conn_keys.connection_prefix,
+          _,
+        )
   let conn_token =
     AuthToken {
       policy_id: mock.connection_minting_policy_id,
@@ -493,15 +501,15 @@ test conn_open_init_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.connection_minting_policy_id),
-           mint_conn_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.connection_minting_policy_id),
+          mint_conn_redeemer,
+          validator_utils.compare_purpose,
+        )
 
   //==========================arrange context=========================
   let context =

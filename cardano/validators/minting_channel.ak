@@ -49,6 +49,7 @@ use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerChanOpenInit, HandlerChanOpenTry,
 }
+use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator(
@@ -132,13 +133,14 @@ validator(
         trace @"mint_channel: client status is active\n"
 
         expect Some(channel_token) =
-          validator_utils.validate_mint(
-            mint,
-            channel_minting_policy_id,
-            handler_token,
-            channel_keys.channel_prefix,
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> validator_utils.validate_mint(
+                mint,
+                channel_minting_policy_id,
+                handler_token,
+                channel_keys.channel_prefix,
+                _,
+              )
         trace @"mint_channel: validator_utils.validate_mint\n"
 
         expect auth.contain_auth_token(channel_output, channel_token)
@@ -152,9 +154,8 @@ validator(
         trace @"mint_channel: channel datum is initialized valid\n"
 
         let channel_id =
-          channel_keys.format_channel_identifier(
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> channel_keys.format_channel_identifier()
 
         expect Some(ibc_module_redeemer) =
           validator_utils.extract_module_redeemer(
@@ -227,13 +228,14 @@ validator(
         trace @"mint_channel: client status is active\n"
 
         expect Some(channel_token) =
-          validator_utils.validate_mint(
-            mint,
-            channel_minting_policy_id,
-            handler_token,
-            channel_keys.channel_prefix,
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> validator_utils.validate_mint(
+                mint,
+                channel_minting_policy_id,
+                handler_token,
+                channel_keys.channel_prefix,
+                _,
+              )
         trace @"mint_channel: validator_utils.validate_mint\n"
 
         expect auth.contain_auth_token(channel_output, channel_token)
@@ -258,9 +260,8 @@ validator(
         trace @"mint_channel: channel init proof is valid\n"
 
         let channel_id =
-          channel_keys.format_channel_identifier(
-            handler_datum.state.next_channel_sequence,
-          )
+          string_utils.int_to_string(handler_datum.state.next_channel_sequence)
+            |> channel_keys.format_channel_identifier()
 
         expect Some(ibc_module_redeemer) =
           validator_utils.extract_module_redeemer(
@@ -606,11 +607,12 @@ test succeed_chan_open_init() {
 
   //========================arrange outputs=======================
   let channel_token_name =
-    auth.generate_token_name(
-      mock_data.handler_token,
-      channel_keys.channel_prefix,
-      mock_data.channel_sequence,
-    )
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> auth.generate_token_name(
+          mock_data.handler_token,
+          channel_keys.channel_prefix,
+          _,
+        )
   let channel_token =
     AuthToken {
       policy_id: mock_data.channel_minting_policy_id,
@@ -666,26 +668,27 @@ test succeed_chan_open_init() {
     ChanOpenInit { handler_token: mock_data.handler_token }
 
   let channel_id =
-    channel_keys.format_channel_identifier(mock_data.channel_sequence)
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> channel_keys.format_channel_identifier()
   let module_redeemer: Redeemer = Callback(OnChanOpenInit { channel_id })
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.channel_minting_policy_id),
-           mint_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.channel_minting_policy_id),
+          mint_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =
@@ -725,11 +728,12 @@ test succeed_chan_open_try() {
 
   //========================arrange outputs=======================
   let channel_token_name =
-    auth.generate_token_name(
-      mock_data.handler_token,
-      channel_keys.channel_prefix,
-      mock_data.channel_sequence,
-    )
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> auth.generate_token_name(
+          mock_data.handler_token,
+          channel_keys.channel_prefix,
+          _,
+        )
   let channel_token =
     AuthToken {
       policy_id: mock_data.channel_minting_policy_id,
@@ -887,26 +891,27 @@ test succeed_chan_open_try() {
   let handler_redeemer: Redeemer = HandlerChanOpenTry
 
   let channel_id =
-    channel_keys.format_channel_identifier(mock_data.channel_sequence)
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> channel_keys.format_channel_identifier()
   let module_redeemer: Redeemer = Callback(OnChanOpenTry { channel_id })
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock_data.handler_input.output_reference),
-           handler_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.handler_input.output_reference),
+          handler_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Mint(mock_data.channel_minting_policy_id),
-           mint_channel_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Mint(mock_data.channel_minting_policy_id),
+          mint_channel_redeemer,
+          validator_utils.compare_script_purpose,
+        )
       |> dict.insert(
-           Spend(mock_data.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(mock_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   //==========================arrange context=========================
   let context =

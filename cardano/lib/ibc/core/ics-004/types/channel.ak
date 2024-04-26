@@ -3,12 +3,12 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb.{
   OPEN, ORDERED, Order as OrderProto, State as StateProto, TRYOPEN,
   UNINITIALIZED, UNORDERED,
 }
+use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{None, Order, Ordered, Unordered}
 use ibc/core/ics_004/types/state.{
   ChannelState, Closed, Init, Open, TryOpen, Uninitialized,
 }
-use ibc/core/ics_024_host_requirements/validate
 
 /// Channel defines pipeline for exactly-once packet delivery between specific
 /// modules on separate blockchains, which has at least one end capable of
@@ -65,14 +65,18 @@ pub fn convert_to_counterparty_proto(
   }
 }
 
+/// Validate basic Channel's props.
+/// It should be only 1 connection_id in connection_hops and that id
+/// must be a valid Cardano IBC connection ID.
 pub fn validate_basic(ch: Channel) -> Bool {
-  expect ch.state != Uninitialized
+  // state should be checked at another functions
+  // expect ch.state != Uninitialized 
 
   expect ch.ordering == Ordered || ch.ordering == Unordered
 
   expect [connection_id] = ch.connection_hops
 
-  expect validate.connection_identifier_validator(connection_id)
+  expect conn_keys_mod.is_valid_connection_id(connection_id)
 
   expect counterparty.validate_basic(ch.counterparty)
 

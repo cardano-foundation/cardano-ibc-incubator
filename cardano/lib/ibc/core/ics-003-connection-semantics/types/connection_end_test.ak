@@ -5,7 +5,7 @@ use ibc/core/ics_003_connection_semantics/types/state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 
-const mock_client_id = "client_id"
+const mock_client_id = "ibc_client-123"
 
 const mock_counterparty_client_id = "counterparty_client_id"
 
@@ -88,18 +88,21 @@ test test_validate_basic() {
     [
       (mock_connection_end, True),
       //connection end client id
-      (ConnectionEnd { ..mock_connection_end, client_id: "lowercaseid" }, True),
+      (ConnectionEnd { ..mock_connection_end, client_id: "lowercaseid" }, False),
       (
         ConnectionEnd { ..mock_connection_end, client_id: "._+-#[]<>._+-#[]<>" },
-        True,
+        False,
       ),
       (
         ConnectionEnd { ..mock_connection_end, client_id: "lower._+-#[]<>" },
-        True,
+        False,
       ),
-      (ConnectionEnd { ..mock_connection_end, client_id: "1234567890" }, True),
-      (ConnectionEnd { ..mock_connection_end, client_id: "NOTLOWERCASE" }, True),
-      (ConnectionEnd { ..mock_connection_end, client_id: "1234567890" }, True),
+      (ConnectionEnd { ..mock_connection_end, client_id: "1234567890" }, False),
+      (
+        ConnectionEnd { ..mock_connection_end, client_id: "NOTLOWERCASE" },
+        False,
+      ),
+      (ConnectionEnd { ..mock_connection_end, client_id: "1234567890" }, False),
       (
         ConnectionEnd { ..mock_connection_end, client_id: "               " },
         False,

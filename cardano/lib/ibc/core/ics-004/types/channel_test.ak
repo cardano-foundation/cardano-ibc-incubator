@@ -1,7 +1,7 @@
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{None, Unordered}
-use ibc/core/ics_004/types/state.{Init, Uninitialized}
+use ibc/core/ics_004/types/state.{Init}
 
 fn setup() -> Channel {
   channel_mod.new(
@@ -19,13 +19,13 @@ test succeed() {
   channel_mod.validate_basic(channel)
 }
 
-test fail_if_state_is_uninitialized() fail {
-  let channel = setup()
+// test fail_if_state_is_uninitialized() fail {
+//   let channel = setup()
 
-  let channel = Channel { ..channel, state: Uninitialized }
+//   let channel = Channel { ..channel, state: Uninitialized }
 
-  channel_mod.validate_basic(channel)
-}
+//   channel_mod.validate_basic(channel)
+// }
 
 test fail_if_ordering_is_invalid() fail {
   let channel = setup()

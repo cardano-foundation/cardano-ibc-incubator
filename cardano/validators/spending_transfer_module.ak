@@ -504,8 +504,10 @@ fn validate_channel_open_init(
   expect chan_handler_token == handler_token
 
   // validate and extract channel outputs
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -550,8 +552,9 @@ fn validate_channel_open_try(
   expect chan_handler_token == handler_token
 
   // validate and extract channel outputs
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -585,8 +588,9 @@ fn validate_channel_open_ack(
   port_id: ByteArray,
   channel_id: ByteArray,
 ) -> Option<(Channel, ByteArray)> {
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -631,8 +635,9 @@ fn validate_channel_open_confirm(
   port_id: ByteArray,
   channel_id: ByteArray,
 ) -> Option<Channel> {
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -675,8 +680,9 @@ fn extract_channel_redeemer(
   handler_token: AuthToken,
   channel_id: ByteArray,
 ) -> Option<SpendChannelRedeemer> {
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
       handler_token,
@@ -872,8 +878,9 @@ fn setup() -> MockData {
       output: module_output,
     }
 
-  expect Some(channel_sequence) =
-    channel_keys.parse_channel_id_sequence(channel_id)
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
 
   let channel_token_name =
     auth.generate_token_name(
@@ -1003,15 +1010,15 @@ test on_chan_open_init_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.channel_minting_policy_id),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.channel_minting_policy_id),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1066,15 +1073,15 @@ test on_chan_open_try_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.channel_minting_policy_id),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.channel_minting_policy_id),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1128,15 +1135,15 @@ test on_chan_open_ack_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1186,15 +1193,15 @@ test on_chan_open_confirm_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1278,20 +1285,20 @@ test on_recv_packet_mint_voucher_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.voucher_minting_policy_id),
-           mint_voucher_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.voucher_minting_policy_id),
+          mint_voucher_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1400,15 +1407,15 @@ test on_recv_packet_unescrow_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1490,15 +1497,15 @@ test transfer_escrow_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1602,20 +1609,20 @@ test transfer_burn_voucher_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.voucher_minting_policy_id),
-           mint_voucher_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.voucher_minting_policy_id),
+          mint_voucher_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1699,20 +1706,20 @@ test on_timeout_packet_mint_voucher_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.voucher_minting_policy_id),
-           mint_voucher_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.voucher_minting_policy_id),
+          mint_voucher_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1812,15 +1819,15 @@ test on_timeout_packet_unescrow_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1908,15 +1915,15 @@ test on_acknowledgement_packet_result_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -2010,20 +2017,20 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Mint(mock.voucher_minting_policy_id),
-           mint_voucher_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Mint(mock.voucher_minting_policy_id),
+          mint_voucher_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -2133,15 +2140,15 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(mock.module_input.output_reference),
-           module_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
       |> dict.insert(
-           Spend(mock.channel_input.output_reference),
-           channel_redeemer,
-           validator_utils.compare_purpose,
-         )
+          Spend(mock.channel_input.output_reference),
+          channel_redeemer,
+          validator_utils.compare_purpose,
+        )
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 

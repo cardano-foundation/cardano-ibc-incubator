@@ -27,6 +27,7 @@ use ibc/core/ics_025_handler_interface/handler_datum.{
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient as HandlerCreateClient, HandlerOperator,
 }
+use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
@@ -42,10 +43,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     expect Some(handler_input) =
       inputs
         |> list.find(
-             fn(input) {
-               input.output |> auth.contain_auth_token(handler_auth_token)
-             },
-           )
+            fn(input) {
+              input.output |> auth.contain_auth_token(handler_auth_token)
+            },
+          )
 
     // spent handler redeemer is CreateClient operator
     expect Some(spent_handler_redeemer) =
@@ -61,11 +62,8 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
 
     // mint just 1 client_state token
     let client_token_name =
-      auth.generate_token_name(
-        handler_auth_token,
-        client_prefix,
-        spent_handler_datum.state.next_client_sequence,
-      )
+      string_utils.int_to_string(spent_handler_datum.state.next_client_sequence)
+        |> auth.generate_token_name(handler_auth_token, client_prefix, _)
     let client_token =
       AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
     expect mint |> auth.mint_auth_token(client_token)
@@ -117,7 +115,7 @@ test test_create_valid_client() {
       policy_id: #"fa413b4f069d5459decaf19a04f64665ad9023b5d3070bf0589c54c8",
       name: handler_token_name,
     }
-  let mock_client_id = 0
+  let mock_client_sequence = 0
   let mock_spent_output_reference =
     OutputReference {
       transaction_id: TransactionId { hash: "tx_hash" },
@@ -128,7 +126,7 @@ test test_create_valid_client() {
   let handler_datum =
     HandlerDatum {
       state: HandlerState {
-        next_client_sequence: mock_client_id,
+        next_client_sequence: mock_client_sequence,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
@@ -157,11 +155,8 @@ test test_create_valid_client() {
 
   //========================arrange mint=======================
   let client_token_name =
-    auth.generate_token_name(
-      mock_handler_auth_token,
-      client_prefix,
-      mock_client_id,
-    )
+    string_utils.int_to_string(mock_client_sequence)
+      |> auth.generate_token_name(mock_handler_auth_token, client_prefix, _)
 
   let mint =
     value.from_asset(mock_client_mint_policy_id, client_token_name, 1)

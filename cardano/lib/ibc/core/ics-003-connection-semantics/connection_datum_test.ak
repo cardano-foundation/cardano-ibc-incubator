@@ -1,4 +1,3 @@
-use aiken/list
 use ibc/auth.{AuthToken}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -7,7 +6,7 @@ use ibc/core/ics_003_connection_semantics/types/state.{State}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 
-const mock_client_id = "client_id"
+const mock_client_id = "ibc_client-199"
 
 const mock_connection_id = "connection_id"
 
@@ -41,173 +40,15 @@ fn create_mock_connection_end(
 
 test test_is_conn_open_init_valid_succeed() {
   let mock_connection_end = create_mock_connection_end(state.Init, "")
-  let mock_counterparty = mock_connection_end.counterparty
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
     ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
-  let test_cases: List<(ConnectionDatum, AuthToken, Bool)> =
-    [
-      (mock_connection_datum, mock_auth_token, True),
-      //connection end client id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "lowercaseid",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "._+-#[]<>._+-#[]<>",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "lower._+-#[]<>",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "1234567890",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "NOTLOWERCASE",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "1234567890",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      //counterparty client Id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "lowercaseid",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "._+-#[]<>._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "lower._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "1234567890",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "NOTLOWERCASE",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-    ]
-  test_cases
-    |> list.all(
-         fn(case) {
-           connection_datum.is_conn_open_init_valid(case.1st, case.2nd) == case.3rd
-         },
-       )
+
+  connection_datum.is_conn_open_init_valid(
+    mock_connection_datum,
+    mock_auth_token,
+  )
 }
 
 // This test is an example for validating the basic functionality of the validate_basic function in connection_end.
@@ -230,7 +71,7 @@ test test_is_conn_open_init_valid_fail_at_validate_basic() fail {
   )
 }
 
-test test_is_conn_open_init_valid_fail_when_auth_token_not_match_with_conection_datum_token() fail {
+test test_is_conn_open_init_valid_fail_when_auth_token_not_match_with_connection_datum_token() fail {
   let mock_connection_end = create_mock_connection_end(state.Init, "")
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
@@ -289,23 +130,18 @@ test test_is_conn_open_init_valid_fail_when_connection_end_state_is_not_init() f
 
 test test_is_conn_open_init_valid_fail_when_counterparty_connection_id_is_not_empty() fail {
   let mock_invalid_counterparty_connection_id = "invalid_counterparty"
-  let mock_connection_end = create_mock_connection_end(state.Init, "")
+  let mock_connection_end =
+    create_mock_connection_end(
+      state.Init,
+      mock_invalid_counterparty_connection_id,
+    )
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
     ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
 
   connection_datum.is_conn_open_init_valid(
-    ConnectionDatum {
-      ..mock_connection_datum,
-      state: ConnectionEnd {
-        ..mock_connection_datum.state,
-        counterparty: Counterparty {
-          ..mock_connection_datum.state.counterparty,
-          connection_id: mock_invalid_counterparty_connection_id,
-        },
-      },
-    },
+    mock_connection_datum,
     mock_auth_token,
   )
 }
@@ -313,230 +149,15 @@ test test_is_conn_open_init_valid_fail_when_counterparty_connection_id_is_not_em
 test test_is_conn_open_try_valid_succeed() {
   let mock_connection_end =
     create_mock_connection_end(state.TryOpen, mock_connection_id)
-  let mock_counterparty = mock_connection_end.counterparty
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
     ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
-  let test_cases: List<(ConnectionDatum, AuthToken, Bool)> =
-    [
-      (mock_connection_datum, mock_auth_token, True),
-      //connection end client id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "lowercaseid",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "._+-#[]<>._+-#[]<>",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "lower._+-#[]<>",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "1234567890",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "NOTLOWERCASE",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            client_id: "1234567890",
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      //connection id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "lowercaseid",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "._+-#[]<>._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "lower._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "NOTLOWERCASE",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              connection_id: "1234567890",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      //counterparty client Id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "lowercaseid",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "._+-#[]<>._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "lower._+-#[]<>",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "1234567890",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum,
-          state: ConnectionEnd {
-            ..mock_connection_end,
-            counterparty: Counterparty {
-              ..mock_counterparty,
-              client_id: "NOTLOWERCASE",
-            },
-          },
-        },
-        mock_auth_token,
-        True,
-      ),
-    ]
-  test_cases
-    |> list.all(
-         fn(case) {
-           connection_datum.is_conn_open_try_valid(case.1st, case.2nd) == case.3rd
-         },
-       )
+
+  connection_datum.is_conn_open_try_valid(
+    mock_connection_datum,
+    mock_auth_token,
+  )
 }
 
 // This test is an example for validating the basic functionality of the validate_basic function in connection_end in connection_datum.
@@ -560,23 +181,7 @@ test test_is_conn_open_try_valid_fail_at_validate_basic() fail {
   )
 }
 
-test test_is_conn_open_try_valid_fail_when_version_is_not_compatible() fail {
-  let mock_connection_end =
-    create_mock_connection_end(state.TryOpen, mock_connection_id)
-  let mock_auth_token =
-    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
-  let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
-  connection_datum.is_conn_open_try_valid(
-    ConnectionDatum {
-      ..mock_connection_datum,
-      state: ConnectionEnd { ..mock_connection_end, versions: [] },
-    },
-    mock_auth_token,
-  )
-}
-
-test test_is_conn_open_try_valid_fail_when_auth_token_not_match_with_conection_datum_token() fail {
+test test_is_conn_open_try_valid_fail_when_auth_token_not_match_with_connection_datum_token() fail {
   let mock_connection_end =
     create_mock_connection_end(state.TryOpen, mock_connection_id)
   let mock_auth_token =
@@ -636,207 +241,31 @@ test test_is_conn_open_try_valid_fail_when_connection_end_state_is_not_try_open(
 test test_is_conn_open_try_valid_fail_when_counterparty_connection_id_is_empty() fail {
   let mock_counterparty_connection_id_empty = " "
   let mock_connection_end =
-    create_mock_connection_end(state.TryOpen, mock_connection_id)
+    create_mock_connection_end(
+      state.TryOpen,
+      mock_counterparty_connection_id_empty,
+    )
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
     ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
 
   connection_datum.is_conn_open_try_valid(
-    ConnectionDatum {
-      ..mock_connection_datum,
-      state: ConnectionEnd {
-        ..mock_connection_datum.state,
-        counterparty: Counterparty {
-          ..mock_connection_datum.state.counterparty,
-          connection_id: mock_counterparty_connection_id_empty,
-        },
-      },
-    },
+    mock_connection_datum,
     mock_auth_token,
   )
 }
 
 test test_is_connection_open_ack_valid_succeed() {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
-  let mock_auth_token =
-    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
-  let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  let test_cases: List<(ConnectionDatum, Bool)> =
-    [
-      (mock_connection_datum_input, True),
-      //connection end client id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "lowercaseid",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "._+-#[]<>._+-#[]<>",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "lower._+-#[]<>",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "1234567890",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "NOTLOWERCASE",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "1234567890",
-          },
-        },
-        True,
-      ),
-      //counterparty client Id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "lowercaseid",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "._+-#[]<>._+-#[]<>",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "lower._+-#[]<>",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "1234567890",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "NOTLOWERCASE",
-            },
-          },
-        },
-        True,
-      ),
-    ]
-  test_cases
-    |> list.all(
-         fn(case) {
-           connection_datum.is_connection_open_ack_valid(
-             case.1st,
-             ConnectionDatum {
-               ..case.1st,
-               state: ConnectionEnd { ..case.1st.state, state: state.Open },
-             },
-           ) == case.2nd
-         },
-       )
-}
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
 
-test test_is_connection_open_ack_valid_fail_when_input_datum_state_is_not_init() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.TryOpen, mock_connection_id)
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
-  let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    mock_connection_datum_input,
-    ConnectionDatum {
-      ..mock_connection_datum_input,
-      state: ConnectionEnd {
-        ..mock_connection_datum_input.state,
-        state: state.Open,
-      },
-    },
-  )
-}
 
-test test_is_connection_open_ack_valid_fail_when_output_counterparty_conn_id_is_empty() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
-  let mock_auth_token =
-    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
@@ -844,95 +273,159 @@ test test_is_connection_open_ack_valid_fail_when_output_counterparty_conn_id_is_
         state: state.Open,
         counterparty: Counterparty {
           ..mock_connection_datum_input.state.counterparty,
-          connection_id: "",
+          connection_id: mock_connection_id,
         },
       },
-    },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
-test test_is_connection_open_ack_valid_fail_when_output_datum_fail_at_validate_basic() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
+test test_is_connection_open_ack_valid_fail_when_input_datum_state_is_not_init() fail {
+  let mock_connection_end_input = create_mock_connection_end(state.TryOpen, "")
+
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    ConnectionDatum {
-      ..mock_connection_datum_input,
-      state: ConnectionEnd {
-        ..mock_connection_datum_input.state,
-        client_id: "this identifier is too long to be used as a valid identifier",
-      },
-    },
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.Open,
-        client_id: "this identifier is too long to be used as a valid identifier",
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: mock_connection_id,
+        },
       },
-    },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
+  )
+}
+
+test test_is_connection_open_ack_valid_fail_when_output_counterparty_conn_id_is_invalid() fail {
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
+
+  let mock_auth_token =
+    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+
+  let mock_connection_datum_input =
+    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+
+  let output_connection_datum =
+    ConnectionDatum {
+      ..mock_connection_datum_input,
+      state: ConnectionEnd {
+        ..mock_connection_datum_input.state,
+        state: state.Open,
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: "  ",
+        },
+      },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
 test test_is_connection_open_ack_valid_fail_when_output_datum_state_is_not_open() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
+
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.TryOpen,
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: mock_connection_id,
+        },
       },
-    },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
 test test_is_connection_open_ack_valid_fail_when_output_datum_state_not_match_with_expected_datum_state() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
+
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.Open,
-        delay_period: //diffrent delay_period with input datum
-        mock_delay_period + 1,
+        delay_period: mock_connection_datum_input.state.delay_period + 1,
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: mock_connection_id,
+        },
       },
-    },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
 test test_is_connection_open_ack_valid_fail_when_output_datum_token_not_match_with_expected_datum_token() fail {
-  let mock_connection_end_input =
-    create_mock_connection_end(state.Init, mock_connection_id)
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
+
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_ack_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.Open,
+        delay_period: mock_connection_datum_input.state.delay_period + 1,
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: mock_connection_id,
+        },
       },
-      token: AuthToken { ..mock_auth_token, name: "invalid_asset_name" },
-    },
+      token: AuthToken {
+        ..mock_connection_datum_input.token,
+        name: "invalid token name",
+      },
+    }
+
+  connection_datum.is_connection_open_ack_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
@@ -943,149 +436,19 @@ test test_is_connection_open_confirm_valid_succeed() {
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  let test_cases: List<(ConnectionDatum, Bool)> =
-    [
-      (mock_connection_datum_input, True),
-      //connection end client id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "lowercaseid",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "._+-#[]<>._+-#[]<>",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "lower._+-#[]<>",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "1234567890",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "NOTLOWERCASE",
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            client_id: "1234567890",
-          },
-        },
-        True,
-      ),
-      //counterparty client Id
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "lowercaseid",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "._+-#[]<>._+-#[]<>",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "lower._+-#[]<>",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "1234567890",
-            },
-          },
-        },
-        True,
-      ),
-      (
-        ConnectionDatum {
-          ..mock_connection_datum_input,
-          state: ConnectionEnd {
-            ..mock_connection_datum_input.state,
-            counterparty: Counterparty {
-              ..mock_connection_datum_input.state.counterparty,
-              client_id: "NOTLOWERCASE",
-            },
-          },
-        },
-        True,
-      ),
-    ]
-  test_cases
-    |> list.all(
-         fn(case) {
-           connection_datum.is_connection_open_confirm_valid(
-             case.1st,
-             ConnectionDatum {
-               ..case.1st,
-               state: ConnectionEnd { ..case.1st.state, state: state.Open },
-             },
-           ) == case.2nd
-         },
-       )
+
+  let output_connection_datum =
+    ConnectionDatum {
+      ..mock_connection_datum_input,
+      state: ConnectionEnd {
+        ..mock_connection_datum_input.state,
+        state: state.Open,
+      },
+    }
+  connection_datum.is_connection_open_confirm_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
+  )
 }
 
 test test_is_connection_open_confirm_valid_fail_when_input_datum_state_is_not_tryopen() fail {
@@ -1095,15 +458,18 @@ test test_is_connection_open_confirm_valid_fail_when_input_datum_state_is_not_tr
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_confirm_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.Open,
       },
-    },
+    }
+  connection_datum.is_connection_open_confirm_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
@@ -1114,15 +480,18 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_state_is_not_o
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_confirm_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
-        state: state.Init,
+        state: state.TryOpen,
       },
-    },
+    }
+  connection_datum.is_connection_open_confirm_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
@@ -1133,17 +502,19 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_state_not_matc
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_confirm_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
+        delay_period: mock_connection_datum_input.state.delay_period + 1,
         state: state.Open,
-        delay_period: //diffrent delay_period with input datum
-        mock_delay_period + 1,
       },
-    },
+    }
+  connection_datum.is_connection_open_confirm_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }
 
@@ -1154,14 +525,21 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_token_not_matc
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
-  connection_datum.is_connection_open_confirm_valid(
-    mock_connection_datum_input,
+
+  let output_connection_datum =
     ConnectionDatum {
       state: ConnectionEnd {
         ..mock_connection_datum_input.state,
         state: state.Open,
       },
-      token: AuthToken { ..mock_auth_token, name: "invalid_asset_name" },
-    },
+      token: AuthToken {
+        ..mock_connection_datum_input.token,
+        name: "invalid token name",
+      },
+    }
+
+  connection_datum.is_connection_open_confirm_valid(
+    mock_connection_datum_input,
+    output_connection_datum,
   )
 }

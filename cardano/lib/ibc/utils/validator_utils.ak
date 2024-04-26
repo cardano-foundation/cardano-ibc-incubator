@@ -229,7 +229,7 @@ pub fn validate_mint(
   minting_policy_id: PolicyId,
   handler_token: AuthToken,
   token_name_prefix: ByteArray,
-  sequence: Int,
+  sequence: ByteArray,
 ) -> Option<AuthToken> {
   let token_name =
     auth.generate_token_name(handler_token, token_name_prefix, sequence)

@@ -94,7 +94,7 @@ test fail_if_output_channel_counterparty_channel_id_is_null() fail {
   channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
 }
 
-test fail_if_output_channel_validate_basic_invalid() fail {
+test fail_if_output_channel_counterparty_channel_id_is_invalid() fail {
   let (input_datum, output_datum) = setup()
 
   let output_datum =
