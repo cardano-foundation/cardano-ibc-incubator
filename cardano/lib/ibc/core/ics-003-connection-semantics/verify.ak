@@ -222,7 +222,7 @@ pub fn verify_packet_receipt_absence(
   )
 }
 
-fn get_block_delay(connection: ConnectionEnd) -> Int {
+pub fn get_block_delay(connection: ConnectionEnd) -> Int {
   let expected_time_per_block = params.max_expected_time_per_block
   let time_delay = connection.delay_period
   math.ceil_divide_uinteger(time_delay, expected_time_per_block)

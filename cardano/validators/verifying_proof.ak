@@ -1,206 +1,72 @@
 use aiken/dict
 use aiken/transaction.{Mint, ScriptContext}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
-use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
-use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
+use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyMembership, VerifyNonMembership, VerifyProofRedeemer,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
-use ibc/core/ics_003_connection_semantics/types/params
 use ibc/core/ics_003_connection_semantics/types/state as conn_state_mod
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_003_connection_semantics/verify_proof_redeemer.{
-  VerifyChannelState, VerifyPacketAcknowledgement, VerifyPacketCommitment,
-  VerifyPacketReceiptAbsence, VerifyProofRedeemer,
-}
-use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
-use ibc/core/ics_004/types/channel
+use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, CommitmentProof_Nonexist,
   ExistenceProof, InnerOp, InnerSpec, LeafOp, NonExistenceProof, ProofSpec,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_024_host_requirements/packet_keys
-use ibc/utils/math
 
 validator {
   fn verify_proof(redeemer: VerifyProofRedeemer, _context: Data) -> Bool {
     when redeemer is {
-      VerifyChannelState {
-        client_datum_state,
-        connection,
-        port_id,
-        channel_id,
+      VerifyMembership {
+        cs,
+        cons_state,
+        height,
+        delay_time_period,
+        delay_block_period,
         proof,
-        proof_height,
-        channel,
-      } -> {
-        let merkle_path =
-          merkle.apply_prefix(
-            connection.counterparty.prefix,
-            merkle.new_merkle_path(
-              [channel_keys.channel_path(port_id, channel_id)],
-            ),
-          )
-        expect Some(consensus_state) =
-          dict.from_list(
-            client_datum_state.consensus_states,
-            height_mod.compare,
-          )
-            |> dict.get(proof_height)
-        client_state.verify_membership(
-          client_datum_state.client_state,
-          consensus_state,
-          proof_height,
-          0,
-          0,
+        path,
+        value,
+      } ->
+        client_state_mod.verify_membership(
+          cs,
+          cons_state,
+          height,
+          delay_time_period,
+          delay_block_period,
           proof,
-          merkle_path,
-          channel_pb.marshal_for_channel(
-            Some(channel.convert_to_channel_proto(channel)),
-          ),
+          path,
+          value,
         )
-      }
 
-      VerifyPacketCommitment {
-        client_datum_state,
-        connection,
-        proof_height,
+      VerifyNonMembership {
+        cs,
+        cons_state,
+        height,
+        delay_time_period,
+        delay_block_period,
         proof,
-        port_id,
-        channel_id,
-        sequence,
-        commitment_bytes,
-      } -> {
-        let time_delay = connection.delay_period
-        let block_delay = get_block_delay(connection)
-        let merkle_path =
-          merkle.apply_prefix(
-            connection.counterparty.prefix,
-            merkle.new_merkle_path(
-              [
-                packet_keys.packet_commitment_path(
-                  port_id,
-                  channel_id,
-                  sequence,
-                ),
-              ],
-            ),
-          )
-        expect Some(consensus_state) =
-          dict.from_list(
-            client_datum_state.consensus_states,
-            height_mod.compare,
-          )
-            |> dict.get(proof_height)
-        client_state.verify_membership(
-          client_datum_state.client_state,
-          consensus_state,
-          proof_height,
-          time_delay,
-          block_delay,
+        path,
+      } ->
+        client_state_mod.verify_non_membership(
+          cs,
+          cons_state,
+          height,
+          delay_time_period,
+          delay_block_period,
           proof,
-          merkle_path,
-          commitment_bytes,
+          path,
         )
-      }
-
-      VerifyPacketAcknowledgement {
-        client_datum_state,
-        connection,
-        proof_height,
-        proof,
-        port_id,
-        channel_id,
-        sequence,
-        acknowledgement,
-      } -> {
-        let time_delay = connection.delay_period
-        let block_delay = get_block_delay(connection)
-        let merkle_path =
-          merkle.apply_prefix(
-            connection.counterparty.prefix,
-            merkle.new_merkle_path(
-              [
-                packet_keys.packet_acknowledgement_path(
-                  port_id,
-                  channel_id,
-                  sequence,
-                ),
-              ],
-            ),
-          )
-
-        expect Some(consensus_state) =
-          dict.from_list(
-            client_datum_state.consensus_states,
-            height_mod.compare,
-          )
-            |> dict.get(proof_height)
-
-        let commit_ack =
-          acknowledgement_mod.commit_acknowledgement(acknowledgement)
-
-        client_state.verify_membership(
-          client_datum_state.client_state,
-          consensus_state,
-          proof_height,
-          time_delay,
-          block_delay,
-          proof,
-          merkle_path,
-          commit_ack,
-        )
-      }
-
-      VerifyPacketReceiptAbsence {
-        client_datum_state,
-        connection,
-        proof_height,
-        proof,
-        port_id,
-        channel_id,
-        sequence,
-      } -> {
-        let time_delay = connection.delay_period
-        let block_delay = get_block_delay(connection)
-        let merkle_path =
-          merkle.apply_prefix(
-            connection.counterparty.prefix,
-            merkle.new_merkle_path(
-              [packet_keys.packet_receipt_path(port_id, channel_id, sequence)],
-            ),
-          )
-        expect Some(consensus_state) =
-          dict.from_list(
-            client_datum_state.consensus_states,
-            height_mod.compare,
-          )
-            |> dict.get(proof_height)
-        client_state.verify_non_membership(
-          client_datum_state.client_state,
-          consensus_state,
-          proof_height,
-          time_delay,
-          block_delay,
-          proof,
-          merkle_path,
-        )
-      }
 
       _ -> False
     }
   }
-}
-
-fn get_block_delay(connection: ConnectionEnd) -> Int {
-  let expected_time_per_block = params.max_expected_time_per_block
-  let time_delay = connection.delay_period
-  math.ceil_divide_uinteger(time_delay, expected_time_per_block)
 }
 
 //==========================================Test================================================
@@ -339,7 +205,7 @@ fn insert_proof_cons_state(
   }
 }
 
-test verify_packet_absence_succeed() {
+test verify_non_membership_succeed() {
   let mock = setup()
 
   let proof_cons_state =
@@ -468,16 +334,185 @@ test verify_packet_absence_succeed() {
       ],
     }
 
+  let merkle_path =
+    merkle.apply_prefix(
+      MerklePrefix { key_prefix: "ibc" },
+      merkle.new_merkle_path(
+        [packet_keys.packet_receipt_path(mock.port_id, mock.channel_id, 1)],
+      ),
+    )
+
   //========================arrange redeemer=======================
   let redeemer =
-    VerifyPacketReceiptAbsence {
-      client_datum_state,
-      connection: mock.connection,
-      proof_height: mock.proof_height,
+    VerifyNonMembership {
+      cs: client_datum_state.client_state,
+      cons_state: proof_cons_state,
+      height: mock.proof_height,
+      delay_time_period: 0,
+      delay_block_period: 0,
       proof: proof_unreceived,
-      port_id: mock.port_id,
-      channel_id: mock.channel_id,
+      path: merkle_path,
+    }
+
+  //========================arrange context=======================
+  let context =
+    ScriptContext { purpose: Mint(""), transaction: transaction.placeholder() }
+
+  verify_proof(redeemer, context)
+}
+
+test verify_membership_succeed() {
+  let mock = setup()
+
+  let packet =
+    Packet {
       sequence: 1,
+      source_port: mock.port_id,
+      source_channel: mock.channel_id,
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+      data: "mock packet data",
+      timeout_height: Height { revision_number: 0, revision_height: 0 },
+      timeout_timestamp: 1735689600000000000,
+    }
+  let packet_commitment = packet_mod.commit_packet(packet)
+
+  let proof_cons_state =
+    ConsensusState {
+      timestamp: 1577923295000000000,
+      next_validators_hash: #"7c3af87e2c224be7f3b2d7b2ab467e69b1a4ef5947fbe76d55e9091e16172346",
+      root: MerkleRoot {
+        hash: #"11a648b10463e8a96c77976940ee316117bb8214bd380e267aa31cf39ef8a09a",
+      },
+    }
+
+  let client_datum_state =
+    insert_proof_cons_state(
+      mock.client_datum_state,
+      mock.proof_height,
+      proof_cons_state,
+    )
+
+  let proof_commitment =
+    MerkleProof {
+      proofs: [
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              key: #"636f6d6d69746d656e74732f706f7274732f706f72742d312f6368616e6e656c732f6368616e6e656c2d302f73657175656e6365732f31",
+              value: #"fa365cf5deedf3169bfe56010f101be23eac638d3bc9f43c7634f78ef718aa10",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"000224",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"020424205fd25b3dc1314970dcbf74075f9d165af4a185eea459128edf21cfacc14b9c9e20",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"04062420",
+                  suffix: #"2067b76c7b82d60ebee7f41dd11a02534c1a16efa70c217310356230dfd5ad0c20",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"060a2420",
+                  suffix: #"20f21e95601cbd0028a9c3c4effd8afbbe068f086ab152ec0edb9cde2fdd6c568f",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"08162420",
+                  suffix: #"2038afa1cc8688eedde1256daab2bff7aade39a6db7320d62f47581fb65d9e8024",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0a2424203dd3101284b12a1c86ec48897aaf11781985de6f1eb75fdb6c8011a7d3e4d2ad20",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0c462420617a9deebfac19d019bc9f7179c90ed228ee21d7330bc10568918f6f26cbb75320",
+                  suffix: #"",
+                },
+              ],
+            },
+          },
+        },
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              key: #"696263",
+              value: #"6cfc3a7872f9703bcd5027ba7197890652bf545bd77a4ae7fa8b780746c91e42",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"00",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0106b99c0d8119ff1edbcbe165d0f19337dbbc080e677c88e57aa2ae767ebf0f0f",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"102be2509e02c885c7493d6e0fa2792b08de6bcc7157707f39f39163f6e68efd",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01168116e3f4be1a4955b203aa979d29f890ccc0e6d2214f7125aa1f61e826b77b",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01ef0d5a163ae333b43e2956b2d9660e65aaa9a1e2f90b30a91d97b5d0f12fb1fc",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"04634f3eedce1a4677cef6f418f7671437db345ad7e26581393b7cc6e722a2c7",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }
+
+  let merkle_path =
+    merkle.apply_prefix(
+      MerklePrefix { key_prefix: "ibc" },
+      merkle.new_merkle_path(
+        [
+          packet_keys.packet_commitment_path(
+            packet.source_port,
+            packet.source_channel,
+            packet.sequence,
+          ),
+        ],
+      ),
+    )
+
+  //========================arrange redeemer=======================
+  let redeemer =
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: proof_cons_state,
+      height: mock.proof_height,
+      delay_time_period: 0,
+      delay_block_period: 0,
+      proof: proof_commitment,
+      path: merkle_path,
+      value: packet_commitment,
     }
 
   //========================arrange context=======================
