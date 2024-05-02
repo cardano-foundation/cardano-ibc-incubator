@@ -15,10 +15,6 @@ cd ../chains
 ./run-docker.sh
 # $GATEWAY_DIR="$SCRIPT_DIR/../gateway"
 
-cd ../cardano-node-services
-${DOCKER_COMPOSE_CMD} up -d --build
-
-
 cd ../gateway
 cp ./.env.example .env
 ${DOCKER_COMPOSE_CMD} up -d --build

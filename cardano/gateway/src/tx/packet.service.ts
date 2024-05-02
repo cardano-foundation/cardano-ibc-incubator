@@ -106,8 +106,6 @@ export class PacketService {
       } as unknown as MsgRecvPacketResponse;
       return response;
     } catch (error) {
-      console.error(error);
-
       this.logger.error(`recvPacket: ${error}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
