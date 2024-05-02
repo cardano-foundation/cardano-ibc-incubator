@@ -17,6 +17,9 @@ use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_st
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyMembership, VerifyProofRedeemer,
+}
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -46,6 +49,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -53,6 +57,7 @@ validator(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
 ) {
   fn acknowledge_packet(
     channel_token: AuthToken,
@@ -159,15 +164,15 @@ validator(
     trace @"acknowledge_packet: ack packet match commit packet"
 
     expect
-      verify_mod.verify_packet_acknowledgement(
-        client_datum.state,
+      validate_acknowledge_packet_proof(
         connection_datum.state,
+        client_datum.state,
         proof_height,
         proof_acked,
-        packet.destination_port,
-        packet.destination_channel,
-        packet.sequence,
+        packet,
         acknowledgement,
+        redeemers,
+        verify_proof_policy_id,
       )
     trace @"acknowledge_packet: packet proof is valid"
 
@@ -203,12 +208,64 @@ validator(
   }
 }
 
+fn validate_acknowledge_packet_proof(
+  connection: ConnectionEnd,
+  client_datum_state: ClientDatumState,
+  proof_height: Height,
+  proof: MerkleProof,
+  packet: Packet,
+  acknowledgement: ByteArray,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> Bool {
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.packet_acknowledgement_path(
+            packet.destination_port,
+            packet.destination_channel,
+            packet.sequence,
+          ),
+        ],
+      ),
+    )
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
+
+  expect
+    verify_proof_redeemer == VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+      value: commit_ack,
+    }
+
+  True
+}
+
 //==========================================Test================================================
 
 type MockData {
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   channel_minting_policy_id: PolicyId,
   chan_open_ack_policy_id: PolicyId,
@@ -455,6 +512,7 @@ fn setup() -> MockData {
     client_minting_policy_id,
     connection_minting_policy_id,
     port_minting_policy_id,
+    verify_proof_policy_id: "mock verify_proof_policy_id",
     spend_channel_script_hash: "mock spend_channel_script_hash",
     channel_minting_policy_id,
     chan_open_ack_policy_id: "mock chan_open_ack_policy_id",
@@ -667,13 +725,11 @@ test succeed_acknowledge_packet() {
       ],
     }
 
+  let acknowledgement =
+    #"7b22726573756c74223a226257396a6179426859327475623364735a57526e5a57316c626e513d227d"
+
   let spend_channel_redeemer =
-    AcknowledgePacket {
-      packet,
-      proof_acked,
-      proof_height,
-      acknowledgement: #"7b22726573756c74223a226257396a6179426859327475623364735a57526e5a57316c626e513d227d",
-    }
+    AcknowledgePacket { packet, proof_acked, proof_height, acknowledgement }
 
   let channel_id =
     chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
@@ -685,6 +741,49 @@ test succeed_acknowledge_packet() {
         acknowledgement: acknowledgement_mod.new_result_acknowledgement(#"01"),
       },
     )
+
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect connection_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(mock_data.connection_input.output)
+
+  let client_datum_state = client_datum.state
+  let connection = connection_datum.state
+
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.packet_acknowledgement_path(
+            packet.destination_port,
+            packet.destination_channel,
+            packet.sequence,
+          ),
+        ],
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
+
+  let verify_proof_redeemer =
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_acked,
+      path: merkle_path,
+      value: commit_ack,
+    }
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
@@ -701,6 +800,11 @@ test succeed_acknowledge_packet() {
       |> dict.insert(
           Mint(mock_data.acknowledge_packet_policy_id),
           mock_data.channel_token,
+          validator_utils.compare_script_purpose,
+        )
+      |> dict.insert(
+          Mint(mock_data.verify_proof_policy_id),
+          verify_proof_redeemer,
           validator_utils.compare_script_purpose,
         )
 
@@ -722,6 +826,7 @@ test succeed_acknowledge_packet() {
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
     mock_data.channel_token,
     context,
   )
