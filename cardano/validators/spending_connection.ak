@@ -3,7 +3,7 @@ use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptContext,
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
 }
 use aiken/transaction/credential.{Script}
@@ -11,15 +11,20 @@ use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/cardano_client/client_state as cardano_client
 use ibc/client/cardano_client/protos/cardano_pb.{
-  CardanoClientState, CardanoHeight, CardanoValidator, TokenConfigs,
+  AnyCardanoClientState, CardanoClientState, CardanoHeight, CardanoValidator,
+  TokenConfigs,
 }
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -31,17 +36,22 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version
-use ibc/core/ics_003_connection_semantics/verify as conn_verify
+use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, InnerSpec,
   LeafOp, ProofSpec,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
+use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
-validator(client_minting_policy_id: PolicyId) {
+validator(
+  client_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
+) {
   fn spend_connection(
     datum: ConnectionDatum,
     redeemer: SpendConnectionRedeemer,
@@ -49,7 +59,7 @@ validator(client_minting_policy_id: PolicyId) {
   ) -> Bool {
     let (spent_output, transaction) =
       validator_utils.extract_spending_context(context)
-    let Transaction { outputs, reference_inputs, validity_range, .. } =
+    let Transaction { outputs, reference_inputs, validity_range, redeemers, .. } =
       transaction
 
     expect spent_output |> auth.contain_auth_token(datum.token)
@@ -118,6 +128,8 @@ validator(client_minting_policy_id: PolicyId) {
             proof_try,
             proof_client,
             proof_height,
+            redeemers,
+            verify_proof_policy_id,
           )
         trace @"spend_connection: validate_conn_open_ack_proof"
 
@@ -177,6 +189,8 @@ fn validate_conn_open_ack_proof(
   proof_try: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect cardano_client.validate_self_client(counterparty_client_state)
 
@@ -196,23 +210,73 @@ fn validate_conn_open_ack_proof(
       connection.delay_period,
     )
 
-  expect
-    conn_verify.verify_connection_state(
-      client_datum_state,
-      connection,
-      expected_connection,
-      proof_try,
-      proof_height,
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let conn_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [connection_keys.connection_path(connection.counterparty.connection_id)],
+      ),
     )
 
-  expect
-    conn_verify.verify_client_state(
-      client_datum_state,
-      connection,
-      counterparty_client_state,
-      proof_client,
-      proof_height,
+  let client_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [client_keys.full_client_state_path(connection.counterparty.client_id)],
+      ),
     )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  let expected_connection_bz =
+    connection_pb.marshal_for_connection_end(
+      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+    )
+
+  let counterparty_client_state_bz =
+    cardano_pb.marshal_for_any_client_state(
+      Some(
+        AnyCardanoClientState {
+          type_url: "/ibc.clients.cardano.v1.ClientState",
+          value: Some(counterparty_client_state),
+        },
+      ),
+    )
+
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  expect
+    verify_proof_redeemer == BatchVerifyMembership {
+      items: [
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_try,
+          path: conn_merkle_path,
+          value: expected_connection_bz,
+        },
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_client,
+          path: client_merkle_path,
+          value: counterparty_client_state_bz,
+        },
+      ],
+    }
 
   True
 }
@@ -241,7 +305,7 @@ fn validate_conn_open_confirm_proof(
     )
 
   expect
-    conn_verify.verify_connection_state(
+    verify_mod.verify_connection_state(
       client_datum_state,
       connection,
       expected_connection,
@@ -255,7 +319,9 @@ fn validate_conn_open_confirm_proof(
 //================================================Test==============================================
 type MockData {
   client_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  connection_id: ByteArray,
   connection_token: AuthToken,
   handler_token: AuthToken,
   client_id: ByteArray,
@@ -402,7 +468,9 @@ fn setup() -> MockData {
 
   MockData {
     client_minting_policy_id,
+    verify_proof_policy_id: "mock verify_proof_policy_id",
     spend_connection_script_hash: "mock spend_connection_script_hash",
+    connection_id,
     connection_token,
     handler_token,
     client_id,
@@ -414,7 +482,7 @@ fn setup() -> MockData {
 fn build_output(datum: Data, token: AuthToken) -> Output {
   let output =
     Output {
-      address: credential.from_script("mock spend channel script hash"),
+      address: credential.from_script("mock script hash"),
       value: value.from_asset(token.policy_id, token.name, 1),
       datum: InlineDatum(datum),
       reference_script: None,
@@ -424,62 +492,18 @@ fn build_output(datum: Data, token: AuthToken) -> Output {
 }
 
 fn build_input(datum: Data, token: AuthToken) -> Input {
-  let channel_output = build_output(datum, token)
+  let output = build_output(datum, token)
 
   let input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock spent channel tx hash" },
+        transaction_id: TransactionId { hash: "mock tx hash" },
         output_index: 0,
       },
-      output: channel_output,
+      output,
     }
 
   input
-}
-
-fn update_client(
-  height: Height,
-  consensus_state: ConsensusState,
-  client_input: Input,
-) -> Input {
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_input.output)
-
-  let latest_height = {
-    let input_height =
-      client_state.get_latest_height(client_datum.state.client_state)
-    if height_mod.compare(height, input_height) == Greater {
-      height
-    } else {
-      input_height
-    }
-  }
-
-  let client_datum =
-    ClientDatum {
-      ..client_datum,
-      state: ClientDatumState {
-        client_state: ClientState {
-          ..client_datum.state.client_state,
-          latest_height: latest_height,
-        },
-        consensus_states: dict.from_list(
-          client_datum.state.consensus_states,
-          height_mod.compare,
-        )
-          |> dict.insert(height, consensus_state, height_mod.compare)
-          |> dict.to_list(),
-      },
-    }
-
-  let updated_input =
-    Input {
-      ..client_input,
-      output: Output { ..client_input.output, datum: InlineDatum(client_datum) },
-    }
-
-  updated_input
 }
 
 test conn_open_ack_succeed() {
@@ -519,7 +543,8 @@ test conn_open_ack_succeed() {
       },
     }
 
-  let client_input = update_client(proof_height, cons_state, mock.client_input)
+  let client_input =
+    test_utils.update_client(proof_height, cons_state, mock.client_input)
 
   let reference_inputs =
     [client_input]
@@ -867,13 +892,104 @@ test conn_open_ack_succeed() {
       proof_height,
     }
 
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+
+  let client_datum_state = client_datum.state
+  let connection = output_conn_datum.state
+
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let conn_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [connection_keys.connection_path(connection.counterparty.connection_id)],
+      ),
+    )
+
+  let client_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [client_keys.full_client_state_path(connection.counterparty.client_id)],
+      ),
+    )
+
+  let expected_counterparty =
+    counterparty.new_counterparty(
+      connection.client_id,
+      mock.connection_id,
+      merkle_prefix.new_merkle_prefix(default_merkle_prefix),
+    )
+
+  let expected_connection =
+    connection_end.new_connection_end(
+      connection_state.TryOpen,
+      connection.counterparty.client_id,
+      expected_counterparty,
+      connection.versions,
+      connection.delay_period,
+    )
+
+  let expected_connection_bz =
+    connection_pb.marshal_for_connection_end(
+      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+    )
+
+  let counterparty_client_state_bz =
+    cardano_pb.marshal_for_any_client_state(
+      Some(
+        AnyCardanoClientState {
+          type_url: "/ibc.clients.cardano.v1.ClientState",
+          value: Some(counterparty_client_state),
+        },
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  let verify_proof_redeemer =
+    BatchVerifyMembership {
+      items: [
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_try,
+          path: conn_merkle_path,
+          value: expected_connection_bz,
+        },
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_client,
+          path: client_merkle_path,
+          value: counterparty_client_state_bz,
+        },
+      ],
+    }
+
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
-           Spend(conn_input.output_reference),
-           connection_redeemer,
-           validator_utils.compare_script_purpose,
-         )
+          Spend(conn_input.output_reference),
+          connection_redeemer,
+          validator_utils.compare_script_purpose,
+        )
+      |> dict.insert(
+          Mint(mock.verify_proof_policy_id),
+          verify_proof_redeemer,
+          validator_utils.compare_script_purpose,
+        )
 
   expect connection_redeemer: SpendConnectionRedeemer = connection_redeemer
 
@@ -893,6 +1009,7 @@ test conn_open_ack_succeed() {
 
   spend_connection(
     mock.client_minting_policy_id,
+    mock.verify_proof_policy_id,
     input_conn_datum,
     connection_redeemer,
     context,
