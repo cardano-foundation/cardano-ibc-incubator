@@ -23,7 +23,7 @@ export class DbSyncService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @InjectEntityManager() private entityManager: EntityManager,
-  ) { }
+  ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
     const query = `
@@ -240,7 +240,8 @@ export class DbSyncService {
   }
 
   async findBlockByHeight(height: bigint): Promise<BlockDto> {
-    const query = 'SELECT block_no as height, slot_no as slot, epoch_no as epoch, id FROM block WHERE block_no = $1';
+    const query =
+      'SELECT block_no as height, slot_no as slot, epoch_no as epoch, id, hash, time FROM block WHERE block_no = $1';
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
@@ -251,10 +252,12 @@ export class DbSyncService {
     }
 
     const blockDto = new BlockDto();
-    blockDto.height = results[0].height;
-    blockDto.slot = results[0].slot;
-    blockDto.epoch = results[0].epoch;
-    blockDto.block_id = results[0].id;
+    blockDto.height = Number(results[0].height);
+    blockDto.slot = Number(results[0].slot);
+    blockDto.epoch = Number(results[0].epoch);
+    blockDto.block_id = Number(results[0].id);
+    blockDto.hash = toHexString(results[0].hash);
+    blockDto.timestamp = new Date(results[0].time + 'Z').valueOf() / 1000; // seconds
 
     return blockDto;
   }
@@ -360,12 +363,12 @@ export class DbSyncService {
     const results = await this.entityManager.query(query, [`\\x${hash}`]);
     return results.length > 0
       ? {
-        hash: toHexString(results[0].tx_hash),
-        tx_id: results[0].tx_id,
-        gas_fee: results[0].gas_fee,
-        tx_size: results[0].tx_size,
-        height: results[0].height,
-      }
+          hash: toHexString(results[0].tx_hash),
+          tx_id: results[0].tx_id,
+          gas_fee: results[0].gas_fee,
+          tx_size: results[0].tx_size,
+          height: results[0].height,
+        }
       : null;
   }
 

@@ -16,6 +16,3 @@ ${DOCKER_COMPOSE_CMD} down
 
 cd ../gateway
 ${DOCKER_COMPOSE_CMD} down
-
-cd ../cardano-node-services
-${DOCKER_COMPOSE_CMD} down

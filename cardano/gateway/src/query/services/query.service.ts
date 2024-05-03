@@ -91,6 +91,7 @@ import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_rede
 import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
+import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 
 @Injectable()
 export class QueryService {
@@ -101,6 +102,7 @@ export class QueryService {
     @InjectEntityManager() private entityManager: EntityManager,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
   ) {}
 
   async newClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -290,26 +292,17 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
 
-    const blockNo = parseInt(height.toString(), 10);
     const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
+    const blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
     try {
-      const results = await lastValueFrom(
-        await this.httpService.get(`${this.configService.get('cardanoBridgeUrl')}/blocks`, {
-          headers: {
-            'Content-Type': 'application/json; charset=UTF-8',
-          },
-          params: {
-            height: blockNo,
-          },
-        }),
-      );
-      const blockDataRes = results?.data;
-
-      const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDataRes);
+      const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDto, blockHeader);
+      blockDataOuroboros.chain_id = `${this.configService.get('cardanoChainNetworkMagic')}`;
+      blockDataOuroboros.epoch_nonce = this.configService.get('cardanoEpochNonceGenesis');
       if (blockDto.epoch > 0) {
         const epochParam = await this.dbService.findEpochParamByEpochNo(BigInt(blockDto.epoch));
         blockDataOuroboros.epoch_nonce = epochParam.nonce;
       }
+
       const blockData: QueryBlockDataResponse = {
         block_data: {
           type_url: 'ibc.clients.cardano.v1.BlockData',

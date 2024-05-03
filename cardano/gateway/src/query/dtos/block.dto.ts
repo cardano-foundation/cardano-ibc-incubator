@@ -3,4 +3,6 @@ export class BlockDto {
   height: number;
   slot: number;
   epoch: number;
+  hash: string;
+  timestamp: number;
 }

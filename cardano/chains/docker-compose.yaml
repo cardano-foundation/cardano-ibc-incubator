@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   cardano-node:
-    image: inputoutput/cardano-node:8.1.2
+    image: ghcr.io/intersectmbo/cardano-node:8.9.1
     volumes:
       - ./devnet:/devnet
     environment:
@@ -12,17 +12,28 @@ services:
     ports:
       - 3001:3001
     command:
-      [ "run"
-      , "--config", "/devnet/cardano-node.json"
-      , "--topology", "/devnet/topology.json"
-      , "--database-path", "/devnet/db"
-      , "--shelley-kes-key", "/devnet/kes.skey"
-      , "--shelley-vrf-key", "/devnet/vrf.skey"
-      , "--shelley-operational-certificate", "/devnet/opcert.cert"
-      , "--byron-delegation-certificate", "/devnet/byron-delegation.cert"
-      , "--byron-signing-key", "/devnet/byron-delegate.key"
-      , "--host-addr", "0.0.0.0"
-      , "--port", "3001"
+      [
+        "run",
+        "--config",
+        "/devnet/cardano-node.json",
+        "--topology",
+        "/devnet/topology.json",
+        "--database-path",
+        "/devnet/db",
+        "--shelley-kes-key",
+        "/devnet/kes.skey",
+        "--shelley-vrf-key",
+        "/devnet/vrf.skey",
+        "--shelley-operational-certificate",
+        "/devnet/opcert.cert",
+        "--byron-delegation-certificate",
+        "/devnet/byron-delegation.cert",
+        "--byron-signing-key",
+        "/devnet/byron-delegate.key",
+        "--host-addr",
+        "0.0.0.0",
+        "--port",
+        "3001"
       ]
 
   cardano-node-ogmios:
@@ -41,9 +52,13 @@ services:
       - ./devnet:/devnet
       - ./devnet/db:/db
     command:
-      [ "--node-config", "/devnet/cardano-node.json"
-      , "--host", "0.0.0.0"
-      , "--node-socket", "/devnet/node.socket"
+      [
+        "--node-config",
+        "/devnet/cardano-node.json",
+        "--host",
+        "0.0.0.0",
+        "--node-socket",
+        "/devnet/node.socket"
       ]
 
   kupo:
@@ -57,15 +72,23 @@ services:
       - cardano-node
     ports:
       - ${KUPO_PORT:-1442}:1442
-    command: [
-      "--node-socket", "/devnet/node.socket",
-      "--node-config", "/devnet/cardano-node.json",
-      "--since", "${KUPO_SINCE:-origin}",
-      "--match", "${KUPO_MATCH:-*}",
-      "--workdir", "/db",
-      "--host", "0.0.0.0",
-      "--port", "1442"
-    ]
+    command:
+      [
+        "--node-socket",
+        "/devnet/node.socket",
+        "--node-config",
+        "/devnet/cardano-node.json",
+        "--since",
+        "${KUPO_SINCE:-origin}",
+        "--match",
+        "${KUPO_MATCH:-*}",
+        "--workdir",
+        "/db",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "1442"
+      ]
     volumes:
       - ./devnet:/devnet
       - ./kupo-db:/db
@@ -91,7 +114,7 @@ services:
     healthcheck:
       # Use pg_isready to check postgres is running. Substitute different
       # user `postgres` if you've setup differently to config/pgpass-mainnet
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -103,7 +126,7 @@ services:
         max-file: "10"
 
   cardano-db-sync:
-    image: inputoutput/cardano-db-sync:13.1.1.3
+    image: ghcr.io/intersectmbo/cardano-db-sync:13.1.1.3
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -118,10 +141,13 @@ services:
     volumes:
       - ./devnet:/devnet
       - ./db-sync-data:/var/lib/cexplorer
-    command: [
-      "--socket-path", "/devnet/node.socket",
-      "--config", "/devnet/db-sync-config.json",
-    ]
+    command:
+      [
+        "--socket-path",
+        "/devnet/node.socket",
+        "--config",
+        "/devnet/db-sync-config.json"
+      ]
     restart: on-failure
     logging:
       driver: "json-file"

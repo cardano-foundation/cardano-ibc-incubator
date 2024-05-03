@@ -10,6 +10,10 @@ export interface IConfig {
   kupoEndpoint: string;
   database: PostgresConnectionOptions;
   cardanoBridgeUrl: string;
+  cardanoChainHost: string;
+  cardanoChainPort: number;
+  cardanoChainNetworkMagic: number;
+  cardanoEpochNonceGenesis: string;
 }
 
 export default (): Partial<IConfig> => ({
@@ -18,4 +22,8 @@ export default (): Partial<IConfig> => ({
   ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
   kupoEndpoint: process.env.KUPO_ENDPOINT,
   cardanoBridgeUrl: process.env.CARDANO_BRIDGE_URL,
+  cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
+  cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
+  cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
+  cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
 });

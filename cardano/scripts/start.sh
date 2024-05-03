@@ -87,12 +87,7 @@ replacement="amount2=1000-$tokenName"
 # Use sed to replace the line in the file
 sed_i_wrapper -i "s/^amount2=1000.*/$replacement/gm" "$file_path"
 
-cd ./cardano-node-services
-# ${DOCKER_COMPOSE_CMD} build
-${DOCKER_COMPOSE_CMD} stop
-${DOCKER_COMPOSE_CMD} up -d --build
-
-cd ../gateway
+cd ./gateway
 cp ./.env.example .env
 # ${DOCKER_COMPOSE_CMD} build
 ${DOCKER_COMPOSE_CMD} stop

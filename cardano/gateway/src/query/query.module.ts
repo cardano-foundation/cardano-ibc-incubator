@@ -7,9 +7,10 @@ import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { PacketService } from './services/packet.service';
+import { MiniProtocalsModule } from '../shared/modules/mini-protocals/mini-protocals.module';
 
 @Module({
-  imports: [LucidModule, HttpModule],
+  imports: [LucidModule, HttpModule, MiniProtocalsModule],
   controllers: [QueryController],
   providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService],
 })

@@ -6,13 +6,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import configuration from './config';
 import { LucidModule } from './shared/modules/lucid/lucid.module';
+import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protocals.module';
 
 @Module({
   imports: [
     // IBCEventWatcherModule,
     // ScheduleModule.forRoot(),
     TypeOrmModule.forRoot(DatabaseConfig),
-    // TxModule,
     ConfigModule.forRoot({
       load: [
         configuration,
@@ -25,6 +25,7 @@ import { LucidModule } from './shared/modules/lucid/lucid.module';
     QueryModule,
     TxModule,
     LucidModule,
+    MiniProtocalsModule,
   ],
   providers: [Logger],
 })
