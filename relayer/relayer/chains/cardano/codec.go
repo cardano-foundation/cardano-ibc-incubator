@@ -1,6 +1,7 @@
 package cardano
 
 import (
+	"github.com/cardano/relayer/v1/relayer/chains/cardano/keys/ed25519"
 	cosmosmodule "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
 	ethermintcodecs "github.com/cardano/relayer/v1/relayer/codecs/ethermint"
@@ -9,6 +10,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/std"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/module"
@@ -78,6 +80,14 @@ func MakeCodec(moduleBasics []module.AppModuleBasic, extraCodecs []string) Codec
 	std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
 	modBasic.RegisterLegacyAminoCodec(encodingConfig.Amino)
 	modBasic.RegisterInterfaces(encodingConfig.InterfaceRegistry)
+
+	// Initializes the interface registry and registers ed25519 public and private key types
+	registry := encodingConfig.InterfaceRegistry
+	registry.RegisterImplementations((*cryptotypes.PubKey)(nil), &ed25519.PubKey{})
+	registry.RegisterImplementations((*cryptotypes.PrivKey)(nil), &ed25519.PrivKey{})
+	encodingConfig.Amino.RegisterConcrete(&ed25519.PrivKey{}, ed25519.PrivKeyName, nil)
+	encodingConfig.Amino.RegisterConcrete(&ed25519.PubKey{}, ed25519.PubKeyName, nil)
+
 	for _, c := range extraCodecs {
 		switch c {
 		case "ethermint":

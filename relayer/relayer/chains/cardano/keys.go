@@ -1,34 +1,29 @@
 package cardano
 
 import (
-	"context"
 	"errors"
 	"os"
 
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/keys/sr25519"
-	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
-	"github.com/cardano/relayer/v1/relayer/codecs/injective"
+	"github.com/cardano/relayer/v1/relayer/chains/cardano/keys/ed25519"
 	"github.com/cardano/relayer/v1/relayer/provider"
+	ckeys "github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/go-bip39"
+	"github.com/jsambuo/go-cardano-serialization/address"
+	"github.com/jsambuo/go-cardano-serialization/network"
 )
 
-const ethereumCoinType = uint32(60)
+// const ethereumCoinType = uint32(60)
 
 var (
-	// SupportedAlgorithms defines the list of signing algorithms used on Evmos:
-	//  - secp256k1     (Cosmos)
-	//  - sr25519		(Cosmos)
-	//  - eth_secp256k1 (Ethereum, Injective)
+	// SupportedAlgorithms defines the list of signing algorithms used on Cardano:
+	// - ed25519
+	SupportedAlgorithms = keyring.SigningAlgoList{ed25519.Ed25519Algo{}}
 
-	SupportedAlgorithms = keyring.SigningAlgoList{hd.Secp256k1, sr25519.Sr25519, ethermint.EthSecp256k1, injective.EthSecp256k1}
-	// SupportedAlgorithmsLedger defines the list of signing algorithms used on Evmos for the Ledger device:
-	//  - secp256k1     (Cosmos)
-	//  - sr25519		(Cosmos)
-	//  - eth_secp256k1 (Ethereum, Injective)
-	SupportedAlgorithmsLedger = keyring.SigningAlgoList{hd.Secp256k1, sr25519.Sr25519, ethermint.EthSecp256k1, injective.EthSecp256k1}
+	// SupportedAlgorithmsLedger defines the list of signing algorithms used on Cardano for the Ledger device:
+	SupportedAlgorithmsLedger = keyring.SigningAlgoList{}
 )
 
 // KeyringAlgoOptions defines a function keys options for the ethereum Secp256k1 curve.
@@ -63,16 +58,11 @@ func (cc *CardanoProvider) KeystoreCreated(path string) bool {
 // AddKey generates a new mnemonic which is then converted to a private key and BIP-39 HD Path and persists it to the keystore.
 // It fails if there is an existing key with the same address.
 func (cc *CardanoProvider) AddKey(name string, coinType uint32, signingAlgorithm string) (output *provider.KeyOutput, err error) {
-	address, err := cc.TxCardano.AddKey(context.Background(), name, cc.PCfg.ChainID)
+	ko, err := cc.KeyAddOrRestore(name, coinType, signingAlgorithm)
 	if err != nil {
 		return nil, err
 	}
-
-	res := &provider.KeyOutput{
-		Address: address,
-	}
-
-	return res, nil
+	return ko, nil
 }
 
 // Updates config.yaml chain with the specified key.
@@ -85,42 +75,94 @@ func (cc *CardanoProvider) UseKey(key string) error {
 // RestoreKey converts a mnemonic to a private key and BIP-39 HD Path and persists it to the keystore.
 // It fails if there is an existing key with the same address.
 func (cc *CardanoProvider) RestoreKey(name, mnemonic string, coinType uint32, signingAlgorithm string) (address string, err error) {
-	address, err = cc.TxCardano.RestoreKey(context.Background(), name, cc.PCfg.ChainID, mnemonic)
+	ko, err := cc.KeyAddOrRestore(name, coinType, signingAlgorithm, mnemonic)
 	if err != nil {
 		return "", err
 	}
-	return address, nil
+	return ko.Address, nil
 }
 
 // KeyAddOrRestore either generates a new mnemonic or uses the specified mnemonic and converts it to a private key
 // and BIP-39 HD Path which is then persisted to the keystore. It fails if there is an existing key with the same address.
 func (cc *CardanoProvider) KeyAddOrRestore(keyName string, coinType uint32, signingAlgorithm string, mnemonic ...string) (*provider.KeyOutput, error) {
-	// Not implement for Cardano Chain
-	return nil, nil
+	var mnemonicStr string
+	var err error
+
+	var algo keyring.SignatureAlgo
+	switch signingAlgorithm {
+	case string(hd.Ed25519Type):
+		algo = ed25519.Ed25519Algo{}
+	default:
+		algo = ed25519.Ed25519Algo{}
+	}
+
+	if len(mnemonic) > 0 {
+		mnemonicStr = mnemonic[0]
+	} else {
+		mnemonicStr, err = CreateMnemonic()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	info, err := cc.Keybase.NewAccount(keyName, mnemonicStr, "", hd.CreateHDPath(coinType, 0, 0).String(), algo)
+	if err != nil {
+		return nil, err
+	}
+
+	acc, err := info.GetAddress()
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := cc.EncodeBech32AccAddr(acc)
+	if err != nil {
+		return nil, err
+	}
+	return &provider.KeyOutput{Mnemonic: mnemonicStr, Address: out}, nil
 }
 
 // ShowAddress retrieves a key by name from the keystore and returns the bech32 encoded string representation of that key.
 func (cc *CardanoProvider) ShowAddress(name string) (address string, err error) {
-	address, err = cc.TxCardano.ShowAddress(context.Background(), name, cc.PCfg.ChainID)
+	info, err := cc.Keybase.Key(name)
+	if err != nil {
+		return "", err
+	}
+	acc, err := info.GetAddress()
 	if err != nil {
 		return "", nil
 	}
-	return address, nil
+	out, err := cc.EncodeBech32AccAddr(acc)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
 
 // ListAddresses returns a map of bech32 encoded strings representing all keys currently in the keystore.
 func (cc *CardanoProvider) ListAddresses() (map[string]string, error) {
-	out, err := cc.TxCardano.ListAddresses(context.Background(), cc.PCfg.ChainID)
+	out := map[string]string{}
+	info, err := cc.Keybase.List()
 	if err != nil {
 		return nil, err
+	}
+	for _, k := range info {
+		acc, err := k.GetAddress()
+		if err != nil {
+			return nil, err
+		}
+		addr, err := cc.EncodeBech32AccAddr(acc)
+		if err != nil {
+			return nil, err
+		}
+		out[k.Name] = addr
 	}
 	return out, nil
 }
 
 // DeleteKey removes a key from the keystore for the specified name.
 func (cc *CardanoProvider) DeleteKey(name string) error {
-	_, err := cc.TxCardano.DeleteKey(context.Background(), name, cc.PCfg.ChainID)
-	if err != nil {
+	if err := cc.Keybase.Delete(name); err != nil {
 		return err
 	}
 	return nil
@@ -128,18 +170,18 @@ func (cc *CardanoProvider) DeleteKey(name string) error {
 
 // KeyExists returns true if a key with the specified name exists in the keystore, it returns false otherwise.
 func (cc *CardanoProvider) KeyExists(name string) bool {
-	out, err := cc.TxCardano.KeyExist(context.Background(), name, cc.PCfg.ChainID)
+	k, err := cc.Keybase.Key(name)
 	if err != nil {
 		return false
 	}
-	return out
+
+	return k.Name == name
 }
 
 // ExportPrivKeyArmor returns a private key in ASCII armored format.
 // It returns an error if the key does not exist or a wrong encryption passphrase is supplied.
 func (cc *CardanoProvider) ExportPrivKeyArmor(keyName string) (armor string, err error) {
-	// Not implement for Cardano Chain
-	return "", nil
+	return cc.Keybase.ExportPrivKeyArmor(keyName, ckeys.DefaultKeyPass)
 }
 
 // GetKeyAddress returns the account address representation for the currently configured key.
@@ -168,7 +210,19 @@ func CreateMnemonic() (string, error) {
 // It returns an empty sting if the byte slice is 0-length.
 // It returns an error if the bech32 conversion fails or the prefix is empty.
 func (cc *CardanoProvider) EncodeBech32AccAddr(addr sdk.AccAddress) (string, error) {
-	return sdk.Bech32ifyAddressBytes(cc.PCfg.AccountPrefix, addr)
+	var net *network.NetworkInfo
+	switch cc.PCfg.AccountPrefix {
+	case "addr":
+		net = network.MainNet()
+	default:
+		net = network.TestNet()
+	}
+
+	enterpriseAddress := address.NewEnterpriseAddress(
+		net,
+		address.NewKeyStakeCredential(addr),
+	)
+	return enterpriseAddress.String(), nil
 }
 
 func (cc *CardanoProvider) DecodeBech32AccAddr(addr string) (sdk.AccAddress, error) {

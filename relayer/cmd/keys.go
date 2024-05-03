@@ -22,6 +22,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cardano"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -187,6 +188,8 @@ $ %s k r cosmoshub faucet-key "[mnemonic-words]"`, appName, appName)),
 			if algo == "" {
 				if ccp, ok := chain.ChainProvider.(*cosmos.CosmosProvider); ok {
 					algo = ccp.PCfg.SigningAlgorithm
+				} else if _, ok := chain.ChainProvider.(*cardano.CardanoProvider); ok {
+					algo = string(hd.Ed25519Type)
 				} else {
 					algo = string(hd.Secp256k1Type)
 				}
