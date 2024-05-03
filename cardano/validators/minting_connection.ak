@@ -9,14 +9,20 @@ use aiken/transaction/credential.{Script}
 use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/cardano_client/client_state as cardano_client
-use ibc/client/cardano_client/protos/cardano_pb.{CardanoClientState}
+use ibc/client/cardano_client/protos/cardano_pb.{
+  AnyCardanoClientState, CardanoClientState,
+}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -28,12 +34,13 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version
-use ibc/core/ics_003_connection_semantics/verify as conn_verify
+use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   InnerSpec, LeafOp, ProofSpec,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
@@ -45,6 +52,7 @@ use ibc/utils/validator_utils
 
 validator(
   client_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
 ) {
   fn mint_connection(
@@ -199,6 +207,8 @@ validator(
             proof_init,
             proof_client,
             proof_height,
+            redeemers,
+            verify_proof_policy_id,
           )
         trace @"mint_connection: minting_connection.validate_conn_open_try_proof\n"
 
@@ -215,6 +225,8 @@ fn validate_conn_open_try_proof(
   proof_init: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect cardano_client.validate_self_client(counterparty_client_state)
 
@@ -234,23 +246,73 @@ fn validate_conn_open_try_proof(
       connection.delay_period,
     )
 
-  expect
-    conn_verify.verify_connection_state(
-      client_datum_state,
-      connection,
-      expected_connection,
-      proof_init,
-      proof_height,
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let conn_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [connection_keys.connection_path(connection.counterparty.connection_id)],
+      ),
     )
 
-  expect
-    conn_verify.verify_client_state(
-      client_datum_state,
-      connection,
-      counterparty_client_state,
-      proof_client,
-      proof_height,
+  let client_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [client_keys.full_client_state_path(connection.counterparty.client_id)],
+      ),
     )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  let expected_connection_bz =
+    connection_pb.marshal_for_connection_end(
+      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+    )
+
+  let counterparty_client_state_bz =
+    cardano_pb.marshal_for_any_client_state(
+      Some(
+        AnyCardanoClientState {
+          type_url: "/ibc.clients.cardano.v1.ClientState",
+          value: Some(counterparty_client_state),
+        },
+      ),
+    )
+
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  expect
+    verify_proof_redeemer == BatchVerifyMembership {
+      items: [
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_init,
+          path: conn_merkle_path,
+          value: expected_connection_bz,
+        },
+        VerifyMembershipParams {
+          cs: client_datum_state.client_state,
+          cons_state: consensus_state,
+          height: proof_height,
+          delay_time_period: time_delay,
+          delay_block_period: block_delay,
+          proof: proof_client,
+          path: client_merkle_path,
+          value: counterparty_client_state_bz,
+        },
+      ],
+    }
 
   True
 }
@@ -258,6 +320,7 @@ fn validate_conn_open_try_proof(
 //====================================================Test==============================================================
 type MockData {
   client_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   connection_minting_policy_id: PolicyId,
   connection_sequence: Int,
@@ -422,6 +485,7 @@ fn setup() -> MockData {
 
   MockData {
     client_minting_policy_id,
+    verify_proof_policy_id: "mock verify_proof_policy_id",
     spend_connection_script_hash: "mock spend_connection_script_hash",
     connection_minting_policy_id: "mock connection_minting_policy_id",
     connection_sequence,
@@ -528,6 +592,7 @@ test conn_open_init_succeed() {
 
   mint_connection(
     mock.client_minting_policy_id,
+    mock.verify_proof_policy_id,
     mock.spend_connection_script_hash,
     mint_conn_redeemer,
     context,
