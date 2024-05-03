@@ -1,17 +1,5 @@
 version: '3.9'
 services:
-  tx-cardano-service:
-    build:
-      context: ./tx-cardano
-      dockerfile: ./Dockerfile
-    volumes:
-      - ~/.relayer:/root/.relayer
-    ports:
-      - "4884:4884"
-    network_mode: "host"
-    env_file:
-      - ./tx-cardano/.env
-  
   relayer-service:
     container_name: relayer
     build:
@@ -19,8 +7,6 @@ services:
       dockerfile: ./relayer/Dockerfile
     volumes:
       - ~/.relayer:/root/.relayer
-    depends_on:
-      - tx-cardano-service
     network_mode: "host"
     env_file:
       - ./.env

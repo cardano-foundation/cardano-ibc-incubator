@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	"github.com/joho/godotenv"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 
@@ -25,6 +27,7 @@ import (
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
+	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -520,10 +523,6 @@ func (cc *CardanoProvider) MsgTransfer(
 	}
 	senderPublicKeyHash := hex.EncodeToString(senderAddress.Payment.Hash())
 
-	if err != nil {
-		cc.log.Error("Fail to load signer from tx-cardano", zap.Error(err))
-		return nil, err
-	}
 	msg := &transfertypes.MsgTransfer{
 		SourcePort:       info.SourcePort,
 		SourceChannel:    info.SourceChannel,
@@ -727,7 +726,9 @@ func (cc *CardanoProvider) broadcastTx(
 	asyncTimeout time.Duration, // timeout for waiting for block inclusion
 	asyncCallbacks []func(*provider.RelayerTxResponse, error), // callback for success/fail of the wait for block inclusion
 ) error {
-	endpoint := "ws://localhost:1337"
+	godotenv.Load()
+
+	endpoint := os.Getenv(constant.OgmiosEndpoint)
 	submit := hex.EncodeToString(tx)
 	var (
 		payload = makePayload("SubmitTx", Map{"submit": submit})

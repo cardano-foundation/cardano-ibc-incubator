@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -15,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/anypb"
-	"testing"
 )
 
 var gw Gateway
@@ -93,7 +94,7 @@ func TestQueryClientState(t *testing.T) {
 			99999,
 			nil)
 		gw.ClientQueryService = mockService
-		clientState, err := gw.QueryClientState(9)
+		clientState, err := gw.QueryClientState("clientId", 9)
 		require.NoError(t, err)
 		require.NotEmpty(t, clientState)
 		mockService.AssertCalled(
@@ -122,7 +123,7 @@ func TestQueryClientState(t *testing.T) {
 			99999,
 			exErr)
 		gw.ClientQueryService = mockService
-		clientState, err := gw.QueryClientState(9)
+		clientState, err := gw.QueryClientState("clientId", 9)
 		require.Equal(t, exErr, err)
 		require.Empty(t, clientState)
 		mockService.AssertCalled(
@@ -153,7 +154,7 @@ func TestQueryConsensusState(t *testing.T) {
 			nil)
 
 		gw.ClientQueryService = mockService
-		consensusState, err := gw.QueryConsensusState(9)
+		consensusState, err := gw.QueryConsensusState("clientId", 9)
 		require.NoError(t, err)
 		require.NotEmpty(t, consensusState)
 		require.Equal(t, uint64(99999), consensusState.ProofHeight.RevisionHeight)
@@ -182,7 +183,7 @@ func TestQueryConsensusState(t *testing.T) {
 			exErr)
 
 		gw.ClientQueryService = mockService
-		consensusState, err := gw.QueryConsensusState(9)
+		consensusState, err := gw.QueryConsensusState("clientId", 9)
 		require.Equal(t, exErr, err)
 		require.Empty(t, consensusState)
 		mockService.AssertCalled(t, "ConsensusState",

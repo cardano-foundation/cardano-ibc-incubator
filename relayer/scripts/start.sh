@@ -16,7 +16,6 @@ fi
 cd ../
 
 cp .env.example .env
-cp tx-cardano/.env.example tx-cardano/.env
 
 # ${DOCKER_COMPOSE_CMD} build
 ${DOCKER_COMPOSE_CMD} stop
