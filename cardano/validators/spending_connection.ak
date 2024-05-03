@@ -256,8 +256,8 @@ fn validate_conn_open_ack_proof(
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   expect
-    verify_proof_redeemer == BatchVerifyMembership {
-      items: [
+    verify_proof_redeemer == BatchVerifyMembership(
+      [
         VerifyMembershipParams {
           cs: client_datum_state.client_state,
           cons_state: consensus_state,
@@ -279,7 +279,7 @@ fn validate_conn_open_ack_proof(
           value: counterparty_client_state_bz,
         },
       ],
-    }
+    )
 
   True
 }
@@ -985,8 +985,8 @@ test conn_open_ack_succeed() {
       |> dict.get(proof_height)
 
   let verify_proof_redeemer =
-    BatchVerifyMembership {
-      items: [
+    BatchVerifyMembership(
+      [
         VerifyMembershipParams {
           cs: client_datum_state.client_state,
           cons_state: consensus_state,
@@ -1008,7 +1008,7 @@ test conn_open_ack_succeed() {
           value: counterparty_client_state_bz,
         },
       ],
-    }
+    )
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()

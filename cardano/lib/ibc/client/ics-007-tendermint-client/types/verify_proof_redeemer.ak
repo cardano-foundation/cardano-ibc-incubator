@@ -36,7 +36,7 @@ pub type VerifyProofRedeemer {
     path: MerklePath,
   }
 
-  BatchVerifyMembership { items: List<VerifyMembershipParams> }
+  BatchVerifyMembership(List<VerifyMembershipParams>)
 
   VerifyOther
 }

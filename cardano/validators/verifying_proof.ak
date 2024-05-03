@@ -66,7 +66,7 @@ validator {
           path,
         )
 
-      BatchVerifyMembership { items } ->
+      BatchVerifyMembership(items) ->
         list.all(
           items,
           fn(i) {
@@ -695,7 +695,7 @@ test batch_verify_membership_succeed() {
       value: packet_commitment,
     }
 
-  let redeemer = BatchVerifyMembership { items: [item] }
+  let redeemer = BatchVerifyMembership([item])
 
   //========================arrange context=======================
   let context =
