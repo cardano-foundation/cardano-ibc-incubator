@@ -55,6 +55,12 @@ export const createDeployment = async (
 
   const referredValidators: Script[] = [];
 
+  const [verifyProofValidator, verifyProofPolicyId] = readValidator(
+    "verifying_proof.verify_proof",
+    lucid,
+  );
+  referredValidators.push(verifyProofValidator);
+
   // load mint port validator
   const [mintPortValidator, mintPortPolicyId] = readValidator(
     "minting_port.mint_port",
@@ -84,6 +90,7 @@ export const createDeployment = async (
     spendConnectionAddress,
   ] = readValidator("spending_connection.spend_connection", lucid, [
     mintClientPolicyId,
+    verifyProofPolicyId,
   ]);
   referredValidators.push(spendConnectionValidator);
 
@@ -91,15 +98,9 @@ export const createDeployment = async (
   const [mintConnectionValidator, mintConnectionPolicyId] = readValidator(
     "minting_connection.mint_connection",
     lucid,
-    [mintClientPolicyId, spendConnectionScriptHash],
+    [mintClientPolicyId, verifyProofPolicyId, spendConnectionScriptHash],
   );
   referredValidators.push(mintConnectionValidator);
-
-  const [verifyProofValidator, verifyProofScriptHash] = readValidator(
-    "verifying_proof.verify_proof",
-    lucid,
-  );
-  referredValidators.push(verifyProofValidator);
 
   // load spend channel validator
   const spendingChannel = await deploySpendChannel(
@@ -107,7 +108,7 @@ export const createDeployment = async (
     mintClientPolicyId,
     mintConnectionPolicyId,
     mintPortPolicyId,
-    verifyProofScriptHash,
+    verifyProofPolicyId,
   );
   referredValidators.push(
     spendingChannel.base.script,
@@ -124,6 +125,7 @@ export const createDeployment = async (
       mintClientPolicyId,
       mintConnectionPolicyId,
       mintPortPolicyId,
+      verifyProofPolicyId,
       spendingChannel.base.hash,
     ],
   );
@@ -283,9 +285,9 @@ export const createDeployment = async (
       verifyProof: {
         title: "verifying_proof.verify_proof",
         script: verifyProofValidator.script,
-        scriptHash: verifyProofScriptHash,
+        scriptHash: verifyProofPolicyId,
         address: "",
-        refUtxo: refUtxosInfo[verifyProofScriptHash],
+        refUtxo: refUtxosInfo[verifyProofPolicyId],
       },
     },
     handlerAuthToken: {
@@ -684,7 +686,7 @@ const deploySpendChannel = async (
       mintPortPolicyId,
     ];
 
-    if (name == "timeout_packet") {
+    if (name != "send_packet") {
       args.push(verifyProofScriptHash);
     }
 
