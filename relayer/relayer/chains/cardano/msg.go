@@ -27,7 +27,7 @@ func NewCardanoMessage(msg sdk.Msg, unsignedTx *anypb.Any, optionalSetSigner fun
 	}
 }
 
-func CosmosMsg(rm provider.RelayerMessage) sdk.Msg {
+func CardanoMsg(rm provider.RelayerMessage) sdk.Msg {
 	if val, ok := rm.(CardanoMessage); !ok {
 		fmt.Printf("got data of type %T but wanted provider.CosmosMessage \n", val)
 		return nil
@@ -36,7 +36,7 @@ func CosmosMsg(rm provider.RelayerMessage) sdk.Msg {
 	}
 }
 
-func CosmosMsgs(rm ...provider.RelayerMessage) []sdk.Msg {
+func CardanoMsgs(rm ...provider.RelayerMessage) []sdk.Msg {
 	sdkMsgs := make([]sdk.Msg, 0)
 	for _, rMsg := range rm {
 		if val, ok := rMsg.(CardanoMessage); !ok {

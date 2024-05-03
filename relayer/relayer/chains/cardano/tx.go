@@ -6,8 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/blinklabs-io/gouroboros/cbor"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 
@@ -86,7 +90,10 @@ func (cc *CardanoProvider) MsgAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	proof provider.PacketProof,
 ) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, err
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +194,7 @@ func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelI
 }
 
 func (cc *CardanoProvider) MsgChannelOpenAck(msgOpenTry provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +241,7 @@ func (cc *CardanoProvider) MsgChannelOpenConfirm(msgOpenAck provider.ChannelInfo
 }
 
 func (cc *CardanoProvider) MsgChannelOpenInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +295,7 @@ func (cc *CardanoProvider) MsgChannelOpenTry(msgOpenInit provider.ChannelInfo, p
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +363,7 @@ func (cc *CardanoProvider) MsgConnectionOpenConfirm(msgOpenAck provider.Connecti
 }
 
 func (cc *CardanoProvider) MsgConnectionOpenInit(info provider.ConnectionInfo, proof provider.ConnectionProof) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -405,10 +412,10 @@ func (cc *CardanoProvider) MsgCreateClient(
 	clientState ibcexported.ClientState,
 	consensusState ibcexported.ConsensusState,
 ) (provider.RelayerMessage, error) {
-	//signer, err := cc.Address()
-	//if err != nil {
-	//	return nil, err
-	//}
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, err
+	}
 
 	anyClientState, err := clienttypes.PackClientState(clientState)
 	if err != nil {
@@ -423,19 +430,14 @@ func (cc *CardanoProvider) MsgCreateClient(
 	msg := &clienttypes.MsgCreateClient{
 		ClientState:    anyClientState,
 		ConsensusState: anyConsensusState,
-		Signer:         "signer",
+		Signer:         signer,
 	}
 
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
-	if err != nil {
-		return nil, err
-	}
-	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
-	if err != nil {
-		return nil, err
-	}
+	// res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	_, err = cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
 	anynil := anypb.Any{}
 	return NewCardanoMessage(msg, &anynil, func(signer string) {
 		msg.Signer = signer
@@ -446,7 +448,7 @@ func (cc *CardanoProvider) MsgRecvPacket(
 	msgTransfer provider.PacketInfo,
 	proof provider.PacketProof,
 ) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -507,7 +509,7 @@ func (cc *CardanoProvider) MsgTransfer(
 	amount sdk.Coin,
 	info provider.PacketInfo,
 ) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -565,12 +567,11 @@ func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer, signer strin
 }
 
 func (cc *CardanoProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexported.ClientMessage) (provider.RelayerMessage, error) {
-	clientMsg, err := clienttypes.PackClientMessage(dstHeader)
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
-
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	clientMsg, err := clienttypes.PackClientMessage(dstHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -726,11 +727,27 @@ func (cc *CardanoProvider) broadcastTx(
 	asyncTimeout time.Duration, // timeout for waiting for block inclusion
 	asyncCallbacks []func(*provider.RelayerTxResponse, error), // callback for success/fail of the wait for block inclusion
 ) error {
+	endpoint := "ws://localhost:1337"
+	submit := hex.EncodeToString(tx)
+	var (
+		payload = makePayload("SubmitTx", Map{"submit": submit})
+		res     Response
+	)
+	if err := query(ctx, payload, &res, endpoint); err != nil {
+		return err
+	}
+
+	go cc.waitForTx(asyncCtx, res.Result.SubmitSuccess.TxId, msgs, asyncTimeout, asyncCallbacks)
+
 	return nil
 }
 
 // sdkError will return the Cosmos SDK registered error for a given codespace/code combo if registered, otherwise nil.
 func (cc *CardanoProvider) sdkError(codespace string, code uint32) error {
+	err := errors.Unwrap(sdkerrors.ABCIError(codespace, code, "error broadcasting transaction"))
+	if err.Error() != errUnknown {
+		return err
+	}
 	return nil
 }
 
@@ -797,7 +814,30 @@ func (cc *CardanoProvider) waitForTx(
 		return
 	}
 
-	rlyResp := &provider.RelayerTxResponse{}
+	rlyResp := &provider.RelayerTxResponse{
+		Height:    res.Height,
+		TxHash:    res.TxHash,
+		Codespace: res.Codespace,
+		Code:      res.Code,
+		Data:      res.Data,
+		// Events: parseEventsFromTxResponse(res),
+	}
+
+	if res.Code != 0 {
+		// Check for any registered SDK errors
+		err := cc.sdkError(res.Codespace, res.Code)
+		if err == nil {
+			err = fmt.Errorf("transaction failed to execute")
+		}
+		if len(callbacks) > 0 {
+			for _, cb := range callbacks {
+				//Call each callback in order since waitForTx is already invoked asyncronously
+				cb(nil, err)
+			}
+		}
+		cc.LogFailedTx(rlyResp, nil, msgs)
+		return
+	}
 
 	if len(callbacks) > 0 {
 		for _, cb := range callbacks {
@@ -807,7 +847,6 @@ func (cc *CardanoProvider) waitForTx(
 	}
 
 	cc.LogSuccessTx(res, msgs)
-
 }
 
 // waitForBlockInclusion will wait for a transaction to be included in a block, up to waitTimeout or context cancellation.
@@ -822,12 +861,12 @@ func (cc *CardanoProvider) waitForBlockInclusion(
 		case <-exitAfter:
 			return nil, fmt.Errorf("timed out after: %d; %w", waitTimeout, ErrTimeoutAfterWaitingForTxBroadcast)
 		// This fixed poll is fine because it's only for logging and updating prometheus metrics currently.
-		case <-time.After(time.Millisecond * 100):
+		case <-time.After(time.Millisecond * 1000):
 			res, err := cc.GateWay.QueryTransactionByHash(ctx, &ibcclient.QueryTransactionByHashRequest{
 				Hash: txHash,
 			})
-			if err != nil {
-				return nil, err
+			if err != nil || res.Hash == "" {
+				continue
 			}
 
 			return &sdk.TxResponse{
@@ -1035,29 +1074,37 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 	asyncCtx context.Context,
 	asyncCallbacks []func(*provider.RelayerTxResponse, error),
 ) error {
-	txHashes := []string{}
-	for _, msg := range msgs {
-		if msg == nil {
-			continue
-		}
-		txData, err := msg.MsgBytes()
-		if err != nil {
-			return err
-		}
-		txHash, err := cc.TxCardano.SignAndSubmitTx(ctx, cc.ChainId(), txData)
-		if err != nil {
-			rlyResp := &provider.RelayerTxResponse{
-				TxHash: txHash,
-			}
-			cc.LogFailedTx(rlyResp, err, msgs)
-			return err
-		}
-		txHashes = append(txHashes, txHash)
+	txSignerKey, feegranterKey, err := cc.buildSignerConfig(msgs)
+	if err != nil {
+		return err
 	}
-	for _, hash := range txHashes {
 
-		go cc.waitForTx(asyncCtx, hash, msgs, defaultBroadcastWaitTimeout, asyncCallbacks)
+	sequenceGuard := ensureSequenceGuard(cc, txSignerKey)
+	sequenceGuard.Mu.Lock()
+	defer sequenceGuard.Mu.Unlock()
 
+	// Currently only supports sending 1 message per transaction for Cardano
+	for _, msg := range msgs {
+		txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
+
+		if err != nil {
+			// Account sequence mismatch errors can happen on the simulated transaction also.
+			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
+				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+			}
+
+			return err
+		}
+		if err := cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks); err != nil {
+			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
+				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+			}
+
+			return err
+		}
+
+		// we had a successful tx broadcast with this sequence, so update it to the next
+		cc.updateNextAccountSequence(sequenceGuard, sequence+1)
 	}
 
 	return nil
@@ -1065,12 +1112,72 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 
 var seqGuardSingleton sync.Mutex
 
+// Gets the sequence guard. If it doesn't exist, initialized and returns it.
+func ensureSequenceGuard(cc *CardanoProvider, key string) *WalletState {
+	seqGuardSingleton.Lock()
+	defer seqGuardSingleton.Unlock()
+
+	if cc.walletStateMap == nil {
+		cc.walletStateMap = map[string]*WalletState{}
+	}
+
+	sequenceGuard, ok := cc.walletStateMap[key]
+	if !ok {
+		cc.walletStateMap[key] = &WalletState{}
+		return cc.walletStateMap[key]
+	}
+
+	return sequenceGuard
+}
+
 func (cc *CardanoProvider) buildSignerConfig(msgs []provider.RelayerMessage) (
 	txSignerKey string,
 	feegranterKey string,
 	err error,
 ) {
-	return "", "", err
+	//Guard against race conditions when choosing a signer/feegranter
+	cc.feegrantMu.Lock()
+	defer cc.feegrantMu.Unlock()
+
+	//Some messages have feegranting disabled. If any message in the TX disables feegrants, then the TX will not be feegranted.
+	isFeegrantEligible := cc.PCfg.FeeGrants != nil
+
+	for _, curr := range msgs {
+		if cMsg, ok := curr.(CardanoMessage); ok {
+			if cMsg.FeegrantDisabled {
+				isFeegrantEligible = false
+			}
+		}
+	}
+
+	//By default, we should sign TXs with the provider's default key
+	txSignerKey = cc.PCfg.Key
+
+	if isFeegrantEligible {
+		txSignerKey, feegranterKey = cc.GetTxFeeGrant()
+		signerAcc, addrErr := cc.GetKeyAddressForKey(txSignerKey)
+		if addrErr != nil {
+			err = addrErr
+			return
+		}
+
+		signerAccAddr, encodeErr := cc.EncodeBech32AccAddr(signerAcc)
+		if encodeErr != nil {
+			err = encodeErr
+			return
+		}
+
+		//Overwrite the 'Signer' field in any Msgs that provide an 'optionalSetSigner' callback
+		for _, curr := range msgs {
+			if cMsg, ok := curr.(CardanoMessage); ok {
+				if cMsg.SetSigner != nil {
+					cMsg.SetSigner(signerAccAddr)
+				}
+			}
+		}
+	}
+
+	return
 }
 
 func (cc *CardanoProvider) ValidatePacket(msgTransfer provider.PacketInfo, latest provider.LatestBlock) error {
@@ -1114,7 +1221,74 @@ func (cc *CardanoProvider) buildMessages(
 	fees sdk.Coins,
 	err error,
 ) {
-	return nil, 0, nil, err
+	// Prepare transaction factory
+	txf, err := cc.PrepareFactory(cc.TxFactory(), txSignerKey)
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	if memo != "" {
+		txf = txf.WithMemo(memo)
+	}
+
+	// TO-DO: support multiple msgs per transaction
+	if len(msgs) != 1 {
+		return nil, 0, sdk.Coins{}, fmt.Errorf("Only supports 1 msg per transaction")
+	}
+
+	msgBytes, err := msgs[0].MsgBytes()
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	var babbageTx BabbageTransaction
+	if _, err := cbor.Decode(msgBytes, &babbageTx); err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	// Generate the bytes to be signed.
+	txHash := babbageTx.Body.Hash()
+	bytesToSign, err := hex.DecodeString(txHash)
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	k, err := txf.Keybase().Key(txSignerKey)
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	pubKey, err := k.GetPubKey()
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	// Sign those bytes
+	sigBytes, _, err := txf.Keybase().Sign(txSignerKey, bytesToSign)
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	// Construct signed transaction
+	var vKeyWitnesses []VKeyWitness = []VKeyWitness{
+		{
+			VKey:      pubKey.Bytes(),
+			Signature: sigBytes[:],
+		},
+	}
+
+	var interfaces []interface{} = make([]interface{}, len(vKeyWitnesses))
+	for i, v := range vKeyWitnesses {
+		interfaces[i] = v
+	}
+	babbageTx.WitnessSet.VkeyWitnesses = interfaces
+
+	txBytes, err = cbor.Encode(babbageTx)
+	if err != nil {
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	return txBytes, 0, sdk.Coins{}, nil
 }
 
 // handleAccountSequenceMismatchError will parse the error string, e.g.:
@@ -1126,7 +1300,25 @@ func (cc *CardanoProvider) handleAccountSequenceMismatchError(sequenceGuard *Wal
 
 // PrepareFactory mutates the tx factory with the appropriate account number, sequence number, and min gas settings.
 func (cc *CardanoProvider) PrepareFactory(txf tx.Factory, signingKey string) (tx.Factory, error) {
-	return tx.Factory{}, nil
+	var (
+		err error
+	)
+	// Get key address and retry if fail
+	if err = retry.Do(func() error {
+		_, err = cc.GetKeyAddressForKey(signingKey)
+		if err != nil {
+			return err
+		}
+		return err
+	}, rtyAtt, rtyDel, rtyErr); err != nil {
+		return tx.Factory{}, err
+	}
+
+	if cc.PCfg.MinGasAmount != 0 {
+		txf = txf.WithGas(cc.PCfg.MinGasAmount)
+	}
+
+	return txf, nil
 }
 
 // SetWithExtensionOptions sets the dynamic fee extension options on the given
@@ -1137,12 +1329,19 @@ func (cc *CardanoProvider) PrepareFactory(txf tx.Factory, signingKey string) (tx
 // extension options or an error if the serialization fails or an invalid option
 // value is encountered.
 func (cc *CardanoProvider) SetWithExtensionOptions(txf tx.Factory) (tx.Factory, error) {
-	return tx.Factory{}, nil
+	// cardano doesn't support this feature
+	return txf, nil
 }
 
 // TxFactory instantiates a new tx factory with the appropriate configuration settings for this chain.
 func (cc *CardanoProvider) TxFactory() tx.Factory {
-	return tx.Factory{}
+	return tx.Factory{}.
+		WithAccountRetriever(cc).
+		WithChainID(cc.PCfg.ChainID).
+		WithTxConfig(cc.Cdc.TxConfig).
+		WithGasAdjustment(cc.PCfg.GasAdjustment).
+		WithGasPrices(cc.PCfg.GasPrices).
+		WithKeybase(cc.Keybase)
 }
 
 // CalculateGas simulates a tx to generate the appropriate gas settings before broadcasting a tx.
@@ -1175,7 +1374,7 @@ type protoTxProvider interface {
 }
 
 func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof provider.PacketProof) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -1221,7 +1420,7 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 }
 
 func (cc *CardanoProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
+	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
 	}
@@ -1258,6 +1457,11 @@ func (cc *CardanoProvider) ChannelProof(
 }
 
 func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, "", err
+	}
+
 	anyClientState, err := PackClientState(clientState)
 	if err != nil {
 		return nil, "", err
@@ -1268,10 +1472,6 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 		return nil, "", err
 	}
 
-	signer, err := cc.TxCardano.ShowAddress(context.Background(), cc.Key(), cc.ChainId())
-	if err != nil {
-		return nil, "", err
-	}
 	msg := &clienttypes.MsgCreateClient{
 		ClientState:    anyClientState,
 		ConsensusState: anyConsensusState,
@@ -1282,10 +1482,6 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 	if err != nil {
 		return nil, "", err
 	}
-	//tx_id, err := cc.TxCardano.SignAndSubmitTx(context.Background(), cc.ChainId(), res.UnsignedTx.GetValue())
-	//if err != nil {
-	//	return nil, "", err
-	//}
 
 	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
 		msg.Signer = signer

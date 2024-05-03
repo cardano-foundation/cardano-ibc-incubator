@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cardano/relayer/v1/package/services"
-	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
 	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	provtypes "github.com/cometbft/cometbft/light/provider"
@@ -20,6 +19,7 @@ import (
 	libclient "github.com/cometbft/cometbft/rpc/jsonrpc/client"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/gogoproto/proto"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"go.uber.org/zap"
@@ -104,40 +104,23 @@ func (pc CardanoProviderConfig) NewProvider(log *zap.Logger, homepath string, de
 	if pc.Broadcast == "" {
 		pc.Broadcast = provider.BroadcastModeBatch
 	}
-	// new TxCardano Service
-	txCardano, err := services.NewTxCardanoService()
-	if err != nil {
-		return nil, err
-	}
-	// update Home Path
-	path, err := txCardano.ShowConfig(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	if path != homepath {
-		err = txCardano.UpdateConfig(context.Background(), homepath)
-		if err != nil {
-			return nil, err
-		}
-	}
 	// new Gateway Service
 	gateway := services.Gateway{}
-	err = gateway.NewGateWayService(pc.RPCAddr)
+	err := gateway.NewGateWayService(pc.RPCAddr)
 	if err != nil {
 		return nil, err
 	}
 	cp := &CardanoProvider{
 		log:            log,
-		TxCardano:      *txCardano,
 		GateWay:        gateway,
 		PCfg:           pc,
-		KeyringOptions: []keyring.Option{ethermint.EthSecp256k1Option()},
+		KeyringOptions: []keyring.Option{KeyringAlgoOptions()},
 		Input:          os.Stdin,
 		Output:         os.Stdout,
 		walletStateMap: map[string]*WalletState{},
 
 		// TODO: this is a bit of a hack, we should probably have a better way to inject modules
-		//Cdc: MakeCodec(pc.Modules, pc.ExtraCodecs),
+		Cdc: MakeCodec([]module.AppModuleBasic{}, pc.ExtraCodecs),
 	}
 
 	return cp, nil
@@ -147,7 +130,6 @@ type CardanoProvider struct {
 	log *zap.Logger
 
 	PCfg           CardanoProviderConfig
-	TxCardano      services.TxCardano
 	GateWay        services.Gateway
 	Keybase        keyring.Keyring
 	KeyringOptions []keyring.Option
