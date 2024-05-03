@@ -23,7 +23,8 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+  BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
+  VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
@@ -172,6 +173,8 @@ validator(
             updated_datum.state,
             proof_ack,
             proof_height,
+            redeemers,
+            verify_proof_policy_id,
           )
         trace @"spend_connection: validate_conn_open_ack_proof"
 
@@ -287,6 +290,8 @@ fn validate_conn_open_confirm_proof(
   connection: ConnectionEnd,
   proof_ack: MerkleProof,
   proof_height: Height,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let expected_counterparty =
     counterparty.new_counterparty(
@@ -304,14 +309,41 @@ fn validate_conn_open_confirm_proof(
       connection.delay_period,
     )
 
-  expect
-    verify_mod.verify_connection_state(
-      client_datum_state,
-      connection,
-      expected_connection,
-      proof_ack,
-      proof_height,
+  let expected_connection_bz =
+    connection_pb.marshal_for_connection_end(
+      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
     )
+
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [connection_keys.connection_path(connection.counterparty.connection_id)],
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  expect
+    verify_proof_redeemer == VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_ack,
+      path: merkle_path,
+      value: expected_connection_bz,
+    }
 
   True
 }
