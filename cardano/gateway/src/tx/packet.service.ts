@@ -67,6 +67,8 @@ import {
   validateAndFormatTimeoutPacketParams,
 } from './helper/packet.validate';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
+import { getBlockDelay } from '../shared/helpers/verify';
+import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 
 @Injectable()
 export class PacketService {
@@ -427,6 +429,40 @@ export class PacketService {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
     };
+    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) => key.revisionHeight === recvPacketOperator.proofHeight.revisionHeight,
+    );
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: recvPacketOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        proof: recvPacketOperator.proofCommitment,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              packetCommitmentPath(
+                convertHex2String(packet.source_port),
+                convertHex2String(packet.source_channel),
+                packet.sequence,
+              ),
+            ),
+          ],
+        },
+        value: commitPacket(packet),
+      },
+    };
+
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
+
     if (
       this._hasVoucherPrefix(
         fungibleTokenPacketData.denom,
@@ -454,6 +490,10 @@ export class PacketService {
         recvPacketPolicyId,
         recvPacketRefUTxO,
         channelToken,
+
+        verifyProofPolicyId,
+        verifyProofRefUTxO,
+        encodedVerifyProofRedeemer,
       };
       return this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
     }
@@ -505,6 +545,10 @@ export class PacketService {
       recvPacketPolicyId,
       recvPacketRefUTxO,
       channelToken,
+
+      verifyProofPolicyId,
+      verifyProofRefUTxO,
+      encodedVerifyProofRedeemer,
     };
 
     // handle recv packet mint
@@ -622,15 +666,29 @@ export class PacketService {
       name: channelTokenName,
     };
 
+    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) => key.revisionHeight === timeoutPacketOperator.proofHeight.revisionHeight,
+    );
     const verifyProofRedeemer: VerifyProofRedeemer = {
-      VerifyPacketReceiptAbsence: {
-        client_datum_state: clientDatum.state,
-        connection: connectionDatum.state,
-        proof_height: timeoutPacketOperator.proofHeight,
+      VerifyNonMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: timeoutPacketOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
         proof: timeoutPacketOperator.proofUnreceived,
-        port_id: packet.destination_port,
-        channel_id: packet.destination_channel,
-        sequence: packet.sequence,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              packetReceiptPath(
+                convertHex2String(packet.destination_port),
+                convertHex2String(packet.destination_channel),
+                packet.sequence,
+              ),
+            ),
+          ],
+        },
       },
     };
 
@@ -1082,6 +1140,39 @@ export class PacketService {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
     };
+
+    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) => key.revisionHeight === ackPacketOperator.proofHeight.revisionHeight,
+    );
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: ackPacketOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        proof: ackPacketOperator.proofAcked,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              packetAcknowledgementPath(
+                convertHex2String(packet.destination_port),
+                convertHex2String(packet.destination_channel),
+                packet.sequence,
+              ),
+            ),
+          ],
+        },
+        value: hashSHA256(ackPacketOperator.acknowledgement),
+      },
+    };
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
       this.logger.log('AcknowledgementResult');
@@ -1111,6 +1202,10 @@ export class PacketService {
         ackPacketPolicyId,
         ackPacketRefUTxO,
         channelToken,
+
+        verifyProofPolicyId,
+        verifyProofRefUTxO,
+        encodedVerifyProofRedeemer,
       };
       return this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
     }
@@ -1155,6 +1250,10 @@ export class PacketService {
         ackPacketPolicyId,
         ackPacketRefUTxO,
         channelToken,
+
+        verifyProofPolicyId,
+        verifyProofRefUTxO,
+        encodedVerifyProofRedeemer,
       };
       return this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
     }
@@ -1206,6 +1305,10 @@ export class PacketService {
       ackPacketPolicyId,
       ackPacketRefUTxO,
       channelToken,
+
+      verifyProofPolicyId,
+      verifyProofRefUTxO,
+      encodedVerifyProofRedeemer,
     };
 
     // handle recv packet mint

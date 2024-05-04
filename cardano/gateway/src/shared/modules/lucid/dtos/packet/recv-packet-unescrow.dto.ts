@@ -20,4 +20,8 @@ export type UnsignedRecvPacketUnescrowDto = {
   recvPacketRefUTxO: UTxO;
   recvPacketPolicyId: PolicyId;
   channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
 };

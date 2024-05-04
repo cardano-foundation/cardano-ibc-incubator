@@ -26,4 +26,8 @@ export type UnsignedAckPacketMintDto = {
   ackPacketRefUTxO: UTxO;
   ackPacketPolicyId: PolicyId;
   channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
 };

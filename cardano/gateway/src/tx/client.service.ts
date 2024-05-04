@@ -104,11 +104,6 @@ export class ClientService {
         'client',
       );
 
-      console.log({
-        type_url: data.client_message.type_url,
-        value: Buffer.from(data.client_message.value).toString('base64'),
-      });
-
       verifyClientMessage(data.client_message, currentClientDatum);
       const foundMisbehaviour = checkForMisbehaviour(data.client_message, currentClientDatum);
 

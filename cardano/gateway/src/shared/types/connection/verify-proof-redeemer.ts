@@ -1,56 +1,36 @@
 import { Data } from '@dinhbx/lucid-custom';
-import { Channel } from '../channel/channel';
-import { ClientDatumState } from '../client-datum-state';
 import { Height } from '../height';
-import { MerkleProof } from '../isc-23/merkle';
-import { ConnectionEnd } from './connection-end';
+import { MerklePath, MerkleProof } from '../isc-23/merkle';
+import { ConsensusState } from '../consensus-state';
+import { VerifyMembershipParams } from './verify-membership-params';
+import { ClientState } from '../client-state-types';
 
 export type VerifyProofRedeemer =
   | {
-      VerifyChannelState: {
-        client_datum_state: ClientDatumState;
-        connection: ConnectionEnd;
-        port_id: string;
-        channel_id: string;
+      VerifyMembership: {
+        cs: ClientState;
+        cons_state: ConsensusState;
+        height: Height;
+        delay_time_period: bigint;
+        delay_block_period: bigint;
         proof: MerkleProof;
-        proof_height: Height;
-        channel: Channel;
+        path: MerklePath;
+        value: string;
       };
     }
   | {
-      VerifyPacketCommitment: {
-        client_datum_state: ClientDatumState;
-        connection: ConnectionEnd;
-        proof_height: Height;
+      VerifyNonMembership: {
+        cs: ClientState;
+        cons_state: ConsensusState;
+        height: Height;
+        delay_time_period: bigint;
+        delay_block_period: bigint;
         proof: MerkleProof;
-        port_id: string;
-        channel_id: string;
-        sequence: bigint;
-        commitment_bytes: string;
+        path: MerklePath;
       };
     }
   | {
-      VerifyPacketAcknowledgement: {
-        client_datum_state: ClientDatumState;
-        connection: ConnectionEnd;
-        proof_height: Height;
-        proof: MerkleProof;
-        port_id: string;
-        channel_id: string;
-        sequence: bigint;
-        acknowledgement: string;
-      };
-    }
-  | {
-      VerifyPacketReceiptAbsence: {
-        client_datum_state: ClientDatumState;
-        connection: ConnectionEnd;
-        proof_height: Height;
-        proof: MerkleProof;
-        port_id: string;
-        channel_id: string;
-        sequence: bigint;
-      };
+      BatchVerifyMembership: [VerifyMembershipParams[]];
     }
   | 'VerifyOther';
 
@@ -109,39 +89,6 @@ export function encodeVerifyProofRedeemer(
     next_validators_hash: Data.Bytes(),
     root: MerkleRootSchema,
   });
-  const ClientDatumStateSchema = Data.Object({
-    clientState: ClientStateSchema,
-    consensusStates: Data.Map(HeightSchema, ConsensusStateSchema),
-  });
-
-  const VersionSchema = Data.Object({
-    identifier: Data.Bytes(),
-    features: Data.Array(Data.Bytes()),
-  });
-  const ConnectionStateSchema = Data.Enum([
-    Data.Literal('Uninitialized'),
-    Data.Literal('Init'),
-    Data.Literal('TryOpen'),
-    Data.Literal('Open'),
-  ]);
-  const MerklePrefixSchema = Data.Object({
-    key_prefix: Data.Bytes(),
-  });
-  const CounterpartySchema = Data.Object({
-    // identifies the client on the counterparty chain associated with a given connection.
-    client_id: Data.Bytes(),
-    // identifies the connection end on the counterparty chain associated with a given connection.
-    connection_id: Data.Bytes(),
-    // commitment merkle prefix of the counterparty chain.
-    prefix: MerklePrefixSchema,
-  });
-  const ConnectionEndSchema = Data.Object({
-    client_id: Data.Bytes(),
-    versions: Data.Array(VersionSchema),
-    state: ConnectionStateSchema,
-    counterparty: CounterpartySchema,
-    delay_period: Data.Integer(),
-  });
 
   const LeafOpSchema = Data.Object({
     hash: Data.Integer(),
@@ -187,72 +134,47 @@ export function encodeVerifyProofRedeemer(
     proofs: Data.Array(CommitmentProofSchema),
   });
 
-  const ChannelStateSchema = Data.Enum([
-    Data.Literal('Uninitialized'),
-    Data.Literal('Init'),
-    Data.Literal('TryOpen'),
-    Data.Literal('Open'),
-    Data.Literal('Close'),
-  ]);
-  const OrderSchema = Data.Enum([Data.Literal('None'), Data.Literal('Unordered'), Data.Literal('Ordered')]);
-  const ChannelCounterpartySchema = Data.Object({
-    port_id: Data.Bytes(),
-    channel_id: Data.Bytes(),
+  const MerklePathSchema = Data.Object({
+    key_path: Data.Array(Data.Bytes()),
   });
-  const ChannelSchema = Data.Object({
-    state: ChannelStateSchema,
-    ordering: OrderSchema,
-    counterparty: ChannelCounterpartySchema,
-    connection_hops: Data.Array(Data.Bytes()),
-    version: Data.Bytes(),
+
+  const VerifyMembershipParamsSchema = Data.Object({
+    cs: ClientStateSchema,
+    cons_state: ConsensusStateSchema,
+    height: HeightSchema,
+    delay_time_period: Data.Integer(),
+    delay_block_period: Data.Integer(),
+    proof: MerkleProofSchema,
+    path: MerklePathSchema,
+    value: Data.Bytes(),
   });
 
   const VerifyProofRedeemerSchema = Data.Enum([
     Data.Object({
-      VerifyChannelState: Data.Object({
-        client_datum_state: ClientDatumStateSchema,
-        connection: ConnectionEndSchema,
-        port_id: Data.Bytes(),
-        channel_id: Data.Bytes(),
+      VerifyMembership: Data.Object({
+        cs: ClientStateSchema,
+        cons_state: ConsensusStateSchema,
+        height: HeightSchema,
+        delay_time_period: Data.Integer(),
+        delay_block_period: Data.Integer(),
         proof: MerkleProofSchema,
-        proof_height: HeightSchema,
-        channel: ChannelSchema,
+        path: MerklePathSchema,
+        value: Data.Bytes(),
       }),
     }),
     Data.Object({
-      VerifyPacketCommitment: Data.Object({
-        client_datum_state: ClientDatumStateSchema,
-        connection: ConnectionEndSchema,
-        proof_height: HeightSchema,
+      VerifyNonMembership: Data.Object({
+        cs: ClientStateSchema,
+        cons_state: ConsensusStateSchema,
+        height: HeightSchema,
+        delay_time_period: Data.Integer(),
+        delay_block_period: Data.Integer(),
         proof: MerkleProofSchema,
-        port_id: Data.Bytes(),
-        channel_id: Data.Bytes(),
-        sequence: Data.Integer(),
-        commitment_bytes: Data.Bytes(),
+        path: MerklePathSchema,
       }),
     }),
     Data.Object({
-      VerifyPacketAcknowledgement: Data.Object({
-        client_datum_state: ClientDatumStateSchema,
-        connection: ConnectionEndSchema,
-        proof_height: HeightSchema,
-        proof: MerkleProofSchema,
-        port_id: Data.Bytes(),
-        channel_id: Data.Bytes(),
-        sequence: Data.Integer(),
-        acknowledgement: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      VerifyPacketReceiptAbsence: Data.Object({
-        client_datum_state: ClientDatumStateSchema,
-        connection: ConnectionEndSchema,
-        proof_height: HeightSchema,
-        proof: MerkleProofSchema,
-        port_id: Data.Bytes(),
-        channel_id: Data.Bytes(),
-        sequence: Data.Integer(),
-      }),
+      BatchVerifyMembership: Data.Tuple([Data.Array(VerifyMembershipParamsSchema)]),
     }),
     Data.Literal('VerifyOther'),
   ]);

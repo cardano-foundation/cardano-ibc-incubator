@@ -25,3 +25,8 @@ export const ATTRIBUTE_KEY_PACKET = {
   PACKET_CHANNEL_ORDERING: 'packet_channel_ordering',
   PACKET_CONNECTION: 'packet_connection',
 };
+
+export const KEY_PACKET_COMMITMENT_PREFIX = 'commitments';
+export const KEY_PACKET_ACK_PREFIX = 'acks';
+export const KEY_PACKET_RECEIPT_PREFIX = 'receipts';
+export const KEY_SEQUENCE_PREFIX = 'sequences';

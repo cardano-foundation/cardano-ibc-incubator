@@ -17,7 +17,7 @@ import {
 import { RpcException } from '@nestjs/microservices';
 import { ConnectionOpenInitOperator } from './dto/connection/connection-open-init-operator.dto';
 import { ConnectionOpenTryOperator } from './dto/connection/connection-open-try-operator.dto';
-import { CLIENT_PREFIX } from 'src/constant';
+import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
 import { ConnectionOpenAckOperator } from './dto/connection/connection-open-ack-operator.dto';
 import { ConnectionOpenConfirmOperator } from './dto/connection/connection-open-confirm-operator.dto';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
@@ -28,7 +28,7 @@ import { State } from 'src/shared/types/connection/state';
 import { MintConnectionRedeemer, SpendConnectionRedeemer } from 'src/shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
-import { convertHex2String, convertString2Hex } from '@shared/helpers/hex';
+import { convertHex2String, convertString2Hex, fromHex, fromText, toHex, toHexString } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
@@ -37,6 +37,14 @@ import {
   validateAndFormatConnectionOpenInitParams,
   validateAndFormatConnectionOpenTryParams,
 } from './helper/connection.validate';
+import { UnsignedConnectionOpenAckDto } from '../shared/modules/lucid/dtos/connection/connection-open-ack.dto';
+import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
+import { getBlockDelay } from '../shared/helpers/verify';
+import { connectionPath } from '../shared/helpers/connection';
+import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
+import { clientStatePath, getCardanoClientStateForVerifyProofRedeemer } from '~@/shared/helpers/client-state';
+import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -397,14 +405,93 @@ export class ConnectionService {
       updatedConnectionDatum,
       'connection',
     );
-    return this.lucidService.createUnsignedConnectionOpenAckTransaction(
+
+    const spendConnectionRefUtxo = this.configService.get('deployment').validators.mintConnection.refUtxo;
+    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) => key.revisionHeight === connectionOpenAckOperator.proofHeight.revisionHeight,
+    );
+    const cardanoConnectionEnd: ConnectionEnd = {
+      client_id: convertHex2String(connectionDatum.state.counterparty.client_id),
+      versions: connectionDatum.state.versions.map((version) => ({
+        identifier: convertHex2String(version.identifier),
+        features: version.features.map((feature) => convertHex2String(feature)),
+      })),
+      state: ConnectionState.STATE_TRYOPEN,
+      counterparty: {
+        client_id: convertHex2String(connectionDatum.state.client_id),
+        connection_id: `${CONNECTION_ID_PREFIX}-${connectionOpenAckOperator.connectionSequence}`,
+        prefix: { key_prefix: fromHex(DEFAULT_MERKLE_PREFIX) },
+      },
+      delay_period: connectionDatum.state.delay_period,
+    };
+
+    const cardanoClientState: CardanoClientState = getCardanoClientStateForVerifyProofRedeemer(
+      CardanoClientState.fromJSON(connectionOpenAckOperator.counterpartyClientState),
+    );
+    const cardanoClientStateAny: Any = {
+      type_url: '/ibc.clients.cardano.v1.ClientState',
+      value: CardanoClientState.encode(cardanoClientState).finish(),
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      BatchVerifyMembership: [
+        [
+          {
+            cs: clientDatum.state.clientState,
+            cons_state: consensusState,
+            height: connectionOpenAckOperator.proofHeight,
+            delay_time_period: updatedConnectionDatum.state.delay_period,
+            delay_block_period: BigInt(getBlockDelay(updatedConnectionDatum.state.delay_period)),
+            proof: connectionOpenAckOperator.proofTry,
+            path: {
+              key_path: [
+                updatedConnectionDatum.state.counterparty.prefix.key_prefix,
+                convertString2Hex(
+                  connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id)),
+                ),
+              ],
+            },
+            value: toHex(ConnectionEnd.encode(cardanoConnectionEnd).finish()),
+          },
+          {
+            cs: clientDatum.state.clientState,
+            cons_state: consensusState,
+            height: connectionOpenAckOperator.proofHeight,
+            delay_time_period: updatedConnectionDatum.state.delay_period,
+            delay_block_period: BigInt(getBlockDelay(updatedConnectionDatum.state.delay_period)),
+            proof: connectionOpenAckOperator.proofClient,
+            path: {
+              key_path: [
+                updatedConnectionDatum.state.counterparty.prefix.key_prefix,
+                convertString2Hex(
+                  clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id)),
+                ),
+              ],
+            },
+            value: toHex(Any.encode(cardanoClientStateAny).finish()),
+          },
+        ],
+      ],
+    };
+
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
+    const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
       connectionUtxo,
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
       clientUtxo,
       encodedUpdatedConnectionDatum,
       constructedAddress,
-    );
+      spendConnectionRefUtxo,
+      verifyProofPolicyId,
+      verifyProofRefUTxO,
+      encodedVerifyProofRedeemer,
+    };
+    return this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
   }
   /* istanbul ignore next */
   async buildUnsignedConnectionOpenConfirmTx(

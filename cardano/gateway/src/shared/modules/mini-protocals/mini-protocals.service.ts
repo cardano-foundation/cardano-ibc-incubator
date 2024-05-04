@@ -2,6 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BlockFetchBlock,
+  BlockFetchNoBlocks,
   BlockFetchClient,
   RealPoint,
   ChainSyncClient,
@@ -35,7 +36,7 @@ export class MiniProtocalsService {
     });
 
     // const blockFetched = await this.peerClient.request(startPoint);
-    const blockFetched = await (await this._initialBlockFetchClient()).request(startPoint);
+    const blockFetched = await this._initialBlockFetchClientAndRequestPoint(startPoint);
 
     if (blockFetched instanceof BlockFetchBlock) {
       const blockBytes = blockFetched.getBlockBytes();
@@ -72,7 +73,7 @@ export class MiniProtocalsService {
     return Buffer.from(cbor.encode(txsCbor)).toString('hex');
   }
 
-  async _initialBlockFetchClient(): Promise<BlockFetchClient> {
+  async _initialBlockFetchClientAndRequestPoint(startPoint: RealPoint): Promise<BlockFetchBlock | BlockFetchNoBlocks> {
     let socket = connect({
       host: this.configService.get('cardanoChainHost'),
       port: this.configService.get('cardanoChainPort'),
@@ -80,29 +81,29 @@ export class MiniProtocalsService {
       keepAliveInitialDelay: 0,
       timeout: 1000,
     });
-    
+
     const mplexer: Multiplexer = new Multiplexer({
       protocolType: 'node-to-node',
       connect: () => {
+        // this.logger.log(`Multiplexer connect: destroyed = ${socket.destroyed}`);
         if (socket.destroyed) {
           socket.destroy();
           mplexer.close({
-            closeSocket: true
+            closeSocket: true,
           });
         }
         return socket;
       },
     });
     socket.on('close', () => {
-      socket.destroy();
       mplexer.close({
-        closeSocket: true
+        closeSocket: true,
       });
     });
     socket.on('error', () => {
       socket.destroy();
       mplexer.close({
-        closeSocket: true
+        closeSocket: true,
       });
     });
 
@@ -112,24 +113,29 @@ export class MiniProtocalsService {
       this.logger.error('BlockFetchClient error', err);
       throw err;
     });
-    return client;
+    const res = await client.request(startPoint);
+
+    client.removeAllListeners(); // This is not in the original code, but it is necessary to avoid memory leaks
+    client.mplexer.close({ closeSocket: true });
+    socket.destroy();
+
+    return res;
   }
 
   async _performHandshake(mplexer: Multiplexer, networkMagic: number) {
     return new Promise<void>((resolve, reject) => {
       mplexer.on(MiniProtocol.Handshake, (chunk) => {
         const msg = n2nHandshakeMessageFromCbor(chunk);
-  
+
         if (msg instanceof N2NMessageAcceptVersion) {
           mplexer.clearListeners(MiniProtocol.Handshake);
-          this.logger.log('connected to node', (mplexer.socket.unwrap() as Socket).remoteAddress);
           resolve();
         } else {
           this.logger.error('connection refused', msg);
           throw new Error('handle rejection');
         }
       });
-  
+
       mplexer.send(
         new N2NMessageProposeVersion({
           versionTable: [
@@ -154,4 +160,3 @@ export class MiniProtocalsService {
     });
   }
 }
-

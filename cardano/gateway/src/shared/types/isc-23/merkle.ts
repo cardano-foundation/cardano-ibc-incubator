@@ -37,3 +37,7 @@ export type NonExistenceProof = {
   left: ExistenceProof;
   right: ExistenceProof;
 };
+
+export type MerklePath = {
+  key_path: string[];
+};
