@@ -11,8 +11,9 @@ COPY ./proto-types ./../proto-types
 # Build the application binary using the provided Makefile
 RUN make build
 
-# Start a new stage from a smaller base image to reduce final image size
-FROM frolvlad/alpine-glibc:latest
+FROM alpine:latest
+
+RUN apk add --no-cache libc6-compat
 
 # Install openssl, required for secure network communications
 RUN apk add --no-cache openssl
@@ -37,6 +38,6 @@ COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/examples ./examples
 
 # Use Dockerize to wait for the Node.js service to be ready before starting the application
-#CMD dockerize -wait tcp://0.0.0.0:26657 -timeout 60s ./scripts/relayer-start.sh
+# CMD dockerize -wait tcp://0.0.0.0:26657 -wait tcp://0.0.0.0:4884 -timeout 120s ./scripts/relayer-start.sh
 
 CMD ["sleep", "infinity"]

@@ -178,9 +178,6 @@ proto-gen:
 	@echo "Generating Protobuf files"
 	@$(protoImage) sh ./scripts/protocgen.sh
 
-proto-gen-tx-cardano:
-	protoc --proto_path=proto/cardano/tx-cardano proto/cardano/tx-cardano/*.proto --go_out=plugins=grpc:proto/cardano/tx-cardano/pb
-
 proto-format:
 	@$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
 

@@ -3,10 +3,11 @@ package cardano
 import (
 	"bytes"
 	"context"
-	sdkmath "cosmossdk.io/math"
 	"errors"
 	"fmt"
-	pb "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/tx-cardano"
+	"time"
+
+	sdkmath "cosmossdk.io/math"
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -21,12 +22,12 @@ import (
 	ty "github.com/cometbft/cometbft/types"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/anypb"
-	"time"
 
 	"github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -94,11 +95,6 @@ func TestMsgChannelOpenAck(t *testing.T) {
 			gwErr: nil,
 		},
 		{
-			name:  "fail err txCardano",
-			txErr: fmt.Errorf("fail err txCardano"),
-			gwErr: nil,
-		},
-		{
 			name:  "fail err gw",
 			txErr: nil,
 			gwErr: fmt.Errorf("fail err gw"),
@@ -108,14 +104,6 @@ func TestMsgChannelOpenAck(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.txErr)
-
 			gwMock := new(services_mock.ChannelMsgServiceMock)
 			gwMock.On("ChannelOpenAck",
 				context.Background(),
@@ -128,9 +116,6 @@ func TestMsgChannelOpenAck(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ChannelMsgService: gwMock,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: txMock,
 				},
 			}
 			response, err := cc.MsgChannelOpenAck(provider.ChannelInfo{}, provider.ChannelProof{})
@@ -159,11 +144,6 @@ func TestMsgChannelOpenInit(t *testing.T) {
 			gwErr: nil,
 		},
 		{
-			name:  "fail err txCardano",
-			txErr: fmt.Errorf("fail err txCardano"),
-			gwErr: nil,
-		},
-		{
 			name:  "fail err gw",
 			txErr: nil,
 			gwErr: fmt.Errorf("fail err gw"),
@@ -172,13 +152,6 @@ func TestMsgChannelOpenInit(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.txErr)
 			gwMock := new(services_mock.ChannelMsgServiceMock)
 			gwMock.On("ChannelOpenInit",
 				context.Background(),
@@ -198,9 +171,6 @@ func TestMsgChannelOpenInit(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ChannelMsgService: gwMock,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: txMock,
 				},
 			}
 			response, err := cc.MsgChannelOpenInit(provider.ChannelInfo{ConnID: "ConnID"}, provider.ChannelProof{})
@@ -246,14 +216,6 @@ func TestMsgConnectionOpenAck(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.txErr)
-
 			mockService := new(services_mock.ClientQueryService)
 			mockService.On(
 				"ClientState",
@@ -275,9 +237,6 @@ func TestMsgConnectionOpenAck(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ClientQueryService: mockService,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: txMock,
 				},
 			}
 			clientState, err := cc.QueryClientState(context.Background(), 9, "")
@@ -348,12 +307,6 @@ func TestMsgConnectionOpenInit(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			keyClientMock := new(services_mock.KeyClient)
-			keyClientMock.On("ShowAddress", context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.txErr)
 			connectionMsgServiceMock := new(services_mock.ConnectionMsgServiceMock)
 			connectionMsgServiceMock.On(
 				"ConnectionOpenInit",
@@ -375,9 +328,6 @@ func TestMsgConnectionOpenInit(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ConnectionMsgService: connectionMsgServiceMock,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: keyClientMock,
 				},
 			}
 			response, err := cc.MsgConnectionOpenInit(provider.ConnectionInfo{}, provider.ConnectionProof{})
@@ -430,17 +380,6 @@ func TestMsgCreateClient(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			keyClient := new(services_mock.KeyClient)
-			keyClient.On("ShowAddress", context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddress)
-			transactionClient := new(services_mock.TransactionClient)
-			transactionClient.On("SignAndSubmitTx", context.Background(), &pb.SignAndSubmitTxRequest{
-				ChainId:              "ChainId",
-				TransactionHexString: []byte("UnsignedTxValue"),
-			}, []grpc.CallOption(nil)).Return("txId", tc.signAndSubmitTx)
 			clientQueryService := new(services_mock.ClientQueryService)
 
 			clientQueryService.On(
@@ -474,10 +413,6 @@ func TestMsgCreateClient(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ClientQueryService: clientQueryService,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient:         keyClient,
-					TransactionClient: transactionClient,
 				},
 			}
 			clientState, err := cc.QueryClientState(context.Background(), 9, "")
@@ -558,12 +493,6 @@ func TestMsgRecvPacket(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			keyClient := new(services_mock.KeyClient)
-			keyClient.On("ShowAddress", context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddress)
 			channelMsgService := new(services_mock.ChannelMsgServiceMock)
 			channelMsgService.On("RecvPacket",
 				context.Background(),
@@ -583,9 +512,6 @@ func TestMsgRecvPacket(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ChannelMsgService: channelMsgService,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: keyClient,
 				},
 			}
 			response, err := cc.MsgRecvPacket(provider.PacketInfo{}, provider.PacketProof{})
@@ -638,12 +564,6 @@ func TestMsgUpdateClient(t *testing.T) {
 				string([]byte{10, 2, 16, 100}),
 				nil)
 
-			keyClient := new(services_mock.KeyClient)
-			keyClient.On("ShowAddress", context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddress)
 			clientMsgService := new(services_mock.ClientMsgService)
 			clientMsgService.On(
 				"UpdateClient",
@@ -665,9 +585,6 @@ func TestMsgUpdateClient(t *testing.T) {
 				GateWay: services.Gateway{
 					ClientMsgService:   clientMsgService,
 					ClientQueryService: clientQueryService,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: keyClient,
 				},
 			}
 			blockData, err := cc.QueryBlockData(context.Background(), 1)
@@ -823,17 +740,6 @@ func TestMsgCreateCosmosClient(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			keyClient := new(services_mock.KeyClient)
-			keyClient.On("ShowAddress", context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddress)
-			transactionClient := new(services_mock.TransactionClient)
-			transactionClient.On("SignAndSubmitTx", context.Background(), &pb.SignAndSubmitTxRequest{
-				ChainId:              "ChainId",
-				TransactionHexString: []byte("UnsignedTxValue"),
-			}, []grpc.CallOption(nil)).Return("txId", tc.signAndSubmitTx)
 			clientQueryService := new(services_mock.ClientQueryService)
 
 			clientQueryService.On(
@@ -867,10 +773,6 @@ func TestMsgCreateCosmosClient(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ClientQueryService: clientQueryService,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient:         keyClient,
-					TransactionClient: transactionClient,
 				},
 			}
 			clientState, err := cc.QueryClientState(context.Background(), 9, "")
@@ -958,13 +860,6 @@ func TestMsgTransfer(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql", tc.txErr)
 			gwMock := new(services_mock.ChannelMsgServiceMock)
 			if tc.name == "info.TimeoutHeight.RevisionHeight != 0" {
 				gwMock.On("Transfer",
@@ -1004,9 +899,6 @@ func TestMsgTransfer(t *testing.T) {
 				GateWay: services.Gateway{
 					ChannelMsgService: gwMock,
 				},
-				TxCardano: services.TxCardano{
-					KeyClient: txMock,
-				},
 			}
 			cc.log = zap.New(zapcore.NewCore(
 				zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
@@ -1023,7 +915,7 @@ func TestMsgTransfer(t *testing.T) {
 				} else if tc.txErr != nil {
 					require.EqualError(t, err, tc.txErr.Error())
 					// Check the log message
-					require.Contains(t, buf.String(), "Fail to load signer from tx-cardano")
+					require.Contains(t, buf.String(), "Fail to load signer from ....")
 				} else {
 					require.EqualError(t, err, tc.gwErr.Error())
 				}
@@ -1059,13 +951,6 @@ func TestMsgAcknowledgement(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.txErr)
 			gwMock := new(services_mock.ChannelMsgServiceMock)
 			gwMock.On("Acknowledgement",
 				context.Background(),
@@ -1084,9 +969,6 @@ func TestMsgAcknowledgement(t *testing.T) {
 				},
 				GateWay: services.Gateway{
 					ChannelMsgService: gwMock,
-				},
-				TxCardano: services.TxCardano{
-					KeyClient: txMock,
 				},
 			}
 			response, err := cc.MsgAcknowledgement(provider.PacketInfo{}, provider.PacketProof{})
@@ -1468,11 +1350,6 @@ func TestSendMessagesToMempool(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			transactionClient := new(services_mock.TransactionClient)
-			transactionClient.On("SignAndSubmitTx", context.Background(), &pb.SignAndSubmitTxRequest{
-				ChainId:              "ChainId",
-				TransactionHexString: []byte{},
-			}, []grpc.CallOption(nil)).Return("txId", tc.signAndSubmitTxErr)
 			typeProviderMock := new(services_mock.TypeProvider)
 
 			typeProviderMock.On("TransactionByHash",
@@ -1487,9 +1364,6 @@ func TestSendMessagesToMempool(t *testing.T) {
 					ChainID: "ChainId",
 				},
 				GateWay: services.Gateway{TypeProvider: typeProviderMock},
-				TxCardano: services.TxCardano{
-					TransactionClient: transactionClient,
-				},
 			}
 
 			cc.log = zap.New(zapcore.NewCore(
@@ -2641,13 +2515,6 @@ func TestMsgTimeout(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddressErr)
 
 			channelMsgServiceMock := new(services_mock.ChannelMsgServiceMock)
 			channelMsgServiceMock.On("Timeout", context.Background(),
@@ -2680,8 +2547,7 @@ func TestMsgTimeout(t *testing.T) {
 					Key:     "KeyName",
 					ChainID: "ChainId",
 				},
-				TxCardano: services.TxCardano{KeyClient: txMock},
-				GateWay:   services.Gateway{ChannelMsgService: channelMsgServiceMock},
+				GateWay: services.Gateway{ChannelMsgService: channelMsgServiceMock},
 			}
 
 			response, err := cc.MsgTimeout(provider.PacketInfo{
@@ -2744,13 +2610,6 @@ func TestTimeoutRefresh(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			txMock := new(services_mock.KeyClient)
-			txMock.On("ShowAddress",
-				context.Background(),
-				&pb.ShowAddressRequest{
-					KeyName: "KeyName",
-					ChainId: "ChainId",
-				}, []grpc.CallOption(nil)).Return("Address", tc.showAddressErr)
 
 			channelMsgServiceMock := new(services_mock.ChannelMsgServiceMock)
 			channelMsgServiceMock.On("TimeoutRefresh",
@@ -2766,8 +2625,7 @@ func TestTimeoutRefresh(t *testing.T) {
 					Key:     "KeyName",
 					ChainID: "ChainId",
 				},
-				TxCardano: services.TxCardano{KeyClient: txMock},
-				GateWay:   services.Gateway{ChannelMsgService: channelMsgServiceMock},
+				GateWay: services.Gateway{ChannelMsgService: channelMsgServiceMock},
 			}
 			response, err := cc.MsgTimeoutRefresh("")
 			if err != nil {
@@ -2836,11 +2694,6 @@ func TestSendMessages(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			transactionClient := new(services_mock.TransactionClient)
-			transactionClient.On("SignAndSubmitTx", context.Background(), &pb.SignAndSubmitTxRequest{
-				ChainId:              "ChainId",
-				TransactionHexString: []byte{10, 2, 16, 100},
-			}, []grpc.CallOption(nil)).Return("txId", tc.signAndSubmitTxErr)
 
 			typeProviderMock := new(services_mock.TypeProvider)
 			typeProviderMock.On("TransactionByHash",
@@ -2853,9 +2706,6 @@ func TestSendMessages(t *testing.T) {
 				PCfg: CardanoProviderConfig{
 					Key:     "KeyName",
 					ChainID: "ChainId",
-				},
-				TxCardano: services.TxCardano{
-					TransactionClient: transactionClient,
 				},
 				GateWay: services.Gateway{TypeProvider: typeProviderMock},
 			}
