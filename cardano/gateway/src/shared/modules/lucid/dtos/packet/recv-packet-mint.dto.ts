@@ -24,4 +24,8 @@ export type UnsignedRecvPacketMintDto = {
   recvPacketRefUTxO: UTxO;
   recvPacketPolicyId: PolicyId;
   channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
 };

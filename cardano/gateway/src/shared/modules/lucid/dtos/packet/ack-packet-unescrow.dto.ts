@@ -22,4 +22,8 @@ export type UnsignedAckPacketUnescrowDto = {
   ackPacketRefUTxO: UTxO;
   ackPacketPolicyId: PolicyId;
   channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
 };

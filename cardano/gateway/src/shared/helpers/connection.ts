@@ -1,3 +1,4 @@
+import { KEY_CONNECTION_PREFIX } from '../../constant';
 import { AuthToken } from '../types/auth-token';
 import { hashSha3_256, hexToBytes } from './hex';
 
@@ -10,4 +11,8 @@ export function getConnectionIdByTokenName(tokenName: string, baseToken: AuthTok
   const connIdHex = tokenName.replaceAll(prefixFull, '');
 
   return Buffer.from(hexToBytes(connIdHex)).toString();
+}
+
+export function connectionPath(connectionId: string): string {
+  return `${KEY_CONNECTION_PREFIX}/${connectionId}`;
 }

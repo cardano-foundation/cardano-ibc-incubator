@@ -58,6 +58,15 @@ export function fromHex(hex) {
 export function decodeString(s) {
   return decode(new TextEncoder().encode(s));
 }
+
+/** Convert a Hex encoded string to a Utf-8 encoded string. */
+export function toText(hex) {
+  return new TextDecoder().decode(decode(new TextEncoder().encode(hex)));
+}
+/** Convert a Utf-8 encoded string to a Hex encoded string. */
+export function fromText(text) {
+  return toHex(new TextEncoder().encode(text));
+}
 /**
  * Decode decodes `src` into `decodedLen(src.length)` bytes
  * If the input is malformed an error will be thrown

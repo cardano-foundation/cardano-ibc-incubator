@@ -20,3 +20,5 @@ export const ATTRIBUTE_KEY_CLIENT = {
   title: 'title',
 };
 export const CLIENT_ID_PREFIX = 'ibc_client';
+export const KEY_CLIENT_PREFIX = 'clients';
+export const KEY_CLIENT_STATE = 'clientState';

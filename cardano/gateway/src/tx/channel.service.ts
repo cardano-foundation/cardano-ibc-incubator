@@ -33,8 +33,8 @@ import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
-import { UnsignedConnectionOpenInitDto } from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
-import { UnsignedConnectionOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
+import { UnsignedChannelOpenInitDto } from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
+import { UnsignedChannelOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -42,6 +42,15 @@ import {
   validateAndFormatChannelOpenInitParams,
   validateAndFormatChannelOpenTryParams,
 } from './helper/channel.validate';
+import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
+import { getBlockDelay } from '~@/shared/helpers/verify';
+import { channelPath } from '~@/shared/helpers/channel';
+import {
+  Channel as CardanoChannel,
+  State as CardanoChannelState,
+  orderFromJSON,
+} from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 
 @Injectable()
 export class ChannelService {
@@ -288,7 +297,7 @@ export class ChannelService {
     //   'mockModule',
     // );
     // Call createUnsignedChannelOpenInitTransaction method with defined parameters
-    const unsignedChannelOpenInitParams: UnsignedConnectionOpenInitDto = {
+    const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
       handlerUtxo,
       connectionUtxo,
       clientUtxo,
@@ -538,18 +547,54 @@ export class ChannelService {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
     };
-    // const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
-    //   mockModuleUtxo.datum!,
-    //   'mockModule',
-    // );
-    // const newMockModuleDatum: MockModuleDatum = currentMockModuleDatum;
-    // const encodedNewMockModuleDatum: string = await this.lucidService.encode<MockModuleDatum>(
-    //   newMockModuleDatum,
-    //   'mockModule',
-    // );
+
+    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) => key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
+    );
+
+    const cardanoChannelEnd: CardanoChannel = {
+      state: CardanoChannelState.STATE_TRYOPEN,
+      ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
+      counterparty: {
+        port_id: convertHex2String(channelDatum.port),
+        channel_id: `${CHANNEL_ID_PREFIX}-${channelOpenAckOperator.channelSequence}`,
+      },
+      connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+      version: convertHex2String(channelDatum.state.channel.version),
+    };
+
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: channelOpenAckOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        proof: channelOpenAckOperator.proofTry,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              channelPath(
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.port_id),
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.channel_id),
+              ),
+            ),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(cardanoChannelEnd).finish()),
+      },
+    };
+
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
 
     // Call createUnsignedChannelOpenAckTransaction method with defined parameters
-    const unsignedChannelOpenAckParams: UnsignedConnectionOpenAckDto = {
+    const unsignedChannelOpenAckParams: UnsignedChannelOpenAckDto = {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
@@ -564,6 +609,9 @@ export class ChannelService {
       chanOpenAckPolicyId,
       chanOpenAckRefUtxo,
       channelToken,
+      verifyProofPolicyId,
+      verifyProofRefUTxO,
+      encodedVerifyProofRedeemer,
     };
     return this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
   }

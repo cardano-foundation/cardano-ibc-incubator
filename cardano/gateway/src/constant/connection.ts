@@ -23,3 +23,4 @@ export const STATE_MAPPING_CONNECTION = {
 };
 
 export const CONNECTION_ID_PREFIX = 'connection';
+export const KEY_CONNECTION_PREFIX = 'connections';

@@ -33,9 +33,8 @@ import {
   encodeMockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
 import { UnsignedSendPacketEscrowDto } from './dtos/packet/send-packet-escrow.dto';
-import { UnsignedConnectionOpenInitDto } from './dtos/channel/channel-open-init.dto';
-import { UnsignedConnectionOpenTryDto } from './dtos/channel/channel-open-try.dto';
-import { UnsignedConnectionOpenAckDto } from './dtos/channel/channel-open-ack.dto';
+import { UnsignedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
+import { UnsignedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
 import { calculateTransferToken } from './helpers/send-packet.helper';
 import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
 import { UnsignedRecvPacketMintDto } from './dtos/packet/recv-packet-mint.dto';
@@ -50,6 +49,7 @@ import { UnsignedAckPacketMintDto } from './dtos/packet/ack-packet-mint.dto';
 import { UnsignedSendPacketBurnDto } from './dtos/packet/send-packet-burn.dto';
 import { UnsignedTimeoutRefreshDto } from './dtos/packet/timeout-refresh-dto';
 import { UnsignedAckPacketSucceedDto } from './dtos/packet/ack-packet-succeed.dto';
+import { UnsignedConnectionOpenAckDto } from './dtos/connection/connection-open-ack.dto';
 type CodecType =
   | 'client'
   | 'connection'
@@ -357,26 +357,25 @@ export class LucidService {
     });
     return tx;
   }
-  public createUnsignedConnectionOpenAckTransaction(
-    connectionUtxo: UTxO,
-    encodedSpendConnectionRedeemer: string,
-    connectionTokenUnit: string,
-    clientUtxo: UTxO,
-    encodedUpdatedConnectionDatum: string,
-    constructedAddress: string,
-  ): Tx {
+  public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
-    tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo])
-      .collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
-      .readFrom([clientUtxo])
+    tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo, dto.verifyProofRefUTxO])
+      .collectFrom([dto.connectionUtxo], dto.encodedSpendConnectionRedeemer)
+      .readFrom([dto.clientUtxo])
       .payToContract(
         deploymentConfig.validators.spendConnection.address,
-        { inline: encodedUpdatedConnectionDatum },
+        { inline: dto.encodedUpdatedConnectionDatum },
         {
-          [connectionTokenUnit]: 1n,
+          [dto.connectionTokenUnit]: 1n,
         },
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
     return tx;
   }
@@ -403,7 +402,7 @@ export class LucidService {
       );
     return tx;
   }
-  public createUnsignedChannelOpenInitTransaction(dto: UnsignedConnectionOpenInitDto): Tx {
+  public createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
@@ -479,11 +478,16 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedChannelOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): Tx {
+  public createUnsignedChannelOpenAckTransaction(dto: UnsignedChannelOpenAckDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.chanOpenAckRefUtxo])
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleRefUtxo,
+      dto.chanOpenAckRefUtxo,
+      dto.verifyProofRefUTxO,
+    ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -508,6 +512,12 @@ export class LucidService {
           [dto.chanOpenAckPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;
@@ -557,7 +567,12 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.recvPacketRefUTxO])
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleRefUtxo,
+      dto.recvPacketRefUTxO,
+      dto.verifyProofRefUTxO,
+    ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -588,6 +603,12 @@ export class LucidService {
           [dto.recvPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;
@@ -601,6 +622,7 @@ export class LucidService {
       dto.spendTransferModuleRefUtxo,
       dto.mintVoucherRefUtxo,
       dto.recvPacketRefUTxO,
+      dto.verifyProofRefUTxO,
     ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
@@ -637,6 +659,12 @@ export class LucidService {
           [dto.recvPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;
@@ -645,7 +673,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -672,6 +700,12 @@ export class LucidService {
           [dto.ackPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;
@@ -680,7 +714,7 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO])
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -715,6 +749,12 @@ export class LucidService {
           [dto.ackPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;
@@ -723,7 +763,13 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
 
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.mintVoucherRefUtxo, dto.ackPacketRefUTxO])
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendTransferModuleRefUtxo,
+      dto.mintVoucherRefUtxo,
+      dto.ackPacketRefUTxO,
+      dto.verifyProofRefUTxO,
+    ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -764,6 +810,12 @@ export class LucidService {
           [dto.ackPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       );
 
     return tx;

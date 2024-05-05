@@ -1,6 +1,6 @@
 import { UTxO } from '@dinhbx/lucid-custom';
 
-export type UnsignedConnectionOpenInitDto = {
+export type UnsignedChannelOpenInitDto = {
   handlerUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
