@@ -17,6 +17,9 @@ use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_st
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyNonMembership, VerifyProofRedeemer,
+}
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -26,9 +29,6 @@ use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
 use ibc/core/ics_003_connection_semantics/types/state as conn_state_mod
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_003_connection_semantics/verify_proof_redeemer.{
-  VerifyPacketReceiptAbsence, VerifyProofRedeemer,
-}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{TimeoutPacket}
@@ -48,6 +48,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -172,20 +173,16 @@ validator(
         chan_order_mod.Unordered -> {
           trace @"timeout_packet: channel ordering is  Unordered"
 
-          expect Some(verify_proof_redeemer) =
-            dict.get(redeemers, Mint(verify_proof_policy_id))
-          expect verify_proof_redeemer: VerifyProofRedeemer =
-            verify_proof_redeemer
           expect
-            verify_proof_redeemer == VerifyPacketReceiptAbsence {
-              client_datum_state: client_datum.state,
-              connection: connection_datum.state,
+            validate_timeout_packet_proof(
+              connection_datum.state,
+              client_datum.state,
               proof_height,
-              proof: proof_unreceived,
-              port_id: packet.destination_port,
-              channel_id: packet.destination_channel,
-              sequence: packet.sequence,
-            }
+              proof_unreceived,
+              packet,
+              redeemers,
+              verify_proof_policy_id,
+            )
           trace @"timeout_packet: packet proof is valid"
 
           True
@@ -233,6 +230,53 @@ validator(
 
     True
   }
+}
+
+fn validate_timeout_packet_proof(
+  connection: ConnectionEnd,
+  client_datum_state: ClientDatumState,
+  proof_height: Height,
+  proof: MerkleProof,
+  packet: Packet,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> Bool {
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.packet_receipt_path(
+            packet.destination_port,
+            packet.destination_channel,
+            packet.sequence,
+          ),
+        ],
+      ),
+    )
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  expect
+    verify_proof_redeemer == VerifyNonMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+    }
+
+  True
 }
 
 //==========================================Test================================================
@@ -740,17 +784,30 @@ test succeed_timeout_packet() {
   expect connection_datum: ConnectionDatum =
     validator_utils.get_inline_datum(mock_data.connection_input.output)
 
-  let verify_proof_redeemer =
-    VerifyPacketReceiptAbsence {
-      client_datum_state: client_datum.state,
-      connection: connection_datum.state,
-      proof_height,
-      proof: proof_unreceived,
-      port_id: packet.destination_port,
-      channel_id: packet.destination_channel,
-      sequence: packet.sequence,
-    }
+  let merkle_path =
+    merkle.apply_prefix(
+      connection_datum.state.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.packet_receipt_path(
+            packet.destination_port,
+            packet.destination_channel,
+            packet.sequence,
+          ),
+        ],
+      ),
+    )
 
+  let verify_proof_redeemer =
+    VerifyNonMembership {
+      cs: client_datum.state.client_state,
+      cons_state,
+      height: proof_height,
+      delay_time_period: 0,
+      delay_block_period: 0,
+      proof: proof_unreceived,
+      path: merkle_path,
+    }
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
       |> dict.insert(
@@ -773,7 +830,6 @@ test succeed_timeout_packet() {
           verify_proof_redeemer,
           validator_utils.compare_script_purpose,
         )
-
   //==========================arrange context=========================
   let context =
     ScriptContext {

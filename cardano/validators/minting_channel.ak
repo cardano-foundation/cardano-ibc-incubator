@@ -12,9 +12,13 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
+  VerifyMembership, VerifyProofRedeemer,
+}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -44,6 +48,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_024_host_requirements/channel_keys as host_chan_keys
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
@@ -56,6 +61,7 @@ validator(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
 ) {
   fn mint_channel(redeemer: MintChannelRedeemer, context: ScriptContext) -> Bool {
@@ -86,7 +92,7 @@ validator(
 
     when redeemer is {
       ChanOpenInit { handler_token } -> {
-        trace @"mint_channel: ChanOpenInit branch\n"
+        trace @"mint_channel: ChanOpenInit branch"
 
         expect Some(handler_datum) =
           validator_utils.validate_handler_redeemer(
@@ -95,7 +101,7 @@ validator(
             handler_token,
             HandlerChanOpenInit,
           )
-        trace @"mint_channel: spent handler redeemer is valid\n"
+        trace @"mint_channel: spent handler redeemer is valid"
 
         expect Some(connection_datum) =
           validator_utils.validate_referred_connection(
@@ -104,13 +110,13 @@ validator(
             connection_minting_policy_id,
             connection_id,
           )
-        trace @"mint_channel: validator_utils.validate_referred_connection\n"
+        trace @"mint_channel: validator_utils.validate_referred_connection"
 
         expect [connection_version] = connection_datum.state.versions
         expect
           order.string(channel_output_datum.state.channel.ordering)
             |> version.verify_supported_feature(connection_version, _)
-        trace @"mint_channel: validate connection support channel ordering\n"
+        trace @"mint_channel: validate connection support channel ordering"
 
         expect Some(client_datum) =
           validator_utils.validate_referred_client(
@@ -119,7 +125,7 @@ validator(
             client_minting_policy_id,
             connection_datum.state.client_id,
           )
-        trace @"mint_channel: validator_utils.validate_referred_client\n"
+        trace @"mint_channel: validator_utils.validate_referred_client"
 
         expect
           client_state.status(
@@ -130,7 +136,7 @@ validator(
               height_mod.compare,
             ),
           ) == Active
-        trace @"mint_channel: client status is active\n"
+        trace @"mint_channel: client status is active"
 
         expect Some(channel_token) =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
@@ -141,7 +147,7 @@ validator(
                 channel_keys.channel_prefix,
                 _,
               )
-        trace @"mint_channel: validator_utils.validate_mint\n"
+        trace @"mint_channel: validator_utils.validate_mint"
 
         expect auth.contain_auth_token(channel_output, channel_token)
         trace @"mint_channel: output contains connection token"
@@ -151,7 +157,7 @@ validator(
             channel_output_datum,
             channel_token,
           )
-        trace @"mint_channel: channel datum is initialized valid\n"
+        trace @"mint_channel: channel datum is initialized valid"
 
         let channel_id =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
@@ -167,7 +173,7 @@ validator(
           )
         expect Callback(ibc_module_callback) = ibc_module_redeemer
         expect ibc_module_callback == OnChanOpenInit { channel_id }
-        trace @"mint_channel: ibc module callback is valid\n"
+        trace @"mint_channel: ibc module callback is valid"
 
         True
       }
@@ -178,7 +184,7 @@ validator(
         proof_init,
         proof_height,
       } -> {
-        trace @"mint_channel: ChanOpenTry branch\n"
+        trace @"mint_channel: ChanOpenTry branch"
 
         expect Some(handler_datum) =
           validator_utils.validate_handler_redeemer(
@@ -187,7 +193,7 @@ validator(
             handler_token,
             HandlerChanOpenTry,
           )
-        trace @"mint_channel: spent handler redeemer is HandlerChanOpenTry\n"
+        trace @"mint_channel: spent handler redeemer is HandlerChanOpenTry"
 
         expect Some(connection_datum) =
           validator_utils.validate_referred_connection(
@@ -196,16 +202,16 @@ validator(
             connection_minting_policy_id,
             connection_id,
           )
-        trace @"mint_channel: reference_inputs contain Connection utxo\n"
+        trace @"mint_channel: reference_inputs contain Connection utxo"
 
         expect connection_datum.state.state == connection_state.Open
-        trace @"mint_channel: Connection is open\n"
+        trace @"mint_channel: Connection is open"
 
         expect [connection_version] = connection_datum.state.versions
         expect
           order.string(channel_output_datum.state.channel.ordering)
             |> version.verify_supported_feature(connection_version, _)
-        trace @"mint_channel: connection support channel ordering\n"
+        trace @"mint_channel: connection support channel ordering"
 
         expect Some(client_datum) =
           validator_utils.validate_referred_client(
@@ -214,7 +220,7 @@ validator(
             client_minting_policy_id,
             connection_datum.state.client_id,
           )
-        trace @"mint_channel: validator_utils.validate_referred_client\n"
+        trace @"mint_channel: validator_utils.validate_referred_client"
 
         expect
           client_state.status(
@@ -225,7 +231,7 @@ validator(
               height_mod.compare,
             ),
           ) == Active
-        trace @"mint_channel: client status is active\n"
+        trace @"mint_channel: client status is active"
 
         expect Some(channel_token) =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
@@ -236,7 +242,7 @@ validator(
                 channel_keys.channel_prefix,
                 _,
               )
-        trace @"mint_channel: validator_utils.validate_mint\n"
+        trace @"mint_channel: validator_utils.validate_mint"
 
         expect auth.contain_auth_token(channel_output, channel_token)
         trace @"mint_channel: output contains connection token"
@@ -246,7 +252,7 @@ validator(
             channel_output_datum,
             channel_token,
           )
-        trace @"mint_channel: channel datum is initialized valid\n"
+        trace @"mint_channel: channel datum is initialized valid"
 
         expect
           validate_chan_open_try_proof(
@@ -256,8 +262,10 @@ validator(
             counterparty_version,
             proof_init,
             proof_height,
+            redeemers,
+            verify_proof_policy_id,
           )
-        trace @"mint_channel: channel init proof is valid\n"
+        trace @"mint_channel: channel init proof is valid"
 
         let channel_id =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
@@ -273,7 +281,7 @@ validator(
           )
         expect Callback(ibc_module_callback) = ibc_module_redeemer
         expect ibc_module_callback == OnChanOpenTry { channel_id }
-        trace @"mint_channel: ibc module callback is valid\n"
+        trace @"mint_channel: ibc module callback is valid"
 
         True
       }
@@ -282,15 +290,17 @@ validator(
 }
 
 fn validate_chan_open_try_proof(
-  connection_end: ConnectionEnd,
+  connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   channel_datum: ChannelDatum,
   counterparty_version: ByteArray,
-  proof_init: MerkleProof,
+  proof: MerkleProof,
   proof_height: Height,
+  redeemers: Dict<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let counterparty_hops =
-    [connection_end.counterparty.connection_id]
+    [connection.counterparty.connection_id]
 
   let expected_counterparty =
     ChannelCounterparty { port_id: channel_datum.port_id, channel_id: "" }
@@ -304,15 +314,48 @@ fn validate_chan_open_try_proof(
       version: counterparty_version,
     }
 
-  verify.verify_channel_state(
-    client_datum_state,
-    connection_end,
-    channel_datum.state.channel.counterparty.port_id,
-    channel_datum.state.channel.counterparty.channel_id,
-    proof_init,
-    proof_height,
-    expected_channel,
-  )
+  let time_delay = connection.delay_period
+  let block_delay = verify.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          host_chan_keys.channel_path(
+            channel_datum.state.channel.counterparty.port_id,
+            channel_datum.state.channel.counterparty.channel_id,
+          ),
+        ],
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
+      |> dict.get(proof_height)
+
+  let channel_bz =
+    channel_pb.marshal_for_channel(
+      Some(channel.convert_to_channel_proto(expected_channel)),
+    )
+
+  expect Some(verify_proof_redeemer) =
+    dict.get(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  expect
+    verify_proof_redeemer == VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+      value: channel_bz,
+    }
+
+  True
 }
 
 //==========================================Test================================================
@@ -321,6 +364,7 @@ type MockData {
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  verify_proof_policy_id: PolicyId,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   channel_minting_policy_id: PolicyId,
   channel_sequence: Int,
@@ -332,6 +376,7 @@ type MockData {
   validity_range: ValidityRange,
   port_id: ByteArray,
   module_input: Input,
+  proof_height: Height,
 }
 
 fn setup() -> MockData {
@@ -580,6 +625,7 @@ fn setup() -> MockData {
     client_minting_policy_id,
     connection_minting_policy_id,
     port_minting_policy_id,
+    verify_proof_policy_id: "mock verify_proof_policy_id",
     spend_channel_script_hash: "mock spend_channel_script_hash",
     channel_minting_policy_id: "mock channel_minting_policy_id",
     channel_sequence,
@@ -591,6 +637,7 @@ fn setup() -> MockData {
     validity_range,
     port_id,
     module_input,
+    proof_height,
   }
 }
 
@@ -709,6 +756,7 @@ test succeed_chan_open_init() {
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
     mock_data.spend_channel_script_hash,
     mint_channel_redeemer,
     context,
@@ -878,14 +926,13 @@ test succeed_chan_open_try() {
       ],
     }
   let counterparty_version = "mock-version"
-  let proof_height = Height { revision_number: 1, revision_height: 13 }
 
   let mint_channel_redeemer =
     ChanOpenTry {
       handler_token: mock_data.handler_token,
       counterparty_version,
       proof_init,
-      proof_height,
+      proof_height: mock_data.proof_height,
     }
 
   let handler_redeemer: Redeemer = HandlerChanOpenTry
@@ -894,6 +941,65 @@ test succeed_chan_open_try() {
     string_utils.int_to_string(mock_data.channel_sequence)
       |> channel_keys.format_channel_identifier()
   let module_redeemer: Redeemer = Callback(OnChanOpenTry { channel_id })
+
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(mock_data.client_input.output)
+  expect connection_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(mock_data.connection_input.output)
+
+  let connection = connection_datum.state
+
+  let time_delay = connection.delay_period
+  let block_delay = verify.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          host_chan_keys.channel_path(
+            channel_datum.state.channel.counterparty.port_id,
+            channel_datum.state.channel.counterparty.channel_id,
+          ),
+        ],
+      ),
+    )
+
+  let counterparty_hops =
+    [connection.counterparty.connection_id]
+
+  let expected_counterparty =
+    ChannelCounterparty { port_id: channel_datum.port_id, channel_id: "" }
+
+  expect Some(cons_state) =
+    dict.from_list(client_datum.state.consensus_states, height_mod.compare)
+      |> dict.get(mock_data.proof_height)
+
+  let expected_channel =
+    Channel {
+      state: channel_state.Init,
+      ordering: channel_datum.state.channel.ordering,
+      counterparty: expected_counterparty,
+      connection_hops: counterparty_hops,
+      version: counterparty_version,
+    }
+
+  let channel_bz =
+    channel_pb.marshal_for_channel(
+      Some(channel.convert_to_channel_proto(expected_channel)),
+    )
+
+  let verify_proof_redeemer =
+    VerifyMembership {
+      cs: client_datum.state.client_state,
+      cons_state,
+      height: mock_data.proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_init,
+      path: merkle_path,
+      value: channel_bz,
+    }
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()
@@ -910,6 +1016,11 @@ test succeed_chan_open_try() {
       |> dict.insert(
           Spend(mock_data.module_input.output_reference),
           module_redeemer,
+          validator_utils.compare_script_purpose,
+        )
+      |> dict.insert(
+          Mint(mock_data.verify_proof_policy_id),
+          verify_proof_redeemer,
           validator_utils.compare_script_purpose,
         )
 
@@ -932,6 +1043,7 @@ test succeed_chan_open_try() {
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
     mock_data.spend_channel_script_hash,
     mint_channel_redeemer,
     context,
