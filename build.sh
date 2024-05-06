@@ -17,5 +17,5 @@ cd ${SCRIPT_DIR}/relayer && docker compose build
 git submodule update --init --recursive
 chmod +x ${SCRIPT_DIR}/setup_osmosis.sh
 bash ${SCRIPT_DIR}/setup_osmosis.sh
-cd ${SCRIPT_DIR}/chains/osmosis && make localnet-init
+cd ${SCRIPT_DIR}/chains/osmosis/osmosis && make localnet-init
 

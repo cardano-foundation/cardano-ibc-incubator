@@ -4,7 +4,7 @@
 CARDANO_SCRIPT_DIR="cardano/scripts"
 COSMOS_SCRIPT_DIR="cosmos/scripts"
 RELAYER_SCRIPT_DIR="relayer/scripts"
-OSMOSIS_SCRIPT_DIR="chains/osmosis/scripts"
+OSMOSIS_SCRIPT_DIR="chains/osmosis/osmosis/scripts"
 
 SCRIPT_DIR=$(dirname $(realpath $0))
 
