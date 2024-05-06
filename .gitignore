@@ -17,5 +17,13 @@
 
 cardano/gateway/deployment
 chains/osmosis
-osmosis-setup/cosmwasm/artifacts
-osmosis-setup/cosmwasm/target
+chains/osmosis-setup/cosmwasm/artifacts
+chains/osmosis-setup/cosmwasm/target
+chains/osmosis-setup/.osmosis-local/data
+chains/osmosis-setup/.osmosis-local/keyring-test
+chains/osmosis-setup/.osmosis-local/config/gentx
+chains/osmosis-setup/.osmosis-local/config/client.toml
+chains/osmosis-setup/.osmosis-local/config/node_key.json
+chains/osmosis-setup/.osmosis-local/config/priv_validator_key.json
+chains/osmosis-setup/.osmosis-local/wasm/wasm/cache
+chains/osmosis-setup/.osmosis-local/wasm/wasm/state/wasm

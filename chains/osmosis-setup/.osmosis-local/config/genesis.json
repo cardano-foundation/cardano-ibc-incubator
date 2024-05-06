@@ -1,0 +1,1113 @@
+{
+  "genesis_time": "2024-04-25T11:03:11.15387095Z",
+  "chain_id": "localosmosis",
+  "initial_height": "1",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "22020096",
+      "max_gas": "-1"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {
+      "app": "0"
+    }
+  },
+  "app_hash": "",
+  "app_state": {
+    "07-tendermint": null,
+    "08-wasm": {
+      "contracts": []
+    },
+    "auth": {
+      "params": {
+        "max_memo_characters": "256",
+        "tx_sig_limit": "7",
+        "tx_size_cost_per_byte": "10",
+        "sig_verify_cost_ed25519": "590",
+        "sig_verify_cost_secp256k1": "1000"
+      },
+      "accounts": [
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo12smx2wdlyttvyzvzg54y2vnqwq2qjateuf7thj",
+          "pub_key": null,
+          "account_number": "0",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1cyyzpxplxdzkeea7kwsydadg87357qnahakaks",
+          "pub_key": null,
+          "account_number": "1",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo18s5lynnmx37hq4wlrw9gdn68sg2uxp5rgk26vv",
+          "pub_key": null,
+          "account_number": "2",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1qwexv7c6sm95lwhzn9027vyu2ccneaqad4w8ka",
+          "pub_key": null,
+          "account_number": "3",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo14hcxlnwlqtq75ttaxf674vk6mafspg8xwgnn53",
+          "pub_key": null,
+          "account_number": "4",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo12rr534cer5c0vj53eq4y32lcwguyy7nndt0u2t",
+          "pub_key": null,
+          "account_number": "5",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1nt33cjd5auzh36syym6azgc8tve0jlvklnq7jq",
+          "pub_key": null,
+          "account_number": "6",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo10qfrpash5g2vk3hppvu45x0g860czur8ff5yx0",
+          "pub_key": null,
+          "account_number": "7",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1f4tvsdukfwh6s9swrc24gkuz23tp8pd3e9r5fa",
+          "pub_key": null,
+          "account_number": "8",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1myv43sqgnj5sm4zl98ftl45af9cfzk7nhjxjqh",
+          "pub_key": null,
+          "account_number": "9",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo14gs9zqh8m49yy9kscjqu9h72exyf295afg6kgk",
+          "pub_key": null,
+          "account_number": "10",
+          "sequence": "0"
+        },
+        {
+          "@type": "/cosmos.auth.v1beta1.BaseAccount",
+          "address": "osmo1jllfytsz4dryxhz5tl7u73v29exsf80vz52ucc",
+          "pub_key": null,
+          "account_number": "11",
+          "sequence": "0"
+        }
+      ]
+    },
+    "authz": {
+      "authorization": []
+    },
+    "bank": {
+      "params": {
+        "send_enabled": [],
+        "default_send_enabled": true
+      },
+      "balances": [
+        {
+          "address": "osmo1qwexv7c6sm95lwhzn9027vyu2ccneaqad4w8ka",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo18s5lynnmx37hq4wlrw9gdn68sg2uxp5rgk26vv",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo1f4tvsdukfwh6s9swrc24gkuz23tp8pd3e9r5fa",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo12rr534cer5c0vj53eq4y32lcwguyy7nndt0u2t",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo12smx2wdlyttvyzvzg54y2vnqwq2qjateuf7thj",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo10qfrpash5g2vk3hppvu45x0g860czur8ff5yx0",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo1jllfytsz4dryxhz5tl7u73v29exsf80vz52ucc",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "1000000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "1000000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "1000000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "1000000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "1000000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo1nt33cjd5auzh36syym6azgc8tve0jlvklnq7jq",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo14gs9zqh8m49yy9kscjqu9h72exyf295afg6kgk",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo14hcxlnwlqtq75ttaxf674vk6mafspg8xwgnn53",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo1cyyzpxplxdzkeea7kwsydadg87357qnahakaks",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "9999999999999999999999999999999999999999999999999"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "9999999999999999999999999999999999999999999999999"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        },
+        {
+          "address": "osmo1myv43sqgnj5sm4zl98ftl45af9cfzk7nhjxjqh",
+          "coins": [
+            {
+              "denom": "stake",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uion",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uosmo",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uusdc",
+              "amount": "100000000000"
+            },
+            {
+              "denom": "uweth",
+              "amount": "100000000000"
+            }
+          ]
+        }
+      ],
+      "supply": [],
+      "denom_metadata": [
+        {
+          "description": "Registered denom uion for localosmosis testing",
+          "denom_units": [
+            {
+              "denom": "uion",
+              "exponent": 0,
+              "aliases": []
+            }
+          ],
+          "base": "uion",
+          "display": "uion",
+          "name": "uion",
+          "symbol": "uion",
+          "uri": "",
+          "uri_hash": ""
+        },
+        {
+          "description": "Registered denom uosmo for localosmosis testing",
+          "denom_units": [
+            {
+              "denom": "uosmo",
+              "exponent": 0,
+              "aliases": []
+            }
+          ],
+          "base": "uosmo",
+          "display": "uosmo",
+          "name": "uosmo",
+          "symbol": "uosmo",
+          "uri": "",
+          "uri_hash": ""
+        }
+      ],
+      "send_enabled": []
+    },
+    "capability": {
+      "index": "1",
+      "owners": []
+    },
+    "concentratedliquidity": {
+      "params": {
+        "authorized_tick_spacing": [
+          "1",
+          "10",
+          "100",
+          "1000"
+        ],
+        "authorized_spread_factors": [
+          "0.000000000000000000",
+          "0.000100000000000000",
+          "0.000500000000000000",
+          "0.001000000000000000",
+          "0.002000000000000000",
+          "0.003000000000000000",
+          "0.005000000000000000"
+        ],
+        "balancer_shares_reward_discount": "0.050000000000000000",
+        "authorized_quote_denoms": [
+          "uosmo",
+          "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
+          "ibc/0CD3A0285E1341859B5E86B6AB7682F023D03E97607CCC1DC95706411D866DF7",
+          "ibc/D189335C6E4A68B513C10AB227BF1C1D38C746766278BA3EEB4FB14124F1D858"
+        ],
+        "authorized_uptimes": [
+          "0.000000001s"
+        ],
+        "is_permissionless_pool_creation_enabled": true,
+        "unrestricted_pool_creator_whitelist": [],
+        "hook_gas_limit": "2000000"
+      },
+      "pool_data": [],
+      "position_data": [],
+      "next_position_id": "1",
+      "next_incentive_record_id": "1",
+      "incentives_accumulator_pool_id_migration_threshold": "0"
+    },
+    "consensus": null,
+    "cosmwasmpool": {
+      "params": {
+        "code_id_whitelist": [],
+        "pool_migration_limit": "20"
+      },
+      "pools": []
+    },
+    "crisis": {
+      "constant_fee": {
+        "denom": "uosmo",
+        "amount": "1000"
+      }
+    },
+    "distribution": {
+      "params": {
+        "community_tax": "0.020000000000000000",
+        "base_proposer_reward": "0.000000000000000000",
+        "bonus_proposer_reward": "0.000000000000000000",
+        "withdraw_addr_enabled": true
+      },
+      "fee_pool": {
+        "community_pool": []
+      },
+      "delegator_withdraw_infos": [],
+      "previous_proposer": "",
+      "outstanding_rewards": [],
+      "validator_accumulated_commissions": [],
+      "validator_historical_rewards": [],
+      "validator_current_rewards": [],
+      "delegator_starting_infos": [],
+      "validator_slash_events": []
+    },
+    "downtimedetector": {
+      "downtimes": [
+        {
+          "duration": "DURATION_30S",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_1M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_2M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_3M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_4M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_5M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_10M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_20M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_30M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_40M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_50M",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_1H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_1_5H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_2H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_2_5H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_3H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_4H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_5H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_6H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_9H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_12H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_18H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_24H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_36H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        },
+        {
+          "duration": "DURATION_48H",
+          "last_downtime": "1970-01-01T00:00:00Z"
+        }
+      ],
+      "last_block_time": "1970-01-01T00:00:00Z"
+    },
+    "epochs": {
+      "epochs": [
+        {
+          "identifier": "day",
+          "start_time": "0001-01-01T00:00:00Z",
+          "duration": "86400s",
+          "current_epoch": "0",
+          "current_epoch_start_time": "0001-01-01T00:00:00Z",
+          "epoch_counting_started": false,
+          "current_epoch_start_height": "0"
+        },
+        {
+          "identifier": "hour",
+          "start_time": "0001-01-01T00:00:00Z",
+          "duration": "60s",
+          "current_epoch": "0",
+          "current_epoch_start_time": "0001-01-01T00:00:00Z",
+          "epoch_counting_started": false,
+          "current_epoch_start_height": "0"
+        },
+        {
+          "identifier": "week",
+          "start_time": "0001-01-01T00:00:00Z",
+          "duration": "604800s",
+          "current_epoch": "0",
+          "current_epoch_start_time": "0001-01-01T00:00:00Z",
+          "epoch_counting_started": false,
+          "current_epoch_start_height": "0"
+        }
+      ]
+    },
+    "evidence": {
+      "evidence": []
+    },
+    "gamm": {
+      "pools": [],
+      "next_pool_number": "1",
+      "params": {
+        "pool_creation_fee": [
+          {
+            "denom": "uosmo",
+            "amount": "1000000000"
+          }
+        ]
+      },
+      "migration_records": {
+        "balancer_to_concentrated_pool_links": []
+      }
+    },
+    "genutil": {
+      "gen_txs": [
+        {
+          "body": {
+            "messages": [
+              {
+                "@type": "/cosmos.staking.v1beta1.MsgCreateValidator",
+                "description": {
+                  "moniker": "val",
+                  "identity": "",
+                  "website": "",
+                  "security_contact": "",
+                  "details": ""
+                },
+                "commission": {
+                  "rate": "0.100000000000000000",
+                  "max_rate": "0.200000000000000000",
+                  "max_change_rate": "0.010000000000000000"
+                },
+                "min_self_delegation": "1",
+                "delegator_address": "osmo12smx2wdlyttvyzvzg54y2vnqwq2qjateuf7thj",
+                "validator_address": "osmovaloper12smx2wdlyttvyzvzg54y2vnqwq2qjatex7kgq4",
+                "pubkey": {
+                  "@type": "/cosmos.crypto.ed25519.PubKey",
+                  "key": "RLjic+kPmOMuvKcRIgGdw6pKS9UeX2T7lDtDDjQQhtc="
+                },
+                "value": {
+                  "denom": "uosmo",
+                  "amount": "500000000"
+                }
+              }
+            ],
+            "memo": "538761f0b9573e416099055004fafb0cee546891@192.168.176.3:26656",
+            "timeout_height": "0",
+            "extension_options": [],
+            "non_critical_extension_options": []
+          },
+          "auth_info": {
+            "signer_infos": [
+              {
+                "public_key": {
+                  "@type": "/cosmos.crypto.secp256k1.PubKey",
+                  "key": "A2MR6q+pOpLtdxh0tHHe2JrEY2KOcvRogtLxHDHzJvOh"
+                },
+                "mode_info": {
+                  "single": {
+                    "mode": "SIGN_MODE_DIRECT"
+                  }
+                },
+                "sequence": "0"
+              }
+            ],
+            "fee": {
+              "amount": [],
+              "gas_limit": "200000",
+              "payer": "",
+              "granter": ""
+            },
+            "tip": null
+          },
+          "signatures": [
+            "S8EJFzX7eIpuAQhQzhoKFHTAgHXFYNk/238J3Hsn/3UH+sUMjb5bLCPfWu/WqFsrgob13Vk2GgnRIPHuMbCcZg=="
+          ]
+        }
+      ]
+    },
+    "gov": {
+      "starting_proposal_id": "1",
+      "deposits": [],
+      "votes": [],
+      "proposals": [],
+      "deposit_params": null,
+      "voting_params": {
+        "voting_period": "60s"
+      },
+      "tally_params": null,
+      "params": {
+        "min_deposit": [
+          {
+            "denom": "uosmo",
+            "amount": "10000000"
+          }
+        ],
+        "max_deposit_period": "172800s",
+        "voting_period": "172800s",
+        "quorum": "0.334000000000000000",
+        "threshold": "0.500000000000000000",
+        "veto_threshold": "0.334000000000000000",
+        "min_initial_deposit_ratio": "0.000000000000000000",
+        "expedited_voting_period": "86400s",
+        "expedited_threshold": "0.667000000000000000",
+        "expedited_min_deposit": [
+          {
+            "denom": "stake",
+            "amount": "50000000"
+          }
+        ],
+        "burn_vote_quorum": false,
+        "burn_proposal_deposit_prevote": false,
+        "burn_vote_veto": true
+      }
+    },
+    "ibc": {
+      "client_genesis": {
+        "clients": [],
+        "clients_consensus": [],
+        "clients_metadata": [],
+        "params": {
+          "allowed_clients": [
+            "06-solomachine",
+            "07-tendermint",
+            "09-localhost"
+          ]
+        },
+        "create_localhost": false,
+        "next_client_sequence": "0"
+      },
+      "connection_genesis": {
+        "connections": [],
+        "client_connection_paths": [],
+        "next_connection_sequence": "0",
+        "params": {
+          "max_expected_time_per_block": "30000000000"
+        }
+      },
+      "channel_genesis": {
+        "channels": [],
+        "acknowledgements": [],
+        "commitments": [],
+        "receipts": [],
+        "send_sequences": [],
+        "recv_sequences": [],
+        "ack_sequences": [],
+        "next_channel_sequence": "0"
+      }
+    },
+    "ibchooks": {
+      "params": {
+        "allowed_async_ack_contracts": []
+      }
+    },
+    "incentives": {
+      "params": {
+        "distr_epoch_identifier": "hour",
+        "group_creation_fee": [
+          {
+            "denom": "uosmo",
+            "amount": "100000000"
+          }
+        ],
+        "unrestricted_creator_whitelist": [],
+        "internal_uptime": "0.000000001s",
+        "min_value_for_distribution": {
+          "denom": "",
+          "amount": "0"
+        }
+      },
+      "gauges": [],
+      "lockable_durations": [
+        "1s",
+        "120s",
+        "180s",
+        "240s"
+      ],
+      "last_gauge_id": "0",
+      "group_gauges": [],
+      "groups": []
+    },
+    "interchainaccounts": {
+      "controller_genesis_state": {
+        "active_channels": [],
+        "interchain_accounts": [],
+        "ports": [],
+        "params": {
+          "controller_enabled": true
+        }
+      },
+      "host_genesis_state": {
+        "active_channels": [],
+        "interchain_accounts": [],
+        "port": "icahost",
+        "params": {
+          "host_enabled": true,
+          "allow_messages": [
+            "*"
+          ]
+        }
+      }
+    },
+    "interchainquery": {
+      "host_port": "icqhost",
+      "params": {
+        "host_enabled": true,
+        "allow_queries": []
+      }
+    },
+    "lockup": {
+      "last_lock_id": "0",
+      "locks": [],
+      "synthetic_locks": [],
+      "params": null
+    },
+    "mint": {
+      "minter": {
+        "epoch_provisions": "0.000000000000000000"
+      },
+      "params": {
+        "mint_denom": "uosmo",
+        "genesis_epoch_provisions": "5000000.000000000000000000",
+        "epoch_identifier": "hour",
+        "reduction_period_in_epochs": "156",
+        "reduction_factor": "0.500000000000000000",
+        "distribution_proportions": {
+          "staking": "0.400000000000000000",
+          "pool_incentives": "0.300000000000000000",
+          "developer_rewards": "0.200000000000000000",
+          "community_pool": "0.100000000000000000"
+        },
+        "weighted_developer_rewards_receivers": [],
+        "minting_rewards_distribution_start_epoch": "0"
+      },
+      "reduction_started_epoch": "0"
+    },
+    "packetfowardmiddleware": {
+      "params": {
+        "fee_percentage": "0.000000000000000000"
+      },
+      "in_flight_packets": {}
+    },
+    "params": null,
+    "poolincentives": {
+      "params": {
+        "minted_denom": "uosmo"
+      },
+      "lockable_durations": [
+        "120s",
+        "180s",
+        "240s"
+      ],
+      "distr_info": {
+        "total_weight": "0",
+        "records": []
+      },
+      "any_pool_to_internal_gauges": null,
+      "concentrated_pool_to_no_lock_gauges": null
+    },
+    "poolmanager": {
+      "next_pool_id": "1",
+      "params": {
+        "pool_creation_fee": [
+          {
+            "denom": "uosmo",
+            "amount": "1000000000"
+          }
+        ],
+        "taker_fee_params": {
+          "default_taker_fee": "0.000000000000000000",
+          "osmo_taker_fee_distribution": {
+            "staking_rewards": "1.000000000000000000",
+            "community_pool": "0.000000000000000000"
+          },
+          "non_osmo_taker_fee_distribution": {
+            "staking_rewards": "0.670000000000000000",
+            "community_pool": "0.330000000000000000"
+          },
+          "admin_addresses": [],
+          "community_pool_denom_to_swap_non_whitelisted_assets_to": "ibc/D189335C6E4A68B513C10AB227BF1C1D38C746766278BA3EEB4FB14124F1D858",
+          "reduced_fee_whitelist": []
+        },
+        "authorized_quote_denoms": [
+          "uosmo",
+          "ibc/27394FB092D2ECCD56123C74F36E4C1F926001CEADA9CA97EA622B25F41E5EB2",
+          "ibc/0CD3A0285E1341859B5E86B6AB7682F023D03E97607CCC1DC95706411D866DF7",
+          "ibc/D189335C6E4A68B513C10AB227BF1C1D38C746766278BA3EEB4FB14124F1D858"
+        ]
+      },
+      "pool_routes": [],
+      "taker_fees_tracker": {
+        "taker_fees_to_stakers": [],
+        "taker_fees_to_community_pool": [],
+        "height_accounting_starts_from": "0"
+      },
+      "pool_volumes": [],
+      "denom_pair_taker_fee_store": []
+    },
+    "protorev": {
+      "params": {
+        "enabled": true,
+        "admin": "osmo17nv67dvc7f8yr00rhgxd688gcn9t9wvhn783z4"
+      },
+      "token_pair_arb_routes": [],
+      "base_denoms": [
+        {
+          "denom": "uosmo",
+          "step_size": "1000000"
+        }
+      ],
+      "days_since_module_genesis": "0",
+      "developer_fees": [],
+      "latest_block_height": "0",
+      "developer_address": "",
+      "max_pool_points_per_block": "100",
+      "max_pool_points_per_tx": "18",
+      "point_count_for_block": "0",
+      "profits": [],
+      "info_by_pool_type": {
+        "stable": {
+          "weight": "5"
+        },
+        "balancer": {
+          "weight": "2"
+        },
+        "concentrated": {
+          "weight": "7",
+          "max_ticks_crossed": "5"
+        },
+        "cosmwasm": {
+          "weight_maps": []
+        }
+      },
+      "cyclic_arb_tracker": {
+        "cyclic_arb": [],
+        "height_accounting_starts_from": "0"
+      }
+    },
+    "rate-limited-ibc": {
+      "params": {
+        "contract_address": ""
+      }
+    },
+    "slashing": {
+      "params": {
+        "signed_blocks_window": "100",
+        "min_signed_per_window": "0.500000000000000000",
+        "downtime_jail_duration": "600s",
+        "slash_fraction_double_sign": "0.050000000000000000",
+        "slash_fraction_downtime": "0.010000000000000000"
+      },
+      "signing_infos": [],
+      "missed_blocks": []
+    },
+    "staking": {
+      "params": {
+        "unbonding_time": "24h",
+        "max_validators": 100,
+        "max_entries": 7,
+        "historical_entries": 10000,
+        "bond_denom": "uosmo",
+        "min_commission_rate": "0.000000000000000000"
+      },
+      "last_total_power": "0",
+      "last_validator_powers": [],
+      "validators": [],
+      "delegations": [],
+      "unbonding_delegations": [],
+      "redelegations": [],
+      "exported": false
+    },
+    "superfluid": {
+      "params": {
+        "minimum_risk_factor": "0.500000000000000000"
+      },
+      "superfluid_assets": [],
+      "osmo_equivalent_multipliers": [],
+      "intermediary_accounts": [],
+      "intemediary_account_connections": []
+    },
+    "tokenfactory": {
+      "params": {
+        "denom_creation_fee": [],
+        "denom_creation_gas_consume": "1000000"
+      },
+      "factory_denoms": []
+    },
+    "transfer": {
+      "port_id": "transfer",
+      "denom_traces": [],
+      "params": {
+        "send_enabled": true,
+        "receive_enabled": true
+      },
+      "total_escrowed": []
+    },
+    "twap": {
+      "twaps": [],
+      "params": {
+        "prune_epoch_identifier": "day",
+        "record_history_keep_period": "172800s"
+      }
+    },
+    "txfees": {
+      "basedenom": "uosmo",
+      "feetokens": [],
+      "params": {
+        "whitelisted_fee_token_setters": []
+      }
+    },
+    "upgrade": {},
+    "valsetpref": null,
+    "vesting": {},
+    "wasm": {
+      "params": {
+        "code_upload_access": {
+          "permission": "Everybody",
+          "addresses": []
+        },
+        "instantiate_default_permission": "Everybody"
+      },
+      "codes": [],
+      "contracts": [],
+      "sequences": []
+    }
+  }
+}

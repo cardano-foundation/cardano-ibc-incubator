@@ -14,7 +14,7 @@ cd ${SCRIPT_DIR}/cosmos && docker compose build
 cd ${SCRIPT_DIR}/relayer && docker compose build 
 
 # Build osmosis
-git submodule update --remote --merge
+git submodule update --init --recursive
 chmod +x ${SCRIPT_DIR}/setup_osmosis.sh
 bash ${SCRIPT_DIR}/setup_osmosis.sh
 cd ${SCRIPT_DIR}/chains/osmosis && make localnet-init
