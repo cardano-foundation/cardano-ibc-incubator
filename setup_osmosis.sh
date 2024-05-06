@@ -17,10 +17,7 @@ cp $SCRIPT_DIR/chains/osmosis/scripts/stop.sh $SCRIPT_DIR/chains/osmosis/osmosis
 rm $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/scripts/setup.sh && cp $SCRIPT_DIR/chains/osmosis/scripts/setup.sh $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/scripts/setup.sh
 
 # Update docker-compose.yml
-rm -rf $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/docker-compose.yml && cp $SCRIPT_DIR/chains/osmosis/configuration/docker-compose.yml $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/docker-compose.yml
+rm $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/docker-compose.yml && cp $SCRIPT_DIR/chains/osmosis/configuration/docker-compose.yml $SCRIPT_DIR/chains/osmosis/osmosis/tests/localosmosis/docker-compose.yml
 
 # Update Dockerfile
-rm -rf $SCRIPT_DIR/chains/osmosis/osmosis/Dockerfile && cp $SCRIPT_DIR/chains/osmosis/configuration/Dockerfile $SCRIPT_DIR/chains/osmosis/osmosis/Dockerfile
-
-# Update .osmosis-local
-rm -rf $HOME/.osmosis-local && cp -r $SCRIPT_DIR/chains/osmosis/configuration/.osmosis-local $HOME/.osmosis-local
+rm $SCRIPT_DIR/chains/osmosis/osmosis/Dockerfile && cp $SCRIPT_DIR/chains/osmosis/configuration/Dockerfile $SCRIPT_DIR/chains/osmosis/osmosis/Dockerfile

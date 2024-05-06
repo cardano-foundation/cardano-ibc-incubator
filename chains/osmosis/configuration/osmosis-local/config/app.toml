@@ -46,7 +46,8 @@ min-gas-price-for-high-gas-tx = "0.0025"
 
 [osmosis-sqs]
 db-host = 'redis'
-db-port = '6379'
+grpc-ingest-address = '0.0.0.0:50051'
+grpc-ingest-max-call-size-bytes = '52428800'
 is-enabled = 'true'
 route-cache-enabled = 'true'
 
