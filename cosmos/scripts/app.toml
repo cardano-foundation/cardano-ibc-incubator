@@ -157,7 +157,7 @@ enabled-unsafe-cors = false
 [grpc]
 
 # Enable defines if the gRPC server should be enabled.
-enable = false
+enable = true
 
 # Address defines the gRPC server address to bind to.
 address = "localhost:9090"
@@ -179,7 +179,7 @@ max-send-msg-size = "2147483647"
 # GRPCWebEnable defines if the gRPC-web should be enabled.
 # NOTE: gRPC must also be enabled, otherwise, this configuration is a no-op.
 # NOTE: gRPC-Web uses the same address as the API server.
-enable = false
+enable = true
 
 ###############################################################################
 ###                        State Sync Configuration                         ###

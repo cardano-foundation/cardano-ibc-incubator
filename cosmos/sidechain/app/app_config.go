@@ -61,6 +61,8 @@ import (
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	_ "github.com/cosmos/cosmos-sdk/x/staking" // import for side-effects
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	_ "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/packetforward"
+	pfmroutertypes "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v8/packetforward/types"
 	_ "github.com/cosmos/ibc-go/modules/capability" // import for side-effects
 	capabilitytypes "github.com/cosmos/ibc-go/modules/capability/types"
 	_ "github.com/cosmos/ibc-go/v8/modules/apps/27-interchain-accounts" // import for side-effects
@@ -97,6 +99,7 @@ var (
 		authz.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
+		pfmroutertypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		feegrant.ModuleName,
 		paramstypes.ModuleName,
@@ -129,6 +132,7 @@ var (
 		ibcexported.ModuleName,
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
+		pfmroutertypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
@@ -147,6 +151,7 @@ var (
 		ibctransfertypes.ModuleName,
 		capabilitytypes.ModuleName,
 		icatypes.ModuleName,
+		pfmroutertypes.ModuleName,
 		ibcfeetypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/endBlockers
