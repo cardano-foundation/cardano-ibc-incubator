@@ -13,6 +13,6 @@ cd ${SCRIPT_DIR}/cosmos && docker compose build
 # Build relayer
 cd ${SCRIPT_DIR}/relayer && docker compose build 
 
-
-
+# Build osmosis
+cd ${SCRIPT_DIR}/chains/osmosis && make localnet-init
 
