@@ -20,6 +20,16 @@ install_prerequisites () {
     apk add dasel
 }
 
+edit_app_toml () {
+  APP=$CONFIG_FOLDER/app.toml
+
+  dasel put -f $APP '.api.address' -v 'tcp://0.0.0.0:1317'
+  dasel put -f $APP '.grpc.address' -v '0.0.0.0:9090'
+  dasel put -f $APP '.grpc-web.address' -v '0.0.0.0:9091'
+  dasel put -f $APP '.osmosis-sqs.address' -v '0.0.0.0:50051'
+
+}
+
 edit_genesis () {
 
     GENESIS=$CONFIG_FOLDER/genesis.json
@@ -202,6 +212,7 @@ then
     install_prerequisites
     edit_genesis
     add_genesis_accounts
+    edit_app_toml
     edit_config
     enable_cors
 fi
