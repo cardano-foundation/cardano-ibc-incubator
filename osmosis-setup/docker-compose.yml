@@ -1,0 +1,41 @@
+version: "4"
+
+services:
+  osmosisd:
+    image: local:osmosis
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+      args:
+        RUNNER_IMAGE: golang:1.21.7-alpine3.19
+        GO_VERSION: "1.21"
+    volumes:
+      - ./scripts/uosmoUionBalancerPool.json:/osmosis/uosmoUionBalancerPool.json
+      - ./scripts/uosmoUusdcBalancerPool.json:/osmosis/uosmoUusdcBalancerPool.json
+      - ./scripts/uusdcUionBalancerPool.json:/osmosis/uusdcUionBalancerPool.json
+      - ./scripts/uwethUusdcStablePool.json:/osmosis/uwethUusdcStablePool.json
+      - ./scripts/nativeDenomThreeAssetPool.json:/osmosis/nativeDenomThreeAssetPool.json
+      - ./scripts/setup.sh:/osmosis/setup.sh
+      - ../cl-genesis-positions:/osmosis/cl-genesis-positions
+      - $HOME/.osmosisd-local/:/osmosis/.osmosisd/
+    entrypoint:
+      - /osmosis/setup.sh
+    command:
+      - $STATE
+    ports:
+      - 26658:26657
+      - 1318:1317
+      - 9090:9090
+      - 9091:9091
+      - 6060:6060
+      - 9092:9092
+    links:
+      - redis
+   # Enable Redis for sidecar query server
+  redis:
+    image: redis/redis-stack:7.2.0-v3
+    ports:
+      - 6379:6379
+      - 8001:8001
+    volumes:
+      - ./redis-data:/data

@@ -16,3 +16,6 @@
 
 
 cardano/gateway/deployment
+chains/osmosis
+osmosis-setup/cosmwasm/artifacts
+osmosis-setup/cosmwasm/target
