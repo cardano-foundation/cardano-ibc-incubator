@@ -1,0 +1,19 @@
+package mithril
+
+import (
+	errorsmod "cosmossdk.io/errors"
+)
+
+// IBC cardano client sentinel errors
+var (
+	ErrInvalidChainID             = errorsmod.Register(ModuleName, 2, "invalid chain-id")
+	ErrInvalidTrustingPeriod      = errorsmod.Register(ModuleName, 3, "invalid trusting period")
+	ErrInvalidMithrilHeaderHeight = errorsmod.Register(ModuleName, 4, "invalid mithril header height")
+	ErrInvalidMithrilHeader       = errorsmod.Register(ModuleName, 5, "invalid mithril header")
+	ErrInvalidMaxClockDrift       = errorsmod.Register(ModuleName, 6, "invalid max clock drift")
+	ErrProcessedTimeNotFound      = errorsmod.Register(ModuleName, 7, "processed time not found")
+	ErrProcessedHeightNotFound    = errorsmod.Register(ModuleName, 8, "processed height not found")
+	ErrDelayPeriodNotPassed       = errorsmod.Register(ModuleName, 9, "packet-specified delay period has not been reached")
+	ErrTrustingPeriodExpired      = errorsmod.Register(ModuleName, 10, "time since latest trusted state has passed the trusting period")
+	ErrInvalidCurrentEpoch        = errorsmod.Register(ModuleName, 11, "invalid current epoch")
+)
