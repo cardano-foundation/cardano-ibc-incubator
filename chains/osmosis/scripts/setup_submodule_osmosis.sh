@@ -16,7 +16,7 @@ cp $SCRIPT_DIR/../scripts/start.sh $SCRIPT_DIR/../osmosis/scripts/start.sh
 cp $SCRIPT_DIR/../scripts/stop.sh $SCRIPT_DIR/../osmosis/scripts/stop.sh
 
 # Update scripts run docker 
-rm $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh && cp $SCRIPT_DIR/../scripts/setup.sh $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh
+rm $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh && cp $SCRIPT_DIR/../scripts/setup_osmosis_local.sh $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh
 
 # Update docker-compose.yml
 rm $SCRIPT_DIR/../osmosis/tests/localosmosis/docker-compose.yml && cp $SCRIPT_DIR/../configuration/docker-compose.yml $SCRIPT_DIR/../osmosis/tests/localosmosis/docker-compose.yml

@@ -16,7 +16,7 @@ echo "║$(printf ' %.0s' $(seq 1 $((($title_length - ${#title}) / 2))))$title$(
 echo "╚$(printf '═%.0s' $(seq 1 $((title_length + 2))))╝"
 
 set_up_osmosis() {
-  bash ${SCRIPT_DIR}/chains/osmosis/scripts/setup_osmosis.sh || return 1
+  bash ${SCRIPT_DIR}/chains/osmosis/scripts/setup_submodule_osmosis.sh || return 1
   return 0
 }
 
