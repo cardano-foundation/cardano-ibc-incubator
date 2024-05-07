@@ -55,11 +55,11 @@ message MithrilHeader {
 
   MithrilStakeDistribution mithril_stake_distribution = 1;
 
-  MithrilCertificate mithril_stake_distribution_certificate = 2;
+  string mithril_stake_distribution_certificate_hash = 2;
 
   CardanoTransactionSnapshot transaction_snapshot = 3;
 
-  MithrilCertificate transaction_snapshot_certificate = 4;
+  string transaction_snapshot_certificate_hash = 4;
 }
 
 message MithrilStakeDistribution {
