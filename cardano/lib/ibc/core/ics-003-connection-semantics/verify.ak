@@ -17,6 +17,7 @@ use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/math
+use ibc/utils/bits
 
 pub fn verify_connection_state(
   client_datum_state: ClientDatumState,
@@ -229,13 +230,37 @@ pub fn get_block_delay(connection: ConnectionEnd) -> Int {
 }
 
 pub fn verify_next_sequence_recv(
-  _client_datum_state: ClientDatumState,
-  _connection: ConnectionEnd,
-  _proof_height: Height,
-  _proof: MerkleProof,
-  _port_id: ByteArray,
-  _channel_id: ByteArray,
-  _next_sequence_recv: Int,
+  client_datum_state: ClientDatumState,
+  connection: ConnectionEnd,
+  proof_height: Height,
+  proof: MerkleProof,
+  port_id: ByteArray,
+  channel_id: ByteArray,
+  next_sequence_recv: Int,
 ) -> Bool {
-  True
+  let time_delay = connection.delay_period
+  let block_delay = get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [packet_keys.next_sequence_recv_path(port_id, channel_id)],
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
+
+  client_state.verify_membership(
+    client_datum_state.client_state,
+    consensus_state,
+    proof_height,
+    time_delay,
+    block_delay,
+    proof,
+    merkle_path,
+    bits.put_uint64_big_endian(next_sequence_recv),
+  )
 }
