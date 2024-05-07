@@ -4,6 +4,7 @@
 CARDANO_SCRIPT_DIR="cardano/scripts"
 COSMOS_SCRIPT_DIR="cosmos/scripts"
 RELAYER_SCRIPT_DIR="relayer/scripts"
+OSMOSIS_SCRIPT_DIR="chains/osmosis/osmosis/scripts"
 
 SCRIPT_DIR=$(dirname $(realpath $0))
 
@@ -14,19 +15,32 @@ echo "╔$(printf '═%.0s' $(seq 1 $((title_length + 2))))╗"
 echo "║$(printf ' %.0s' $(seq 1 $((($title_length - ${#title}) / 2))))$title$(printf ' %.0s' $(seq 1 $((($title_length - ${#title}) / 2))))║"
 echo "╚$(printf '═%.0s' $(seq 1 $((title_length + 2))))╝"
 
+set_up_osmosis() {
+  bash ${SCRIPT_DIR}/chains/osmosis/scripts/setup_submodule_osmosis.sh || return 1
+  return 0
+}
+
 set_permission() {
   chmod +x ${SCRIPT_DIR}/${CARDANO_SCRIPT_DIR}/start.sh || return 1
   chmod +x ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/start.sh || return 1
   chmod +x ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/start.sh || return 1
+  chmod +x ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/start.sh || return 1
   return 0
 }
 
 run() {
     bash ${SCRIPT_DIR}/${CARDANO_SCRIPT_DIR}/start.sh && \
     bash ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/start.sh &&
+    bash ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/start.sh &&
     bash ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/start.sh || return 1
   return 0
 }
+
+if set_up_osmosis; then
+  echo >&2 -e "\nSet up osmosis successful!";
+else
+  echo >&2 -e "\nWARNING: Fails to set up osmosis.";
+fi
 
 if set_permission; then
     echo >&2 -e "\nSet permission successful!";

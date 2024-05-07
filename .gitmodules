@@ -1,0 +1,3 @@
+[submodule "chains/osmosis/osmosis"]
+	path = chains/osmosis/osmosis
+	url = git@github.com:osmosis-labs/osmosis.git
