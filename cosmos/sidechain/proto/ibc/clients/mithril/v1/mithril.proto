@@ -37,9 +37,9 @@ message ConsensusState {
 
   uint64 timestamp = 1;
 
-  MithrilCertificate mithril_stake_distribution_certificate = 2;
+  string mithril_stake_distribution_certificate_hash = 2;
 
-  MithrilCertificate transaction_snapshot_certificate = 3;
+  string transaction_snapshot_certificate_hash = 3;
 }
 
 message Misbehaviour {
@@ -55,11 +55,11 @@ message MithrilHeader {
 
   MithrilStakeDistribution mithril_stake_distribution = 1;
 
-  string mithril_stake_distribution_certificate_hash = 2;
+  MithrilCertificate mithril_stake_distribution_certificate = 2;
 
   CardanoTransactionSnapshot transaction_snapshot = 3;
 
-  string transaction_snapshot_certificate_hash = 4;
+  MithrilCertificate transaction_snapshot_certificate = 4;
 }
 
 message MithrilStakeDistribution {

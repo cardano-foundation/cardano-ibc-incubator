@@ -1295,18 +1295,18 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_ConsensusState                                        protoreflect.MessageDescriptor
-	fd_ConsensusState_timestamp                              protoreflect.FieldDescriptor
-	fd_ConsensusState_mithril_stake_distribution_certificate protoreflect.FieldDescriptor
-	fd_ConsensusState_transaction_snapshot_certificate       protoreflect.FieldDescriptor
+	md_ConsensusState                                             protoreflect.MessageDescriptor
+	fd_ConsensusState_timestamp                                   protoreflect.FieldDescriptor
+	fd_ConsensusState_mithril_stake_distribution_certificate_hash protoreflect.FieldDescriptor
+	fd_ConsensusState_transaction_snapshot_certificate_hash       protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_ConsensusState = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("ConsensusState")
 	fd_ConsensusState_timestamp = md_ConsensusState.Fields().ByName("timestamp")
-	fd_ConsensusState_mithril_stake_distribution_certificate = md_ConsensusState.Fields().ByName("mithril_stake_distribution_certificate")
-	fd_ConsensusState_transaction_snapshot_certificate = md_ConsensusState.Fields().ByName("transaction_snapshot_certificate")
+	fd_ConsensusState_mithril_stake_distribution_certificate_hash = md_ConsensusState.Fields().ByName("mithril_stake_distribution_certificate_hash")
+	fd_ConsensusState_transaction_snapshot_certificate_hash = md_ConsensusState.Fields().ByName("transaction_snapshot_certificate_hash")
 }
 
 var _ protoreflect.Message = (*fastReflection_ConsensusState)(nil)
@@ -1380,15 +1380,15 @@ func (x *fastReflection_ConsensusState) Range(f func(protoreflect.FieldDescripto
 			return
 		}
 	}
-	if x.MithrilStakeDistributionCertificate != nil {
-		value := protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
-		if !f(fd_ConsensusState_mithril_stake_distribution_certificate, value) {
+	if x.MithrilStakeDistributionCertificateHash != "" {
+		value := protoreflect.ValueOfString(x.MithrilStakeDistributionCertificateHash)
+		if !f(fd_ConsensusState_mithril_stake_distribution_certificate_hash, value) {
 			return
 		}
 	}
-	if x.TransactionSnapshotCertificate != nil {
-		value := protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
-		if !f(fd_ConsensusState_transaction_snapshot_certificate, value) {
+	if x.TransactionSnapshotCertificateHash != "" {
+		value := protoreflect.ValueOfString(x.TransactionSnapshotCertificateHash)
+		if !f(fd_ConsensusState_transaction_snapshot_certificate_hash, value) {
 			return
 		}
 	}
@@ -1409,10 +1409,10 @@ func (x *fastReflection_ConsensusState) Has(fd protoreflect.FieldDescriptor) boo
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		return x.Timestamp != uint64(0)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		return x.MithrilStakeDistributionCertificate != nil
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		return x.TransactionSnapshotCertificate != nil
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		return x.MithrilStakeDistributionCertificateHash != ""
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		return x.TransactionSnapshotCertificateHash != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1431,10 +1431,10 @@ func (x *fastReflection_ConsensusState) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		x.Timestamp = uint64(0)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		x.MithrilStakeDistributionCertificate = nil
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		x.TransactionSnapshotCertificate = nil
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		x.MithrilStakeDistributionCertificateHash = ""
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		x.TransactionSnapshotCertificateHash = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1454,12 +1454,12 @@ func (x *fastReflection_ConsensusState) Get(descriptor protoreflect.FieldDescrip
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		value := x.Timestamp
 		return protoreflect.ValueOfUint64(value)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		value := x.MithrilStakeDistributionCertificate
-		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		value := x.TransactionSnapshotCertificate
-		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		value := x.MithrilStakeDistributionCertificateHash
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		value := x.TransactionSnapshotCertificateHash
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1482,10 +1482,10 @@ func (x *fastReflection_ConsensusState) Set(fd protoreflect.FieldDescriptor, val
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		x.Timestamp = value.Uint()
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		x.MithrilStakeDistributionCertificate = value.Message().Interface().(*MithrilCertificate)
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		x.TransactionSnapshotCertificate = value.Message().Interface().(*MithrilCertificate)
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		x.MithrilStakeDistributionCertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		x.TransactionSnapshotCertificateHash = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1506,18 +1506,12 @@ func (x *fastReflection_ConsensusState) Set(fd protoreflect.FieldDescriptor, val
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ConsensusState) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		if x.MithrilStakeDistributionCertificate == nil {
-			x.MithrilStakeDistributionCertificate = new(MithrilCertificate)
-		}
-		return protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		if x.TransactionSnapshotCertificate == nil {
-			x.TransactionSnapshotCertificate = new(MithrilCertificate)
-		}
-		return protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		panic(fmt.Errorf("field timestamp of message ibc.clients.mithril.v1.ConsensusState is not mutable"))
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		panic(fmt.Errorf("field mithril_stake_distribution_certificate_hash of message ibc.clients.mithril.v1.ConsensusState is not mutable"))
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		panic(fmt.Errorf("field transaction_snapshot_certificate_hash of message ibc.clients.mithril.v1.ConsensusState is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1533,12 +1527,10 @@ func (x *fastReflection_ConsensusState) NewField(fd protoreflect.FieldDescriptor
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		return protoreflect.ValueOfUint64(uint64(0))
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		m := new(MithrilCertificate)
-		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		m := new(MithrilCertificate)
-		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate_hash":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate_hash":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1611,12 +1603,12 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 		if x.Timestamp != 0 {
 			n += 1 + runtime.Sov(uint64(x.Timestamp))
 		}
-		if x.MithrilStakeDistributionCertificate != nil {
-			l = options.Size(x.MithrilStakeDistributionCertificate)
+		l = len(x.MithrilStakeDistributionCertificateHash)
+		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.TransactionSnapshotCertificate != nil {
-			l = options.Size(x.TransactionSnapshotCertificate)
+		l = len(x.TransactionSnapshotCertificateHash)
+		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -1648,31 +1640,17 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.TransactionSnapshotCertificate != nil {
-			encoded, err := options.Marshal(x.TransactionSnapshotCertificate)
-			if err != nil {
-				return protoiface.MarshalOutput{
-					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-					Buf:               input.Buf,
-				}, err
-			}
-			i -= len(encoded)
-			copy(dAtA[i:], encoded)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		if len(x.TransactionSnapshotCertificateHash) > 0 {
+			i -= len(x.TransactionSnapshotCertificateHash)
+			copy(dAtA[i:], x.TransactionSnapshotCertificateHash)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TransactionSnapshotCertificateHash)))
 			i--
 			dAtA[i] = 0x1a
 		}
-		if x.MithrilStakeDistributionCertificate != nil {
-			encoded, err := options.Marshal(x.MithrilStakeDistributionCertificate)
-			if err != nil {
-				return protoiface.MarshalOutput{
-					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-					Buf:               input.Buf,
-				}, err
-			}
-			i -= len(encoded)
-			copy(dAtA[i:], encoded)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		if len(x.MithrilStakeDistributionCertificateHash) > 0 {
+			i -= len(x.MithrilStakeDistributionCertificateHash)
+			copy(dAtA[i:], x.MithrilStakeDistributionCertificateHash)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MithrilStakeDistributionCertificateHash)))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -1751,9 +1729,9 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 				}
 			case 2:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificate", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificateHash", wireType)
 				}
-				var msglen int
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1763,33 +1741,29 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					msglen |= int(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				if msglen < 0 {
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + msglen
+				postIndex := iNdEx + intStringLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.MithrilStakeDistributionCertificate == nil {
-					x.MithrilStakeDistributionCertificate = &MithrilCertificate{}
-				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MithrilStakeDistributionCertificate); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
+				x.MithrilStakeDistributionCertificateHash = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificate", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificateHash", wireType)
 				}
-				var msglen int
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1799,27 +1773,23 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					msglen |= int(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				if msglen < 0 {
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + msglen
+				postIndex := iNdEx + intStringLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.TransactionSnapshotCertificate == nil {
-					x.TransactionSnapshotCertificate = &MithrilCertificate{}
-				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TransactionSnapshotCertificate); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
+				x.TransactionSnapshotCertificateHash = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -2435,20 +2405,20 @@ func (x *fastReflection_Misbehaviour) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_MithrilHeader                                             protoreflect.MessageDescriptor
-	fd_MithrilHeader_mithril_stake_distribution                  protoreflect.FieldDescriptor
-	fd_MithrilHeader_mithril_stake_distribution_certificate_hash protoreflect.FieldDescriptor
-	fd_MithrilHeader_transaction_snapshot                        protoreflect.FieldDescriptor
-	fd_MithrilHeader_transaction_snapshot_certificate_hash       protoreflect.FieldDescriptor
+	md_MithrilHeader                                        protoreflect.MessageDescriptor
+	fd_MithrilHeader_mithril_stake_distribution             protoreflect.FieldDescriptor
+	fd_MithrilHeader_mithril_stake_distribution_certificate protoreflect.FieldDescriptor
+	fd_MithrilHeader_transaction_snapshot                   protoreflect.FieldDescriptor
+	fd_MithrilHeader_transaction_snapshot_certificate       protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_MithrilHeader = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("MithrilHeader")
 	fd_MithrilHeader_mithril_stake_distribution = md_MithrilHeader.Fields().ByName("mithril_stake_distribution")
-	fd_MithrilHeader_mithril_stake_distribution_certificate_hash = md_MithrilHeader.Fields().ByName("mithril_stake_distribution_certificate_hash")
+	fd_MithrilHeader_mithril_stake_distribution_certificate = md_MithrilHeader.Fields().ByName("mithril_stake_distribution_certificate")
 	fd_MithrilHeader_transaction_snapshot = md_MithrilHeader.Fields().ByName("transaction_snapshot")
-	fd_MithrilHeader_transaction_snapshot_certificate_hash = md_MithrilHeader.Fields().ByName("transaction_snapshot_certificate_hash")
+	fd_MithrilHeader_transaction_snapshot_certificate = md_MithrilHeader.Fields().ByName("transaction_snapshot_certificate")
 }
 
 var _ protoreflect.Message = (*fastReflection_MithrilHeader)(nil)
@@ -2522,9 +2492,9 @@ func (x *fastReflection_MithrilHeader) Range(f func(protoreflect.FieldDescriptor
 			return
 		}
 	}
-	if x.MithrilStakeDistributionCertificateHash != "" {
-		value := protoreflect.ValueOfString(x.MithrilStakeDistributionCertificateHash)
-		if !f(fd_MithrilHeader_mithril_stake_distribution_certificate_hash, value) {
+	if x.MithrilStakeDistributionCertificate != nil {
+		value := protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
+		if !f(fd_MithrilHeader_mithril_stake_distribution_certificate, value) {
 			return
 		}
 	}
@@ -2534,9 +2504,9 @@ func (x *fastReflection_MithrilHeader) Range(f func(protoreflect.FieldDescriptor
 			return
 		}
 	}
-	if x.TransactionSnapshotCertificateHash != "" {
-		value := protoreflect.ValueOfString(x.TransactionSnapshotCertificateHash)
-		if !f(fd_MithrilHeader_transaction_snapshot_certificate_hash, value) {
+	if x.TransactionSnapshotCertificate != nil {
+		value := protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
+		if !f(fd_MithrilHeader_transaction_snapshot_certificate, value) {
 			return
 		}
 	}
@@ -2557,12 +2527,12 @@ func (x *fastReflection_MithrilHeader) Has(fd protoreflect.FieldDescriptor) bool
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		return x.MithrilStakeDistribution != nil
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		return x.MithrilStakeDistributionCertificateHash != ""
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		return x.MithrilStakeDistributionCertificate != nil
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		return x.TransactionSnapshot != nil
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		return x.TransactionSnapshotCertificateHash != ""
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		return x.TransactionSnapshotCertificate != nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2581,12 +2551,12 @@ func (x *fastReflection_MithrilHeader) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		x.MithrilStakeDistribution = nil
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		x.MithrilStakeDistributionCertificateHash = ""
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		x.MithrilStakeDistributionCertificate = nil
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		x.TransactionSnapshot = nil
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		x.TransactionSnapshotCertificateHash = ""
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		x.TransactionSnapshotCertificate = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2606,15 +2576,15 @@ func (x *fastReflection_MithrilHeader) Get(descriptor protoreflect.FieldDescript
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		value := x.MithrilStakeDistribution
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		value := x.MithrilStakeDistributionCertificateHash
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		value := x.MithrilStakeDistributionCertificate
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		value := x.TransactionSnapshot
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		value := x.TransactionSnapshotCertificateHash
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		value := x.TransactionSnapshotCertificate
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2637,12 +2607,12 @@ func (x *fastReflection_MithrilHeader) Set(fd protoreflect.FieldDescriptor, valu
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		x.MithrilStakeDistribution = value.Message().Interface().(*MithrilStakeDistribution)
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		x.MithrilStakeDistributionCertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		x.MithrilStakeDistributionCertificate = value.Message().Interface().(*MithrilCertificate)
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		x.TransactionSnapshot = value.Message().Interface().(*CardanoTransactionSnapshot)
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		x.TransactionSnapshotCertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		x.TransactionSnapshotCertificate = value.Message().Interface().(*MithrilCertificate)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2668,15 +2638,21 @@ func (x *fastReflection_MithrilHeader) Mutable(fd protoreflect.FieldDescriptor) 
 			x.MithrilStakeDistribution = new(MithrilStakeDistribution)
 		}
 		return protoreflect.ValueOfMessage(x.MithrilStakeDistribution.ProtoReflect())
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		if x.MithrilStakeDistributionCertificate == nil {
+			x.MithrilStakeDistributionCertificate = new(MithrilCertificate)
+		}
+		return protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		if x.TransactionSnapshot == nil {
 			x.TransactionSnapshot = new(CardanoTransactionSnapshot)
 		}
 		return protoreflect.ValueOfMessage(x.TransactionSnapshot.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		panic(fmt.Errorf("field mithril_stake_distribution_certificate_hash of message ibc.clients.mithril.v1.MithrilHeader is not mutable"))
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		panic(fmt.Errorf("field transaction_snapshot_certificate_hash of message ibc.clients.mithril.v1.MithrilHeader is not mutable"))
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		if x.TransactionSnapshotCertificate == nil {
+			x.TransactionSnapshotCertificate = new(MithrilCertificate)
+		}
+		return protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2693,13 +2669,15 @@ func (x *fastReflection_MithrilHeader) NewField(fd protoreflect.FieldDescriptor)
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		m := new(MithrilStakeDistribution)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		m := new(MithrilCertificate)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		m := new(CardanoTransactionSnapshot)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		m := new(MithrilCertificate)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2773,16 +2751,16 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.MithrilStakeDistribution)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.MithrilStakeDistributionCertificateHash)
-		if l > 0 {
+		if x.MithrilStakeDistributionCertificate != nil {
+			l = options.Size(x.MithrilStakeDistributionCertificate)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.TransactionSnapshot != nil {
 			l = options.Size(x.TransactionSnapshot)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.TransactionSnapshotCertificateHash)
-		if l > 0 {
+		if x.TransactionSnapshotCertificate != nil {
+			l = options.Size(x.TransactionSnapshotCertificate)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -2814,10 +2792,17 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.TransactionSnapshotCertificateHash) > 0 {
-			i -= len(x.TransactionSnapshotCertificateHash)
-			copy(dAtA[i:], x.TransactionSnapshotCertificateHash)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TransactionSnapshotCertificateHash)))
+		if x.TransactionSnapshotCertificate != nil {
+			encoded, err := options.Marshal(x.TransactionSnapshotCertificate)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
 			dAtA[i] = 0x22
 		}
@@ -2835,10 +2820,17 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			i--
 			dAtA[i] = 0x1a
 		}
-		if len(x.MithrilStakeDistributionCertificateHash) > 0 {
-			i -= len(x.MithrilStakeDistributionCertificateHash)
-			copy(dAtA[i:], x.MithrilStakeDistributionCertificateHash)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MithrilStakeDistributionCertificateHash)))
+		if x.MithrilStakeDistributionCertificate != nil {
+			encoded, err := options.Marshal(x.MithrilStakeDistributionCertificate)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -2943,9 +2935,9 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 2:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificateHash", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificate", wireType)
 				}
-				var stringLen uint64
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -2955,23 +2947,27 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if msglen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + msglen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.MithrilStakeDistributionCertificateHash = string(dAtA[iNdEx:postIndex])
+				if x.MithrilStakeDistributionCertificate == nil {
+					x.MithrilStakeDistributionCertificate = &MithrilCertificate{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MithrilStakeDistributionCertificate); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
@@ -3011,9 +3007,9 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 4:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificateHash", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificate", wireType)
 				}
-				var stringLen uint64
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -3023,23 +3019,27 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if msglen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + msglen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.TransactionSnapshotCertificateHash = string(dAtA[iNdEx:postIndex])
+				if x.TransactionSnapshotCertificate == nil {
+					x.TransactionSnapshotCertificate = &MithrilCertificate{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TransactionSnapshotCertificate); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -7917,9 +7917,9 @@ type ConsensusState struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Timestamp                           uint64              `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	MithrilStakeDistributionCertificate *MithrilCertificate `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate,json=mithrilStakeDistributionCertificate,proto3" json:"mithril_stake_distribution_certificate,omitempty"`
-	TransactionSnapshotCertificate      *MithrilCertificate `protobuf:"bytes,3,opt,name=transaction_snapshot_certificate,json=transactionSnapshotCertificate,proto3" json:"transaction_snapshot_certificate,omitempty"`
+	Timestamp                               uint64 `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	MithrilStakeDistributionCertificateHash string `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate_hash,json=mithrilStakeDistributionCertificateHash,proto3" json:"mithril_stake_distribution_certificate_hash,omitempty"`
+	TransactionSnapshotCertificateHash      string `protobuf:"bytes,3,opt,name=transaction_snapshot_certificate_hash,json=transactionSnapshotCertificateHash,proto3" json:"transaction_snapshot_certificate_hash,omitempty"`
 }
 
 func (x *ConsensusState) Reset() {
@@ -7949,18 +7949,18 @@ func (x *ConsensusState) GetTimestamp() uint64 {
 	return 0
 }
 
-func (x *ConsensusState) GetMithrilStakeDistributionCertificate() *MithrilCertificate {
+func (x *ConsensusState) GetMithrilStakeDistributionCertificateHash() string {
 	if x != nil {
-		return x.MithrilStakeDistributionCertificate
+		return x.MithrilStakeDistributionCertificateHash
 	}
-	return nil
+	return ""
 }
 
-func (x *ConsensusState) GetTransactionSnapshotCertificate() *MithrilCertificate {
+func (x *ConsensusState) GetTransactionSnapshotCertificateHash() string {
 	if x != nil {
-		return x.TransactionSnapshotCertificate
+		return x.TransactionSnapshotCertificateHash
 	}
-	return nil
+	return ""
 }
 
 type Misbehaviour struct {
@@ -8023,10 +8023,10 @@ type MithrilHeader struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	MithrilStakeDistribution                *MithrilStakeDistribution   `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3" json:"mithril_stake_distribution,omitempty"`
-	MithrilStakeDistributionCertificateHash string                      `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate_hash,json=mithrilStakeDistributionCertificateHash,proto3" json:"mithril_stake_distribution_certificate_hash,omitempty"`
-	TransactionSnapshot                     *CardanoTransactionSnapshot `protobuf:"bytes,3,opt,name=transaction_snapshot,json=transactionSnapshot,proto3" json:"transaction_snapshot,omitempty"`
-	TransactionSnapshotCertificateHash      string                      `protobuf:"bytes,4,opt,name=transaction_snapshot_certificate_hash,json=transactionSnapshotCertificateHash,proto3" json:"transaction_snapshot_certificate_hash,omitempty"`
+	MithrilStakeDistribution            *MithrilStakeDistribution   `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3" json:"mithril_stake_distribution,omitempty"`
+	MithrilStakeDistributionCertificate *MithrilCertificate         `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate,json=mithrilStakeDistributionCertificate,proto3" json:"mithril_stake_distribution_certificate,omitempty"`
+	TransactionSnapshot                 *CardanoTransactionSnapshot `protobuf:"bytes,3,opt,name=transaction_snapshot,json=transactionSnapshot,proto3" json:"transaction_snapshot,omitempty"`
+	TransactionSnapshotCertificate      *MithrilCertificate         `protobuf:"bytes,4,opt,name=transaction_snapshot_certificate,json=transactionSnapshotCertificate,proto3" json:"transaction_snapshot_certificate,omitempty"`
 }
 
 func (x *MithrilHeader) Reset() {
@@ -8056,11 +8056,11 @@ func (x *MithrilHeader) GetMithrilStakeDistribution() *MithrilStakeDistribution 
 	return nil
 }
 
-func (x *MithrilHeader) GetMithrilStakeDistributionCertificateHash() string {
+func (x *MithrilHeader) GetMithrilStakeDistributionCertificate() *MithrilCertificate {
 	if x != nil {
-		return x.MithrilStakeDistributionCertificateHash
+		return x.MithrilStakeDistributionCertificate
 	}
-	return ""
+	return nil
 }
 
 func (x *MithrilHeader) GetTransactionSnapshot() *CardanoTransactionSnapshot {
@@ -8070,11 +8070,11 @@ func (x *MithrilHeader) GetTransactionSnapshot() *CardanoTransactionSnapshot {
 	return nil
 }
 
-func (x *MithrilHeader) GetTransactionSnapshotCertificateHash() string {
+func (x *MithrilHeader) GetTransactionSnapshotCertificate() *MithrilCertificate {
 	if x != nil {
-		return x.TransactionSnapshotCertificateHash
+		return x.TransactionSnapshotCertificate
 	}
-	return ""
+	return nil
 }
 
 type MithrilStakeDistribution struct {
@@ -8562,67 +8562,67 @@ var file_ibc_clients_mithril_v1_mithril_proto_rawDesc = []byte{
 	0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x21, 0x0a, 0x0c, 0x75, 0x70, 0x67, 0x72, 0x61, 0x64,
 	0x65, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x07, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0b, 0x75, 0x70,
 	0x67, 0x72, 0x61, 0x64, 0x65, 0x50, 0x61, 0x74, 0x68, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0xab, 0x02, 0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x73, 0x65, 0x6e, 0x73, 0x75, 0x73, 0x53, 0x74, 0x61,
+	0xe5, 0x01, 0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x73, 0x65, 0x6e, 0x73, 0x75, 0x73, 0x53, 0x74, 0x61,
 	0x74, 0x65, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70,
-	0x12, 0x7f, 0x0a, 0x26, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b,
+	0x12, 0x5c, 0x0a, 0x2b, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b,
 	0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x63,
-	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x2a, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69,
-	0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x23, 0x6d, 0x69,
-	0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69,
-	0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74,
-	0x65, 0x12, 0x74, 0x0a, 0x20, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
-	0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62,
+	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x27, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74,
+	0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x43,
+	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x12, 0x51,
+	0x0a, 0x25, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e,
+	0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61,
+	0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x22, 0x74,
+	0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68,
+	0x6f, 0x74, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73,
+	0x68, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xff, 0x01, 0x0a, 0x0c, 0x4d, 0x69, 0x73, 0x62,
+	0x65, 0x68, 0x61, 0x76, 0x69, 0x6f, 0x75, 0x72, 0x12, 0x1f, 0x0a, 0x09, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x02, 0x18, 0x01, 0x52,
+	0x08, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x49, 0x64, 0x12, 0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x5f, 0x31, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74,
+	0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x31, 0x52, 0x0e,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x31, 0x12, 0x63,
+	0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72,
+	0x5f, 0x32, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76,
+	0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x42,
+	0x12, 0xe2, 0xde, 0x1f, 0x0e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64,
+	0x65, 0x72, 0x32, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64,
+	0x65, 0x72, 0x32, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xe3, 0x03, 0x0a, 0x0d, 0x4d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x6e, 0x0a, 0x1a, 0x6d,
+	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73,
+	0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f,
+	0x6e, 0x52, 0x18, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44,
+	0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x7f, 0x0a, 0x26, 0x6d,
+	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73,
+	0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66,
+	0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62,
 	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
 	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74,
-	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x1e, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63,
-	0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65, 0x72, 0x74,
-	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xff, 0x01,
-	0x0a, 0x0c, 0x4d, 0x69, 0x73, 0x62, 0x65, 0x68, 0x61, 0x76, 0x69, 0x6f, 0x75, 0x72, 0x12, 0x1f,
-	0x0a, 0x09, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x42, 0x02, 0x18, 0x01, 0x52, 0x08, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x49, 0x64, 0x12,
-	0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x5f, 0x31, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x62, 0x63, 0x2e,
-	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
-	0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72,
-	0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x31, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x31, 0x12, 0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f,
-	0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x5f, 0x32, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25,
-	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
-	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48,
-	0x65, 0x61, 0x64, 0x65, 0x72, 0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e, 0x4d, 0x69, 0x74, 0x68, 0x72,
-	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72,
-	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0x9d, 0x03, 0x0a, 0x0d, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x12, 0x6e, 0x0a, 0x1a, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61,
-	0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72,
-	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x18, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x23, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
 	0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f,
-	0x6e, 0x12, 0x5c, 0x0a, 0x2b, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61,
-	0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
-	0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x27, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53,
-	0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e,
-	0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x12,
-	0x65, 0x0a, 0x14, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73,
-	0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x32, 0x2e,
+	0x6e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x65, 0x0a, 0x14,
+	0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e, 0x61, 0x70,
+	0x73, 0x68, 0x6f, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x32, 0x2e, 0x69, 0x62, 0x63,
+	0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x52, 0x13,
+	0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73,
+	0x68, 0x6f, 0x74, 0x12, 0x74, 0x0a, 0x20, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69,
+	0x6f, 0x6e, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e,
 	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
-	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72,
-	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f,
-	0x74, 0x52, 0x13, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e,
-	0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x12, 0x51, 0x0a, 0x25, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61,
-	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63,
-	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x22, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69,
-	0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
+	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65,
+	0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x1e, 0x74, 0x72, 0x61, 0x6e, 0x73,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65,
+	0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
 	0xcd, 0x02, 0x0a, 0x18, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65,
 	0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05,
 	0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f,
@@ -8804,12 +8804,12 @@ var file_ibc_clients_mithril_v1_mithril_proto_depIdxs = []int32{
 	3,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
 	3,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
 	14, // 2: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	10, // 3: ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	10, // 4: ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	7,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	7,  // 6: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	8,  // 7: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
-	9,  // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	7,  // 3: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	7,  // 4: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	8,  // 5: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
+	10, // 6: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	9,  // 7: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	10, // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
 	12, // 9: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
 	14, // 10: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
 	3,  // 11: ibc.clients.mithril.v1.CardanoTransactionSnapshot.height:type_name -> ibc.clients.mithril.v1.Height
