@@ -11,8 +11,8 @@ else
   DOCKER_COMPOSE_CMD="docker-compose"
 fi
 
-cd ../chains
+cd ../../chains/cardano
 ${DOCKER_COMPOSE_CMD} down
 
-cd ../gateway
+cd ../../cardano/gateway
 ${DOCKER_COMPOSE_CMD} down

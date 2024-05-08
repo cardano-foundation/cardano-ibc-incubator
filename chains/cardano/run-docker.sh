@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR=$(dirname $(realpath $0))
-
+# SCRIPT_DIR=$SCRIPT_DIR/../../cardano/
 cd ${SCRIPT_DIR}
 
 DOCKER_COMPOSE_CMD=
