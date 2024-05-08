@@ -2,6 +2,7 @@ syntax = "proto3";
 package ibc.clients.mithril.v1;
 
 import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
 
 option go_package = "sidechain/x/clients/mithril";
 
@@ -25,7 +26,7 @@ message ClientState {
   // Epoch number of current chain state
   uint64 current_epoch = 4;
 
-  uint64 trusting_period = 5;
+  google.protobuf.Duration trusting_period = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
 
   MithrilProtocolParameters protocol_parameters = 6;
   // Path at which next upgraded client will be committed.
