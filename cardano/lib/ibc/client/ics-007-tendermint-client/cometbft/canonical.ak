@@ -1,5 +1,5 @@
 use aiken/list
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{

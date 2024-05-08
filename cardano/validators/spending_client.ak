@@ -15,14 +15,18 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{
   Other, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
-  BlockID, Commit, PartSetHeader,
-}
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
+  BlockID, PartSetHeader,
+} as block_id_mod
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader} as tm_header_mod
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
+  Consensus, block_protocol,
+}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -132,6 +136,8 @@ type MockData {
   input: Input,
 }
 
+const fake_proposer_address = #"9f8b16a350cad1bc0e4c5e7a3b2d9f5b7a0c611f"
+
 fn setup() -> MockData {
   let client_token =
     AuthToken { policy_id: "mock policy_id", name: "mock name" }
@@ -182,12 +188,15 @@ test update_client_misbehaviour_conflict_header() {
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        ..tm_header_mod.null_tm_header(),
+        version: Consensus { block: block_protocol, app: 0 },
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
         validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
         next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
         app_hash: #"35c73ae54e3eb940a037effeba522aa34ed8d39c7b0f8af990bda1f252a343a7",
+        proposer_address: fake_proposer_address,
       },
       commit: Commit {
         height: 3,
@@ -414,6 +423,9 @@ test update_client_misbehaviour_monotonic_time_violation() {
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        ..tm_header_mod.null_tm_header(),
+        version: Consensus { block: block_protocol, app: 0 },
+        proposer_address: fake_proposer_address,
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
@@ -652,6 +664,9 @@ test update_client_verify_adjacent_succeed() {
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        ..tm_header_mod.null_tm_header(),
+        version: Consensus { block: block_protocol, app: 0 },
+        proposer_address: fake_proposer_address,
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
@@ -830,10 +845,10 @@ test update_client_verify_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             )
+              header_mod.get_height(header),
+              header_mod.consensus_state(header),
+              height.compare,
+            )
           |> dict.to_list(),
       },
     }
@@ -875,6 +890,9 @@ test update_client_verify_non_adjacent_succeed() {
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        ..tm_header_mod.null_tm_header(),
+        version: Consensus { block: block_protocol, app: 0 },
+        proposer_address: fake_proposer_address,
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
@@ -1053,10 +1071,10 @@ test update_client_verify_non_adjacent_succeed() {
         },
         consensus_states: dict.new()
           |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             )
+              header_mod.get_height(header),
+              header_mod.consensus_state(header),
+              height.compare,
+            )
           |> dict.to_list(),
       },
     }
