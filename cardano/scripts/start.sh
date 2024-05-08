@@ -37,11 +37,12 @@ if [[ "$USER" = "jenkins" ]] ; then
   DENO="/var/lib/jenkins/.deno/bin/deno"
 fi
 
-cd ../chains
+cd ../../chains/cardano
 ./run-docker.sh
+
 # $GATEWAY_DIR="$SCRIPT_DIR/../gateway"
 
-cd ../
+cd ../../cardano
 cp .env.example .env
 ${AIKEN} build --trace-level verbose
 ${DENO} run -A ./aiken-to-lucid/src/main.ts

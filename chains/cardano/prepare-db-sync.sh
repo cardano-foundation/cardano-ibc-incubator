@@ -73,7 +73,7 @@ echo "{\"Epoch0Nonce\": ${Epoch0Nonce}, \"poolParams\": ${PoolParams}}" > "$BASE
 
 echo "Epoch0Nonce: ${Epoch0Nonce}"
 
-cd ../gateway
+cd ../../cardano/gateway
 sed -i.bak "s/CARDANO_EPOCH_NONCE_GENESIS=.*/CARDANO_EPOCH_NONCE_GENESIS=${Epoch0Nonce}/g" ".env.example"
 rm .env.example.bak
 

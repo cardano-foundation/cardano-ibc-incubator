@@ -27,3 +27,12 @@ chains/osmosis/configuration/.osmosis-local/config/node_key.json
 chains/osmosis/configuration/.osmosis-local/config/priv_validator_key.json
 chains/osmosis/configuration/.osmosis-local/wasm/wasm/cache
 chains/osmosis/configuration/.osmosis-local/wasm/wasm/state/wasm
+
+
+
+chains/cardano/devnet/
+chains/cardano/kupo-db/
+chains/cardano/db-sync-data/
+chains/cardano/postgres/
+chains/cardano/baseinfo/
+chains/cardano/persistence/
