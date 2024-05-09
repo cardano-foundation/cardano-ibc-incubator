@@ -38,9 +38,17 @@ message ConsensusState {
 
   uint64 timestamp = 1;
 
-  string mithril_stake_distribution_certificate_hash = 2;
+  // First certificate hash of latest epoch of mithril stake distribution
+  string fc_hash_latest_epoch_msd = 2;
 
-  string transaction_snapshot_certificate_hash = 3;
+  // Latest certificate hash of mithril stake distribution
+  string latest_cert_hash_msd = 3;
+
+    // First certificate hash of latest epoch of transaction snapshot
+  string fc_hash_latest_epoch_ts = 4;
+
+  // Latest certificate hash of transaction snapshot
+  string latest_cert_hash_ts = 5;
 }
 
 message Misbehaviour {
