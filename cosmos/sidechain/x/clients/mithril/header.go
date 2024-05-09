@@ -14,9 +14,9 @@ var _ exported.ClientMessage = (*MithrilHeader)(nil)
 // ConsensusState returns the updated consensus state associated with the header
 func (h MithrilHeader) ConsensusState() *ConsensusState {
 	return &ConsensusState{
-		Timestamp:                               h.GetTimestamp(),
-		MithrilStakeDistributionCertificateHash: h.MithrilStakeDistributionCertificate.Hash,
-		TransactionSnapshotCertificateHash:      h.TransactionSnapshotCertificate.Hash,
+		Timestamp:         h.GetTimestamp(),
+		LatestCertHashMsd: h.MithrilStakeDistributionCertificate.Hash,
+		LatestCertHashTs:  h.TransactionSnapshotCertificate.Hash,
 	}
 }
 
