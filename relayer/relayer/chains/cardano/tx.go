@@ -1352,7 +1352,7 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 	if err != nil {
 		return nil, err
 	}
-	assembled := &chantypes.MsgTimeout{
+	msg := &chantypes.MsgTimeout{
 		Packet:           msgTransfer.Packet(),
 		ProofUnreceived:  proof.Proof,
 		ProofHeight:      proof.ProofHeight,
@@ -1360,13 +1360,8 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 		Signer:           signer,
 	}
 
-	_, err = cc.GateWay.PacketTimeout(context.Background(), transformMsgTimeout(assembled))
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(assembled, func(signer string) {
-		assembled.Signer = signer
+	return NewCardanoMessage(msg, func(signer string) {
+		msg.Signer = signer
 	}), nil
 }
 
@@ -1401,22 +1396,13 @@ func (cc *CardanoProvider) MsgTimeoutRefresh(channelId string) (provider.Relayer
 		return nil, err
 	}
 
-	//todo: find a better solution for this msg
-	msg := &chantypes.MsgChannelCloseInit{
+	msg := &pbchannel.MsgTimeoutRefresh{
 		ChannelId: channelId,
 		Signer:    signer,
 	}
 
 	return NewCardanoMessage(msg, func(signer string) {
 	}), nil
-}
-
-func transformMsgTimeoutRefresh(msg *chantypes.MsgChannelCloseInit) *pbchannel.MsgTimeoutRefresh {
-	return &pbchannel.MsgTimeoutRefresh{
-		ChannelId: msg.ChannelId,
-		Signer:    msg.Signer,
-	}
-
 }
 
 func (cc *CardanoProvider) ChannelProof(
@@ -1473,120 +1459,73 @@ func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *pbclientstruct.Cl
 }
 
 func (cc *CardanoProvider) buildMsgViaGW(ctx context.Context, cardanoMsg CardanoMessage, signer string) ([]byte, error) {
-	switch sdk.MsgTypeURL(cardanoMsg.Msg) {
-	case constant.MsgCreateClient:
-		if createClientMsg, ok := cardanoMsg.Msg.(*clienttypes.MsgCreateClient); !ok {
-			return nil, fmt.Errorf("not a create client message")
-		} else {
-			res, err := cc.GateWay.CreateClient(ctx, createClientMsg.ClientState, createClientMsg.ConsensusState, signer)
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+	switch msg := cardanoMsg.Msg.(type) {
+	case *clienttypes.MsgCreateClient:
+		res, err := cc.GateWay.CreateClient(ctx, msg.ClientState, msg.ConsensusState, signer)
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgUpdateClient:
-		if updateClientMsg, ok := cardanoMsg.Msg.(*clienttypes.MsgUpdateClient); !ok {
-			return nil, fmt.Errorf("not a update client message")
-		} else {
-			res, err := cc.GateWay.UpdateClient(ctx, transformStdUpdateClientToGwUpdateClient(updateClientMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *clienttypes.MsgUpdateClient:
+		res, err := cc.GateWay.UpdateClient(ctx, transformStdUpdateClientToGwUpdateClient(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgConnectionOpenInit:
-		if connectionOpenInitMsg, ok := cardanoMsg.Msg.(*conntypes.MsgConnectionOpenInit); !ok {
-			return nil, fmt.Errorf("not a connection open init message")
-		} else {
-			res, err := cc.GateWay.ConnectionOpenInit(ctx, transformMsgConnectionOpenInit(connectionOpenInitMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *conntypes.MsgConnectionOpenInit:
+		res, err := cc.GateWay.ConnectionOpenInit(ctx, transformMsgConnectionOpenInit(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgConnectionOpenAck:
-		if connectionOpenAckMsg, ok := cardanoMsg.Msg.(*conntypes.MsgConnectionOpenAck); !ok {
-			return nil, fmt.Errorf("not a connection open ack message")
-		} else {
-			res, err := cc.GateWay.ConnectionOpenAck(ctx, transformMsgConnectionOpenAck(connectionOpenAckMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *conntypes.MsgConnectionOpenAck:
+		res, err := cc.GateWay.ConnectionOpenAck(ctx, transformMsgConnectionOpenAck(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgChannelOpenInit:
-		if channelOpenInitMsg, ok := cardanoMsg.Msg.(*chantypes.MsgChannelOpenInit); !ok {
-			return nil, fmt.Errorf("not a channel open init message")
-		} else {
-			res, err := cc.GateWay.ChannelOpenInit(ctx, transformMsgChannelOpenInit(channelOpenInitMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelOpenInit:
+		res, err := cc.GateWay.ChannelOpenInit(ctx, transformMsgChannelOpenInit(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgChannelOpenAck:
-		if channelOpenAckMsg, ok := cardanoMsg.Msg.(*chantypes.MsgChannelOpenAck); !ok {
-			return nil, fmt.Errorf("not a channel open ack message")
-		} else {
-			res, err := cc.GateWay.ChannelOpenAck(ctx, transformMsgChannelOpenAck(channelOpenAckMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelOpenAck:
+		res, err := cc.GateWay.ChannelOpenAck(ctx, transformMsgChannelOpenAck(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgApplicationTransfer:
-		if applicationTransferMsg, ok := cardanoMsg.Msg.(*transfertypes.MsgTransfer); !ok {
-			return nil, fmt.Errorf("not an application transfer message")
-		} else {
-			res, err := cc.GateWay.Transfer(ctx, tranMsgTransferToGWMsgTransfer(applicationTransferMsg, signer))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *transfertypes.MsgTransfer:
+		res, err := cc.GateWay.Transfer(ctx, tranMsgTransferToGWMsgTransfer(msg, signer))
+		if err != nil {
+			return nil, err
 		}
-
-	case constant.MsgRecvPacket:
-		if recvPacketMsg, ok := cardanoMsg.Msg.(*chantypes.MsgRecvPacket); !ok {
-			return nil, fmt.Errorf("not a recv packet message")
-		} else {
-			res, err := cc.GateWay.RecvPacket(ctx, transformMsgRecvPacket(recvPacketMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgRecvPacket:
+		res, err := cc.GateWay.RecvPacket(ctx, transformMsgRecvPacket(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgAcknowledgement:
-		if acknowledgementMsg, ok := cardanoMsg.Msg.(*chantypes.MsgAcknowledgement); !ok {
-			return nil, fmt.Errorf("not an acknowledgement message")
-		} else {
-			res, err := cc.GateWay.PacketAcknowledgement(ctx, transferMsgAcknowledgement(acknowledgementMsg))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgAcknowledgement:
+		res, err := cc.GateWay.PacketAcknowledgement(ctx, transferMsgAcknowledgement(msg))
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgTimeoutRefresh:
-		if msgTimeoutRefresh, ok := cardanoMsg.Msg.(*chantypes.MsgChannelCloseInit); !ok {
-			return nil, fmt.Errorf("not a msgTimeoutRefresh")
-		} else {
-			res, err := cc.GateWay.TimeoutRefresh(context.Background(), transformMsgTimeoutRefresh(msgTimeoutRefresh))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *pbchannel.MsgTimeoutRefresh:
+		res, err := cc.GateWay.TimeoutRefresh(ctx, msg)
+		if err != nil {
+			return nil, err
 		}
-	case constant.MsgTimeOut:
-		if msgTimeOut, ok := cardanoMsg.Msg.(*chantypes.MsgTimeout); !ok {
-			return nil, fmt.Errorf("not a msgTimeOut")
-		} else {
-			res, err := cc.GateWay.PacketTimeout(ctx, transformMsgTimeout(msgTimeOut))
-			if err != nil {
-				return nil, err
-			}
-			return res.UnsignedTx.Value, nil
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgTimeout:
+		res, err := cc.GateWay.PacketTimeout(ctx, transformMsgTimeout(msg))
+		if err != nil {
+			return nil, err
 		}
-	default:
-		return nil, fmt.Errorf("not supported message")
+		return res.UnsignedTx.Value, nil
 	}
-	return nil, fmt.Errorf("not supported message")
+	return nil, fmt.Errorf("not supported message: %s", sdk.MsgTypeURL(cardanoMsg.Msg))
 }
