@@ -21,11 +21,12 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader} as tm_header_mod
+use ibc/client/ics_007_tendermint_client/cometbft/protos/types_pb.{Consensus}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
-  Consensus, block_protocol,
+  block_protocol,
 }
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod

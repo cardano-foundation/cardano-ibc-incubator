@@ -1,13 +1,31 @@
-use aiken/bytearray
+use aiken/builtin.{if_then_else as ite}
+use aiken/bytearray.{concat, length, push}
 use aiken/hash.{Hash, Sha3_256}
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID} as block_id_mod
+use ibc/client/ics_007_tendermint_client/cometbft/canonical.{
+  canonicalize_block_id,
+}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
   max_chain_id_len, tm_hash_size,
 }
+use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/tree.{
+  hash_from_byte_slices_sha2_256,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
+  marshal_for_block_id,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
+  marshal_for_timestamp, timestamp_proto,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/types_pb.{
+  Consensus, marshal_for_consensus,
+}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
-  Consensus, block_protocol,
+  block_protocol,
 }
+use ibc/utils/bytes.{encode_varint}
+use ibc/utils/int.{uint64}
 
 pub type TmHeader {
   // basic block info
@@ -84,9 +102,149 @@ pub fn null_tm_header() -> TmHeader {
   }
 }
 
-pub fn hash(_h: TmHeader) -> ByteArray {
-  // TODO: Add hashing logic
-  ""
+pub fn hash(h: TmHeader) -> ByteArray {
+  ite(
+    length(h.validators_hash) == 0,
+    #[],
+    {
+      let TmHeader {
+        version,
+        chain_id,
+        height,
+        time,
+        last_block_id,
+        last_commit_hash,
+        data_hash,
+        validators_hash,
+        next_validators_hash,
+        consensus_hash,
+        app_hash,
+        last_results_hash,
+        evidence_hash,
+        proposer_address,
+      } = h
+      let hbz = version |> Some() |> marshal_for_consensus()
+      let pbt = time |> timestamp_proto() |> marshal_for_timestamp()
+      let bzbi =
+        last_block_id
+          |> canonicalize_block_id()
+          |> Some()
+          |> marshal_for_block_id()
+
+      hash_from_byte_slices_sha2_256(
+        [
+          hbz,
+          ite(
+            length(chain_id) == 0,
+            #[],
+            chain_id
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(chain_id)
+              |> push(10),
+          ),
+          ite(
+            height == 0,
+            #[],
+            height |> uint64() |> encode_varint() |> push(8),
+          ),
+          pbt,
+          bzbi,
+          ite(
+            length(last_commit_hash) == 0,
+            #[],
+            last_commit_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(last_commit_hash)
+              |> push(10),
+          ),
+          ite(
+            length(data_hash) == 0,
+            #[],
+            data_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(data_hash)
+              |> push(10),
+          ),
+          ite(
+            length(validators_hash) == 0,
+            #[],
+            validators_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(validators_hash)
+              |> push(10),
+          ),
+          ite(
+            length(next_validators_hash) == 0,
+            #[],
+            next_validators_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(next_validators_hash)
+              |> push(10),
+          ),
+          ite(
+            length(consensus_hash) == 0,
+            #[],
+            consensus_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(consensus_hash)
+              |> push(10),
+          ),
+          ite(
+            length(app_hash) == 0,
+            #[],
+            app_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(app_hash)
+              |> push(10),
+          ),
+          ite(
+            length(last_results_hash) == 0,
+            #[],
+            last_results_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(last_results_hash)
+              |> push(10),
+          ),
+          ite(
+            length(evidence_hash) == 0,
+            #[],
+            evidence_hash
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(evidence_hash)
+              |> push(10),
+          ),
+          ite(
+            length(proposer_address) == 0,
+            #[],
+            proposer_address
+              |> length()
+              |> uint64()
+              |> encode_varint()
+              |> concat(proposer_address)
+              |> push(10),
+          ),
+        ],
+      )
+    },
+  )
 }
 
 fn validate_hash(h: ByteArray) -> Bool {
