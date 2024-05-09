@@ -1,6 +1,7 @@
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
-  BlockID, Commit, PartSetHeader,
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
+  BlockID, PartSetHeader,
 }
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
@@ -26,6 +27,7 @@ fn get_sample_header() -> Header {
   Header {
     signed_header: SignedHeader {
       header: tm_header.TmHeader {
+        ..tm_header.null_tm_header(),
         chain_id: "ogmosis",
         height: expected_revision_height,
         time: expected_time,

@@ -28,20 +28,22 @@ pub fn verify_header(
 
   expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
 
+  // Only height, time, and next_validators_hash are necessary for verification
+  let trusted_header =
+    SignedHeader {
+      header: tm_header.TmHeader {
+        ..tm_header.null_tm_header(),
+        chain_id: cs.chain_id,
+        height: header.trusted_height.revision_height,
+        time: cons_state.timestamp,
+        next_validators_hash: cons_state.next_validators_hash,
+      },
+      commit: commit.null_commit(),
+    }
+
   expect
     verifier.verify(
-      // Only height, time, and next_validators_hash are necessary for verification
-      SignedHeader {
-        header: tm_header.TmHeader {
-          chain_id: cs.chain_id,
-          height: header.trusted_height.revision_height,
-          time: cons_state.timestamp,
-          validators_hash: #[],
-          next_validators_hash: cons_state.next_validators_hash,
-          app_hash: #[],
-        },
-        commit: commit.null_commit(),
-      },
+      trusted_header,
       header.trusted_validators,
       header.signed_header,
       header.validator_set,

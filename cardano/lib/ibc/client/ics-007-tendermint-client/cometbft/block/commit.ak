@@ -1,4 +1,7 @@
 use aiken/list
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
+  BlockID, PartSetHeader,
+} as block_id_mod
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 
 pub type Commit {
@@ -6,16 +9,6 @@ pub type Commit {
   round: Int,
   block_id: BlockID,
   signatures: List<CommitSig>,
-}
-
-pub type BlockID {
-  hash: ByteArray,
-  part_set_header: PartSetHeader,
-}
-
-pub type PartSetHeader {
-  total: Int,
-  hash: ByteArray,
 }
 
 pub fn validate_basic(commit: Commit) -> Bool {
@@ -34,10 +27,7 @@ pub fn null_commit() -> Commit {
   Commit {
     height: 0,
     round: 0,
-    block_id: BlockID {
-      hash: #[],
-      part_set_header: PartSetHeader { total: 0, hash: #[] },
-    },
+    block_id: block_id_mod.null_block_id(),
     signatures: [],
   }
 }

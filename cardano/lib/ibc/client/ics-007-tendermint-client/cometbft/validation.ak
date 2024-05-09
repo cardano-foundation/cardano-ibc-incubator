@@ -5,7 +5,8 @@ use aiken/int
 use aiken/list
 use aiken/math/rational.{Rational}
 use aiken/option
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
   block_id_flag_commit,
@@ -18,10 +19,10 @@ pub fn verify_commit_light(
   chain_id: ByteArray,
   vals: ValidatorSet,
   block_id: BlockID,
-  heght: Int,
+  height: Int,
   commit: Commit,
 ) -> Bool {
-  verify_commit_light_internal(chain_id, vals, block_id, heght, commit, False)
+  verify_commit_light_internal(chain_id, vals, block_id, height, commit, False)
 }
 
 fn verify_commit_light_internal(
