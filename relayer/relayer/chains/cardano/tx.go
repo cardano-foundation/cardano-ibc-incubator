@@ -21,8 +21,6 @@ import (
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 	any1 "github.com/golang/protobuf/ptypes/any"
 
-	"google.golang.org/protobuf/types/known/anypb"
-
 	"github.com/avast/retry-go/v4"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -97,9 +95,6 @@ func (cc *CardanoProvider) MsgAcknowledgement(
 	if err != nil {
 		return nil, err
 	}
-	if err != nil {
-		return nil, err
-	}
 	msg := &chantypes.MsgAcknowledgement{
 		Packet:          msgRecvPacket.Packet(),
 		Acknowledgement: msgRecvPacket.Ack,
@@ -107,11 +102,8 @@ func (cc *CardanoProvider) MsgAcknowledgement(
 		ProofHeight:     proof.ProofHeight,
 		Signer:          signer,
 	}
-	res, err := cc.GateWay.PacketAcknowledgement(context.Background(), transferMsgAcknowledgement(msg))
-	if err != nil {
-		return nil, err
-	}
-	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -211,15 +203,7 @@ func (cc *CardanoProvider) MsgChannelOpenAck(msgOpenTry provider.ChannelInfo, pr
 		Signer:                signer,
 	}
 
-	chanOpenAckRes, err := cc.GateWay.ChannelOpenAck(
-		context.Background(),
-		transformMsgChannelOpenAck(msg),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(msg, chanOpenAckRes.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -264,14 +248,7 @@ func (cc *CardanoProvider) MsgChannelOpenInit(info provider.ChannelInfo, proof p
 		Signer: signer,
 	}
 
-	chanOpenInitRes, err := cc.GateWay.ChannelOpenInit(
-		context.Background(),
-		transformMsgChannelOpenInit(msg))
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(msg, chanOpenInitRes.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -329,12 +306,8 @@ func (cc *CardanoProvider) MsgConnectionOpenAck(msgOpenTry provider.ConnectionIn
 		},
 		Signer: signer,
 	}
-	res, err := cc.GateWay.ConnectionOpenAck(context.Background(), transformMsgConnectionOpenAck(msg))
-	if err != nil {
-		return nil, err
-	}
 
-	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -382,12 +355,7 @@ func (cc *CardanoProvider) MsgConnectionOpenInit(info provider.ConnectionInfo, p
 		Signer:      signer,
 	}
 
-	connOpenInitRes, err := cc.GateWay.ConnectionOpenInit(context.Background(), transformMsgConnectionOpenInit(msg))
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(msg, connOpenInitRes.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -436,13 +404,7 @@ func (cc *CardanoProvider) MsgCreateClient(
 		Signer:         signer,
 	}
 
-	// res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	anynil := anypb.Any{}
-	return NewCardanoMessage(msg, &anynil, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -462,11 +424,7 @@ func (cc *CardanoProvider) MsgRecvPacket(
 		Signer:          signer,
 	}
 
-	res, err := cc.GateWay.RecvPacket(context.Background(), transformMsgRecvPacket(msg))
-	if err != nil {
-		return nil, err
-	}
-	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -536,11 +494,8 @@ func (cc *CardanoProvider) MsgTransfer(
 	if info.TimeoutHeight.RevisionHeight != 0 {
 		msg.TimeoutHeight = info.TimeoutHeight
 	}
-	res, err := cc.GateWay.Transfer(context.Background(), tranMsgTransferToGWMsgTransfer(msg, signer))
-	if err != nil {
-		return nil, err
-	}
-	msgTransfer := NewCardanoMessage(msg, res.UnsignedTx, nil).(CardanoMessage)
+
+	msgTransfer := NewCardanoMessage(msg, nil).(CardanoMessage)
 	msgTransfer.FeegrantDisabled = true
 	return msgTransfer, nil
 }
@@ -581,11 +536,7 @@ func (cc *CardanoProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexpo
 		Signer:        signer,
 	}
 
-	res, err := cc.GateWay.UpdateClient(context.Background(), transformStdUpdateClientToGwUpdateClient(msg))
-	if err != nil {
-		return nil, err
-	}
-	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), nil
 }
@@ -1232,12 +1183,22 @@ func (cc *CardanoProvider) buildMessages(
 		txf = txf.WithMemo(memo)
 	}
 
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, 0, nil, err
+	}
+
 	// TO-DO: support multiple msgs per transaction
 	if len(msgs) != 1 {
 		return nil, 0, sdk.Coins{}, fmt.Errorf("Only supports 1 msg per transaction")
 	}
 
-	msgBytes, err := msgs[0].MsgBytes()
+	cardanoMsg, ok := msgs[0].(CardanoMessage)
+	if !ok {
+		return nil, 0, sdk.Coins{}, fmt.Errorf("not a cardano message")
+	}
+
+	msgBytes, err := cc.buildMsgViaGW(ctx, cardanoMsg, signer)
 	if err != nil {
 		return nil, 0, sdk.Coins{}, err
 	}
@@ -1379,7 +1340,7 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 	if err != nil {
 		return nil, err
 	}
-	assembled := &chantypes.MsgTimeout{
+	msg := &chantypes.MsgTimeout{
 		Packet:           msgTransfer.Packet(),
 		ProofUnreceived:  proof.Proof,
 		ProofHeight:      proof.ProofHeight,
@@ -1387,37 +1348,34 @@ func (cc *CardanoProvider) MsgTimeout(msgTransfer provider.PacketInfo, proof pro
 		Signer:           signer,
 	}
 
-	req := &pbchannel.MsgTimeout{
-		Packet: &pbchannel.Packet{
-			Sequence:           msgTransfer.Sequence,
-			SourcePort:         msgTransfer.SourcePort,
-			SourceChannel:      msgTransfer.SourceChannel,
-			DestinationPort:    msgTransfer.DestPort,
-			DestinationChannel: msgTransfer.DestChannel,
-			Data:               msgTransfer.Data,
-			TimeoutHeight: &clienttypes.Height{
-				RevisionNumber: msgTransfer.TimeoutHeight.RevisionNumber,
-				RevisionHeight: msgTransfer.TimeoutHeight.RevisionHeight,
-			},
-			TimeoutTimestamp: msgTransfer.TimeoutTimestamp,
-		},
-		ProofUnreceived: proof.Proof,
-		ProofHeight: &clienttypes.Height{
-			RevisionNumber: proof.ProofHeight.RevisionNumber,
-			RevisionHeight: proof.ProofHeight.RevisionHeight,
-		},
-		NextSequenceRecv: msgTransfer.Sequence,
-		Signer:           signer,
-	}
-
-	res, err := cc.GateWay.PacketTimeout(context.Background(), req)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(assembled, res.UnsignedTx, func(signer string) {
-		assembled.Signer = signer
+	return NewCardanoMessage(msg, func(signer string) {
+		msg.Signer = signer
 	}), nil
+}
+
+func transformMsgTimeout(msg *chantypes.MsgTimeout) *pbchannel.MsgTimeout {
+	return &pbchannel.MsgTimeout{
+		Packet: &pbchannel.Packet{
+			Sequence:           msg.Packet.Sequence,
+			SourcePort:         msg.Packet.SourcePort,
+			SourceChannel:      msg.Packet.SourceChannel,
+			DestinationPort:    msg.Packet.DestinationPort,
+			DestinationChannel: msg.Packet.DestinationChannel,
+			Data:               msg.Packet.Data,
+			TimeoutHeight: &clienttypes.Height{
+				RevisionNumber: msg.Packet.TimeoutHeight.RevisionNumber,
+				RevisionHeight: msg.Packet.TimeoutHeight.RevisionHeight,
+			},
+			TimeoutTimestamp: msg.Packet.TimeoutTimestamp,
+		},
+		ProofUnreceived: msg.ProofUnreceived,
+		ProofHeight: &clienttypes.Height{
+			RevisionNumber: msg.ProofHeight.RevisionNumber,
+			RevisionHeight: msg.ProofHeight.RevisionHeight,
+		},
+		NextSequenceRecv: msg.NextSequenceRecv,
+		Signer:           msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
@@ -1426,17 +1384,12 @@ func (cc *CardanoProvider) MsgTimeoutRefresh(channelId string) (provider.Relayer
 		return nil, err
 	}
 
-	req := &pbchannel.MsgTimeoutRefresh{
+	msg := &pbchannel.MsgTimeoutRefresh{
 		ChannelId: channelId,
 		Signer:    signer,
 	}
 
-	res, err := cc.GateWay.TimeoutRefresh(context.Background(), req)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewCardanoMessage(nil, res.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 	}), nil
 }
 
@@ -1484,11 +1437,83 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 		return nil, "", err
 	}
 
-	return NewCardanoMessage(msg, res.UnsignedTx, func(signer string) {
+	return NewCardanoMessage(msg, func(signer string) {
 		msg.Signer = signer
 	}), res.ClientId, nil
 }
 
 func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
 	return nil, nil
+}
+
+func (cc *CardanoProvider) buildMsgViaGW(ctx context.Context, cardanoMsg CardanoMessage, signer string) ([]byte, error) {
+	switch msg := cardanoMsg.Msg.(type) {
+	case *clienttypes.MsgCreateClient:
+		res, err := cc.GateWay.CreateClient(ctx, msg.ClientState, msg.ConsensusState, signer)
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *clienttypes.MsgUpdateClient:
+		res, err := cc.GateWay.UpdateClient(ctx, transformStdUpdateClientToGwUpdateClient(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *conntypes.MsgConnectionOpenInit:
+		res, err := cc.GateWay.ConnectionOpenInit(ctx, transformMsgConnectionOpenInit(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *conntypes.MsgConnectionOpenAck:
+		res, err := cc.GateWay.ConnectionOpenAck(ctx, transformMsgConnectionOpenAck(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelOpenInit:
+		res, err := cc.GateWay.ChannelOpenInit(ctx, transformMsgChannelOpenInit(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelOpenAck:
+		res, err := cc.GateWay.ChannelOpenAck(ctx, transformMsgChannelOpenAck(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *transfertypes.MsgTransfer:
+		res, err := cc.GateWay.Transfer(ctx, tranMsgTransferToGWMsgTransfer(msg, signer))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgRecvPacket:
+		res, err := cc.GateWay.RecvPacket(ctx, transformMsgRecvPacket(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgAcknowledgement:
+		res, err := cc.GateWay.PacketAcknowledgement(ctx, transferMsgAcknowledgement(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *pbchannel.MsgTimeoutRefresh:
+		res, err := cc.GateWay.TimeoutRefresh(ctx, msg)
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgTimeout:
+		res, err := cc.GateWay.PacketTimeout(ctx, transformMsgTimeout(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	}
+	return nil, fmt.Errorf("not supported message: %s", sdk.MsgTypeURL(cardanoMsg.Msg))
 }
