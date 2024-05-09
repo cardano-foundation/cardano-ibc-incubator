@@ -1,7 +1,9 @@
 use aiken/builtin.{if_then_else as ite}
 use aiken/bytearray.{concat, length, push}
 use aiken/hash.{Hash, Sha3_256}
-use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID} as block_id_mod
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
+  BlockID, PartSetHeader,
+} as block_id_mod
 use ibc/client/ics_007_tendermint_client/cometbft/canonical.{
   canonicalize_block_id,
 }
@@ -250,4 +252,28 @@ pub fn hash(h: TmHeader) -> ByteArray {
 fn validate_hash(h: ByteArray) -> Bool {
   let len = h |> bytearray.length()
   len == 0 || len == tm_hash_size
+}
+
+test test_tmheader_hash() {
+  let tmheader =
+    TmHeader {
+      version: Consensus { block: 1, app: 2 },
+      chain_id: "chainId",
+      height: 3,
+      time: 1715282423 * 1_000_000_000 + 300358000,
+      last_block_id: BlockID {
+        hash: #[4, 5, 6],
+        part_set_header: PartSetHeader { total: 7, hash: #[8, 9, 10] },
+      },
+      last_commit_hash: #[11],
+      data_hash: #[12],
+      validators_hash: #[13],
+      next_validators_hash: #[14],
+      consensus_hash: #[15],
+      app_hash: #[16],
+      last_results_hash: #[17],
+      evidence_hash: #[18],
+      proposer_address: #[19],
+    }
+  hash(tmheader) == #"f6809c55c6e77bb067268253dcb2ca6e570846f88e4d48d80db0deb80ebaf33d"
 }
