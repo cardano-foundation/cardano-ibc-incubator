@@ -55,6 +55,9 @@ func (h MithrilHeader) ValidateBasic() error {
 	if h.TransactionSnapshotCertificate == nil {
 		return errorsmod.Wrap(ErrInvalidTransactionSnapshotCertificate, "transaction snapshot certificate cannot be nil")
 	}
+	if h.MithrilStakeDistribution.Epoch != h.TransactionSnapshot.Epoch {
+		return errorsmod.Wrap(ErrInvalidMithrilHeader, "mithril stake distribution epoch does not match transaction snapshot epoch")
+	}
 	if !strings.EqualFold(h.MithrilStakeDistribution.CertificateHash, h.MithrilStakeDistributionCertificate.Hash) {
 		return errorsmod.Wrap(ErrInvalidMithrilHeader, "mithril stake distribution does not match mithril stake distribution certificate")
 	}
