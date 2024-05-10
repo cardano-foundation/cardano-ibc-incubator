@@ -18,14 +18,17 @@ import {
   ConsensusState as ConsensusStateTendermint,
 } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import {
+  ClientState as ClientStateMithril,
+  ConsensusState as ConsensusStateMithril,
+  SignedEntityType,
+} from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import {
   InteractionContext,
   WebSocketCloseHandler,
   WebSocketErrorHandler,
   createInteractionContext,
 } from '@cardano-ogmios/client';
 import { StateQueryClient, createStateQueryClient } from '@cardano-ogmios/client/dist/StateQuery';
-import { InjectEntityManager } from '@nestjs/typeorm';
-import { EntityManager } from 'typeorm';
 import { BlockDto } from '../dtos/block.dto';
 import { connectionConfig } from '@config/kupmios.config';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
@@ -80,8 +83,6 @@ import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@dinhbx/lucid-custom';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
-import { HttpService } from '@nestjs/axios';
-import { lastValueFrom } from 'rxjs';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
   decodeMintConnectionRedeemer,
@@ -92,18 +93,110 @@ import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { MithrilClientState } from '../../shared/types/mithril';
 
 @Injectable()
 export class QueryService {
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
-    private readonly httpService: HttpService,
-    @InjectEntityManager() private entityManager: EntityManager,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
+    @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
+
+  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
+    const { height } = request;
+    if (!height) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+    }
+    const currentEpochSettings = await this.mithrilService.getCurrentEpochSettings();
+
+    const certificates = await this.mithrilService.getMostRecentCertificates();
+    const certificate = certificates[0];
+
+    const mithrilHeight = (
+      certificate.signed_entity_type.CardanoTransactions ?? certificate.signed_entity_type.CardanoImmutableFilesFull
+    ).immutable_file_number;
+
+    const clientStateMithril: ClientStateMithril = {
+      /** Chain id */
+      chain_id: this.configService.get('cardanoChainNetworkMagic').toString(),
+      /** Latest height the client was updated to */
+      latest_height: {
+        /** the immutable file number */
+        mithril_height: BigInt(mithrilHeight),
+      },
+      /** Block height when the client was frozen due to a misbehaviour */
+      frozen_height: {
+        mithril_height: 0n,
+      },
+      /** Epoch number of current chain state */
+      current_epoch: BigInt(currentEpochSettings.epoch),
+      trusting_period: BigInt(0),
+      protocol_parameters: {
+        /** Quorum parameter */
+        k: BigInt(currentEpochSettings.protocol.k),
+        /** Security parameter (number of lotteries) */
+        m: BigInt(currentEpochSettings.protocol.m),
+        /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
+        phi_f: BigInt(currentEpochSettings.protocol.phi_f * 100),
+      },
+      /** Path at which next upgraded client will be committed. */
+      upgrade_path: [],
+    } as unknown as ClientStateMithril;
+
+    let signedEntityType: SignedEntityType = SignedEntityType.UNRECOGNIZED;
+    if (certificate.signed_entity_type.CardanoTransactions) signedEntityType = SignedEntityType.CARDANO_TRANSACTIONS;
+    if (certificate.signed_entity_type.CardanoImmutableFilesFull)
+      signedEntityType = SignedEntityType.MITHRIL_STAKE_DISTRIBUTION;
+
+    const snapshots = await this.mithrilService.getMostRecentSnapshots();
+    let latestSnapshot = snapshots.find((snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch);
+    if (!latestSnapshot) latestSnapshot = snapshots[0];
+
+    const snapshotsOfLatestEpoch = snapshots.filter((snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch);
+    let firstSnapshotOfLatestEpoch = snapshots[0];
+    if (snapshotsOfLatestEpoch.length)
+      firstSnapshotOfLatestEpoch = snapshotsOfLatestEpoch[snapshotsOfLatestEpoch.length - 1];
+
+    const certificateOfLatestEpoch = certificates.filter((e) => e.epoch === certificate.epoch);
+    let firstCertificateOfLatestEpoch = certificates[0];
+    if (certificateOfLatestEpoch.length)
+      firstCertificateOfLatestEpoch = certificateOfLatestEpoch[certificateOfLatestEpoch.length - 1];
+
+    const timestamp = new Date(certificate.metadata.initiated_at).valueOf();
+    const consensusStateMithril: ConsensusStateMithril = {
+      timestamp: BigInt(timestamp),
+      /** First certificate hash of latest epoch of mithril stake distribution */
+      fc_hash_latest_epoch_msd: firstCertificateOfLatestEpoch.hash,
+      /** Latest certificate hash of mithril stake distribution */
+      latest_cert_hash_msd: certificate.hash,
+      /** First certificate hash of latest epoch of transaction snapshot */
+      fc_hash_latest_epoch_ts: firstSnapshotOfLatestEpoch.certificate_hash,
+      /** Latest certificate hash of transaction snapshot */
+      latest_cert_hash_ts: latestSnapshot.certificate_hash,
+    } as unknown as ConsensusStateMithril;
+
+    const clientStateAny: Any = {
+      type_url: '/ibc.clients.mithril.v1.ClientState',
+      value: ClientStateMithril.encode(clientStateMithril).finish(),
+    };
+
+    const consensusStateAny: Any = {
+      type_url: '/ibc.clients.mithril.v1.ConsensusState',
+      value: ConsensusStateMithril.encode(consensusStateMithril).finish(),
+    };
+
+    const response: QueryNewClientResponse = {
+      client_state: clientStateAny,
+      consensus_state: consensusStateAny,
+    };
+
+    return response;
+  }
 
   async newClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
     const { height } = request;

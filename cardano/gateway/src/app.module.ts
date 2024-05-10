@@ -7,6 +7,7 @@ import { ConfigModule } from '@nestjs/config';
 import configuration from './config';
 import { LucidModule } from './shared/modules/lucid/lucid.module';
 import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protocals.module';
+import { MithrilModule } from './shared/modules/mithril/mithril.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protoc
     TxModule,
     LucidModule,
     MiniProtocalsModule,
+    MithrilModule,
   ],
   providers: [Logger],
 })
