@@ -40,6 +40,7 @@ genesis:
             - "099-cardano"
             - "07-tendermint"
             - "06-solomachine"
+            - "2000-cardano-mithril"
         create_localhost: false
         next_client_sequence: 0
       connection_genesis:

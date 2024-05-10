@@ -1,6 +1,7 @@
 package mithril
 
 import (
+	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -17,18 +18,23 @@ import (
 // UpdateState must only be used to update within a single revision, thus header revision number and trusted height's revision
 // number must be the same. To update to a new revision, use a separate upgrade path
 // UpdateState will prune the oldest consensus state if it is expired.
-func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage) []exported.Height
+func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage) []exported.Height {
+	return []exported.Height{}
+}
 
 // UpdateStateOnMisbehaviour updates state upon misbehaviour, freezing the ClientState. This method should only be called when misbehaviour is detected
 // as it does not perform any misbehaviour checks.
-func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage)
+func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage) {
+}
 
 // VerifyClientMessage checks if the clientMessage is of type Header or Misbehaviour and verifies the message
 // Called by clientState.VerifyClientMessage, before clientState.CheckForMisbehaviour
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
 	clientMsg exported.ClientMessage,
-) error
+) error {
+	return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+}
 
 // // VerifyClientMessage checks if the clientMessage is of type Header or Misbehaviour and verifies the message
 // // Called by clientState.VerifyClientMessage, before clientState.CheckForMisbehaviour

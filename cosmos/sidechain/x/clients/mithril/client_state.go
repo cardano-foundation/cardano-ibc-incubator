@@ -209,7 +209,9 @@ func (cs ClientState) VerifyMembership(
 	proof []byte,
 	path exported.Path,
 	value []byte,
-) error
+) error {
+	return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+}
 
 // VerifyNonMembership is a generic proof verification method which verifies the absence of a given CommitmentPath at a specified height.
 // The caller is expected to construct the full CommitmentPath from a CommitmentPrefix and a standardized path (as defined in ICS 24).
@@ -223,4 +225,6 @@ func (cs ClientState) VerifyNonMembership(
 	delayBlockPeriod uint64,
 	proof []byte,
 	path exported.Path,
-) error
+) error {
+	return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+}
