@@ -1,5 +1,6 @@
 use ibc/auth.{AuthToken}
 use ibc/client/cardano_client/protos/cardano_pb.{CardanoClientState}
+use ibc/client/mithril_client/protos/mithril_pb.{MithrilClientState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 
@@ -16,7 +17,7 @@ pub type MintConnectionRedeemer {
 
 pub type SpendConnectionRedeemer {
   ConnOpenAck {
-    counterparty_client_state: CardanoClientState,
+    counterparty_client_state: MithrilClientState,
     proof_try: MerkleProof,
     proof_client: MerkleProof,
     proof_height: Height,
