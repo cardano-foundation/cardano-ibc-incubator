@@ -17,7 +17,6 @@ pub fn validate_basic(sh: SignedHeader, chain_id: ByteArray) -> Bool {
 
   expect sh.commit.height == sh.header.height
 
-  // TODO: uncomment this when hash function implemented
-  // expect tm_header_mod.hash(sh.header) == sh.commit.block_id.hash
+  expect tm_header_mod.hash(sh.header) == sh.commit.block_id.hash
   True
 }
