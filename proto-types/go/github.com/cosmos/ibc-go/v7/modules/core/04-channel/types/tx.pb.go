@@ -7,7 +7,8 @@
 package types
 
 import (
-	_ "github.com/cosmos/gogoproto/gogoproto"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+_ "github.com/cosmos/gogoproto/gogoproto"
 	types "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1585,6 +1586,16 @@ type MsgTimeoutRefresh struct {
 
 	ChannelId string `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	Signer    string `protobuf:"bytes,2,opt,name=signer,proto3" json:"signer,omitempty"`
+}
+
+func (x *MsgTimeoutRefresh) ValidateBasic() error {
+  //TODO implement me
+  panic("implement me")
+}
+
+func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
+  //TODO implement me
+  panic("implement me")
 }
 
 func (x *MsgTimeoutRefresh) Reset() {
