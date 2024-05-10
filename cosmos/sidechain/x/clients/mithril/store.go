@@ -25,7 +25,15 @@ var (
 
 // GetConsensusState retrieves the consensus state from the client prefixed store.
 // If the ConsensusState does not exist in state for the provided height a nil value and false boolean flag is returned
-func GetConsensusState(store storetypes.KVStore, cdc codec.BinaryCodec, height exported.Height) (*ConsensusState, bool)
+func GetConsensusState(store storetypes.KVStore, cdc codec.BinaryCodec, height exported.Height) (*ConsensusState, bool) {
+	bz := store.Get(host.ConsensusStateKey(height))
+	if len(bz) == 0 {
+		return nil, false
+	}
+
+	consensusStateI := clienttypes.MustUnmarshalConsensusState(cdc, bz)
+	return consensusStateI.(*ConsensusState), true
+}
 
 // SetProcessedTime stores the time at which a header was processed and the corresponding consensus state was created.
 // This is useful when validating whether a packet has reached the time specified delay period in the mithril client's
