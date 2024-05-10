@@ -1,6 +1,5 @@
 use aiken/bytearray
 use aiken/dict.{Dict}
-use aiken/option
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -22,44 +21,43 @@ pub fn check_for_misbehaviour(
   consensus_states: Dict<Height, ConsensusState>,
 ) -> Bool {
   when msg is {
-    HeaderCase(h) -> {
-      let existing_cons_state =
+    HeaderCase(h) ->
+      when
         store.get_consensus_state(consensus_states, header_mod.get_height(h))
-          |> option.or_else(consensus_state.null_consensus_state())
-      if existing_cons_state != consensus_state.null_consensus_state() {
-        if existing_cons_state == header_mod.consensus_state(h) {
-          False
-        } else {
-          True
-        }
-      } else {
-        let prev_cons =
-          store.get_next_consensus_state(
-            consensus_states,
-            header_mod.get_height(h),
-          )
-            |> option.or_else(consensus_state.null_consensus_state())
-        let next_cons =
-          store.get_prev_consensus_state(
-            consensus_states,
-            header_mod.get_height(h),
-          )
-            |> option.or_else(consensus_state.null_consensus_state())
-        let check_prev =
-          prev_cons != consensus_state.null_consensus_state() && !(prev_cons.timestamp < header_mod.consensus_state(
-            h,
-          ).timestamp)
-        let check_next =
-          next_cons != consensus_state.null_consensus_state() && !(next_cons.timestamp > header_mod.consensus_state(
-            h,
-          ).timestamp)
-        if check_prev || check_next {
-          True
-        } else {
-          False
+      is {
+        Some(existing_cons_state) ->
+          existing_cons_state != header_mod.consensus_state(h)
+        None -> {
+          let invalid_prev =
+            when
+              store.get_prev_consensus_state(
+                consensus_states,
+                header_mod.get_height(h),
+              )
+            is {
+              Some(prev_cons) -> prev_cons.timestamp >= header_mod.get_time(h)
+              None -> False
+            }
+
+          if !invalid_prev {
+            let invalid_next =
+              when
+                store.get_next_consensus_state(
+                  consensus_states,
+                  header_mod.get_height(h),
+                )
+              is {
+                Some(next_cons) -> next_cons.timestamp <= header_mod.get_time(h)
+                None -> False
+              }
+
+            invalid_next
+          } else {
+            invalid_prev
+          }
         }
       }
-    }
+
     MisbehaviourCase(misbehaviour) ->
       if
       height.compare(
