@@ -1,8 +1,10 @@
 use aiken/bytearray
+use aiken/list
 use aiken/math/rational.{Rational}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/vote
 use ibc/utils/time.{Duration, Time}
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
@@ -73,6 +75,7 @@ pub fn verify_adjacent(
       untrusted_header.commit.block_id,
       untrusted_header.header.height,
       untrusted_header.commit,
+      None,
     )
   True
 }
@@ -100,12 +103,25 @@ pub fn verify_non_adjacent(
       max_clock_drift,
     )
 
+  let list_vote_sign_bytes =
+    list.indexed_map(
+      untrusted_header.commit.signatures,
+      fn(idx, _sig) {
+        vote.vote_sign_bytes_for_commit(
+          untrusted_header.commit,
+          trusted_header.header.chain_id,
+          idx,
+        )
+      },
+    )
+
   expect
     validation.verify_commit_light_trusting(
       trusted_header.header.chain_id,
       trusted_vals,
       untrusted_header.commit,
       trust_level,
+      Some(list_vote_sign_bytes),
     )
   expect
     validation.verify_commit_light(
@@ -114,6 +130,7 @@ pub fn verify_non_adjacent(
       untrusted_header.commit.block_id,
       untrusted_header.header.height,
       untrusted_header.commit,
+      Some(list_vote_sign_bytes),
     )
   True
 }

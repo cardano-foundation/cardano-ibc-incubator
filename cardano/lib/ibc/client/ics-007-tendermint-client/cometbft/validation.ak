@@ -17,6 +17,7 @@ pub fn verify_commit_light(
   block_id: BlockID,
   height: Int,
   commit: Commit,
+  list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
   expect verify_basic_vals_and_commit(vals, commit, height, block_id)
   let voting_power_needed = validator_set.total_voting_power(vals) * 2 / 3
@@ -47,6 +48,7 @@ pub fn verify_commit_light(
       count,
       False,
       True,
+      list_vote_sign_bytes,
     )
   }
 }
@@ -56,6 +58,7 @@ pub fn verify_commit_light_trusting(
   vals: ValidatorSet,
   commit: Commit,
   trust_level: Rational,
+  list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
   expect !list.is_empty(vals.validators)
   expect rational.denominator(trust_level) != 0
@@ -89,6 +92,7 @@ pub fn verify_commit_light_trusting(
       count,
       False,
       False,
+      list_vote_sign_bytes,
     )
   }
 }
@@ -125,6 +129,7 @@ fn verify_commit_single(
   count_sig: fn(CommitSig) -> Bool,
   count_all_signatures: Bool,
   lock_up_by_index: Bool,
+  list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
   let (tallied_voting_power, _seen_vals, partial_passed) =
     list.indexed_foldr(
@@ -152,7 +157,13 @@ fn verify_commit_single(
           when found_val is {
             Some((val, seen_vals)) -> {
               let vote_sign_bytes =
-                vote.vote_sign_bytes_for_commit(commit, chain_id, idx)
+                when list_vote_sign_bytes is {
+                  Some(list_vote_sign_bytes) -> {
+                    expect Some(bz) = list.at(list_vote_sign_bytes, idx)
+                    bz
+                  }
+                  None -> vote.vote_sign_bytes_for_commit(commit, chain_id, idx)
+                }
 
               expect
                 builtin.verify_ed25519_signature(
