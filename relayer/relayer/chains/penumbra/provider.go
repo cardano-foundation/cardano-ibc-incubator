@@ -3,6 +3,7 @@ package penumbra
 import (
 	"context"
 	"fmt"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"io"
 	"os"
 	"path"
@@ -172,12 +173,12 @@ func (cc *PenumbraProvider) MsgCreateCosmosClient(clientState ibcexported.Client
 	panic("implement me")
 }
 
-func (cc *PenumbraProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
+func (cc *PenumbraProvider) MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (provider.RelayerMessage, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (cc *PenumbraProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
+func (cc *PenumbraProvider) QueryCardanoState(ctx context.Context, height int64) (*mithrilstruct.ClientState, *mithrilstruct.ConsensusState, error) {
 	//TODO implement me
 	panic("implement me")
 }

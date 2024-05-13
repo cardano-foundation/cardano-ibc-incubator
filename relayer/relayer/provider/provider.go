@@ -6,6 +6,7 @@ import (
 	"time"
 
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"github.com/cometbft/cometbft/proto/tendermint/crypto"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -418,7 +419,7 @@ type ChainProvider interface {
 
 	MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (RelayerMessage, string, error)
 
-	MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (RelayerMessage, error)
+	MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (RelayerMessage, error)
 
 	MsgUpgradeClient(srcClientId string, consRes *clienttypes.QueryConsensusStateResponse, clientRes *clienttypes.QueryClientStateResponse) (RelayerMessage, error)
 
@@ -624,7 +625,7 @@ type QueryProvider interface {
 	QueryUnbondingPeriod(context.Context) (time.Duration, error)
 
 	// ics 02 - client
-	QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error)
+	QueryCardanoState(ctx context.Context, height int64) (*mithrilstruct.ClientState, *mithrilstruct.ConsensusState, error)
 	QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error)
 	QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error)
 	QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error)

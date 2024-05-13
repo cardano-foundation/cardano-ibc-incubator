@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"os"
 	"regexp"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/avast/retry-go/v4"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -1442,7 +1442,7 @@ func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientS
 	}), res.ClientId, nil
 }
 
-func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
+func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (provider.RelayerMessage, error) {
 	return nil, nil
 }
 

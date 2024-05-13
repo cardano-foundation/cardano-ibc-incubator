@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"strconv"
 	"strings"
 	"sync"
@@ -817,13 +818,13 @@ func (cc *CardanoProvider) QueryCardanoLatestHeight(ctx context.Context) (int64,
 	return int64(res), nil
 }
 
-func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
+func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) (*mithrilstruct.ClientState, *mithrilstruct.ConsensusState, error) {
 	res, err := cc.GateWay.QueryCardanoState(uint64(height))
 	if err != nil {
 		return nil, nil, err
 	}
-	var clientState = pbclientstruct.ClientState{}
-	var consensusState = pbclientstruct.ConsensusState{}
+	var clientState = mithrilstruct.ClientState{}
+	var consensusState = mithrilstruct.ConsensusState{}
 	err = res.GetClientState().UnmarshalTo(&clientState)
 	if err != nil {
 		return nil, nil, err
