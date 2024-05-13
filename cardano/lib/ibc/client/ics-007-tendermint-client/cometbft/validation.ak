@@ -147,9 +147,9 @@ fn verify_commit_single(
               validator_set.get_by_address(vals, commit_sig.validator_address)
                 |> option.map(
                     fn(result) {
-                      expect !list.has(acc.2nd, result.1st)
+                      expect !list.has(acc.2nd, result)
 
-                      (result.2nd, [result.1st, ..acc.2nd])
+                      (result, [result, ..acc.2nd])
                     },
                   )
             }
