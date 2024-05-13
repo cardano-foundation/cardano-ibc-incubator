@@ -94,7 +94,7 @@ import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { MithrilClientState } from '../../shared/types/mithril';
+import { getNanoseconds } from '../../shared/helpers/time';
 
 @Injectable()
 export class QueryService {
@@ -135,7 +135,10 @@ export class QueryService {
       },
       /** Epoch number of current chain state */
       current_epoch: BigInt(currentEpochSettings.epoch),
-      trusting_period: BigInt(0),
+      trusting_period: {
+        seconds: 0n,
+        nanos: 0,
+      },
       protocol_parameters: {
         /** Quorum parameter */
         k: BigInt(currentEpochSettings.protocol.k),
@@ -147,11 +150,6 @@ export class QueryService {
       /** Path at which next upgraded client will be committed. */
       upgrade_path: [],
     } as unknown as ClientStateMithril;
-
-    let signedEntityType: SignedEntityType = SignedEntityType.UNRECOGNIZED;
-    if (certificate.signed_entity_type.CardanoTransactions) signedEntityType = SignedEntityType.CARDANO_TRANSACTIONS;
-    if (certificate.signed_entity_type.CardanoImmutableFilesFull)
-      signedEntityType = SignedEntityType.MITHRIL_STAKE_DISTRIBUTION;
 
     const snapshots = await this.mithrilService.getMostRecentSnapshots();
     let latestSnapshot = snapshots.find((snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch);
@@ -167,9 +165,9 @@ export class QueryService {
     if (certificateOfLatestEpoch.length)
       firstCertificateOfLatestEpoch = certificateOfLatestEpoch[certificateOfLatestEpoch.length - 1];
 
-    const timestamp = new Date(certificate.metadata.initiated_at).valueOf();
+    const timestamp = new Date(certificate.metadata.sealed_at).valueOf();
     const consensusStateMithril: ConsensusStateMithril = {
-      timestamp: BigInt(timestamp),
+      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(certificate.metadata.sealed_at)),
       /** First certificate hash of latest epoch of mithril stake distribution */
       fc_hash_latest_epoch_msd: firstCertificateOfLatestEpoch.hash,
       /** Latest certificate hash of mithril stake distribution */
