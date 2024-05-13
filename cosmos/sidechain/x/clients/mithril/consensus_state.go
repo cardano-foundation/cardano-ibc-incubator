@@ -1,6 +1,7 @@
 package mithril
 
 import (
+	"encoding/hex"
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
@@ -49,16 +50,16 @@ func (cs ConsensusState) GetTime() time.Time {
 
 // ValidateBasic defines a basic validation for the mithril consensus state.
 func (cs ConsensusState) ValidateBasic() error {
-	if err := cmttypes.ValidateHash([]byte(cs.FcHashLatestEpochMsd)); err != nil {
+	if data, err := hex.DecodeString(cs.FcHashLatestEpochMsd); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "first certificate hash of latest epoch of mithril stake distribution is invalid")
 	}
-	if err := cmttypes.ValidateHash([]byte(cs.LatestCertHashMsd)); err != nil {
+	if data, err := hex.DecodeString(cs.LatestCertHashMsd); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "latest certificate hash of mithril stake distribution is invalid")
 	}
-	if err := cmttypes.ValidateHash([]byte(cs.FcHashLatestEpochTs)); err != nil {
+	if data, err := hex.DecodeString(cs.FcHashLatestEpochTs); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "first certificate hash of latest epoch of transaction snapshot is invalid")
 	}
-	if err := cmttypes.ValidateHash([]byte(cs.LatestCertHashTs)); err != nil {
+	if data, err := hex.DecodeString(cs.LatestCertHashTs); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "latest certificate hash of transaction snapshot is invalid")
 	}
 	if cs.Timestamp <= 0 {
