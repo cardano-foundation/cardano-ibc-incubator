@@ -1,7 +1,6 @@
 use aiken/list
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/tree
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
-use ibc/utils/list as list_utils
 
 pub type ValidatorSet {
   validators: List<Validator>,
@@ -44,8 +43,8 @@ pub fn size(vals: ValidatorSet) -> Int {
 pub fn get_by_address(
   vals: ValidatorSet,
   address: ByteArray,
-) -> Option<(Int, Validator)> {
-  list_utils.indexed_find(vals.validators, fn(val) { val.address == address })
+) -> Option<Validator> {
+  list.find(vals.validators, fn(val) { val.address == address })
 }
 
 //--------------------------------------Test--------------------------------------
