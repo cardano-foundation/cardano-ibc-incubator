@@ -91,7 +91,7 @@ export class QueryController {
 
   @GrpcMethod('Query', 'NewClient')
   async NewClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
-    const response: QueryNewClientResponse = await this.queryService.newClient(request);
+    const response: QueryNewClientResponse = await this.queryService.queryNewMithrilClient(request);
     return response;
   }
 

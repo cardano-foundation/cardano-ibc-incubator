@@ -43,4 +43,10 @@ const querySystemStart = async (ogmiosUrl: string) => {
   return parsedSystemTime;
 };
 
-export { querySystemStart };
+const getNanoseconds = (d) => {
+  let nanoSeconds = d.split('.')[1].split('Z')[0];
+  nanoSeconds = Number(nanoSeconds).toString();
+  return parseInt(nanoSeconds);
+};
+
+export { querySystemStart, getNanoseconds };
