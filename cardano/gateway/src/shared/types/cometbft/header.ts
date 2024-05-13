@@ -1,14 +1,27 @@
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { ConsensusState } from '../consensus-state';
 import { MAX_CHAIN_ID_LENGTH, TM_HASH_SIZE } from '../../../constant';
+import { BlockID } from './commit';
 
+export type ConsensusVersion = {
+  block: bigint;
+  app: bigint;
+};
 export type TmHeader = {
+  version: ConsensusVersion;
   chainId: string;
   height: bigint;
   time: bigint;
+  lastBlockId: BlockID;
+  lastCommitHash: string;
+  dataHash: string;
   validatorsHash: string;
   nextValidatorsHash: string;
+  consensusHash: string;
   appHash: string;
+  lastResultsHash: string;
+  evidenceHash: string;
+  proposerAddress: string;
 };
 
 // ValidateBasic performs stateless validation on a Header returning an error

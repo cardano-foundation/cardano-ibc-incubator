@@ -4,10 +4,10 @@ import { ClientMessage } from './msgs/client-message';
 export type SpendClientRedeemer =
   | 'Other'
   | {
-    UpdateClient: {
-      msg: ClientMessage;
+      UpdateClient: {
+        msg: ClientMessage;
+      };
     };
-  };
 export async function encodeSpendClientRedeemer(
   spendClientRedeemer: SpendClientRedeemer,
   Lucid: typeof import('@dinhbx/lucid-custom'),
@@ -33,13 +33,25 @@ export async function encodeSpendClientRedeemer(
     blockId: BlockIDSchema,
     signatures: Data.Array(CommitSigSchema),
   });
+  const ConsensusSchema = Data.Object({
+    block: Data.Integer(),
+    app: Data.Integer(),
+  });
   const TmHeaderSchema = Data.Object({
+    version: ConsensusSchema,
     chainId: Data.Bytes(),
     height: Data.Integer(),
     time: Data.Integer(),
+    lastBlockId: BlockIDSchema,
+    lastCommitHash: Data.Bytes(),
+    dataHash: Data.Bytes(),
     validatorsHash: Data.Bytes(),
     nextValidatorsHash: Data.Bytes(),
+    consensusHash: Data.Bytes(),
     appHash: Data.Bytes(),
+    lastResultsHash: Data.Bytes(),
+    evidenceHash: Data.Bytes(),
+    proposerAddress: Data.Bytes(),
   });
   const SignedHeaderSchema = Data.Object({
     header: TmHeaderSchema,
@@ -114,13 +126,25 @@ export function decodeSpendClientRedeemer(
     blockId: BlockIDSchema,
     signatures: Data.Array(CommitSigSchema),
   });
+  const ConsensusSchema = Data.Object({
+    block: Data.Integer(),
+    app: Data.Integer(),
+  });
   const TmHeaderSchema = Data.Object({
+    version: ConsensusSchema,
     chainId: Data.Bytes(),
     height: Data.Integer(),
     time: Data.Integer(),
+    lastBlockId: BlockIDSchema,
+    lastCommitHash: Data.Bytes(),
+    dataHash: Data.Bytes(),
     validatorsHash: Data.Bytes(),
     nextValidatorsHash: Data.Bytes(),
+    consensusHash: Data.Bytes(),
     appHash: Data.Bytes(),
+    lastResultsHash: Data.Bytes(),
+    evidenceHash: Data.Bytes(),
+    proposerAddress: Data.Bytes(),
   });
   const SignedHeaderSchema = Data.Object({
     header: TmHeaderSchema,
