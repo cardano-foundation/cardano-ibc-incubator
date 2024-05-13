@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"math"
 	"math/big"
 	"math/rand"
@@ -16,7 +17,6 @@ import (
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/avast/retry-go/v4"
-	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
 	"github.com/cardano/relayer/v1/relayer/ethermint"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -1924,7 +1924,7 @@ type protoTxProvider interface {
 	GetProtoTx() *txtypes.Tx
 }
 
-func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
+func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (provider.RelayerMessage, error) {
 	signer, err := cc.Address()
 	if err != nil {
 		return nil, err
@@ -1933,12 +1933,12 @@ func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.Cli
 	if err != nil {
 		return nil, err
 	}
-	anyClientState.TypeUrl = string("/ibc.clients.cardano.v1.ClientState")
+	anyClientState.TypeUrl = string("/ibc.clients.mithril.v1.ClientState")
 	anyConsensusState, err := PackConsensusState(consensusState)
 	if err != nil {
 		return nil, err
 	}
-	anyConsensusState.TypeUrl = string("/ibc.clients.cardano.v1.ConsensusState")
+	anyConsensusState.TypeUrl = string("/ibc.clients.mithril.v1.ConsensusState")
 
 	msg := &clienttypes.MsgCreateClient{
 		ClientState:    anyClientState,
