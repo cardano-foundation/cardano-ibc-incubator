@@ -167,7 +167,7 @@ message MithrilProtocolParameters {
   // Security parameter (number of lotteries)
   uint64 m = 2;
   // f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
-  uint64 phi_f = 3;
+  double phi_f = 3;
 }
 
 enum ProtocolMessagePartKey {
@@ -182,18 +182,58 @@ enum ProtocolMessagePartKey {
   LATEST_IMMUTABLE_FILE_NUMBER = 3;
 }
 
-enum SignedEntityType {
-  option (gogoproto.goproto_enum_prefix) = false;
-
-  MITHRIL_STAKE_DISTRIBUTION = 0;
-
-  CARDANO_TRANSACTIONS = 1;
+message CertificateSignature {
+  oneof sig_type {
+    GenesisSignature genesis_signature = 1;
+    MultiSignature multi_signature = 2;
+  }
 }
 
-enum CertificateSignature {
-  option (gogoproto.goproto_enum_prefix) = false;
+message GenesisSignature {
+  ProtocolGenesisSignature protocol_genesis_signature = 1;
+}
 
-  GENESIS_SIGNATURE = 0;
+// ProtocolGenesisSignature wraps a cryptographic signature.
+message ProtocolGenesisSignature {
+  bytes signature = 1;
+}
 
-  MULTI_SIGNATURE = 1;
+// MultiSignature represents a collective signature.
+message MultiSignature {
+  SignedEntityType entity_type = 1;
+  ProtocolMultiSignature signature = 2;
+}
+
+// An entity type associated with the signature.
+message SignedEntityType {
+  oneof entity {
+    MithrilStakeDistribution mithril_stake_distribution = 1;
+    CardanoStakeDistribution cardano_stake_distribution = 2;
+    CardanoImmutableFilesFull cardano_immutable_files_full = 3;
+    CardanoTransactions cardano_transactions = 4;
+  }
+}
+
+message CardanoStakeDistribution {
+  uint64 epoch = 1;
+}
+
+message CardanoImmutableFilesFull {
+  CardanoDbBeacon beacon = 1;
+}
+
+message CardanoTransactions {
+  CardanoDbBeacon beacon = 1;
+}
+
+message CardanoDbBeacon {
+  string network = 1;
+  uint64 epoch = 2;
+  uint64 immutable_file_number = 3;
+}
+
+// ProtocolMultiSignature wraps a multi-signature.
+message ProtocolMultiSignature {
+  bytes signatures = 1;
+  bytes batch_proof = 2; // Assuming serialization of BatchPath is handled elsewhere.
 }
