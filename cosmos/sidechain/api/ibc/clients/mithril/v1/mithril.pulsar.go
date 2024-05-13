@@ -6823,17 +6823,66 @@ func (x *fastReflection_SignerWithStake) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var _ protoreflect.List = (*_ProtocolMessage_1_list)(nil)
+
+type _ProtocolMessage_1_list struct {
+	list *[]*MessagePart
+}
+
+func (x *_ProtocolMessage_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_ProtocolMessage_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MessagePart)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_ProtocolMessage_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MessagePart)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_ProtocolMessage_1_list) AppendMutable() protoreflect.Value {
+	v := new(MessagePart)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_ProtocolMessage_1_list) NewElement() protoreflect.Value {
+	v := new(MessagePart)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
-	md_ProtocolMessage                             protoreflect.MessageDescriptor
-	fd_ProtocolMessage_protocol_message_part_key   protoreflect.FieldDescriptor
-	fd_ProtocolMessage_protocol_message_part_value protoreflect.FieldDescriptor
+	md_ProtocolMessage               protoreflect.MessageDescriptor
+	fd_ProtocolMessage_message_parts protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_ProtocolMessage = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("ProtocolMessage")
-	fd_ProtocolMessage_protocol_message_part_key = md_ProtocolMessage.Fields().ByName("protocol_message_part_key")
-	fd_ProtocolMessage_protocol_message_part_value = md_ProtocolMessage.Fields().ByName("protocol_message_part_value")
+	fd_ProtocolMessage_message_parts = md_ProtocolMessage.Fields().ByName("message_parts")
 }
 
 var _ protoreflect.Message = (*fastReflection_ProtocolMessage)(nil)
@@ -6901,15 +6950,9 @@ func (x *fastReflection_ProtocolMessage) Interface() protoreflect.ProtoMessage {
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_ProtocolMessage) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.ProtocolMessagePartKey != 0 {
-		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.ProtocolMessagePartKey))
-		if !f(fd_ProtocolMessage_protocol_message_part_key, value) {
-			return
-		}
-	}
-	if x.ProtocolMessagePartValue != "" {
-		value := protoreflect.ValueOfString(x.ProtocolMessagePartValue)
-		if !f(fd_ProtocolMessage_protocol_message_part_value, value) {
+	if len(x.MessageParts) != 0 {
+		value := protoreflect.ValueOfList(&_ProtocolMessage_1_list{list: &x.MessageParts})
+		if !f(fd_ProtocolMessage_message_parts, value) {
 			return
 		}
 	}
@@ -6928,10 +6971,8 @@ func (x *fastReflection_ProtocolMessage) Range(f func(protoreflect.FieldDescript
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_ProtocolMessage) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		return x.ProtocolMessagePartKey != 0
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		return x.ProtocolMessagePartValue != ""
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		return len(x.MessageParts) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6948,10 +6989,8 @@ func (x *fastReflection_ProtocolMessage) Has(fd protoreflect.FieldDescriptor) bo
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		x.ProtocolMessagePartKey = 0
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		x.ProtocolMessagePartValue = ""
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		x.MessageParts = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6968,12 +7007,12 @@ func (x *fastReflection_ProtocolMessage) Clear(fd protoreflect.FieldDescriptor) 
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_ProtocolMessage) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		value := x.ProtocolMessagePartKey
-		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		value := x.ProtocolMessagePartValue
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		if len(x.MessageParts) == 0 {
+			return protoreflect.ValueOfList(&_ProtocolMessage_1_list{})
+		}
+		listValue := &_ProtocolMessage_1_list{list: &x.MessageParts}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6994,10 +7033,10 @@ func (x *fastReflection_ProtocolMessage) Get(descriptor protoreflect.FieldDescri
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		x.ProtocolMessagePartKey = (ProtocolMessagePartKey)(value.Enum())
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		x.ProtocolMessagePartValue = value.Interface().(string)
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		lv := value.List()
+		clv := lv.(*_ProtocolMessage_1_list)
+		x.MessageParts = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -7018,10 +7057,12 @@ func (x *fastReflection_ProtocolMessage) Set(fd protoreflect.FieldDescriptor, va
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		panic(fmt.Errorf("field protocol_message_part_key of message ibc.clients.mithril.v1.ProtocolMessage is not mutable"))
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		panic(fmt.Errorf("field protocol_message_part_value of message ibc.clients.mithril.v1.ProtocolMessage is not mutable"))
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		if x.MessageParts == nil {
+			x.MessageParts = []*MessagePart{}
+		}
+		value := &_ProtocolMessage_1_list{list: &x.MessageParts}
+		return protoreflect.ValueOfList(value)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -7035,10 +7076,9 @@ func (x *fastReflection_ProtocolMessage) Mutable(fd protoreflect.FieldDescriptor
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_ProtocolMessage) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		return protoreflect.ValueOfEnum(0)
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		list := []*MessagePart{}
+		return protoreflect.ValueOfList(&_ProtocolMessage_1_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -7108,12 +7148,11 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 		var n int
 		var l int
 		_ = l
-		if x.ProtocolMessagePartKey != 0 {
-			n += 1 + runtime.Sov(uint64(x.ProtocolMessagePartKey))
-		}
-		l = len(x.ProtocolMessagePartValue)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
+		if len(x.MessageParts) > 0 {
+			for _, e := range x.MessageParts {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -7144,17 +7183,21 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.ProtocolMessagePartValue) > 0 {
-			i -= len(x.ProtocolMessagePartValue)
-			copy(dAtA[i:], x.ProtocolMessagePartValue)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ProtocolMessagePartValue)))
-			i--
-			dAtA[i] = 0x12
-		}
-		if x.ProtocolMessagePartKey != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.ProtocolMessagePartKey))
-			i--
-			dAtA[i] = 0x8
+		if len(x.MessageParts) > 0 {
+			for iNdEx := len(x.MessageParts) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.MessageParts[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
 		}
 		if input.Buf != nil {
 			input.Buf = append(input.Buf, dAtA...)
@@ -7203,6 +7246,457 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 			}
 			if fieldNum <= 0 {
 				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ProtocolMessage: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MessageParts", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MessageParts = append(x.MessageParts, &MessagePart{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MessageParts[len(x.MessageParts)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_MessagePart                             protoreflect.MessageDescriptor
+	fd_MessagePart_protocol_message_part_key   protoreflect.FieldDescriptor
+	fd_MessagePart_protocol_message_part_value protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_MessagePart = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("MessagePart")
+	fd_MessagePart_protocol_message_part_key = md_MessagePart.Fields().ByName("protocol_message_part_key")
+	fd_MessagePart_protocol_message_part_value = md_MessagePart.Fields().ByName("protocol_message_part_value")
+}
+
+var _ protoreflect.Message = (*fastReflection_MessagePart)(nil)
+
+type fastReflection_MessagePart MessagePart
+
+func (x *MessagePart) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_MessagePart)(x)
+}
+
+func (x *MessagePart) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_MessagePart_messageType fastReflection_MessagePart_messageType
+var _ protoreflect.MessageType = fastReflection_MessagePart_messageType{}
+
+type fastReflection_MessagePart_messageType struct{}
+
+func (x fastReflection_MessagePart_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_MessagePart)(nil)
+}
+func (x fastReflection_MessagePart_messageType) New() protoreflect.Message {
+	return new(fastReflection_MessagePart)
+}
+func (x fastReflection_MessagePart_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_MessagePart
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_MessagePart) Descriptor() protoreflect.MessageDescriptor {
+	return md_MessagePart
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_MessagePart) Type() protoreflect.MessageType {
+	return _fastReflection_MessagePart_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_MessagePart) New() protoreflect.Message {
+	return new(fastReflection_MessagePart)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_MessagePart) Interface() protoreflect.ProtoMessage {
+	return (*MessagePart)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_MessagePart) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.ProtocolMessagePartKey != 0 {
+		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.ProtocolMessagePartKey))
+		if !f(fd_MessagePart_protocol_message_part_key, value) {
+			return
+		}
+	}
+	if x.ProtocolMessagePartValue != "" {
+		value := protoreflect.ValueOfString(x.ProtocolMessagePartValue)
+		if !f(fd_MessagePart_protocol_message_part_value, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_MessagePart) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		return x.ProtocolMessagePartKey != 0
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		return x.ProtocolMessagePartValue != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		x.ProtocolMessagePartKey = 0
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		x.ProtocolMessagePartValue = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_MessagePart) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		value := x.ProtocolMessagePartKey
+		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		value := x.ProtocolMessagePartValue
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		x.ProtocolMessagePartKey = (ProtocolMessagePartKey)(value.Enum())
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		x.ProtocolMessagePartValue = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		panic(fmt.Errorf("field protocol_message_part_key of message ibc.clients.mithril.v1.MessagePart is not mutable"))
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		panic(fmt.Errorf("field protocol_message_part_value of message ibc.clients.mithril.v1.MessagePart is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_MessagePart) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		return protoreflect.ValueOfEnum(0)
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_MessagePart) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.MessagePart", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_MessagePart) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_MessagePart) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_MessagePart) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.ProtocolMessagePartKey != 0 {
+			n += 1 + runtime.Sov(uint64(x.ProtocolMessagePartKey))
+		}
+		l = len(x.ProtocolMessagePartValue)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.ProtocolMessagePartValue) > 0 {
+			i -= len(x.ProtocolMessagePartValue)
+			copy(dAtA[i:], x.ProtocolMessagePartValue)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ProtocolMessagePartValue)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if x.ProtocolMessagePartKey != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ProtocolMessagePartKey))
+			i--
+			dAtA[i] = 0x8
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MessagePart: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MessagePart: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
@@ -7315,7 +7809,7 @@ func (x *MithrilProtocolParameters) ProtoReflect() protoreflect.Message {
 }
 
 func (x *MithrilProtocolParameters) slowProtoReflect() protoreflect.Message {
-	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -8613,8 +9107,7 @@ type ProtocolMessage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
-	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+	MessageParts []*MessagePart `protobuf:"bytes,1,rep,name=message_parts,json=messageParts,proto3" json:"message_parts,omitempty"`
 }
 
 func (x *ProtocolMessage) Reset() {
@@ -8637,14 +9130,50 @@ func (*ProtocolMessage) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartKey() ProtocolMessagePartKey {
+func (x *ProtocolMessage) GetMessageParts() []*MessagePart {
+	if x != nil {
+		return x.MessageParts
+	}
+	return nil
+}
+
+type MessagePart struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
+	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+}
+
+func (x *MessagePart) Reset() {
+	*x = MessagePart{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MessagePart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagePart) ProtoMessage() {}
+
+// Deprecated: Use MessagePart.ProtoReflect.Descriptor instead.
+func (*MessagePart) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MessagePart) GetProtocolMessagePartKey() ProtocolMessagePartKey {
 	if x != nil {
 		return x.ProtocolMessagePartKey
 	}
 	return ProtocolMessagePartKey_SNAPSHOT_DIGEST
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartValue() string {
+func (x *MessagePart) GetProtocolMessagePartValue() string {
 	if x != nil {
 		return x.ProtocolMessagePartValue
 	}
@@ -8667,7 +9196,7 @@ type MithrilProtocolParameters struct {
 func (x *MithrilProtocolParameters) Reset() {
 	*x = MithrilProtocolParameters{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -8681,7 +9210,7 @@ func (*MithrilProtocolParameters) ProtoMessage() {}
 
 // Deprecated: Use MithrilProtocolParameters.ProtoReflect.Descriptor instead.
 func (*MithrilProtocolParameters) Descriptor() ([]byte, []int) {
-	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{11}
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MithrilProtocolParameters) GetK() uint64 {
@@ -8901,58 +9430,64 @@ var file_ibc_clients_mithril_v1_mithril_proto_rawDesc = []byte{
 	0x79, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x70, 0x61, 0x72, 0x74,
 	0x79, 0x49, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x18, 0x02, 0x20, 0x01,
 	0x28, 0x04, 0x52, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0xc1, 0x01, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73,
-	0x61, 0x67, 0x65, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f,
-	0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x6b, 0x65, 0x79,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
-	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
-	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50,
-	0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c,
-	0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x3d,
-	0x0a, 0x1b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61,
-	0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20,
-	0x01, 0x28, 0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73,
-	0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x04, 0x88,
-	0xa0, 0x1f, 0x00, 0x22, 0x52, 0x0a, 0x19, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73,
-	0x12, 0x0c, 0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6b, 0x12, 0x0c,
-	0x0a, 0x01, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6d, 0x12, 0x13, 0x0a, 0x05,
-	0x70, 0x68, 0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x04, 0x70, 0x68, 0x69,
-	0x46, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x2a, 0xa0, 0x01, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74,
-	0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b,
-	0x65, 0x79, 0x12, 0x13, 0x0a, 0x0f, 0x53, 0x4e, 0x41, 0x50, 0x53, 0x48, 0x4f, 0x54, 0x5f, 0x44,
-	0x49, 0x47, 0x45, 0x53, 0x54, 0x10, 0x00, 0x12, 0x24, 0x0a, 0x20, 0x43, 0x41, 0x52, 0x44, 0x41,
-	0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e, 0x53, 0x5f,
-	0x4d, 0x45, 0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f, 0x54, 0x10, 0x01, 0x12, 0x23, 0x0a,
-	0x1f, 0x4e, 0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52, 0x45, 0x47, 0x41, 0x54, 0x45, 0x5f,
-	0x56, 0x45, 0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4b, 0x45, 0x59,
-	0x10, 0x02, 0x12, 0x20, 0x0a, 0x1c, 0x4c, 0x41, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x49, 0x4d, 0x4d,
-	0x55, 0x54, 0x41, 0x42, 0x4c, 0x45, 0x5f, 0x46, 0x49, 0x4c, 0x45, 0x5f, 0x4e, 0x55, 0x4d, 0x42,
-	0x45, 0x52, 0x10, 0x03, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x52, 0x0a, 0x10, 0x53, 0x69,
-	0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1e,
-	0x0a, 0x1a, 0x4d, 0x49, 0x54, 0x48, 0x52, 0x49, 0x4c, 0x5f, 0x53, 0x54, 0x41, 0x4b, 0x45, 0x5f,
-	0x44, 0x49, 0x53, 0x54, 0x52, 0x49, 0x42, 0x55, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x00, 0x12, 0x18,
-	0x0a, 0x14, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41,
-	0x43, 0x54, 0x49, 0x4f, 0x4e, 0x53, 0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x48,
-	0x0a, 0x14, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53, 0x69, 0x67,
-	0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x47, 0x45, 0x4e, 0x45, 0x53, 0x49,
-	0x53, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10, 0x00, 0x12, 0x13, 0x0a,
-	0x0f, 0x4d, 0x55, 0x4c, 0x54, 0x49, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45,
-	0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x42, 0xd8, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d,
-	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
-	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
-	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x31, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73,
-	0x64, 0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x69, 0x62, 0x63, 0x2f, 0x63, 0x6c,
-	0x69, 0x65, 0x6e, 0x74, 0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2f, 0x76, 0x31,
-	0x3b, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x49, 0x43, 0x4d,
-	0xaa, 0x02, 0x16, 0x49, 0x62, 0x63, 0x2e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x4d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x16, 0x49, 0x62, 0x63, 0x5c,
-	0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c,
-	0x56, 0x31, 0xe2, 0x02, 0x22, 0x49, 0x62, 0x63, 0x5c, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73,
-	0x5c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d,
-	0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x19, 0x49, 0x62, 0x63, 0x3a, 0x3a, 0x43,
-	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x3a, 0x3a, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x3a,
-	0x3a, 0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x61, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x12, 0x48, 0x0a, 0x0d, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61,
+	0x72, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x23, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x52, 0x0c,
+	0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x73, 0x3a, 0x04, 0x88, 0xa0,
+	0x1f, 0x00, 0x22, 0xbd, 0x01, 0x0a, 0x0b, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61,
+	0x72, 0x74, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x6b, 0x65, 0x79, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61,
+	0x72, 0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x3d, 0x0a,
+	0x1b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67,
+	0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73,
+	0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x04, 0x88, 0xa0,
+	0x1f, 0x00, 0x22, 0x52, 0x0a, 0x19, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72, 0x6f,
+	0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12,
+	0x0c, 0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6b, 0x12, 0x0c, 0x0a,
+	0x01, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6d, 0x12, 0x13, 0x0a, 0x05, 0x70,
+	0x68, 0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x04, 0x70, 0x68, 0x69, 0x46,
+	0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x2a, 0xa0, 0x01, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f,
+	0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65,
+	0x79, 0x12, 0x13, 0x0a, 0x0f, 0x53, 0x4e, 0x41, 0x50, 0x53, 0x48, 0x4f, 0x54, 0x5f, 0x44, 0x49,
+	0x47, 0x45, 0x53, 0x54, 0x10, 0x00, 0x12, 0x24, 0x0a, 0x20, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e,
+	0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e, 0x53, 0x5f, 0x4d,
+	0x45, 0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f, 0x54, 0x10, 0x01, 0x12, 0x23, 0x0a, 0x1f,
+	0x4e, 0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52, 0x45, 0x47, 0x41, 0x54, 0x45, 0x5f, 0x56,
+	0x45, 0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4b, 0x45, 0x59, 0x10,
+	0x02, 0x12, 0x20, 0x0a, 0x1c, 0x4c, 0x41, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x49, 0x4d, 0x4d, 0x55,
+	0x54, 0x41, 0x42, 0x4c, 0x45, 0x5f, 0x46, 0x49, 0x4c, 0x45, 0x5f, 0x4e, 0x55, 0x4d, 0x42, 0x45,
+	0x52, 0x10, 0x03, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x52, 0x0a, 0x10, 0x53, 0x69, 0x67,
+	0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1e, 0x0a,
+	0x1a, 0x4d, 0x49, 0x54, 0x48, 0x52, 0x49, 0x4c, 0x5f, 0x53, 0x54, 0x41, 0x4b, 0x45, 0x5f, 0x44,
+	0x49, 0x53, 0x54, 0x52, 0x49, 0x42, 0x55, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x00, 0x12, 0x18, 0x0a,
+	0x14, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43,
+	0x54, 0x49, 0x4f, 0x4e, 0x53, 0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x48, 0x0a,
+	0x14, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53, 0x69, 0x67, 0x6e,
+	0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x47, 0x45, 0x4e, 0x45, 0x53, 0x49, 0x53,
+	0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10, 0x00, 0x12, 0x13, 0x0a, 0x0f,
+	0x4d, 0x55, 0x4c, 0x54, 0x49, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10,
+	0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x42, 0xd8, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d, 0x2e,
+	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
+	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x31, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
+	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x69, 0x62, 0x63, 0x2f, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2f, 0x76, 0x31, 0x3b,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x49, 0x43, 0x4d, 0xaa,
+	0x02, 0x16, 0x49, 0x62, 0x63, 0x2e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x4d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x16, 0x49, 0x62, 0x63, 0x5c, 0x43,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56,
+	0x31, 0xe2, 0x02, 0x22, 0x49, 0x62, 0x63, 0x5c, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
+	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x19, 0x49, 0x62, 0x63, 0x3a, 0x3a, 0x43, 0x6c,
+	0x69, 0x65, 0x6e, 0x74, 0x73, 0x3a, 0x3a, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x3a, 0x3a,
+	0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -8968,7 +9503,7 @@ func file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP() []byte {
 }
 
 var file_ibc_clients_mithril_v1_mithril_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ibc_clients_mithril_v1_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ibc_clients_mithril_v1_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_ibc_clients_mithril_v1_mithril_proto_goTypes = []interface{}{
 	(ProtocolMessagePartKey)(0),        // 0: ibc.clients.mithril.v1.ProtocolMessagePartKey
 	(SignedEntityType)(0),              // 1: ibc.clients.mithril.v1.SignedEntityType
@@ -8984,14 +9519,15 @@ var file_ibc_clients_mithril_v1_mithril_proto_goTypes = []interface{}{
 	(*CertificateMetadata)(nil),        // 11: ibc.clients.mithril.v1.CertificateMetadata
 	(*SignerWithStake)(nil),            // 12: ibc.clients.mithril.v1.SignerWithStake
 	(*ProtocolMessage)(nil),            // 13: ibc.clients.mithril.v1.ProtocolMessage
-	(*MithrilProtocolParameters)(nil),  // 14: ibc.clients.mithril.v1.MithrilProtocolParameters
-	(*durationpb.Duration)(nil),        // 15: google.protobuf.Duration
+	(*MessagePart)(nil),                // 14: ibc.clients.mithril.v1.MessagePart
+	(*MithrilProtocolParameters)(nil),  // 15: ibc.clients.mithril.v1.MithrilProtocolParameters
+	(*durationpb.Duration)(nil),        // 16: google.protobuf.Duration
 }
 var file_ibc_clients_mithril_v1_mithril_proto_depIdxs = []int32{
 	3,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
 	3,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
-	15, // 2: ibc.clients.mithril.v1.ClientState.trusting_period:type_name -> google.protobuf.Duration
-	14, // 3: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	16, // 2: ibc.clients.mithril.v1.ClientState.trusting_period:type_name -> google.protobuf.Duration
+	15, // 3: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
 	7,  // 4: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
 	7,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
 	8,  // 6: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
@@ -8999,20 +9535,21 @@ var file_ibc_clients_mithril_v1_mithril_proto_depIdxs = []int32{
 	9,  // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
 	10, // 9: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
 	12, // 10: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	14, // 11: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	15, // 11: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
 	3,  // 12: ibc.clients.mithril.v1.CardanoTransactionSnapshot.height:type_name -> ibc.clients.mithril.v1.Height
 	1,  // 13: ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
 	11, // 14: ibc.clients.mithril.v1.MithrilCertificate.metadata:type_name -> ibc.clients.mithril.v1.CertificateMetadata
 	13, // 15: ibc.clients.mithril.v1.MithrilCertificate.protocol_message:type_name -> ibc.clients.mithril.v1.ProtocolMessage
 	2,  // 16: ibc.clients.mithril.v1.MithrilCertificate.signature:type_name -> ibc.clients.mithril.v1.CertificateSignature
-	14, // 17: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	15, // 17: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
 	12, // 18: ibc.clients.mithril.v1.CertificateMetadata.signers:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	0,  // 19: ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	14, // 19: ibc.clients.mithril.v1.ProtocolMessage.message_parts:type_name -> ibc.clients.mithril.v1.MessagePart
+	0,  // 20: ibc.clients.mithril.v1.MessagePart.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_ibc_clients_mithril_v1_mithril_proto_init() }
@@ -9154,6 +9691,18 @@ func file_ibc_clients_mithril_v1_mithril_proto_init() {
 			}
 		}
 		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MessagePart); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*MithrilProtocolParameters); i {
 			case 0:
 				return &v.state
@@ -9172,7 +9721,7 @@ func file_ibc_clients_mithril_v1_mithril_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ibc_clients_mithril_v1_mithril_proto_rawDesc,
 			NumEnums:      3,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

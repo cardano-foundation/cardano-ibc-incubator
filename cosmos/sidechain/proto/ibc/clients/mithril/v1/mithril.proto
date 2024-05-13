@@ -147,6 +147,12 @@ message SignerWithStake {
 
 message ProtocolMessage {
   option (gogoproto.goproto_getters) = false;
+  
+  repeated MessagePart message_parts = 1;
+}
+
+message MessagePart {
+  option (gogoproto.goproto_getters) = false;
 
   ProtocolMessagePartKey protocol_message_part_key = 1;
 
