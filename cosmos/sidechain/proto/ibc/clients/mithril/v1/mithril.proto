@@ -167,7 +167,7 @@ message MithrilProtocolParameters {
   // Security parameter (number of lotteries)
   uint64 m = 2;
   // f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
-  double phi_f = 3;
+  Fraction phi_f = 3 [(gogoproto.nullable) = false];
 }
 
 enum ProtocolMessagePartKey {
@@ -236,4 +236,11 @@ message CardanoDbBeacon {
 message ProtocolMultiSignature {
   bytes signatures = 1;
   bytes batch_proof = 2; // Assuming serialization of BatchPath is handled elsewhere.
+}
+
+// Fraction defines the protobuf message type for tmmath.Fraction that only
+// supports positive values.
+message Fraction {
+  uint64 numerator   = 1;
+  uint64 denominator = 2;
 }
