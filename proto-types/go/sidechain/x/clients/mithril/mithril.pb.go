@@ -74,98 +74,6 @@ func (ProtocolMessagePartKey) EnumDescriptor() ([]byte, []int) {
 	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{0}
 }
 
-type SignedEntityType int32
-
-const (
-	SignedEntityType_MITHRIL_STAKE_DISTRIBUTION SignedEntityType = 0
-	SignedEntityType_CARDANO_TRANSACTIONS       SignedEntityType = 1
-)
-
-// Enum value maps for SignedEntityType.
-var (
-	SignedEntityType_name = map[int32]string{
-		0: "MITHRIL_STAKE_DISTRIBUTION",
-		1: "CARDANO_TRANSACTIONS",
-	}
-	SignedEntityType_value = map[string]int32{
-		"MITHRIL_STAKE_DISTRIBUTION": 0,
-		"CARDANO_TRANSACTIONS":       1,
-	}
-)
-
-func (x SignedEntityType) Enum() *SignedEntityType {
-	p := new(SignedEntityType)
-	*p = x
-	return p
-}
-
-func (x SignedEntityType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (SignedEntityType) Descriptor() protoreflect.EnumDescriptor {
-	return file_ibc_lightclients_mithril_mithril_proto_enumTypes[1].Descriptor()
-}
-
-func (SignedEntityType) Type() protoreflect.EnumType {
-	return &file_ibc_lightclients_mithril_mithril_proto_enumTypes[1]
-}
-
-func (x SignedEntityType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use SignedEntityType.Descriptor instead.
-func (SignedEntityType) EnumDescriptor() ([]byte, []int) {
-	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{1}
-}
-
-type CertificateSignature int32
-
-const (
-	CertificateSignature_GENESIS_SIGNATURE CertificateSignature = 0
-	CertificateSignature_MULTI_SIGNATURE   CertificateSignature = 1
-)
-
-// Enum value maps for CertificateSignature.
-var (
-	CertificateSignature_name = map[int32]string{
-		0: "GENESIS_SIGNATURE",
-		1: "MULTI_SIGNATURE",
-	}
-	CertificateSignature_value = map[string]int32{
-		"GENESIS_SIGNATURE": 0,
-		"MULTI_SIGNATURE":   1,
-	}
-)
-
-func (x CertificateSignature) Enum() *CertificateSignature {
-	p := new(CertificateSignature)
-	*p = x
-	return p
-}
-
-func (x CertificateSignature) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (CertificateSignature) Descriptor() protoreflect.EnumDescriptor {
-	return file_ibc_lightclients_mithril_mithril_proto_enumTypes[2].Descriptor()
-}
-
-func (CertificateSignature) Type() protoreflect.EnumType {
-	return &file_ibc_lightclients_mithril_mithril_proto_enumTypes[2]
-}
-
-func (x CertificateSignature) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use CertificateSignature.Descriptor instead.
-func (CertificateSignature) EnumDescriptor() ([]byte, []int) {
-	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{2}
-}
-
 type Height struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -706,15 +614,15 @@ type MithrilCertificate struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Hash                     string               `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	PreviousHash             string               `protobuf:"bytes,2,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
-	Epoch                    uint64               `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	SignedEntityType         SignedEntityType     `protobuf:"varint,4,opt,name=signed_entity_type,json=signedEntityType,proto3,enum=ibc.clients.mithril.v1.SignedEntityType" json:"signed_entity_type,omitempty"`
-	Metadata                 *CertificateMetadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	ProtocolMessage          *ProtocolMessage     `protobuf:"bytes,6,opt,name=protocol_message,json=protocolMessage,proto3" json:"protocol_message,omitempty"`
-	SignedMessage            string               `protobuf:"bytes,7,opt,name=signed_message,json=signedMessage,proto3" json:"signed_message,omitempty"`
-	AggregateVerificationKey string               `protobuf:"bytes,8,opt,name=aggregate_verification_key,json=aggregateVerificationKey,proto3" json:"aggregate_verification_key,omitempty"`
-	Signature                CertificateSignature `protobuf:"varint,9,opt,name=signature,proto3,enum=ibc.clients.mithril.v1.CertificateSignature" json:"signature,omitempty"`
+	Hash                     string                `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	PreviousHash             string                `protobuf:"bytes,2,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
+	Epoch                    uint64                `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	SignedEntityType         *SignedEntityType     `protobuf:"bytes,4,opt,name=signed_entity_type,json=signedEntityType,proto3" json:"signed_entity_type,omitempty"`
+	Metadata                 *CertificateMetadata  `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	ProtocolMessage          *ProtocolMessage      `protobuf:"bytes,6,opt,name=protocol_message,json=protocolMessage,proto3" json:"protocol_message,omitempty"`
+	SignedMessage            string                `protobuf:"bytes,7,opt,name=signed_message,json=signedMessage,proto3" json:"signed_message,omitempty"`
+	AggregateVerificationKey string                `protobuf:"bytes,8,opt,name=aggregate_verification_key,json=aggregateVerificationKey,proto3" json:"aggregate_verification_key,omitempty"`
+	Signature                *CertificateSignature `protobuf:"bytes,9,opt,name=signature,proto3" json:"signature,omitempty"`
 }
 
 func (x *MithrilCertificate) Reset() {
@@ -770,11 +678,11 @@ func (x *MithrilCertificate) GetEpoch() uint64 {
 	return 0
 }
 
-func (x *MithrilCertificate) GetSignedEntityType() SignedEntityType {
+func (x *MithrilCertificate) GetSignedEntityType() *SignedEntityType {
 	if x != nil {
 		return x.SignedEntityType
 	}
-	return SignedEntityType_MITHRIL_STAKE_DISTRIBUTION
+	return nil
 }
 
 func (x *MithrilCertificate) GetMetadata() *CertificateMetadata {
@@ -805,11 +713,11 @@ func (x *MithrilCertificate) GetAggregateVerificationKey() string {
 	return ""
 }
 
-func (x *MithrilCertificate) GetSignature() CertificateSignature {
+func (x *MithrilCertificate) GetSignature() *CertificateSignature {
 	if x != nil {
 		return x.Signature
 	}
-	return CertificateSignature_GENESIS_SIGNATURE
+	return nil
 }
 
 type CertificateMetadata struct {
@@ -951,8 +859,7 @@ type ProtocolMessage struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
-	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+	MessageParts []*MessagePart `protobuf:"bytes,1,rep,name=message_parts,json=messageParts,proto3" json:"message_parts,omitempty"`
 }
 
 func (x *ProtocolMessage) Reset() {
@@ -987,14 +894,62 @@ func (*ProtocolMessage) Descriptor() ([]byte, []int) {
 	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartKey() ProtocolMessagePartKey {
+func (x *ProtocolMessage) GetMessageParts() []*MessagePart {
+	if x != nil {
+		return x.MessageParts
+	}
+	return nil
+}
+
+type MessagePart struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
+	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+}
+
+func (x *MessagePart) Reset() {
+	*x = MessagePart{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MessagePart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagePart) ProtoMessage() {}
+
+func (x *MessagePart) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MessagePart.ProtoReflect.Descriptor instead.
+func (*MessagePart) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MessagePart) GetProtocolMessagePartKey() ProtocolMessagePartKey {
 	if x != nil {
 		return x.ProtocolMessagePartKey
 	}
 	return ProtocolMessagePartKey_SNAPSHOT_DIGEST
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartValue() string {
+func (x *MessagePart) GetProtocolMessagePartValue() string {
 	if x != nil {
 		return x.ProtocolMessagePartValue
 	}
@@ -1011,13 +966,13 @@ type MithrilProtocolParameters struct {
 	// Security parameter (number of lotteries)
 	M uint64 `protobuf:"varint,2,opt,name=m,proto3" json:"m,omitempty"`
 	// f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
-	PhiF uint64 `protobuf:"varint,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f,omitempty"`
+	PhiF *Fraction `protobuf:"bytes,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f,omitempty"`
 }
 
 func (x *MithrilProtocolParameters) Reset() {
 	*x = MithrilProtocolParameters{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[11]
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[12]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -1030,7 +985,7 @@ func (x *MithrilProtocolParameters) String() string {
 func (*MithrilProtocolParameters) ProtoMessage() {}
 
 func (x *MithrilProtocolParameters) ProtoReflect() protoreflect.Message {
-	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[11]
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[12]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1043,7 +998,7 @@ func (x *MithrilProtocolParameters) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MithrilProtocolParameters.ProtoReflect.Descriptor instead.
 func (*MithrilProtocolParameters) Descriptor() ([]byte, []int) {
-	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{11}
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MithrilProtocolParameters) GetK() uint64 {
@@ -1060,9 +1015,668 @@ func (x *MithrilProtocolParameters) GetM() uint64 {
 	return 0
 }
 
-func (x *MithrilProtocolParameters) GetPhiF() uint64 {
+func (x *MithrilProtocolParameters) GetPhiF() *Fraction {
 	if x != nil {
 		return x.PhiF
+	}
+	return nil
+}
+
+type CertificateSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to SigType:
+	//
+	//	*CertificateSignature_GenesisSignature
+	//	*CertificateSignature_MultiSignature
+	SigType isCertificateSignature_SigType `protobuf_oneof:"sig_type"`
+}
+
+func (x *CertificateSignature) Reset() {
+	*x = CertificateSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CertificateSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CertificateSignature) ProtoMessage() {}
+
+func (x *CertificateSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CertificateSignature.ProtoReflect.Descriptor instead.
+func (*CertificateSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{13}
+}
+
+func (m *CertificateSignature) GetSigType() isCertificateSignature_SigType {
+	if m != nil {
+		return m.SigType
+	}
+	return nil
+}
+
+func (x *CertificateSignature) GetGenesisSignature() *GenesisSignature {
+	if x, ok := x.GetSigType().(*CertificateSignature_GenesisSignature); ok {
+		return x.GenesisSignature
+	}
+	return nil
+}
+
+func (x *CertificateSignature) GetMultiSignature() *MultiSignature {
+	if x, ok := x.GetSigType().(*CertificateSignature_MultiSignature); ok {
+		return x.MultiSignature
+	}
+	return nil
+}
+
+type isCertificateSignature_SigType interface {
+	isCertificateSignature_SigType()
+}
+
+type CertificateSignature_GenesisSignature struct {
+	GenesisSignature *GenesisSignature `protobuf:"bytes,1,opt,name=genesis_signature,json=genesisSignature,proto3,oneof"`
+}
+
+type CertificateSignature_MultiSignature struct {
+	MultiSignature *MultiSignature `protobuf:"bytes,2,opt,name=multi_signature,json=multiSignature,proto3,oneof"`
+}
+
+func (*CertificateSignature_GenesisSignature) isCertificateSignature_SigType() {}
+
+func (*CertificateSignature_MultiSignature) isCertificateSignature_SigType() {}
+
+type GenesisSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ProtocolGenesisSignature *ProtocolGenesisSignature `protobuf:"bytes,1,opt,name=protocol_genesis_signature,json=protocolGenesisSignature,proto3" json:"protocol_genesis_signature,omitempty"`
+}
+
+func (x *GenesisSignature) Reset() {
+	*x = GenesisSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GenesisSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GenesisSignature) ProtoMessage() {}
+
+func (x *GenesisSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GenesisSignature.ProtoReflect.Descriptor instead.
+func (*GenesisSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GenesisSignature) GetProtocolGenesisSignature() *ProtocolGenesisSignature {
+	if x != nil {
+		return x.ProtocolGenesisSignature
+	}
+	return nil
+}
+
+// ProtocolGenesisSignature wraps a cryptographic signature.
+type ProtocolGenesisSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Signature []byte `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (x *ProtocolGenesisSignature) Reset() {
+	*x = ProtocolGenesisSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[15]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ProtocolGenesisSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtocolGenesisSignature) ProtoMessage() {}
+
+func (x *ProtocolGenesisSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[15]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProtocolGenesisSignature.ProtoReflect.Descriptor instead.
+func (*ProtocolGenesisSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ProtocolGenesisSignature) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// MultiSignature represents a collective signature.
+type MultiSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	EntityType *SignedEntityType       `protobuf:"bytes,1,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
+	Signature  *ProtocolMultiSignature `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (x *MultiSignature) Reset() {
+	*x = MultiSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[16]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MultiSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MultiSignature) ProtoMessage() {}
+
+func (x *MultiSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[16]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MultiSignature.ProtoReflect.Descriptor instead.
+func (*MultiSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *MultiSignature) GetEntityType() *SignedEntityType {
+	if x != nil {
+		return x.EntityType
+	}
+	return nil
+}
+
+func (x *MultiSignature) GetSignature() *ProtocolMultiSignature {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// An entity type associated with the signature.
+type SignedEntityType struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Entity:
+	//
+	//	*SignedEntityType_MithrilStakeDistribution
+	//	*SignedEntityType_CardanoStakeDistribution
+	//	*SignedEntityType_CardanoImmutableFilesFull
+	//	*SignedEntityType_CardanoTransactions
+	Entity isSignedEntityType_Entity `protobuf_oneof:"entity"`
+}
+
+func (x *SignedEntityType) Reset() {
+	*x = SignedEntityType{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[17]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SignedEntityType) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedEntityType) ProtoMessage() {}
+
+func (x *SignedEntityType) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[17]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SignedEntityType.ProtoReflect.Descriptor instead.
+func (*SignedEntityType) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{17}
+}
+
+func (m *SignedEntityType) GetEntity() isSignedEntityType_Entity {
+	if m != nil {
+		return m.Entity
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetMithrilStakeDistribution() *MithrilStakeDistribution {
+	if x, ok := x.GetEntity().(*SignedEntityType_MithrilStakeDistribution); ok {
+		return x.MithrilStakeDistribution
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoStakeDistribution() *CardanoStakeDistribution {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoStakeDistribution); ok {
+		return x.CardanoStakeDistribution
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoImmutableFilesFull() *CardanoImmutableFilesFull {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoImmutableFilesFull); ok {
+		return x.CardanoImmutableFilesFull
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoTransactions() *CardanoTransactions {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoTransactions); ok {
+		return x.CardanoTransactions
+	}
+	return nil
+}
+
+type isSignedEntityType_Entity interface {
+	isSignedEntityType_Entity()
+}
+
+type SignedEntityType_MithrilStakeDistribution struct {
+	MithrilStakeDistribution *MithrilStakeDistribution `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoStakeDistribution struct {
+	CardanoStakeDistribution *CardanoStakeDistribution `protobuf:"bytes,2,opt,name=cardano_stake_distribution,json=cardanoStakeDistribution,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoImmutableFilesFull struct {
+	CardanoImmutableFilesFull *CardanoImmutableFilesFull `protobuf:"bytes,3,opt,name=cardano_immutable_files_full,json=cardanoImmutableFilesFull,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoTransactions struct {
+	CardanoTransactions *CardanoTransactions `protobuf:"bytes,4,opt,name=cardano_transactions,json=cardanoTransactions,proto3,oneof"`
+}
+
+func (*SignedEntityType_MithrilStakeDistribution) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoStakeDistribution) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoImmutableFilesFull) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoTransactions) isSignedEntityType_Entity() {}
+
+type CardanoStakeDistribution struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Epoch uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+}
+
+func (x *CardanoStakeDistribution) Reset() {
+	*x = CardanoStakeDistribution{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[18]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoStakeDistribution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoStakeDistribution) ProtoMessage() {}
+
+func (x *CardanoStakeDistribution) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[18]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardanoStakeDistribution.ProtoReflect.Descriptor instead.
+func (*CardanoStakeDistribution) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CardanoStakeDistribution) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+type CardanoImmutableFilesFull struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Beacon *CardanoDbBeacon `protobuf:"bytes,1,opt,name=beacon,proto3" json:"beacon,omitempty"`
+}
+
+func (x *CardanoImmutableFilesFull) Reset() {
+	*x = CardanoImmutableFilesFull{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoImmutableFilesFull) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoImmutableFilesFull) ProtoMessage() {}
+
+func (x *CardanoImmutableFilesFull) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardanoImmutableFilesFull.ProtoReflect.Descriptor instead.
+func (*CardanoImmutableFilesFull) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *CardanoImmutableFilesFull) GetBeacon() *CardanoDbBeacon {
+	if x != nil {
+		return x.Beacon
+	}
+	return nil
+}
+
+type CardanoTransactions struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Beacon *CardanoDbBeacon `protobuf:"bytes,1,opt,name=beacon,proto3" json:"beacon,omitempty"`
+}
+
+func (x *CardanoTransactions) Reset() {
+	*x = CardanoTransactions{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[20]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoTransactions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoTransactions) ProtoMessage() {}
+
+func (x *CardanoTransactions) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[20]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardanoTransactions.ProtoReflect.Descriptor instead.
+func (*CardanoTransactions) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *CardanoTransactions) GetBeacon() *CardanoDbBeacon {
+	if x != nil {
+		return x.Beacon
+	}
+	return nil
+}
+
+type CardanoDbBeacon struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Network             string `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	Epoch               uint64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	ImmutableFileNumber uint64 `protobuf:"varint,3,opt,name=immutable_file_number,json=immutableFileNumber,proto3" json:"immutable_file_number,omitempty"`
+}
+
+func (x *CardanoDbBeacon) Reset() {
+	*x = CardanoDbBeacon{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[21]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoDbBeacon) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoDbBeacon) ProtoMessage() {}
+
+func (x *CardanoDbBeacon) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[21]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CardanoDbBeacon.ProtoReflect.Descriptor instead.
+func (*CardanoDbBeacon) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *CardanoDbBeacon) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *CardanoDbBeacon) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *CardanoDbBeacon) GetImmutableFileNumber() uint64 {
+	if x != nil {
+		return x.ImmutableFileNumber
+	}
+	return 0
+}
+
+// ProtocolMultiSignature wraps a multi-signature.
+type ProtocolMultiSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Signatures []byte `protobuf:"bytes,1,opt,name=signatures,proto3" json:"signatures,omitempty"`
+	BatchProof []byte `protobuf:"bytes,2,opt,name=batch_proof,json=batchProof,proto3" json:"batch_proof,omitempty"` // Assuming serialization of BatchPath is handled elsewhere.
+}
+
+func (x *ProtocolMultiSignature) Reset() {
+	*x = ProtocolMultiSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[22]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ProtocolMultiSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtocolMultiSignature) ProtoMessage() {}
+
+func (x *ProtocolMultiSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[22]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProtocolMultiSignature.ProtoReflect.Descriptor instead.
+func (*ProtocolMultiSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ProtocolMultiSignature) GetSignatures() []byte {
+	if x != nil {
+		return x.Signatures
+	}
+	return nil
+}
+
+func (x *ProtocolMultiSignature) GetBatchProof() []byte {
+	if x != nil {
+		return x.BatchProof
+	}
+	return nil
+}
+
+// Fraction defines the protobuf message type for tmmath.Fraction that only
+// supports positive values.
+type Fraction struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Numerator   uint64 `protobuf:"varint,1,opt,name=numerator,proto3" json:"numerator,omitempty"`
+	Denominator uint64 `protobuf:"varint,2,opt,name=denominator,proto3" json:"denominator,omitempty"`
+}
+
+func (x *Fraction) Reset() {
+	*x = Fraction{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[23]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Fraction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fraction) ProtoMessage() {}
+
+func (x *Fraction) ProtoReflect() protoreflect.Message {
+	mi := &file_ibc_lightclients_mithril_mithril_proto_msgTypes[23]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Fraction.ProtoReflect.Descriptor instead.
+func (*Fraction) Descriptor() ([]byte, []int) {
+	return file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *Fraction) GetNumerator() uint64 {
+	if x != nil {
+		return x.Numerator
+	}
+	return 0
+}
+
+func (x *Fraction) GetDenominator() uint64 {
+	if x != nil {
+		return x.Denominator
 	}
 	return 0
 }
@@ -1214,7 +1828,7 @@ var file_ibc_lightclients_mithril_mithril_proto_rawDesc = []byte{
 	0x6f, 0x75, 0x73, 0x48, 0x61, 0x73, 0x68, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68,
 	0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x56, 0x0a,
 	0x12, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x5f, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x74,
-	0x79, 0x70, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x79, 0x70, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e,
 	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
 	0x76, 0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54,
 	0x79, 0x70, 0x65, 0x52, 0x10, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74,
@@ -1235,7 +1849,7 @@ var file_ibc_lightclients_mithril_mithril_proto_rawDesc = []byte{
 	0x69, 0x6f, 0x6e, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x61,
 	0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x69, 0x63, 0x61,
 	0x74, 0x69, 0x6f, 0x6e, 0x4b, 0x65, 0x79, 0x12, 0x4a, 0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61,
-	0x74, 0x75, 0x72, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2c, 0x2e, 0x69, 0x62, 0x63,
+	0x74, 0x75, 0x72, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2c, 0x2e, 0x69, 0x62, 0x63,
 	0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
 	0x2e, 0x76, 0x31, 0x2e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53,
 	0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74,
@@ -1263,47 +1877,143 @@ var file_ibc_lightclients_mithril_mithril_proto_rawDesc = []byte{
 	0x72, 0x74, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x70, 0x61,
 	0x72, 0x74, 0x79, 0x49, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x18, 0x02,
 	0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f,
-	0x00, 0x22, 0xc1, 0x01, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f,
-	0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x6b,
-	0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63,
+	0x00, 0x22, 0x61, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73,
+	0x73, 0x61, 0x67, 0x65, 0x12, 0x48, 0x0a, 0x0d, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f,
+	0x70, 0x61, 0x72, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x23, 0x2e, 0x69, 0x62,
+	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74,
+	0x52, 0x0c, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x73, 0x3a, 0x04,
+	0x88, 0xa0, 0x1f, 0x00, 0x22, 0xbd, 0x01, 0x0a, 0x0b, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
+	0x50, 0x61, 0x72, 0x74, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c,
+	0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x6b, 0x65,
+	0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c,
+	0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31,
+	0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
+	0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f,
+	0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12,
+	0x3d, 0x0a, 0x1b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73,
+	0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65,
+	0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x04,
+	0x88, 0xa0, 0x1f, 0x00, 0x22, 0x7a, 0x0a, 0x19, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72,
+	0x73, 0x12, 0x0c, 0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6b, 0x12,
+	0x0c, 0x0a, 0x01, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6d, 0x12, 0x3b, 0x0a,
+	0x05, 0x70, 0x68, 0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x20, 0x2e, 0x69,
+	0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72,
+	0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x46, 0x72, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x04,
+	0xc8, 0xde, 0x1f, 0x00, 0x52, 0x04, 0x70, 0x68, 0x69, 0x46, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00,
+	0x22, 0xce, 0x01, 0x0a, 0x14, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65,
+	0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x57, 0x0a, 0x11, 0x67, 0x65, 0x6e,
+	0x65, 0x73, 0x69, 0x73, 0x5f, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e,
+	0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x47, 0x65,
+	0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x48, 0x00,
+	0x52, 0x10, 0x67, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75,
+	0x72, 0x65, 0x12, 0x51, 0x0a, 0x0f, 0x6d, 0x75, 0x6c, 0x74, 0x69, 0x5f, 0x73, 0x69, 0x67, 0x6e,
+	0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x26, 0x2e, 0x69, 0x62,
+	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74,
+	0x75, 0x72, 0x65, 0x48, 0x00, 0x52, 0x0e, 0x6d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e,
+	0x61, 0x74, 0x75, 0x72, 0x65, 0x42, 0x0a, 0x0a, 0x08, 0x73, 0x69, 0x67, 0x5f, 0x74, 0x79, 0x70,
+	0x65, 0x22, 0x82, 0x01, 0x0a, 0x10, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67,
+	0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x6e, 0x0a, 0x1a, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63,
+	0x6f, 0x6c, 0x5f, 0x67, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x5f, 0x73, 0x69, 0x67, 0x6e, 0x61,
+	0x74, 0x75, 0x72, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63,
+	0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x47, 0x65, 0x6e, 0x65,
+	0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x52, 0x18, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67,
+	0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x22, 0x38, 0x0a, 0x18, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63,
+	0x6f, 0x6c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75,
+	0x72, 0x65, 0x12, 0x1c, 0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65,
+	0x22, 0xa9, 0x01, 0x0a, 0x0e, 0x4d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74,
+	0x75, 0x72, 0x65, 0x12, 0x49, 0x0a, 0x0b, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x74, 0x79,
+	0x70, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63,
 	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76,
-	0x31, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67,
-	0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63,
-	0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79,
-	0x12, 0x3d, 0x0a, 0x1b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73,
-	0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d,
-	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x3a,
-	0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x52, 0x0a, 0x19, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
-	0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65,
-	0x72, 0x73, 0x12, 0x0c, 0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6b,
-	0x12, 0x0c, 0x0a, 0x01, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6d, 0x12, 0x13,
-	0x0a, 0x05, 0x70, 0x68, 0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x04, 0x70,
-	0x68, 0x69, 0x46, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x2a, 0xa0, 0x01, 0x0a, 0x16, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72,
-	0x74, 0x4b, 0x65, 0x79, 0x12, 0x13, 0x0a, 0x0f, 0x53, 0x4e, 0x41, 0x50, 0x53, 0x48, 0x4f, 0x54,
-	0x5f, 0x44, 0x49, 0x47, 0x45, 0x53, 0x54, 0x10, 0x00, 0x12, 0x24, 0x0a, 0x20, 0x43, 0x41, 0x52,
-	0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e,
-	0x53, 0x5f, 0x4d, 0x45, 0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f, 0x54, 0x10, 0x01, 0x12,
-	0x23, 0x0a, 0x1f, 0x4e, 0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52, 0x45, 0x47, 0x41, 0x54,
-	0x45, 0x5f, 0x56, 0x45, 0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4b,
-	0x45, 0x59, 0x10, 0x02, 0x12, 0x20, 0x0a, 0x1c, 0x4c, 0x41, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x49,
-	0x4d, 0x4d, 0x55, 0x54, 0x41, 0x42, 0x4c, 0x45, 0x5f, 0x46, 0x49, 0x4c, 0x45, 0x5f, 0x4e, 0x55,
-	0x4d, 0x42, 0x45, 0x52, 0x10, 0x03, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x52, 0x0a, 0x10,
-	0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65,
-	0x12, 0x1e, 0x0a, 0x1a, 0x4d, 0x49, 0x54, 0x48, 0x52, 0x49, 0x4c, 0x5f, 0x53, 0x54, 0x41, 0x4b,
-	0x45, 0x5f, 0x44, 0x49, 0x53, 0x54, 0x52, 0x49, 0x42, 0x55, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x00,
-	0x12, 0x18, 0x0a, 0x14, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e,
-	0x53, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e, 0x53, 0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00,
-	0x2a, 0x48, 0x0a, 0x14, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53,
-	0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x47, 0x45, 0x4e, 0x45,
-	0x53, 0x49, 0x53, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10, 0x00, 0x12,
-	0x13, 0x0a, 0x0f, 0x4d, 0x55, 0x4c, 0x54, 0x49, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55,
-	0x52, 0x45, 0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x42, 0x1d, 0x5a, 0x1b, 0x73, 0x69,
-	0x64, 0x65, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x78, 0x2f, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74,
-	0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x33,
+	0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79,
+	0x70, 0x65, 0x52, 0x0a, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x4c,
+	0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f,
+	0x63, 0x6f, 0x6c, 0x4d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72,
+	0x65, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x22, 0xd8, 0x03, 0x0a,
+	0x10, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70,
+	0x65, 0x12, 0x70, 0x0a, 0x1a, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61,
+	0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d,
+	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72,
+	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x48, 0x00, 0x52, 0x18, 0x6d, 0x69, 0x74, 0x68, 0x72,
+	0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74,
+	0x69, 0x6f, 0x6e, 0x12, 0x70, 0x0a, 0x1a, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x5f, 0x73,
+	0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f,
+	0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c,
+	0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31,
+	0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73,
+	0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x48, 0x00, 0x52, 0x18, 0x63, 0x61, 0x72,
+	0x64, 0x61, 0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62,
+	0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x74, 0x0a, 0x1c, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f,
+	0x5f, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x66, 0x69, 0x6c, 0x65, 0x73,
+	0x5f, 0x66, 0x75, 0x6c, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x31, 0x2e, 0x69, 0x62,
+	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x49, 0x6d, 0x6d, 0x75,
+	0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x46, 0x75, 0x6c, 0x6c, 0x48, 0x00,
+	0x52, 0x19, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x49, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62,
+	0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x46, 0x75, 0x6c, 0x6c, 0x12, 0x60, 0x0a, 0x14, 0x63,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x5f, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69,
+	0x6f, 0x6e, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2b, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61,
+	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x48, 0x00, 0x52, 0x13, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e,
+	0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x42, 0x08, 0x0a,
+	0x06, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x22, 0x30, 0x0a, 0x18, 0x43, 0x61, 0x72, 0x64, 0x61,
+	0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74,
+	0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x22, 0x5c, 0x0a, 0x19, 0x43, 0x61, 0x72,
+	0x64, 0x61, 0x6e, 0x6f, 0x49, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c,
+	0x65, 0x73, 0x46, 0x75, 0x6c, 0x6c, 0x12, 0x3f, 0x0a, 0x06, 0x62, 0x65, 0x61, 0x63, 0x6f, 0x6e,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x44, 0x62, 0x42, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x52,
+	0x06, 0x62, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x22, 0x56, 0x0a, 0x13, 0x43, 0x61, 0x72, 0x64, 0x61,
+	0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x12, 0x3f,
+	0x0a, 0x06, 0x62, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x27,
+	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x44,
+	0x62, 0x42, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x52, 0x06, 0x62, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x22,
+	0x75, 0x0a, 0x0f, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x44, 0x62, 0x42, 0x65, 0x61, 0x63,
+	0x6f, 0x6e, 0x12, 0x18, 0x0a, 0x07, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x09, 0x52, 0x07, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x12, 0x14, 0x0a, 0x05,
+	0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f,
+	0x63, 0x68, 0x12, 0x32, 0x0a, 0x15, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x5f,
+	0x66, 0x69, 0x6c, 0x65, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x13, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65,
+	0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x22, 0x59, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63,
+	0x6f, 0x6c, 0x4d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65,
+	0x12, 0x1e, 0x0a, 0x0a, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x0c, 0x52, 0x0a, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73,
+	0x12, 0x1f, 0x0a, 0x0b, 0x62, 0x61, 0x74, 0x63, 0x68, 0x5f, 0x70, 0x72, 0x6f, 0x6f, 0x66, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x0a, 0x62, 0x61, 0x74, 0x63, 0x68, 0x50, 0x72, 0x6f, 0x6f,
+	0x66, 0x22, 0x4a, 0x0a, 0x08, 0x46, 0x72, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1c, 0x0a,
+	0x09, 0x6e, 0x75, 0x6d, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x09, 0x6e, 0x75, 0x6d, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x20, 0x0a, 0x0b, 0x64,
+	0x65, 0x6e, 0x6f, 0x6d, 0x69, 0x6e, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x0b, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x69, 0x6e, 0x61, 0x74, 0x6f, 0x72, 0x2a, 0xa0, 0x01,
+	0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67,
+	0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x13, 0x0a, 0x0f, 0x53, 0x4e, 0x41, 0x50,
+	0x53, 0x48, 0x4f, 0x54, 0x5f, 0x44, 0x49, 0x47, 0x45, 0x53, 0x54, 0x10, 0x00, 0x12, 0x24, 0x0a,
+	0x20, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43,
+	0x54, 0x49, 0x4f, 0x4e, 0x53, 0x5f, 0x4d, 0x45, 0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f,
+	0x54, 0x10, 0x01, 0x12, 0x23, 0x0a, 0x1f, 0x4e, 0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52,
+	0x45, 0x47, 0x41, 0x54, 0x45, 0x5f, 0x56, 0x45, 0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49,
+	0x4f, 0x4e, 0x5f, 0x4b, 0x45, 0x59, 0x10, 0x02, 0x12, 0x20, 0x0a, 0x1c, 0x4c, 0x41, 0x54, 0x45,
+	0x53, 0x54, 0x5f, 0x49, 0x4d, 0x4d, 0x55, 0x54, 0x41, 0x42, 0x4c, 0x45, 0x5f, 0x46, 0x49, 0x4c,
+	0x45, 0x5f, 0x4e, 0x55, 0x4d, 0x42, 0x45, 0x52, 0x10, 0x03, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00,
+	0x42, 0x1d, 0x5a, 0x1b, 0x73, 0x69, 0x64, 0x65, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x2f, 0x78, 0x2f,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x62,
+	0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -1318,52 +2028,75 @@ func file_ibc_lightclients_mithril_mithril_proto_rawDescGZIP() []byte {
 	return file_ibc_lightclients_mithril_mithril_proto_rawDescData
 }
 
-var file_ibc_lightclients_mithril_mithril_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ibc_lightclients_mithril_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ibc_lightclients_mithril_mithril_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_ibc_lightclients_mithril_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_ibc_lightclients_mithril_mithril_proto_goTypes = []interface{}{
 	(ProtocolMessagePartKey)(0),        // 0: ibc.clients.mithril.v1.ProtocolMessagePartKey
-	(SignedEntityType)(0),              // 1: ibc.clients.mithril.v1.SignedEntityType
-	(CertificateSignature)(0),          // 2: ibc.clients.mithril.v1.CertificateSignature
-	(*Height)(nil),                     // 3: ibc.clients.mithril.v1.Height
-	(*ClientState)(nil),                // 4: ibc.clients.mithril.v1.ClientState
-	(*ConsensusState)(nil),             // 5: ibc.clients.mithril.v1.ConsensusState
-	(*Misbehaviour)(nil),               // 6: ibc.clients.mithril.v1.Misbehaviour
-	(*MithrilHeader)(nil),              // 7: ibc.clients.mithril.v1.MithrilHeader
-	(*MithrilStakeDistribution)(nil),   // 8: ibc.clients.mithril.v1.MithrilStakeDistribution
-	(*CardanoTransactionSnapshot)(nil), // 9: ibc.clients.mithril.v1.CardanoTransactionSnapshot
-	(*MithrilCertificate)(nil),         // 10: ibc.clients.mithril.v1.MithrilCertificate
-	(*CertificateMetadata)(nil),        // 11: ibc.clients.mithril.v1.CertificateMetadata
-	(*SignerWithStake)(nil),            // 12: ibc.clients.mithril.v1.SignerWithStake
-	(*ProtocolMessage)(nil),            // 13: ibc.clients.mithril.v1.ProtocolMessage
-	(*MithrilProtocolParameters)(nil),  // 14: ibc.clients.mithril.v1.MithrilProtocolParameters
-	(*durationpb.Duration)(nil),        // 15: google.protobuf.Duration
+	(*Height)(nil),                     // 1: ibc.clients.mithril.v1.Height
+	(*ClientState)(nil),                // 2: ibc.clients.mithril.v1.ClientState
+	(*ConsensusState)(nil),             // 3: ibc.clients.mithril.v1.ConsensusState
+	(*Misbehaviour)(nil),               // 4: ibc.clients.mithril.v1.Misbehaviour
+	(*MithrilHeader)(nil),              // 5: ibc.clients.mithril.v1.MithrilHeader
+	(*MithrilStakeDistribution)(nil),   // 6: ibc.clients.mithril.v1.MithrilStakeDistribution
+	(*CardanoTransactionSnapshot)(nil), // 7: ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	(*MithrilCertificate)(nil),         // 8: ibc.clients.mithril.v1.MithrilCertificate
+	(*CertificateMetadata)(nil),        // 9: ibc.clients.mithril.v1.CertificateMetadata
+	(*SignerWithStake)(nil),            // 10: ibc.clients.mithril.v1.SignerWithStake
+	(*ProtocolMessage)(nil),            // 11: ibc.clients.mithril.v1.ProtocolMessage
+	(*MessagePart)(nil),                // 12: ibc.clients.mithril.v1.MessagePart
+	(*MithrilProtocolParameters)(nil),  // 13: ibc.clients.mithril.v1.MithrilProtocolParameters
+	(*CertificateSignature)(nil),       // 14: ibc.clients.mithril.v1.CertificateSignature
+	(*GenesisSignature)(nil),           // 15: ibc.clients.mithril.v1.GenesisSignature
+	(*ProtocolGenesisSignature)(nil),   // 16: ibc.clients.mithril.v1.ProtocolGenesisSignature
+	(*MultiSignature)(nil),             // 17: ibc.clients.mithril.v1.MultiSignature
+	(*SignedEntityType)(nil),           // 18: ibc.clients.mithril.v1.SignedEntityType
+	(*CardanoStakeDistribution)(nil),   // 19: ibc.clients.mithril.v1.CardanoStakeDistribution
+	(*CardanoImmutableFilesFull)(nil),  // 20: ibc.clients.mithril.v1.CardanoImmutableFilesFull
+	(*CardanoTransactions)(nil),        // 21: ibc.clients.mithril.v1.CardanoTransactions
+	(*CardanoDbBeacon)(nil),            // 22: ibc.clients.mithril.v1.CardanoDbBeacon
+	(*ProtocolMultiSignature)(nil),     // 23: ibc.clients.mithril.v1.ProtocolMultiSignature
+	(*Fraction)(nil),                   // 24: ibc.clients.mithril.v1.Fraction
+	(*durationpb.Duration)(nil),        // 25: google.protobuf.Duration
 }
 var file_ibc_lightclients_mithril_mithril_proto_depIdxs = []int32{
-	3,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
-	3,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
-	15, // 2: ibc.clients.mithril.v1.ClientState.trusting_period:type_name -> google.protobuf.Duration
-	14, // 3: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	7,  // 4: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	7,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	8,  // 6: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
-	10, // 7: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	9,  // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
-	10, // 9: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	12, // 10: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	14, // 11: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	3,  // 12: ibc.clients.mithril.v1.CardanoTransactionSnapshot.height:type_name -> ibc.clients.mithril.v1.Height
-	1,  // 13: ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
-	11, // 14: ibc.clients.mithril.v1.MithrilCertificate.metadata:type_name -> ibc.clients.mithril.v1.CertificateMetadata
-	13, // 15: ibc.clients.mithril.v1.MithrilCertificate.protocol_message:type_name -> ibc.clients.mithril.v1.ProtocolMessage
-	2,  // 16: ibc.clients.mithril.v1.MithrilCertificate.signature:type_name -> ibc.clients.mithril.v1.CertificateSignature
-	14, // 17: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	12, // 18: ibc.clients.mithril.v1.CertificateMetadata.signers:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	0,  // 19: ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	1,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
+	1,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
+	25, // 2: ibc.clients.mithril.v1.ClientState.trusting_period:type_name -> google.protobuf.Duration
+	13, // 3: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	5,  // 4: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	5,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	6,  // 6: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
+	8,  // 7: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	7,  // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	8,  // 9: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	10, // 10: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
+	13, // 11: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	1,  // 12: ibc.clients.mithril.v1.CardanoTransactionSnapshot.height:type_name -> ibc.clients.mithril.v1.Height
+	18, // 13: ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
+	9,  // 14: ibc.clients.mithril.v1.MithrilCertificate.metadata:type_name -> ibc.clients.mithril.v1.CertificateMetadata
+	11, // 15: ibc.clients.mithril.v1.MithrilCertificate.protocol_message:type_name -> ibc.clients.mithril.v1.ProtocolMessage
+	14, // 16: ibc.clients.mithril.v1.MithrilCertificate.signature:type_name -> ibc.clients.mithril.v1.CertificateSignature
+	13, // 17: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	10, // 18: ibc.clients.mithril.v1.CertificateMetadata.signers:type_name -> ibc.clients.mithril.v1.SignerWithStake
+	12, // 19: ibc.clients.mithril.v1.ProtocolMessage.message_parts:type_name -> ibc.clients.mithril.v1.MessagePart
+	0,  // 20: ibc.clients.mithril.v1.MessagePart.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
+	24, // 21: ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f:type_name -> ibc.clients.mithril.v1.Fraction
+	15, // 22: ibc.clients.mithril.v1.CertificateSignature.genesis_signature:type_name -> ibc.clients.mithril.v1.GenesisSignature
+	17, // 23: ibc.clients.mithril.v1.CertificateSignature.multi_signature:type_name -> ibc.clients.mithril.v1.MultiSignature
+	16, // 24: ibc.clients.mithril.v1.GenesisSignature.protocol_genesis_signature:type_name -> ibc.clients.mithril.v1.ProtocolGenesisSignature
+	18, // 25: ibc.clients.mithril.v1.MultiSignature.entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
+	23, // 26: ibc.clients.mithril.v1.MultiSignature.signature:type_name -> ibc.clients.mithril.v1.ProtocolMultiSignature
+	6,  // 27: ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
+	19, // 28: ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution:type_name -> ibc.clients.mithril.v1.CardanoStakeDistribution
+	20, // 29: ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full:type_name -> ibc.clients.mithril.v1.CardanoImmutableFilesFull
+	21, // 30: ibc.clients.mithril.v1.SignedEntityType.cardano_transactions:type_name -> ibc.clients.mithril.v1.CardanoTransactions
+	22, // 31: ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon:type_name -> ibc.clients.mithril.v1.CardanoDbBeacon
+	22, // 32: ibc.clients.mithril.v1.CardanoTransactions.beacon:type_name -> ibc.clients.mithril.v1.CardanoDbBeacon
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_ibc_lightclients_mithril_mithril_proto_init() }
@@ -1505,6 +2238,18 @@ func file_ibc_lightclients_mithril_mithril_proto_init() {
 			}
 		}
 		file_ibc_lightclients_mithril_mithril_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MessagePart); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*MithrilProtocolParameters); i {
 			case 0:
 				return &v.state
@@ -1516,14 +2261,156 @@ func file_ibc_lightclients_mithril_mithril_proto_init() {
 				return nil
 			}
 		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CertificateSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GenesisSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ProtocolGenesisSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MultiSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SignedEntityType); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoStakeDistribution); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoImmutableFilesFull); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[20].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoTransactions); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[21].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoDbBeacon); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[22].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ProtocolMultiSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_lightclients_mithril_mithril_proto_msgTypes[23].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Fraction); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
+	file_ibc_lightclients_mithril_mithril_proto_msgTypes[13].OneofWrappers = []interface{}{
+		(*CertificateSignature_GenesisSignature)(nil),
+		(*CertificateSignature_MultiSignature)(nil),
+	}
+	file_ibc_lightclients_mithril_mithril_proto_msgTypes[17].OneofWrappers = []interface{}{
+		(*SignedEntityType_MithrilStakeDistribution)(nil),
+		(*SignedEntityType_CardanoStakeDistribution)(nil),
+		(*SignedEntityType_CardanoImmutableFilesFull)(nil),
+		(*SignedEntityType_CardanoTransactions)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ibc_lightclients_mithril_mithril_proto_rawDesc,
-			NumEnums:      3,
-			NumMessages:   12,
+			NumEnums:      1,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

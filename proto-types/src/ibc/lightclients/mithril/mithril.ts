@@ -1,7 +1,7 @@
 /* eslint-disable */
 import { Duration } from "../../../google/protobuf/duration";
 import { BinaryReader, BinaryWriter } from "../../../binary";
-import { isSet, DeepPartial, Exact } from "../../../helpers";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../helpers";
 export const protobufPackage = "ibc.clients.mithril.v1";
 export enum ProtocolMessagePartKey {
   SNAPSHOT_DIGEST = 0,
@@ -41,66 +41,6 @@ export function protocolMessagePartKeyToJSON(object: ProtocolMessagePartKey): st
     case ProtocolMessagePartKey.LATEST_IMMUTABLE_FILE_NUMBER:
       return "LATEST_IMMUTABLE_FILE_NUMBER";
     case ProtocolMessagePartKey.UNRECOGNIZED:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-export enum SignedEntityType {
-  MITHRIL_STAKE_DISTRIBUTION = 0,
-  CARDANO_TRANSACTIONS = 1,
-  UNRECOGNIZED = -1,
-}
-export function signedEntityTypeFromJSON(object: any): SignedEntityType {
-  switch (object) {
-    case 0:
-    case "MITHRIL_STAKE_DISTRIBUTION":
-      return SignedEntityType.MITHRIL_STAKE_DISTRIBUTION;
-    case 1:
-    case "CARDANO_TRANSACTIONS":
-      return SignedEntityType.CARDANO_TRANSACTIONS;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return SignedEntityType.UNRECOGNIZED;
-  }
-}
-export function signedEntityTypeToJSON(object: SignedEntityType): string {
-  switch (object) {
-    case SignedEntityType.MITHRIL_STAKE_DISTRIBUTION:
-      return "MITHRIL_STAKE_DISTRIBUTION";
-    case SignedEntityType.CARDANO_TRANSACTIONS:
-      return "CARDANO_TRANSACTIONS";
-    case SignedEntityType.UNRECOGNIZED:
-    default:
-      return "UNRECOGNIZED";
-  }
-}
-export enum CertificateSignature {
-  GENESIS_SIGNATURE = 0,
-  MULTI_SIGNATURE = 1,
-  UNRECOGNIZED = -1,
-}
-export function certificateSignatureFromJSON(object: any): CertificateSignature {
-  switch (object) {
-    case 0:
-    case "GENESIS_SIGNATURE":
-      return CertificateSignature.GENESIS_SIGNATURE;
-    case 1:
-    case "MULTI_SIGNATURE":
-      return CertificateSignature.MULTI_SIGNATURE;
-    case -1:
-    case "UNRECOGNIZED":
-    default:
-      return CertificateSignature.UNRECOGNIZED;
-  }
-}
-export function certificateSignatureToJSON(object: CertificateSignature): string {
-  switch (object) {
-    case CertificateSignature.GENESIS_SIGNATURE:
-      return "GENESIS_SIGNATURE";
-    case CertificateSignature.MULTI_SIGNATURE:
-      return "MULTI_SIGNATURE";
-    case CertificateSignature.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
   }
@@ -166,12 +106,12 @@ export interface MithrilCertificate {
   hash: string;
   previous_hash: string;
   epoch: bigint;
-  signed_entity_type: SignedEntityType;
+  signed_entity_type?: SignedEntityType;
   metadata?: CertificateMetadata;
   protocol_message?: ProtocolMessage;
   signed_message: string;
   aggregate_verification_key: string;
-  signature: CertificateSignature;
+  signature?: CertificateSignature;
 }
 export interface CertificateMetadata {
   protocol_version: string;
@@ -185,6 +125,9 @@ export interface SignerWithStake {
   stake: bigint;
 }
 export interface ProtocolMessage {
+  message_parts: MessagePart[];
+}
+export interface MessagePart {
   protocol_message_part_key: ProtocolMessagePartKey;
   protocol_message_part_value: string;
 }
@@ -194,7 +137,58 @@ export interface MithrilProtocolParameters {
   /** Security parameter (number of lotteries) */
   m: bigint;
   /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
-  phi_f: bigint;
+  phi_f: Fraction;
+}
+export interface CertificateSignature {
+  genesis_signature?: GenesisSignature;
+  multi_signature?: MultiSignature;
+}
+export interface GenesisSignature {
+  protocol_genesis_signature?: ProtocolGenesisSignature;
+}
+/** ProtocolGenesisSignature wraps a cryptographic signature. */
+export interface ProtocolGenesisSignature {
+  signature: Uint8Array;
+}
+/** MultiSignature represents a collective signature. */
+export interface MultiSignature {
+  entity_type?: SignedEntityType;
+  signature?: ProtocolMultiSignature;
+}
+/** An entity type associated with the signature. */
+export interface SignedEntityType {
+  mithril_stake_distribution?: MithrilStakeDistribution;
+  cardano_stake_distribution?: CardanoStakeDistribution;
+  cardano_immutable_files_full?: CardanoImmutableFilesFull;
+  cardano_transactions?: CardanoTransactions;
+}
+export interface CardanoStakeDistribution {
+  epoch: bigint;
+}
+export interface CardanoImmutableFilesFull {
+  beacon?: CardanoDbBeacon;
+}
+export interface CardanoTransactions {
+  beacon?: CardanoDbBeacon;
+}
+export interface CardanoDbBeacon {
+  network: string;
+  epoch: bigint;
+  immutable_file_number: bigint;
+}
+/** ProtocolMultiSignature wraps a multi-signature. */
+export interface ProtocolMultiSignature {
+  signatures: Uint8Array;
+  /** Assuming serialization of BatchPath is handled elsewhere. */
+  batch_proof: Uint8Array;
+}
+/**
+ * Fraction defines the protobuf message type for tmmath.Fraction that only
+ * supports positive values.
+ */
+export interface Fraction {
+  numerator: bigint;
+  denominator: bigint;
 }
 function createBaseHeight(): Height {
   return {
@@ -807,12 +801,12 @@ function createBaseMithrilCertificate(): MithrilCertificate {
     hash: "",
     previous_hash: "",
     epoch: BigInt(0),
-    signed_entity_type: 0,
+    signed_entity_type: undefined,
     metadata: undefined,
     protocol_message: undefined,
     signed_message: "",
     aggregate_verification_key: "",
-    signature: 0
+    signature: undefined
   };
 }
 export const MithrilCertificate = {
@@ -827,8 +821,8 @@ export const MithrilCertificate = {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(24).uint64(message.epoch);
     }
-    if (message.signed_entity_type !== 0) {
-      writer.uint32(32).int32(message.signed_entity_type);
+    if (message.signed_entity_type !== undefined) {
+      SignedEntityType.encode(message.signed_entity_type, writer.uint32(34).fork()).ldelim();
     }
     if (message.metadata !== undefined) {
       CertificateMetadata.encode(message.metadata, writer.uint32(42).fork()).ldelim();
@@ -842,8 +836,8 @@ export const MithrilCertificate = {
     if (message.aggregate_verification_key !== "") {
       writer.uint32(66).string(message.aggregate_verification_key);
     }
-    if (message.signature !== 0) {
-      writer.uint32(72).int32(message.signature);
+    if (message.signature !== undefined) {
+      CertificateSignature.encode(message.signature, writer.uint32(74).fork()).ldelim();
     }
     return writer;
   },
@@ -864,7 +858,7 @@ export const MithrilCertificate = {
           message.epoch = reader.uint64();
           break;
         case 4:
-          message.signed_entity_type = (reader.int32() as any);
+          message.signed_entity_type = SignedEntityType.decode(reader, reader.uint32());
           break;
         case 5:
           message.metadata = CertificateMetadata.decode(reader, reader.uint32());
@@ -879,7 +873,7 @@ export const MithrilCertificate = {
           message.aggregate_verification_key = reader.string();
           break;
         case 9:
-          message.signature = (reader.int32() as any);
+          message.signature = CertificateSignature.decode(reader, reader.uint32());
           break;
         default:
           reader.skipType(tag & 7);
@@ -893,12 +887,12 @@ export const MithrilCertificate = {
     if (isSet(object.hash)) obj.hash = String(object.hash);
     if (isSet(object.previous_hash)) obj.previous_hash = String(object.previous_hash);
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (isSet(object.signed_entity_type)) obj.signed_entity_type = signedEntityTypeFromJSON(object.signed_entity_type);
+    if (isSet(object.signed_entity_type)) obj.signed_entity_type = SignedEntityType.fromJSON(object.signed_entity_type);
     if (isSet(object.metadata)) obj.metadata = CertificateMetadata.fromJSON(object.metadata);
     if (isSet(object.protocol_message)) obj.protocol_message = ProtocolMessage.fromJSON(object.protocol_message);
     if (isSet(object.signed_message)) obj.signed_message = String(object.signed_message);
     if (isSet(object.aggregate_verification_key)) obj.aggregate_verification_key = String(object.aggregate_verification_key);
-    if (isSet(object.signature)) obj.signature = certificateSignatureFromJSON(object.signature);
+    if (isSet(object.signature)) obj.signature = CertificateSignature.fromJSON(object.signature);
     return obj;
   },
   toJSON(message: MithrilCertificate): unknown {
@@ -906,12 +900,12 @@ export const MithrilCertificate = {
     message.hash !== undefined && (obj.hash = message.hash);
     message.previous_hash !== undefined && (obj.previous_hash = message.previous_hash);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
-    message.signed_entity_type !== undefined && (obj.signed_entity_type = signedEntityTypeToJSON(message.signed_entity_type));
+    message.signed_entity_type !== undefined && (obj.signed_entity_type = message.signed_entity_type ? SignedEntityType.toJSON(message.signed_entity_type) : undefined);
     message.metadata !== undefined && (obj.metadata = message.metadata ? CertificateMetadata.toJSON(message.metadata) : undefined);
     message.protocol_message !== undefined && (obj.protocol_message = message.protocol_message ? ProtocolMessage.toJSON(message.protocol_message) : undefined);
     message.signed_message !== undefined && (obj.signed_message = message.signed_message);
     message.aggregate_verification_key !== undefined && (obj.aggregate_verification_key = message.aggregate_verification_key);
-    message.signature !== undefined && (obj.signature = certificateSignatureToJSON(message.signature));
+    message.signature !== undefined && (obj.signature = message.signature ? CertificateSignature.toJSON(message.signature) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MithrilCertificate>, I>>(object: I): MithrilCertificate {
@@ -921,7 +915,9 @@ export const MithrilCertificate = {
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
-    message.signed_entity_type = object.signed_entity_type ?? 0;
+    if (object.signed_entity_type !== undefined && object.signed_entity_type !== null) {
+      message.signed_entity_type = SignedEntityType.fromPartial(object.signed_entity_type);
+    }
     if (object.metadata !== undefined && object.metadata !== null) {
       message.metadata = CertificateMetadata.fromPartial(object.metadata);
     }
@@ -930,7 +926,9 @@ export const MithrilCertificate = {
     }
     message.signed_message = object.signed_message ?? "";
     message.aggregate_verification_key = object.aggregate_verification_key ?? "";
-    message.signature = object.signature ?? 0;
+    if (object.signature !== undefined && object.signature !== null) {
+      message.signature = CertificateSignature.fromPartial(object.signature);
+    }
     return message;
   }
 };
@@ -1090,13 +1088,63 @@ export const SignerWithStake = {
 };
 function createBaseProtocolMessage(): ProtocolMessage {
   return {
-    protocol_message_part_key: 0,
-    protocol_message_part_value: ""
+    message_parts: []
   };
 }
 export const ProtocolMessage = {
   typeUrl: "/ibc.clients.mithril.v1.ProtocolMessage",
   encode(message: ProtocolMessage, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    for (const v of message.message_parts) {
+      MessagePart.encode(v!, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ProtocolMessage {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseProtocolMessage();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.message_parts.push(MessagePart.decode(reader, reader.uint32()));
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ProtocolMessage {
+    const obj = createBaseProtocolMessage();
+    if (Array.isArray(object?.message_parts)) obj.message_parts = object.message_parts.map((e: any) => MessagePart.fromJSON(e));
+    return obj;
+  },
+  toJSON(message: ProtocolMessage): unknown {
+    const obj: any = {};
+    if (message.message_parts) {
+      obj.message_parts = message.message_parts.map(e => e ? MessagePart.toJSON(e) : undefined);
+    } else {
+      obj.message_parts = [];
+    }
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ProtocolMessage>, I>>(object: I): ProtocolMessage {
+    const message = createBaseProtocolMessage();
+    message.message_parts = object.message_parts?.map(e => MessagePart.fromPartial(e)) || [];
+    return message;
+  }
+};
+function createBaseMessagePart(): MessagePart {
+  return {
+    protocol_message_part_key: 0,
+    protocol_message_part_value: ""
+  };
+}
+export const MessagePart = {
+  typeUrl: "/ibc.clients.mithril.v1.MessagePart",
+  encode(message: MessagePart, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.protocol_message_part_key !== 0) {
       writer.uint32(8).int32(message.protocol_message_part_key);
     }
@@ -1105,10 +1153,10 @@ export const ProtocolMessage = {
     }
     return writer;
   },
-  decode(input: BinaryReader | Uint8Array, length?: number): ProtocolMessage {
+  decode(input: BinaryReader | Uint8Array, length?: number): MessagePart {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseProtocolMessage();
+    const message = createBaseMessagePart();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1125,20 +1173,20 @@ export const ProtocolMessage = {
     }
     return message;
   },
-  fromJSON(object: any): ProtocolMessage {
-    const obj = createBaseProtocolMessage();
+  fromJSON(object: any): MessagePart {
+    const obj = createBaseMessagePart();
     if (isSet(object.protocol_message_part_key)) obj.protocol_message_part_key = protocolMessagePartKeyFromJSON(object.protocol_message_part_key);
     if (isSet(object.protocol_message_part_value)) obj.protocol_message_part_value = String(object.protocol_message_part_value);
     return obj;
   },
-  toJSON(message: ProtocolMessage): unknown {
+  toJSON(message: MessagePart): unknown {
     const obj: any = {};
     message.protocol_message_part_key !== undefined && (obj.protocol_message_part_key = protocolMessagePartKeyToJSON(message.protocol_message_part_key));
     message.protocol_message_part_value !== undefined && (obj.protocol_message_part_value = message.protocol_message_part_value);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<ProtocolMessage>, I>>(object: I): ProtocolMessage {
-    const message = createBaseProtocolMessage();
+  fromPartial<I extends Exact<DeepPartial<MessagePart>, I>>(object: I): MessagePart {
+    const message = createBaseMessagePart();
     message.protocol_message_part_key = object.protocol_message_part_key ?? 0;
     message.protocol_message_part_value = object.protocol_message_part_value ?? "";
     return message;
@@ -1148,7 +1196,7 @@ function createBaseMithrilProtocolParameters(): MithrilProtocolParameters {
   return {
     k: BigInt(0),
     m: BigInt(0),
-    phi_f: BigInt(0)
+    phi_f: Fraction.fromPartial({})
   };
 }
 export const MithrilProtocolParameters = {
@@ -1160,8 +1208,8 @@ export const MithrilProtocolParameters = {
     if (message.m !== BigInt(0)) {
       writer.uint32(16).uint64(message.m);
     }
-    if (message.phi_f !== BigInt(0)) {
-      writer.uint32(24).uint64(message.phi_f);
+    if (message.phi_f !== undefined) {
+      Fraction.encode(message.phi_f, writer.uint32(26).fork()).ldelim();
     }
     return writer;
   },
@@ -1179,7 +1227,7 @@ export const MithrilProtocolParameters = {
           message.m = reader.uint64();
           break;
         case 3:
-          message.phi_f = reader.uint64();
+          message.phi_f = Fraction.decode(reader, reader.uint32());
           break;
         default:
           reader.skipType(tag & 7);
@@ -1192,14 +1240,14 @@ export const MithrilProtocolParameters = {
     const obj = createBaseMithrilProtocolParameters();
     if (isSet(object.k)) obj.k = BigInt(object.k.toString());
     if (isSet(object.m)) obj.m = BigInt(object.m.toString());
-    if (isSet(object.phi_f)) obj.phi_f = BigInt(object.phi_f.toString());
+    if (isSet(object.phi_f)) obj.phi_f = Fraction.fromJSON(object.phi_f);
     return obj;
   },
   toJSON(message: MithrilProtocolParameters): unknown {
     const obj: any = {};
     message.k !== undefined && (obj.k = (message.k || BigInt(0)).toString());
     message.m !== undefined && (obj.m = (message.m || BigInt(0)).toString());
-    message.phi_f !== undefined && (obj.phi_f = (message.phi_f || BigInt(0)).toString());
+    message.phi_f !== undefined && (obj.phi_f = message.phi_f ? Fraction.toJSON(message.phi_f) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MithrilProtocolParameters>, I>>(object: I): MithrilProtocolParameters {
@@ -1211,7 +1259,635 @@ export const MithrilProtocolParameters = {
       message.m = BigInt(object.m.toString());
     }
     if (object.phi_f !== undefined && object.phi_f !== null) {
-      message.phi_f = BigInt(object.phi_f.toString());
+      message.phi_f = Fraction.fromPartial(object.phi_f);
+    }
+    return message;
+  }
+};
+function createBaseCertificateSignature(): CertificateSignature {
+  return {
+    genesis_signature: undefined,
+    multi_signature: undefined
+  };
+}
+export const CertificateSignature = {
+  typeUrl: "/ibc.clients.mithril.v1.CertificateSignature",
+  encode(message: CertificateSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.genesis_signature !== undefined) {
+      GenesisSignature.encode(message.genesis_signature, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.multi_signature !== undefined) {
+      MultiSignature.encode(message.multi_signature, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CertificateSignature {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCertificateSignature();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.genesis_signature = GenesisSignature.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.multi_signature = MultiSignature.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CertificateSignature {
+    const obj = createBaseCertificateSignature();
+    if (isSet(object.genesis_signature)) obj.genesis_signature = GenesisSignature.fromJSON(object.genesis_signature);
+    if (isSet(object.multi_signature)) obj.multi_signature = MultiSignature.fromJSON(object.multi_signature);
+    return obj;
+  },
+  toJSON(message: CertificateSignature): unknown {
+    const obj: any = {};
+    message.genesis_signature !== undefined && (obj.genesis_signature = message.genesis_signature ? GenesisSignature.toJSON(message.genesis_signature) : undefined);
+    message.multi_signature !== undefined && (obj.multi_signature = message.multi_signature ? MultiSignature.toJSON(message.multi_signature) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CertificateSignature>, I>>(object: I): CertificateSignature {
+    const message = createBaseCertificateSignature();
+    if (object.genesis_signature !== undefined && object.genesis_signature !== null) {
+      message.genesis_signature = GenesisSignature.fromPartial(object.genesis_signature);
+    }
+    if (object.multi_signature !== undefined && object.multi_signature !== null) {
+      message.multi_signature = MultiSignature.fromPartial(object.multi_signature);
+    }
+    return message;
+  }
+};
+function createBaseGenesisSignature(): GenesisSignature {
+  return {
+    protocol_genesis_signature: undefined
+  };
+}
+export const GenesisSignature = {
+  typeUrl: "/ibc.clients.mithril.v1.GenesisSignature",
+  encode(message: GenesisSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.protocol_genesis_signature !== undefined) {
+      ProtocolGenesisSignature.encode(message.protocol_genesis_signature, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): GenesisSignature {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGenesisSignature();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.protocol_genesis_signature = ProtocolGenesisSignature.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): GenesisSignature {
+    const obj = createBaseGenesisSignature();
+    if (isSet(object.protocol_genesis_signature)) obj.protocol_genesis_signature = ProtocolGenesisSignature.fromJSON(object.protocol_genesis_signature);
+    return obj;
+  },
+  toJSON(message: GenesisSignature): unknown {
+    const obj: any = {};
+    message.protocol_genesis_signature !== undefined && (obj.protocol_genesis_signature = message.protocol_genesis_signature ? ProtocolGenesisSignature.toJSON(message.protocol_genesis_signature) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<GenesisSignature>, I>>(object: I): GenesisSignature {
+    const message = createBaseGenesisSignature();
+    if (object.protocol_genesis_signature !== undefined && object.protocol_genesis_signature !== null) {
+      message.protocol_genesis_signature = ProtocolGenesisSignature.fromPartial(object.protocol_genesis_signature);
+    }
+    return message;
+  }
+};
+function createBaseProtocolGenesisSignature(): ProtocolGenesisSignature {
+  return {
+    signature: new Uint8Array()
+  };
+}
+export const ProtocolGenesisSignature = {
+  typeUrl: "/ibc.clients.mithril.v1.ProtocolGenesisSignature",
+  encode(message: ProtocolGenesisSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signature.length !== 0) {
+      writer.uint32(10).bytes(message.signature);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ProtocolGenesisSignature {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseProtocolGenesisSignature();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signature = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ProtocolGenesisSignature {
+    const obj = createBaseProtocolGenesisSignature();
+    if (isSet(object.signature)) obj.signature = bytesFromBase64(object.signature);
+    return obj;
+  },
+  toJSON(message: ProtocolGenesisSignature): unknown {
+    const obj: any = {};
+    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ProtocolGenesisSignature>, I>>(object: I): ProtocolGenesisSignature {
+    const message = createBaseProtocolGenesisSignature();
+    message.signature = object.signature ?? new Uint8Array();
+    return message;
+  }
+};
+function createBaseMultiSignature(): MultiSignature {
+  return {
+    entity_type: undefined,
+    signature: undefined
+  };
+}
+export const MultiSignature = {
+  typeUrl: "/ibc.clients.mithril.v1.MultiSignature",
+  encode(message: MultiSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.entity_type !== undefined) {
+      SignedEntityType.encode(message.entity_type, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.signature !== undefined) {
+      ProtocolMultiSignature.encode(message.signature, writer.uint32(18).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MultiSignature {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMultiSignature();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.entity_type = SignedEntityType.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.signature = ProtocolMultiSignature.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MultiSignature {
+    const obj = createBaseMultiSignature();
+    if (isSet(object.entity_type)) obj.entity_type = SignedEntityType.fromJSON(object.entity_type);
+    if (isSet(object.signature)) obj.signature = ProtocolMultiSignature.fromJSON(object.signature);
+    return obj;
+  },
+  toJSON(message: MultiSignature): unknown {
+    const obj: any = {};
+    message.entity_type !== undefined && (obj.entity_type = message.entity_type ? SignedEntityType.toJSON(message.entity_type) : undefined);
+    message.signature !== undefined && (obj.signature = message.signature ? ProtocolMultiSignature.toJSON(message.signature) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MultiSignature>, I>>(object: I): MultiSignature {
+    const message = createBaseMultiSignature();
+    if (object.entity_type !== undefined && object.entity_type !== null) {
+      message.entity_type = SignedEntityType.fromPartial(object.entity_type);
+    }
+    if (object.signature !== undefined && object.signature !== null) {
+      message.signature = ProtocolMultiSignature.fromPartial(object.signature);
+    }
+    return message;
+  }
+};
+function createBaseSignedEntityType(): SignedEntityType {
+  return {
+    mithril_stake_distribution: undefined,
+    cardano_stake_distribution: undefined,
+    cardano_immutable_files_full: undefined,
+    cardano_transactions: undefined
+  };
+}
+export const SignedEntityType = {
+  typeUrl: "/ibc.clients.mithril.v1.SignedEntityType",
+  encode(message: SignedEntityType, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.mithril_stake_distribution !== undefined) {
+      MithrilStakeDistribution.encode(message.mithril_stake_distribution, writer.uint32(10).fork()).ldelim();
+    }
+    if (message.cardano_stake_distribution !== undefined) {
+      CardanoStakeDistribution.encode(message.cardano_stake_distribution, writer.uint32(18).fork()).ldelim();
+    }
+    if (message.cardano_immutable_files_full !== undefined) {
+      CardanoImmutableFilesFull.encode(message.cardano_immutable_files_full, writer.uint32(26).fork()).ldelim();
+    }
+    if (message.cardano_transactions !== undefined) {
+      CardanoTransactions.encode(message.cardano_transactions, writer.uint32(34).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): SignedEntityType {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSignedEntityType();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.mithril_stake_distribution = MithrilStakeDistribution.decode(reader, reader.uint32());
+          break;
+        case 2:
+          message.cardano_stake_distribution = CardanoStakeDistribution.decode(reader, reader.uint32());
+          break;
+        case 3:
+          message.cardano_immutable_files_full = CardanoImmutableFilesFull.decode(reader, reader.uint32());
+          break;
+        case 4:
+          message.cardano_transactions = CardanoTransactions.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): SignedEntityType {
+    const obj = createBaseSignedEntityType();
+    if (isSet(object.mithril_stake_distribution)) obj.mithril_stake_distribution = MithrilStakeDistribution.fromJSON(object.mithril_stake_distribution);
+    if (isSet(object.cardano_stake_distribution)) obj.cardano_stake_distribution = CardanoStakeDistribution.fromJSON(object.cardano_stake_distribution);
+    if (isSet(object.cardano_immutable_files_full)) obj.cardano_immutable_files_full = CardanoImmutableFilesFull.fromJSON(object.cardano_immutable_files_full);
+    if (isSet(object.cardano_transactions)) obj.cardano_transactions = CardanoTransactions.fromJSON(object.cardano_transactions);
+    return obj;
+  },
+  toJSON(message: SignedEntityType): unknown {
+    const obj: any = {};
+    message.mithril_stake_distribution !== undefined && (obj.mithril_stake_distribution = message.mithril_stake_distribution ? MithrilStakeDistribution.toJSON(message.mithril_stake_distribution) : undefined);
+    message.cardano_stake_distribution !== undefined && (obj.cardano_stake_distribution = message.cardano_stake_distribution ? CardanoStakeDistribution.toJSON(message.cardano_stake_distribution) : undefined);
+    message.cardano_immutable_files_full !== undefined && (obj.cardano_immutable_files_full = message.cardano_immutable_files_full ? CardanoImmutableFilesFull.toJSON(message.cardano_immutable_files_full) : undefined);
+    message.cardano_transactions !== undefined && (obj.cardano_transactions = message.cardano_transactions ? CardanoTransactions.toJSON(message.cardano_transactions) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<SignedEntityType>, I>>(object: I): SignedEntityType {
+    const message = createBaseSignedEntityType();
+    if (object.mithril_stake_distribution !== undefined && object.mithril_stake_distribution !== null) {
+      message.mithril_stake_distribution = MithrilStakeDistribution.fromPartial(object.mithril_stake_distribution);
+    }
+    if (object.cardano_stake_distribution !== undefined && object.cardano_stake_distribution !== null) {
+      message.cardano_stake_distribution = CardanoStakeDistribution.fromPartial(object.cardano_stake_distribution);
+    }
+    if (object.cardano_immutable_files_full !== undefined && object.cardano_immutable_files_full !== null) {
+      message.cardano_immutable_files_full = CardanoImmutableFilesFull.fromPartial(object.cardano_immutable_files_full);
+    }
+    if (object.cardano_transactions !== undefined && object.cardano_transactions !== null) {
+      message.cardano_transactions = CardanoTransactions.fromPartial(object.cardano_transactions);
+    }
+    return message;
+  }
+};
+function createBaseCardanoStakeDistribution(): CardanoStakeDistribution {
+  return {
+    epoch: BigInt(0)
+  };
+}
+export const CardanoStakeDistribution = {
+  typeUrl: "/ibc.clients.mithril.v1.CardanoStakeDistribution",
+  encode(message: CardanoStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CardanoStakeDistribution {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCardanoStakeDistribution();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CardanoStakeDistribution {
+    const obj = createBaseCardanoStakeDistribution();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    return obj;
+  },
+  toJSON(message: CardanoStakeDistribution): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CardanoStakeDistribution>, I>>(object: I): CardanoStakeDistribution {
+    const message = createBaseCardanoStakeDistribution();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    return message;
+  }
+};
+function createBaseCardanoImmutableFilesFull(): CardanoImmutableFilesFull {
+  return {
+    beacon: undefined
+  };
+}
+export const CardanoImmutableFilesFull = {
+  typeUrl: "/ibc.clients.mithril.v1.CardanoImmutableFilesFull",
+  encode(message: CardanoImmutableFilesFull, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.beacon !== undefined) {
+      CardanoDbBeacon.encode(message.beacon, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CardanoImmutableFilesFull {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCardanoImmutableFilesFull();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.beacon = CardanoDbBeacon.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CardanoImmutableFilesFull {
+    const obj = createBaseCardanoImmutableFilesFull();
+    if (isSet(object.beacon)) obj.beacon = CardanoDbBeacon.fromJSON(object.beacon);
+    return obj;
+  },
+  toJSON(message: CardanoImmutableFilesFull): unknown {
+    const obj: any = {};
+    message.beacon !== undefined && (obj.beacon = message.beacon ? CardanoDbBeacon.toJSON(message.beacon) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CardanoImmutableFilesFull>, I>>(object: I): CardanoImmutableFilesFull {
+    const message = createBaseCardanoImmutableFilesFull();
+    if (object.beacon !== undefined && object.beacon !== null) {
+      message.beacon = CardanoDbBeacon.fromPartial(object.beacon);
+    }
+    return message;
+  }
+};
+function createBaseCardanoTransactions(): CardanoTransactions {
+  return {
+    beacon: undefined
+  };
+}
+export const CardanoTransactions = {
+  typeUrl: "/ibc.clients.mithril.v1.CardanoTransactions",
+  encode(message: CardanoTransactions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.beacon !== undefined) {
+      CardanoDbBeacon.encode(message.beacon, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CardanoTransactions {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCardanoTransactions();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.beacon = CardanoDbBeacon.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CardanoTransactions {
+    const obj = createBaseCardanoTransactions();
+    if (isSet(object.beacon)) obj.beacon = CardanoDbBeacon.fromJSON(object.beacon);
+    return obj;
+  },
+  toJSON(message: CardanoTransactions): unknown {
+    const obj: any = {};
+    message.beacon !== undefined && (obj.beacon = message.beacon ? CardanoDbBeacon.toJSON(message.beacon) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CardanoTransactions>, I>>(object: I): CardanoTransactions {
+    const message = createBaseCardanoTransactions();
+    if (object.beacon !== undefined && object.beacon !== null) {
+      message.beacon = CardanoDbBeacon.fromPartial(object.beacon);
+    }
+    return message;
+  }
+};
+function createBaseCardanoDbBeacon(): CardanoDbBeacon {
+  return {
+    network: "",
+    epoch: BigInt(0),
+    immutable_file_number: BigInt(0)
+  };
+}
+export const CardanoDbBeacon = {
+  typeUrl: "/ibc.clients.mithril.v1.CardanoDbBeacon",
+  encode(message: CardanoDbBeacon, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.network !== "") {
+      writer.uint32(10).string(message.network);
+    }
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(16).uint64(message.epoch);
+    }
+    if (message.immutable_file_number !== BigInt(0)) {
+      writer.uint32(24).uint64(message.immutable_file_number);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): CardanoDbBeacon {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseCardanoDbBeacon();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.network = reader.string();
+          break;
+        case 2:
+          message.epoch = reader.uint64();
+          break;
+        case 3:
+          message.immutable_file_number = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): CardanoDbBeacon {
+    const obj = createBaseCardanoDbBeacon();
+    if (isSet(object.network)) obj.network = String(object.network);
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (isSet(object.immutable_file_number)) obj.immutable_file_number = BigInt(object.immutable_file_number.toString());
+    return obj;
+  },
+  toJSON(message: CardanoDbBeacon): unknown {
+    const obj: any = {};
+    message.network !== undefined && (obj.network = message.network);
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    message.immutable_file_number !== undefined && (obj.immutable_file_number = (message.immutable_file_number || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<CardanoDbBeacon>, I>>(object: I): CardanoDbBeacon {
+    const message = createBaseCardanoDbBeacon();
+    message.network = object.network ?? "";
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    if (object.immutable_file_number !== undefined && object.immutable_file_number !== null) {
+      message.immutable_file_number = BigInt(object.immutable_file_number.toString());
+    }
+    return message;
+  }
+};
+function createBaseProtocolMultiSignature(): ProtocolMultiSignature {
+  return {
+    signatures: new Uint8Array(),
+    batch_proof: new Uint8Array()
+  };
+}
+export const ProtocolMultiSignature = {
+  typeUrl: "/ibc.clients.mithril.v1.ProtocolMultiSignature",
+  encode(message: ProtocolMultiSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signatures.length !== 0) {
+      writer.uint32(10).bytes(message.signatures);
+    }
+    if (message.batch_proof.length !== 0) {
+      writer.uint32(18).bytes(message.batch_proof);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): ProtocolMultiSignature {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseProtocolMultiSignature();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signatures = reader.bytes();
+          break;
+        case 2:
+          message.batch_proof = reader.bytes();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): ProtocolMultiSignature {
+    const obj = createBaseProtocolMultiSignature();
+    if (isSet(object.signatures)) obj.signatures = bytesFromBase64(object.signatures);
+    if (isSet(object.batch_proof)) obj.batch_proof = bytesFromBase64(object.batch_proof);
+    return obj;
+  },
+  toJSON(message: ProtocolMultiSignature): unknown {
+    const obj: any = {};
+    message.signatures !== undefined && (obj.signatures = base64FromBytes(message.signatures !== undefined ? message.signatures : new Uint8Array()));
+    message.batch_proof !== undefined && (obj.batch_proof = base64FromBytes(message.batch_proof !== undefined ? message.batch_proof : new Uint8Array()));
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<ProtocolMultiSignature>, I>>(object: I): ProtocolMultiSignature {
+    const message = createBaseProtocolMultiSignature();
+    message.signatures = object.signatures ?? new Uint8Array();
+    message.batch_proof = object.batch_proof ?? new Uint8Array();
+    return message;
+  }
+};
+function createBaseFraction(): Fraction {
+  return {
+    numerator: BigInt(0),
+    denominator: BigInt(0)
+  };
+}
+export const Fraction = {
+  typeUrl: "/ibc.clients.mithril.v1.Fraction",
+  encode(message: Fraction, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.numerator !== BigInt(0)) {
+      writer.uint32(8).uint64(message.numerator);
+    }
+    if (message.denominator !== BigInt(0)) {
+      writer.uint32(16).uint64(message.denominator);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): Fraction {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFraction();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.numerator = reader.uint64();
+          break;
+        case 2:
+          message.denominator = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): Fraction {
+    const obj = createBaseFraction();
+    if (isSet(object.numerator)) obj.numerator = BigInt(object.numerator.toString());
+    if (isSet(object.denominator)) obj.denominator = BigInt(object.denominator.toString());
+    return obj;
+  },
+  toJSON(message: Fraction): unknown {
+    const obj: any = {};
+    message.numerator !== undefined && (obj.numerator = (message.numerator || BigInt(0)).toString());
+    message.denominator !== undefined && (obj.denominator = (message.denominator || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<Fraction>, I>>(object: I): Fraction {
+    const message = createBaseFraction();
+    if (object.numerator !== undefined && object.numerator !== null) {
+      message.numerator = BigInt(object.numerator.toString());
+    }
+    if (object.denominator !== undefined && object.denominator !== null) {
+      message.denominator = BigInt(object.denominator.toString());
     }
     return message;
   }

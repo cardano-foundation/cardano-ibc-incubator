@@ -95,6 +95,7 @@ import { validQueryClientStateParam, validQueryConsensusStateParam } from '../he
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { getNanoseconds } from '../../shared/helpers/time';
+import { doubleToFraction } from '../../shared/helpers/number';
 
 @Injectable()
 export class QueryService {
@@ -114,20 +115,20 @@ export class QueryService {
     }
     const currentEpochSettings = await this.mithrilService.getCurrentEpochSettings();
 
-    const certificates = await this.mithrilService.getMostRecentCertificates();
-    const certificate = certificates[0];
+    let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
+    let lastMithrilStakeDistribution = mithrilStakeDistributionsList[0];
+    let lastCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      lastMithrilStakeDistribution.certificate_hash,
+    );
 
-    const mithrilHeight = (
-      certificate.signed_entity_type.CardanoTransactions ?? certificate.signed_entity_type.CardanoImmutableFilesFull
-    ).immutable_file_number;
-
+    const phifFraction = doubleToFraction(currentEpochSettings.protocol.phi_f);
     const clientStateMithril: ClientStateMithril = {
       /** Chain id */
       chain_id: this.configService.get('cardanoChainNetworkMagic').toString(),
       /** Latest height the client was updated to */
       latest_height: {
         /** the immutable file number */
-        mithril_height: BigInt(mithrilHeight),
+        mithril_height: BigInt(lastCertificate.beacon.immutable_file_number),
       },
       /** Block height when the client was frozen due to a misbehaviour */
       frozen_height: {
@@ -145,33 +146,44 @@ export class QueryService {
         /** Security parameter (number of lotteries) */
         m: BigInt(currentEpochSettings.protocol.m),
         /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
-        phi_f: BigInt(currentEpochSettings.protocol.phi_f * 100),
+        phi_f: {
+          numerator: phifFraction.numerator,
+          denominator: phifFraction.denominator,
+        },
       },
       /** Path at which next upgraded client will be committed. */
       upgrade_path: [],
     } as unknown as ClientStateMithril;
 
-    const snapshots = await this.mithrilService.getMostRecentSnapshots();
-    let latestSnapshot = snapshots.find((snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch);
-    if (!latestSnapshot) latestSnapshot = snapshots[0];
+    const listSnapshots = await this.mithrilService.mithrilClient.list_snapshots();
+    const snapshotsOfLatestEpoch = listSnapshots.filter(
+      (snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch,
+    );
 
-    const snapshotsOfLatestEpoch = snapshots.filter((snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch);
-    let firstSnapshotOfLatestEpoch = snapshots[0];
+    let latestSnapshot = listSnapshots.find(
+      (snapshot) => snapshot.certificate_hash === lastCertificate.certificate_hash,
+    );
+    if (!latestSnapshot) latestSnapshot = listSnapshots[0];
+
+    let firstSnapshotOfLatestEpoch = listSnapshots[0];
     if (snapshotsOfLatestEpoch.length)
       firstSnapshotOfLatestEpoch = snapshotsOfLatestEpoch[snapshotsOfLatestEpoch.length - 1];
 
-    const certificateOfLatestEpoch = certificates.filter((e) => e.epoch === certificate.epoch);
-    let firstCertificateOfLatestEpoch = certificates[0];
-    if (certificateOfLatestEpoch.length)
-      firstCertificateOfLatestEpoch = certificateOfLatestEpoch[certificateOfLatestEpoch.length - 1];
+    const listStakeDistributionOfLatestEpoch = mithrilStakeDistributionsList.filter(
+      (e) => e.epoch === currentEpochSettings.epoch,
+    );
+    let fstStakeDistributionOfLatestEpoch = mithrilStakeDistributionsList[0];
+    if (listStakeDistributionOfLatestEpoch.length)
+      fstStakeDistributionOfLatestEpoch =
+        listStakeDistributionOfLatestEpoch[listStakeDistributionOfLatestEpoch.length - 1];
 
-    const timestamp = new Date(certificate.metadata.sealed_at).valueOf();
+    const timestamp = new Date(lastCertificate.metadata.sealed_at).valueOf();
     const consensusStateMithril: ConsensusStateMithril = {
-      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(certificate.metadata.sealed_at)),
+      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(lastCertificate.metadata.sealed_at)),
       /** First certificate hash of latest epoch of mithril stake distribution */
-      fc_hash_latest_epoch_msd: firstCertificateOfLatestEpoch.hash,
+      fc_hash_latest_epoch_msd: fstStakeDistributionOfLatestEpoch.hash,
       /** Latest certificate hash of mithril stake distribution */
-      latest_cert_hash_msd: certificate.hash,
+      latest_cert_hash_msd: lastMithrilStakeDistribution.hash,
       /** First certificate hash of latest epoch of transaction snapshot */
       fc_hash_latest_epoch_ts: firstSnapshotOfLatestEpoch.certificate_hash,
       /** Latest certificate hash of transaction snapshot */
@@ -757,11 +769,21 @@ export class QueryService {
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
+
+    // get create_client events from tx
+    const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(tx.height);
+    let createClientEvent = null;
+    if (authOrClientUTxos.length) {
+      const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
+      createClientEvent = txsAuthOrClientsResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
+    }
+
     const response: QueryTransactionByHashResponse = {
       hash: tx.hash,
       height: tx.height,
       gas_fee: tx.gas_fee,
       tx_size: tx.tx_size,
+      events: createClientEvent ? createClientEvent.events : [],
     } as unknown as QueryTransactionByHashResponse;
     return response;
   }

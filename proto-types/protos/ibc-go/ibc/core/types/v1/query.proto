@@ -60,4 +60,5 @@ message QueryTransactionByHashResponse {
   uint64 height = 2;
   uint64 gas_fee = 3;
   uint64 tx_size = 4;
+  repeated Event events = 5;
 }
