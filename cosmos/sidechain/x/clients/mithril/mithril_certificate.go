@@ -13,6 +13,18 @@ type FeedHasher interface {
 	FeedHash(hasher hash.Hash)
 }
 
+type MithrilCertificateVerifier struct{}
+
+func (v *MithrilCertificateVerifier) VerifyMultiSignature(message []byte, multiSignature *ProtocolMultiSignature, aggregateVerificationKey []byte, protocolParameters *MithrilProtocolParameters) (bool, error) {
+	return multiSignature.Verify(
+		message,
+		aggregateVerificationKey,
+		protocolParameters,
+	)
+}
+
+func (pms *ProtocolMultiSignature) Verify(message []byte, avk []byte, parameters *MithrilProtocolParameters) (bool, error)
+
 func (c *MithrilCertificate) ComputeHash() string {
 	hasher := sha256.New()
 
@@ -91,7 +103,8 @@ func (m *CertificateMetadata) ComputeHash() string {
 
 // PhiFFixed provides a fixed-point representation of PhiF suitable for hashing.
 func (mpp *MithrilProtocolParameters) PhiFFixed() uint64 {
-	return uint64(math.Round(mpp.PhiF * 1e6)) // Adjust the multiplier to match the precision used in Rust.
+	phi_f := (float64)(mpp.PhiF.Numerator) / (float64)(mpp.PhiF.Denominator)
+	return uint64(math.Round(phi_f * 1e6)) // Adjust the multiplier to match the precision used in Rust.
 }
 
 // ComputeHash computes the hash of the MithrilProtocolParameters.
