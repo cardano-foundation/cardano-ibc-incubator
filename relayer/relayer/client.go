@@ -3,7 +3,7 @@ package relayer
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/types/known/durationpb"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"strings"
 	"time"
 
@@ -145,18 +145,12 @@ func CreateClient(
 			return "", err
 		}
 		if customClientTrustingPeriod != 0 {
-			mainClientState.TrustingPeriod = &durationpb.Duration{
-				Seconds: int64(customClientTrustingPeriod.Seconds()),
-				Nanos:   0,
-			}
-			//	side chain take second as input
+			mainClientState.(*mithril.ClientState).TrustingPeriod = customClientTrustingPeriod
 		} else {
-			mainClientState.TrustingPeriod = &durationpb.Duration{
-				Seconds: int64(constant.ClientTrustingPeriod.Seconds()),
-				Nanos:   0,
-			}
+			mainClientState.(*mithril.ClientState).TrustingPeriod = constant.ClientTrustingPeriod
 		}
-		createMsg, err := cosmosChain.ChainProvider.MsgCreateCardanoClient(mainClientState, mainConsensusState)
+
+		createMsg, err := cosmosChain.ChainProvider.MsgCreateClient(mainClientState, mainConsensusState)
 		if err != nil {
 			return "", fmt.Errorf("failed to compose CreateClient msg for chain{%s} tracking the state of chain{%s}: %w",
 				cardanoChain.ChainID(), cosmosChain.ChainID(), err)
@@ -221,7 +215,7 @@ func CreateClient(
 		if err != nil {
 			return "", fmt.Errorf("failed to create new client state for chain{%s}: %w", cosmosChain.ChainID(), err)
 		}
-		createMsg, clientID, err := cardanoChain.ChainProvider.MsgCreateCosmosClient(clientState, dstUpdateHeader.ConsensusState())
+		createMsg, err := cardanoChain.ChainProvider.MsgCreateClient(clientState, dstUpdateHeader.ConsensusState())
 		if err != nil {
 			return "", fmt.Errorf("failed to compose CreateClient msg for chain{%s} tracking the state of chain{%s}: %w",
 				cardanoChain.ChainID(), cosmosChain.ChainID(), err)
@@ -244,9 +238,10 @@ func CreateClient(
 		}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr); err != nil {
 			return "", err
 		}
-
+		if clientID, err = parseClientIDFromEvents(res.Events); err != nil {
+			return "", err
+		}
 		cardanoChain.PathEnd.ClientID = clientID
-
 		return clientID, nil
 	}
 
