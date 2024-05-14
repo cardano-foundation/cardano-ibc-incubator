@@ -1,5 +1,5 @@
 /* eslint-disable */
-import { ResultBlockResults, ResultBlockSearch } from "./block";
+import { ResultBlockResults, ResultBlockSearch, Event } from "./block";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
@@ -37,6 +37,7 @@ export interface QueryTransactionByHashResponse {
   height: bigint;
   gas_fee: bigint;
   tx_size: bigint;
+  events: Event[];
 }
 function createBaseQueryBlockResultsRequest(): QueryBlockResultsRequest {
   return {
@@ -337,7 +338,8 @@ function createBaseQueryTransactionByHashResponse(): QueryTransactionByHashRespo
     hash: "",
     height: BigInt(0),
     gas_fee: BigInt(0),
-    tx_size: BigInt(0)
+    tx_size: BigInt(0),
+    events: []
   };
 }
 export const QueryTransactionByHashResponse = {
@@ -354,6 +356,9 @@ export const QueryTransactionByHashResponse = {
     }
     if (message.tx_size !== BigInt(0)) {
       writer.uint32(32).uint64(message.tx_size);
+    }
+    for (const v of message.events) {
+      Event.encode(v!, writer.uint32(42).fork()).ldelim();
     }
     return writer;
   },
@@ -376,6 +381,9 @@ export const QueryTransactionByHashResponse = {
         case 4:
           message.tx_size = reader.uint64();
           break;
+        case 5:
+          message.events.push(Event.decode(reader, reader.uint32()));
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -389,6 +397,7 @@ export const QueryTransactionByHashResponse = {
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     if (isSet(object.gas_fee)) obj.gas_fee = BigInt(object.gas_fee.toString());
     if (isSet(object.tx_size)) obj.tx_size = BigInt(object.tx_size.toString());
+    if (Array.isArray(object?.events)) obj.events = object.events.map((e: any) => Event.fromJSON(e));
     return obj;
   },
   toJSON(message: QueryTransactionByHashResponse): unknown {
@@ -397,6 +406,11 @@ export const QueryTransactionByHashResponse = {
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.gas_fee !== undefined && (obj.gas_fee = (message.gas_fee || BigInt(0)).toString());
     message.tx_size !== undefined && (obj.tx_size = (message.tx_size || BigInt(0)).toString());
+    if (message.events) {
+      obj.events = message.events.map(e => e ? Event.toJSON(e) : undefined);
+    } else {
+      obj.events = [];
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryTransactionByHashResponse>, I>>(object: I): QueryTransactionByHashResponse {
@@ -411,6 +425,7 @@ export const QueryTransactionByHashResponse = {
     if (object.tx_size !== undefined && object.tx_size !== null) {
       message.tx_size = BigInt(object.tx_size.toString());
     }
+    message.events = object.events?.map(e => Event.fromPartial(e)) || [];
     return message;
   }
 };

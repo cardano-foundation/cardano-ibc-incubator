@@ -16,6 +16,7 @@ export interface IConfig {
   cardanoEpochNonceGenesis: string;
 
   mithrilEndpoint: string;
+  mtithrilGenesisVerificationKey: string;
 }
 
 export default (): Partial<IConfig> => ({
@@ -29,4 +30,5 @@ export default (): Partial<IConfig> => ({
   cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
   cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
   mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
+  mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,
 });
