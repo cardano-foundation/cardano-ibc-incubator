@@ -36,9 +36,9 @@ use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
-  OnAcknowledgementPacket, OnChanOpenAck, OnChanOpenConfirm, OnChanOpenInit,
-  OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator, TransferModuleData,
-  TransferModuleOperator,
+  OnAcknowledgementPacket, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
+  OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator,
+  TransferModuleData, TransferModuleOperator,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
@@ -155,7 +155,7 @@ fn handler_callback(
     }
     OnChanOpenAck { channel_id } -> {
       expect Some((output_channel, counterparty_version)) =
-        validate_channel_open_ack(
+        validate_chan_open_ack(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -177,7 +177,7 @@ fn handler_callback(
     }
     OnChanOpenConfirm { channel_id } -> {
       expect Some(_) =
-        validate_channel_open_confirm(
+        validate_chan_open_confirm(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -192,6 +192,7 @@ fn handler_callback(
 
       True
     }
+    OnChanCloseInit { .. } -> False
     OnRecvPacket { channel_id, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnRecvPacket branch"
 
@@ -579,7 +580,7 @@ fn validate_channel_open_try(
   Some((channel_datum.state.channel, counterparty_version))
 }
 
-fn validate_channel_open_ack(
+fn validate_chan_open_ack(
   inputs: List<Input>,
   redeemers: Dict<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
@@ -626,7 +627,7 @@ fn validate_channel_open_ack(
   Some((channel_datum.state.channel, counterparty_version))
 }
 
-fn validate_channel_open_confirm(
+fn validate_chan_open_confirm(
   inputs: List<Input>,
   redeemers: Dict<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
@@ -2175,4 +2176,56 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     module_redeemer,
     context,
   )
+}
+
+test on_chan_close_init_given_any_input_returns_false() {
+  let fake_data = setup()
+
+  //==========================arrange inputs=========================
+  let inputs =
+    [fake_data.module_input]
+
+  //==========================arrange outputs=========================
+  let module_output = fake_data.module_input.output
+
+  let outputs =
+    [module_output]
+
+  //==========================arrange redeemers=========================
+  let module_redeemer: Redeemer =
+    Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
+
+  let redeemers: Dict<ScriptPurpose, Redeemer> =
+    dict.new()
+      |> dict.insert(
+          Spend(fake_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
+  //==========================arrange context=========================
+  let purpose = Spend(fake_data.module_input.output_reference)
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder(),
+      inputs: inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+    }
+
+  let context = ScriptContext { purpose, transaction }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spend_transfer_module(
+    fake_data.handler_token,
+    fake_data.port_token,
+    fake_data.module_token,
+    fake_data.port_id,
+    fake_data.channel_minting_policy_id,
+    fake_data.voucher_minting_policy_id,
+    Void,
+    module_redeemer,
+    context,
+  ) == False
 }

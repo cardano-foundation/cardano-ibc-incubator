@@ -38,5 +38,6 @@ pub type SpendChannelRedeemer {
     proof_height: Height,
   }
   SendPacket { packet: Packet }
+  ChanCloseInit
   RefreshUtxo
 }
