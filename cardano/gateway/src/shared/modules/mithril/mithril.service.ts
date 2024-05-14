@@ -8,13 +8,21 @@ import { CertificateDTO } from './dtos/get-most-recent-certificates.dto';
 import { RegisterdSignersResponseDTO } from './dtos/get-registerd-signers-for-epoch.dto';
 import { CertificateDetailDTO } from './dtos/get-certificate-by-hash.dto';
 import { SnapshotDTO } from './dtos/get-most-recent-snapshots.dto';
+import { MithrilClient } from '@cuonglv0297/mithril-client-wasm';
 
 @Injectable()
 export class MithrilService {
+  public mithrilClient: MithrilClient;
+
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-  ) {}
+  ) {
+    this.mithrilClient = new MithrilClient(
+      this.configService.get('mithrilEndpoint'),
+      this.configService.get('mtithrilGenesisVerificationKey'),
+    );
+  }
 
   async getCurrentEpochSettings(): Promise<CurrentEpochSettingsResponseDTO> {
     const res = await this._request({
