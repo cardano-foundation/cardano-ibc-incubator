@@ -127,7 +127,7 @@ validator(
       ) == client_status_mod.Active
     trace @"chan_open_confirm: client status is active"
 
-    expect channel_datum_mod.is_channel_open_confirm_valid(datum, updated_datum)
+    expect channel_datum_mod.validate_chan_open_confirm(datum, updated_datum)
     trace @"chan_open_confirm: output datum is updated valid"
 
     expect

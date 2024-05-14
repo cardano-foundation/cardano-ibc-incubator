@@ -55,7 +55,7 @@ fn setup() -> (ChannelDatum, ChannelDatum) {
 
 test succeed() {
   let (input_datum, output_datum) = setup()
-  channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_ack(input_datum, output_datum)
 }
 
 test fail_if_input_channel_state_is_not_init() fail {
@@ -70,7 +70,7 @@ test fail_if_input_channel_state_is_not_init() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_ack(input_datum, output_datum)
 }
 
 test fail_if_output_channel_counterparty_channel_id_is_null() fail {
@@ -91,7 +91,7 @@ test fail_if_output_channel_counterparty_channel_id_is_null() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_ack(input_datum, output_datum)
 }
 
 test fail_if_output_channel_counterparty_channel_id_is_invalid() fail {
@@ -112,7 +112,7 @@ test fail_if_output_channel_counterparty_channel_id_is_invalid() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_ack(input_datum, output_datum)
 }
 
 test fail_if_output_channel_state_is_not_open() fail {
@@ -127,5 +127,5 @@ test fail_if_output_channel_state_is_not_open() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_ack_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_ack(input_datum, output_datum)
 }

@@ -26,7 +26,7 @@ pub type ChannelDatumState {
   packet_acknowledgement: List<(Int, ByteArray)>,
 }
 
-pub fn is_chan_open_init_valid(
+pub fn validate_chan_open_init(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
@@ -69,7 +69,7 @@ pub fn is_chan_open_init_valid(
   True
 }
 
-pub fn is_chan_open_try_valid(
+pub fn validate_chan_open_try(
   datum: ChannelDatum,
   auth_token: AuthToken,
 ) -> Bool {
@@ -112,7 +112,7 @@ pub fn is_chan_open_try_valid(
   True
 }
 
-pub fn is_channel_open_ack_valid(
+pub fn validate_chan_open_ack(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
 ) -> Bool {
@@ -148,7 +148,7 @@ pub fn is_channel_open_ack_valid(
   expected_datum == output_datum
 }
 
-pub fn is_channel_open_confirm_valid(
+pub fn validate_chan_open_confirm(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
 ) -> Bool {
@@ -163,6 +163,25 @@ pub fn is_channel_open_confirm_valid(
         channel: Channel {
           ..input_datum.state.channel,
           state: channel_state.Open,
+        },
+      },
+    }
+
+  expected_datum == output_datum
+}
+
+pub fn validate_chan_close_init(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+) -> Bool {
+  let expected_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel {
+          ..input_datum.state.channel,
+          state: channel_state.Closed,
         },
       },
     }
