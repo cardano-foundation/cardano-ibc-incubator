@@ -93,3 +93,18 @@ func (m *ClientState) VerifyUpgradeAndUpdateState(ctx sdk.Context, cdc codec.Bin
 	//TODO implement me
 	panic("implement me")
 }
+
+func (m *ConsensusState) ClientType() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *ConsensusState) GetTimestamp() uint64 {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *ConsensusState) ValidateBasic() error {
+	//TODO implement me
+	panic("implement me")
+}

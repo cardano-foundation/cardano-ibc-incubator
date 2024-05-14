@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
+	"github.com/cometbft/cometbft/abci/types"
 	"os"
 	"regexp"
 	"strings"
@@ -772,7 +772,7 @@ func (cc *CardanoProvider) waitForTx(
 		Codespace: res.Codespace,
 		Code:      res.Code,
 		Data:      res.Data,
-		// Events: parseEventsFromTxResponse(res),
+		Events:    parseEventsFromTxResponse(res),
 	}
 
 	if res.Code != 0 {
@@ -821,11 +821,27 @@ func (cc *CardanoProvider) waitForBlockInclusion(
 				continue
 			}
 
+			var events []types.Event
+			for _, event := range res.Events {
+				var attributes []types.EventAttribute
+				for _, attribute := range event.EventAttribute {
+					attributes = append(attributes, types.EventAttribute{
+						Key:   attribute.Key,
+						Value: attribute.Value,
+					})
+				}
+				events = append(events, types.Event{
+					Type:       event.Type,
+					Attributes: attributes,
+				})
+			}
+
 			return &sdk.TxResponse{
 				TxHash:  res.Hash,
 				Height:  int64(res.Height),
 				GasUsed: int64(res.GasFee),
 				Info:    fmt.Sprintf("tx_size %v", res.TxSize),
+				Events:  events,
 			}, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -1408,42 +1424,6 @@ func (cc *CardanoProvider) ChannelProof(
 		Version:     channelRes.Channel.Version,
 		Ordering:    channelRes.Channel.Ordering,
 	}, nil
-}
-
-func (cc *CardanoProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, "", err
-	}
-
-	anyClientState, err := PackClientState(clientState)
-	if err != nil {
-		return nil, "", err
-	}
-
-	anyConsensusState, err := PackConsensusState(consensusState)
-	if err != nil {
-		return nil, "", err
-	}
-
-	msg := &clienttypes.MsgCreateClient{
-		ClientState:    anyClientState,
-		ConsensusState: anyConsensusState,
-		Signer:         "",
-	}
-
-	res, err := cc.GateWay.CreateClient(context.Background(), msg.ClientState, msg.ConsensusState, signer)
-	if err != nil {
-		return nil, "", err
-	}
-
-	return NewCardanoMessage(msg, func(signer string) {
-		msg.Signer = signer
-	}), res.ClientId, nil
-}
-
-func (cc *CardanoProvider) MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (provider.RelayerMessage, error) {
-	return nil, nil
 }
 
 func (cc *CardanoProvider) buildMsgViaGW(ctx context.Context, cardanoMsg CardanoMessage, signer string) ([]byte, error) {

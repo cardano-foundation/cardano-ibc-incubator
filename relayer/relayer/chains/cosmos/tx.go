@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"math"
 	"math/big"
 	"math/rand"
@@ -1922,33 +1921,6 @@ func BuildSimTx(info *keyring.Record, txf tx.Factory, msgs ...sdk.Msg) ([]byte, 
 // workaround to get access to the wrapper TxBuilder's method GetProtoTx().
 type protoTxProvider interface {
 	GetProtoTx() *txtypes.Tx
-}
-
-func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *mithrilstruct.ClientState, consensusState *mithrilstruct.ConsensusState) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	anyClientState, err := PackClientState(clientState)
-	if err != nil {
-		return nil, err
-	}
-	anyClientState.TypeUrl = string("/ibc.clients.mithril.v1.ClientState")
-	anyConsensusState, err := PackConsensusState(consensusState)
-	if err != nil {
-		return nil, err
-	}
-	anyConsensusState.TypeUrl = string("/ibc.clients.mithril.v1.ConsensusState")
-
-	msg := &clienttypes.MsgCreateClient{
-		ClientState:    anyClientState,
-		ConsensusState: anyConsensusState,
-		Signer:         signer,
-	}
-
-	return NewCosmosMessage(msg, func(signer string) {
-		msg.Signer = signer
-	}), nil
 }
 
 func (cc *CosmosProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {
