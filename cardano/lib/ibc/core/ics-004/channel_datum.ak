@@ -189,6 +189,25 @@ pub fn validate_chan_close_init(
   expected_datum == output_datum
 }
 
+pub fn validate_chan_close_confirm(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+) -> Bool {
+  let expected_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel {
+          ..input_datum.state.channel,
+          state: channel_state.Closed,
+        },
+      },
+    }
+
+  expected_datum == output_datum
+}
+
 pub fn validate_recv_packet(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,

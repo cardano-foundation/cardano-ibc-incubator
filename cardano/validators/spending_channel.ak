@@ -27,8 +27,9 @@ use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, ChanCloseInit, ChanOpenAck, ChanOpenConfirm, RecvPacket,
-  RefreshUtxo, SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
+  ChanOpenConfirm, RecvPacket, RefreshUtxo, SendPacket, SpendChannelRedeemer,
+  TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -54,6 +55,7 @@ validator(
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
   chan_close_init_policy_id: PolicyId,
+  chan_close_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
@@ -89,6 +91,14 @@ validator(
       ChanCloseInit -> {
         expect Some(redeemer) =
           dict.get(redeemers, Mint(chan_close_init_policy_id))
+
+        expect redeemer: AuthToken = redeemer
+
+        redeemer == datum.token
+      }
+      ChanCloseConfirm { .. } -> {
+        expect Some(redeemer) =
+          dict.get(redeemers, Mint(chan_close_confirm_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
@@ -156,6 +166,7 @@ type MockData {
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
   chan_close_init_policy_id: PolicyId,
+  chan_close_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
@@ -403,6 +414,7 @@ fn setup() -> MockData {
     chan_open_ack_policy_id: "mock chan_open_ack_policy_id",
     chan_open_confirm_policy_id: "mock chan_open_confirm_policy_id",
     chan_close_init_policy_id: "fake chan close init policy id",
+    chan_close_confirm_policy_id: "fake chan close confirm policy id",
     recv_packet_policy_id: "mock recv_packet_policy_id",
     send_packet_policy_id: "mock send_packet_policy_id",
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
@@ -740,6 +752,7 @@ test chan_open_ack_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -960,6 +973,7 @@ test chan_open_confirm_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1213,6 +1227,7 @@ test recv_packet_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1344,6 +1359,7 @@ test send_packet_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1613,6 +1629,7 @@ test timeout_packet_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1867,6 +1884,7 @@ test acknowledge_packet_succeed() {
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1942,6 +1960,87 @@ test chan_close_init_succeed() {
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
+    fake_data.recv_packet_policy_id,
+    fake_data.send_packet_policy_id,
+    fake_data.timeout_packet_policy_id,
+    fake_data.acknowledge_packet_policy_id,
+    input_channel_datum,
+    spend_channel_redeemer,
+    context,
+  )
+}
+
+test chan_close_confirm_succeed() {
+  let fake_data = setup()
+
+  //========================arrange inputs=======================
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-0",
+        channel_id: "channel-0",
+      },
+      connection_hops: [],
+      version: "fake-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: "port-0",
+      token: fake_data.channel_token,
+    }
+
+  let channel_input =
+    build_channel_input(input_channel_datum, fake_data.channel_token)
+
+  let inputs =
+    [channel_input]
+
+  //========================arrange redeemers=======================
+  let chan_close_init_redeemer: Redeemer = fake_data.channel_token
+
+  let redeemers: Dict<ScriptPurpose, Redeemer> =
+    dict.new()
+      |> dict.insert(
+          Mint(fake_data.chan_close_confirm_policy_id),
+          chan_close_init_redeemer,
+          validator_utils.compare_script_purpose,
+        )
+
+  //==========================arrange context=========================
+  let context =
+    ScriptContext {
+      purpose: Spend(channel_input.output_reference),
+      transaction: Transaction {
+        ..transaction.placeholder(),
+        inputs: inputs,
+        redeemers: redeemers,
+      },
+    }
+
+  let proof_init = MerkleProof { proofs: [] }
+
+  let proof_height = Height { revision_number: 1, revision_height: 13 }
+
+  let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+
+  spend_channel(
+    fake_data.chan_open_ack_policy_id,
+    fake_data.chan_open_confirm_policy_id,
+    fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
     fake_data.recv_packet_policy_id,
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
