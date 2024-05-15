@@ -36,7 +36,7 @@ use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
-  OnAcknowledgementPacket, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
+  OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
   OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator,
   TransferModuleData, TransferModuleOperator,
 }
@@ -193,6 +193,7 @@ fn handler_callback(
       True
     }
     OnChanCloseInit { .. } -> False
+    OnChanCloseConfirm { .. } -> False
     OnRecvPacket { channel_id, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnRecvPacket branch"
 
@@ -2194,6 +2195,58 @@ test on_chan_close_init_given_any_input_returns_false() {
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
     Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
+
+  let redeemers: Dict<ScriptPurpose, Redeemer> =
+    dict.new()
+      |> dict.insert(
+          Spend(fake_data.module_input.output_reference),
+          module_redeemer,
+          validator_utils.compare_purpose,
+        )
+  //==========================arrange context=========================
+  let purpose = Spend(fake_data.module_input.output_reference)
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder(),
+      inputs: inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+    }
+
+  let context = ScriptContext { purpose, transaction }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spend_transfer_module(
+    fake_data.handler_token,
+    fake_data.port_token,
+    fake_data.module_token,
+    fake_data.port_id,
+    fake_data.channel_minting_policy_id,
+    fake_data.voucher_minting_policy_id,
+    Void,
+    module_redeemer,
+    context,
+  ) == False
+}
+
+test on_chan_close_confirm_given_any_input_returns_false() {
+  let fake_data = setup()
+
+  //==========================arrange inputs=========================
+  let inputs =
+    [fake_data.module_input]
+
+  //==========================arrange outputs=========================
+  let module_output = fake_data.module_input.output
+
+  let outputs =
+    [module_output]
+
+  //==========================arrange redeemers=========================
+  let module_redeemer: Redeemer =
+    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
 
   let redeemers: Dict<ScriptPurpose, Redeemer> =
     dict.new()

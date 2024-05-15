@@ -13,6 +13,7 @@ pub type IBCModuleCallback {
   OnChanOpenAck { channel_id: ByteArray }
   OnChanOpenConfirm { channel_id: ByteArray }
   OnChanCloseInit { channel_id: ByteArray }
+  OnChanCloseConfirm { channel_id: ByteArray }
   OnRecvPacket {
     channel_id: ByteArray,
     acknowledgement: Acknowledgement,
