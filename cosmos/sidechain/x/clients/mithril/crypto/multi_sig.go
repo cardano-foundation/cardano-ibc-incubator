@@ -8,6 +8,8 @@ import (
 	blst "github.com/supranational/blst/bindings/go"
 )
 
+var POP = []byte("PoP")
+
 type BlstVk = blst.P1Affine
 
 type BlstSig = blst.P2Affine
@@ -200,7 +202,7 @@ func (vk *VerificationKey) AggregateVerificationKeys(keys []*VerificationKey) (*
 // two final exponentiations (for verifying k1 and k2) into a single one.
 func (vkp *VerificationKeyPoP) Check() error {
 	result := verifyPairing(vkp.VK, vkp.POP)
-	if !vkp.POP.K1.Verify(false, vkp.VK.BlstVk, false, []byte{}, []byte{}) || !result {
+	if !vkp.POP.K1.Verify(false, vkp.VK.BlstVk, false, POP, nil) || !result {
 		fmt.Errorf("multisignature error: invalid key")
 	}
 	return nil
@@ -237,12 +239,12 @@ func (vkp *VerificationKeyPoP) FromBytes(bytes []byte) (*VerificationKeyPoP, err
 }
 
 func (vkp *VerificationKeyPoP) FromSigningKey(sk *SigningKey) (*VerificationKeyPoP, error) {
-	mvp, err := new(VerificationKey).FromSigningKey(sk)
+	mvk, err := new(VerificationKey).FromSigningKey(sk)
 	if err != nil {
 		return nil, err
 	}
 
-	pop, err :+ new(ProofOfPossession).FromSigningKey(sk)
+	pop, err := new(ProofOfPossession).FromSigningKey(sk)
 	if err != nil {
 		return nil, err
 	}
@@ -252,4 +254,44 @@ func (vkp *VerificationKeyPoP) FromSigningKey(sk *SigningKey) (*VerificationKeyP
 	return vkp, nil
 }
 
+// ====================== ProofOfPossession implementation ======================
+// / Convert to a 96 byte string.
+// /
+// / # Layout
+// / The layout of a `MspPoP` encoding is
+// / * K1 (G1 point)
+// / * K2 (G1 point)
+func (pop *ProofOfPossession) ToBytes() []byte {
+	var popBytes [96]byte
+	k1Bytes := pop.K1.Serialize() // Assumes ToBytes returns [48]byte or similar
+	copy(popBytes[:48], k1Bytes)
 
+	k2Bytes := compressP1(pop.K2) // Assumes compressP1 returns [48]byte or similar and can error
+	copy(popBytes[48:], k2Bytes)
+
+	return popBytes[:]
+}
+
+// / Deserialize a byte string to a `PublicKeyPoP`.
+func (pop *ProofOfPossession) FromBytes(bytes []byte) (*ProofOfPossession, error) {
+	k1 := new(BlstSig).Deserialize(bytes[:48])
+	k2, err := uncompressP1(bytes[48:96])
+	if err != nil {
+		return nil, err
+	}
+
+	pop.K1 = k1
+	pop.K2 = k2
+	return pop, nil
+}
+
+// / Convert a secret key into an `MspPoP`. This is performed by computing
+// / `k1 =  H_G1(b"PoP" || mvk)` and `k2 = g1 * sk` where `H_G1` hashes into
+// / `G1` and `g1` is the generator in `G1`.
+func (pop *ProofOfPossession) FromSigningKey(sk *SigningKey) (*ProofOfPossession, error) {
+	k1 := new(BlstSig).Sign(sk.BlstSk, POP, nil)
+	k2 := scalarToPkInG1(sk)
+	pop.K1 = k1
+	pop.K2 = k2
+	return pop, nil
+}
