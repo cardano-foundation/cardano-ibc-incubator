@@ -234,7 +234,7 @@ message CardanoDbBeacon {
 
 // ProtocolMultiSignature wraps a multi-signature.
 message ProtocolMultiSignature {
-  bytes signatures = 1;
+  repeated bytes signatures = 1;
   bytes batch_proof = 2; // Assuming serialization of BatchPath is handled elsewhere.
 }
 
