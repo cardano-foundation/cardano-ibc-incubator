@@ -12903,6 +12903,52 @@ func (x *fastReflection_CardanoDbBeacon) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var _ protoreflect.List = (*_ProtocolMultiSignature_1_list)(nil)
+
+type _ProtocolMultiSignature_1_list struct {
+	list *[][]byte
+}
+
+func (x *_ProtocolMultiSignature_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_ProtocolMultiSignature_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfBytes((*x.list)[i])
+}
+
+func (x *_ProtocolMultiSignature_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Bytes()
+	concreteValue := valueUnwrapped
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_ProtocolMultiSignature_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Bytes()
+	concreteValue := valueUnwrapped
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_ProtocolMultiSignature_1_list) AppendMutable() protoreflect.Value {
+	panic(fmt.Errorf("AppendMutable can not be called on message ProtocolMultiSignature at list field Signatures as it is not of Message kind"))
+}
+
+func (x *_ProtocolMultiSignature_1_list) Truncate(n int) {
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_ProtocolMultiSignature_1_list) NewElement() protoreflect.Value {
+	var v []byte
+	return protoreflect.ValueOfBytes(v)
+}
+
+func (x *_ProtocolMultiSignature_1_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
 	md_ProtocolMultiSignature             protoreflect.MessageDescriptor
 	fd_ProtocolMultiSignature_signatures  protoreflect.FieldDescriptor
@@ -12982,7 +13028,7 @@ func (x *fastReflection_ProtocolMultiSignature) Interface() protoreflect.ProtoMe
 // on the current field descriptor.
 func (x *fastReflection_ProtocolMultiSignature) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
 	if len(x.Signatures) != 0 {
-		value := protoreflect.ValueOfBytes(x.Signatures)
+		value := protoreflect.ValueOfList(&_ProtocolMultiSignature_1_list{list: &x.Signatures})
 		if !f(fd_ProtocolMultiSignature_signatures, value) {
 			return
 		}
@@ -13049,8 +13095,11 @@ func (x *fastReflection_ProtocolMultiSignature) Clear(fd protoreflect.FieldDescr
 func (x *fastReflection_ProtocolMultiSignature) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.signatures":
-		value := x.Signatures
-		return protoreflect.ValueOfBytes(value)
+		if len(x.Signatures) == 0 {
+			return protoreflect.ValueOfList(&_ProtocolMultiSignature_1_list{})
+		}
+		listValue := &_ProtocolMultiSignature_1_list{list: &x.Signatures}
+		return protoreflect.ValueOfList(listValue)
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.batch_proof":
 		value := x.BatchProof
 		return protoreflect.ValueOfBytes(value)
@@ -13075,7 +13124,9 @@ func (x *fastReflection_ProtocolMultiSignature) Get(descriptor protoreflect.Fiel
 func (x *fastReflection_ProtocolMultiSignature) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.signatures":
-		x.Signatures = value.Bytes()
+		lv := value.List()
+		clv := lv.(*_ProtocolMultiSignature_1_list)
+		x.Signatures = *clv.list
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.batch_proof":
 		x.BatchProof = value.Bytes()
 	default:
@@ -13099,7 +13150,11 @@ func (x *fastReflection_ProtocolMultiSignature) Set(fd protoreflect.FieldDescrip
 func (x *fastReflection_ProtocolMultiSignature) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.signatures":
-		panic(fmt.Errorf("field signatures of message ibc.clients.mithril.v1.ProtocolMultiSignature is not mutable"))
+		if x.Signatures == nil {
+			x.Signatures = [][]byte{}
+		}
+		value := &_ProtocolMultiSignature_1_list{list: &x.Signatures}
+		return protoreflect.ValueOfList(value)
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.batch_proof":
 		panic(fmt.Errorf("field batch_proof of message ibc.clients.mithril.v1.ProtocolMultiSignature is not mutable"))
 	default:
@@ -13116,7 +13171,8 @@ func (x *fastReflection_ProtocolMultiSignature) Mutable(fd protoreflect.FieldDes
 func (x *fastReflection_ProtocolMultiSignature) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.signatures":
-		return protoreflect.ValueOfBytes(nil)
+		list := [][]byte{}
+		return protoreflect.ValueOfList(&_ProtocolMultiSignature_1_list{list: &list})
 	case "ibc.clients.mithril.v1.ProtocolMultiSignature.batch_proof":
 		return protoreflect.ValueOfBytes(nil)
 	default:
@@ -13188,9 +13244,11 @@ func (x *fastReflection_ProtocolMultiSignature) ProtoMethods() *protoiface.Metho
 		var n int
 		var l int
 		_ = l
-		l = len(x.Signatures)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
+		if len(x.Signatures) > 0 {
+			for _, b := range x.Signatures {
+				l = len(b)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
 		}
 		l = len(x.BatchProof)
 		if l > 0 {
@@ -13233,11 +13291,13 @@ func (x *fastReflection_ProtocolMultiSignature) ProtoMethods() *protoiface.Metho
 			dAtA[i] = 0x12
 		}
 		if len(x.Signatures) > 0 {
-			i -= len(x.Signatures)
-			copy(dAtA[i:], x.Signatures)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signatures)))
-			i--
-			dAtA[i] = 0xa
+			for iNdEx := len(x.Signatures) - 1; iNdEx >= 0; iNdEx-- {
+				i -= len(x.Signatures[iNdEx])
+				copy(dAtA[i:], x.Signatures[iNdEx])
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signatures[iNdEx])))
+				i--
+				dAtA[i] = 0xa
+			}
 		}
 		if input.Buf != nil {
 			input.Buf = append(input.Buf, dAtA...)
@@ -13317,10 +13377,8 @@ func (x *fastReflection_ProtocolMultiSignature) ProtoMethods() *protoiface.Metho
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.Signatures = append(x.Signatures[:0], dAtA[iNdEx:postIndex]...)
-				if x.Signatures == nil {
-					x.Signatures = []byte{}
-				}
+				x.Signatures = append(x.Signatures, make([]byte, postIndex-iNdEx))
+				copy(x.Signatures[len(x.Signatures)-1], dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 2:
 				if wireType != 2 {
@@ -15144,8 +15202,8 @@ type ProtocolMultiSignature struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Signatures []byte `protobuf:"bytes,1,opt,name=signatures,proto3" json:"signatures,omitempty"`
-	BatchProof []byte `protobuf:"bytes,2,opt,name=batch_proof,json=batchProof,proto3" json:"batch_proof,omitempty"` // Assuming serialization of BatchPath is handled elsewhere.
+	Signatures [][]byte `protobuf:"bytes,1,rep,name=signatures,proto3" json:"signatures,omitempty"`
+	BatchProof []byte   `protobuf:"bytes,2,opt,name=batch_proof,json=batchProof,proto3" json:"batch_proof,omitempty"` // Assuming serialization of BatchPath is handled elsewhere.
 }
 
 func (x *ProtocolMultiSignature) Reset() {
@@ -15168,7 +15226,7 @@ func (*ProtocolMultiSignature) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *ProtocolMultiSignature) GetSignatures() []byte {
+func (x *ProtocolMultiSignature) GetSignatures() [][]byte {
 	if x != nil {
 		return x.Signatures
 	}
@@ -15538,7 +15596,7 @@ var file_ibc_clients_mithril_v1_mithril_proto_rawDesc = []byte{
 	0x13, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x4e, 0x75,
 	0x6d, 0x62, 0x65, 0x72, 0x22, 0x59, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c,
 	0x4d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x12, 0x1e,
-	0x0a, 0x0a, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73, 0x18, 0x01, 0x20, 0x01,
+	0x0a, 0x0a, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73, 0x18, 0x01, 0x20, 0x03,
 	0x28, 0x0c, 0x52, 0x0a, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x73, 0x12, 0x1f,
 	0x0a, 0x0b, 0x62, 0x61, 0x74, 0x63, 0x68, 0x5f, 0x70, 0x72, 0x6f, 0x6f, 0x66, 0x18, 0x02, 0x20,
 	0x01, 0x28, 0x0c, 0x52, 0x0a, 0x62, 0x61, 0x74, 0x63, 0x68, 0x50, 0x72, 0x6f, 0x6f, 0x66, 0x22,
