@@ -39,11 +39,11 @@ func uncompressP1(bytes []byte) (*blst.P1, error) {
 	return out, nil
 }
 
-func scalarToPkInG1(sk *SigningKey) blst.P1 {
+func scalarToPkInG1(sk *SigningKey) *blst.P1 {
 	out := blst.P1{}
 	defaultBlstP1Affine := blst.P1Affine{}
 	out.FromAffine(defaultBlstP1Affine.From(sk.BlstSk))
-	return out
+	return &out
 }
 
 func vkFromP2Affine(vk *VerificationKey) *blst.P2 {
@@ -52,21 +52,21 @@ func vkFromP2Affine(vk *VerificationKey) *blst.P2 {
 	return projectiveP2
 }
 
-func sigToP1(sig *BlstSig) blst.P1 {
+func sigToP1(sig *BlstSig) *blst.P1 {
 	projectiveP1 := blst.P1{}
 	p1AffineFromBlstSig := new(blst.P1Affine).Uncompress(sig.Compress())
 	projectiveP1.FromAffine(p1AffineFromBlstSig)
-	return projectiveP1
+	return &projectiveP1
 }
 
-func p2AffineToVk(groupedVks *blst.P2) BlstVk {
+func p2AffineToVk(groupedVks *blst.P2) *BlstVk {
 	affineP2 := groupedVks.ToAffine()
 	blstVk := new(blst.P1Affine).Uncompress(affineP2.Compress())
-	return *blstVk
+	return blstVk
 }
 
-func p1AffineToSig(groupedSigs *blst.P1) BlstSig {
+func p1AffineToSig(groupedSigs *blst.P1) *BlstSig {
 	affineP1 := groupedSigs.ToAffine()
 	blstSig := new(blst.P2Affine).Uncompress(affineP1.Compress())
-	return *blstSig
+	return blstSig
 }
