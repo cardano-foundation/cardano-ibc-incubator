@@ -416,9 +416,7 @@ type ChainProvider interface {
 	// [Begin] Client IBC message assembly functions
 	NewClientState(dstChainID string, dstIBCHeader IBCHeader, dstTrustingPeriod, dstUbdPeriod time.Duration, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour bool) (ibcexported.ClientState, error)
 
-	MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (RelayerMessage, string, error)
-
-	MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (RelayerMessage, error)
+	MsgCreateClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (RelayerMessage, error)
 
 	MsgUpgradeClient(srcClientId string, consRes *clienttypes.QueryConsensusStateResponse, clientRes *clienttypes.QueryClientStateResponse) (RelayerMessage, error)
 
@@ -624,7 +622,7 @@ type QueryProvider interface {
 	QueryUnbondingPeriod(context.Context) (time.Duration, error)
 
 	// ics 02 - client
-	QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error)
+	QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error)
 	QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error)
 	QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error)
 	QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error)

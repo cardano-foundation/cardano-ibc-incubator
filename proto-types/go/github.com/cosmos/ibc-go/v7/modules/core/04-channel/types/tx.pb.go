@@ -7,8 +7,8 @@
 package types
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-_ "github.com/cosmos/gogoproto/gogoproto"
+  sdk "github.com/cosmos/cosmos-sdk/types"
+	_ "github.com/cosmos/gogoproto/gogoproto"
 	types "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
@@ -1588,16 +1588,6 @@ type MsgTimeoutRefresh struct {
 	Signer    string `protobuf:"bytes,2,opt,name=signer,proto3" json:"signer,omitempty"`
 }
 
-func (x *MsgTimeoutRefresh) ValidateBasic() error {
-  //TODO implement me
-  panic("implement me")
-}
-
-func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
-  //TODO implement me
-  panic("implement me")
-}
-
 func (x *MsgTimeoutRefresh) Reset() {
 	*x = MsgTimeoutRefresh{}
 	if protoimpl.UnsafeEnabled {
@@ -1606,7 +1596,15 @@ func (x *MsgTimeoutRefresh) Reset() {
 		ms.StoreMessageInfo(mi)
 	}
 }
+func (x *MsgTimeoutRefresh) ValidateBasic() error {
+	//TODO implement me
+	panic("implement me")
+}
 
+func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
+	//TODO implement me
+	panic("implement me")
+}
 func (x *MsgTimeoutRefresh) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }

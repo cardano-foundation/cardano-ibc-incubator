@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
+	mithril_exported "github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"strconv"
 	"strings"
 	"sync"
@@ -817,13 +819,13 @@ func (cc *CardanoProvider) QueryCardanoLatestHeight(ctx context.Context) (int64,
 	return int64(res), nil
 }
 
-func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
+func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
 	res, err := cc.GateWay.QueryCardanoState(uint64(height))
 	if err != nil {
 		return nil, nil, err
 	}
-	var clientState = pbclientstruct.ClientState{}
-	var consensusState = pbclientstruct.ConsensusState{}
+	var clientState = mithrilstruct.ClientState{}
+	var consensusState = mithrilstruct.ConsensusState{}
 	err = res.GetClientState().UnmarshalTo(&clientState)
 	if err != nil {
 		return nil, nil, err
@@ -832,7 +834,31 @@ func (cc *CardanoProvider) QueryCardanoState(ctx context.Context, height int64) 
 	if err != nil {
 		return nil, nil, err
 	}
-	return &clientState, &consensusState, nil
+	exportedClientState := mithril_exported.ClientState{
+		ChainId:        clientState.ChainId,
+		LatestHeight:   &mithril_exported.Height{MithrilHeight: clientState.LatestHeight.MithrilHeight},
+		FrozenHeight:   &mithril_exported.Height{MithrilHeight: clientState.FrozenHeight.MithrilHeight},
+		CurrentEpoch:   clientState.CurrentEpoch,
+		TrustingPeriod: time.Duration(clientState.TrustingPeriod.Seconds),
+		ProtocolParameters: &mithril_exported.MithrilProtocolParameters{
+			K: clientState.ProtocolParameters.K,
+			M: clientState.ProtocolParameters.M,
+			PhiF: mithril_exported.Fraction{
+				Numerator:   clientState.ProtocolParameters.PhiF.Numerator,
+				Denominator: clientState.ProtocolParameters.PhiF.Denominator,
+			},
+		},
+		UpgradePath: clientState.UpgradePath,
+	}
+	exportedConsensusState := mithril_exported.ConsensusState{
+		Timestamp:            consensusState.Timestamp,
+		FcHashLatestEpochMsd: consensusState.FcHashLatestEpochMsd,
+		LatestCertHashMsd:    consensusState.LatestCertHashTs,
+		FcHashLatestEpochTs:  consensusState.FcHashLatestEpochTs,
+		LatestCertHashTs:     consensusState.LatestCertHashTs,
+	}
+
+	return &exportedClientState, &exportedConsensusState, nil
 }
 
 func (cc *CardanoProvider) QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error) {

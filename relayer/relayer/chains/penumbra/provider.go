@@ -167,17 +167,7 @@ func (cc *PenumbraProvider) QueryCardanoLatestHeight(ctx context.Context) (int64
 	panic("implement me")
 }
 
-func (cc *PenumbraProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (cc *PenumbraProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (cc *PenumbraProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
+func (cc *PenumbraProvider) QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
 	//TODO implement me
 	panic("implement me")
 }
