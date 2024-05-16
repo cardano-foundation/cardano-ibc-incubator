@@ -24,7 +24,7 @@ import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { Packet } from 'src/shared/types/channel/packet';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
-import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, PORT_ID_PREFIX, TRANSFER_MODULE_PORT } from 'src/constant';
+import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, PORT_ID_PREFIX, TRANSFER_MODULE_PORT, ORDER_MAPPING_CHANNEL } from 'src/constant';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import {
   deleteKeySortMap,
@@ -69,6 +69,7 @@ import {
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
+import { State as ChannelState, Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 
 @Injectable()
 export class PacketService {
@@ -89,6 +90,8 @@ export class PacketService {
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
       this.logger.log('RecvPacket is processing');
+      // console.log('RecvPacket data ', data);
+      // this.logger.log('RecvPacket data ', data);
 
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
 
@@ -304,8 +307,18 @@ export class PacketService {
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const channelEnd = channelDatum.state.channel;
+
+    console.log("channelDatum",channelDatum)
+    console.log("channelEnd")
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
+    }
+
+    // Check Next Sequence 
+    if (ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering] === ChannelOrder.ORDER_ORDERED) {
+      if (recvPacketOperator.packetSequence !== channelDatum.state.next_sequence_recv) {
+        throw new Error('Invalid recv packet sequence');
+      }
     }
 
     const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(
@@ -329,6 +342,8 @@ export class PacketService {
       connectionUtxo.datum!,
       'connection',
     );
+
+    console.log("connectionDatum", connectionDatum);
     // Get the token unit associated with the client by connection datum
     const clientTokenUnit = this.lucidService.getClientTokenUnit(
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
@@ -1009,6 +1024,13 @@ export class PacketService {
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
+    }
+
+    // Check Next Sequence 
+    if (ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering] === ChannelOrder.ORDER_ORDERED) {
+      if (ackPacketOperator.packetSequence !== channelDatum.state.next_sequence_ack) {
+        throw new Error('Invalid ack packet sequence');
+      }
     }
 
     const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(

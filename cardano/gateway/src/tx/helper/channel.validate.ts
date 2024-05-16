@@ -14,6 +14,7 @@ import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ChannelOpenAckOperator } from '../dto/channel/channel-open-ack-operator.dto';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { ChannelOpenConfirmOperator } from '../dto/channel/channel-open-confirm-operator.dto';
+import { State as ChannelState, Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit): {
   constructedAddress: string;
   channelOpenInitOperator: ChannelOpenInitOperator;
@@ -30,11 +31,24 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
   // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
 
   // Prepare the Channel open init operator object
+  let orderingChannel : Order;
+  switch (data.channel.ordering) {
+    case ChannelOrder.ORDER_NONE_UNSPECIFIED:
+      orderingChannel = Order.None;
+      break;
+    case ChannelOrder.ORDER_UNORDERED:
+      orderingChannel = Order.Unordered;
+      break;
+    case ChannelOrder.ORDER_ORDERED:
+      orderingChannel = Order.Ordered;
+      break;
+  }
+
   const channelOpenInitOperator: ChannelOpenInitOperator = {
     //TODO: check in channel.connection_hops
     connectionId: data.channel.connection_hops[0],
     counterpartyPortId: data.channel.counterparty.port_id,
-    ordering: Order.Unordered,
+    ordering: orderingChannel,
     version: data.channel.version,
     port_id: data.port_id,
   };

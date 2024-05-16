@@ -1,6 +1,6 @@
 import { UTxO } from '@dinhbx/lucid-custom';
 
-export type UnsignedChannelOpenInitDto = {
+export type UnsignedUnorderedChannelOpenInitDto = {
   handlerUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
@@ -15,5 +15,23 @@ export type UnsignedChannelOpenInitDto = {
   encodedUpdatedHandlerDatum: string;
   encodedChannelDatum: string;
   encodedNewTransferModuleDatum?: string;
+  constructedAddress: string;
+};
+
+export type UnsignedOrderedChannelOpenInitDto = {
+  handlerUtxo: UTxO;
+  connectionUtxo: UTxO;
+  clientUtxo: UTxO;
+  spendHandlerRefUtxo: UTxO;
+  mintChannelRefUtxo: UTxO;
+  spendMockModuleRefUtxo: UTxO;
+  mockModuleUtxo: UTxO;
+  encodedSpendMockModuleRedeemer: string;
+  encodedSpendHandlerRedeemer: string;
+  encodedMintChannelRedeemer: string;
+  channelTokenUnit: string;
+  encodedUpdatedHandlerDatum: string;
+  encodedChannelDatum: string;
+  encodedNewMockModuleDatum?: string;
   constructedAddress: string;
 };

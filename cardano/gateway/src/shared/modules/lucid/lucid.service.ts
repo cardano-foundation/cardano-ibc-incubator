@@ -33,8 +33,8 @@ import {
   encodeMockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
 import { UnsignedSendPacketEscrowDto } from './dtos/packet/send-packet-escrow.dto';
-import { UnsignedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
-import { UnsignedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
+import { UnsignedUnorderedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
+import { UnsignedUnorderedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
 import { calculateTransferToken } from './helpers/send-packet.helper';
 import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
 import { UnsignedRecvPacketMintDto } from './dtos/packet/recv-packet-mint.dto';
@@ -402,7 +402,7 @@ export class LucidService {
       );
     return tx;
   }
-  public createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): Tx {
+  public createUnsignedUnorderedChannelOpenInitTransaction(dto: UnsignedUnorderedChannelOpenInitDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
@@ -435,6 +435,38 @@ export class LucidService {
 
     return tx;
   }
+  public createUnsignedOrderedChannelOpenInitTransaction(dto: UnsignedOrderedChannelOpenInitDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([dto.spendHandlerRefUtxo, dto.mintChannelRefUtxo, dto.spendMockModuleRefUtxo])
+      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .mintAssets(
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+        dto.encodedMintChannelRedeemer,
+      )
+      .readFrom([dto.connectionUtxo, dto.clientUtxo]);
+
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendChannel.address, dto.encodedChannelDatum, {
+      [dto.channelTokenUnit]: 1n,
+    });
+    addPayToContract(
+      deploymentConfig.modules.mock.address,
+      dto.encodedNewMockModuleDatum,
+      dto.mockModuleUtxo.assets,
+    );
+
+    return tx;
+  }
+
   public createUnsignedChannelOpenTryTransaction(
     handlerUtxo: UTxO,
     connectionUtxo: UTxO,
@@ -478,7 +510,52 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedChannelOpenAckTransaction(dto: UnsignedChannelOpenAckDto): Tx {
+  public createUnsignedOrderedChannelOpenAckTransaction(dto: UnsignedOrderedChannelOpenAckDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendMockModuleRefUtxo,
+      dto.chanOpenAckRefUtxo,
+      dto.verifyProofRefUTxO,
+    ])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: this.LucidImporter.Data.void(),
+        },
+        dto.mockModuleUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.chanOpenAckPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+
+  public createUnsignedUnorderedChannelOpenAckTransaction(dto: UnsignedUnorderedChannelOpenAckDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 

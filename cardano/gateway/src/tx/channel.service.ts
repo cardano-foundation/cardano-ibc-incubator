@@ -33,8 +33,11 @@ import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
-import { UnsignedChannelOpenInitDto } from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
-import { UnsignedChannelOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
+import { 
+  UnsignedUnorderedChannelOpenInitDto, 
+  UnsignedOrderedChannelOpenInitDto 
+} from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
+import { UnsignedUnorderedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -51,6 +54,7 @@ import {
   orderFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
+import { Order } from '~@/shared/types/channel/order';
 
 @Injectable()
 export class ChannelService {
@@ -61,6 +65,11 @@ export class ChannelService {
   ) {}
 
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
+    console.log("dataMsgChannelOpenInit");
+    console.dir({
+      ...data
+    }, {depth: 10});
+    
     try {
       this.logger.log('Channel Open Init is processing');
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
@@ -95,6 +104,10 @@ export class ChannelService {
   }
   /* istanbul ignore next */
   async channelOpenTry(data: MsgChannelOpenTry): Promise<MsgChannelOpenTryResponse> {
+    console.log("dataMsgChannelOpenTry");
+    console.dir({
+      ...data
+    }, {depth: 10});
     try {
       this.logger.log('Channel Open Try is processing');
       const { constructedAddress, channelOpenTryOperator } = validateAndFormatChannelOpenTryParams(data);
@@ -126,6 +139,10 @@ export class ChannelService {
     }
   }
   async channelOpenAck(data: MsgChannelOpenAck): Promise<MsgChannelOpenAckResponse> {
+    console.log("dataMsgChannelOpenAck");
+    console.dir({
+      ...data
+    }, {depth: 10});
     try {
       this.logger.log('Channel Open Ack is processing');
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
@@ -157,6 +174,10 @@ export class ChannelService {
   }
   /* istanbul ignore next */
   async channelOpenConfirm(data: MsgChannelOpenConfirm): Promise<MsgChannelOpenConfirmResponse> {
+    console.log("dataMsgChannelOpenConfirm");
+    console.dir({
+      ...data
+    }, {depth: 10});
     try {
       this.logger.log('Channel Open Confirm is processing');
       const { constructedAddress, channelOpenConfirmOperator } = validateAndFormatChannelOpenConfirmParams(data);
@@ -268,53 +289,108 @@ export class ChannelService {
     const mintChannelRefUtxo = this.configService.get('deployment').validators.mintChannel.refUtxo;
     const spendTransferModuleRefUtxo = this.configService.get('deployment').validators.spendTransferModule.refUtxo;
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
-    // Get mock module utxo
-    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    const spendTransferModuleRedeemer: IBCModuleRedeemer = {
-      Callback: [
-        {
-          OnChanOpenInit: {
-            channel_id: channelId,
-          },
-        },
-      ],
-    };
-    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      spendTransferModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
-    // const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
-    //   mockModuleUtxo.datum!,
-    //   'mockModule',
-    // );
+    const spendMockModuleRefUtxo = this.configService.get('deployment').validators.spendMockModule.refUtxo;
+    const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier
 
-    // const newMockModuleDatum: MockModuleDatum = {
-    //   ...currentMockModuleDatum,
-    //   opened_channels: insertSortMap(currentMockModuleDatum.opened_channels, channelId, true),
-    // };
-    // const encodedNewMockModuleDatum: string = await this.lucidService.encode<MockModuleDatum>(
-    //   newMockModuleDatum,
-    //   'mockModule',
-    // );
-    // Call createUnsignedChannelOpenInitTransaction method with defined parameters
-    const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
-      handlerUtxo,
-      connectionUtxo,
-      clientUtxo,
-      spendHandlerRefUtxo,
-      mintChannelRefUtxo,
-      spendTransferModuleRefUtxo,
-      transferModuleUtxo,
-      encodedSpendTransferModuleRedeemer,
-      encodedSpendHandlerRedeemer,
-      encodedMintChannelRedeemer,
-      channelTokenUnit,
-      encodedUpdatedHandlerDatum,
-      encodedChannelDatum,
-      constructedAddress,
-    };
-    const unsignedTx = this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
-    return { unsignedTx: unsignedTx, channelId: channelId.toString() };
+    switch (channelOpenInitOperator.ordering) {
+      case Order.Unordered:
+        console.log("case Unorderd")
+
+        const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
+        const spendTransferModuleRedeemer: IBCModuleRedeemer = {
+          Callback: [
+            {
+              OnChanOpenInit: {
+                channel_id: channelId,
+              },
+            },
+          ],
+        };
+        const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+          spendTransferModuleRedeemer,
+          'iBCModuleRedeemer',
+        );
+
+        const unsignedUnorderedChannelOpenInitParams: UnsignedUnorderedChannelOpenInitDto = {
+          handlerUtxo,
+          connectionUtxo,
+          clientUtxo,
+          spendHandlerRefUtxo,
+          mintChannelRefUtxo,
+          spendTransferModuleRefUtxo,
+          transferModuleUtxo,
+          encodedSpendTransferModuleRedeemer,
+          encodedSpendHandlerRedeemer,
+          encodedMintChannelRedeemer,
+          channelTokenUnit,
+          encodedUpdatedHandlerDatum,
+          encodedChannelDatum,
+          constructedAddress,
+        };
+        const unsignedUnorderedChannelTx = this.lucidService.createUnsignedUnorderedChannelOpenInitTransaction(unsignedUnorderedChannelOpenInitParams);
+        
+        return { unsignedTx: unsignedUnorderedChannelTx, channelId: channelId.toString() };
+      case Order.Ordered:
+        console.log("case Ordered")
+        const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+
+        const spendMockModuleRedeemer: IBCModuleRedeemer = {
+          Callback: [
+            {
+              OnChanOpenInit: {
+                channel_id: channelId,
+              },
+            },
+          ],
+        };
+        const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
+          spendMockModuleRedeemer,
+          'iBCModuleRedeemer',
+        );
+
+        console.log("eee1")
+        console.log("mockModuleUtxo: ", mockModuleUtxo)
+
+        const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
+          mockModuleUtxo.datum!,
+          'mockModule',
+        );
+        console.log({
+          currentMockModuleDatum
+        })
+
+        const newMockModuleDatum: MockModuleDatum = {
+          ...currentMockModuleDatum,
+        };
+
+        const encodedNewMockModuleDatum: string = await this.lucidService.encode<MockModuleDatum>(
+          newMockModuleDatum,
+          'mockModule',
+        );
+
+        console.log("encodedNewMockModuleDatum: ", encodedNewMockModuleDatum)
+
+        const unsignedOrderedChannelOpenInitParams: UnsignedOrderedChannelOpenInitDto = {
+          handlerUtxo,
+          connectionUtxo,
+          clientUtxo,
+          spendHandlerRefUtxo,
+          mintChannelRefUtxo,
+          spendMockModuleRefUtxo,
+          mockModuleUtxo,
+          encodedSpendMockModuleRedeemer,
+          encodedSpendHandlerRedeemer,
+          encodedMintChannelRedeemer,
+          channelTokenUnit,
+          encodedUpdatedHandlerDatum,
+          encodedChannelDatum,
+          encodedNewMockModuleDatum,
+          constructedAddress,
+        };
+        const unsignedOrderedChannelTx = this.lucidService.createUnsignedOrderedChannelOpenInitTransaction(unsignedOrderedChannelOpenInitParams);
+        
+        return { unsignedTx: unsignedOrderedChannelTx, channelId: channelId.toString() };
+    }
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
@@ -424,7 +500,7 @@ export class ChannelService {
     );
     const newMockModuleDatum: MockModuleDatum = {
       ...currentMockModuleDatum,
-      opened_channels: insertSortMap(currentMockModuleDatum.opened_channels, channelId, true),
+      // opened_channels: insertSortMap(currentMockModuleDatum.opened_channels, channelId, true),
     };
 
     const encodedNewMockModuleDatum: string = await this.lucidService.encode<MockModuleDatum>(
@@ -524,6 +600,21 @@ export class ChannelService {
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
     const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelOpenAckOperator.channelSequence);
+
+    const spendMockModuleRefUtxo = this.configService.get('deployment').validators.spendMockModule.refUtxo;
+    const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
+    const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+
+    const spendTransferModuleRedeemer: IBCModuleRedeemer = {
+      Callback: [
+        {
+          OnChanOpenAck: {
+            channel_id: channelId,
+          },
+        },
+      ],
+    };
+
     const spendMockModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
@@ -533,10 +624,17 @@ export class ChannelService {
         },
       ],
     };
+
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+      spendTransferModuleRedeemer,
+      'iBCModuleRedeemer',
+    );
+
+    const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
       spendMockModuleRedeemer,
       'iBCModuleRedeemer',
     );
+
     const chanOpenAckPolicyId =
       this.configService.get('deployment').validators.spendChannel.refValidator.chan_open_ack.scriptHash;
 
@@ -593,27 +691,51 @@ export class ChannelService {
       this.lucidService.LucidImporter,
     );
 
-    // Call createUnsignedChannelOpenAckTransaction method with defined parameters
-    const unsignedChannelOpenAckParams: UnsignedChannelOpenAckDto = {
-      channelUtxo,
-      connectionUtxo,
-      clientUtxo,
-      spendChannelRefUtxo,
-      spendTransferModuleRefUtxo,
-      transferModuleUtxo,
-      encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer,
-      channelTokenUnit,
-      encodedUpdatedChannelDatum,
-      constructedAddress,
-      chanOpenAckPolicyId,
-      chanOpenAckRefUtxo,
-      channelToken,
-      verifyProofPolicyId,
-      verifyProofRefUTxO,
-      encodedVerifyProofRedeemer,
-    };
-    return this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
+    switch (channelDatum.state.channel.ordering) {
+      case Order.Unordered:
+        // Call createUnsignedChannelOpenAckTransaction method with defined parameters
+        const unsignedUnorderedChannelOpenAckParams: UnsignedUnorderedChannelOpenAckDto = {
+          channelUtxo,
+          connectionUtxo,
+          clientUtxo,
+          spendChannelRefUtxo,
+          spendTransferModuleRefUtxo,
+          transferModuleUtxo,
+          encodedSpendChannelRedeemer,
+          encodedSpendTransferModuleRedeemer,
+          channelTokenUnit,
+          encodedUpdatedChannelDatum,
+          constructedAddress,
+          chanOpenAckPolicyId,
+          chanOpenAckRefUtxo,
+          channelToken,
+          verifyProofPolicyId,
+          verifyProofRefUTxO,
+          encodedVerifyProofRedeemer,
+        };
+        return this.lucidService.createUnsignedUnorderedChannelOpenAckTransaction(unsignedUnorderedChannelOpenAckParams);
+      case Order.Ordered:
+        const unsignedOrderedChannelOpenAckParams: UnsignedOrderedChannelOpenAckDto = {
+          channelUtxo,
+          connectionUtxo,
+          clientUtxo,
+          spendChannelRefUtxo,
+          spendMockModuleRefUtxo,
+          mockModuleUtxo,
+          encodedSpendChannelRedeemer,
+          encodedSpendMockModuleRedeemer,
+          channelTokenUnit,
+          encodedUpdatedChannelDatum,
+          constructedAddress,
+          chanOpenAckPolicyId,
+          chanOpenAckRefUtxo,
+          channelToken,
+          verifyProofPolicyId,
+          verifyProofRefUTxO,
+          encodedVerifyProofRedeemer,
+        };
+        return this.lucidService.createUnsignedOrderedChannelOpenAckTransaction(unsignedOrderedChannelOpenAckParams);
+    }
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenConfirmTx(

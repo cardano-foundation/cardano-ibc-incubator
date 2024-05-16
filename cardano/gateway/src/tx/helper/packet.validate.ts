@@ -21,6 +21,7 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
   recvPacketOperator: RecvPacketOperator;
 } {
   const constructedAddress: string = data.signer;
+  console.log("haha", data);
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
