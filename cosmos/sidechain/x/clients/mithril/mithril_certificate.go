@@ -23,7 +23,10 @@ func (v *MithrilCertificateVerifier) VerifyMultiSignature(message []byte, multiS
 	)
 }
 
-func (pms *ProtocolMultiSignature) Verify(message []byte, avk []byte, parameters *MithrilProtocolParameters) (bool, error)
+func (pms *ProtocolMultiSignature) Verify(message []byte, avk []byte, parameters *MithrilProtocolParameters) (bool, error) {
+	// TO-DO: not implemented
+	return true, nil
+}
 
 func (c *MithrilCertificate) ComputeHash() string {
 	hasher := sha256.New()
