@@ -1588,16 +1588,6 @@ type MsgTimeoutRefresh struct {
 	Signer    string `protobuf:"bytes,2,opt,name=signer,proto3" json:"signer,omitempty"`
 }
 
-func (x *MsgTimeoutRefresh) ValidateBasic() error {
-  //TODO implement me
-  panic("implement me")
-}
-
-func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
-  //TODO implement me
-  panic("implement me")
-}
-
 func (x *MsgTimeoutRefresh) Reset() {
 	*x = MsgTimeoutRefresh{}
 	if protoimpl.UnsafeEnabled {
