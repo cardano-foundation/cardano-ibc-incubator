@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -1303,7 +1303,7 @@ func (cc *CosmosProvider) QueryCardanoLatestHeight(ctx context.Context) (int64, 
 	panic("implement me")
 }
 
-func (cc *CosmosProvider) QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error) {
+func (cc *CosmosProvider) QueryCardanoState(ctx context.Context, height int64) (exported.ClientState, exported.ConsensusState, error) {
 	//TODO implement me
 	panic("implement me")
 }

@@ -2,6 +2,7 @@ package cosmos
 
 import (
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
+	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -110,7 +111,7 @@ func MakeCodecConfig() Codec {
 // PackClientState constructs a new Any packed with the given client state value. It returns
 // an error if the client state can't be casted to a protobuf message or if the concrete
 // implemention is not registered to the protobuf codec.
-func PackClientState(clientState *pbclientstruct.ClientState) (*codectypes.Any, error) {
+func PackClientState(clientState *mithrilstruct.ClientState) (*codectypes.Any, error) {
 	anyClientState, err := codectypes.NewAnyWithValue(clientState)
 	if err != nil {
 		return nil, sdkerrors.Wrap(sdkerrors.ErrPackAny, err.Error())
@@ -131,7 +132,7 @@ func PackClientStateCosmos(clientState *pbclientstruct.ClientState) (*codectypes
 // PackConsensusState constructs a new Any packed with the given consensus state value. It returns
 // an error if the consensus state can't be casted to a protobuf message or if the concrete
 // implemention is not registered to the protobuf codec.
-func PackConsensusState(consensusState *pbclientstruct.ConsensusState) (*codectypes.Any, error) {
+func PackConsensusState(consensusState *mithrilstruct.ConsensusState) (*codectypes.Any, error) {
 	msg := consensusState
 	//if !ok {
 	//	return nil, sdkerrors.Wrapf(sdkerrors.ErrPackAny, "cannot proto marshal %T", consensusState)

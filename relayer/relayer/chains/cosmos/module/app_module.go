@@ -1,6 +1,7 @@
 package module
 
 import (
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -44,7 +45,14 @@ func (AppModuleBasic) RegisterInterfaces(registry codectypes.InterfaceRegistry) 
 		(*exported.Height)(nil),
 		&Height{},
 	)
-
+	registry.RegisterImplementations(
+		(*exported.ClientState)(nil),
+		&mithril.ClientState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ConsensusState)(nil),
+		&mithril.ConsensusState{},
+	)
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the ibc module.

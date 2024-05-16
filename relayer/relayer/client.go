@@ -3,6 +3,7 @@ package relayer
 import (
 	"context"
 	"fmt"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"strings"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/avast/retry-go/v4"
-	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
@@ -135,23 +135,22 @@ func CreateClient(
 	switch createType {
 	case false: //Create client on cosmos for cardano
 		cosmosChain.log.Info("Start create client on cosmos for cardano", zap.Time("time", time.Now()))
-		mainClientState := &pbclientstruct.ClientState{}
-		mainConsensusState := &pbclientstruct.ConsensusState{}
+
 		srcHeight, err := cardanoChain.ChainProvider.QueryCardanoLatestHeight(ctx)
 		if err != nil {
 			return "", err
 		}
-		mainClientState, mainConsensusState, err = cardanoChain.ChainProvider.QueryCardanoState(ctx, srcHeight)
+		mainClientState, mainConsensusState, err := cardanoChain.ChainProvider.QueryCardanoState(ctx, srcHeight)
 		if err != nil {
 			return "", err
 		}
 		if customClientTrustingPeriod != 0 {
-			mainClientState.TrustingPeriod = uint64(customClientTrustingPeriod.Seconds())
-			//	side chain take second as input
+			mainClientState.(*mithril.ClientState).TrustingPeriod = customClientTrustingPeriod
 		} else {
-			mainClientState.TrustingPeriod = uint64(constant.ClientTrustingPeriod.Seconds())
+			mainClientState.(*mithril.ClientState).TrustingPeriod = constant.ClientTrustingPeriod
 		}
-		createMsg, err := cosmosChain.ChainProvider.MsgCreateCardanoClient(mainClientState, mainConsensusState)
+
+		createMsg, err := cosmosChain.ChainProvider.MsgCreateClient(mainClientState, mainConsensusState)
 		if err != nil {
 			return "", fmt.Errorf("failed to compose CreateClient msg for chain{%s} tracking the state of chain{%s}: %w",
 				cardanoChain.ChainID(), cosmosChain.ChainID(), err)
@@ -216,7 +215,7 @@ func CreateClient(
 		if err != nil {
 			return "", fmt.Errorf("failed to create new client state for chain{%s}: %w", cosmosChain.ChainID(), err)
 		}
-		createMsg, clientID, err := cardanoChain.ChainProvider.MsgCreateCosmosClient(clientState, dstUpdateHeader.ConsensusState())
+		createMsg, err := cardanoChain.ChainProvider.MsgCreateClient(clientState, dstUpdateHeader.ConsensusState())
 		if err != nil {
 			return "", fmt.Errorf("failed to compose CreateClient msg for chain{%s} tracking the state of chain{%s}: %w",
 				cardanoChain.ChainID(), cosmosChain.ChainID(), err)
@@ -239,9 +238,10 @@ func CreateClient(
 		}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr); err != nil {
 			return "", err
 		}
-
+		if clientID, err = parseClientIDFromEvents(res.Events); err != nil {
+			return "", err
+		}
 		cardanoChain.PathEnd.ClientID = clientID
-
 		return clientID, nil
 	}
 
