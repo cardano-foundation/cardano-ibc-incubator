@@ -1,6 +1,4 @@
-use aiken/bytearray
 use aiken/list
-use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/tree
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 
@@ -14,9 +12,9 @@ pub fn hash(vals: ValidatorSet) -> ByteArray {
   let bzs =
     vals.validators
       |> list.reduce(
-           [],
-           fn(accum, val) { list.concat(accum, [tm_validator.bytes(val)]) },
-         )
+          [],
+          fn(accum, val) { list.concat(accum, [tm_validator.bytes(val)]) },
+        )
   tree.hash_from_byte_slices_sha2_256(bzs)
 }
 
@@ -31,7 +29,11 @@ pub fn null_validator_set() -> ValidatorSet {
 // TODO: Need recalculation of the set's total voting power 
 // if current total_voting_power is 0
 pub fn total_voting_power(vals: ValidatorSet) -> Int {
-  vals.total_voting_power
+  if vals.total_voting_power == 0 {
+    list.reduce(vals.validators, 0, fn(acc, val) { acc + val.voting_power })
+  } else {
+    vals.total_voting_power
+  }
 }
 
 pub fn size(vals: ValidatorSet) -> Int {
@@ -41,20 +43,8 @@ pub fn size(vals: ValidatorSet) -> Int {
 pub fn get_by_address(
   vals: ValidatorSet,
   address: ByteArray,
-) -> (Int, Validator) {
-  let tm_validator =
-    list.find(
-      vals.validators,
-      fn(val) { bytearray.compare(val.address, address) == Equal },
-    )
-  if option.is_none(tm_validator) {
-    (-1, tm_validator.null_validator())
-  } else {
-    let founded_validator =
-      option.or_else(tm_validator, tm_validator.null_validator())
-    expect Some(index) = list.index_of(vals.validators, founded_validator)
-    (index, founded_validator)
-  }
+) -> Option<Validator> {
+  list.find(vals.validators, fn(val) { val.address == address })
 }
 
 //--------------------------------------Test--------------------------------------

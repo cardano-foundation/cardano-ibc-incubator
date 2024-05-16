@@ -81,5 +81,6 @@ pub fn valid_commit(
     block_id,
     commit.height,
     commit,
+    None
   )
 }

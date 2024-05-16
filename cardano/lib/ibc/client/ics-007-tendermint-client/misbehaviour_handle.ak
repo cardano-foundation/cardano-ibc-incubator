@@ -135,5 +135,6 @@ fn check_misbehaviour_header(
     h.trusted_validators,
     h.signed_header.commit,
     cs_trust_level,
+    None,
   )
 }
