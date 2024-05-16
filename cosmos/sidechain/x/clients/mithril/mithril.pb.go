@@ -58,56 +58,6 @@ func (ProtocolMessagePartKey) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_4410ce5523531b7b, []int{0}
 }
 
-type SignedEntityType int32
-
-const (
-	MITHRIL_STAKE_DISTRIBUTION SignedEntityType = 0
-	CARDANO_TRANSACTIONS       SignedEntityType = 1
-)
-
-var SignedEntityType_name = map[int32]string{
-	0: "MITHRIL_STAKE_DISTRIBUTION",
-	1: "CARDANO_TRANSACTIONS",
-}
-
-var SignedEntityType_value = map[string]int32{
-	"MITHRIL_STAKE_DISTRIBUTION": 0,
-	"CARDANO_TRANSACTIONS":       1,
-}
-
-func (x SignedEntityType) String() string {
-	return proto.EnumName(SignedEntityType_name, int32(x))
-}
-
-func (SignedEntityType) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_4410ce5523531b7b, []int{1}
-}
-
-type CertificateSignature int32
-
-const (
-	GENESIS_SIGNATURE CertificateSignature = 0
-	MULTI_SIGNATURE   CertificateSignature = 1
-)
-
-var CertificateSignature_name = map[int32]string{
-	0: "GENESIS_SIGNATURE",
-	1: "MULTI_SIGNATURE",
-}
-
-var CertificateSignature_value = map[string]int32{
-	"GENESIS_SIGNATURE": 0,
-	"MULTI_SIGNATURE":   1,
-}
-
-func (x CertificateSignature) String() string {
-	return proto.EnumName(CertificateSignature_name, int32(x))
-}
-
-func (CertificateSignature) EnumDescriptor() ([]byte, []int) {
-	return fileDescriptor_4410ce5523531b7b, []int{2}
-}
-
 type Height struct {
 	// the immutable file number
 	MithrilHeight uint64 `protobuf:"varint,1,opt,name=mithril_height,json=mithrilHeight,proto3" json:"mithril_height,omitempty"`
@@ -402,15 +352,15 @@ func (m *CardanoTransactionSnapshot) XXX_DiscardUnknown() {
 var xxx_messageInfo_CardanoTransactionSnapshot proto.InternalMessageInfo
 
 type MithrilCertificate struct {
-	Hash                     string               `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
-	PreviousHash             string               `protobuf:"bytes,2,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
-	Epoch                    uint64               `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	SignedEntityType         SignedEntityType     `protobuf:"varint,4,opt,name=signed_entity_type,json=signedEntityType,proto3,enum=ibc.clients.mithril.v1.SignedEntityType" json:"signed_entity_type,omitempty"`
-	Metadata                 *CertificateMetadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	ProtocolMessage          *ProtocolMessage     `protobuf:"bytes,6,opt,name=protocol_message,json=protocolMessage,proto3" json:"protocol_message,omitempty"`
-	SignedMessage            string               `protobuf:"bytes,7,opt,name=signed_message,json=signedMessage,proto3" json:"signed_message,omitempty"`
-	AggregateVerificationKey string               `protobuf:"bytes,8,opt,name=aggregate_verification_key,json=aggregateVerificationKey,proto3" json:"aggregate_verification_key,omitempty"`
-	Signature                CertificateSignature `protobuf:"varint,9,opt,name=signature,proto3,enum=ibc.clients.mithril.v1.CertificateSignature" json:"signature,omitempty"`
+	Hash                     string                `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
+	PreviousHash             string                `protobuf:"bytes,2,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
+	Epoch                    uint64                `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	SignedEntityType         *SignedEntityType     `protobuf:"bytes,4,opt,name=signed_entity_type,json=signedEntityType,proto3" json:"signed_entity_type,omitempty"`
+	Metadata                 *CertificateMetadata  `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	ProtocolMessage          *ProtocolMessage      `protobuf:"bytes,6,opt,name=protocol_message,json=protocolMessage,proto3" json:"protocol_message,omitempty"`
+	SignedMessage            string                `protobuf:"bytes,7,opt,name=signed_message,json=signedMessage,proto3" json:"signed_message,omitempty"`
+	AggregateVerificationKey string                `protobuf:"bytes,8,opt,name=aggregate_verification_key,json=aggregateVerificationKey,proto3" json:"aggregate_verification_key,omitempty"`
+	Signature                *CertificateSignature `protobuf:"bytes,9,opt,name=signature,proto3" json:"signature,omitempty"`
 }
 
 func (m *MithrilCertificate) Reset()         { *m = MithrilCertificate{} }
@@ -526,8 +476,7 @@ func (m *SignerWithStake) XXX_DiscardUnknown() {
 var xxx_messageInfo_SignerWithStake proto.InternalMessageInfo
 
 type ProtocolMessage struct {
-	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
-	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+	MessageParts []*MessagePart `protobuf:"bytes,1,rep,name=message_parts,json=messageParts,proto3" json:"message_parts,omitempty"`
 }
 
 func (m *ProtocolMessage) Reset()         { *m = ProtocolMessage{} }
@@ -563,20 +512,58 @@ func (m *ProtocolMessage) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_ProtocolMessage proto.InternalMessageInfo
 
+type MessagePart struct {
+	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
+	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+}
+
+func (m *MessagePart) Reset()         { *m = MessagePart{} }
+func (m *MessagePart) String() string { return proto.CompactTextString(m) }
+func (*MessagePart) ProtoMessage()    {}
+func (*MessagePart) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{11}
+}
+func (m *MessagePart) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MessagePart) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MessagePart.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MessagePart) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MessagePart.Merge(m, src)
+}
+func (m *MessagePart) XXX_Size() int {
+	return m.Size()
+}
+func (m *MessagePart) XXX_DiscardUnknown() {
+	xxx_messageInfo_MessagePart.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MessagePart proto.InternalMessageInfo
+
 type MithrilProtocolParameters struct {
 	// Quorum parameter
 	K uint64 `protobuf:"varint,1,opt,name=k,proto3" json:"k,omitempty"`
 	// Security parameter (number of lotteries)
 	M uint64 `protobuf:"varint,2,opt,name=m,proto3" json:"m,omitempty"`
 	// f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
-	PhiF uint64 `protobuf:"varint,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f,omitempty"`
+	PhiF Fraction `protobuf:"bytes,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f"`
 }
 
 func (m *MithrilProtocolParameters) Reset()         { *m = MithrilProtocolParameters{} }
 func (m *MithrilProtocolParameters) String() string { return proto.CompactTextString(m) }
 func (*MithrilProtocolParameters) ProtoMessage()    {}
 func (*MithrilProtocolParameters) Descriptor() ([]byte, []int) {
-	return fileDescriptor_4410ce5523531b7b, []int{11}
+	return fileDescriptor_4410ce5523531b7b, []int{12}
 }
 func (m *MithrilProtocolParameters) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -605,10 +592,647 @@ func (m *MithrilProtocolParameters) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MithrilProtocolParameters proto.InternalMessageInfo
 
+type CertificateSignature struct {
+	// Types that are valid to be assigned to SigType:
+	//	*CertificateSignature_GenesisSignature
+	//	*CertificateSignature_MultiSignature
+	SigType isCertificateSignature_SigType `protobuf_oneof:"sig_type"`
+}
+
+func (m *CertificateSignature) Reset()         { *m = CertificateSignature{} }
+func (m *CertificateSignature) String() string { return proto.CompactTextString(m) }
+func (*CertificateSignature) ProtoMessage()    {}
+func (*CertificateSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{13}
+}
+func (m *CertificateSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CertificateSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CertificateSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CertificateSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CertificateSignature.Merge(m, src)
+}
+func (m *CertificateSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *CertificateSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_CertificateSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CertificateSignature proto.InternalMessageInfo
+
+type isCertificateSignature_SigType interface {
+	isCertificateSignature_SigType()
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type CertificateSignature_GenesisSignature struct {
+	GenesisSignature *GenesisSignature `protobuf:"bytes,1,opt,name=genesis_signature,json=genesisSignature,proto3,oneof" json:"genesis_signature,omitempty"`
+}
+type CertificateSignature_MultiSignature struct {
+	MultiSignature *MultiSignature `protobuf:"bytes,2,opt,name=multi_signature,json=multiSignature,proto3,oneof" json:"multi_signature,omitempty"`
+}
+
+func (*CertificateSignature_GenesisSignature) isCertificateSignature_SigType() {}
+func (*CertificateSignature_MultiSignature) isCertificateSignature_SigType()   {}
+
+func (m *CertificateSignature) GetSigType() isCertificateSignature_SigType {
+	if m != nil {
+		return m.SigType
+	}
+	return nil
+}
+
+func (m *CertificateSignature) GetGenesisSignature() *GenesisSignature {
+	if x, ok := m.GetSigType().(*CertificateSignature_GenesisSignature); ok {
+		return x.GenesisSignature
+	}
+	return nil
+}
+
+func (m *CertificateSignature) GetMultiSignature() *MultiSignature {
+	if x, ok := m.GetSigType().(*CertificateSignature_MultiSignature); ok {
+		return x.MultiSignature
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*CertificateSignature) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*CertificateSignature_GenesisSignature)(nil),
+		(*CertificateSignature_MultiSignature)(nil),
+	}
+}
+
+type GenesisSignature struct {
+	ProtocolGenesisSignature *ProtocolGenesisSignature `protobuf:"bytes,1,opt,name=protocol_genesis_signature,json=protocolGenesisSignature,proto3" json:"protocol_genesis_signature,omitempty"`
+}
+
+func (m *GenesisSignature) Reset()         { *m = GenesisSignature{} }
+func (m *GenesisSignature) String() string { return proto.CompactTextString(m) }
+func (*GenesisSignature) ProtoMessage()    {}
+func (*GenesisSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{14}
+}
+func (m *GenesisSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *GenesisSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_GenesisSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *GenesisSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_GenesisSignature.Merge(m, src)
+}
+func (m *GenesisSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *GenesisSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_GenesisSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_GenesisSignature proto.InternalMessageInfo
+
+func (m *GenesisSignature) GetProtocolGenesisSignature() *ProtocolGenesisSignature {
+	if m != nil {
+		return m.ProtocolGenesisSignature
+	}
+	return nil
+}
+
+// ProtocolGenesisSignature wraps a cryptographic signature.
+type ProtocolGenesisSignature struct {
+	Signature []byte `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (m *ProtocolGenesisSignature) Reset()         { *m = ProtocolGenesisSignature{} }
+func (m *ProtocolGenesisSignature) String() string { return proto.CompactTextString(m) }
+func (*ProtocolGenesisSignature) ProtoMessage()    {}
+func (*ProtocolGenesisSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{15}
+}
+func (m *ProtocolGenesisSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ProtocolGenesisSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ProtocolGenesisSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ProtocolGenesisSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ProtocolGenesisSignature.Merge(m, src)
+}
+func (m *ProtocolGenesisSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *ProtocolGenesisSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_ProtocolGenesisSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ProtocolGenesisSignature proto.InternalMessageInfo
+
+func (m *ProtocolGenesisSignature) GetSignature() []byte {
+	if m != nil {
+		return m.Signature
+	}
+	return nil
+}
+
+// MultiSignature represents a collective signature.
+type MultiSignature struct {
+	EntityType *SignedEntityType       `protobuf:"bytes,1,opt,name=entity_type,json=entityType,proto3" json:"entity_type,omitempty"`
+	Signature  *ProtocolMultiSignature `protobuf:"bytes,2,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (m *MultiSignature) Reset()         { *m = MultiSignature{} }
+func (m *MultiSignature) String() string { return proto.CompactTextString(m) }
+func (*MultiSignature) ProtoMessage()    {}
+func (*MultiSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{16}
+}
+func (m *MultiSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MultiSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MultiSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MultiSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MultiSignature.Merge(m, src)
+}
+func (m *MultiSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *MultiSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_MultiSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MultiSignature proto.InternalMessageInfo
+
+func (m *MultiSignature) GetEntityType() *SignedEntityType {
+	if m != nil {
+		return m.EntityType
+	}
+	return nil
+}
+
+func (m *MultiSignature) GetSignature() *ProtocolMultiSignature {
+	if m != nil {
+		return m.Signature
+	}
+	return nil
+}
+
+// An entity type associated with the signature.
+type SignedEntityType struct {
+	// Types that are valid to be assigned to Entity:
+	//
+	//	*SignedEntityType_MithrilStakeDistribution
+	//	*SignedEntityType_CardanoStakeDistribution
+	//	*SignedEntityType_CardanoImmutableFilesFull
+	//	*SignedEntityType_CardanoTransactions
+	Entity isSignedEntityType_Entity `protobuf_oneof:"entity"`
+}
+
+func (m *SignedEntityType) Reset()         { *m = SignedEntityType{} }
+func (m *SignedEntityType) String() string { return proto.CompactTextString(m) }
+func (*SignedEntityType) ProtoMessage()    {}
+func (*SignedEntityType) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{17}
+}
+func (m *SignedEntityType) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SignedEntityType) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SignedEntityType.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SignedEntityType) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SignedEntityType.Merge(m, src)
+}
+func (m *SignedEntityType) XXX_Size() int {
+	return m.Size()
+}
+func (m *SignedEntityType) XXX_DiscardUnknown() {
+	xxx_messageInfo_SignedEntityType.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SignedEntityType proto.InternalMessageInfo
+
+type isSignedEntityType_Entity interface {
+	isSignedEntityType_Entity()
+	MarshalTo([]byte) (int, error)
+	Size() int
+}
+
+type SignedEntityType_MithrilStakeDistribution struct {
+	MithrilStakeDistribution *MithrilStakeDistribution `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3,oneof" json:"mithril_stake_distribution,omitempty"`
+}
+type SignedEntityType_CardanoStakeDistribution struct {
+	CardanoStakeDistribution *CardanoStakeDistribution `protobuf:"bytes,2,opt,name=cardano_stake_distribution,json=cardanoStakeDistribution,proto3,oneof" json:"cardano_stake_distribution,omitempty"`
+}
+type SignedEntityType_CardanoImmutableFilesFull struct {
+	CardanoImmutableFilesFull *CardanoImmutableFilesFull `protobuf:"bytes,3,opt,name=cardano_immutable_files_full,json=cardanoImmutableFilesFull,proto3,oneof" json:"cardano_immutable_files_full,omitempty"`
+}
+type SignedEntityType_CardanoTransactions struct {
+	CardanoTransactions *CardanoTransactions `protobuf:"bytes,4,opt,name=cardano_transactions,json=cardanoTransactions,proto3,oneof" json:"cardano_transactions,omitempty"`
+}
+
+func (*SignedEntityType_MithrilStakeDistribution) isSignedEntityType_Entity()  {}
+func (*SignedEntityType_CardanoStakeDistribution) isSignedEntityType_Entity()  {}
+func (*SignedEntityType_CardanoImmutableFilesFull) isSignedEntityType_Entity() {}
+func (*SignedEntityType_CardanoTransactions) isSignedEntityType_Entity()       {}
+
+func (m *SignedEntityType) GetEntity() isSignedEntityType_Entity {
+	if m != nil {
+		return m.Entity
+	}
+	return nil
+}
+
+func (m *SignedEntityType) GetMithrilStakeDistribution() *MithrilStakeDistribution {
+	if x, ok := m.GetEntity().(*SignedEntityType_MithrilStakeDistribution); ok {
+		return x.MithrilStakeDistribution
+	}
+	return nil
+}
+
+func (m *SignedEntityType) GetCardanoStakeDistribution() *CardanoStakeDistribution {
+	if x, ok := m.GetEntity().(*SignedEntityType_CardanoStakeDistribution); ok {
+		return x.CardanoStakeDistribution
+	}
+	return nil
+}
+
+func (m *SignedEntityType) GetCardanoImmutableFilesFull() *CardanoImmutableFilesFull {
+	if x, ok := m.GetEntity().(*SignedEntityType_CardanoImmutableFilesFull); ok {
+		return x.CardanoImmutableFilesFull
+	}
+	return nil
+}
+
+func (m *SignedEntityType) GetCardanoTransactions() *CardanoTransactions {
+	if x, ok := m.GetEntity().(*SignedEntityType_CardanoTransactions); ok {
+		return x.CardanoTransactions
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*SignedEntityType) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*SignedEntityType_MithrilStakeDistribution)(nil),
+		(*SignedEntityType_CardanoStakeDistribution)(nil),
+		(*SignedEntityType_CardanoImmutableFilesFull)(nil),
+		(*SignedEntityType_CardanoTransactions)(nil),
+	}
+}
+
+type CardanoStakeDistribution struct {
+	Epoch uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+}
+
+func (m *CardanoStakeDistribution) Reset()         { *m = CardanoStakeDistribution{} }
+func (m *CardanoStakeDistribution) String() string { return proto.CompactTextString(m) }
+func (*CardanoStakeDistribution) ProtoMessage()    {}
+func (*CardanoStakeDistribution) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{18}
+}
+func (m *CardanoStakeDistribution) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CardanoStakeDistribution) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CardanoStakeDistribution.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CardanoStakeDistribution) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CardanoStakeDistribution.Merge(m, src)
+}
+func (m *CardanoStakeDistribution) XXX_Size() int {
+	return m.Size()
+}
+func (m *CardanoStakeDistribution) XXX_DiscardUnknown() {
+	xxx_messageInfo_CardanoStakeDistribution.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CardanoStakeDistribution proto.InternalMessageInfo
+
+func (m *CardanoStakeDistribution) GetEpoch() uint64 {
+	if m != nil {
+		return m.Epoch
+	}
+	return 0
+}
+
+type CardanoImmutableFilesFull struct {
+	Beacon *CardanoDbBeacon `protobuf:"bytes,1,opt,name=beacon,proto3" json:"beacon,omitempty"`
+}
+
+func (m *CardanoImmutableFilesFull) Reset()         { *m = CardanoImmutableFilesFull{} }
+func (m *CardanoImmutableFilesFull) String() string { return proto.CompactTextString(m) }
+func (*CardanoImmutableFilesFull) ProtoMessage()    {}
+func (*CardanoImmutableFilesFull) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{19}
+}
+func (m *CardanoImmutableFilesFull) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CardanoImmutableFilesFull) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CardanoImmutableFilesFull.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CardanoImmutableFilesFull) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CardanoImmutableFilesFull.Merge(m, src)
+}
+func (m *CardanoImmutableFilesFull) XXX_Size() int {
+	return m.Size()
+}
+func (m *CardanoImmutableFilesFull) XXX_DiscardUnknown() {
+	xxx_messageInfo_CardanoImmutableFilesFull.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CardanoImmutableFilesFull proto.InternalMessageInfo
+
+func (m *CardanoImmutableFilesFull) GetBeacon() *CardanoDbBeacon {
+	if m != nil {
+		return m.Beacon
+	}
+	return nil
+}
+
+type CardanoTransactions struct {
+	Beacon *CardanoDbBeacon `protobuf:"bytes,1,opt,name=beacon,proto3" json:"beacon,omitempty"`
+}
+
+func (m *CardanoTransactions) Reset()         { *m = CardanoTransactions{} }
+func (m *CardanoTransactions) String() string { return proto.CompactTextString(m) }
+func (*CardanoTransactions) ProtoMessage()    {}
+func (*CardanoTransactions) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{20}
+}
+func (m *CardanoTransactions) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CardanoTransactions) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CardanoTransactions.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CardanoTransactions) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CardanoTransactions.Merge(m, src)
+}
+func (m *CardanoTransactions) XXX_Size() int {
+	return m.Size()
+}
+func (m *CardanoTransactions) XXX_DiscardUnknown() {
+	xxx_messageInfo_CardanoTransactions.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CardanoTransactions proto.InternalMessageInfo
+
+func (m *CardanoTransactions) GetBeacon() *CardanoDbBeacon {
+	if m != nil {
+		return m.Beacon
+	}
+	return nil
+}
+
+type CardanoDbBeacon struct {
+	Network             string `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	Epoch               uint64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	ImmutableFileNumber uint64 `protobuf:"varint,3,opt,name=immutable_file_number,json=immutableFileNumber,proto3" json:"immutable_file_number,omitempty"`
+}
+
+func (m *CardanoDbBeacon) Reset()         { *m = CardanoDbBeacon{} }
+func (m *CardanoDbBeacon) String() string { return proto.CompactTextString(m) }
+func (*CardanoDbBeacon) ProtoMessage()    {}
+func (*CardanoDbBeacon) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{21}
+}
+func (m *CardanoDbBeacon) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CardanoDbBeacon) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CardanoDbBeacon.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CardanoDbBeacon) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CardanoDbBeacon.Merge(m, src)
+}
+func (m *CardanoDbBeacon) XXX_Size() int {
+	return m.Size()
+}
+func (m *CardanoDbBeacon) XXX_DiscardUnknown() {
+	xxx_messageInfo_CardanoDbBeacon.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CardanoDbBeacon proto.InternalMessageInfo
+
+func (m *CardanoDbBeacon) GetNetwork() string {
+	if m != nil {
+		return m.Network
+	}
+	return ""
+}
+
+func (m *CardanoDbBeacon) GetEpoch() uint64 {
+	if m != nil {
+		return m.Epoch
+	}
+	return 0
+}
+
+func (m *CardanoDbBeacon) GetImmutableFileNumber() uint64 {
+	if m != nil {
+		return m.ImmutableFileNumber
+	}
+	return 0
+}
+
+// ProtocolMultiSignature wraps a multi-signature.
+type ProtocolMultiSignature struct {
+	Signatures [][]byte `protobuf:"bytes,1,rep,name=signatures,proto3" json:"signatures,omitempty"`
+	BatchProof []byte   `protobuf:"bytes,2,opt,name=batch_proof,json=batchProof,proto3" json:"batch_proof,omitempty"`
+}
+
+func (m *ProtocolMultiSignature) Reset()         { *m = ProtocolMultiSignature{} }
+func (m *ProtocolMultiSignature) String() string { return proto.CompactTextString(m) }
+func (*ProtocolMultiSignature) ProtoMessage()    {}
+func (*ProtocolMultiSignature) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{22}
+}
+func (m *ProtocolMultiSignature) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *ProtocolMultiSignature) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_ProtocolMultiSignature.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *ProtocolMultiSignature) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ProtocolMultiSignature.Merge(m, src)
+}
+func (m *ProtocolMultiSignature) XXX_Size() int {
+	return m.Size()
+}
+func (m *ProtocolMultiSignature) XXX_DiscardUnknown() {
+	xxx_messageInfo_ProtocolMultiSignature.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ProtocolMultiSignature proto.InternalMessageInfo
+
+func (m *ProtocolMultiSignature) GetSignatures() [][]byte {
+	if m != nil {
+		return m.Signatures
+	}
+	return nil
+}
+
+func (m *ProtocolMultiSignature) GetBatchProof() []byte {
+	if m != nil {
+		return m.BatchProof
+	}
+	return nil
+}
+
+// Fraction defines the protobuf message type for tmmath.Fraction that only
+// supports positive values.
+type Fraction struct {
+	Numerator   uint64 `protobuf:"varint,1,opt,name=numerator,proto3" json:"numerator,omitempty"`
+	Denominator uint64 `protobuf:"varint,2,opt,name=denominator,proto3" json:"denominator,omitempty"`
+}
+
+func (m *Fraction) Reset()         { *m = Fraction{} }
+func (m *Fraction) String() string { return proto.CompactTextString(m) }
+func (*Fraction) ProtoMessage()    {}
+func (*Fraction) Descriptor() ([]byte, []int) {
+	return fileDescriptor_4410ce5523531b7b, []int{23}
+}
+func (m *Fraction) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Fraction) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Fraction.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Fraction) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Fraction.Merge(m, src)
+}
+func (m *Fraction) XXX_Size() int {
+	return m.Size()
+}
+func (m *Fraction) XXX_DiscardUnknown() {
+	xxx_messageInfo_Fraction.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Fraction proto.InternalMessageInfo
+
+func (m *Fraction) GetNumerator() uint64 {
+	if m != nil {
+		return m.Numerator
+	}
+	return 0
+}
+
+func (m *Fraction) GetDenominator() uint64 {
+	if m != nil {
+		return m.Denominator
+	}
+	return 0
+}
+
 func init() {
 	proto.RegisterEnum("ibc.clients.mithril.v1.ProtocolMessagePartKey", ProtocolMessagePartKey_name, ProtocolMessagePartKey_value)
-	proto.RegisterEnum("ibc.clients.mithril.v1.SignedEntityType", SignedEntityType_name, SignedEntityType_value)
-	proto.RegisterEnum("ibc.clients.mithril.v1.CertificateSignature", CertificateSignature_name, CertificateSignature_value)
 	proto.RegisterType((*Height)(nil), "ibc.clients.mithril.v1.Height")
 	proto.RegisterType((*ClientState)(nil), "ibc.clients.mithril.v1.ClientState")
 	proto.RegisterType((*ConsensusState)(nil), "ibc.clients.mithril.v1.ConsensusState")
@@ -620,7 +1244,19 @@ func init() {
 	proto.RegisterType((*CertificateMetadata)(nil), "ibc.clients.mithril.v1.CertificateMetadata")
 	proto.RegisterType((*SignerWithStake)(nil), "ibc.clients.mithril.v1.SignerWithStake")
 	proto.RegisterType((*ProtocolMessage)(nil), "ibc.clients.mithril.v1.ProtocolMessage")
+	proto.RegisterType((*MessagePart)(nil), "ibc.clients.mithril.v1.MessagePart")
 	proto.RegisterType((*MithrilProtocolParameters)(nil), "ibc.clients.mithril.v1.MithrilProtocolParameters")
+	proto.RegisterType((*CertificateSignature)(nil), "ibc.clients.mithril.v1.CertificateSignature")
+	proto.RegisterType((*GenesisSignature)(nil), "ibc.clients.mithril.v1.GenesisSignature")
+	proto.RegisterType((*ProtocolGenesisSignature)(nil), "ibc.clients.mithril.v1.ProtocolGenesisSignature")
+	proto.RegisterType((*MultiSignature)(nil), "ibc.clients.mithril.v1.MultiSignature")
+	proto.RegisterType((*SignedEntityType)(nil), "ibc.clients.mithril.v1.SignedEntityType")
+	proto.RegisterType((*CardanoStakeDistribution)(nil), "ibc.clients.mithril.v1.CardanoStakeDistribution")
+	proto.RegisterType((*CardanoImmutableFilesFull)(nil), "ibc.clients.mithril.v1.CardanoImmutableFilesFull")
+	proto.RegisterType((*CardanoTransactions)(nil), "ibc.clients.mithril.v1.CardanoTransactions")
+	proto.RegisterType((*CardanoDbBeacon)(nil), "ibc.clients.mithril.v1.CardanoDbBeacon")
+	proto.RegisterType((*ProtocolMultiSignature)(nil), "ibc.clients.mithril.v1.ProtocolMultiSignature")
+	proto.RegisterType((*Fraction)(nil), "ibc.clients.mithril.v1.Fraction")
 }
 
 func init() {
@@ -628,100 +1264,123 @@ func init() {
 }
 
 var fileDescriptor_4410ce5523531b7b = []byte{
-	// 1486 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x57, 0xcd, 0x73, 0x1b, 0xc5,
-	0x12, 0xd7, 0x4a, 0xf2, 0x87, 0xda, 0x5f, 0xca, 0xd8, 0x2f, 0x6f, 0xad, 0xe4, 0x49, 0x7a, 0x71,
-	0xf2, 0x9e, 0x09, 0x20, 0x61, 0x01, 0xa9, 0x22, 0x05, 0x07, 0x59, 0xde, 0xd8, 0x8b, 0x25, 0xd9,
-	0x35, 0xbb, 0x36, 0x1f, 0x97, 0x65, 0xac, 0x1d, 0x6b, 0xb7, 0x2c, 0x69, 0xb7, 0x76, 0x46, 0x06,
-	0x73, 0xa1, 0x8a, 0x53, 0x6e, 0x70, 0xcc, 0x31, 0x55, 0x1c, 0xb9, 0xf1, 0x1f, 0x70, 0xcb, 0x85,
-	0xaa, 0x1c, 0x39, 0x05, 0xb0, 0xff, 0x10, 0xa8, 0x9d, 0x9d, 0x95, 0x65, 0x5b, 0x22, 0x4e, 0x8a,
-	0xdb, 0x4e, 0x4f, 0xff, 0xba, 0xa7, 0xfb, 0xd7, 0xdd, 0x33, 0x0b, 0x77, 0xdd, 0x83, 0x56, 0xb9,
-	0xd5, 0x71, 0x69, 0x8f, 0xb3, 0x72, 0xd7, 0xe5, 0x4e, 0xe0, 0x76, 0xca, 0xc7, 0x6b, 0xf1, 0x67,
-	0xc9, 0x0f, 0x3c, 0xee, 0xa1, 0x9b, 0xee, 0x41, 0xab, 0x24, 0xb5, 0x4a, 0xf1, 0xd6, 0xf1, 0x5a,
-	0x6e, 0xa9, 0xed, 0xb5, 0x3d, 0xa1, 0x52, 0x0e, 0xbf, 0x22, 0xed, 0x5c, 0xbe, 0xed, 0x79, 0xed,
-	0x0e, 0x2d, 0x8b, 0xd5, 0x41, 0xff, 0xb0, 0x6c, 0xf7, 0x03, 0xc2, 0x5d, 0xaf, 0x17, 0xed, 0xdf,
-	0xf9, 0x00, 0x26, 0xb7, 0xa8, 0xdb, 0x76, 0x38, 0xba, 0x07, 0xf3, 0xd2, 0x9a, 0xe5, 0x08, 0x89,
-	0xaa, 0x14, 0x95, 0xd5, 0x34, 0x9e, 0x93, 0xd2, 0x48, 0xed, 0xe1, 0xf4, 0xe3, 0xa7, 0x85, 0xc4,
-	0x93, 0xa7, 0x85, 0xc4, 0x9d, 0x9f, 0x52, 0x30, 0x53, 0x13, 0xe7, 0x30, 0x38, 0xe1, 0x14, 0x2d,
-	0xc3, 0x74, 0xcb, 0x21, 0x6e, 0xcf, 0x72, 0x6d, 0x01, 0xcd, 0xe0, 0x29, 0xb1, 0xd6, 0x6d, 0x54,
-	0x83, 0xb9, 0x0e, 0xe1, 0x94, 0xf1, 0xd8, 0x74, 0xb2, 0xa8, 0xac, 0xce, 0x54, 0xf2, 0xa5, 0xd1,
-	0xb1, 0x94, 0x22, 0x5f, 0x78, 0x36, 0x02, 0xc9, 0x03, 0xd6, 0x60, 0xee, 0x30, 0xf0, 0xbe, 0xa6,
-	0xbd, 0xd8, 0x48, 0xea, 0x7a, 0x46, 0x22, 0x90, 0x34, 0xb2, 0x02, 0x73, 0xad, 0x7e, 0x10, 0xd0,
-	0x1e, 0xb7, 0xa8, 0xef, 0xb5, 0x1c, 0x35, 0x2d, 0x82, 0x9c, 0x95, 0x42, 0x2d, 0x94, 0xa1, 0x3a,
-	0x2c, 0xf0, 0xa0, 0xcf, 0xb8, 0xdb, 0x6b, 0x5b, 0x3e, 0x0d, 0x5c, 0xcf, 0x56, 0x27, 0x84, 0xaf,
-	0xe5, 0x52, 0x94, 0xce, 0x52, 0x9c, 0xce, 0xd2, 0x86, 0x4c, 0xe7, 0xfa, 0xf4, 0xb3, 0x17, 0x85,
-	0xc4, 0x93, 0xdf, 0x0a, 0x0a, 0x9e, 0x8f, 0xb1, 0xbb, 0x02, 0x8a, 0x0e, 0x60, 0x51, 0xa8, 0xb7,
-	0xbc, 0x8e, 0xe5, 0x93, 0x80, 0x74, 0x29, 0xa7, 0x01, 0x53, 0x27, 0x85, 0xc5, 0xb5, 0x71, 0xa7,
-	0x6f, 0x44, 0x9f, 0xbb, 0x12, 0xb9, 0x3b, 0x00, 0x62, 0xe4, 0x5f, 0x91, 0xa1, 0xff, 0xc2, 0x6c,
-	0xdf, 0x6f, 0x07, 0xc4, 0xa6, 0x96, 0x4f, 0xb8, 0xa3, 0x4e, 0x15, 0x53, 0xab, 0x19, 0x3c, 0x23,
-	0x65, 0xbb, 0x84, 0x3b, 0x0f, 0xd3, 0x21, 0x71, 0x77, 0xbe, 0x4d, 0xc2, 0x7c, 0xcd, 0xeb, 0x31,
-	0xda, 0x63, 0x7d, 0x16, 0xf1, 0x76, 0x1b, 0x32, 0xdc, 0xed, 0x52, 0xc6, 0x49, 0xd7, 0x97, 0x9c,
-	0x9f, 0x0b, 0xd0, 0x03, 0x50, 0x0f, 0x5b, 0x96, 0x43, 0x98, 0x63, 0x49, 0x0a, 0x45, 0xde, 0xac,
-	0x2e, 0xb3, 0x05, 0x8b, 0x19, 0xbc, 0x74, 0xd8, 0xda, 0x22, 0xcc, 0xa9, 0x8b, 0x5d, 0x91, 0xc0,
-	0x06, 0xb3, 0x51, 0x19, 0x96, 0xa4, 0x7e, 0x8b, 0x06, 0x3c, 0x32, 0x10, 0x62, 0x52, 0x02, 0x73,
-	0x23, 0xda, 0xab, 0xd1, 0x80, 0x87, 0xd8, 0x10, 0xf0, 0x1e, 0xfc, 0x7b, 0xa4, 0x23, 0xce, 0x04,
-	0x47, 0x19, 0xbc, 0x78, 0xc5, 0x8f, 0xc9, 0xd0, 0xdb, 0xb0, 0x78, 0xc5, 0x0d, 0x67, 0x82, 0xae,
-	0x0c, 0xce, 0x5e, 0xf4, 0x62, 0x32, 0x99, 0x84, 0x3f, 0x15, 0x98, 0x6d, 0xb8, 0xec, 0x80, 0x3a,
-	0xe4, 0xd8, 0xf5, 0xfa, 0x01, 0x2a, 0x40, 0x26, 0xa2, 0x60, 0x50, 0xbb, 0xeb, 0x49, 0x55, 0xc1,
-	0xd3, 0x91, 0x50, 0xb7, 0x51, 0x0b, 0xb2, 0xe7, 0xcd, 0x41, 0x6c, 0x1a, 0x58, 0x6b, 0xb2, 0x86,
-	0xef, 0xbd, 0x84, 0xc0, 0x2d, 0xa1, 0xbe, 0x8e, 0x4e, 0x5f, 0x14, 0xe6, 0x2f, 0x88, 0xd6, 0xf0,
-	0x7c, 0xf7, 0xc2, 0x7a, 0x84, 0x93, 0x8a, 0xac, 0xf1, 0xd7, 0x76, 0x52, 0xb9, 0xe4, 0xa4, 0x22,
-	0x33, 0x70, 0x96, 0x82, 0xb9, 0x0b, 0x8a, 0xa8, 0x07, 0xb9, 0xd8, 0x39, 0xe3, 0xe4, 0x88, 0x5a,
-	0xb6, 0xcb, 0x78, 0xe0, 0x1e, 0xf4, 0xc3, 0xea, 0x16, 0x39, 0x99, 0xa9, 0xbc, 0xf3, 0x92, 0x63,
-	0x18, 0x21, 0x70, 0x63, 0x08, 0x87, 0xd5, 0xee, 0x98, 0x1d, 0xf4, 0x0d, 0xfc, 0x6f, 0xbc, 0x3f,
-	0x41, 0xa6, 0x7b, 0xe8, 0xb6, 0x08, 0xa7, 0x32, 0xcf, 0xf7, 0x5f, 0xe2, 0xbb, 0x76, 0x8e, 0xc0,
-	0x2b, 0xe3, 0xbc, 0x0e, 0x29, 0x21, 0x0a, 0x4b, 0x3c, 0x20, 0x3d, 0x46, 0x5a, 0xc2, 0x23, 0xeb,
-	0x11, 0x9f, 0x39, 0x5e, 0x3c, 0x55, 0x2a, 0xe3, 0xdc, 0xd5, 0x48, 0x60, 0x93, 0x9e, 0x67, 0x9e,
-	0x43, 0x0d, 0x89, 0xc4, 0x8b, 0xfc, 0xaa, 0x10, 0x71, 0x28, 0x8e, 0x72, 0x73, 0x21, 0xc2, 0xf4,
-	0x2b, 0x47, 0x98, 0x1f, 0xe1, 0x6a, 0x68, 0x5f, 0xb2, 0xfc, 0x4b, 0x12, 0xd4, 0x71, 0xd4, 0xa0,
-	0x25, 0x98, 0x88, 0x26, 0x60, 0xd4, 0xf2, 0xd1, 0x02, 0xed, 0x01, 0x62, 0x6e, 0xbb, 0x47, 0x03,
-	0x66, 0x7d, 0xe9, 0x72, 0x27, 0xe2, 0x46, 0x4d, 0x16, 0x53, 0xab, 0x33, 0x95, 0xff, 0x8f, 0x3b,
-	0xa0, 0x21, 0x10, 0x9f, 0xb8, 0xdc, 0x11, 0x6e, 0x70, 0x56, 0x9a, 0x18, 0x48, 0x10, 0x82, 0x74,
-	0xd8, 0x9a, 0xb2, 0xfb, 0xc5, 0x37, 0x7a, 0x03, 0xb2, 0x43, 0x49, 0x10, 0xad, 0x2b, 0x3b, 0x7d,
-	0x61, 0x48, 0x1e, 0x36, 0x2e, 0xfa, 0x0f, 0x40, 0x2b, 0xa0, 0x84, 0x53, 0xdb, 0x22, 0x5c, 0x34,
-	0x77, 0x1a, 0x67, 0xa4, 0xa4, 0xca, 0xd1, 0x17, 0x80, 0xae, 0x4e, 0xd8, 0xd7, 0x1f, 0xb0, 0x37,
-	0xae, 0x0c, 0x58, 0x99, 0xcf, 0x3f, 0x14, 0xc8, 0x8d, 0xe7, 0x3f, 0xbc, 0x5b, 0x06, 0xf4, 0x8a,
-	0x68, 0xa2, 0x5b, 0x70, 0x36, 0x16, 0x8a, 0x50, 0x0a, 0x30, 0xd3, 0xa5, 0xc1, 0x51, 0x87, 0x5a,
-	0x81, 0xe7, 0x71, 0x39, 0x42, 0x21, 0x12, 0x61, 0xcf, 0xe3, 0x23, 0xd3, 0x92, 0x1a, 0x9d, 0x96,
-	0x01, 0x85, 0xe9, 0x61, 0x0a, 0x1f, 0xc0, 0xa4, 0xbc, 0x20, 0x27, 0xae, 0x75, 0x41, 0x4a, 0x6d,
-	0x19, 0xe3, 0x77, 0x69, 0x40, 0x57, 0x0b, 0x6e, 0x40, 0xa0, 0x32, 0x44, 0xe0, 0x0a, 0xcc, 0xf9,
-	0x01, 0x0d, 0x27, 0x28, 0x8b, 0x8e, 0x19, 0x05, 0x33, 0x1b, 0x0b, 0x2f, 0x9e, 0x31, 0x35, 0x7c,
-	0xc6, 0x7d, 0x59, 0x66, 0xb6, 0x45, 0x7b, 0xdc, 0xe5, 0x27, 0x16, 0x3f, 0xf1, 0xa3, 0x3e, 0x98,
-	0xaf, 0xac, 0xfe, 0x6d, 0x99, 0xd9, 0x9a, 0x00, 0x98, 0x27, 0x7e, 0x5c, 0x67, 0x43, 0x12, 0xb4,
-	0x09, 0xd3, 0x5d, 0xca, 0x89, 0x4d, 0x38, 0x91, 0xd1, 0xbf, 0x39, 0xb6, 0x91, 0xcf, 0xa3, 0x6b,
-	0x48, 0x08, 0x1e, 0x80, 0x11, 0x86, 0xec, 0xa0, 0xa4, 0xba, 0x94, 0x31, 0xd2, 0xa6, 0xb2, 0xa0,
-	0xc6, 0x76, 0x41, 0x5c, 0x49, 0x8d, 0x48, 0x1d, 0x2f, 0xf8, 0x17, 0x05, 0xe1, 0x0b, 0x4b, 0x06,
-	0x1d, 0x5b, 0x9c, 0x12, 0x09, 0x9b, 0x8b, 0xa4, 0xb1, 0xda, 0x87, 0x90, 0x23, 0xed, 0x76, 0x40,
-	0xdb, 0x21, 0xfd, 0xc7, 0x34, 0x88, 0x0e, 0x19, 0x0e, 0x8f, 0x23, 0x7a, 0xa2, 0x4e, 0x0b, 0x88,
-	0x3a, 0xd0, 0xd8, 0x1f, 0x52, 0xd8, 0xa6, 0x27, 0xe8, 0x63, 0xc8, 0x84, 0xe6, 0x08, 0xef, 0x07,
-	0x54, 0xcd, 0x88, 0x84, 0xbe, 0x75, 0x8d, 0x14, 0x18, 0x31, 0x06, 0x9f, 0xc3, 0x65, 0x45, 0xfc,
-	0x98, 0x84, 0xc5, 0x11, 0xc9, 0x0a, 0x0b, 0x75, 0x90, 0xa2, 0x63, 0x1a, 0xb0, 0xf8, 0x9e, 0xc8,
-	0x9c, 0x47, 0xbe, 0x1f, 0x89, 0xc7, 0x3d, 0x81, 0x92, 0xff, 0xe4, 0x13, 0xa8, 0x08, 0x33, 0x6e,
-	0xcf, 0xe5, 0x6e, 0x34, 0x13, 0x64, 0xb9, 0x0d, 0x8b, 0x50, 0x0e, 0xa6, 0x19, 0x25, 0x1d, 0xb1,
-	0x1d, 0x75, 0xcc, 0x60, 0x8d, 0xaa, 0x30, 0x25, 0x87, 0x96, 0x3a, 0xf1, 0x6a, 0xc3, 0x2e, 0xc6,
-	0xc9, 0x6c, 0x6d, 0xc1, 0xc2, 0x25, 0x8d, 0xf0, 0x61, 0xec, 0x93, 0x80, 0x9f, 0x0c, 0x3d, 0x8c,
-	0xc5, 0x5a, 0xb7, 0xc3, 0xee, 0x88, 0x27, 0xac, 0xe8, 0x0e, 0xb1, 0x90, 0x96, 0x7e, 0x56, 0x60,
-	0xe1, 0x52, 0x4d, 0x21, 0x17, 0x96, 0x2f, 0x97, 0x65, 0x98, 0x50, 0x2e, 0x4a, 0x43, 0x11, 0x6c,
-	0x97, 0xae, 0x59, 0x9f, 0xbb, 0x24, 0xe0, 0xdb, 0xf4, 0x04, 0xdf, 0xf4, 0x47, 0xca, 0xd1, 0x47,
-	0x70, 0x6b, 0xb4, 0xab, 0x63, 0xd2, 0xe9, 0x53, 0xd9, 0xeb, 0xea, 0x08, 0xf0, 0x7e, 0xb8, 0x2f,
-	0x63, 0xc0, 0xb0, 0x3c, 0x96, 0x45, 0x34, 0x0b, 0xca, 0x91, 0xbc, 0x7d, 0x94, 0xa3, 0x70, 0xd5,
-	0x95, 0x69, 0x50, 0xba, 0x68, 0x11, 0x26, 0x7c, 0xc7, 0xb5, 0x0e, 0x25, 0x8f, 0x69, 0xdf, 0x71,
-	0x1f, 0x45, 0x36, 0xef, 0x3f, 0x55, 0xe0, 0xe6, 0xe8, 0x58, 0xd0, 0x22, 0x2c, 0x18, 0xcd, 0xea,
-	0xae, 0xb1, 0xb5, 0x63, 0x5a, 0x1b, 0xfa, 0xa6, 0x66, 0x98, 0xd9, 0x04, 0xba, 0x0b, 0xc5, 0x5a,
-	0x15, 0x6f, 0x54, 0x9b, 0x3b, 0x96, 0x89, 0xab, 0x4d, 0xa3, 0x5a, 0x33, 0xf5, 0x9d, 0xa6, 0x61,
-	0x35, 0x34, 0xbc, 0x5d, 0xd7, 0x2c, 0xbc, 0xb3, 0x63, 0x66, 0x15, 0xb4, 0x02, 0x85, 0xa6, 0xf6,
-	0xa9, 0x69, 0x55, 0x37, 0x37, 0xb1, 0xb6, 0x59, 0x35, 0x35, 0x6b, 0x5f, 0xc3, 0xfa, 0x23, 0xbd,
-	0x56, 0x0d, 0xb5, 0xad, 0x6d, 0xed, 0xb3, 0x6c, 0x12, 0x15, 0xe1, 0x76, 0xbd, 0x6a, 0x6a, 0x86,
-	0x69, 0xe9, 0x8d, 0xc6, 0x9e, 0x59, 0x5d, 0xaf, 0x6b, 0xd6, 0x23, 0xbd, 0xae, 0x59, 0xcd, 0xbd,
-	0xc6, 0xba, 0x86, 0xb3, 0xa9, 0x5c, 0xfa, 0xf1, 0x0f, 0xf9, 0xc4, 0x7d, 0x0c, 0xd9, 0xcb, 0xc3,
-	0x0a, 0xe5, 0x21, 0xd7, 0xd0, 0xcd, 0x2d, 0xac, 0xd7, 0x2d, 0xc3, 0xac, 0x6e, 0x6b, 0xd6, 0x86,
-	0x6e, 0x98, 0x58, 0x5f, 0xdf, 0x0b, 0xed, 0x67, 0x13, 0x48, 0x85, 0xa5, 0x51, 0xc7, 0xcc, 0x2a,
-	0xd2, 0xe6, 0x16, 0x2c, 0x8d, 0xea, 0x57, 0xf4, 0x2f, 0xb8, 0xb1, 0xa9, 0x35, 0x35, 0x43, 0x37,
-	0x2c, 0x43, 0xdf, 0x6c, 0x56, 0xcd, 0x3d, 0xac, 0x65, 0x13, 0x61, 0x2a, 0x1a, 0x7b, 0x75, 0x53,
-	0x1f, 0x12, 0x4a, 0x4b, 0xeb, 0xef, 0x3f, 0x3b, 0xcd, 0x2b, 0xcf, 0x4f, 0xf3, 0xca, 0xef, 0xa7,
-	0x79, 0xe5, 0xfb, 0xb3, 0x7c, 0xe2, 0xf9, 0x59, 0x3e, 0xf1, 0xeb, 0x59, 0x3e, 0xf1, 0xf9, 0x2d,
-	0xe6, 0xda, 0x54, 0xfc, 0xb4, 0x95, 0xbf, 0xba, 0xfc, 0x27, 0x7a, 0x30, 0x29, 0xb8, 0x7e, 0xf7,
-	0xaf, 0x00, 0x00, 0x00, 0xff, 0xff, 0x1e, 0xd3, 0xe0, 0xcc, 0xa7, 0x0e, 0x00, 0x00,
+	// 1846 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x58, 0xcf, 0x73, 0x23, 0x47,
+	0xf5, 0xd7, 0x48, 0xb2, 0x2d, 0x3d, 0xcb, 0xb6, 0xb6, 0xed, 0xef, 0x7e, 0xc7, 0xce, 0x22, 0x1b,
+	0x39, 0x3f, 0x4c, 0x02, 0xf6, 0xda, 0x40, 0x0a, 0x02, 0x14, 0x25, 0xc9, 0xb2, 0xa5, 0xac, 0x7f,
+	0xd1, 0xd2, 0x3a, 0x84, 0xa2, 0x6a, 0xd2, 0x9a, 0x69, 0x49, 0x53, 0xd6, 0xfc, 0xa8, 0xe9, 0x96,
+	0x83, 0x73, 0xa1, 0x2a, 0xa7, 0xdc, 0xe0, 0x98, 0xe3, 0x56, 0x71, 0xa2, 0xb8, 0x71, 0xe7, 0x9e,
+	0x0b, 0x54, 0x8e, 0x39, 0x05, 0xd8, 0xfd, 0x43, 0xa0, 0xa6, 0xbb, 0x47, 0x1a, 0xc9, 0x9a, 0xb5,
+	0x37, 0xc0, 0x6d, 0xfa, 0xf5, 0x7b, 0xef, 0xf3, 0x7e, 0xf7, 0x93, 0xe0, 0x75, 0xbb, 0x63, 0xee,
+	0x99, 0x03, 0x9b, 0xba, 0x9c, 0xed, 0x39, 0x36, 0xef, 0x07, 0xf6, 0x60, 0xef, 0x7a, 0x3f, 0xfa,
+	0xdc, 0xf5, 0x03, 0x8f, 0x7b, 0xe8, 0xa1, 0xdd, 0x31, 0x77, 0x15, 0xd7, 0x6e, 0x74, 0x75, 0xbd,
+	0xbf, 0xb1, 0xd6, 0xf3, 0x7a, 0x9e, 0x60, 0xd9, 0x0b, 0xbf, 0x24, 0xf7, 0x46, 0xa9, 0xe7, 0x79,
+	0xbd, 0x01, 0xdd, 0x13, 0xa7, 0xce, 0xb0, 0xbb, 0x67, 0x0d, 0x03, 0xc2, 0x6d, 0xcf, 0x95, 0xf7,
+	0xe5, 0x1f, 0xc3, 0x7c, 0x83, 0xda, 0xbd, 0x3e, 0x47, 0x6f, 0xc0, 0xb2, 0xd2, 0x66, 0xf4, 0x05,
+	0x45, 0xd7, 0xb6, 0xb4, 0x9d, 0x2c, 0x5e, 0x52, 0x54, 0xc9, 0xf6, 0x5e, 0xee, 0xb3, 0x67, 0x9b,
+	0xa9, 0xcf, 0x9f, 0x6d, 0xa6, 0xca, 0x7f, 0xce, 0xc0, 0x62, 0x4d, 0xd8, 0xd1, 0xe2, 0x84, 0x53,
+	0xb4, 0x0e, 0x39, 0xb3, 0x4f, 0x6c, 0xd7, 0xb0, 0x2d, 0x21, 0x9a, 0xc7, 0x0b, 0xe2, 0xdc, 0xb4,
+	0x50, 0x0d, 0x96, 0x06, 0x84, 0x53, 0xc6, 0x23, 0xd5, 0xe9, 0x2d, 0x6d, 0x67, 0xf1, 0xa0, 0xb4,
+	0x3b, 0xdb, 0x97, 0x5d, 0x89, 0x85, 0x0b, 0x52, 0x48, 0x19, 0x58, 0x83, 0xa5, 0x6e, 0xe0, 0x7d,
+	0x42, 0xdd, 0x48, 0x49, 0xe6, 0x7e, 0x4a, 0xa4, 0x90, 0x52, 0xb2, 0x0d, 0x4b, 0xe6, 0x30, 0x08,
+	0xa8, 0xcb, 0x0d, 0xea, 0x7b, 0x66, 0x5f, 0xcf, 0x0a, 0x27, 0x0b, 0x8a, 0x58, 0x0f, 0x69, 0xe8,
+	0x04, 0x56, 0x78, 0x30, 0x64, 0xdc, 0x76, 0x7b, 0x86, 0x4f, 0x03, 0xdb, 0xb3, 0xf4, 0x39, 0x81,
+	0xb5, 0xbe, 0x2b, 0xc3, 0xb9, 0x1b, 0x85, 0x73, 0xf7, 0x50, 0x85, 0xb3, 0x9a, 0xfb, 0xe2, 0xeb,
+	0xcd, 0xd4, 0xe7, 0x7f, 0xdf, 0xd4, 0xf0, 0x72, 0x24, 0x7b, 0x21, 0x44, 0x51, 0x07, 0x56, 0x05,
+	0xbb, 0xe9, 0x0d, 0x0c, 0x9f, 0x04, 0xc4, 0xa1, 0x9c, 0x06, 0x4c, 0x9f, 0x17, 0x1a, 0xf7, 0x93,
+	0xac, 0x3f, 0x95, 0x9f, 0x17, 0x4a, 0xf2, 0x62, 0x24, 0x88, 0x91, 0x7f, 0x8b, 0x86, 0xbe, 0x0d,
+	0x85, 0xa1, 0xdf, 0x0b, 0x88, 0x45, 0x0d, 0x9f, 0xf0, 0xbe, 0xbe, 0xb0, 0x95, 0xd9, 0xc9, 0xe3,
+	0x45, 0x45, 0xbb, 0x20, 0xbc, 0xff, 0x5e, 0x36, 0x4c, 0x5c, 0xf9, 0xd3, 0x34, 0x2c, 0xd7, 0x3c,
+	0x97, 0x51, 0x97, 0x0d, 0x99, 0xcc, 0xdb, 0x23, 0xc8, 0x73, 0xdb, 0xa1, 0x8c, 0x13, 0xc7, 0x57,
+	0x39, 0x1f, 0x13, 0xd0, 0xbb, 0xa0, 0x77, 0x4d, 0xa3, 0x4f, 0x58, 0xdf, 0x50, 0x29, 0x14, 0x71,
+	0x33, 0x1c, 0x66, 0x89, 0x2c, 0xe6, 0xf1, 0x5a, 0xd7, 0x6c, 0x10, 0xd6, 0x3f, 0x11, 0xb7, 0x22,
+	0x80, 0xa7, 0xcc, 0x42, 0x7b, 0xb0, 0xa6, 0xf8, 0x4d, 0x1a, 0x70, 0xa9, 0x20, 0x94, 0xc9, 0x08,
+	0x99, 0x07, 0xf2, 0xae, 0x46, 0x03, 0x1e, 0xca, 0x86, 0x02, 0x3f, 0x80, 0xff, 0x9f, 0x09, 0xc4,
+	0x99, 0xc8, 0x51, 0x1e, 0xaf, 0xde, 0xc2, 0x69, 0x33, 0xf4, 0x3d, 0x58, 0xbd, 0x05, 0xc3, 0x99,
+	0x48, 0x57, 0x1e, 0x17, 0x27, 0x51, 0xda, 0x4c, 0x05, 0xe1, 0x5f, 0x1a, 0x14, 0x4e, 0x6d, 0xd6,
+	0xa1, 0x7d, 0x72, 0x6d, 0x7b, 0xc3, 0x00, 0x6d, 0x42, 0x5e, 0xa6, 0x60, 0x54, 0xbb, 0xd5, 0xb4,
+	0xae, 0xe1, 0x9c, 0x24, 0x36, 0x2d, 0x64, 0x42, 0x71, 0xdc, 0x1c, 0xc4, 0xa2, 0x81, 0xb1, 0xaf,
+	0x6a, 0xf8, 0x8d, 0x3b, 0x12, 0xd8, 0x10, 0xec, 0x55, 0xf4, 0xfc, 0xeb, 0xcd, 0xe5, 0x09, 0xd2,
+	0x3e, 0x5e, 0x76, 0x26, 0xce, 0x33, 0x40, 0x0e, 0x54, 0x8d, 0x7f, 0x63, 0x90, 0x83, 0x29, 0x90,
+	0x03, 0x15, 0x81, 0x17, 0x19, 0x58, 0x9a, 0x60, 0x44, 0x2e, 0x6c, 0x44, 0xe0, 0x8c, 0x93, 0x2b,
+	0x6a, 0x58, 0x36, 0xe3, 0x81, 0xdd, 0x19, 0x86, 0xd5, 0x2d, 0x62, 0xb2, 0x78, 0xf0, 0xf8, 0x0e,
+	0x33, 0x5a, 0xa1, 0xe0, 0x61, 0x4c, 0x0e, 0xeb, 0x4e, 0xc2, 0x0d, 0xfa, 0x2d, 0xbc, 0x99, 0x8c,
+	0x27, 0x92, 0x69, 0x77, 0x6d, 0x93, 0x70, 0xaa, 0xe2, 0xfc, 0xf6, 0x1d, 0xd8, 0xb5, 0xb1, 0x04,
+	0xde, 0x4e, 0x42, 0x8d, 0x31, 0x21, 0x0a, 0x6b, 0x3c, 0x20, 0x2e, 0x23, 0xa6, 0x40, 0x64, 0x2e,
+	0xf1, 0x59, 0xdf, 0x8b, 0xa6, 0xca, 0x41, 0x12, 0x5c, 0x8d, 0x04, 0x16, 0x71, 0xbd, 0xf6, 0x58,
+	0xb4, 0xa5, 0x24, 0xf1, 0x2a, 0xbf, 0x4d, 0x44, 0x1c, 0xb6, 0x66, 0xc1, 0x4c, 0x78, 0x98, 0x7d,
+	0x65, 0x0f, 0x4b, 0x33, 0xa0, 0x62, 0xf7, 0x2a, 0xcb, 0x7f, 0x4d, 0x83, 0x9e, 0x94, 0x1a, 0xb4,
+	0x06, 0x73, 0x72, 0x02, 0xca, 0x96, 0x97, 0x07, 0xf4, 0x14, 0x10, 0xb3, 0x7b, 0x2e, 0x0d, 0x98,
+	0xf1, 0xb1, 0xcd, 0xfb, 0x32, 0x37, 0x7a, 0x7a, 0x2b, 0xb3, 0xb3, 0x78, 0xf0, 0x56, 0x92, 0x81,
+	0x2d, 0x21, 0xf1, 0x81, 0xcd, 0xfb, 0x02, 0x06, 0x17, 0x95, 0x8a, 0x11, 0x05, 0x21, 0xc8, 0x86,
+	0xad, 0xa9, 0xba, 0x5f, 0x7c, 0xa3, 0xef, 0x40, 0x31, 0x16, 0x04, 0xd1, 0xba, 0xaa, 0xd3, 0x57,
+	0x62, 0xf4, 0xb0, 0x71, 0xd1, 0xb7, 0x00, 0xcc, 0x80, 0x12, 0x4e, 0x2d, 0x83, 0x70, 0xd1, 0xdc,
+	0x59, 0x9c, 0x57, 0x94, 0x0a, 0x47, 0x1f, 0x01, 0xba, 0x3d, 0x61, 0xbf, 0xf9, 0x80, 0x7d, 0x70,
+	0x6b, 0xc0, 0xaa, 0x78, 0xfe, 0x53, 0x83, 0x8d, 0xe4, 0xfc, 0x87, 0x6f, 0xcb, 0x28, 0xbd, 0xc2,
+	0x1b, 0xf9, 0x0a, 0x16, 0x22, 0xa2, 0x70, 0x65, 0x13, 0x16, 0x1d, 0x1a, 0x5c, 0x0d, 0xa8, 0x11,
+	0x78, 0x1e, 0x57, 0x23, 0x14, 0x24, 0x09, 0x7b, 0x1e, 0x9f, 0x19, 0x96, 0xcc, 0xec, 0xb0, 0x8c,
+	0x52, 0x98, 0x8d, 0xa7, 0xf0, 0x5d, 0x98, 0x57, 0x0f, 0xe4, 0xdc, 0xbd, 0x1e, 0x48, 0xc5, 0xad,
+	0x7c, 0xfc, 0x5d, 0x16, 0xd0, 0xed, 0x82, 0x1b, 0x25, 0x50, 0x8b, 0x25, 0x70, 0x1b, 0x96, 0xfc,
+	0x80, 0x86, 0x13, 0x94, 0x49, 0x33, 0xa5, 0x33, 0x85, 0x88, 0x38, 0x69, 0x63, 0x26, 0x6e, 0xe3,
+	0xa5, 0x2a, 0x33, 0xcb, 0xa0, 0x2e, 0xb7, 0xf9, 0x8d, 0xc1, 0x6f, 0xfc, 0xa8, 0x0f, 0x76, 0x5e,
+	0x5a, 0x66, 0x56, 0x5d, 0x08, 0xb4, 0x6f, 0xfc, 0xa8, 0xce, 0x62, 0x14, 0x74, 0x0c, 0x39, 0x87,
+	0x72, 0x62, 0x11, 0x4e, 0x94, 0xf7, 0xef, 0x24, 0x36, 0xf2, 0xd8, 0xbb, 0x53, 0x25, 0x82, 0x47,
+	0xc2, 0x08, 0x43, 0x71, 0x54, 0x52, 0x0e, 0x65, 0x8c, 0xf4, 0xa8, 0x2a, 0xa8, 0xc4, 0x2e, 0x88,
+	0x2a, 0xe9, 0x54, 0xb2, 0xe3, 0x15, 0x7f, 0x92, 0x10, 0x6e, 0x58, 0xca, 0xe9, 0x48, 0xe3, 0x82,
+	0x08, 0xd8, 0x92, 0xa4, 0x46, 0x6c, 0x3f, 0x85, 0x0d, 0xd2, 0xeb, 0x05, 0xb4, 0x17, 0xa6, 0xff,
+	0x9a, 0x06, 0xd2, 0xc8, 0x70, 0x78, 0x5c, 0xd1, 0x1b, 0x3d, 0x27, 0x44, 0xf4, 0x11, 0xc7, 0x65,
+	0x8c, 0xe1, 0x09, 0xbd, 0x41, 0xef, 0x43, 0x3e, 0x54, 0x47, 0xf8, 0x30, 0xa0, 0x7a, 0x5e, 0x58,
+	0xfc, 0xdd, 0x7b, 0x84, 0xa0, 0x15, 0xc9, 0xe0, 0xb1, 0xb8, 0xaa, 0x88, 0x3f, 0xa5, 0x61, 0x75,
+	0x46, 0xb0, 0xc2, 0x42, 0x1d, 0x85, 0xe8, 0x9a, 0x06, 0x2c, 0x7a, 0x27, 0xf2, 0x63, 0xcf, 0x2f,
+	0x25, 0x39, 0x69, 0x05, 0x4a, 0xff, 0x37, 0x57, 0xa0, 0x2d, 0x58, 0xb4, 0x5d, 0x9b, 0xdb, 0x72,
+	0x26, 0xa8, 0x72, 0x8b, 0x93, 0xd0, 0x06, 0xe4, 0x18, 0x25, 0x03, 0x71, 0x2d, 0x3b, 0x66, 0x74,
+	0x46, 0x15, 0x58, 0x50, 0x43, 0x4b, 0x9f, 0x7b, 0xb5, 0x61, 0x17, 0xc9, 0xa9, 0x68, 0x35, 0x60,
+	0x65, 0x8a, 0x23, 0x5c, 0x8c, 0x7d, 0x12, 0xf0, 0x9b, 0xd8, 0x62, 0x2c, 0xce, 0x4d, 0x2b, 0xec,
+	0x8e, 0x68, 0xc2, 0x8a, 0xee, 0x10, 0x07, 0xa5, 0x89, 0xc0, 0xca, 0x54, 0x49, 0xa1, 0x06, 0x2c,
+	0xa9, 0xd2, 0x09, 0xc3, 0xc8, 0x99, 0xae, 0x09, 0x5b, 0xb7, 0x13, 0x23, 0x28, 0x99, 0x2f, 0x48,
+	0xc0, 0x71, 0xc1, 0x19, 0x1f, 0x22, 0x63, 0xff, 0xa2, 0xc1, 0x62, 0x8c, 0x07, 0xd9, 0xb0, 0x3e,
+	0x5d, 0xf5, 0x02, 0x48, 0x54, 0x5e, 0x68, 0xfa, 0xf2, 0xc1, 0xee, 0x3d, 0xcb, 0x3f, 0xd4, 0xf7,
+	0x84, 0xde, 0xe0, 0x87, 0xfe, 0x4c, 0x3a, 0xfa, 0x19, 0xbc, 0x36, 0x1b, 0xea, 0x9a, 0x0c, 0x86,
+	0x54, 0x8d, 0x12, 0x7d, 0x86, 0xf0, 0x65, 0x78, 0xaf, 0xec, 0xff, 0x04, 0xd6, 0x13, 0x8b, 0x04,
+	0x15, 0x40, 0xbb, 0x52, 0x8f, 0x9b, 0x76, 0x15, 0x9e, 0x1c, 0x15, 0x65, 0xcd, 0x41, 0x3f, 0x81,
+	0x39, 0xbf, 0x6f, 0x1b, 0x5d, 0xf5, 0xda, 0x6f, 0x25, 0x39, 0x75, 0x14, 0xc8, 0x19, 0x5f, 0xcd,
+	0x86, 0xeb, 0x3d, 0xce, 0xfa, 0x7d, 0xfb, 0x48, 0x61, 0xff, 0x4d, 0x83, 0xb5, 0x59, 0x0d, 0x84,
+	0x3e, 0x80, 0x07, 0x3d, 0xea, 0x52, 0x66, 0x33, 0x63, 0xdc, 0x89, 0xda, 0xcb, 0x47, 0xdb, 0xb1,
+	0x14, 0x18, 0x29, 0x69, 0xa4, 0x70, 0xb1, 0x37, 0x45, 0x43, 0xbf, 0x80, 0x15, 0x67, 0x38, 0xe0,
+	0x76, 0x4c, 0xad, 0xec, 0xa0, 0x37, 0x13, 0xf3, 0x1f, 0xb2, 0xc7, 0x95, 0x2e, 0x3b, 0x13, 0x94,
+	0x2a, 0x40, 0x8e, 0xd9, 0x3d, 0x31, 0x7d, 0xcb, 0x9f, 0x6a, 0x50, 0x9c, 0xb6, 0x23, 0x5c, 0x0b,
+	0x47, 0x69, 0x4a, 0xf2, 0xea, 0xf1, 0x5d, 0x25, 0x31, 0xad, 0x75, 0x9c, 0xd7, 0xe9, 0x9b, 0xf2,
+	0x8f, 0x40, 0x4f, 0x92, 0x0a, 0x7f, 0xa8, 0x4c, 0x42, 0x17, 0x62, 0xc3, 0xaa, 0xfc, 0x47, 0x0d,
+	0x96, 0x27, 0xfd, 0x45, 0x4d, 0x58, 0x8c, 0x3f, 0x2f, 0xda, 0x2b, 0x3e, 0x2f, 0x40, 0xc7, 0x0f,
+	0xcb, 0x49, 0x1c, 0x5b, 0x46, 0xfd, 0xee, 0x4e, 0x98, 0xb0, 0x26, 0x6e, 0xeb, 0x57, 0x19, 0x28,
+	0x4e, 0xc3, 0x21, 0xff, 0x7f, 0xb1, 0x81, 0x37, 0x52, 0x2f, 0xd9, 0xc1, 0x7d, 0xd8, 0x30, 0xe5,
+	0x3a, 0x33, 0x0b, 0x31, 0xfd, 0x72, 0x44, 0xb5, 0x08, 0xcd, 0x44, 0x34, 0x13, 0xee, 0x10, 0x87,
+	0x47, 0x11, 0xa2, 0xed, 0x38, 0x43, 0x4e, 0x3a, 0x03, 0x6a, 0x74, 0xed, 0x01, 0x65, 0x46, 0x77,
+	0x38, 0x18, 0xa8, 0x76, 0xdc, 0xbf, 0x03, 0xb3, 0x19, 0x89, 0x1e, 0x85, 0x92, 0x47, 0xc3, 0xc1,
+	0xa0, 0x91, 0xc2, 0xeb, 0x66, 0xd2, 0x25, 0xfa, 0x08, 0xd6, 0x22, 0xd4, 0xd8, 0xde, 0xcc, 0xd4,
+	0xbe, 0xf1, 0xce, 0xfd, 0x57, 0x7d, 0xd6, 0x48, 0xe1, 0x55, 0xf3, 0x36, 0xb9, 0x9a, 0x83, 0x79,
+	0x59, 0x2c, 0xe5, 0xc7, 0xa0, 0x27, 0x45, 0x66, 0xf6, 0xca, 0x5d, 0xfe, 0x35, 0xac, 0x27, 0xfa,
+	0x85, 0x7e, 0x0e, 0xf3, 0x1d, 0x4a, 0xcc, 0x51, 0x01, 0xbc, 0x75, 0x87, 0xb1, 0x87, 0x9d, 0xaa,
+	0x60, 0xc7, 0x4a, 0xac, 0x7c, 0x09, 0xab, 0x33, 0xfc, 0xf8, 0xcf, 0xf5, 0x0e, 0x61, 0x65, 0xea,
+	0x0a, 0xe9, 0xb0, 0xe0, 0x52, 0xfe, 0xb1, 0x17, 0x5c, 0x45, 0xcf, 0x9c, 0x3a, 0x8e, 0x1d, 0x4f,
+	0xc7, 0x97, 0xc0, 0x03, 0xf8, 0xbf, 0xc9, 0x22, 0x30, 0xdc, 0xa1, 0xd3, 0xa1, 0x81, 0x7a, 0xbb,
+	0x57, 0xed, 0x78, 0x38, 0xce, 0xc4, 0x55, 0xf9, 0x43, 0x78, 0x38, 0xbb, 0xbd, 0x50, 0x09, 0x60,
+	0xd4, 0x60, 0xf2, 0x61, 0x2c, 0xe0, 0x18, 0x25, 0x5c, 0xbc, 0x3b, 0x84, 0x9b, 0x7d, 0xc3, 0x0f,
+	0x3c, 0xaf, 0x2b, 0x2c, 0x29, 0x60, 0x10, 0xa4, 0x8b, 0x90, 0x52, 0x7e, 0x1f, 0x72, 0xd1, 0xb8,
+	0x0f, 0x47, 0x8d, 0x3b, 0x74, 0x68, 0x40, 0xb8, 0x17, 0x44, 0xff, 0x89, 0x8c, 0x08, 0xe1, 0xaa,
+	0x61, 0x51, 0xd7, 0x73, 0x6c, 0x57, 0xdc, 0x4b, 0xa7, 0xe2, 0xa4, 0xb7, 0x9f, 0x69, 0x31, 0x3b,
+	0x27, 0x1f, 0xbe, 0x55, 0x58, 0x69, 0x9d, 0x55, 0x2e, 0x5a, 0x8d, 0xf3, 0xb6, 0x71, 0xd8, 0x3c,
+	0xae, 0xb7, 0xda, 0xc5, 0x14, 0x7a, 0x1d, 0xb6, 0x6a, 0x15, 0x7c, 0x58, 0x39, 0x3b, 0x37, 0xda,
+	0xb8, 0x72, 0xd6, 0xaa, 0xd4, 0xda, 0xcd, 0xf3, 0xb3, 0x96, 0x71, 0x5a, 0xc7, 0x4f, 0x4e, 0xea,
+	0x06, 0x3e, 0x3f, 0x6f, 0x17, 0x35, 0xb4, 0x0d, 0x9b, 0x67, 0xf5, 0x5f, 0xb6, 0x8d, 0xca, 0xf1,
+	0x31, 0xae, 0x1f, 0x57, 0xda, 0x75, 0xe3, 0xb2, 0x8e, 0x9b, 0x47, 0xcd, 0x5a, 0x25, 0xe4, 0x36,
+	0x9e, 0xd4, 0x3f, 0x2c, 0xa6, 0xd1, 0x16, 0x3c, 0x3a, 0xa9, 0xb4, 0xeb, 0xad, 0xb6, 0xd1, 0x3c,
+	0x3d, 0x7d, 0xda, 0xae, 0x54, 0x4f, 0xea, 0xc6, 0x51, 0xf3, 0xa4, 0x6e, 0x9c, 0x3d, 0x3d, 0xad,
+	0xd6, 0x71, 0x31, 0xb3, 0x91, 0xfd, 0xec, 0x0f, 0xa5, 0x54, 0xf5, 0x87, 0x5f, 0x3c, 0x2f, 0x69,
+	0x5f, 0x3e, 0x2f, 0x69, 0xff, 0x78, 0x5e, 0xd2, 0x7e, 0xff, 0xa2, 0x94, 0xfa, 0xf2, 0x45, 0x29,
+	0xf5, 0xd5, 0x8b, 0x52, 0xea, 0x57, 0xaf, 0x31, 0xdb, 0xa2, 0xe2, 0xaf, 0xbb, 0xbd, 0xdf, 0x4c,
+	0xff, 0x1f, 0xd9, 0x99, 0x17, 0xa3, 0xfb, 0xfb, 0xff, 0x0e, 0x00, 0x00, 0xff, 0xff, 0xed, 0x03,
+	0x2d, 0x05, 0xad, 0x14, 0x00, 0x00,
 }
 
 func (m *Height) Marshal() (dAtA []byte, err error) {
@@ -1175,10 +1834,17 @@ func (m *MithrilCertificate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
-	if m.Signature != 0 {
-		i = encodeVarintMithril(dAtA, i, uint64(m.Signature))
+	if m.Signature != nil {
+		{
+			size, err := m.Signature.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
 		i--
-		dAtA[i] = 0x48
+		dAtA[i] = 0x4a
 	}
 	if len(m.AggregateVerificationKey) > 0 {
 		i -= len(m.AggregateVerificationKey)
@@ -1218,10 +1884,17 @@ func (m *MithrilCertificate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x2a
 	}
-	if m.SignedEntityType != 0 {
-		i = encodeVarintMithril(dAtA, i, uint64(m.SignedEntityType))
+	if m.SignedEntityType != nil {
+		{
+			size, err := m.SignedEntityType.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
 		i--
-		dAtA[i] = 0x20
+		dAtA[i] = 0x22
 	}
 	if m.Epoch != 0 {
 		i = encodeVarintMithril(dAtA, i, uint64(m.Epoch))
@@ -1366,6 +2039,43 @@ func (m *ProtocolMessage) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.MessageParts) > 0 {
+		for iNdEx := len(m.MessageParts) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.MessageParts[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintMithril(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MessagePart) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MessagePart) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MessagePart) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
 	if len(m.ProtocolMessagePartValue) > 0 {
 		i -= len(m.ProtocolMessagePartValue)
 		copy(dAtA[i:], m.ProtocolMessagePartValue)
@@ -1401,11 +2111,16 @@ func (m *MithrilProtocolParameters) MarshalToSizedBuffer(dAtA []byte) (int, erro
 	_ = i
 	var l int
 	_ = l
-	if m.PhiF != 0 {
-		i = encodeVarintMithril(dAtA, i, uint64(m.PhiF))
-		i--
-		dAtA[i] = 0x18
+	{
+		size, err := m.PhiF.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintMithril(dAtA, i, uint64(size))
 	}
+	i--
+	dAtA[i] = 0x1a
 	if m.M != 0 {
 		i = encodeVarintMithril(dAtA, i, uint64(m.M))
 		i--
@@ -1413,6 +2128,518 @@ func (m *MithrilProtocolParameters) MarshalToSizedBuffer(dAtA []byte) (int, erro
 	}
 	if m.K != 0 {
 		i = encodeVarintMithril(dAtA, i, uint64(m.K))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CertificateSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CertificateSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CertificateSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SigType != nil {
+		{
+			size := m.SigType.Size()
+			i -= size
+			if _, err := m.SigType.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CertificateSignature_GenesisSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CertificateSignature_GenesisSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.GenesisSignature != nil {
+		{
+			size, err := m.GenesisSignature.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *CertificateSignature_MultiSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CertificateSignature_MultiSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.MultiSignature != nil {
+		{
+			size, err := m.MultiSignature.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *GenesisSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *GenesisSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *GenesisSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ProtocolGenesisSignature != nil {
+		{
+			size, err := m.ProtocolGenesisSignature.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ProtocolGenesisSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ProtocolGenesisSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ProtocolGenesisSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Signature) > 0 {
+		i -= len(m.Signature)
+		copy(dAtA[i:], m.Signature)
+		i = encodeVarintMithril(dAtA, i, uint64(len(m.Signature)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MultiSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MultiSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MultiSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Signature != nil {
+		{
+			size, err := m.Signature.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.EntityType != nil {
+		{
+			size, err := m.EntityType.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SignedEntityType) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SignedEntityType) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SignedEntityType) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Entity != nil {
+		{
+			size := m.Entity.Size()
+			i -= size
+			if _, err := m.Entity.MarshalTo(dAtA[i:]); err != nil {
+				return 0, err
+			}
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SignedEntityType_MithrilStakeDistribution) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SignedEntityType_MithrilStakeDistribution) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.MithrilStakeDistribution != nil {
+		{
+			size, err := m.MithrilStakeDistribution.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SignedEntityType_CardanoStakeDistribution) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SignedEntityType_CardanoStakeDistribution) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.CardanoStakeDistribution != nil {
+		{
+			size, err := m.CardanoStakeDistribution.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SignedEntityType_CardanoImmutableFilesFull) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SignedEntityType_CardanoImmutableFilesFull) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.CardanoImmutableFilesFull != nil {
+		{
+			size, err := m.CardanoImmutableFilesFull.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SignedEntityType_CardanoTransactions) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SignedEntityType_CardanoTransactions) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.CardanoTransactions != nil {
+		{
+			size, err := m.CardanoTransactions.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	return len(dAtA) - i, nil
+}
+func (m *CardanoStakeDistribution) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CardanoStakeDistribution) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CardanoStakeDistribution) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Epoch != 0 {
+		i = encodeVarintMithril(dAtA, i, uint64(m.Epoch))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CardanoImmutableFilesFull) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CardanoImmutableFilesFull) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CardanoImmutableFilesFull) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Beacon != nil {
+		{
+			size, err := m.Beacon.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CardanoTransactions) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CardanoTransactions) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CardanoTransactions) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Beacon != nil {
+		{
+			size, err := m.Beacon.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintMithril(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CardanoDbBeacon) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CardanoDbBeacon) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CardanoDbBeacon) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.ImmutableFileNumber != 0 {
+		i = encodeVarintMithril(dAtA, i, uint64(m.ImmutableFileNumber))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Epoch != 0 {
+		i = encodeVarintMithril(dAtA, i, uint64(m.Epoch))
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.Network) > 0 {
+		i -= len(m.Network)
+		copy(dAtA[i:], m.Network)
+		i = encodeVarintMithril(dAtA, i, uint64(len(m.Network)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *ProtocolMultiSignature) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *ProtocolMultiSignature) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *ProtocolMultiSignature) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BatchProof) > 0 {
+		i -= len(m.BatchProof)
+		copy(dAtA[i:], m.BatchProof)
+		i = encodeVarintMithril(dAtA, i, uint64(len(m.BatchProof)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Signatures) > 0 {
+		for iNdEx := len(m.Signatures) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Signatures[iNdEx])
+			copy(dAtA[i:], m.Signatures[iNdEx])
+			i = encodeVarintMithril(dAtA, i, uint64(len(m.Signatures[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Fraction) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Fraction) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Fraction) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Denominator != 0 {
+		i = encodeVarintMithril(dAtA, i, uint64(m.Denominator))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Numerator != 0 {
+		i = encodeVarintMithril(dAtA, i, uint64(m.Numerator))
 		i--
 		dAtA[i] = 0x8
 	}
@@ -1630,8 +2857,9 @@ func (m *MithrilCertificate) Size() (n int) {
 	if m.Epoch != 0 {
 		n += 1 + sovMithril(uint64(m.Epoch))
 	}
-	if m.SignedEntityType != 0 {
-		n += 1 + sovMithril(uint64(m.SignedEntityType))
+	if m.SignedEntityType != nil {
+		l = m.SignedEntityType.Size()
+		n += 1 + l + sovMithril(uint64(l))
 	}
 	if m.Metadata != nil {
 		l = m.Metadata.Size()
@@ -1649,8 +2877,9 @@ func (m *MithrilCertificate) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovMithril(uint64(l))
 	}
-	if m.Signature != 0 {
-		n += 1 + sovMithril(uint64(m.Signature))
+	if m.Signature != nil {
+		l = m.Signature.Size()
+		n += 1 + l + sovMithril(uint64(l))
 	}
 	return n
 }
@@ -1706,6 +2935,21 @@ func (m *ProtocolMessage) Size() (n int) {
 	}
 	var l int
 	_ = l
+	if len(m.MessageParts) > 0 {
+		for _, e := range m.MessageParts {
+			l = e.Size()
+			n += 1 + l + sovMithril(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MessagePart) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
 	if m.ProtocolMessagePartKey != 0 {
 		n += 1 + sovMithril(uint64(m.ProtocolMessagePartKey))
 	}
@@ -1728,8 +2972,237 @@ func (m *MithrilProtocolParameters) Size() (n int) {
 	if m.M != 0 {
 		n += 1 + sovMithril(uint64(m.M))
 	}
-	if m.PhiF != 0 {
-		n += 1 + sovMithril(uint64(m.PhiF))
+	l = m.PhiF.Size()
+	n += 1 + l + sovMithril(uint64(l))
+	return n
+}
+
+func (m *CertificateSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SigType != nil {
+		n += m.SigType.Size()
+	}
+	return n
+}
+
+func (m *CertificateSignature_GenesisSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.GenesisSignature != nil {
+		l = m.GenesisSignature.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *CertificateSignature_MultiSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.MultiSignature != nil {
+		l = m.MultiSignature.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *GenesisSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ProtocolGenesisSignature != nil {
+		l = m.ProtocolGenesisSignature.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *ProtocolGenesisSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Signature)
+	if l > 0 {
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *MultiSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.EntityType != nil {
+		l = m.EntityType.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	if m.Signature != nil {
+		l = m.Signature.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *SignedEntityType) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Entity != nil {
+		n += m.Entity.Size()
+	}
+	return n
+}
+
+func (m *SignedEntityType_MithrilStakeDistribution) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.MithrilStakeDistribution != nil {
+		l = m.MithrilStakeDistribution.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *SignedEntityType_CardanoStakeDistribution) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.CardanoStakeDistribution != nil {
+		l = m.CardanoStakeDistribution.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *SignedEntityType_CardanoImmutableFilesFull) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.CardanoImmutableFilesFull != nil {
+		l = m.CardanoImmutableFilesFull.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *SignedEntityType_CardanoTransactions) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.CardanoTransactions != nil {
+		l = m.CardanoTransactions.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+func (m *CardanoStakeDistribution) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Epoch != 0 {
+		n += 1 + sovMithril(uint64(m.Epoch))
+	}
+	return n
+}
+
+func (m *CardanoImmutableFilesFull) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Beacon != nil {
+		l = m.Beacon.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *CardanoTransactions) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Beacon != nil {
+		l = m.Beacon.Size()
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *CardanoDbBeacon) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Network)
+	if l > 0 {
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	if m.Epoch != 0 {
+		n += 1 + sovMithril(uint64(m.Epoch))
+	}
+	if m.ImmutableFileNumber != 0 {
+		n += 1 + sovMithril(uint64(m.ImmutableFileNumber))
+	}
+	return n
+}
+
+func (m *ProtocolMultiSignature) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Signatures) > 0 {
+		for _, b := range m.Signatures {
+			l = len(b)
+			n += 1 + l + sovMithril(uint64(l))
+		}
+	}
+	l = len(m.BatchProof)
+	if l > 0 {
+		n += 1 + l + sovMithril(uint64(l))
+	}
+	return n
+}
+
+func (m *Fraction) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Numerator != 0 {
+		n += 1 + sovMithril(uint64(m.Numerator))
+	}
+	if m.Denominator != 0 {
+		n += 1 + sovMithril(uint64(m.Denominator))
 	}
 	return n
 }
@@ -3164,10 +4637,10 @@ func (m *MithrilCertificate) Unmarshal(dAtA []byte) error {
 				}
 			}
 		case 4:
-			if wireType != 0 {
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field SignedEntityType", wireType)
 			}
-			m.SignedEntityType = 0
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowMithril
@@ -3177,11 +4650,28 @@ func (m *MithrilCertificate) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.SignedEntityType |= SignedEntityType(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.SignedEntityType == nil {
+				m.SignedEntityType = &SignedEntityType{}
+			}
+			if err := m.SignedEntityType.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
@@ -3319,10 +4809,10 @@ func (m *MithrilCertificate) Unmarshal(dAtA []byte) error {
 			m.AggregateVerificationKey = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 9:
-			if wireType != 0 {
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
 			}
-			m.Signature = 0
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowMithril
@@ -3332,11 +4822,28 @@ func (m *MithrilCertificate) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.Signature |= CertificateSignature(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Signature == nil {
+				m.Signature = &CertificateSignature{}
+			}
+			if err := m.Signature.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMithril(dAtA[iNdEx:])
@@ -3679,6 +5186,90 @@ func (m *ProtocolMessage) Unmarshal(dAtA []byte) error {
 		}
 		switch fieldNum {
 		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MessageParts", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.MessageParts = append(m.MessageParts, &MessagePart{})
+			if err := m.MessageParts[len(m.MessageParts)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MessagePart) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MessagePart: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MessagePart: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ProtocolMessagePartKey", wireType)
 			}
@@ -3818,10 +5409,10 @@ func (m *MithrilProtocolParameters) Unmarshal(dAtA []byte) error {
 				}
 			}
 		case 3:
-			if wireType != 0 {
+			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field PhiF", wireType)
 			}
-			m.PhiF = 0
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return ErrIntOverflowMithril
@@ -3831,7 +5422,1188 @@ func (m *MithrilProtocolParameters) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				m.PhiF |= uint64(b&0x7F) << shift
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.PhiF.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CertificateSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CertificateSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CertificateSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field GenesisSignature", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &GenesisSignature{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.SigType = &CertificateSignature_GenesisSignature{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MultiSignature", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &MultiSignature{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.SigType = &CertificateSignature_MultiSignature{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *GenesisSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: GenesisSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: GenesisSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProtocolGenesisSignature", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ProtocolGenesisSignature == nil {
+				m.ProtocolGenesisSignature = &ProtocolGenesisSignature{}
+			}
+			if err := m.ProtocolGenesisSignature.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ProtocolGenesisSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ProtocolGenesisSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ProtocolGenesisSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signature = append(m.Signature[:0], dAtA[iNdEx:postIndex]...)
+			if m.Signature == nil {
+				m.Signature = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MultiSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MultiSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MultiSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EntityType", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.EntityType == nil {
+				m.EntityType = &SignedEntityType{}
+			}
+			if err := m.EntityType.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Signature == nil {
+				m.Signature = &ProtocolMultiSignature{}
+			}
+			if err := m.Signature.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SignedEntityType) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SignedEntityType: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SignedEntityType: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistribution", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &MithrilStakeDistribution{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Entity = &SignedEntityType_MithrilStakeDistribution{v}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CardanoStakeDistribution", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &CardanoStakeDistribution{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Entity = &SignedEntityType_CardanoStakeDistribution{v}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CardanoImmutableFilesFull", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &CardanoImmutableFilesFull{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Entity = &SignedEntityType_CardanoImmutableFilesFull{v}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field CardanoTransactions", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &CardanoTransactions{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Entity = &SignedEntityType_CardanoTransactions{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CardanoStakeDistribution) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CardanoStakeDistribution: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CardanoStakeDistribution: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+			}
+			m.Epoch = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Epoch |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CardanoImmutableFilesFull) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CardanoImmutableFilesFull: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CardanoImmutableFilesFull: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Beacon", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Beacon == nil {
+				m.Beacon = &CardanoDbBeacon{}
+			}
+			if err := m.Beacon.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CardanoTransactions) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CardanoTransactions: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CardanoTransactions: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Beacon", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Beacon == nil {
+				m.Beacon = &CardanoDbBeacon{}
+			}
+			if err := m.Beacon.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CardanoDbBeacon) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CardanoDbBeacon: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CardanoDbBeacon: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Network", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Network = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+			}
+			m.Epoch = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Epoch |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ImmutableFileNumber", wireType)
+			}
+			m.ImmutableFileNumber = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ImmutableFileNumber |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *ProtocolMultiSignature) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: ProtocolMultiSignature: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: ProtocolMultiSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signatures", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signatures = append(m.Signatures, make([]byte, postIndex-iNdEx))
+			copy(m.Signatures[len(m.Signatures)-1], dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BatchProof", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthMithril
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BatchProof = append(m.BatchProof[:0], dAtA[iNdEx:postIndex]...)
+			if m.BatchProof == nil {
+				m.BatchProof = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipMithril(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthMithril
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Fraction) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowMithril
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Fraction: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Fraction: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Numerator", wireType)
+			}
+			m.Numerator = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Numerator |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denominator", wireType)
+			}
+			m.Denominator = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowMithril
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Denominator |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

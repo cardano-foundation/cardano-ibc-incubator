@@ -1,6 +1,6 @@
 {
     "protocolConsts": {
-        "k": 30,
+        "k": 2160,
         "protocolMagic": 42
     },
     "startTime": 1657186415,

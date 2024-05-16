@@ -154,7 +154,7 @@ func validateProtocolParameters(pm *MithrilProtocolParameters) error {
 		return errorsmod.Wrapf(ErrInvalidNumberLotteries, "number of lotteries should be greater than 0")
 	}
 
-	if pm.PhiF == 0 || pm.PhiF > 100 {
+	if pm.PhiF.Numerator == 0 || pm.PhiF.Numerator > pm.PhiF.Denominator {
 		return errorsmod.Wrapf(ErrInvalidChanceWinLottery, "chance of a signer to win a lottery should be greater than 0 and less than or equal to 1 (phiF/100)")
 	}
 
