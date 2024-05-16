@@ -178,7 +178,7 @@ export interface CardanoDbBeacon {
 }
 /** ProtocolMultiSignature wraps a multi-signature. */
 export interface ProtocolMultiSignature {
-  signatures: Uint8Array;
+  signatures: Uint8Array[];
   /** Assuming serialization of BatchPath is handled elsewhere. */
   batch_proof: Uint8Array;
 }
@@ -1778,15 +1778,15 @@ export const CardanoDbBeacon = {
 };
 function createBaseProtocolMultiSignature(): ProtocolMultiSignature {
   return {
-    signatures: new Uint8Array(),
+    signatures: [],
     batch_proof: new Uint8Array()
   };
 }
 export const ProtocolMultiSignature = {
   typeUrl: "/ibc.clients.mithril.v1.ProtocolMultiSignature",
   encode(message: ProtocolMultiSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.signatures.length !== 0) {
-      writer.uint32(10).bytes(message.signatures);
+    for (const v of message.signatures) {
+      writer.uint32(10).bytes(v!);
     }
     if (message.batch_proof.length !== 0) {
       writer.uint32(18).bytes(message.batch_proof);
@@ -1801,7 +1801,7 @@ export const ProtocolMultiSignature = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.signatures = reader.bytes();
+          message.signatures.push(reader.bytes());
           break;
         case 2:
           message.batch_proof = reader.bytes();
@@ -1815,19 +1815,23 @@ export const ProtocolMultiSignature = {
   },
   fromJSON(object: any): ProtocolMultiSignature {
     const obj = createBaseProtocolMultiSignature();
-    if (isSet(object.signatures)) obj.signatures = bytesFromBase64(object.signatures);
+    if (Array.isArray(object?.signatures)) obj.signatures = object.signatures.map((e: any) => bytesFromBase64(e));
     if (isSet(object.batch_proof)) obj.batch_proof = bytesFromBase64(object.batch_proof);
     return obj;
   },
   toJSON(message: ProtocolMultiSignature): unknown {
     const obj: any = {};
-    message.signatures !== undefined && (obj.signatures = base64FromBytes(message.signatures !== undefined ? message.signatures : new Uint8Array()));
+    if (message.signatures) {
+      obj.signatures = message.signatures.map(e => base64FromBytes(e !== undefined ? e : new Uint8Array()));
+    } else {
+      obj.signatures = [];
+    }
     message.batch_proof !== undefined && (obj.batch_proof = base64FromBytes(message.batch_proof !== undefined ? message.batch_proof : new Uint8Array()));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ProtocolMultiSignature>, I>>(object: I): ProtocolMultiSignature {
     const message = createBaseProtocolMultiSignature();
-    message.signatures = object.signatures ?? new Uint8Array();
+    message.signatures = object.signatures?.map(e => e) || [];
     message.batch_proof = object.batch_proof ?? new Uint8Array();
     return message;
   }
