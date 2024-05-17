@@ -51,6 +51,20 @@ func TestLegacyProcessor(t *testing.T) {
 	t.Run("TestRelayPacketLegacyWHomeDir", s.TestRelayPacketLegacyWHomeDir)
 }
 
+func TestCreateAndUpdateClients(t *testing.T) {
+	s := &IBCTestSuite{
+		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
+	}
+	s.SetupTestHomeDir(t, "")
+	t.Run("Create and Update Clients", func(t *testing.T) {
+		runResult := s.createClients(t, s.System)
+		assert.Nil(t, runResult.Err)
+		time.Sleep(5 * time.Second)
+		runResult = s.updateClient(t, s.System)
+		assert.Nil(t, runResult.Err)
+	})
+}
+
 func (s *IBCTestSuite) SetupTestHomeDir(t *testing.T, homeDir string) {
 	s.System = setUp(t, homeDir)
 }
@@ -184,6 +198,26 @@ func (s *IBCTestSuite) TestRelayPacketLegacyWHomeDir(t *testing.T) {
 	}
 
 	s.TestRelayPacketLegacy(t)
+}
+
+func (s *IBCTestSuite) createClients(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",
+		"clients", Path,
+	)
+
+}
+
+func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
+		"transact", "update-clients", Path,
+	)
+
 }
 
 func (s *IBCTestSuite) createConnection(t *testing.T, sys *relayertest.System) relayertest.RunResult {

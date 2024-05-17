@@ -53,6 +53,10 @@ func (AppModuleBasic) RegisterInterfaces(registry codectypes.InterfaceRegistry) 
 		(*exported.ConsensusState)(nil),
 		&mithril.ConsensusState{},
 	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&mithril.MithrilHeader{},
+	)
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the ibc module.

@@ -724,7 +724,6 @@ func (cc *CosmosProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexpor
 	}
 
 	clientMsg, err := clienttypes.PackClientMessage(dstHeader)
-	clientMsg.TypeUrl = "/ibc.clients.cardano.v1.BlockData"
 	if err != nil {
 		return nil, err
 	}

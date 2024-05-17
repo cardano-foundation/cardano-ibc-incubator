@@ -396,3 +396,12 @@ func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbc
 	}
 	return res, nil
 }
+
+func (gw Gateway) QueryIBCHeader(ctx context.Context, h int64) (*ibcclient.QueryIBCHeaderResponse, error) {
+	res, err := gw.TypeProvider.IBCHeader(ctx, &ibcclient.QueryIBCHeaderRequest{Height: uint64(h)})
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+
+}
