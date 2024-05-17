@@ -25,4 +25,8 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		(*exported.ClientMessage)(nil),
 		&Misbehaviour{},
 	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&MithrilHeader{},
+	)
 }

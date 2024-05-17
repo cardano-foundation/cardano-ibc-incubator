@@ -39,10 +39,13 @@ func (cs *ClientState) verifyHeader(
 	fcTsInPrevEpoch := getFcTsInEpoch(clientStore, header.TransactionSnapshot.Epoch-1)
 
 	if fcMsdInEpoch != nilCertificate {
-		if header.MithrilStakeDistributionCertificate.PreviousHash != fcMsdInEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid latest mithril state distribution certificate")
+		if header.MithrilStakeDistribution.CertificateHash != fcMsdInEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s %v != %v", "invalid latest mithril state distribution certificate:", header.MithrilStakeDistributionCertificate.Hash, fcMsdInEpoch.Hash)
 		}
 	} else {
+		if fcMsdInPrevEpoch == nilCertificate {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+		}
 		if header.MithrilStakeDistributionCertificate.PreviousHash != fcMsdInPrevEpoch.Hash {
 			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid first mithril state distribution certificate")
 		}
@@ -50,11 +53,14 @@ func (cs *ClientState) verifyHeader(
 
 	if fcTsInEpoch != nilCertificate {
 		if header.TransactionSnapshotCertificate.PreviousHash != fcTsInEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid latest mithril state distribution certificate")
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s %v != %v", "invalid latest transaction snapshot certificate:", header.TransactionSnapshotCertificate.PreviousHash, fcTsInEpoch.Hash)
 		}
 	} else {
+		if fcTsInPrevEpoch == nilCertificate {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first transaction snapshot certificate")
+		}
 		if header.TransactionSnapshotCertificate.PreviousHash != fcTsInPrevEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid first mithril state distribution certificate")
+			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid first transaction snapshot certificate")
 		}
 	}
 
@@ -71,7 +77,8 @@ func (cs *ClientState) verifyHeader(
 }
 
 func (c *MithrilCertificate) verifyCertificate() error {
-	return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+	// TO-DO: not implemented
+	return nil
 }
 
 func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage) []exported.Height {

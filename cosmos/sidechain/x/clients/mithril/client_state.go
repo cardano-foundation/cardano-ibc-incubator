@@ -187,6 +187,10 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
 	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
+	setFcMsdInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FcHashLatestEpochMsd}, cs.CurrentEpoch)
+	setFcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FcHashLatestEpochTs}, cs.CurrentEpoch)
+	setLcMsdInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashMsd}, cs.CurrentEpoch)
+	setLcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashTs}, cs.CurrentEpoch)
 
 	return nil
 }
