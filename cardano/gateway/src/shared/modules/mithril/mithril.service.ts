@@ -9,6 +9,8 @@ import { RegisterdSignersResponseDTO } from './dtos/get-registerd-signers-for-ep
 import { CertificateDetailDTO } from './dtos/get-certificate-by-hash.dto';
 import { SnapshotDTO } from './dtos/get-most-recent-snapshots.dto';
 import { MithrilClient } from '@cuonglv0297/mithril-client-wasm';
+import { CardanoTransactionSetSnapshotDTO } from './dtos/get-most-recent-cardano-transactions.dto';
+import { MithrilStakeDistributionDTO } from './dtos/get-most-recent-mithril-stake-distributions.dto';
 
 @Injectable()
 export class MithrilService {
@@ -68,6 +70,24 @@ export class MithrilService {
     });
 
     return snapshots.map((snapshot) => snapshot as unknown as SnapshotDTO);
+  }
+
+  async getCardanoTransactionsSetSnapshot(): Promise<CardanoTransactionSetSnapshotDTO[]> {
+    const cardanoTransactions = await this._request({
+      path: '/artifact/cardano-transactions',
+      method: 'GET',
+    });
+
+    return cardanoTransactions.map((tx) => tx as unknown as CardanoTransactionSetSnapshotDTO);
+  }
+
+  async getMostRecentMithrilStakeDistributions(): Promise<MithrilStakeDistributionDTO[]> {
+    const stakeDistributions = await this._request({
+      path: '/artifact/mithril-stake-distributions',
+      method: 'GET',
+    });
+
+    return stakeDistributions.map((stakeDistribution) => stakeDistribution as unknown as MithrilStakeDistributionDTO);
   }
 
   private async _request(requestData: { path: string; payload?: any; params?: any; method: Method }): Promise<any> {

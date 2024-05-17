@@ -50,7 +50,7 @@ export function encodeToString(src) {
   return new TextDecoder().decode(encode(src));
 }
 
-export function fromHex(hex) {
+export function fromHex(hex): Uint8Array {
   if (!hex) return new Uint8Array();
   return decodeString(hex);
 }
