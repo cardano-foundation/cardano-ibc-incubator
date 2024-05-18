@@ -50,6 +50,8 @@ import {
   QueryBlockSearchResponse,
   QueryTransactionByHashRequest,
   QueryTransactionByHashResponse,
+  QueryIBCHeaderRequest,
+  QueryIBCHeaderResponse,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { QueryService } from './services/query.service';
 import { ConnectionService } from './services/connection.service';
@@ -191,5 +193,11 @@ export class QueryController {
   ): Promise<QueryProofUnreceivedPacketsResponse> {
     const response: QueryProofUnreceivedPacketsResponse = await this.packetService.queryProofUnreceivedPackets(request);
     return response as unknown as QueryProofUnreceivedPacketsResponse;
+  }
+
+  @GrpcMethod('Query', 'IBCHeader')
+  async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
+    const response: QueryIBCHeaderResponse = await this.queryService.queryIBCHeader(request);
+    return response as unknown as QueryIBCHeaderResponse;
   }
 }

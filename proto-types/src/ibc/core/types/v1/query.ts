@@ -1,5 +1,6 @@
 /* eslint-disable */
 import { ResultBlockResults, ResultBlockSearch, Event } from "./block";
+import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
@@ -38,6 +39,12 @@ export interface QueryTransactionByHashResponse {
   gas_fee: bigint;
   tx_size: bigint;
   events: Event[];
+}
+export interface QueryIBCHeaderRequest {
+  height: bigint;
+}
+export interface QueryIBCHeaderResponse {
+  header?: Any;
 }
 function createBaseQueryBlockResultsRequest(): QueryBlockResultsRequest {
   return {
@@ -429,11 +436,108 @@ export const QueryTransactionByHashResponse = {
     return message;
   }
 };
+function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
+  return {
+    height: BigInt(0)
+  };
+}
+export const QueryIBCHeaderRequest = {
+  typeUrl: "/ibc.core.types.v1.QueryIBCHeaderRequest",
+  encode(message: QueryIBCHeaderRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.height !== BigInt(0)) {
+      writer.uint32(16).uint64(message.height);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryIBCHeaderRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryIBCHeaderRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 2:
+          message.height = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryIBCHeaderRequest {
+    const obj = createBaseQueryIBCHeaderRequest();
+    if (isSet(object.height)) obj.height = BigInt(object.height.toString());
+    return obj;
+  },
+  toJSON(message: QueryIBCHeaderRequest): unknown {
+    const obj: any = {};
+    message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderRequest>, I>>(object: I): QueryIBCHeaderRequest {
+    const message = createBaseQueryIBCHeaderRequest();
+    if (object.height !== undefined && object.height !== null) {
+      message.height = BigInt(object.height.toString());
+    }
+    return message;
+  }
+};
+function createBaseQueryIBCHeaderResponse(): QueryIBCHeaderResponse {
+  return {
+    header: undefined
+  };
+}
+export const QueryIBCHeaderResponse = {
+  typeUrl: "/ibc.core.types.v1.QueryIBCHeaderResponse",
+  encode(message: QueryIBCHeaderResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.header !== undefined) {
+      Any.encode(message.header, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): QueryIBCHeaderResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseQueryIBCHeaderResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.header = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): QueryIBCHeaderResponse {
+    const obj = createBaseQueryIBCHeaderResponse();
+    if (isSet(object.header)) obj.header = Any.fromJSON(object.header);
+    return obj;
+  },
+  toJSON(message: QueryIBCHeaderResponse): unknown {
+    const obj: any = {};
+    message.header !== undefined && (obj.header = message.header ? Any.toJSON(message.header) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderResponse>, I>>(object: I): QueryIBCHeaderResponse {
+    const message = createBaseQueryIBCHeaderResponse();
+    if (object.header !== undefined && object.header !== null) {
+      message.header = Any.fromPartial(object.header);
+    }
+    return message;
+  }
+};
 /** Query provides defines the gRPC querier service */
 export interface Query {
   BlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse>;
   BlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse>;
   TransactionByHash(request: QueryTransactionByHashRequest): Promise<QueryTransactionByHashResponse>;
+  IBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse>;
 }
 export class QueryClientImpl implements Query {
   private readonly rpc: Rpc;
@@ -442,6 +546,7 @@ export class QueryClientImpl implements Query {
     this.BlockResults = this.BlockResults.bind(this);
     this.BlockSearch = this.BlockSearch.bind(this);
     this.TransactionByHash = this.TransactionByHash.bind(this);
+    this.IBCHeader = this.IBCHeader.bind(this);
   }
   BlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const data = QueryBlockResultsRequest.encode(request).finish();
@@ -457,5 +562,10 @@ export class QueryClientImpl implements Query {
     const data = QueryTransactionByHashRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "TransactionByHash", data);
     return promise.then(data => QueryTransactionByHashResponse.decode(new BinaryReader(data)));
+  }
+  IBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
+    const data = QueryIBCHeaderRequest.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.types.v1.Query", "IBCHeader", data);
+    return promise.then(data => QueryIBCHeaderResponse.decode(new BinaryReader(data)));
   }
 }

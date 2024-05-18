@@ -20,7 +20,7 @@ import {
 import {
   ClientState as ClientStateMithril,
   ConsensusState as ConsensusStateMithril,
-  SignedEntityType,
+  MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 import {
   InteractionContext,
@@ -48,6 +48,8 @@ import {
   QueryBlockSearchResponse,
   QueryTransactionByHashRequest,
   QueryTransactionByHashResponse,
+  QueryIBCHeaderRequest,
+  QueryIBCHeaderResponse,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
@@ -96,6 +98,10 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { getNanoseconds } from '../../shared/helpers/time';
 import { doubleToFraction } from '../../shared/helpers/number';
+import {
+  normalizeMithrilStakeDistribution,
+  normalizeMithrilStakeDistributionCertificate,
+} from '../../shared/helpers/mithril-header';
 
 @Injectable()
 export class QueryService {
@@ -116,9 +122,20 @@ export class QueryService {
     const currentEpochSettings = await this.mithrilService.getCurrentEpochSettings();
 
     let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
-    let lastMithrilStakeDistribution = mithrilStakeDistributionsList[0];
-    let lastCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
-      lastMithrilStakeDistribution.certificate_hash,
+    let mithrilDistribution = mithrilStakeDistributionsList[0];
+    let fcCertificateMsd = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      mithrilDistribution.certificate_hash,
+    );
+
+    let certificateList = await this.mithrilService.mithrilClient.list_mithril_certificates();
+    const latestCertificateMsd = certificateList.find(
+      (certificate) => BigInt(certificate.epoch) === BigInt(mithrilDistribution.epoch),
+    );
+
+    const listSnapshots = await this.mithrilService.mithrilClient.list_snapshots();
+    let latestSnapshot = listSnapshots[0];
+    const latestSnapshotCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      latestSnapshot.certificate_hash,
     );
 
     const phifFraction = doubleToFraction(currentEpochSettings.protocol.phi_f);
@@ -128,7 +145,7 @@ export class QueryService {
       /** Latest height the client was updated to */
       latest_height: {
         /** the immutable file number */
-        mithril_height: BigInt(lastCertificate.beacon.immutable_file_number),
+        mithril_height: BigInt(latestSnapshotCertificate.beacon.immutable_file_number),
       },
       /** Block height when the client was frozen due to a misbehaviour */
       frozen_height: {
@@ -155,37 +172,15 @@ export class QueryService {
       upgrade_path: [],
     } as unknown as ClientStateMithril;
 
-    const listSnapshots = await this.mithrilService.mithrilClient.list_snapshots();
-    const snapshotsOfLatestEpoch = listSnapshots.filter(
-      (snapshot) => snapshot.beacon.epoch === currentEpochSettings.epoch,
-    );
-
-    let latestSnapshot = listSnapshots.find(
-      (snapshot) => snapshot.certificate_hash === lastCertificate.certificate_hash,
-    );
-    if (!latestSnapshot) latestSnapshot = listSnapshots[0];
-
-    let firstSnapshotOfLatestEpoch = listSnapshots[0];
-    if (snapshotsOfLatestEpoch.length)
-      firstSnapshotOfLatestEpoch = snapshotsOfLatestEpoch[snapshotsOfLatestEpoch.length - 1];
-
-    const listStakeDistributionOfLatestEpoch = mithrilStakeDistributionsList.filter(
-      (e) => e.epoch === currentEpochSettings.epoch,
-    );
-    let fstStakeDistributionOfLatestEpoch = mithrilStakeDistributionsList[0];
-    if (listStakeDistributionOfLatestEpoch.length)
-      fstStakeDistributionOfLatestEpoch =
-        listStakeDistributionOfLatestEpoch[listStakeDistributionOfLatestEpoch.length - 1];
-
-    const timestamp = new Date(lastCertificate.metadata.sealed_at).valueOf();
+    const timestamp = new Date(fcCertificateMsd.metadata.sealed_at).valueOf();
     const consensusStateMithril: ConsensusStateMithril = {
-      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(lastCertificate.metadata.sealed_at)),
+      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(fcCertificateMsd.metadata.sealed_at)),
       /** First certificate hash of latest epoch of mithril stake distribution */
-      fc_hash_latest_epoch_msd: fstStakeDistributionOfLatestEpoch.hash,
+      fc_hash_latest_epoch_msd: mithrilDistribution.certificate_hash,
       /** Latest certificate hash of mithril stake distribution */
-      latest_cert_hash_msd: lastMithrilStakeDistribution.hash,
+      latest_cert_hash_msd: latestCertificateMsd.hash,
       /** First certificate hash of latest epoch of transaction snapshot */
-      fc_hash_latest_epoch_ts: firstSnapshotOfLatestEpoch.certificate_hash,
+      fc_hash_latest_epoch_ts: mithrilDistribution.certificate_hash,
       /** Latest certificate hash of transaction snapshot */
       latest_cert_hash_ts: latestSnapshot.certificate_hash,
     } as unknown as ConsensusStateMithril;
@@ -291,11 +286,13 @@ export class QueryService {
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     // const blockHeight = await (await this.getStateQueryClient()).blockHeight();
-    const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    // const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+
     const latestHeightResponse = {
-      height: latestBlockNo,
+      height: listSnapshots[0].beacon.immutable_file_number,
     };
-    // this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
+    this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
@@ -785,6 +782,62 @@ export class QueryService {
       tx_size: tx.tx_size,
       events: createClientEvent ? createClientEvent.events : [],
     } as unknown as QueryTransactionByHashResponse;
+    return response;
+  }
+
+  async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
+    this.logger.log(`height = ${request.height}`, 'queryIBCHeader');
+    const { height } = request;
+    if (!height) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+    }
+    let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
+    let mithrilStakeDistribution = mithrilStakeDistributionsList[0];
+
+    let distributionCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      mithrilStakeDistribution.certificate_hash,
+    );
+
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const snapshot = listSnapshots.find((e) => BigInt(e.beacon.immutable_file_number) === BigInt(height));
+    if (!snapshot) throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
+    const snapshotCertificate = await await this.mithrilService.mithrilClient.get_mithril_certificate(
+      snapshot.certificate_hash,
+    );
+
+    const mithrilHeader: MithrilHeader = {
+      mithril_stake_distribution: normalizeMithrilStakeDistribution(mithrilStakeDistribution, distributionCertificate),
+      mithril_stake_distribution_certificate: normalizeMithrilStakeDistributionCertificate(
+        mithrilStakeDistribution,
+        distributionCertificate,
+      ),
+      transaction_snapshot: {
+        snapshot_hash: snapshot.hash,
+        merkle_root: snapshot.merkle_root,
+        certificate_hash: snapshot.certificate_hash,
+        epoch: BigInt(snapshotCertificate.beacon.epoch),
+        height: {
+          mithril_height: BigInt(snapshotCertificate.beacon.immutable_file_number),
+        },
+      },
+      transaction_snapshot_certificate: normalizeMithrilStakeDistributionCertificate(
+        {
+          epoch: snapshot.beacon.epoch,
+          hash: snapshot.hash,
+          certificate_hash: snapshot.certificate_hash,
+          created_at: snapshot.created_at,
+        },
+        snapshotCertificate,
+      ),
+    };
+
+    const mithrilHeaderAny: Any = {
+      type_url: '/ibc.clients.mithril.v1.MithrilHeader',
+      value: MithrilHeader.encode(mithrilHeader).finish(),
+    };
+    const response: QueryIBCHeaderResponse = {
+      header: mithrilHeaderAny,
+    };
     return response;
   }
 }
