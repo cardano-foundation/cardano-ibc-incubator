@@ -77,7 +77,7 @@ func (h Height) EQ(other exported.Height) bool {
 
 // String returns a string representation of Height
 func (h Height) String() string {
-	return fmt.Sprintf("%d", h.MithrilHeight)
+	return fmt.Sprintf("%d-%d", 0, h.MithrilHeight)
 }
 
 // Decrement will return a new height with the MithrilHeight decremented

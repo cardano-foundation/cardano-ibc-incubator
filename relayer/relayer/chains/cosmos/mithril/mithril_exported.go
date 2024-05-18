@@ -108,3 +108,28 @@ func (m *ConsensusState) ValidateBasic() error {
 	//TODO implement me
 	panic("implement me")
 }
+
+func (m *MithrilHeader) Height() uint64 {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MithrilHeader) NextValidatorsHash() []byte {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MithrilHeader) ClientType() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MithrilHeader) ValidateBasic() error {
+	//TODO implement me
+	panic("implement me")
+}

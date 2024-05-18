@@ -9,8 +9,6 @@ import (
 
 	"github.com/cardano/relayer/v1/constant"
 
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
-
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
@@ -121,8 +119,11 @@ func CreateClient(
 	//If a client ID was specified in the path and override is not set, ensure the client exists.
 	if !override && cardanoChain.PathEnd.ClientID != "" {
 		// TODO: check client is not expired
-		srcHeight, _ := cardanoChain.ChainProvider.QueryCardanoLatestHeight(ctx)
-		_, err := cardanoChain.ChainProvider.QueryClientStateResponse(ctx, int64(srcHeight), cardanoChain.ClientID())
+		srcHeight, err := cardanoChain.ChainProvider.QueryLatestHeight(ctx)
+		if err != nil {
+			return "", err
+		}
+		_, err = cardanoChain.ChainProvider.QueryClientStateResponse(ctx, int64(srcHeight), cardanoChain.ClientID())
 		if err != nil {
 			return "", fmt.Errorf("please ensure provided on-chain client (%s) exists on the chain (%s): %w",
 				cardanoChain.PathEnd.ClientID, cardanoChain.ChainID(), err)
@@ -136,7 +137,7 @@ func CreateClient(
 	case false: //Create client on cosmos for cardano
 		cosmosChain.log.Info("Start create client on cosmos for cardano", zap.Time("time", time.Now()))
 
-		srcHeight, err := cardanoChain.ChainProvider.QueryCardanoLatestHeight(ctx)
+		srcHeight, err := cardanoChain.ChainProvider.QueryLatestHeight(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -279,19 +280,16 @@ func MsgUpdateClient(
 	}
 	switch src.ChainProvider.Type() {
 	case "cardano": // cardano -> cosmos
-		var srcBlockData *module.BlockData
-		// TODO: use for check misbehavior
-		//var dstTrustedBlockData *pbclientstruct.BlockData
-
+		var ibcHeader provider.IBCHeader
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.Go(func() error {
 			return retry.Do(func() error {
 				var err error
-				srcBlockData, err = src.ChainProvider.QueryBlockData(egCtx, srch)
+				ibcHeader, err = src.ChainProvider.QueryIBCHeader(egCtx, srch)
 				return err
 			}, retry.Context(egCtx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
 				src.log.Info(
-					"Failed to query Block Data from Cardano when building update client message",
+					"Failed to query Mithril header from Cardano when building update client message",
 					zap.String("client_id", dstClientId),
 					zap.Uint("attempt", n+1),
 					zap.Uint("max_attempts", RtyAttNum),
@@ -299,29 +297,17 @@ func MsgUpdateClient(
 				)
 			}))
 		})
-		// TODO: use for check misbehavior
-		// eg.Go(func() error {
-		// 	return retry.Do(func() error {
-		// 		var err error
-		// 		dstTrustedBlockData, err = src.ChainProvider.QueryBlockData(egCtx, int64(dstClientState.GetLatestHeight().GetRevisionHeight())+1)
-		// 		return err
-		// 	}, retry.Context(egCtx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
-		// 		src.log.Info(
-		// 			"Failed to query Block Data from Cardano when building update client message",
-		// 			zap.String("client_id", dst.ClientID()),
-		// 			zap.Uint("attempt", n+1),
-		// 			zap.Uint("max_attempts", RtyAttNum),
-		// 			zap.Error(err),
-		// 		)
-		// 	}))
-		// })
 
 		if err := eg.Wait(); err != nil {
 			return nil, err
 		}
 
+		msgUpdateClient, ok := ibcHeader.(*mithril.MithrilHeader)
+		if !ok {
+			return nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+		}
 		// updates off-chain light client
-		return dst.ChainProvider.MsgUpdateClient(dstClientId, srcBlockData)
+		return dst.ChainProvider.MsgUpdateClient(dstClientId, msgUpdateClient)
 
 	case "cosmos": // cosmos -> cardano
 		var srcHeader, dstTrustedHeader provider.IBCHeader
@@ -416,7 +402,7 @@ func UpdateClients(
 		Src: []provider.RelayerMessage{srcMsgUpdateClient},
 		Dst: []provider.RelayerMessage{dstMsgUpdateClient},
 	}
-
+	//clients.Src = nil
 	// Send msgs to both chains
 	result := clients.Send(ctx, src.log, AsRelayMsgSender(src), AsRelayMsgSender(dst), memo)
 	if err := result.Error(); err != nil {
