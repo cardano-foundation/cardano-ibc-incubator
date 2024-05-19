@@ -406,7 +406,7 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []*MTLeaf, proof *Batch
 
 // ====================== MerkleTree implementation ======================
 // Provided a non-empty list of leaves, `create` generates its corresponding `MerkleTree`.
-func Create(leaves []*MTLeaf) (*MerkleTree, error) {
+func Create(leaves []MTLeaf) (*MerkleTree, error) {
 	n := uint64(len(leaves))
 	if n == 0 {
 		return nil, fmt.Errorf("MerkleTree::create() called with no leaves")

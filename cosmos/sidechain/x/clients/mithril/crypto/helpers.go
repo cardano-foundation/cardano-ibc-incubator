@@ -1,7 +1,9 @@
 package crypto
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math/bits"
 
 	blst "github.com/supranational/blst/bindings/go"
 )
@@ -69,4 +71,51 @@ func p1AffineToSig(groupedSigs *blst.P1) *BlstSig {
 	affineP1 := groupedSigs.ToAffine()
 	blstSig := new(blst.P2Affine).Uncompress(affineP1.Compress())
 	return blstSig
+}
+
+// ////////////////
+// Heap Helpers //
+// ////////////////
+// parent returns the index of the parent of the given node.
+func parent(index uint64) (uint64, error) {
+	if index == 0 {
+		return 0, fmt.Errorf("the root node does not have a parent")
+	}
+	return (index - 1) / 2, nil
+}
+
+// leftChild returns the index of the left child of the given node.
+func leftChild(index uint64) uint64 {
+	return (2 * index) + 1
+}
+
+// rightChild returns the index of the right child of the given node.
+func rightChild(index uint64) uint64 {
+	return (2 * index) + 2
+}
+
+// sibling returns the index of the sibling of the given node.
+func sibling(index uint64) (uint64, error) {
+	if index == 0 {
+		return 0, fmt.Errorf("the root node does not have a sibling")
+	}
+	if index%2 == 1 {
+		return index + 1, nil
+	}
+	return index - 1, nil
+}
+
+func nextPowerOfTwo(x uint64) uint64 {
+	if x < 2 {
+		return 1
+	}
+	return 1 << (64 - bits.LeadingZeros64(x-1))
+}
+
+func toByteSlice(indices []uint64) []byte {
+	result := make([]byte, 8*len(indices))
+	for i, val := range indices {
+		binary.BigEndian.PutUint64(result[i*8:], val)
+	}
+	return result
 }
