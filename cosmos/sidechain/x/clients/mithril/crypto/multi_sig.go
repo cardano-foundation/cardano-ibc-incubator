@@ -45,9 +45,9 @@ type ProofOfPossession struct {
 
 // MultiSig public key, contains the verification key and the proof of possession.
 type VerificationKeyPoP struct {
-	/// The verification key.
+	// The verification key.
 	VK *VerificationKey
-	/// Proof of Possession.
+	// Proof of Possession.
 	POP *ProofOfPossession
 }
 
@@ -199,34 +199,34 @@ func (vk *VerificationKey) AggregateVerificationKeys(keys []*VerificationKey) (*
 }
 
 // ====================== VerificationKeyPoP implementation ======================
-// / if `e(k1,g2) = e(H_G1("PoP" || mvk),mvk)` and `e(g1,mvk) = e(k2,g2)`
-// / are both true, return 1. The first part is a signature verification
-// / of message "PoP", while the second we need to compute the pairing
-// / manually.
+// if `e(k1,g2) = e(H_G1("PoP" || mvk),mvk)` and `e(g1,mvk) = e(k2,g2)`
+// are both true, return 1. The first part is a signature verification
+// of message "PoP", while the second we need to compute the pairing
+// manually.
 // If we are really looking for performance improvements, we can combine the
 // two final exponentiations (for verifying k1 and k2) into a single one.
 func (vkp *VerificationKeyPoP) Check() error {
 	result := verifyPairing(vkp.VK, vkp.POP)
 	if !vkp.POP.K1.Verify(false, vkp.VK.BlstVk, true, POP, nil) || !result {
-		fmt.Errorf("multisignature error: invalid key")
+		return fmt.Errorf("multisignature error: invalid key")
 	}
 	return nil
 }
 
-// / Convert to a 144 byte string.
-// /
-// / # Layout
-// / The layout of a `PublicKeyPoP` encoding is
-// / * Public key
-// / * Proof of Possession
-func (vkp *VerificationKeyPoP) ToBytes() [192]byte {
+// Convert to a 144 byte string.
+//
+// # Layout
+// The layout of a `PublicKeyPoP` encoding is
+// * Public key
+// * Proof of Possession
+func (vkp *VerificationKeyPoP) ToBytes() []byte {
 	var vkpBytes [192]byte
 	copy(vkpBytes[:96], vkp.VK.ToBytes())  // Assumes ToBytes returns 96 bytes for the VK
 	copy(vkpBytes[96:], vkp.POP.ToBytes()) // Assumes ToBytes returns 96 bytes for the POP
-	return vkpBytes
+	return vkpBytes[:]
 }
 
-// / Deserialize a byte string to a `PublicKeyPoP`.
+// Deserialize a byte string to a `PublicKeyPoP`.
 func (vkp *VerificationKeyPoP) FromBytes(bytes []byte) (*VerificationKeyPoP, error) {
 	mvk, err := new(VerificationKey).FromBytes(bytes[:96])
 	if err != nil {
@@ -260,12 +260,12 @@ func (vkp *VerificationKeyPoP) FromSigningKey(sk *SigningKey) (*VerificationKeyP
 }
 
 // ====================== ProofOfPossession implementation ======================
-// / Convert to a 96 byte string.
-// /
-// / # Layout
-// / The layout of a `MspPoP` encoding is
-// / * K1 (G1 point)
-// / * K2 (G1 point)
+// Convert to a 96 byte string.
+//
+// # Layout
+// The layout of a `MspPoP` encoding is
+// * K1 (G1 point)
+// * K2 (G1 point)
 func (pop *ProofOfPossession) ToBytes() []byte {
 	var popBytes [96]byte
 	k1Bytes := pop.K1.Serialize() // Assumes ToBytes returns [48]byte or similar
@@ -277,7 +277,7 @@ func (pop *ProofOfPossession) ToBytes() []byte {
 	return popBytes[:]
 }
 
-// / Deserialize a byte string to a `PublicKeyPoP`.
+// Deserialize a byte string to a `PublicKeyPoP`.
 func (pop *ProofOfPossession) FromBytes(bytes []byte) (*ProofOfPossession, error) {
 	k1 := new(BlstSig).Deserialize(bytes[:48])
 	k2, err := uncompressP1(bytes[48:96])
@@ -290,9 +290,9 @@ func (pop *ProofOfPossession) FromBytes(bytes []byte) (*ProofOfPossession, error
 	return pop, nil
 }
 
-// / Convert a secret key into an `MspPoP`. This is performed by computing
-// / `k1 =  H_G1(b"PoP" || mvk)` and `k2 = g1 * sk` where `H_G1` hashes into
-// / `G1` and `g1` is the generator in `G1`.
+// Convert a secret key into an `MspPoP`. This is performed by computing
+// `k1 =  H_G1(b"PoP" || mvk)` and `k2 = g1 * sk` where `H_G1` hashes into
+// `G1` and `g1` is the generator in `G1`.
 func (pop *ProofOfPossession) FromSigningKey(sk *SigningKey) (*ProofOfPossession, error) {
 	k1 := new(BlstSig).Sign(sk.BlstSk, POP, nil)
 	k2 := scalarToPkInG1(sk)
@@ -302,7 +302,7 @@ func (pop *ProofOfPossession) FromSigningKey(sk *SigningKey) (*ProofOfPossession
 }
 
 // ====================== Signature implementation ======================
-// / Verify a signature against a verification key.
+// Verify a signature against a verification key.
 func (s *Signature) Verify(msg []byte, mvk *VerificationKey) error {
 	if ok := s.BlstSig.Verify(false, mvk.BlstVk, true, msg, nil); !ok {
 		return fmt.Errorf("invalid signature")
@@ -310,14 +310,14 @@ func (s *Signature) Verify(msg []byte, mvk *VerificationKey) error {
 	return nil
 }
 
-// / Dense mapping function indexed by the index to be evaluated.
-// / We hash the signature to produce a 64 bytes integer.
-// / The return value of this function refers to
-// / `ev = H("map" || msg || index || σ) <- MSP.Eval(msg,index,σ)` given in paper.
-func (s *Signature) Eval(msg []byte, index Index) ([64]byte, error) {
+// Dense mapping function indexed by the index to be evaluated.
+// We hash the signature to produce a 64 bytes integer.
+// The return value of this function refers to
+// `ev = H("map" || msg || index || σ) <- MSP.Eval(msg,index,σ)` given in paper.
+func (s *Signature) Eval(msg []byte, index Index) ([]byte, error) {
 	hasher, err := blake2b.New512(nil)
 	if err != nil {
-		return [64]byte{}, err
+		return nil, err
 	}
 	hasher.Write([]byte("map"))
 	hasher.Write(msg)
@@ -326,20 +326,20 @@ func (s *Signature) Eval(msg []byte, index Index) ([64]byte, error) {
 
 	var result [64]byte
 	copy(result[:], hasher.Sum(nil))
-	return result, nil
+	return result[:], nil
 }
 
-// / Convert an `Signature` to its compressed byte representation.
+// Convert an `Signature` to its compressed byte representation.
 func (s *Signature) ToBytes() []byte {
 	var bytes [48]byte
 	copy(bytes[:], s.BlstSig.Serialize()) // Serialize assumed to return the full serialized data
 	return bytes[:]
 }
 
-// / Convert a string of bytes into a `MspSig`.
-// /
-// / # Error
-// / Returns an error if the byte string does not represent a point in the curve.
+// Convert a string of bytes into a `MspSig`.
+//
+// # Error
+// Returns an error if the byte string does not represent a point in the curve.
 func (s *Signature) FromBytes(data []byte) (*Signature, error) {
 	if len(data) != 48 {
 		return nil, fmt.Errorf("data must be exactly 48 bytes")
@@ -348,8 +348,8 @@ func (s *Signature) FromBytes(data []byte) (*Signature, error) {
 	return s, nil
 }
 
-// / Compare two signatures. Used for PartialOrd impl, used to rank signatures. The comparison
-// / function can be anything, as long as it is consistent across different nodes.
+// Compare two signatures. Used for PartialOrd impl, used to rank signatures. The comparison
+// function can be anything, as long as it is consistent across different nodes.
 func (s *Signature) CmpMsgSig(other *Signature) int {
 	selfBytes := s.ToBytes()
 	otherBytes := other.ToBytes()
@@ -357,10 +357,10 @@ func (s *Signature) CmpMsgSig(other *Signature) int {
 	return bytes.Compare(selfBytes[:], otherBytes[:])
 }
 
-// / Aggregate a slice of verification keys and Signatures by first hashing the
-// / signatures into random scalars, and multiplying the signature and verification
-// / key with the resulting value. This follows the steps defined in Figure 6,
-// / `Aggregate` step.
+// Aggregate a slice of verification keys and Signatures by first hashing the
+// signatures into random scalars, and multiplying the signature and verification
+// key with the resulting value. This follows the steps defined in Figure 6,
+// `Aggregate` step.
 func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*VerificationKey, *Signature, error) {
 	if len(vks) != len(sigs) || len(vks) == 0 {
 		return nil, nil, fmt.Errorf("invalid input: number of verification keys and signatures must match and not be empty")
@@ -411,8 +411,8 @@ func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*Verif
 	return &VerificationKey{aggrVk}, &Signature{aggrSig}, nil
 }
 
-// / Verify a set of signatures with their corresponding verification keys using the
-// / aggregation mechanism of Figure 6.
+// Verify a set of signatures with their corresponding verification keys using the
+// aggregation mechanism of Figure 6.
 func (s *Signature) VerifyAggregate(msg []byte, vks []*VerificationKey, sigs []*Signature) error {
 	aggrVk, aggrSig, err := s.Aggregate(vks, sigs)
 	if err != nil {
@@ -425,7 +425,7 @@ func (s *Signature) VerifyAggregate(msg []byte, vks []*VerificationKey, sigs []*
 	return nil
 }
 
-// / Batch verify several sets of signatures with their corresponding verification keys.
+// Batch verify several sets of signatures with their corresponding verification keys.
 func (s *Signature) BatchVerifyAggregates(msgs [][]byte, vks []*VerificationKey, sigs []*Signature) error {
 	// Collect BLST signatures
 	blstSigs := make([]*blst.P2Affine, len(sigs))

@@ -119,3 +119,8 @@ func toByteSlice(indices []uint64) []byte {
 	}
 	return result
 }
+
+func EvLtPhi(phiF float64, ev []byte, stake Stake, totalStake Stake) bool {
+	// TO-DO: need to implement later
+	return true
+}

@@ -507,6 +507,72 @@ func (mt *MerkleTree) GetPath(i uint64) (*Path, error) {
 	}, nil
 }
 
+func (mt *MerkleTree) GetBatchedPath(indices []uint64) (*BatchPath, error) {
+	if len(indices) == 0 {
+		return nil, fmt.Errorf("get_batched_path() called with no indices")
+	}
+
+	for _, i := range indices {
+		if i >= mt.N {
+			return nil, fmt.Errorf("proof index out of bounds: asked for index out of range")
+		}
+	}
+
+	orderedIndices := make([]uint64, len(indices))
+	copy(orderedIndices, indices)
+	sort.Slice(orderedIndices, func(i, j int) bool { return orderedIndices[i] < orderedIndices[j] })
+
+	for i := range orderedIndices {
+		if orderedIndices[i] != indices[i] {
+			return nil, fmt.Errorf("indices should be ordered")
+		}
+	}
+
+	for i := range orderedIndices {
+		orderedIndices[i] = mt.idxOfLeaf(orderedIndices[i])
+	}
+
+	idx := orderedIndices[0]
+	var proof [][]byte
+
+	for idx > 0 {
+		newIndices := make([]uint64, len(orderedIndices))
+		i := 0
+		var err error
+		idx, err = parent(idx)
+		if err != nil {
+			return nil, err
+		}
+		for i < len(orderedIndices) {
+			newIndices[i], err = parent(orderedIndices[i])
+			if err != nil {
+				return nil, err
+			}
+			sibling, err := sibling(orderedIndices[i])
+			if err != nil {
+				return nil, err
+			}
+			if i < len(orderedIndices)-1 && orderedIndices[i+1] == sibling {
+				i++
+			} else if sibling < uint64(len(mt.Nodes)) {
+				proof = append(proof, mt.Nodes[sibling])
+			}
+			i++
+		}
+		copy(orderedIndices, newIndices)
+	}
+
+	return &BatchPath{
+		Values:  proof,
+		Indices: indices,
+		Hasher:  mt.Hasher,
+	}, nil
+}
+
+func (mt *MerkleTree) idxOfLeaf(index uint64) uint64 {
+	return mt.LeafOff + index
+}
+
 // Remaining functions for the MerkleTree struct are not included as only
 // verification-related functions are required for on-chain activities.
 // This approach focuses on minimizing the codebase to essential operations,
