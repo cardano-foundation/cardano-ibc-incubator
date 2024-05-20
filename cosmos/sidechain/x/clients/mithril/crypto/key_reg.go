@@ -19,9 +19,9 @@ type ClosedKeyReg struct {
 }
 
 // ====================== KeyReg implementation ======================
-// / Verify and register a public key and stake for a particular party.
-// / # Error
-// / The function fails when the proof of possession is invalid or when the key is already registered.
+// Verify and register a public key and stake for a particular party.
+// # Error
+// The function fails when the proof of possession is invalid or when the key is already registered.
 func (kr *KeyReg) Register(stake Stake, pk VerificationKeyPoP) error {
 	kr.mu.Lock()
 	defer kr.mu.Unlock()
@@ -37,8 +37,8 @@ func (kr *KeyReg) Register(stake Stake, pk VerificationKeyPoP) error {
 	return fmt.Errorf("key already registered")
 }
 
-// / Finalize the key registration.
-// / This function disables `KeyReg::register`, consumes the instance of `self`, and returns a `ClosedKeyReg`.
+// Finalize the key registration.
+// This function disables `KeyReg::register`, consumes the instance of `self`, and returns a `ClosedKeyReg`.
 func (kr *KeyReg) Close() (*ClosedKeyReg, error) {
 	kr.mu.Lock()
 	defer kr.mu.Unlock()

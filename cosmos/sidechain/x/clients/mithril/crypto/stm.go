@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash"
 )
@@ -587,6 +588,41 @@ func (sig *StmSig) Cmp(other *StmSig) int {
 		return 1
 	}
 	return 0
+}
+
+// ====================== StmSigRegParty implementation ======================
+// / Convert StmSigRegParty to bytes
+// / # Layout
+// / * RegParty
+// / * Signature
+func (srp *StmSigRegParty) ToBytes() []byte {
+	regPartyBytes := srp.RegParty.ToBytes()
+	sigBytes := srp.Sig.ToBytes()
+
+	out := append(regPartyBytes, sigBytes...)
+	return out
+}
+
+// /Extract a `StmSigRegParty` from a byte slice.
+func (srp *StmSigRegParty) FromBytes(bytes []byte) (*StmSigRegParty, error) {
+	if len(bytes) < 104 {
+		return nil, errors.New("invalid byte slice length")
+	}
+
+	regParty, err := new(RegParty).FromBytes(bytes[:104])
+	if err != nil {
+		return nil, err
+	}
+
+	sig, err := new(StmSig).FromBytes(bytes[104:])
+	if err != nil {
+		return nil, err
+	}
+
+	srp.RegParty = regParty
+	srp.Sig = sig
+
+	return srp, nil
 }
 
 func (cv *CoreVerifier) DedupSigsForIndices(totalStake Stake, params *StmParameters, msg []byte, sigs []StmSigRegParty) ([]StmSigRegParty, error) {

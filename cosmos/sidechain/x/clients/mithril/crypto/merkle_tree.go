@@ -39,7 +39,7 @@ type BatchPath struct {
 // This structure differs from `MerkleTree` in that it does not contain all elements, which are not always necessary.
 // Instead, it only contains the root of the tree.
 type MerkleTreeCommitment struct {
-	/// Root of the merkle commitment.
+	// Root of the merkle commitment.
 	Root   []byte
 	Hasher hash.Hash
 }
@@ -49,7 +49,7 @@ type MerkleTreeCommitment struct {
 // as well as the root of the tree.
 // Number of leaves is required by the batch path generation/verification.
 type MerkleTreeCommitmentBatchCompat struct {
-	/// Root of the merkle commitment.
+	// Root of the merkle commitment.
 	Root     []byte
 	NrLeaves uint64
 	Hasher   hash.Hash
@@ -57,17 +57,17 @@ type MerkleTreeCommitmentBatchCompat struct {
 
 // Tree of hashes, providing a commitment of data and its ordering.
 type MerkleTree struct {
-	/// The nodes are stored in an array heap:
-	/// * `nodes[0]` is the root,
-	/// * the parent of `nodes[i]` is `nodes[(i-1)/2]`
-	/// * the children of `nodes[i]` are `{nodes[2i + 1], nodes[2i + 2]}`
-	/// * All nodes have size `Output<D>::output_size()`, even leafs (which are hashed before committing them).
+	// The nodes are stored in an array heap:
+	// * `nodes[0]` is the root,
+	// * the parent of `nodes[i]` is `nodes[(i-1)/2]`
+	// * the children of `nodes[i]` are `{nodes[2i + 1], nodes[2i + 2]}`
+	// * All nodes have size `Output<D>::output_size()`, even leafs (which are hashed before committing them).
 	Nodes [][]byte
-	/// The leaves begin at `nodes[leaf_off]`.
+	// The leaves begin at `nodes[leaf_off]`.
 	LeafOff uint64
-	/// Number of leaves cached in the merkle tree.
+	// Number of leaves cached in the merkle tree.
 	N uint64
-	/// Phantom type to link the tree with its hasher
+	// Phantom type to link the tree with its hasher
 	Hasher hash.Hash
 }
 
