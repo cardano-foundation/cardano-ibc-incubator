@@ -38,7 +38,7 @@ func (h MithrilHeader) GetTimestamp() uint64 {
 }
 
 func (h MithrilHeader) GetTime() time.Time {
-	return time.Unix(int64(h.GetTimestamp()), 0)
+	return time.Unix(int64(h.GetTimestamp()/uint64(time.Second)), int64(h.GetTimestamp()%uint64(time.Second)))
 }
 
 // ValidateBasic checks that mithril stake distrbution and  are not nil.

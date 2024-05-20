@@ -40,12 +40,12 @@ func (ConsensusState) ClientType() string {
 
 // GetTimestamp returns block time in nanoseconds of the header that created consensus state
 func (cs ConsensusState) GetTimestamp() uint64 {
-	return uint64(cs.Timestamp * uint64(time.Second))
+	return cs.Timestamp
 }
 
 // GetTime returns block time of the header that created consensus state in time.Time type
 func (cs ConsensusState) GetTime() time.Time {
-	return time.Unix(int64(cs.Timestamp), 0)
+	return time.Unix(int64(cs.GetTimestamp()/uint64(time.Second)), int64(cs.GetTimestamp()%uint64(time.Second)))
 }
 
 // ValidateBasic defines a basic validation for the mithril consensus state.
