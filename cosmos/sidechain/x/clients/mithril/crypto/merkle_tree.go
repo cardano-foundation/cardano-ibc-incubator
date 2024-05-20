@@ -317,7 +317,7 @@ func (m *MerkleTreeCommitmentBatchCompat) ConcatWithMsg(msg []byte) []byte {
 // todo: Update doc.
 // todo: Simplify the algorithm.
 // todo: Maybe we want more granular errors, rather than only `BatchPathInvalid`
-func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []*MTLeaf, proof *BatchPath) error {
+func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchPath) error {
 	if len(batchVal) != len(proof.Indices) {
 		return fmt.Errorf("batch value length does not match proof indices length")
 	}

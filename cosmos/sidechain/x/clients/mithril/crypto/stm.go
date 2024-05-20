@@ -625,8 +625,173 @@ func (srp *StmSigRegParty) FromBytes(bytes []byte) (*StmSigRegParty, error) {
 	return srp, nil
 }
 
+// ====================== StmAggrSig implementation ======================
+// / Verify all checks from signatures, except for the signature verification itself.
+// /
+// / Indices and quorum are checked by `CoreVerifier::preliminary_verify` with `msgp`.
+// / It collects leaves from signatures and checks the batch proof.
+// / After batch proof is checked, it collects and returns the signatures and
+// / verification keys to be used by aggregate verification.
+func (sa *StmAggrSig) PreliminaryVerify(msg []byte, avk *StmAggrVerificationKey, parameters *StmParameters) ([]Signature, []VerificationKey, error) {
+	msgp := avk.MTCommitment.ConcatWithMsg(msg)
+	if err := new(CoreVerifier).PreliminaryVerify(avk.TotalStake, sa.Signatures, parameters, msgp); err != nil {
+		return nil, nil, err
+	}
+
+	var leaves []RegParty
+	for _, sigReg := range sa.Signatures {
+		leaves = append(leaves, *sigReg.RegParty)
+	}
+
+	if err := avk.MTCommitment.Check(leaves, sa.BatchProof); err != nil {
+		return nil, nil, err
+	}
+
+	return new(CoreVerifier).CollectSigsVKs(sa.Signatures)
+}
+
+// / Verify aggregate signature, by checking that
+// / * each signature contains only valid indices,
+// / * the lottery is indeed won by each one of them,
+// / * the merkle tree path is valid,
+// / * the aggregate signature validates with respect to the aggregate verification key
+// / (aggregation is computed using functions `MSP.BKey` and `MSP.BSig` as described in Section 2.4 of the paper).
+func (sa *StmAggrSig) Verify(msg []byte, avk *StmAggrVerificationKey, parameters *StmParameters) error {
+	msgp := avk.MTCommitment.ConcatWithMsg(msg)
+	sigs, vks, err := sa.PreliminaryVerify(msg, avk, parameters)
+	if err != nil {
+		return err
+	}
+
+	if err := new(Signature).VerifyAggregate(msgp, vks, sigs); err != nil {
+		return err
+	}
+	return nil
+}
+
+// / Batch verify a set of signatures, with different messages and avks.
+func (sa *StmAggrSig) BatchVerify(stmSignatures []*StmAggrSig, msgs [][]byte, avks []*StmAggrVerificationKey, parameters []*StmParameters) error {
+	batchSize := len(stmSignatures)
+	if batchSize != len(msgs) || batchSize != len(avks) || batchSize != len(parameters) {
+		return errors.New("number of messages, avks, and parameters should correspond to size of the batch")
+	}
+
+	var aggrSigs []Signature
+	var aggrVks []VerificationKey
+	for idx, sigGroup := range stmSignatures {
+		if _, _, err := sigGroup.PreliminaryVerify(msgs[idx], avks[idx], parameters[idx]); err != nil {
+			return err
+		}
+
+		var groupedSigs []Signature
+		var groupedVks []VerificationKey
+		for _, sigReg := range sigGroup.Signatures {
+			groupedSigs = append(groupedSigs, *sigReg.Sig.Sigma)
+			groupedVks = append(groupedVks, *sigReg.RegParty.VerificationKey)
+		}
+
+		aggrVk, aggrSig, err := new(Signature).Aggregate(groupedVks, groupedSigs)
+		if err != nil {
+			return err
+		}
+		aggrSigs = append(aggrSigs, *aggrSig)
+		aggrVks = append(aggrVks, *aggrVk)
+	}
+
+	var concatMsgs [][]byte
+	for i, msg := range msgs {
+		concatMsgs = append(concatMsgs, avks[i].MTCommitment.ConcatWithMsg(msg))
+	}
+
+	if err := new(Signature).BatchVerifyAggregates(concatMsgs, aggrVks, aggrSigs); err != nil {
+		return err
+	}
+	return nil
+}
+
+// / Convert multi signature to bytes
+// / # Layout
+// / * Number of the pairs of Signatures and Registered Parties (SigRegParty) (as u64)
+// / * Size of a pair of Signature and Registered Party
+// / * Pairs of Signatures and Registered Parties
+// / * Batch proof
+func (sa *StmAggrSig) ToBytes() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	if err := binary.Write(buf, binary.BigEndian, uint64(len(sa.Signatures))); err != nil {
+		return nil, err
+	}
+
+	if len(sa.Signatures) > 0 {
+		firstSigBytes := sa.Signatures[0].ToBytes()
+		if err := binary.Write(buf, binary.BigEndian, uint64(len(firstSigBytes))); err != nil {
+			return nil, err
+		}
+		for _, sigReg := range sa.Signatures {
+			sigBytes := sigReg.ToBytes()
+			if _, err := buf.Write(sigBytes); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	proofBytes := sa.BatchProof.ToBytes()
+	if _, err := buf.Write(proofBytes); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// /Extract a `StmAggrSig` from a byte slice.
+func (sa *StmAggrSig) FromBytes(data []byte) (*StmAggrSig, error) {
+	buf := bytes.NewBuffer(data)
+	var numSig uint64
+	if err := binary.Read(buf, binary.BigEndian, &numSig); err != nil {
+		return nil, err
+	}
+
+	var sigSize uint64
+	if err := binary.Read(buf, binary.BigEndian, &sigSize); err != nil {
+		return nil, err
+	}
+
+	sigRegList := make([]StmSigRegParty, numSig)
+	for i := uint64(0); i < numSig; i++ {
+		sigBytes := make([]byte, sigSize)
+		if _, err := buf.Read(sigBytes); err != nil {
+			return nil, err
+		}
+		sigReg, err := new(StmSigRegParty).FromBytes(sigBytes)
+		if err != nil {
+			return nil, err
+		}
+		sigRegList[i] = *sigReg
+	}
+
+	batchProofBytes := buf.Bytes()
+	batchProof, err := new(BatchPath).FromBytes(batchProofBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	sa.Signatures = sigRegList
+	sa.BatchProof = batchProof
+
+	return sa, nil
+}
+
+// ====================== CoreVerifier implementation ======================
+
 func (cv *CoreVerifier) DedupSigsForIndices(totalStake Stake, params *StmParameters, msg []byte, sigs []StmSigRegParty) ([]StmSigRegParty, error) {
 	return nil, nil
+}
+
+func (cv *CoreVerifier) PreliminaryVerify(totalStake Stake, signatures []StmSigRegParty, params *StmParameters, msg []byte) error {
+	return nil
+}
+
+func (cv *CoreVerifier) CollectSigsVKs(sigs []StmSigRegParty) ([]Signature, []VerificationKey, error) {
+	return nil, nil, nil
 }
 
 func (savk *StmAggrVerificationKey) From(reg *ClosedKeyReg) *StmAggrVerificationKey {

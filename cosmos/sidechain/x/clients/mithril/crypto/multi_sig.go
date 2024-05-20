@@ -361,13 +361,13 @@ func (s *Signature) CmpMsgSig(other *Signature) int {
 // signatures into random scalars, and multiplying the signature and verification
 // key with the resulting value. This follows the steps defined in Figure 6,
 // `Aggregate` step.
-func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*VerificationKey, *Signature, error) {
+func (s *Signature) Aggregate(vks []VerificationKey, sigs []Signature) (*VerificationKey, *Signature, error) {
 	if len(vks) != len(sigs) || len(vks) == 0 {
 		return nil, nil, fmt.Errorf("invalid input: number of verification keys and signatures must match and not be empty")
 	}
 
 	if len(vks) == 1 {
-		return vks[0], sigs[0], nil
+		return &vks[0], &sigs[0], nil
 	}
 
 	hashedSigs, err := blake2b.New(16, nil)
@@ -395,7 +395,7 @@ func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*Verif
 
 	transmutedVks := make([]*blst.P2, len(vks))
 	for i, vk := range vks {
-		transmutedVks[i] = vkFromP2Affine(vk)
+		transmutedVks[i] = vkFromP2Affine(&vk)
 		groupedVks = groupedVks.Add(transmutedVks)
 	}
 
@@ -413,7 +413,7 @@ func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*Verif
 
 // Verify a set of signatures with their corresponding verification keys using the
 // aggregation mechanism of Figure 6.
-func (s *Signature) VerifyAggregate(msg []byte, vks []*VerificationKey, sigs []*Signature) error {
+func (s *Signature) VerifyAggregate(msg []byte, vks []VerificationKey, sigs []Signature) error {
 	aggrVk, aggrSig, err := s.Aggregate(vks, sigs)
 	if err != nil {
 		return err
@@ -426,7 +426,7 @@ func (s *Signature) VerifyAggregate(msg []byte, vks []*VerificationKey, sigs []*
 }
 
 // Batch verify several sets of signatures with their corresponding verification keys.
-func (s *Signature) BatchVerifyAggregates(msgs [][]byte, vks []*VerificationKey, sigs []*Signature) error {
+func (s *Signature) BatchVerifyAggregates(msgs [][]byte, vks []VerificationKey, sigs []Signature) error {
 	// Collect BLST signatures
 	blstSigs := make([]*blst.P2Affine, len(sigs))
 	for i, sig := range sigs {
