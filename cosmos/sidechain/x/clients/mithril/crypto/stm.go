@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash"
+	"sort"
 )
 
 // Stake represents the quantity of stake held by a party, represented as a uint64.
@@ -591,10 +591,10 @@ func (sig *StmSig) Cmp(other *StmSig) int {
 }
 
 // ====================== StmSigRegParty implementation ======================
-// / Convert StmSigRegParty to bytes
-// / # Layout
-// / * RegParty
-// / * Signature
+// Convert StmSigRegParty to bytes
+// # Layout
+// * RegParty
+// * Signature
 func (srp *StmSigRegParty) ToBytes() []byte {
 	regPartyBytes := srp.RegParty.ToBytes()
 	sigBytes := srp.Sig.ToBytes()
@@ -603,10 +603,10 @@ func (srp *StmSigRegParty) ToBytes() []byte {
 	return out
 }
 
-// /Extract a `StmSigRegParty` from a byte slice.
+// Extract a `StmSigRegParty` from a byte slice.
 func (srp *StmSigRegParty) FromBytes(bytes []byte) (*StmSigRegParty, error) {
 	if len(bytes) < 104 {
-		return nil, errors.New("invalid byte slice length")
+		return nil, fmt.Errorf("invalid byte slice length")
 	}
 
 	regParty, err := new(RegParty).FromBytes(bytes[:104])
@@ -626,12 +626,12 @@ func (srp *StmSigRegParty) FromBytes(bytes []byte) (*StmSigRegParty, error) {
 }
 
 // ====================== StmAggrSig implementation ======================
-// / Verify all checks from signatures, except for the signature verification itself.
-// /
-// / Indices and quorum are checked by `CoreVerifier::preliminary_verify` with `msgp`.
-// / It collects leaves from signatures and checks the batch proof.
-// / After batch proof is checked, it collects and returns the signatures and
-// / verification keys to be used by aggregate verification.
+// Verify all checks from signatures, except for the signature verification itself.
+//
+// Indices and quorum are checked by `CoreVerifier::preliminary_verify` with `msgp`.
+// It collects leaves from signatures and checks the batch proof.
+// After batch proof is checked, it collects and returns the signatures and
+// verification keys to be used by aggregate verification.
 func (sa *StmAggrSig) PreliminaryVerify(msg []byte, avk *StmAggrVerificationKey, parameters *StmParameters) ([]Signature, []VerificationKey, error) {
 	msgp := avk.MTCommitment.ConcatWithMsg(msg)
 	if err := new(CoreVerifier).PreliminaryVerify(avk.TotalStake, sa.Signatures, parameters, msgp); err != nil {
@@ -647,15 +647,15 @@ func (sa *StmAggrSig) PreliminaryVerify(msg []byte, avk *StmAggrVerificationKey,
 		return nil, nil, err
 	}
 
-	return new(CoreVerifier).CollectSigsVKs(sa.Signatures)
+	return new(CoreVerifier).CollectSigsVks(sa.Signatures)
 }
 
-// / Verify aggregate signature, by checking that
-// / * each signature contains only valid indices,
-// / * the lottery is indeed won by each one of them,
-// / * the merkle tree path is valid,
-// / * the aggregate signature validates with respect to the aggregate verification key
-// / (aggregation is computed using functions `MSP.BKey` and `MSP.BSig` as described in Section 2.4 of the paper).
+// Verify aggregate signature, by checking that
+// * each signature contains only valid indices,
+// * the lottery is indeed won by each one of them,
+// * the merkle tree path is valid,
+// * the aggregate signature validates with respect to the aggregate verification key
+// (aggregation is computed using functions `MSP.BKey` and `MSP.BSig` as described in Section 2.4 of the paper).
 func (sa *StmAggrSig) Verify(msg []byte, avk *StmAggrVerificationKey, parameters *StmParameters) error {
 	msgp := avk.MTCommitment.ConcatWithMsg(msg)
 	sigs, vks, err := sa.PreliminaryVerify(msg, avk, parameters)
@@ -669,11 +669,11 @@ func (sa *StmAggrSig) Verify(msg []byte, avk *StmAggrVerificationKey, parameters
 	return nil
 }
 
-// / Batch verify a set of signatures, with different messages and avks.
+// Batch verify a set of signatures, with different messages and avks.
 func (sa *StmAggrSig) BatchVerify(stmSignatures []*StmAggrSig, msgs [][]byte, avks []*StmAggrVerificationKey, parameters []*StmParameters) error {
 	batchSize := len(stmSignatures)
 	if batchSize != len(msgs) || batchSize != len(avks) || batchSize != len(parameters) {
-		return errors.New("number of messages, avks, and parameters should correspond to size of the batch")
+		return fmt.Errorf("number of messages, avks, and parameters should correspond to size of the batch")
 	}
 
 	var aggrSigs []Signature
@@ -709,12 +709,12 @@ func (sa *StmAggrSig) BatchVerify(stmSignatures []*StmAggrSig, msgs [][]byte, av
 	return nil
 }
 
-// / Convert multi signature to bytes
-// / # Layout
-// / * Number of the pairs of Signatures and Registered Parties (SigRegParty) (as u64)
-// / * Size of a pair of Signature and Registered Party
-// / * Pairs of Signatures and Registered Parties
-// / * Batch proof
+// Convert multi signature to bytes
+// # Layout
+// * Number of the pairs of Signatures and Registered Parties (SigRegParty) (as u64)
+// * Size of a pair of Signature and Registered Party
+// * Pairs of Signatures and Registered Parties
+// * Batch proof
 func (sa *StmAggrSig) ToBytes() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	if err := binary.Write(buf, binary.BigEndian, uint64(len(sa.Signatures))); err != nil {
@@ -742,7 +742,7 @@ func (sa *StmAggrSig) ToBytes() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// /Extract a `StmAggrSig` from a byte slice.
+// Extract a `StmAggrSig` from a byte slice.
 func (sa *StmAggrSig) FromBytes(data []byte) (*StmAggrSig, error) {
 	buf := bytes.NewBuffer(data)
 	var numSig uint64
@@ -781,17 +781,187 @@ func (sa *StmAggrSig) FromBytes(data []byte) (*StmAggrSig, error) {
 }
 
 // ====================== CoreVerifier implementation ======================
+// Setup a core verifier for given list of signers.
+//   - Collect the unique signers in a hash set,
+//   - Calculate the total stake of the eligible signers,
+//   - Sort the eligible signers.
+func Setup(publicSigners []struct {
+	VK    *VerificationKey
+	Stake Stake
+}) *CoreVerifier {
+	totalStake := Stake(0)
+	uniqueParties := make(map[MTLeaf]struct{})
 
-func (cv *CoreVerifier) DedupSigsForIndices(totalStake Stake, params *StmParameters, msg []byte, sigs []StmSigRegParty) ([]StmSigRegParty, error) {
-	return nil, nil
+	for _, signer := range publicSigners {
+		newTotalStake := totalStake + signer.Stake
+		if newTotalStake < totalStake {
+			panic("Total stake overflow")
+		}
+		totalStake = newTotalStake
+		uniqueParties[MTLeaf{VerificationKey: signer.VK, Stake: signer.Stake}] = struct{}{}
+	}
+
+	var eligibleParties []RegParty
+	for leaf := range uniqueParties {
+		eligibleParties = append(eligibleParties, RegParty{
+			VerificationKey: leaf.VerificationKey,
+			Stake:           leaf.Stake,
+		})
+	}
+
+	sort.Slice(eligibleParties, func(i, j int) bool {
+		return eligibleParties[i].VerificationKey.Compare(eligibleParties[j].VerificationKey) < 0
+	})
+
+	return &CoreVerifier{
+		EligibleParties: eligibleParties,
+		TotalStake:      totalStake,
+	}
 }
 
-func (cv *CoreVerifier) PreliminaryVerify(totalStake Stake, signatures []StmSigRegParty, params *StmParameters, msg []byte) error {
+// Preliminary verification that checks whether indices are unique and the quorum is achieved.
+func (cv *CoreVerifier) PreliminaryVerify(totalStake Stake, signatures []StmSigRegParty, parameters *StmParameters, msg []byte) error {
+	uniqueIndices := make(map[Index]struct{})
+
+	for _, sigReg := range signatures {
+		if err := sigReg.Sig.CheckIndices(parameters, sigReg.RegParty.Stake, msg, totalStake); err != nil {
+			return err
+		}
+		for _, index := range sigReg.Sig.Indexes {
+			uniqueIndices[index] = struct{}{}
+		}
+	}
+
+	if len(signatures) != len(uniqueIndices) {
+		return fmt.Errorf("indices are not unique")
+	}
+	if uint64(len(uniqueIndices)) < parameters.K {
+		return fmt.Errorf("no quorum: %d < %d", len(uniqueIndices), parameters.K)
+	}
+
 	return nil
 }
 
-func (cv *CoreVerifier) CollectSigsVKs(sigs []StmSigRegParty) ([]Signature, []VerificationKey, error) {
-	return nil, nil, nil
+// Given a slice of `sig_reg_list`, this function returns a new list of `sig_reg_list` with only valid indices.
+// In case of conflict (having several signatures for the same index)
+// it selects the smallest signature (i.e. takes the signature with the smallest scalar).
+// The function selects at least `self.k` indexes.
+//
+//	# Error
+//
+// If there is no sufficient signatures, then the function fails.
+// todo: We need to agree on a criteria to dedup (by default we use a BTreeMap that guarantees keys order)
+// todo: not good, because it only removes index if there is a conflict (see benches)
+func (cv *CoreVerifier) DedupSigsForIndices(totalStake Stake, params *StmParameters, msg []byte, sigs []StmSigRegParty) ([]StmSigRegParty, error) {
+	sigByIndex := make(map[Index]*StmSigRegParty)
+	removalIdxByVK := make(map[*StmSigRegParty][]Index)
+
+	for _, sigReg := range sigs {
+		if err := sigReg.Sig.VerifyCore(params, sigReg.RegParty.VerificationKey, sigReg.RegParty.Stake, msg, totalStake); err != nil {
+			continue
+		}
+
+		for _, index := range sigReg.Sig.Indexes {
+			if existingSig, exists := sigByIndex[index]; exists {
+				if sigReg.Sig.Sigma.Cmp(existingSig.Sig.Sigma) < 0 {
+					removalIdxByVK[existingSig] = append(removalIdxByVK[existingSig], index)
+					sigByIndex[index] = &sigReg
+				} else {
+					removalIdxByVK[&sigReg] = append(removalIdxByVK[&sigReg], index)
+				}
+			} else {
+				sigByIndex[index] = &sigReg
+			}
+		}
+	}
+
+	dedupSigs := make(map[StmSigRegParty]struct{})
+	count := uint64(0)
+
+	for _, sigReg := range sigByIndex {
+		if _, exists := dedupSigs[*sigReg]; exists {
+			continue
+		}
+
+		dedupedSig := *sigReg
+		if indexes, exists := removalIdxByVK[sigReg]; exists {
+			newIndexes := make([]Index, 0, len(dedupedSig.Sig.Indexes))
+			for _, index := range dedupedSig.Sig.Indexes {
+				keep := true
+				for _, remIndex := range indexes {
+					if index == remIndex {
+						keep = false
+						break
+					}
+				}
+				if keep {
+					newIndexes = append(newIndexes, index)
+				}
+			}
+			dedupedSig.Sig.Indexes = newIndexes
+		}
+
+		dedupSigs[dedupedSig] = struct{}{}
+		count += uint64(len(dedupedSig.Sig.Indexes))
+
+		if count >= params.K {
+			result := make([]StmSigRegParty, 0, len(dedupSigs))
+			for sig := range dedupSigs {
+				result = append(result, sig)
+			}
+			return result, nil
+		}
+	}
+
+	return nil, fmt.Errorf("not enough signatures: %d < %d", count, params.K)
+}
+
+// Collect and return `Vec<Signature>, Vec<VerificationKey>` which will be used
+// by the aggregate verification.
+func (cv *CoreVerifier) CollectSigsVks(sigRegList []StmSigRegParty) ([]Signature, []VerificationKey, error) {
+	sigs := make([]Signature, len(sigRegList))
+	vks := make([]VerificationKey, len(sigRegList))
+
+	for i, sigReg := range sigRegList {
+		sigs[i] = *sigReg.Sig.Sigma
+		vks[i] = *sigReg.RegParty.VerificationKey
+	}
+
+	return sigs, vks, nil
+}
+
+// Core verification
+//
+// Verify a list of signatures with respect to given message with given parameters.
+func (cv *CoreVerifier) Verify(signatures []StmSig, parameters *StmParameters, msg []byte) error {
+	sigRegList := make([]StmSigRegParty, len(signatures))
+
+	for i, sig := range signatures {
+		sigRegList[i] = StmSigRegParty{
+			Sig:      &sig,
+			RegParty: &cv.EligibleParties[sig.SignerIndex],
+		}
+	}
+
+	uniqueSigs, err := cv.DedupSigsForIndices(cv.TotalStake, parameters, msg, sigRegList)
+	if err != nil {
+		return err
+	}
+
+	if err := cv.PreliminaryVerify(cv.TotalStake, uniqueSigs, parameters, msg); err != nil {
+		return err
+	}
+
+	sigs, vks, err := cv.CollectSigsVks(uniqueSigs)
+	if err != nil {
+		return err
+	}
+
+	if err := new(Signature).VerifyAggregate(msg, vks, sigs); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (savk *StmAggrVerificationKey) From(reg *ClosedKeyReg) *StmAggrVerificationKey {
