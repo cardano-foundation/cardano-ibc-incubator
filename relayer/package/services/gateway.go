@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"github.com/cardano/relayer/v1/package/mithril"
 	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
@@ -26,7 +27,8 @@ type Gateway struct {
 	ChannelQueryService    pbchannel.QueryClient
 	ChannelMsgService      pbchannel.MsgClient
 
-	TypeProvider ibcclient.QueryClient
+	TypeProvider   ibcclient.QueryClient
+	MithrilService *mithril.MithrilService
 }
 
 func (gw *Gateway) NewGateWayService(address string) error {
@@ -45,6 +47,7 @@ func (gw *Gateway) NewGateWayService(address string) error {
 	gw.ChannelMsgService = pbchannel.NewMsgClient(conn)
 
 	gw.TypeProvider = ibcclient.NewQueryClient(conn)
+	gw.MithrilService = mithril.NewMithrilService("https://aggregator.testing-preview.api.mithril.network/aggregator")
 
 	return nil
 }
@@ -395,13 +398,4 @@ func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbc
 		return nil, err
 	}
 	return res, nil
-}
-
-func (gw Gateway) QueryIBCHeader(ctx context.Context, h int64) (*ibcclient.QueryIBCHeaderResponse, error) {
-	res, err := gw.TypeProvider.IBCHeader(ctx, &ibcclient.QueryIBCHeaderRequest{Height: uint64(h)})
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-
 }
