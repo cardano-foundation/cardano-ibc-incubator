@@ -18,6 +18,7 @@ const (
 	CardanoChainName    = "cardano"
 	CardanoChainID      = "cardano"
 	CardanoPortTransfer = "port-100"
+	MithrilEndpoint     = "https://aggregator.testing-preview.api.mithril.network/aggregator"
 
 	CosmosRPCAddr      = "http://0.0.0.0:26657"
 	CosmosChainName    = "cosmos"
@@ -83,10 +84,11 @@ func addCardanoChain(t *testing.T, sys *relayertest.System) {
 	sys.MustAddChain(t, CardanoChainName, cmd.ProviderConfigWrapper{
 		Type: CardanoChainName,
 		Value: cardano.CardanoProviderConfig{
-			ChainID:        CardanoChainID,
-			RPCAddr:        CardanoRPCAddr,
-			KeyringBackend: KeyringBackend,
-			Timeout:        Timeout,
+			ChainID:         CardanoChainID,
+			RPCAddr:         CardanoRPCAddr,
+			KeyringBackend:  KeyringBackend,
+			Timeout:         Timeout,
+			MithrilEndpoint: MithrilEndpoint,
 		},
 	})
 	if !checkKeyExist(t, sys, CardanoChainName, KeyNameTest, CardanoAddressTest) {

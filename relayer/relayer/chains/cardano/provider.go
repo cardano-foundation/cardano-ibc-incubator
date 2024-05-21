@@ -61,7 +61,8 @@ type CardanoProviderConfig struct {
 	ExtensionOptions []provider.ExtensionOption `json:"extension-options" yaml:"extension-options"`
 
 	//If FeeGrantConfiguration is set, TXs submitted by the ChainClient will be signed by the FeeGrantees in a round-robin fashion by default.
-	FeeGrants *FeeGrantConfiguration `json:"feegrants" yaml:"feegrants"`
+	FeeGrants       *FeeGrantConfiguration `json:"feegrants" yaml:"feegrants"`
+	MithrilEndpoint string                 `json:"mithril-endpoint" yaml:"mithril-endpoint"`
 }
 
 // By default, TXs will be signed by the feegrantees 'ManagedGrantees' keys in a round robin fashion.
@@ -106,7 +107,7 @@ func (pc CardanoProviderConfig) NewProvider(log *zap.Logger, homepath string, de
 	}
 	// new Gateway Service
 	gateway := services.Gateway{}
-	err := gateway.NewGateWayService(pc.RPCAddr)
+	err := gateway.NewGateWayService(pc.RPCAddr, pc.MithrilEndpoint)
 	if err != nil {
 		return nil, err
 	}
