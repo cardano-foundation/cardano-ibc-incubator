@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cometbft/cometbft/abci/types"
 	"os"
 	"regexp"
@@ -23,7 +22,6 @@ import (
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
-	mithrilstruct "github.com/cardano/proto-types/go/sidechain/x/clients/mithril"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -857,197 +855,14 @@ func (cc *CardanoProvider) mkTxResult(resTx *coretypes.ResultTx) (*sdk.TxRespons
 
 // QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
 func (cc *CardanoProvider) QueryIBCHeader(ctx context.Context, h int64) (provider.IBCHeader, error) {
-	res, err := cc.GateWay.QueryIBCHeader(ctx, h)
+	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h)
 	if err != nil {
 		return nil, err
 	}
-	var mithrilHeader = mithrilstruct.MithrilHeader{}
-	err = res.GetHeader().UnmarshalTo(&mithrilHeader)
-	if err != nil {
-		return nil, err
-	}
-	return convertMithrilHeader(mithrilHeader), nil
+
+	return mithrilHeader, nil
 }
 
-func convertMithrilHeader(mithrilHeader mithrilstruct.MithrilHeader) *mithril.MithrilHeader {
-	return &mithril.MithrilHeader{
-		MithrilStakeDistribution: &mithril.MithrilStakeDistribution{
-			Epoch:            mithrilHeader.MithrilStakeDistribution.Epoch,
-			SignersWithStake: convertSignerWithStake(mithrilHeader.MithrilStakeDistribution.SignersWithStake),
-			Hash:             mithrilHeader.MithrilStakeDistribution.Hash,
-			CertificateHash:  mithrilHeader.MithrilStakeDistribution.CertificateHash,
-			CreatedAt:        mithrilHeader.MithrilStakeDistribution.CreatedAt,
-			ProtocolParameter: &mithril.MithrilProtocolParameters{
-				K: mithrilHeader.MithrilStakeDistribution.ProtocolParameter.K,
-				M: mithrilHeader.MithrilStakeDistribution.ProtocolParameter.M,
-				PhiF: mithril.Fraction{
-					Numerator:   mithrilHeader.MithrilStakeDistribution.ProtocolParameter.PhiF.Numerator,
-					Denominator: mithrilHeader.MithrilStakeDistribution.ProtocolParameter.PhiF.Denominator,
-				},
-			},
-		},
-		MithrilStakeDistributionCertificate: &mithril.MithrilCertificate{
-			Hash:             mithrilHeader.MithrilStakeDistributionCertificate.Hash,
-			PreviousHash:     mithrilHeader.MithrilStakeDistributionCertificate.PreviousHash,
-			Epoch:            mithrilHeader.MithrilStakeDistributionCertificate.Epoch,
-			SignedEntityType: convertSignedEntityType(mithrilHeader.MithrilStakeDistributionCertificate.SignedEntityType),
-			Metadata: &mithril.CertificateMetadata{
-				ProtocolVersion: mithrilHeader.MithrilStakeDistributionCertificate.Metadata.ProtocolVersion,
-				ProtocolParameters: &mithril.MithrilProtocolParameters{
-					K: mithrilHeader.MithrilStakeDistributionCertificate.Metadata.ProtocolParameters.K,
-					M: mithrilHeader.MithrilStakeDistributionCertificate.Metadata.ProtocolParameters.M,
-					PhiF: mithril.Fraction{
-						Numerator:   mithrilHeader.MithrilStakeDistributionCertificate.Metadata.ProtocolParameters.PhiF.Numerator,
-						Denominator: mithrilHeader.MithrilStakeDistributionCertificate.Metadata.ProtocolParameters.PhiF.Denominator,
-					},
-				},
-				InitiatedAt: mithrilHeader.MithrilStakeDistributionCertificate.Metadata.InitiatedAt,
-				SealedAt:    mithrilHeader.MithrilStakeDistributionCertificate.Metadata.SealedAt,
-				Signers:     convertSignerWithStake(mithrilHeader.MithrilStakeDistributionCertificate.Metadata.Signers),
-			},
-			ProtocolMessage: &mithril.ProtocolMessage{
-				MessageParts: convertMessagePart(mithrilHeader.MithrilStakeDistributionCertificate.ProtocolMessage.MessageParts),
-			},
-			SignedMessage:            mithrilHeader.MithrilStakeDistributionCertificate.SignedMessage,
-			AggregateVerificationKey: mithrilHeader.MithrilStakeDistributionCertificate.AggregateVerificationKey,
-			Signature:                convertSignature(mithrilHeader.MithrilStakeDistributionCertificate.Signature),
-		},
-		TransactionSnapshot: &mithril.CardanoTransactionSnapshot{
-			SnapshotHash:    mithrilHeader.TransactionSnapshot.SnapshotHash,
-			MerkleRoot:      mithrilHeader.TransactionSnapshot.MerkleRoot,
-			CertificateHash: mithrilHeader.TransactionSnapshot.CertificateHash,
-			Epoch:           mithrilHeader.TransactionSnapshot.Epoch,
-			Height: &mithril.Height{
-				MithrilHeight: mithrilHeader.TransactionSnapshot.Height.MithrilHeight,
-			},
-		},
-		TransactionSnapshotCertificate: &mithril.MithrilCertificate{
-			Hash:             mithrilHeader.TransactionSnapshotCertificate.Hash,
-			PreviousHash:     mithrilHeader.TransactionSnapshotCertificate.PreviousHash,
-			Epoch:            mithrilHeader.TransactionSnapshotCertificate.Epoch,
-			SignedEntityType: convertSignedEntityType(mithrilHeader.TransactionSnapshotCertificate.SignedEntityType),
-			Metadata: &mithril.CertificateMetadata{
-				ProtocolVersion: mithrilHeader.TransactionSnapshotCertificate.Metadata.ProtocolVersion,
-				ProtocolParameters: &mithril.MithrilProtocolParameters{
-					K: mithrilHeader.TransactionSnapshotCertificate.Metadata.ProtocolParameters.K,
-					M: mithrilHeader.TransactionSnapshotCertificate.Metadata.ProtocolParameters.M,
-					PhiF: mithril.Fraction{
-						Numerator:   mithrilHeader.TransactionSnapshotCertificate.Metadata.ProtocolParameters.PhiF.Numerator,
-						Denominator: mithrilHeader.TransactionSnapshotCertificate.Metadata.ProtocolParameters.PhiF.Denominator,
-					},
-				},
-				InitiatedAt: mithrilHeader.TransactionSnapshotCertificate.Metadata.InitiatedAt,
-				SealedAt:    mithrilHeader.TransactionSnapshotCertificate.Metadata.SealedAt,
-				Signers:     convertSignerWithStake(mithrilHeader.TransactionSnapshotCertificate.Metadata.Signers),
-			},
-			ProtocolMessage: &mithril.ProtocolMessage{
-				MessageParts: convertMessagePart(mithrilHeader.TransactionSnapshotCertificate.ProtocolMessage.MessageParts),
-			},
-			SignedMessage:            mithrilHeader.TransactionSnapshotCertificate.SignedMessage,
-			AggregateVerificationKey: mithrilHeader.TransactionSnapshotCertificate.AggregateVerificationKey,
-			Signature:                convertSignature(mithrilHeader.TransactionSnapshotCertificate.Signature),
-		},
-	}
-}
-
-func convertSignerWithStake(stake []*mithrilstruct.SignerWithStake) []*mithril.SignerWithStake {
-	var signerWS []*mithril.SignerWithStake
-	for _, signer := range stake {
-		signerWS = append(signerWS, &mithril.SignerWithStake{
-			PartyId: signer.PartyId,
-			Stake:   signer.Stake,
-		})
-
-	}
-	return signerWS
-}
-
-func convertSignedEntityType(req *mithrilstruct.SignedEntityType) *mithril.SignedEntityType {
-	signedType := mithril.SignedEntityType{}
-	switch v := req.Entity.(type) {
-	case *mithrilstruct.SignedEntityType_MithrilStakeDistribution:
-		signedType.Entity = &mithril.SignedEntityType_MithrilStakeDistribution{
-			MithrilStakeDistribution: &mithril.MithrilStakeDistribution{
-				Epoch:            v.MithrilStakeDistribution.Epoch,
-				SignersWithStake: convertSignerWithStake(v.MithrilStakeDistribution.SignersWithStake),
-				Hash:             v.MithrilStakeDistribution.Hash,
-				CertificateHash:  v.MithrilStakeDistribution.CertificateHash,
-				CreatedAt:        v.MithrilStakeDistribution.CreatedAt,
-				ProtocolParameter: &mithril.MithrilProtocolParameters{
-					K: v.MithrilStakeDistribution.ProtocolParameter.K,
-					M: v.MithrilStakeDistribution.ProtocolParameter.M,
-					PhiF: mithril.Fraction{
-						Numerator:   v.MithrilStakeDistribution.ProtocolParameter.PhiF.Numerator,
-						Denominator: v.MithrilStakeDistribution.ProtocolParameter.PhiF.Denominator,
-					},
-				},
-			},
-		}
-	case *mithrilstruct.SignedEntityType_CardanoStakeDistribution:
-		signedType.Entity = &mithril.SignedEntityType_CardanoStakeDistribution{
-			CardanoStakeDistribution: &mithril.CardanoStakeDistribution{
-				Epoch: v.CardanoStakeDistribution.Epoch,
-			},
-		}
-	case *mithrilstruct.SignedEntityType_CardanoImmutableFilesFull:
-		signedType.Entity = &mithril.SignedEntityType_CardanoImmutableFilesFull{
-			CardanoImmutableFilesFull: &mithril.CardanoImmutableFilesFull{
-				Beacon: &mithril.CardanoDbBeacon{
-					Network:             v.CardanoImmutableFilesFull.Beacon.Network,
-					Epoch:               v.CardanoImmutableFilesFull.Beacon.Epoch,
-					ImmutableFileNumber: v.CardanoImmutableFilesFull.Beacon.ImmutableFileNumber,
-				},
-			},
-		}
-	case *mithrilstruct.SignedEntityType_CardanoTransactions:
-		signedType.Entity = &mithril.SignedEntityType_CardanoTransactions{
-			CardanoTransactions: &mithril.CardanoTransactions{
-				Beacon: &mithril.CardanoDbBeacon{
-					Network:             v.CardanoTransactions.Beacon.Network,
-					Epoch:               v.CardanoTransactions.Beacon.Epoch,
-					ImmutableFileNumber: v.CardanoTransactions.Beacon.ImmutableFileNumber,
-				},
-			},
-		}
-	}
-	return &signedType
-}
-
-func convertMessagePart(req []*mithrilstruct.MessagePart) []*mithril.MessagePart {
-	var messageParts []*mithril.MessagePart
-	for _, messagePart := range req {
-		messageParts = append(messageParts, &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.ProtocolMessagePartKey(messagePart.ProtocolMessagePartKey),
-			ProtocolMessagePartValue: messagePart.ProtocolMessagePartValue,
-		})
-	}
-	return messageParts
-}
-
-func convertSignature(req *mithrilstruct.CertificateSignature) *mithril.CertificateSignature {
-	signature := &mithril.CertificateSignature{}
-	switch v := req.SigType.(type) {
-	case *mithrilstruct.CertificateSignature_GenesisSignature:
-		signature.SigType = &mithril.CertificateSignature_GenesisSignature{
-			GenesisSignature: &mithril.GenesisSignature{
-				ProtocolGenesisSignature: &mithril.ProtocolGenesisSignature{
-					Signature: v.GenesisSignature.ProtocolGenesisSignature.Signature,
-				},
-			},
-		}
-	case *mithrilstruct.CertificateSignature_MultiSignature:
-		signature.SigType = &mithril.CertificateSignature_MultiSignature{
-			MultiSignature: &mithril.MultiSignature{
-				EntityType: convertSignedEntityType(v.MultiSignature.EntityType),
-				Signature: &mithril.ProtocolMultiSignature{
-					Signatures: v.MultiSignature.Signature.Signatures,
-					BatchProof: v.MultiSignature.Signature.BatchProof,
-				},
-			},
-		}
-	}
-	return signature
-}
 func (cc *CardanoProvider) QueryICQWithProof(ctx context.Context, path string, request []byte, height uint64) (provider.ICQProof, error) {
 	return provider.ICQProof{}, nil
 }

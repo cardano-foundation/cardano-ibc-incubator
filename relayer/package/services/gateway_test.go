@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"github.com/cardano/relayer/v1/package/mithril"
 	"testing"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
@@ -1066,7 +1067,7 @@ func TestQueryBlockResults(t *testing.T) {
 				Height: 1,
 			}, []grpc.CallOption(nil)).Return(
 			"Key", "Value", true, "Type", 1, 1, nil)
-		gw.TypeProvider = mockService
+		//gw.TypeProvider = mockService
 		response, err := gw.QueryBlockResults(context.Background(), 1)
 		require.NoError(t, err)
 		require.NotEmpty(t, response)
@@ -1080,7 +1081,7 @@ func TestQueryBlockResults(t *testing.T) {
 				Height: 1,
 			}, []grpc.CallOption(nil)).Return(
 			"Key", "Value", true, "Type", 1, 1, exErr)
-		gw.TypeProvider = mockService
+		//gw.TypeProvider = mockService
 		response, err := gw.QueryBlockResults(context.Background(), 1)
 		require.Error(t, err)
 		require.Empty(t, response)
@@ -1185,7 +1186,7 @@ func TestQueryTransactionByHash(t *testing.T) {
 			mockService.On("TransactionByHash", context.Background(),
 				&ibcclient.QueryTransactionByHashRequest{}, []grpc.CallOption(nil)).Return("", 1, 1, 1, tc.TypeProvider)
 
-			gw.TypeProvider = mockService
+			//gw.TypeProvider = mockService
 			response, err := gw.QueryTransactionByHash(context.Background(), &ibcclient.QueryTransactionByHashRequest{})
 			if err != nil {
 				require.Error(t, err, tc.exErr)
@@ -1227,7 +1228,7 @@ func TestQueryBlockSearch(t *testing.T) {
 					Page:             0,
 				}, []grpc.CallOption(nil)).Return(0, 1, 2, tc.TypeProvider)
 
-			gw.TypeProvider = mockService
+			//gw.TypeProvider = mockService
 			response, err := gw.QueryBlockSearch(context.Background(),
 				"", "", "",
 				0, 0)
@@ -1352,4 +1353,13 @@ func TestQueryUnreceivedAcknowledgements(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQueryIBCHeader(t *testing.T) {
+	t.Run("QueryIBCHeader Success", func(t *testing.T) {
+		gw.MithrilService = mithril.NewMithrilService("https://aggregator.testing-preview.api.mithril.network/aggregator")
+		response, err := gw.QueryIBCHeader(context.Background(), 11476)
+		require.NoError(t, err)
+		require.NotEmpty(t, response)
+	})
 }
