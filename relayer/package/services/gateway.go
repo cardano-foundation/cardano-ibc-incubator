@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"github.com/cardano/relayer/v1/package/mithril"
 	"strings"
 
@@ -31,7 +32,7 @@ type Gateway struct {
 	MithrilService *mithril.MithrilService
 }
 
-func (gw *Gateway) NewGateWayService(address string) error {
+func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) error {
 	conn, err := grpc.Dial(strings.TrimPrefix(address, "http://"), grpc.WithInsecure())
 	if err != nil {
 		return err
@@ -47,17 +48,20 @@ func (gw *Gateway) NewGateWayService(address string) error {
 	gw.ChannelMsgService = pbchannel.NewMsgClient(conn)
 
 	gw.TypeProvider = ibcclient.NewQueryClient(conn)
-	gw.MithrilService = mithril.NewMithrilService("https://aggregator.testing-preview.api.mithril.network/aggregator")
+	gw.MithrilService = mithril.NewMithrilService(mithrilEndpoint)
 
 	return nil
 }
 
 func (gw *Gateway) GetLastHeight() (uint64, error) {
-	res, err := gw.ClientQueryService.LatestHeight(context.Background(), &pbclient.QueryLatestHeightRequest{})
+	res, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
 	if err != nil {
 		return 0, err
 	}
-	return res.Height, nil
+	if len(res) == 0 {
+		return 0, fmt.Errorf("cardano transaction set snapshot return nil")
+	}
+	return res[0].Beacon.ImmutableFileNumber, nil
 }
 
 func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
