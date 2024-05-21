@@ -30,6 +30,25 @@ faucet:
     - 100000stake
 genesis:
   app_state:
+    capability: 
+      "index": "2"
+      "owners": [
+        {
+          "index": "1",
+          "index_owners": {
+            "owners": [
+              {
+                "module": "ibc",
+                "name": "ports/orderedtransfer"
+              },
+              {
+                "module": "orderedtransfer",
+                "name": "ports/orderedtransfer"
+              }
+            ]
+          }
+        }, 
+      ]
     ibc:
       client_genesis:
         clients: []
@@ -58,8 +77,8 @@ genesis:
         "ack_sequences": []
         "next_channel_sequence": 0
 
-    "transfer":
-      "port_id": "transfer"
+    "orderedtransfer":
+      "port_id": "orderedtransfer"
       "denom_traces": []
       "params":
         "send_enabled": true

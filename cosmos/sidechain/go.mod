@@ -3,6 +3,8 @@ module sidechain
 go 1.21
 
 replace (
+	// enable ordered ibc transfer
+	github.com/cosmos/ibc-go/v8 v8.0.0 => github.com/chinhnd-smartosc/ibc-go/v8 v8.0.0-ordered-ibc-transfer
 	// fix upstream GHSA-h395-qcrw-5vmq vulnerability.
 	github.com/gin-gonic/gin => github.com/gin-gonic/gin v1.7.0
 	// replace broken goleveldb
