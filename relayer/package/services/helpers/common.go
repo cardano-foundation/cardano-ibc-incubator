@@ -26,7 +26,7 @@ func floatToFraction(f float64) Fraction {
 	}
 
 	// Determine the sign of the fraction
-	sign := uint64(1)
+	sign := int64(1)
 	if f < 0 {
 		sign = -1
 		f = -f
@@ -47,5 +47,5 @@ func floatToFraction(f float64) Fraction {
 	numerator /= g
 	denominator /= g
 
-	return Fraction{sign * numerator, denominator}
+	return Fraction{uint64(sign) * numerator, denominator}
 }

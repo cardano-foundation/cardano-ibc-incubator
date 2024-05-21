@@ -26,10 +26,10 @@ type CertificateMetadataBase struct {
 
 // MessageParts represents the parts of the protocol message
 type MessageParts struct {
-	SnapshotDigest                string  `json:"snapshot_digest"`
-	NextAggregateVerificationKey  string  `json:"next_aggregate_verification_key"`
+	SnapshotDigest                *string `json:"snapshot_digest"`
+	NextAggregateVerificationKey  *string `json:"next_aggregate_verification_key"`
 	CardanoTransactionsMerkleRoot *string `json:"cardano_transactions_merkle_root,omitempty"`
-	LatestImmutableFileNumber     *uint64 `json:"latest_immutable_file_number,omitempty"`
+	LatestImmutableFileNumber     *string `json:"latest_immutable_file_number,omitempty"`
 }
 
 // ProtocolMessage represents the protocol message structure
@@ -40,7 +40,7 @@ type ProtocolMessage struct {
 // CardanoImmutableFilesFull represents the Cardano immutable files full entity
 type CardanoImmutableFilesFull struct {
 	Network             string `json:"network"`
-	Epoch               int    `json:"epoch"`
+	Epoch               uint64 `json:"epoch"`
 	ImmutableFileNumber uint64 `json:"immutable_file_number"`
 }
 
@@ -49,6 +49,10 @@ type CardanoTransactions struct {
 	Network             string `json:"network"`
 	Epoch               uint64 `json:"epoch"`
 	ImmutableFileNumber uint64 `json:"immutable_file_number"`
+}
+
+type CardanoStakeDistribution struct {
+	Epoch uint64 `json:"epoch"`
 }
 
 type EpochSetting struct {
@@ -61,4 +65,6 @@ type EpochSetting struct {
 type SignedEntityType struct {
 	CardanoImmutableFilesFull *CardanoImmutableFilesFull `json:"CardanoImmutableFilesFull,omitempty"`
 	CardanoTransactions       *CardanoTransactions       `json:"CardanoTransactions,omitempty"`
+	MithrilStakeDistribution  *uint64                    `json:"MithrilStakeDistribution,omitempty"`
+	CardanoStakeDistribution  *CardanoStakeDistribution  `json:"CardanoStakeDistribution,omitempty"`
 }

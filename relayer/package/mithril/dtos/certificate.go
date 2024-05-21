@@ -7,7 +7,7 @@ type CertificateMetadataOverall struct {
 
 type CertificateMetadataDetail struct {
 	CertificateMetadataBase
-	Signers []Signer
+	Signers []*Signer
 }
 
 type CertificateOverall struct {
@@ -34,4 +34,9 @@ type CertificateDetail struct {
 	AggregateVerificationKey string                    `json:"aggregate_verification_key"`
 	MultiSignature           string                    `json:"multi_signature"`
 	GenesisSignature         string                    `json:"genesis_signature"`
+}
+
+type CertificateMultiSignature struct {
+	Signatures [][]interface{} `json:"signatures"`
+	BatchProof interface{}     `json:"batch_proof"`
 }

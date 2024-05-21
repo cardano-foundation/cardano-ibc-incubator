@@ -2,16 +2,14 @@ package services
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"github.com/cardano/relayer/v1/package/mithril/dtos"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 )
 
 func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64) (*mithril.MithrilHeader, error) {
-	//res, err := gw.TypeProvider.IBCHeader(ctx, &ibcclient.QueryIBCHeaderRequest{Height: uint64(h)})
-	//if err != nil {
-	//	return nil, err
-	//}
-
 	mithrilStakeDistributionList, err := gw.MithrilService.GetListMithrilStakeDistributions()
 	if err != nil {
 		return nil, err
@@ -22,79 +20,43 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64) (*mithril.Mithri
 		return nil, err
 	}
 
+	cardanoTxsSetSnapshot, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	var snapshot *dtos.CardanoTransactionSetSnapshot
+	for idx, cardanoTx := range cardanoTxsSetSnapshot {
+		if cardanoTx.Beacon.ImmutableFileNumber == uint64(h) {
+			snapshot = &cardanoTxsSetSnapshot[idx]
+		}
+	}
+	if snapshot == nil {
+		return nil, errors.New(fmt.Sprintf("Could not find snapshot with height %d", h))
+	}
+	snapshotCertificate, err := gw.MithrilService.GetCertificateByHash(snapshot.CertificateHash)
+	if err != nil {
+		return nil, err
+	}
+
 	mithrilHeader := mithril.MithrilHeader{
-		MithrilStakeDistribution: helpers.ConvertMithrilStakeDistribution(mithrilStakeDistribution, *mithrilDistributionCertificate),
-		MithrilStakeDistributionCertificate: &mithril.MithrilCertificate{
-			Hash:         "",
-			PreviousHash: "",
-			Epoch:        0,
-			SignedEntityType: &mithril.SignedEntityType{
-				Entity: nil,
-			},
-			Metadata: &mithril.CertificateMetadata{
-				ProtocolVersion: "",
-				ProtocolParameters: &mithril.MithrilProtocolParameters{
-					K: 0,
-					M: 0,
-					PhiF: mithril.Fraction{
-						Numerator:   0,
-						Denominator: 0,
-					},
-				},
-				InitiatedAt: 0,
-				SealedAt:    0,
-				Signers:     nil,
-			},
-			ProtocolMessage: &mithril.ProtocolMessage{
-				MessageParts: nil,
-			},
-			SignedMessage:            "",
-			AggregateVerificationKey: "",
-			Signature: &mithril.CertificateSignature{
-				SigType: nil,
-			},
-		},
+		MithrilStakeDistribution:            helpers.ConvertMithrilStakeDistribution(mithrilStakeDistribution, *mithrilDistributionCertificate),
+		MithrilStakeDistributionCertificate: helpers.ConvertMithrilStakeDistributionCertificate(mithrilStakeDistribution, *mithrilDistributionCertificate),
 		TransactionSnapshot: &mithril.CardanoTransactionSnapshot{
-			SnapshotHash:    "",
-			MerkleRoot:      "",
-			CertificateHash: "",
-			Epoch:           0,
+			SnapshotHash:    snapshot.Hash,
+			MerkleRoot:      snapshot.MerkleRoot,
+			CertificateHash: snapshot.CertificateHash,
+			Epoch:           snapshot.Beacon.Epoch,
 			Height: &mithril.Height{
-				MithrilHeight: 0,
+				MithrilHeight: snapshot.Beacon.ImmutableFileNumber,
 			},
 		},
-		TransactionSnapshotCertificate: &mithril.MithrilCertificate{
-			Hash:         "",
-			PreviousHash: "",
-			Epoch:        0,
-			SignedEntityType: &mithril.SignedEntityType{
-				Entity: nil,
-			},
-			Metadata: &mithril.CertificateMetadata{
-				ProtocolVersion: "",
-				ProtocolParameters: &mithril.MithrilProtocolParameters{
-					K: 0,
-					M: 0,
-					PhiF: mithril.Fraction{
-						Numerator:   0,
-						Denominator: 0,
-					},
-				},
-				InitiatedAt: 0,
-				SealedAt:    0,
-				Signers:     nil,
-			},
-			ProtocolMessage: &mithril.ProtocolMessage{
-				MessageParts: nil,
-			},
-			SignedMessage:            "",
-			AggregateVerificationKey: "",
-			Signature: &mithril.CertificateSignature{
-				SigType: nil,
-			},
-		},
+		TransactionSnapshotCertificate: helpers.ConvertMithrilStakeDistributionCertificate(dtos.MithrilStakeDistribution{
+			Hash:            snapshot.Hash,
+			Epoch:           snapshot.Beacon.Epoch,
+			CertificateHash: snapshot.CertificateHash,
+			CreatedAt:       snapshot.CreatedAt,
+		}, *snapshotCertificate),
 	}
 
 	return &mithrilHeader, nil
-
 }
