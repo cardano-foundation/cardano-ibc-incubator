@@ -25,8 +25,8 @@ func ConvertMithrilStakeDistribution(stakeDistribution dtos.MithrilStakeDistribu
 			K: stakeDistributionCertificate.Metadata.Parameters.K,
 			M: stakeDistributionCertificate.Metadata.Parameters.M,
 			PhiF: mithril.Fraction{
-				Numerator:   floatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Numerator,
-				Denominator: floatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
+				Numerator:   FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Numerator,
+				Denominator: FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
 			},
 		},
 	}
@@ -186,8 +186,8 @@ func ConvertMithrilStakeDistributionCertificate(stakeDistribution dtos.MithrilSt
 				K: stakeDistributionCertificate.Metadata.Parameters.K,
 				M: stakeDistributionCertificate.Metadata.Parameters.M,
 				PhiF: mithril.Fraction{
-					Numerator:   floatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Numerator,
-					Denominator: floatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
+					Numerator:   FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Numerator,
+					Denominator: FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
 				},
 			},
 			InitiatedAt: uint64(stakeDistributionCertificate.Metadata.InitiatedAt.UnixNano()),

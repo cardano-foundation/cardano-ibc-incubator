@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/cardano/relayer/v1/package/mithril"
+	"github.com/joho/godotenv"
 	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
@@ -33,6 +34,10 @@ type Gateway struct {
 }
 
 func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) error {
+	err := godotenv.Load()
+	if err != nil {
+		return err
+	}
 	conn, err := grpc.Dial(strings.TrimPrefix(address, "http://"), grpc.WithInsecure())
 	if err != nil {
 		return err
