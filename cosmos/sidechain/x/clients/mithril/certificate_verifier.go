@@ -1,4 +1,4 @@
-package verifier
+package mithril
 
 import (
 	"fmt"
@@ -7,7 +7,7 @@ import (
 )
 
 type MithrilCertificateRetriever interface {
-	GetCertificateDetails(hash string) (*entities.Certificate, error)
+	GetCertificateDetails(hash string) (*Certificate, error)
 }
 
 type MithrilCertificateVerifier struct {
@@ -26,7 +26,7 @@ func (v *MithrilCertificateVerifier) VerifyMultiSignature(message []byte, multiS
 	)
 }
 
-func (v *MithrilCertificateVerifier) VerifyStandardCertificate(certificate entities.Certificate, signature entities.ProtocolMultiSignature) (*entities.Certificate, error) {
+func (v *MithrilCertificateVerifier) VerifyStandardCertificate(certificate Certificate, signature entities.ProtocolMultiSignature) (*Certificate, error) {
 	if err := v.VerifyMultiSignature([]byte(certificate.SignedMessage), signature, certificate.AggregateVerificationKey, certificate.Metadata.ProtocolParameters); err != nil {
 		return nil, err
 	}

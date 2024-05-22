@@ -1,4 +1,4 @@
-package entities
+package mithril
 
 import (
 	"crypto/sha256"
@@ -6,10 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"hash"
-	"sidechain/x/clients/mithril"
+	"sidechain/x/clients/mithril/common/entities"
 )
-
-type CertificateSignature = mithril.CertificateSignature
 
 type FeedHasher interface {
 	FeedHash(hasher hash.Hash)
@@ -18,15 +16,15 @@ type FeedHasher interface {
 type Certificate struct {
 	Hash                     string
 	PreviousHash             string
-	Epoch                    Epoch
-	Metadata                 CertificateMetadata
-	ProtocolMessage          ProtocolMessage
+	Epoch                    entities.Epoch
+	Metadata                 entities.CertificateMetadata
+	ProtocolMessage          entities.ProtocolMessage
 	SignedMessage            string
-	AggregateVerificationKey ProtocolAggregateVerificationKey
+	AggregateVerificationKey entities.ProtocolAggregateVerificationKey
 	Signature                CertificateSignature
 }
 
-func NewCertificate(previousHash string, epoch Epoch, metadata CertificateMetadata, protocolMessage ProtocolMessage, aggregateVerificationKey ProtocolAggregateVerificationKey, signature CertificateSignature) Certificate {
+func NewCertificate(previousHash string, epoch entities.Epoch, metadata entities.CertificateMetadata, protocolMessage entities.ProtocolMessage, aggregateVerificationKey entities.ProtocolAggregateVerificationKey, signature CertificateSignature) Certificate {
 	signedMessage := protocolMessage.ComputeHash()
 	certificate := Certificate{
 		Hash:                     "",
@@ -58,9 +56,9 @@ func (c *Certificate) ComputeHash() string {
 	hasher.Write([]byte(hex.EncodeToString(keyJSON)))
 
 	switch s := c.Signature.SigType.(type) {
-	case *mithril.CertificateSignature_GenesisSignature:
+	case *CertificateSignature_GenesisSignature:
 		hasher.Write([]byte(s.GenesisSignature.ToBytesHex()))
-	case *mithril.CertificateSignature_MultiSignature:
+	case *CertificateSignature_MultiSignature:
 		if entity, ok := s.MultiSignature.EntityType.Entity.(FeedHasher); ok {
 			entity.FeedHash(hasher)
 		}
@@ -79,7 +77,7 @@ func (c *Certificate) ComputeHash() string {
 
 func (c *Certificate) IsGenesis() bool {
 	switch c.Signature.SigType.(type) {
-	case *mithril.CertificateSignature_GenesisSignature:
+	case *CertificateSignature_GenesisSignature:
 		return true
 	default:
 		return false
@@ -90,6 +88,36 @@ func (c *Certificate) IsChainingToItself() bool {
 	return c.Hash == c.PreviousHash
 }
 
-func (c *Certificate) MatchMessage(message ProtocolMessage) bool {
+func (c *Certificate) MatchMessage(message entities.ProtocolMessage) bool {
 	return message.ComputeHash() == c.SignedMessage
+}
+
+func (csd *CardanoStakeDistribution) FeedHash(hasher hash.Hash) {
+	epochBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(epochBytes, csd.Epoch)
+	hasher.Write(epochBytes)
+}
+
+func (ciff *CardanoImmutableFilesFull) FeedHash(hasher hash.Hash) {
+	hasher.Write([]byte(ciff.Beacon.Network))
+	epochBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(epochBytes, ciff.Beacon.Epoch)
+	hasher.Write(epochBytes)
+	fileNumberBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(fileNumberBytes, ciff.Beacon.ImmutableFileNumber)
+	hasher.Write(fileNumberBytes)
+}
+
+func (ct *CardanoTransactions) FeedHash(hasher hash.Hash) {
+	hasher.Write([]byte(ct.Beacon.Network))
+	epochBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(epochBytes, ct.Beacon.Epoch)
+	hasher.Write(epochBytes)
+	fileNumberBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(fileNumberBytes, ct.Beacon.ImmutableFileNumber)
+	hasher.Write(fileNumberBytes)
+}
+
+func (gs *GenesisSignature) ToBytesHex() string {
+	return hex.EncodeToString(gs.GetProtocolGenesisSignature().Signature)
 }
