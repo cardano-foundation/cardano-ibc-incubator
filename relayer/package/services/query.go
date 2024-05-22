@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/mithril/dtos"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
+	"os"
+	"slices"
 )
 
 func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64) (*mithril.MithrilHeader, error) {
@@ -59,4 +62,77 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64) (*mithril.Mithri
 	}
 
 	return &mithrilHeader, nil
+}
+
+func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.ConsensusState, error) {
+	currentEpochSettings, err := gw.MithrilService.GetEpochSetting()
+	if err != nil {
+		return nil, nil, err
+	}
+	mithrilStakeDistributionsList, err := gw.MithrilService.GetListMithrilStakeDistributions()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(mithrilStakeDistributionsList) == 0 {
+		return nil, nil, fmt.Errorf("GetListMithrilStakeDistributions returned empty list")
+	}
+	mithrilDistribution := mithrilStakeDistributionsList[0]
+	fcCertificateMsd, err := gw.MithrilService.GetCertificateByHash(mithrilDistribution.CertificateHash)
+	if err != nil {
+		return nil, nil, err
+	}
+	certificateList, err := gw.MithrilService.GetListCertificates()
+	if err != nil {
+		return nil, nil, err
+	}
+	latestCertificateMsd := dtos.CertificateOverall{}
+	idx := slices.IndexFunc(certificateList, func(c dtos.CertificateOverall) bool { return c.Epoch == mithrilDistribution.Epoch })
+	if idx == -1 {
+		return nil, nil, fmt.Errorf("could not find certificate with epoch %d", mithrilDistribution.Epoch)
+	}
+	latestCertificateMsd = certificateList[idx]
+
+	listSnapshots, err := gw.MithrilService.GetListSnapshots()
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(listSnapshots) == 0 {
+		return nil, nil, fmt.Errorf("GetListSnapshots returned empty list")
+	}
+	latestSnapshot := listSnapshots[0]
+	latestSnapshotCertificate, err := gw.MithrilService.GetCertificateByHash(latestSnapshot.CertificateHash)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	phifFraction := helpers.FloatToFraction(currentEpochSettings.Protocol.PhiF)
+	clientState := &mithril.ClientState{
+		ChainId: os.Getenv(constant.CardanoChainNetworkMagic),
+		LatestHeight: &mithril.Height{
+			MithrilHeight: latestSnapshotCertificate.Beacon.ImmutableFileNumber,
+		},
+		FrozenHeight: &mithril.Height{
+			MithrilHeight: 0,
+		},
+		CurrentEpoch:   currentEpochSettings.Epoch,
+		TrustingPeriod: 0,
+		ProtocolParameters: &mithril.MithrilProtocolParameters{
+			K: currentEpochSettings.Protocol.K,
+			M: currentEpochSettings.Protocol.M,
+			PhiF: mithril.Fraction{
+				Numerator:   phifFraction.Numerator,
+				Denominator: phifFraction.Denominator,
+			},
+		},
+		UpgradePath: nil,
+	}
+	timestamp := fcCertificateMsd.Metadata.SealedAt.UnixNano()
+	consensusState := &mithril.ConsensusState{
+		Timestamp:            uint64(timestamp),
+		FcHashLatestEpochMsd: mithrilDistribution.CertificateHash,
+		LatestCertHashMsd:    latestCertificateMsd.Hash,
+		FcHashLatestEpochTs:  mithrilDistribution.CertificateHash,
+		LatestCertHashTs:     latestSnapshot.CertificateHash,
+	}
+	return clientState, consensusState, nil
 }

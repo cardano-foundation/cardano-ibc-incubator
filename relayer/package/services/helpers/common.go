@@ -17,7 +17,7 @@ func gcd(a, b uint64) uint64 {
 }
 
 // Function to convert a float to a Fraction
-func floatToFraction(f float64) Fraction {
+func FloatToFraction(f float64) Fraction {
 	const precision = 1e-9 // precision for floating point comparison
 
 	// Handle special cases for zero
