@@ -82,10 +82,10 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 
 	// check for duplicate update
-	if _, found := GetConsensusState(clientStore, cdc, header.GetHeight()); found {
-		// perform no-op
-		return []exported.Height{header.GetHeight()}
-	}
+	// if _, found := GetConsensusState(clientStore, cdc, header.GetHeight()); found {
+	// perform no-op
+	// return []exported.Height{header.GetHeight()}
+	// }
 
 	height := NewHeight(header.TransactionSnapshot.Height.GetRevisionHeight())
 	if height.GT(cs.LatestHeight) {
@@ -106,11 +106,8 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 		setFcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
 		setFcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, epoch)
 	}
-	consensusState = &ConsensusState{
-		Timestamp:         header.GetTimestamp(),
-		LatestCertHashMsd: header.MithrilStakeDistributionCertificate.Hash,
-		LatestCertHashTs:  header.TransactionSnapshotCertificate.Hash,
-	}
+	consensusState.LatestCertHashMsd = header.MithrilStakeDistributionCertificate.Hash
+	consensusState.LatestCertHashTs = header.TransactionSnapshotCertificate.Hash
 
 	// set latest certificate of mithril stake distribution and transaction snapshot for epoch
 	setLcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
