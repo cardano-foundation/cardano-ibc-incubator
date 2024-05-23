@@ -5,38 +5,46 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cardano/relayer/v1/constant"
+	"slices"
+
 	"github.com/cardano/relayer/v1/package/mithril/dtos"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"os"
-	"slices"
 )
 
-func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64) (*mithril.MithrilHeader, error) {
-	mithrilStakeDistributionList, err := gw.MithrilService.GetListMithrilStakeDistributions()
-	if err != nil {
-		return nil, err
-	}
-	mithrilStakeDistribution := mithrilStakeDistributionList[0]
-	mithrilDistributionCertificate, err := gw.MithrilService.GetCertificateByHash(mithrilStakeDistribution.CertificateHash)
-	if err != nil {
-		return nil, err
-	}
-
+func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.ClientState) (*mithril.MithrilHeader, error) {
 	cardanoTxsSetSnapshot, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
 	if err != nil {
 		return nil, err
 	}
-	var snapshot *dtos.CardanoTransactionSetSnapshot
-	for idx, cardanoTx := range cardanoTxsSetSnapshot {
-		if cardanoTx.Beacon.ImmutableFileNumber == uint64(h) {
-			snapshot = &cardanoTxsSetSnapshot[idx]
-		}
-	}
-	if snapshot == nil {
+	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshot, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Beacon.ImmutableFileNumber == uint64(h) })
+	if snapshotIdx == -1 {
 		return nil, errors.New(fmt.Sprintf("Could not find snapshot with height %d", h))
 	}
+
+	snapshot := &cardanoTxsSetSnapshot[snapshotIdx]
 	snapshotCertificate, err := gw.MithrilService.GetCertificateByHash(snapshot.CertificateHash)
+	if err != nil {
+		return nil, err
+	}
+	if cs.CurrentEpoch < snapshot.Beacon.Epoch {
+		fmt.Printf("Client State has Current epoch: %v", cs.CurrentEpoch)
+		fmt.Printf("Snapshot has epoch: %v", snapshot.Beacon.Epoch)
+		return gw.QueryIBCGenesisCertHeader(ctx, int64(cs.CurrentEpoch+1))
+	}
+
+	mithrilStakeDistributionList, err := gw.MithrilService.GetListMithrilStakeDistributions()
+	if err != nil {
+		return nil, err
+	}
+
+	mithrilStakeDistributionIdx := slices.IndexFunc(mithrilStakeDistributionList, func(c dtos.MithrilStakeDistribution) bool { return c.Epoch == snapshot.Beacon.Epoch })
+	if mithrilStakeDistributionIdx == -1 {
+		return nil, errors.New(fmt.Sprintf("Could not find stake distribution with epoch %d", snapshot.Beacon.Epoch))
+	}
+	mithrilStakeDistribution := mithrilStakeDistributionList[mithrilStakeDistributionIdx]
+	mithrilDistributionCertificate, err := gw.MithrilService.GetCertificateByHash(mithrilStakeDistribution.CertificateHash)
 	if err != nil {
 		return nil, err
 	}
@@ -135,4 +143,57 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 		LatestCertHashTs:     latestSnapshot.CertificateHash,
 	}
 	return clientState, consensusState, nil
+}
+
+func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (*mithril.MithrilHeader, error) {
+	mithrilStakeDistributionList, err := gw.MithrilService.GetListMithrilStakeDistributions()
+	if err != nil {
+		return nil, err
+	}
+
+	mithrilStakeDistributionIdx := slices.IndexFunc(mithrilStakeDistributionList, func(c dtos.MithrilStakeDistribution) bool { return c.Epoch == uint64(epoch) })
+	if mithrilStakeDistributionIdx == -1 {
+		return nil, errors.New(fmt.Sprintf("Could not find stake distribution with epoch %d", epoch))
+	}
+	mithrilStakeDistribution := mithrilStakeDistributionList[mithrilStakeDistributionIdx]
+	mithrilDistributionCertificate, err := gw.MithrilService.GetCertificateByHash(mithrilStakeDistribution.CertificateHash)
+	if err != nil {
+		return nil, err
+	}
+
+	cardanoTxsSetSnapshot, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
+	if err != nil {
+		return nil, err
+	}
+
+	cardanoTxsSetSnapshotReverse := slices.Clone(cardanoTxsSetSnapshot)
+	slices.Reverse(cardanoTxsSetSnapshotReverse)
+	firstSnapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshotReverse, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Beacon.Epoch == uint64(epoch) })
+	if firstSnapshotIdx == -1 {
+		return nil, errors.New(fmt.Sprintf("Could not find snapshot with epoch %d", epoch))
+	}
+	firstSnapshot := &cardanoTxsSetSnapshotReverse[firstSnapshotIdx]
+	snapshotCertificate, _ := gw.MithrilService.GetCertificateByHash(firstSnapshot.CertificateHash)
+	// TODO: There is an issue that cannot get first trx snapshots with epoch if there are too many tx snapshots
+	mithrilHeader := mithril.MithrilHeader{
+		MithrilStakeDistribution:            helpers.ConvertMithrilStakeDistribution(mithrilStakeDistribution, *mithrilDistributionCertificate),
+		MithrilStakeDistributionCertificate: helpers.ConvertMithrilStakeDistributionCertificate(mithrilStakeDistribution, *mithrilDistributionCertificate),
+		TransactionSnapshot: &mithril.CardanoTransactionSnapshot{
+			SnapshotHash:    firstSnapshot.Hash,
+			MerkleRoot:      firstSnapshot.MerkleRoot,
+			CertificateHash: firstSnapshot.CertificateHash,
+			Epoch:           firstSnapshot.Beacon.Epoch,
+			Height: &mithril.Height{
+				MithrilHeight: firstSnapshot.Beacon.ImmutableFileNumber,
+			},
+		},
+		TransactionSnapshotCertificate: helpers.ConvertMithrilStakeDistributionCertificate(dtos.MithrilStakeDistribution{
+			Hash:            firstSnapshot.Hash,
+			Epoch:           firstSnapshot.Beacon.Epoch,
+			CertificateHash: firstSnapshot.CertificateHash,
+			CreatedAt:       firstSnapshot.CreatedAt,
+		}, *snapshotCertificate),
+	}
+
+	return &mithrilHeader, nil
 }

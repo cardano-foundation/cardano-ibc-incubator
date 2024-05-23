@@ -8,6 +8,7 @@ import (
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	proto "github.com/cosmos/gogoproto/proto"
 	github_com_cosmos_gogoproto_types "github.com/cosmos/gogoproto/types"
+	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	_ "google.golang.org/protobuf/types/known/durationpb"
 	io "io"
 	math "math"
@@ -61,6 +62,54 @@ func (ProtocolMessagePartKey) EnumDescriptor() ([]byte, []int) {
 type Height struct {
 	// the immutable file number
 	MithrilHeight uint64 `protobuf:"varint,1,opt,name=mithril_height,json=mithrilHeight,proto3" json:"mithril_height,omitempty"`
+}
+
+func (m *Height) IsZero() bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) LT(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) LTE(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) EQ(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GT(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GTE(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GetRevisionNumber() uint64 {
+	return 0
+}
+
+func (m *Height) GetRevisionHeight() uint64 {
+	return m.MithrilHeight
+}
+
+func (m *Height) Increment() ibcexported.Height {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) Decrement() (ibcexported.Height, bool) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (m *Height) Reset()      { *m = Height{} }
