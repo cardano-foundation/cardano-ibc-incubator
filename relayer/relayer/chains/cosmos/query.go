@@ -6,11 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
@@ -1324,6 +1325,12 @@ func (cc *CosmosProvider) QueryMainConsensusState(ctx context.Context, height in
 }
 
 func (cc *CosmosProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *CosmosProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
 	//TODO implement me
 	panic("implement me")
 }

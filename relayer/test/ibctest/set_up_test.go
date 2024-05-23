@@ -18,7 +18,7 @@ const (
 	CardanoChainName    = "cardano"
 	CardanoChainID      = "cardano"
 	CardanoPortTransfer = "port-100"
-	MithrilEndpoint     = "https://aggregator.testing-preview.api.mithril.network/aggregator"
+	MithrilEndpoint     = "http://0.0.0.0:8080/aggregator"
 
 	CosmosRPCAddr      = "http://0.0.0.0:26657"
 	CosmosChainName    = "cosmos"

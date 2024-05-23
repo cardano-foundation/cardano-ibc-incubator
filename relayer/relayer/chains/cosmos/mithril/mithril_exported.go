@@ -20,8 +20,9 @@ func (m *ClientState) ClientType() string {
 }
 
 func (m *ClientState) GetLatestHeight() exported.Height {
-	//TODO implement me
-	panic("implement me")
+	return &Height{
+		MithrilHeight: m.LatestHeight.MithrilHeight,
+	}
 }
 
 func (m *ClientState) Validate() error {

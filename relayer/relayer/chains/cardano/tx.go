@@ -3,14 +3,16 @@ package cardano
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cometbft/cometbft/abci/types"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cometbft/cometbft/abci/types"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -23,6 +25,7 @@ import (
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/constant"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -36,6 +39,7 @@ import (
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	echovl "github.com/echovl/cardano-go"
@@ -855,7 +859,21 @@ func (cc *CardanoProvider) mkTxResult(resTx *coretypes.ResultTx) (*sdk.TxRespons
 
 // QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
 func (cc *CardanoProvider) QueryIBCHeader(ctx context.Context, h int64) (provider.IBCHeader, error) {
-	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h)
+	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return mithrilHeader, nil
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *CardanoProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
+	var clientState mithril.ClientState
+	bytes, _ := json.Marshal(cs)
+	json.Unmarshal(bytes, &clientState)
+
+	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h, &clientState)
 	if err != nil {
 		return nil, err
 	}

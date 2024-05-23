@@ -3,9 +3,10 @@ package relayer
 import (
 	"context"
 	"fmt"
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"strings"
 	"time"
+
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 
 	"github.com/cardano/relayer/v1/constant"
 
@@ -285,7 +286,15 @@ func MsgUpdateClient(
 		eg.Go(func() error {
 			return retry.Do(func() error {
 				var err error
-				ibcHeader, err = src.ChainProvider.QueryIBCHeader(egCtx, srch)
+				clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, dsth, dst.ClientID())
+				if err != nil {
+					return fmt.Errorf("failed to query the client state response: %w", err)
+				}
+				clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+				if err != nil {
+					return fmt.Errorf("failed to unpack client state: %w", err)
+				}
+				ibcHeader, err = src.ChainProvider.QueryIBCMithrilHeader(egCtx, srch, &clientState)
 				return err
 			}, retry.Context(egCtx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
 				src.log.Info(
