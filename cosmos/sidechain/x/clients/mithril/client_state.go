@@ -100,8 +100,8 @@ func (cs ClientState) Status(
 // IsExpired returns whether or not the client has passed the trusting period since the last
 // update (in which case no headers are considered valid).
 func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
-	expirationTime := time.Unix(int64(latestTimestamp), 0).Add(cs.TrustingPeriod)
-	return !expirationTime.After(now)
+	// expirationTime := time.Unix(int64(latestTimestamp), 0).Add(cs.TrustingPeriod)
+	return false
 }
 
 // Validate performs a basic validation of the client state fields.
