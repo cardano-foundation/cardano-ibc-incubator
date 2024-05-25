@@ -12,6 +12,6 @@
     "timeout": "10s",
     "output-format": "json",
     "sign-mode": "direct",
-    "mithril-endpoint": "https://aggregator.testing-preview.api.mithril.network/aggregator"
+    "mithril-endpoint": "http://localhost:8080/aggregator"
   }
 }
