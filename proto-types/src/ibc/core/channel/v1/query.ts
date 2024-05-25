@@ -2308,6 +2308,8 @@ export interface Query {
   UnreceivedAcks(request: QueryUnreceivedAcksRequest): Promise<QueryUnreceivedAcksResponse>;
   /** NextSequenceReceive returns the next receive sequence for a given channel. */
   NextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse>;
+  /** NextSequenceAck returns the next acknowledgements sequence for a given channel. */
+  NextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse>;
   ProofUnreceivedPackets(request: QueryProofUnreceivedPacketsRequest): Promise<QueryProofUnreceivedPacketsResponse>;
 }
 export class QueryClientImpl implements Query {
@@ -2327,6 +2329,7 @@ export class QueryClientImpl implements Query {
     this.UnreceivedPackets = this.UnreceivedPackets.bind(this);
     this.UnreceivedAcks = this.UnreceivedAcks.bind(this);
     this.NextSequenceReceive = this.NextSequenceReceive.bind(this);
+    this.NextSequenceAck = this.NextSequenceAck.bind(this);
     this.ProofUnreceivedPackets = this.ProofUnreceivedPackets.bind(this);
   }
   Channel(request: QueryChannelRequest): Promise<QueryChannelResponse> {
@@ -2394,6 +2397,11 @@ export class QueryClientImpl implements Query {
   NextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
     const data = QueryNextSequenceReceiveRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.channel.v1.Query", "NextSequenceReceive", data);
+    return promise.then(data => QueryNextSequenceReceiveResponse.decode(new BinaryReader(data)));
+  }
+  NextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
+    const data = QueryNextSequenceReceiveRequest.encode(request).finish();
+    const promise = this.rpc.request("ibc.core.channel.v1.Query", "NextSequenceAck", data);
     return promise.then(data => QueryNextSequenceReceiveResponse.decode(new BinaryReader(data)));
   }
   ProofUnreceivedPackets(request: QueryProofUnreceivedPacketsRequest): Promise<QueryProofUnreceivedPacketsResponse> {
