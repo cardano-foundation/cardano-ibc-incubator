@@ -1,5 +1,5 @@
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
-import { CHANNEL_ID_PREFIX, PORT_ID_PREFIX, TRANSFER_MODULE_PORT } from 'src/constant';
+import { CHANNEL_ID_PREFIX, PORT_ID_PREFIX, TRANSFER_MODULE_PORT, MOCK_MODULE_PORT} from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import { RecvPacketOperator } from '../dto/packet/recv-packet-operator.dto';
@@ -28,7 +28,9 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (data.packet.destination_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`)
+  if (data.packet.destination_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
+    data.packet.destination_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT }`
+  )
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_port" ${data.packet.destination_port} not supported`,
     );
@@ -140,7 +142,9 @@ export function validateAndFormatAcknowledgementPacketParams(data: MsgAcknowledg
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "source_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (data.packet.source_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`)
+  if (data.packet.source_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
+    data.packet.destination_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT }`
+  )
     throw new GrpcInvalidArgumentException(`Invalid argument: "source_port" ${data.packet.source_port} not supported`);
 
   // Prepare the Recv packet operator object
