@@ -408,3 +408,19 @@ func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbc
 	}
 	return res, nil
 }
+
+func (gw *Gateway) QueryNextSequenceReceive(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceReceive(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryNextSequenceAck(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceAck(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
