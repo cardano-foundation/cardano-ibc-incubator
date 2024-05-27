@@ -15,13 +15,13 @@ import { SendPacketOperator } from '../dto/packet/send-packet-operator.dto';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TimeoutPacketOperator } from '../dto/packet/time-out-packet-operator.dto';
 import { AckPacketOperator } from '../dto/packet/ack-packet-operator.dto';
+import { MOCK_MODULE_PORT } from '~@/constant/channel';
 
 export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
   constructedAddress: string;
   recvPacketOperator: RecvPacketOperator;
 } {
   const constructedAddress: string = data.signer;
-  console.log("haha", data);
   if (!constructedAddress) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
   }
@@ -29,7 +29,9 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (data.packet.destination_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`)
+  if (data.packet.destination_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
+    data.packet.destination_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT }`
+  ) 
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_port" ${data.packet.destination_port} not supported`,
     );
@@ -141,7 +143,9 @@ export function validateAndFormatAcknowledgementPacketParams(data: MsgAcknowledg
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "source_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (data.packet.source_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`)
+  if (data.packet.source_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
+    data.packet.source_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT }`
+  )
     throw new GrpcInvalidArgumentException(`Invalid argument: "source_port" ${data.packet.source_port} not supported`);
 
   // Prepare the Recv packet operator object

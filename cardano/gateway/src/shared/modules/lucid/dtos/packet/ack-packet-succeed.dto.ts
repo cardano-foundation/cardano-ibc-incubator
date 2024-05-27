@@ -24,3 +24,26 @@ export type UnsignedAckPacketSucceedDto = {
   verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
 };
+
+export type UnsignedAckPacketOrderedChannelSucceedDto = {
+  channelUtxo: UTxO;
+  connectionUtxo: UTxO;
+  clientUtxo: UTxO;
+  spendChannelRefUtxo: UTxO;
+  spendMockModuleRefUtxo: UTxO;
+  mockModuleUtxo: UTxO;
+
+  encodedSpendChannelRedeemer: string;
+  encodedSpendMockModuleRedeemer: string;
+  channelTokenUnit: string;
+  encodedUpdatedChannelDatum: string;
+  constructedAddress: string;
+
+  ackPacketRefUTxO: UTxO;
+  ackPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
+};

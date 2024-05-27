@@ -98,11 +98,10 @@ service Query {
     option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
                                    "ports/{port_id}/next_sequence";
   }
-
   // NextSequenceAck returns the next acknowledgements sequence for a given channel.
   rpc NextSequenceAck(QueryNextSequenceReceiveRequest) returns (QueryNextSequenceReceiveResponse) {
     option (google.api.http).get = "/ibc/core/channel/v1/channels/{channel_id}/"
-      "ports/{port_id}/next_sequence_acks";
+                                   "ports/{port_id}/next_sequence_acks";
   }
 
   rpc ProofUnreceivedPackets(QueryProofUnreceivedPacketsRequest) returns (QueryProofUnreceivedPacketsResponse) {

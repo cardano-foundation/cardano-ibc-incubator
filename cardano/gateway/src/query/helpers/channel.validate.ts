@@ -11,6 +11,7 @@ import {
   QueryUnreceivedPacketsRequest,
   QueryUnreceivedAcksRequest,
   QueryProofUnreceivedPacketsRequest,
+  QueryNextSequenceReceiveRequest,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { validPagination } from './helper';
 
@@ -177,5 +178,21 @@ export function validQueryUnreceivedAcksParam(request: QueryUnreceivedAcksReques
 
   request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
+  return request;
+}
+
+export function validQueryNextSequenceReceiveParam(
+  request: QueryNextSequenceReceiveRequest,
+): QueryNextSequenceReceiveRequest {
+  if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
+  // validate prefix channel id
+  if (!request.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`))
+    throw new GrpcInvalidArgumentException(
+      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+    );
+  if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
+
+  request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+    
   return request;
 }

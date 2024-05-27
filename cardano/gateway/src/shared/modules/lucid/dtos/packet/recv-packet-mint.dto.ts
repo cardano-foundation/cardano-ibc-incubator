@@ -29,3 +29,32 @@ export type UnsignedRecvPacketMintDto = {
   verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
 };
+
+export type UnsignedRecvPacketMintFroOrderedChannelDto = {
+  channelUtxo: UTxO;
+  connectionUtxo: UTxO;
+  clientUtxo: UTxO;
+  spendChannelRefUtxo: UTxO;
+  spendTransferModuleRefUtxo: UTxO;
+  transferModuleUtxo: UTxO;
+  mintVoucherRefUtxo: UTxO;
+
+  encodedSpendChannelRedeemer: string;
+  encodedSpendTransferModuleRedeemer: string;
+  encodedMintVoucherRedeemer: string;
+  encodedUpdatedChannelDatum: string;
+
+  channelTokenUnit: string;
+  voucherTokenUnit: string;
+  transferAmount: bigint;
+  receiverAddress: string;
+  constructedAddress: string;
+
+  recvPacketRefUTxO: UTxO;
+  recvPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
+};
