@@ -32,12 +32,12 @@ import {
   decodeMockModuleDatum,
   encodeMockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
-import { UnsignedSendPacketEscrowDto } from './dtos/packet/send-packet-escrow.dto';
-import { UnsignedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
-import { UnsignedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
+import { UnsignedSendPacketEscrowDto, UnsignedSendPacketEscrowForOrderedChannelDto } from './dtos/packet/send-packet-escrow.dto';
+import { UnsignedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
+import { UnsignedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
 import { calculateTransferToken } from './helpers/send-packet.helper';
 import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
-import { UnsignedRecvPacketMintDto } from './dtos/packet/recv-packet-mint.dto';
+import { UnsignedRecvPacketMintDto, UnsignedRecvPacketMintForOrderedChannelDto } from './dtos/packet/recv-packet-mint.dto';
 import {
   MintVoucherRedeemer,
   encodeMintVoucherRedeemer,
@@ -48,7 +48,7 @@ import { UnsignedAckPacketUnescrowDto } from './dtos/packet/ack-packet-unescrow.
 import { UnsignedAckPacketMintDto } from './dtos/packet/ack-packet-mint.dto';
 import { UnsignedSendPacketBurnDto } from './dtos/packet/send-packet-burn.dto';
 import { UnsignedTimeoutRefreshDto } from './dtos/packet/timeout-refresh-dto';
-import { UnsignedAckPacketSucceedDto } from './dtos/packet/ack-packet-succeed.dto';
+import { UnsignedAckPacketSucceedDto, UnsignedAckPacketSucceedForOrderedChannelDto } from './dtos/packet/ack-packet-succeed.dto';
 import { UnsignedConnectionOpenAckDto } from './dtos/connection/connection-open-ack.dto';
 type CodecType =
   | 'client'
@@ -435,6 +435,37 @@ export class LucidService {
 
     return tx;
   }
+  public createUnsignedOrderedChannelOpenInitTransaction(dto: UnsignedOrderedChannelOpenInitDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([dto.spendHandlerRefUtxo, dto.mintChannelRefUtxo, dto.spendMockModuleRefUtxo])
+      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .mintAssets(
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+        dto.encodedMintChannelRedeemer,
+      )
+      .readFrom([dto.connectionUtxo, dto.clientUtxo]);
+
+    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
+      tx.payToContract(address, { inline }, token);
+    };
+    addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
+      [this.getHandlerTokenUnit()]: 1n,
+    });
+    addPayToContract(deploymentConfig.validators.spendChannel.address, dto.encodedChannelDatum, {
+      [dto.channelTokenUnit]: 1n,
+    });
+    addPayToContract(
+      deploymentConfig.modules.mock.address,
+      dto.encodedNewMockModuleDatum,
+      dto.mockModuleUtxo.assets,
+    );
+
+    return tx;
+  }
   public createUnsignedChannelOpenTryTransaction(
     handlerUtxo: UTxO,
     connectionUtxo: UTxO,
@@ -506,6 +537,50 @@ export class LucidService {
           inline: this.LucidImporter.Data.void(),
         },
         dto.transferModuleUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.chanOpenAckPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+  public createUnsignedOrderedChannelOpenAckTransaction(dto: UnsignedOrderedChannelOpenAckDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendMockModuleRefUtxo,
+      dto.chanOpenAckRefUtxo,
+      dto.verifyProofRefUTxO,
+    ])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: dto.mockModuleUtxo.datum,
+        },
+        dto.mockModuleUtxo.assets,
       )
       .mintAssets(
         {
@@ -669,6 +744,52 @@ export class LucidService {
 
     return tx;
   }
+  public createUnsignedRecvPacketOrderedChannelMintTx(dto: UnsignedRecvPacketMintForOrderedChannelDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendMockModuleRefUtxo,
+      dto.recvPacketRefUTxO,
+      dto.verifyProofRefUTxO,
+    ])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: dto.mockModuleUtxo.datum,
+        },
+        {
+          ...dto.mockModuleUtxo.assets,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
   public createUnsignedAckPacketSucceedTx(dto: UnsignedAckPacketSucceedDto): Tx {
     const deploymentConfig = this.configService.get('deployment');
 
@@ -693,6 +814,47 @@ export class LucidService {
         },
         {
           ...dto.transferModuleUtxo.assets,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.ackPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+  public createUnsignedAckPacketSucceedTxForOrderedChannel (dto: UnsignedAckPacketSucceedForOrderedChannelDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([dto.spendChannelRefUtxo, dto.spendMockModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelOrderedDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: dto.mockModuleUtxo.datum,
+        },
+        {
+          ...dto.mockModuleUtxo.assets,
         },
       )
       .mintAssets(
@@ -849,6 +1011,38 @@ export class LucidService {
             dto.denomToken,
           ),
         },
+      )
+      .mintAssets(
+        {
+          [dto.sendPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
+
+    return tx;
+  }
+
+  public createUnsignedSendPacketEscrowTxForOrderedChannel(dto: UnsignedSendPacketEscrowForOrderedChannelDto): Tx {
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    tx.readFrom([dto.spendChannelRefUTxO, dto.spendMockModuleUTxO, dto.sendPacketRefUTxO])
+      .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUTxO], dto.encodedSpendModuleRedeemer)
+      .readFrom([dto.connectionUTxO, dto.clientUTxO])
+      .payToContract(
+        dto.spendChannelAddress,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        dto.mockModuleAddress,
+        {
+          inline: dto.mockModuleUTxO.datum,
+        },
+        dto.mockModuleUTxO.assets,
       )
       .mintAssets(
         {
