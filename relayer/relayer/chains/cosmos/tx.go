@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"math"
 	"math/big"
 	"math/rand"
@@ -12,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
 	"github.com/avast/retry-go/v4"
 	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
@@ -1540,7 +1539,7 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 		return &tmclient.ClientState{}, err
 	}
 
-	clientState, ok := clientStateExported.(*module.ClientState)
+	clientState, ok := clientStateExported.(*mithril.ClientState)
 	if !ok {
 		return &tmclient.ClientState{},
 			fmt.Errorf("error when casting exported clientstate to tendermint type, got(%T)", clientStateExported)
@@ -1548,11 +1547,11 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 	//TODO: find out better solution
 	// current use only for trustingPeriod and LatestHeight
 	res := &tmclient.ClientState{
-		TrustingPeriod: time.Duration(clientState.TrustingPeriod) * time.Second,
+		TrustingPeriod: clientState.TrustingPeriod,
 		// side chain return time in second format
 		LatestHeight: clienttypes.Height{
-			RevisionNumber: clientState.LatestHeight.RevisionNumber,
-			RevisionHeight: clientState.LatestHeight.RevisionHeight,
+			RevisionNumber: 0,
+			RevisionHeight: clientState.LatestHeight.MithrilHeight,
 		},
 	}
 

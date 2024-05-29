@@ -37,9 +37,9 @@ func (c *Chain) CreateOpenConnections(
 	dst.PathEnd.ClientID = strings.TrimPrefix(dst.PathEnd.ClientID, "07-tendermint-")
 
 	// Timeout is per message. Four connection handshake messages, allowing maxRetries for each.
-	processorTimeout := timeout * 4 * time.Duration(maxRetries)
+	//processorTimeout := timeout * 4 * time.Duration(maxRetries)
 
-	ctx, cancel := context.WithTimeout(ctx, processorTimeout)
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Minute)
 	defer cancel()
 
 	pp := processor.NewPathProcessor(

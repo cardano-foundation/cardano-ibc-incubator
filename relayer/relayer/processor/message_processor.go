@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"sync"
 	"time"
 
@@ -95,22 +96,22 @@ func (mp *messageProcessor) processMessages(
 	var needsClientUpdate bool
 
 	// Localhost IBC does not permit client updates
-	if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID {
-		var err error
-		needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
-		if err != nil {
-			return err
-		}
-		if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
-			return err
-		}
-	}
-
+	//if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID &&
+	//	src.ChainProvider.Type() != "cosmos" {
+	//	var err error
+	//	needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
+	//	if err != nil {
+	//		return err
+	//	}
+	//	if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
+	//		return err
+	//	}
+	//	fmt.Println("assembleMsgUpdateClient")
+	//}
 	if src.ChainProvider.Type() == "cosmos" &&
 		len(messages.channelMessages)+len(messages.connectionMessages)+len(messages.packetMessages) > 0 {
 		updateClient(ctx, src, dst, src.latestHeader.(provider.TendermintIBCHeader))
 	}
-
 	mp.assembleMessages(ctx, messages, src, dst)
 
 	return mp.trackAndSendMessages(ctx, src, dst, needsClientUpdate)
@@ -178,12 +179,24 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 		var timestamp uint64
 		switch src.ChainProvider.Type() {
 		case "cardano":
-			srcBlockData, err := src.ChainProvider.QueryBlockData(context.Background(), int64(dst.ClientState.ConsensusHeight.RevisionHeight))
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dst.latestBlock.Height), dst.Info.ClientID)
 			if err != nil {
-				return false, fmt.Errorf("failed to get header height: %w", err)
+				return false, fmt.Errorf("failed to query the client state response: %w", err)
 			}
-			timestamp = srcBlockData.Timestamp
-			consensusHeightTime = time.Unix(int64(timestamp), 0)
+			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+			if err != nil {
+				return false, fmt.Errorf("failed to unpack client state: %w", err)
+			}
+			ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+			if err != nil {
+				return false, err
+			}
+			h, ok := ibcHeader.(*mithril.MithrilHeader)
+			if !ok {
+				return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+			}
+			timestamp = h.TransactionSnapshotCertificate.Metadata.SealedAt
+			consensusHeightTime = time.Unix(0, int64(timestamp))
 		case "cosmos":
 			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
 			if err != nil {
@@ -330,11 +343,27 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 
 		switch src.ChainProvider.Type() {
 		case "cardano":
-			blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(clientConsensusHeight.RevisionHeight+1))
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(clientConsensusHeight.RevisionHeight+1), dst.Info.ClientID)
 			if err != nil {
-				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
+				return fmt.Errorf("failed to query the client state response: %w", err)
 			}
+			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+			if err != nil {
+				return fmt.Errorf("failed to unpack client state: %w", err)
+			}
+			ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+			if err != nil {
+				return err
+			}
+			msgUpdate, ok := ibcHeader.(*mithril.MithrilHeader)
+			if !ok {
+				return fmt.Errorf("failed to cast IBC header to MithrilHeader")
+			}
+			//blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(clientConsensusHeight.RevisionHeight+1))
+			//if err != nil {
+			//	return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
+			//		clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
+			//}
 
 			//counterpartyHeader = blockData
 			//TODO: check this condition
@@ -345,7 +374,7 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 			//		trustedConsensusHeight.RevisionHeight)
 			//}
 
-			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, blockData)
+			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, msgUpdate)
 			if err != nil {
 				return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
 					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
@@ -409,7 +438,6 @@ func (mp *messageProcessor) trackAndSendMessages(
 ) error {
 	broadcastBatch := dst.ChainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
 	var batch []messageToTrack
-
 	for _, t := range mp.trackers() {
 
 		retries := dst.trackProcessingMessage(t)

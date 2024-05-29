@@ -29,8 +29,8 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 		return nil, err
 	}
 	if cs.CurrentEpoch < snapshot.Beacon.Epoch {
-		fmt.Printf("Client State has Current epoch: %v", cs.CurrentEpoch)
-		fmt.Printf("Snapshot has epoch: %v", snapshot.Beacon.Epoch)
+		//fmt.Printf("Client State has Current epoch: %v, ", cs.CurrentEpoch)
+		//fmt.Printf("Snapshot has epoch: %v \n", snapshot.Beacon.Epoch)
 		return gw.QueryIBCGenesisCertHeader(ctx, int64(cs.CurrentEpoch+1))
 	}
 
