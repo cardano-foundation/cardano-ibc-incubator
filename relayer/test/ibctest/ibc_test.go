@@ -33,7 +33,7 @@ func TestIBCSuite(t *testing.T) {
 	}
 	s.SetupTestHomeDir(t, "")
 	t.Run("TestCreateConnection", s.TestCreateConnection)
-	t.Run("TestCreateChannel", s.TestCreateChannel)
+	t.Run("TestCreateChannel", s.TestCreateUnorderedChannel)
 	t.Run("TestRelayPacket", s.TestRelayPacket)
 
 	t.Run("TestRelayPacketWHomeDir", s.TestRelayPacketWHomeDir)
@@ -46,10 +46,21 @@ func TestLegacyProcessor(t *testing.T) {
 	s.SetupTestHomeDir(t, "")
 
 	t.Run("TestCreateConnection", s.TestCreateConnection)
-	t.Run("TestCreateChannel", s.TestCreateChannel)
+	t.Run("TestCreateChannel", s.TestCreateUnorderedChannel)
 	t.Run("TestRelayPacketLegacy", s.TestRelayPacketLegacy)
 
 	t.Run("TestRelayPacketLegacyWHomeDir", s.TestRelayPacketLegacyWHomeDir)
+}
+
+func TestIBCSuiteOrderedChannel(t *testing.T) {
+	s := &IBCTestSuite{
+		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
+	}
+	s.SetupTestHomeDir(t, "")
+	t.Run("TestCreateConnection", s.TestCreateConnection)
+	t.Run("TestCreateOrderedChannel", s.TestCreateOrderedChannel)
+	t.Run("TestRelayPacket", s.TestRelayPacket)
+	t.Run("TestRelayPacketOrderedChannelWHomeDir", s.TestRelayPacketOrderedChannelWHomeDir)
 }
 
 func TestCreateAndUpdateClients(t *testing.T) {
@@ -81,8 +92,13 @@ func (s *IBCTestSuite) TestCreateConnection(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 }
 
-func (s *IBCTestSuite) TestCreateChannel(t *testing.T) {
-	runResult := s.createUnorderdTransferChannel(t, s.System)
+func (s *IBCTestSuite) TestCreateUnorderedChannel(t *testing.T) {
+	runResult := s.createUnorderedChannel(t, s.System)
+	assert.Nil(t, runResult.Err)
+}
+
+func (s *IBCTestSuite) TestCreateOrderedChannel(t *testing.T) {
+	runResult := s.createOrderedChannel(t, s.System)
 	assert.Nil(t, runResult.Err)
 }
 
@@ -171,7 +187,7 @@ func (s *IBCTestSuite) TestRelayPacketWHomeDir(t *testing.T) {
 		s.System = setUp(t, dir)
 
 		s.createConnection(t, s.System)
-		s.createUnorderdTransferChannel(t, s.System)
+		s.createUnorderedChannel(t, s.System)
 	} else {
 		s.System.HomeDir = dir
 
@@ -197,7 +213,7 @@ func (s *IBCTestSuite) TestRelayPacketLegacyWHomeDir(t *testing.T) {
 		s.System = setUp(t, dir)
 
 		s.createConnection(t, s.System)
-		s.createUnorderdTransferChannel(t, s.System)
+		s.createUnorderedChannel(t, s.System)
 	} else {
 		s.System.HomeDir = dir
 
@@ -205,6 +221,32 @@ func (s *IBCTestSuite) TestRelayPacketLegacyWHomeDir(t *testing.T) {
 	}
 
 	s.TestRelayPacketLegacy(t)
+}
+
+func (s *IBCTestSuite) TestRelayPacketOrderedChannelWHomeDir(t *testing.T) {
+	dir, err := os.Getwd()
+	assert.Nil(t, err)
+
+	dir = dir + "/test/ibctest"
+	path := dir + "/config"
+
+	if _, err := os.Stat(path); err != nil {
+		assert.True(t, os.IsNotExist(err))
+
+		err := os.Chdir(dir)
+		assert.Nil(t, err)
+
+		s.System = setUp(t, dir)
+
+		s.createConnection(t, s.System)
+		s.createOrderedChannel(t, s.System)
+	} else {
+		s.System.HomeDir = dir
+
+		s.System.MustGetConfig(t)
+	}
+
+	s.TestRelayPacket(t)
 }
 
 func (s *IBCTestSuite) createClients(t *testing.T, sys *relayertest.System) relayertest.RunResult {
@@ -239,7 +281,7 @@ func (s *IBCTestSuite) createConnection(t *testing.T, sys *relayertest.System) r
 	)
 }
 
-func (s *IBCTestSuite) createUnorderdTransferChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+func (s *IBCTestSuite) createUnorderedChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
 	defer cancel()
 
@@ -249,6 +291,18 @@ func (s *IBCTestSuite) createUnorderdTransferChannel(t *testing.T, sys *relayert
 		"--dst-port", CosmosPortTransfer,
 		"--order", "unordered",
 		"--version", "ics20-1")
+}
+
+func (s *IBCTestSuite) createOrderedChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
+		"transact", "channel", Path,
+		"--src-port", CardanoPortMockModule,
+		"--dst-port", CosmosPortMockModule,
+		"--order", "ordered",
+		"--version", "ordered-ics20-1")
 }
 
 func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.System, pathEnd *relayer.PathEnd, chainName string) (string, string) {
