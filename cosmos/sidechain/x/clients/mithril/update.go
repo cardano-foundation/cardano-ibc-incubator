@@ -89,9 +89,8 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 
 	prevConsensusState, _ := GetConsensusState(clientStore, cdc, cs.LatestHeight)
 	consensusState := &ConsensusState{
-		Timestamp:            header.GetTimestamp(),
-		FcHashLatestEpochMsd: prevConsensusState.FcHashLatestEpochMsd,
-		FcHashLatestEpochTs:  prevConsensusState.FcHashLatestEpochTs,
+		Timestamp:                header.GetTimestamp(),
+		FirstCertHashLatestEpoch: prevConsensusState.FirstCertHashLatestEpoch,
 	}
 
 	height := NewHeight(header.TransactionSnapshot.Height.GetRevisionHeight())
@@ -102,15 +101,14 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	epoch := header.TransactionSnapshot.Epoch
 	if epoch > cs.CurrentEpoch {
 		cs.CurrentEpoch = epoch
-
-		consensusState.FcHashLatestEpochMsd = header.MithrilStakeDistributionCertificate.Hash
-		consensusState.FcHashLatestEpochTs = header.MithrilStakeDistributionCertificate.Hash
-		// set first certificate of mithril stake distribution and transaction snapshot for epoch
-		setFcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
+		consensusState.FirstCertHashLatestEpoch = header.MithrilStakeDistributionCertificate.Hash
 		setFcTsInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
 	}
-	consensusState.LatestCertHashMsd = header.MithrilStakeDistributionCertificate.Hash
-	consensusState.LatestCertHashTs = header.TransactionSnapshotCertificate.Hash
+	consensusState = &ConsensusState{
+		Timestamp:                header.GetTimestamp(),
+		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
+	}
+	consensusState.LatestCertHashTxSnapshot = header.MithrilStakeDistributionCertificate.Hash
 
 	// set latest certificate of mithril stake distribution and transaction snapshot for epoch
 	setLcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)

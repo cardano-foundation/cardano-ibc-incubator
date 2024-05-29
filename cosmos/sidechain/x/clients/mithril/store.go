@@ -306,6 +306,13 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height exported.Hei
 	deleteIterationKey(clientStore, height)
 }
 
+// setFcInEpoch stores the first Mithril Certificate (mithril stake distribution certificate) in epoch
+func setFcInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
+	key := FcInEpochKey(epoch)
+	val := MustMarshalMithrilCertificate(certificate)
+	clientStore.Set(key, val)
+}
+
 // setFcMsdInEpoch stores the first Mithril Stake Distribution certificate in epoch
 func setFcMsdInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
 	key := FcMsdInEpochKey(epoch)
