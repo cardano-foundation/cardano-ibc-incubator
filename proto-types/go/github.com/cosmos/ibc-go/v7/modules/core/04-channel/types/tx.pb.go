@@ -7,8 +7,7 @@
 package types
 
 import (
-  sdk "github.com/cosmos/cosmos-sdk/types"
-  _ "github.com/cosmos/gogoproto/gogoproto"
+	_ "github.com/cosmos/gogoproto/gogoproto"
 	types "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
