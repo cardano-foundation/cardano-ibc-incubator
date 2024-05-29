@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cardano/relayer/v1/constant"
 	"slices"
+
+	"github.com/cardano/relayer/v1/constant"
+
+	"os"
 
 	"github.com/cardano/relayer/v1/package/mithril/dtos"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
-	"os"
 )
 
 func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.ClientState) (*mithril.MithrilHeader, error) {
@@ -20,6 +22,10 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 	}
 	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshot, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Beacon.ImmutableFileNumber == uint64(h) })
 	if snapshotIdx == -1 {
+		latestHeight := cardanoTxsSetSnapshot[0].Beacon.ImmutableFileNumber
+		if h < int64(latestHeight) {
+			return nil, errors.New(fmt.Sprintf("SkipImmutableFile: Missing mithril height %d", h))
+		}
 		return nil, errors.New(fmt.Sprintf("Could not find snapshot with height %d", h))
 	}
 
