@@ -2,7 +2,6 @@ package crypto
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"hash"
@@ -13,13 +12,13 @@ import (
 
 var POP = []byte("PoP")
 
-type BlstVk = blst.P1Affine
+type BlstSig = blst.P1Affine
 
-type BlstSig = blst.P2Affine
+type BlstVk = blst.P2Affine
 
 type BlstSk = blst.SecretKey
 
-type AggregateSignature = blst.P2Aggregate
+type AggregateSignature = blst.P1Aggregate
 
 // MultiSig secret key, which is a wrapper over the BlstSk type from the blst
 // library.
@@ -57,12 +56,7 @@ type Signature struct {
 
 // ====================== SigningKey implementation ======================
 // Generate a secret key
-func Gen() (*SigningKey, error) {
-	ikm := make([]byte, 32)
-	_, err := rand.Read(ikm)
-	if err != nil {
-		return nil, err
-	}
+func Gen(ikm []byte) (*SigningKey, error) {
 	return &SigningKey{
 		BlstSk: blst.KeyGen(ikm),
 	}, nil
@@ -70,8 +64,7 @@ func Gen() (*SigningKey, error) {
 
 // Sign a message with the given secret key
 func (sk *SigningKey) Sign(msg []byte) *Signature {
-	var dst = []byte("BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_NUL_")
-	sig := new(BlstSig).Sign(sk.BlstSk, msg, dst)
+	sig := new(BlstSig).Sign(sk.BlstSk, msg, nil)
 	return &Signature{
 		BlstSig: sig,
 	}
@@ -188,7 +181,7 @@ func (vk *VerificationKey) AggregateVerificationKeys(keys []*VerificationKey) (*
 		blstVks = append(blstVks, key.BlstVk)
 	}
 
-	aggregated := new(blst.P1Aggregate)
+	aggregated := new(blst.P2Aggregate)
 	if ok := aggregated.Aggregate(blstVks, false); !ok {
 		return nil, fmt.Errorf("an mspmvk is always a valid key, this function only fails if keys is empty or if the keys are invalid, none of which can happen")
 	}
@@ -321,8 +314,10 @@ func (s *Signature) Eval(msg []byte, index Index) ([]byte, error) {
 	}
 	hasher.Write([]byte("map"))
 	hasher.Write(msg)
-	hasher.Write(s.ToBytes()) // Assumed this method exists and returns a byte slice
-	hasher.Write([]byte(fmt.Sprintf("%d", index)))
+	indexBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(indexBytes, uint64(index))
+	hasher.Write(indexBytes)
+	hasher.Write(s.ToBytes())
 
 	var result [64]byte
 	copy(result[:], hasher.Sum(nil))
@@ -332,7 +327,7 @@ func (s *Signature) Eval(msg []byte, index Index) ([]byte, error) {
 // Convert an `Signature` to its compressed byte representation.
 func (s *Signature) ToBytes() []byte {
 	var bytes [48]byte
-	copy(bytes[:], s.BlstSig.Serialize()) // Serialize assumed to return the full serialized data
+	copy(bytes[:], s.BlstSig.Compress()) // Serialize assumed to return the full serialized data
 	return bytes[:]
 }
 
@@ -344,7 +339,7 @@ func (s *Signature) FromBytes(data []byte) (*Signature, error) {
 	if len(data) != 48 {
 		return nil, fmt.Errorf("data must be exactly 48 bytes")
 	}
-	s.BlstSig = new(BlstSig).Deserialize(data)
+	s.BlstSig = new(BlstSig).Uncompress(data)
 	return s, nil
 }
 
@@ -361,13 +356,13 @@ func (s *Signature) CmpMsgSig(other *Signature) int {
 // signatures into random scalars, and multiplying the signature and verification
 // key with the resulting value. This follows the steps defined in Figure 6,
 // `Aggregate` step.
-func (s *Signature) Aggregate(vks []VerificationKey, sigs []Signature) (*VerificationKey, *Signature, error) {
+func (s *Signature) Aggregate(vks []*VerificationKey, sigs []*Signature) (*VerificationKey, *Signature, error) {
 	if len(vks) != len(sigs) || len(vks) == 0 {
 		return nil, nil, fmt.Errorf("invalid input: number of verification keys and signatures must match and not be empty")
 	}
 
 	if len(vks) == 1 {
-		return &vks[0], &sigs[0], nil
+		return vks[0], sigs[0], nil
 	}
 
 	hashedSigs, err := blake2b.New(16, nil)
@@ -380,7 +375,7 @@ func (s *Signature) Aggregate(vks []VerificationKey, sigs []Signature) (*Verific
 	}
 
 	var scalars []byte
-	var signatures []*blst.P2Affine
+	var signatures []*blst.P1Affine
 	for index, sig := range sigs {
 		hasher := hashedSigs
 		indexBytes := make([]byte, 8)
@@ -390,30 +385,29 @@ func (s *Signature) Aggregate(vks []VerificationKey, sigs []Signature) (*Verific
 		scalars = append(scalars, hasher.Sum(nil)...)
 	}
 
-	groupedVks := new(blst.P2)
-	groupedSigs := new(blst.P1)
+	p1s := []*blst.P1{}
+	p2s := []*blst.P2{}
 
-	transmutedVks := make([]*blst.P2, len(vks))
-	for i, vk := range vks {
-		transmutedVks[i] = vkFromP2Affine(&vk)
-		groupedVks = groupedVks.Add(transmutedVks)
+	for _, sig := range signatures {
+		p1s = append(p1s, sigToP1(sig))
 	}
 
-	transmutedSigs := make([]*blst.P1, len(signatures))
-	for i, sig := range signatures {
-		transmutedSigs[i] = sigToP1(sig)
-		groupedSigs = groupedSigs.Add(transmutedSigs)
+	for _, vk := range vks {
+		p2s = append(p2s, vkFromP2Affine(vk))
 	}
 
-	aggrVk := p2AffineToVk(groupedVks.Mult(scalars, 128))
+	groupedSigs := blst.P1sToAffine(p1s)
+	groupedVks := blst.P2sToAffine(p2s)
+
 	aggrSig := p1AffineToSig(groupedSigs.Mult(scalars, 128))
+	aggrVk := p2AffineToVk(groupedVks.Mult(scalars, 128))
 
 	return &VerificationKey{aggrVk}, &Signature{aggrSig}, nil
 }
 
 // Verify a set of signatures with their corresponding verification keys using the
 // aggregation mechanism of Figure 6.
-func (s *Signature) VerifyAggregate(msg []byte, vks []VerificationKey, sigs []Signature) error {
+func (s *Signature) VerifyAggregate(msg []byte, vks []*VerificationKey, sigs []*Signature) error {
 	aggrVk, aggrSig, err := s.Aggregate(vks, sigs)
 	if err != nil {
 		return err
@@ -426,9 +420,9 @@ func (s *Signature) VerifyAggregate(msg []byte, vks []VerificationKey, sigs []Si
 }
 
 // Batch verify several sets of signatures with their corresponding verification keys.
-func (s *Signature) BatchVerifyAggregates(msgs [][]byte, vks []VerificationKey, sigs []Signature) error {
+func (s *Signature) BatchVerifyAggregates(msgs [][]byte, vks []*VerificationKey, sigs []*Signature) error {
 	// Collect BLST signatures
-	blstSigs := make([]*blst.P2Affine, len(sigs))
+	blstSigs := make([]*blst.P1Affine, len(sigs))
 	for i, sig := range sigs {
 		blstSigs[i] = sig.BlstSig
 	}
@@ -459,7 +453,7 @@ func (s *Signature) Sum(signatures []*Signature) (*Signature, error) {
 		return nil, fmt.Errorf("one cannot add an empty vector")
 	}
 
-	blstSigs := make([]*blst.P2Affine, len(signatures))
+	blstSigs := make([]*blst.P1Affine, len(signatures))
 	for i, sig := range signatures {
 		blstSigs[i] = sig.BlstSig
 	}

@@ -30,9 +30,9 @@ type Path struct {
 // Contains the hashes and the corresponding merkle tree indices of given batch.
 // Used to verify the signatures are issued by the registered signers.
 type BatchPath struct {
-	Values  [][]byte
-	Indices []uint64
-	Hasher  hash.Hash
+	Values  [][]byte  `json:"values,omitempty"`
+	Indices []uint64  `json:"indices,omitempty"`
+	Hasher  hash.Hash `json:"hasher,omitempty"`
 }
 
 // `MerkleTree` commitment.
@@ -50,9 +50,9 @@ type MerkleTreeCommitment struct {
 // Number of leaves is required by the batch path generation/verification.
 type MerkleTreeCommitmentBatchCompat struct {
 	// Root of the merkle commitment.
-	Root     []byte
-	NrLeaves uint64
-	Hasher   hash.Hash
+	Root     []byte    `json:"root,omitempty"`
+	NrLeaves uint64    `json:"nr_leaves,omitempty"`
+	Hasher   hash.Hash `json:"hasher,omitempty"`
 }
 
 // Tree of hashes, providing a commitment of data and its ordering.
@@ -339,7 +339,7 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchP
 	leaves := make([][]byte, len(batchVal))
 	for i, val := range batchVal {
 		m.Hasher.Reset()
-		m.Hasher.Write(val.ToBytes()) // Assuming MTLeaf has a toBytes() method or similar
+		m.Hasher.Write(val.ToBytes())
 		leaves[i] = m.Hasher.Sum(nil)
 	}
 
@@ -386,8 +386,12 @@ func (m *MerkleTreeCommitmentBatchCompat) Check(batchVal []MTLeaf, proof *BatchP
 					values = values[1:]
 				} else {
 					m.Hasher.Reset()
+					m.Hasher.Write([]byte{0})
+					zeroHash := m.Hasher.Sum(nil)
+
+					m.Hasher.Reset()
 					m.Hasher.Write(leaves[i])
-					m.Hasher.Write(m.Hasher.Sum(nil)) // Assuming hashing of zero bytes
+					m.Hasher.Write(zeroHash)
 					newHashes = append(newHashes, m.Hasher.Sum(nil))
 				}
 			}

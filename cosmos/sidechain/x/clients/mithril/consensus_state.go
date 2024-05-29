@@ -19,17 +19,13 @@ const SentinelRoot = "sentinel_root"
 // NewConsensusState creates a new ConsensusState instance.
 func NewConsensusState(
 	timestamp uint64,
-	fcHashLatestEpochMsd string,
-	latestCertHashMsd string,
-	fcHashLatestEpochTs string,
-	latestCertHashTs string,
+	firstCertHashLatestEpoch string,
+	latestCertHashTxSnapshot string,
 ) *ConsensusState {
 	return &ConsensusState{
-		Timestamp:            timestamp,
-		FcHashLatestEpochMsd: fcHashLatestEpochMsd,
-		LatestCertHashMsd:    latestCertHashMsd,
-		FcHashLatestEpochTs:  fcHashLatestEpochTs,
-		LatestCertHashTs:     latestCertHashTs,
+		Timestamp:                timestamp,
+		FirstCertHashLatestEpoch: firstCertHashLatestEpoch,
+		LatestCertHashTxSnapshot: latestCertHashTxSnapshot,
 	}
 }
 
@@ -50,17 +46,11 @@ func (cs ConsensusState) GetTime() time.Time {
 
 // ValidateBasic defines a basic validation for the mithril consensus state.
 func (cs ConsensusState) ValidateBasic() error {
-	if data, err := hex.DecodeString(cs.FcHashLatestEpochMsd); err != nil || cmttypes.ValidateHash(data) != nil {
+	if data, err := hex.DecodeString(cs.FirstCertHashLatestEpoch); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "first certificate hash of latest epoch of mithril stake distribution is invalid")
 	}
-	if data, err := hex.DecodeString(cs.LatestCertHashMsd); err != nil || cmttypes.ValidateHash(data) != nil {
+	if data, err := hex.DecodeString(cs.LatestCertHashTxSnapshot); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "latest certificate hash of mithril stake distribution is invalid")
-	}
-	if data, err := hex.DecodeString(cs.FcHashLatestEpochTs); err != nil || cmttypes.ValidateHash(data) != nil {
-		return errorsmod.Wrap(err, "first certificate hash of latest epoch of transaction snapshot is invalid")
-	}
-	if data, err := hex.DecodeString(cs.LatestCertHashTs); err != nil || cmttypes.ValidateHash(data) != nil {
-		return errorsmod.Wrap(err, "latest certificate hash of transaction snapshot is invalid")
 	}
 	if cs.Timestamp <= 0 {
 		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "timestamp must be a positive Unix time")
