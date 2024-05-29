@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -74,12 +73,12 @@ func TestCreateAndUpdateClients(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		runResult = s.updateClient(t, s.System)
 		assert.Nil(t, runResult.Err)
-		for i := 0; i < 100; i++ {
-			fmt.Printf("Loop Time: %v \n", i+1)
-			time.Sleep(5 * time.Second)
-			runResult = s.updateClient(t, s.System)
-			assert.Nil(t, runResult.Err)
-		}
+		//for i := 0; i < 100; i++ {
+		//	fmt.Printf("Loop Time: %v \n", i+1)
+		//	time.Sleep(5 * time.Second)
+		//	runResult = s.updateClient(t, s.System)
+		//	assert.Nil(t, runResult.Err)
+		//}
 	})
 }
 

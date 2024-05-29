@@ -1078,10 +1078,16 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	// if sending messages fails to one pathEnd, we don't need to halt sending to the other pathEnd.
 	var eg errgroup.Group
 	eg.Go(func() error {
+		if len(pathEnd1Messages.connectionMessages) > 0 {
+			fmt.Println("pathEnd1Messages.connectionMessages", pathEnd1Messages.connectionMessages)
+		}
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
 		return mp.processMessages(ctx, pathEnd1Messages, pp.PathEnd2, pp.PathEnd1)
 	})
 	eg.Go(func() error {
+		if len(pathEnd2Messages.connectionMessages) > 0 {
+			fmt.Println("pathEnd2Messages.connectionMessages", pathEnd2Messages.connectionMessages)
+		}
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
 		return mp.processMessages(ctx, pathEnd2Messages, pp.PathEnd1, pp.PathEnd2)
 	})

@@ -115,13 +115,7 @@ func (m *MithrilHeader) Height() uint64 {
 }
 
 func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
-	return &ConsensusState{
-		Timestamp:            m.TransactionSnapshotCertificate.Metadata.SealedAt,
-		FcHashLatestEpochMsd: "",
-		LatestCertHashMsd:    "",
-		FcHashLatestEpochTs:  "",
-		LatestCertHashTs:     "",
-	}
+	return &ConsensusState{}
 }
 
 func (m *MithrilHeader) NextValidatorsHash() []byte {

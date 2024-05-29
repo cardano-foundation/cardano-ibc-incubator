@@ -318,10 +318,16 @@ func (pp *PathProcessor) processAvailableSignals(ctx context.Context, cancel fun
 		)
 		return true
 	case d := <-pp.PathEnd1.incomingCacheData:
+		if len(d.IBCMessagesCache.ConnectionHandshake) > 0 {
+			fmt.Println("d := <-pp.PathEnd1.incomingCacheData", d.IBCMessagesCache.ConnectionHandshake)
+		}
 		// we have new data from ChainProcessor for pathEnd1
 		pp.PathEnd1.mergeCacheData(ctx, cancel, d, pp.PathEnd2.Info.ChainID, pp.PathEnd2.inSync, pp.messageLifecycle, pp.PathEnd2)
 
 	case d := <-pp.PathEnd2.incomingCacheData:
+		if len(d.IBCMessagesCache.ConnectionHandshake) > 0 {
+			fmt.Println("d := <-pp.PathEnd2.incomingCacheData", d.IBCMessagesCache.ConnectionHandshake)
+		}
 		// we have new data from ChainProcessor for pathEnd2
 		pp.PathEnd2.mergeCacheData(ctx, cancel, d, pp.PathEnd1.Info.ChainID, pp.PathEnd1.inSync, pp.messageLifecycle, pp.PathEnd1)
 

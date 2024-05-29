@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
+	"strconv"
 	"sync"
 	"time"
 
@@ -195,7 +196,11 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 			if !ok {
 				return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
 			}
-			timestamp = h.TransactionSnapshotCertificate.Metadata.SealedAt
+			i, err := strconv.ParseInt(h.TransactionSnapshotCertificate.Metadata.SealedAt, 10, 64)
+			if err != nil {
+				return false, err
+			}
+			timestamp = uint64(i)
 			consensusHeightTime = time.Unix(0, int64(timestamp))
 		case "cosmos":
 			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))

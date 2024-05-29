@@ -99,12 +99,12 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	if err != nil {
 		return nil, nil, err
 	}
-	latestCertificateMsd := dtos.CertificateOverall{}
+	// latestCertificateMsd := dtos.CertificateOverall{}
 	idx := slices.IndexFunc(certificateList, func(c dtos.CertificateOverall) bool { return c.Epoch == mithrilDistribution.Epoch })
 	if idx == -1 {
 		return nil, nil, fmt.Errorf("could not find certificate with epoch %d", mithrilDistribution.Epoch)
 	}
-	latestCertificateMsd = certificateList[idx]
+	// latestCertificateMsd = certificateList[idx]
 
 	listSnapshots, err := gw.MithrilService.GetListSnapshots()
 	if err != nil {
@@ -142,11 +142,9 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	}
 	timestamp := fcCertificateMsd.Metadata.SealedAt.UnixNano()
 	consensusState := &mithril.ConsensusState{
-		Timestamp:            uint64(timestamp),
-		FcHashLatestEpochMsd: mithrilDistribution.CertificateHash,
-		LatestCertHashMsd:    latestCertificateMsd.Hash,
-		FcHashLatestEpochTs:  mithrilDistribution.CertificateHash,
-		LatestCertHashTs:     latestSnapshot.CertificateHash,
+		Timestamp:                uint64(timestamp),
+		FirstCertHashLatestEpoch: mithrilDistribution.CertificateHash,
+		LatestCertHashTxSnapshot: latestSnapshot.CertificateHash,
 	}
 	return clientState, consensusState, nil
 }
