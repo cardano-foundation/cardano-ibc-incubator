@@ -1,0 +1,15 @@
+syntax = "proto3";
+package sidechain.mockmodule;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "sidechain/x/mockmodule/types";
+
+// Params defines the parameters for the module.
+message Params {
+  option (amino.name) = "sidechain/x/mockmodule/Params";
+  option (gogoproto.equal) = true;
+
+  
+}

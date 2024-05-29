@@ -189,7 +189,36 @@ func (cc *CardanoProvider) ConnectionProof(
 }
 
 func (cc *CardanoProvider) MsgChannelCloseInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	return nil, nil
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, err
+	}
+	msg := &chantypes.MsgChannelCloseInit{
+		PortId:    info.PortID,
+		ChannelId: info.ChannelID,
+		Signer:    signer,
+	}
+
+	chanCloseInitRes, err := cc.GateWay.ChannelCloseInit(
+		context.Background(),
+		transformMsgChannelCloseInit(msg),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewCardanoMessage(msg, chanCloseInitRes.UnsignedTx, func(signer string) {
+		msg.Signer = signer
+	}), nil
+
+}
+
+func transformMsgChannelCloseInit(msg *chantypes.MsgChannelCloseInit) *pbchannel.MsgChannelCloseInit {
+	return &pbchannel.MsgChannelCloseInit{
+		PortId:    msg.PortId,
+		ChannelId: msg.ChannelId,
+		Signer:    msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {

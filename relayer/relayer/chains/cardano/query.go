@@ -576,12 +576,44 @@ func (cc *CardanoProvider) QueryLatestHeight(ctx context.Context) (int64, error)
 
 // QueryNextSeqAck returns the next seqAck for a configured channel
 func (cc *CardanoProvider) QueryNextSeqAck(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	return nil, nil
+	res, err := cc.GateWay.QueryNextSequenceAck(ctx, &pbchannel.QueryNextSequenceReceiveRequest{
+		PortId:    portid,
+		ChannelId: channelid,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	recvRes = &chantypes.QueryNextSequenceReceiveResponse{
+		NextSequenceReceive: res.NextSequenceReceive,
+		Proof:               res.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: res.ProofHeight.RevisionHeight,
+			RevisionHeight: res.ProofHeight.RevisionNumber,
+		},
+	}
+	return recvRes, nil
 }
 
 // QueryNextSeqRecv returns the next seqRecv for a configured channel
 func (cc *CardanoProvider) QueryNextSeqRecv(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	return nil, nil
+	res, err := cc.GateWay.QueryNextSequenceReceive(ctx, &pbchannel.QueryNextSequenceReceiveRequest{
+		PortId:    portid,
+		ChannelId: channelid,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	recvRes = &chantypes.QueryNextSequenceReceiveResponse{
+		NextSequenceReceive: res.NextSequenceReceive,
+		Proof:               res.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: res.ProofHeight.RevisionHeight,
+			RevisionHeight: res.ProofHeight.RevisionNumber,
+		},
+	}
+	return recvRes, nil
 }
 
 // QueryPacketAcknowledgement returns the packet ack proof at a given height

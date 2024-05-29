@@ -14,15 +14,17 @@ import (
 )
 
 const (
-	CardanoRPCAddr      = "http://0.0.0.0:5001"
-	CardanoChainName    = "cardano"
-	CardanoChainID      = "cardano"
-	CardanoPortTransfer = "port-100"
+	CardanoRPCAddr        = "http://0.0.0.0:5001"
+	CardanoChainName      = "cardano"
+	CardanoChainID        = "cardano"
+	CardanoPortTransfer   = "port-100"
+	CardanoPortMockModule = "port-99"
 
-	CosmosRPCAddr      = "http://0.0.0.0:26657"
-	CosmosChainName    = "cosmos"
-	CosmosChainID      = "sidechain" // -> need to change later
-	CosmosPortTransfer = "transfer"
+	CosmosRPCAddr        = "http://0.0.0.0:26657"
+	CosmosChainName      = "cosmos"
+	CosmosChainID        = "sidechain" // -> need to change later
+	CosmosPortTransfer   = "transfer"
+	CosmosPortMockModule = "orderedtransfer"
 
 	TimeForTestTransfer = "1h"
 	TimeForTestTimeOut  = "1s"
@@ -44,7 +46,7 @@ const (
 	GasAdjustment          = 1.1
 	Path                   = "demo"
 	Amount                 = "2000stake"
-	AmountCardanoMockToken = "3000-9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b"
+	AmountCardanoMockToken = "3123-9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b"
 	AmountCardano          = "2001-lovelace"
 )
 

@@ -1,0 +1,13 @@
+syntax = "proto3";
+package sidechain.mockmodule;
+
+option go_package = "sidechain/x/mockmodule/types";
+
+message MockmodulePacketData {
+    oneof packet {
+        NoData noData = 1;
+    }
+}
+
+message NoData {
+}
