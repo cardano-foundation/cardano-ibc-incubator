@@ -101,8 +101,7 @@ func (m *ConsensusState) ClientType() string {
 }
 
 func (m *ConsensusState) GetTimestamp() uint64 {
-	//TODO implement me
-	panic("implement me")
+	return m.Timestamp
 }
 
 func (m *ConsensusState) ValidateBasic() error {
@@ -116,13 +115,18 @@ func (m *MithrilHeader) Height() uint64 {
 }
 
 func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
-	//TODO implement me
-	panic("implement me")
+	return &ConsensusState{
+		Timestamp:            m.TransactionSnapshotCertificate.Metadata.SealedAt,
+		FcHashLatestEpochMsd: "",
+		LatestCertHashMsd:    "",
+		FcHashLatestEpochTs:  "",
+		LatestCertHashTs:     "",
+	}
 }
 
 func (m *MithrilHeader) NextValidatorsHash() []byte {
-	//TODO implement me
-	panic("implement me")
+	// TODO: fill data
+	return []byte("")
 }
 
 func (m *MithrilHeader) ClientType() string {

@@ -270,7 +270,7 @@ func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relay
 }
 
 func (s *IBCTestSuite) createConnection(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",

@@ -379,14 +379,14 @@ func (pathEnd *PathEndRuntime) mergeCacheData(ctx context.Context, cancel func()
 	pathEnd.latestHeader = d.LatestHeader
 	pathEnd.ClientState = d.ClientState
 
-	terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.ClientState, counterParty)
-	if err != nil {
-		pathEnd.log.Error(
-			"Failed to check for misbehaviour",
-			zap.String("client_id", pathEnd.Info.ClientID),
-			zap.Error(err),
-		)
-	}
+	//terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.ClientState, counterParty)
+	//if err != nil {
+	//	pathEnd.log.Error(
+	//		"Failed to check for misbehaviour",
+	//		zap.String("client_id", pathEnd.Info.ClientID),
+	//		zap.Error(err),
+	//	)
+	//}
 
 	if d.ClientState.ConsensusHeight != pathEnd.ClientState.ConsensusHeight {
 		pathEnd.ClientState = d.ClientState
@@ -398,11 +398,15 @@ func (pathEnd *PathEndRuntime) mergeCacheData(ctx context.Context, cancel func()
 
 	pathEnd.handleCallbacks(d.IBCMessagesCache)
 
-	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) || terminate {
+	//if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) || terminate {
+	//	cancel()
+	//	return
+	//}
+
+	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) {
 		cancel()
 		return
 	}
-
 	pathEnd.connectionStateCache = d.ConnectionStateCache // Update latest connection open state for chain
 	pathEnd.channelStateCache = d.ChannelStateCache       // Update latest channel open state for chain
 
