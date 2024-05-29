@@ -26,5 +26,7 @@ var (
 	ErrInvalidNumberLotteries                     = errorsmod.Register(ModuleName, 19, "invalid number of lotteries (m) in protocol parameters")
 	ErrInvalidChanceWinLottery                    = errorsmod.Register(ModuleName, 20, "invalid chance of a signer win lottery (phi_f) in protocol parameters")
 	ErrInvalidCertificate                         = errorsmod.Register(ModuleName, 21, "invalid mithril certificate")
-	ErrNotImplemented                             = errorsmod.Register(ModuleName, 22, "not implemented")
+	ErrInvalidMessagePartKey                      = errorsmod.Register(ModuleName, 22, "invalid message part key")
+	ErrUnsupportedGenesisSignature                = errorsmod.Register(ModuleName, 23, "genesis signature is not supported")
+	ErrNotImplemented                             = errorsmod.Register(ModuleName, 24, "not implemented")
 )

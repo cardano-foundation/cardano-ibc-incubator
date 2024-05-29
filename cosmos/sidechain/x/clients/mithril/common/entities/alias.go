@@ -11,5 +11,18 @@ type PartyId = string
 type Stake = uint64
 
 type ProtocolMultiSignature struct {
-	Key crypto.StmAggrSig
+	Key *crypto.StmAggrSig
 }
+
+type ProtocolStakeDistribution = []*struct {
+	PartyId ProtocolPartyId
+	Stake   ProtocolStake
+}
+
+type ProtocolPartyId = string
+
+type ProtocolStake = Stake
+
+type ProtocolSigner = crypto.StmSigner
+
+type ProtocolInitializer = StmInitializerWrapper

@@ -6,11 +6,20 @@ import (
 
 const (
 	ModuleName                           = "2000-cardano-mithril"
+	KeyFirstCertificateInEpochPrefix     = "fcInEpoch"
 	KeyFirstCertificateMsdInEpochPrefix  = "fcMsdInEpoch"
 	KeyFirstCertificateTsInEpochPrefix   = "fcTsInEpoch"
 	KeyLatestCertificateMsdInEpochPrefix = "LcMsdInEpoch"
 	KeyLatestCertificateTsInEpochPrefix  = "LcTsInEpoch"
 )
+
+func FcInEpochKey(epoch uint64) []byte {
+	return []byte(FcInEpochPath(epoch))
+}
+
+func FcInEpochPath(epoch uint64) string {
+	return fmt.Sprintf("%s/%v", KeyFirstCertificateInEpochPrefix, epoch)
+}
 
 func FcMsdInEpochKey(epoch uint64) []byte {
 	return []byte(FcMsdInEpochPath(epoch))

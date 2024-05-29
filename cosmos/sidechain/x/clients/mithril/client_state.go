@@ -154,7 +154,7 @@ func validateProtocolParameters(pm *MithrilProtocolParameters) error {
 		return errorsmod.Wrapf(ErrInvalidNumberLotteries, "number of lotteries should be greater than 0")
 	}
 
-	if pm.PhiF.Numerator == 0 || pm.PhiF.Numerator > pm.PhiF.Denominator {
+	if pm.PhiF.Numerator == 0 || pm.PhiF.Denominator == 0 || pm.PhiF.Numerator > pm.PhiF.Denominator {
 		return errorsmod.Wrapf(ErrInvalidChanceWinLottery, "chance of a signer to win a lottery should be greater than 0 and less than or equal to 1 (phiF/100)")
 	}
 
@@ -187,10 +187,8 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
 	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
-	setFcMsdInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FcHashLatestEpochMsd}, cs.CurrentEpoch)
-	setFcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FcHashLatestEpochTs}, cs.CurrentEpoch)
-	setLcMsdInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashMsd}, cs.CurrentEpoch)
-	setLcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashTs}, cs.CurrentEpoch)
+	setFcInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FirstCertHashLatestEpoch}, cs.CurrentEpoch)
+	setLcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashTxSnapshot}, cs.CurrentEpoch)
 
 	return nil
 }
