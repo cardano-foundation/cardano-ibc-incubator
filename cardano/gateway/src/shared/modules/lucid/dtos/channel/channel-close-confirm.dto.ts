@@ -1,10 +1,12 @@
 import { UTxO } from '@dinhbx/lucid-custom';
 import { AuthToken } from '~@/shared/types/auth-token';
 
-export type UnsignedChannelCloseInitDto = {
+export type UnsignedChannelCloseConfirmDto = {
     channelUtxo: UTxO;
+    handlerUtxo: UTxO;
     connectionUtxo: UTxO;
     clientUtxo: UTxO;
+    spendHandlerRefUtxo: UTxO;
     spendChannelRefUtxo: UTxO;
     spendMockModuleRefUtxo: UTxO;
     channelCloseInitRefUtxO: UTxO;

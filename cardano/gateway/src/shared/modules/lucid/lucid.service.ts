@@ -561,8 +561,9 @@ export class LucidService {
     const tx: Tx = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([
-      dto.spendHandlerRefUtxo,
+      dto.spendChannelRefUtxo,
       dto.spendMockModuleRefUtxo,
+      dto.channelCloseInitRefUtxO,
     ])
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
@@ -582,6 +583,12 @@ export class LucidService {
           inline: dto.mockModuleUtxo.datum,
         },
         dto.mockModuleUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.channelCloseInitPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
       )
     return tx;
   }

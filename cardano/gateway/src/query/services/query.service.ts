@@ -92,6 +92,7 @@ import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
+import { REDEEMER_CHANNEL_CLOSE_INIT } from '~@/constant/redeemer';
 
 @Injectable()
 export class QueryService {
@@ -466,7 +467,8 @@ export class QueryService {
       spendAddress,
     );
 
-    redeemers = redeemers.filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10);
+    redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
+    
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
         case REDEEMER_TYPE.MINT:
@@ -476,7 +478,7 @@ export class QueryService {
           if (mintRedeemer.hasOwnProperty('ChanOpenTry')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_TRY;
           break;
         case REDEEMER_TYPE.SPEND:
-          const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);     
 
           if (spendRedeemer.hasOwnProperty('ChanOpenAck')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_ACK;
           if (spendRedeemer.hasOwnProperty('ChanOpenConfirm'))
@@ -533,6 +535,12 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('TimeoutPacket')) {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
+          }
+          if(spendRedeemer === 'ChanCloseInit') {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_INIT;
+          }
+          if(spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
         default:
