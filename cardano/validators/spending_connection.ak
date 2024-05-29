@@ -24,7 +24,7 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/client/mithril_client/client_state as mithril_client_state
 use ibc/client/mithril_client/protos/mithril_pb.{
   AnyMithrilClientState, MithrilClientState, MithrilHeight,
-  MithrilProtocolParameters,
+  MithrilProtocolParameters, Fraction
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
@@ -611,7 +611,7 @@ test conn_open_ack_succeed() {
       current_epoch: 1,
       trusting_period: 1,
       protocol_parameters: Some(
-        MithrilProtocolParameters { k: 0, m: 0, phi_f: 0 },
+        MithrilProtocolParameters { k: 0, m: 0, phi_f: Some(Fraction {numerator: 0, denominator: 1}),},
       ),
       upgrade_path: [],
     }
