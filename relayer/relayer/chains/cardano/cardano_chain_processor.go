@@ -126,7 +126,7 @@ func (ccp *CardanoChainProcessor) Run(ctx context.Context, initialBlockHistory u
 		break
 	}
 	// this will make initial QueryLoop iteration look back initialBlockHistory blocks in history
-	latestQueriedBlock := persistence.latestHeight - 2
+	latestQueriedBlock := persistence.latestHeight - 1
 
 	if latestQueriedBlock < 0 {
 		latestQueriedBlock = 0
@@ -333,6 +333,19 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		}
 
 		if hasIBCEvents {
+			dsth, err := dst.ChainProvider.QueryLatestHeight(ctx)
+			if err != nil {
+				return fmt.Errorf("error querying latest height for chain_id: %s, %w", dst.Info.ChainID, err)
+			}
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, dsth, dst.Info.ClientID)
+			if err != nil {
+				return fmt.Errorf("failed to query the client state response: %w", err)
+			}
+			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+			if err != nil {
+				return fmt.Errorf("failed to unpack client state: %w", err)
+			}
+			ibcHeader, err = src.ChainProvider.QueryIBCMithrilHeader(ctx, i, &clientState)
 			data, ok := ibcHeader.(*mithril.MithrilHeader)
 			if !ok {
 				return fmt.Errorf("failed to cast IBC header to MithrilHeader")
