@@ -46,7 +46,6 @@
     "google-protobuf": "^3.21.2",
     "js-sha256": "^0.11.0",
     "js-sha3": "^0.9.3",
-    "kafkajs": "^2.2.4",
     "lucid-cardano": "^0.10.7",
     "nestjs-grpc-exceptions": "^0.2.1",
     "pg": "^8.11.3",

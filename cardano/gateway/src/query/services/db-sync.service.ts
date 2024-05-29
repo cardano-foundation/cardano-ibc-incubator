@@ -275,29 +275,6 @@ export class DbSyncService {
     return epochParam;
   }
 
-  async findActiveValidatorsByEpoch(epoch: bigint): Promise<[ValidatorDto]> {
-    epoch = epoch >= MinimumActiveEpoch ? epoch : MinimumActiveEpoch;
-    const query = `
-    SELECT DISTINCT ph.view as poolId, pu.vrf_key_hash as vrfKeyHash
-    FROM pool_update pu
-      LEFT JOIN pool_retire pr ON pu.hash_id = pr.hash_id
-      LEFT JOIN pool_hash ph ON pu.hash_id = ph.id
-    WHERE 
-      pu.active_epoch_no <= $1
-      AND (pr.retiring_epoch > $2 OR pr.retiring_epoch IS NULL)
-    `;
-
-    const results = await this.entityManager.query(query, [epoch.toString(), (epoch - 2n).toString()]);
-
-    return results.map((result) => {
-      const validatorDto: ValidatorDto = {
-        pool_id: result.poolid,
-        vrf_key_hash: result.vrfkeyhash.toString('hex'),
-      };
-      return validatorDto;
-    });
-  }
-
   async checkExistPoolUpdateByBlockNo(height: number): Promise<boolean> {
     const query = `
     SELECT 
