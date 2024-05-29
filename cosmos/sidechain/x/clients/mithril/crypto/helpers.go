@@ -3,6 +3,8 @@ package crypto
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
+	"math/big"
 	"math/bits"
 
 	blst "github.com/supranational/blst/bindings/go"
@@ -50,27 +52,24 @@ func scalarToPkInG1(sk *SigningKey) *blst.P1 {
 
 func vkFromP2Affine(vk *VerificationKey) *blst.P2 {
 	projectiveP2 := &blst.P2{}
-	projectiveP2.FromAffine(new(blst.P2Affine).Uncompress(vk.Compress()))
+	projectiveP2.FromAffine(vk.BlstVk)
 	return projectiveP2
 }
 
 func sigToP1(sig *BlstSig) *blst.P1 {
 	projectiveP1 := blst.P1{}
-	p1AffineFromBlstSig := new(blst.P1Affine).Uncompress(sig.Compress())
-	projectiveP1.FromAffine(p1AffineFromBlstSig)
+	projectiveP1.FromAffine(sig)
 	return &projectiveP1
 }
 
 func p2AffineToVk(groupedVks *blst.P2) *BlstVk {
-	affineP2 := groupedVks.ToAffine()
-	blstVk := new(blst.P1Affine).Uncompress(affineP2.Compress())
-	return blstVk
+	p2Affine := groupedVks.ToAffine()
+	return p2Affine
 }
 
 func p1AffineToSig(groupedSigs *blst.P1) *BlstSig {
-	affineP1 := groupedSigs.ToAffine()
-	blstSig := new(blst.P2Affine).Uncompress(affineP1.Compress())
-	return blstSig
+	p1Affine := groupedSigs.ToAffine()
+	return p1Affine
 }
 
 // ////////////////
@@ -121,6 +120,49 @@ func toByteSlice(indices []uint64) []byte {
 }
 
 func EvLtPhi(phiF float64, ev []byte, stake Stake, totalStake Stake) bool {
-	// TO-DO: need to implement later
-	return true
+	// If phiF = 1, then we automatically break with true
+	if math.Abs(phiF-1.0) < math.SmallestNonzeroFloat64 {
+		return true
+	}
+
+	evMax := new(big.Int).Exp(big.NewInt(2), big.NewInt(512), nil)
+	evBigInt := new(big.Int).SetBytes(ev[:])
+	evBigInt = evBigInt.Mod(evBigInt, evMax)
+
+	q := new(big.Rat).SetFrac(evMax, new(big.Int).Sub(evMax, evBigInt))
+
+	c := new(big.Rat).SetFloat64(math.Log(1.0 - phiF))
+	if c == nil {
+		panic("Only fails if the float is infinite or NaN.")
+	}
+
+	w := new(big.Rat).SetFrac(big.NewInt(int64(stake)), big.NewInt(int64(totalStake)))
+	x := new(big.Rat).Neg(new(big.Rat).Mul(w, c))
+
+	// Now we compute a taylor function that breaks when the result is known.
+	return taylorComparison(1000, q, x)
+}
+
+func taylorComparison(bound int, cmp, x *big.Rat) bool {
+	newX := new(big.Rat).Set(x)
+	phi := new(big.Rat).SetInt64(1)
+	divisor := new(big.Rat).SetInt64(1)
+
+	for i := 0; i < bound; i++ {
+		phi.Add(phi, newX)
+
+		divisor.Add(divisor, big.NewRat(1, 1))
+		newX.Mul(newX, x)
+		newX.Quo(newX, divisor)
+
+		errorTerm := new(big.Rat).Mul(new(big.Rat).Abs(newX), big.NewRat(3, 1)) // newX * M
+
+		if cmp.Cmp(new(big.Rat).Add(phi, errorTerm)) > 0 {
+			return false
+		} else if cmp.Cmp(new(big.Rat).Sub(phi, errorTerm)) < 0 {
+			return true
+		}
+	}
+
+	return false
 }

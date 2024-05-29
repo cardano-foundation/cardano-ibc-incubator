@@ -56,3 +56,12 @@ func (k *ProtocolAggregateVerificationKey) ToJsonHex() (string, error) {
 	}
 	return hex.EncodeToString(keyBytes), nil
 }
+
+type ProtocolSignerVerificationKey struct {
+	Key *crypto.StmVerificationKeyPoP
+}
+
+type StmInitializerWrapper struct {
+	StmInitializer crypto.StmInitializer
+	KesSignature   []byte
+}
