@@ -35,6 +35,7 @@ import {
 import { UnsignedSendPacketEscrowDto, UnsignedSendPacketEscrowDtoForTwoModule } from './dtos/packet/send-packet-escrow.dto';
 import { UnsignedUnorderedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
 import { UnsignedUnorderedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
+import { UnsignedChannelCloseInitDto } from './dtos/channel/channel-close-init.dto';
 import { calculateTransferToken } from './helpers/send-packet.helper';
 import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
 import { UnsignedRecvPacketMintDto } from './dtos/packet/recv-packet-mint.dto';
@@ -552,6 +553,36 @@ export class LucidService {
         dto.encodedVerifyProofRedeemer,
       );
 
+    return tx;
+  }
+
+  public createUnsignedChannelCloseInitTransaction( dto: UnsignedChannelCloseInitDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+
+    tx.readFrom([
+      dto.spendHandlerRefUtxo,
+      dto.spendMockModuleRefUtxo,
+    ])
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: dto.mockModuleUtxo.datum,
+        },
+        dto.mockModuleUtxo.assets,
+      )
     return tx;
   }
 
