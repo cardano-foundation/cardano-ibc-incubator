@@ -107,13 +107,11 @@ func (m *Height) GTE(height ibcexported.Height) bool {
 }
 
 func (m *Height) GetRevisionNumber() uint64 {
-	//TODO implement me
-	panic("implement me")
+	return 0
 }
 
 func (m *Height) GetRevisionHeight() uint64 {
-	//TODO implement me
-	panic("implement me")
+	return m.MithrilHeight
 }
 
 func (m *Height) Increment() ibcexported.Height {

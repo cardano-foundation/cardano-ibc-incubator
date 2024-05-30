@@ -299,6 +299,10 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 			return err
 		})
 		if err := eg.Wait(); err != nil {
+			if strings.Contains(err.Error(), "SkipImmutableFile: Missing mithril height") {
+				ccp.log.Info("Skipping block", zap.Int64("height", i))
+				continue
+			}
 			ccp.log.Warn("Error querying block data", zap.Error(err))
 			break
 		}

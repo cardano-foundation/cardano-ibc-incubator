@@ -1,7 +1,5 @@
 package dtos
 
-import "time"
-
 type Beacon struct {
 	Network             string `json:"network"`
 	Epoch               uint64 `json:"epoch"`
@@ -20,8 +18,8 @@ type CertificateMetadataBase struct {
 	Network     string     `json:"network"`
 	Version     string     `json:"version"`
 	Parameters  Parameters `json:"parameters"`
-	InitiatedAt time.Time  `json:"initiated_at"`
-	SealedAt    time.Time  `json:"sealed_at"`
+	InitiatedAt string     `json:"initiated_at"`
+	SealedAt    string     `json:"sealed_at"`
 }
 
 // MessageParts represents the parts of the protocol message
