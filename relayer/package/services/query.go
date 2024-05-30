@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/cardano/relayer/v1/constant"
 
@@ -106,7 +107,7 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	}
 	// latestCertificateMsd = certificateList[idx]
 
-	listSnapshots, err := gw.MithrilService.GetListSnapshots()
+	listSnapshots, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -140,9 +141,15 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 		},
 		UpgradePath: nil,
 	}
-	timestamp := fcCertificateMsd.Metadata.SealedAt.UnixNano()
+
+	layout := "2006-01-02T15:04:05.000000000Z"
+	tt, err := time.Parse(layout, fcCertificateMsd.Metadata.SealedAt)
+	if err != nil {
+		return nil, nil, err
+
+	}
 	consensusState := &mithril.ConsensusState{
-		Timestamp:                uint64(timestamp),
+		Timestamp:                uint64(tt.UnixNano()),
 		FirstCertHashLatestEpoch: mithrilDistribution.CertificateHash,
 		LatestCertHashTxSnapshot: latestSnapshot.CertificateHash,
 	}

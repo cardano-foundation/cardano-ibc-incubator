@@ -315,6 +315,23 @@ func MsgUpdateClient(
 		if !ok {
 			return nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
 		}
+
+		// get cardano client consensus state
+		clientConsensusState, err := dst.ChainProvider.QueryClientConsensusState(ctx, dsth, dstClientId, dstClientState.GetLatestHeight())
+		if err != nil {
+			return nil, err
+		}
+		consensusStateData, err := clienttypes.UnpackClientMessage(clientConsensusState.ConsensusState)
+		if err != nil {
+			return nil, err
+		}
+		consensusState, ok := consensusStateData.(*mithril.ConsensusState)
+		if !ok {
+			return nil, fmt.Errorf("failed to cast consensus state to MithrilHeader")
+		}
+		if msgUpdateClient.TransactionSnapshotCertificate.Hash == consensusState.LatestCertHashTxSnapshot {
+			return nil, nil
+		}
 		// updates off-chain light client
 		return dst.ChainProvider.MsgUpdateClient(dstClientId, msgUpdateClient)
 
@@ -410,6 +427,12 @@ func UpdateClients(
 	clients := &RelayMsgs{
 		Src: []provider.RelayerMessage{srcMsgUpdateClient},
 		Dst: []provider.RelayerMessage{dstMsgUpdateClient},
+	}
+	if srcMsgUpdateClient == nil {
+		clients.Src = []provider.RelayerMessage{}
+	}
+	if dstMsgUpdateClient == nil {
+		clients.Dst = []provider.RelayerMessage{}
 	}
 	//clients.Src = nil
 	// Send msgs to both chains

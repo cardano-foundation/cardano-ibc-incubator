@@ -188,8 +188,8 @@ func ConvertMithrilStakeDistributionCertificate(stakeDistribution dtos.MithrilSt
 					Denominator: FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
 				},
 			},
-			InitiatedAt: stakeDistributionCertificate.Metadata.InitiatedAt.String(),
-			SealedAt:    stakeDistributionCertificate.Metadata.SealedAt.String(),
+			InitiatedAt: stakeDistributionCertificate.Metadata.InitiatedAt,
+			SealedAt:    stakeDistributionCertificate.Metadata.SealedAt,
 			Signers:     convertSignerWithStake(stakeDistributionCertificate.Metadata.Signers),
 		},
 		ProtocolMessage: &mithril.ProtocolMessage{
