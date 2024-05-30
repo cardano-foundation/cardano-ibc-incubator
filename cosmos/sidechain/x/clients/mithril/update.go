@@ -34,21 +34,21 @@ func (cs *ClientState) verifyHeader(
 	nilCertificate := MithrilCertificate{}
 	expectedPreviousCerForTs := nilCertificate
 
-	fcMsdInEpoch := getFcMsdInEpoch(clientStore, header.MithrilStakeDistribution.Epoch)
-	fcMsdInPrevEpoch := getFcMsdInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
+	firstCertInEpoch := getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch)
+	firstCertInPrevEpoch := getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
 
-	if fcMsdInEpoch != nilCertificate {
-		if header.MithrilStakeDistribution.CertificateHash != fcMsdInEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid latest mithril state distribution certificate:", header.MithrilStakeDistribution.CertificateHash, fcMsdInEpoch.Hash)
+	if firstCertInEpoch != nilCertificate {
+		if header.MithrilStakeDistribution.CertificateHash != firstCertInEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid latest mithril state distribution certificate:", header.MithrilStakeDistribution.CertificateHash, firstCertInEpoch.Hash)
 		}
-		expectedPreviousCerForTs = fcMsdInEpoch
+		expectedPreviousCerForTs = firstCertInEpoch
 	} else {
-		if fcMsdInPrevEpoch == nilCertificate {
+		if firstCertInEpoch == nilCertificate {
 			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
 		}
 		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
-		if header.MithrilStakeDistributionCertificate.PreviousHash != fcMsdInPrevEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, fcMsdInPrevEpoch.Hash)
+		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, firstCertInPrevEpoch.Hash)
 		}
 	}
 
@@ -102,7 +102,6 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	if epoch > cs.CurrentEpoch {
 		cs.CurrentEpoch = epoch
 		consensusState.FirstCertHashLatestEpoch = header.MithrilStakeDistributionCertificate.Hash
-		setFcTsInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
 	}
 	consensusState = &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
@@ -111,7 +110,6 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	consensusState.LatestCertHashTxSnapshot = header.MithrilStakeDistributionCertificate.Hash
 
 	// set latest certificate of mithril stake distribution and transaction snapshot for epoch
-	setLcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
 	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, epoch)
 
 	// set client state, consensus state and associated metadata
