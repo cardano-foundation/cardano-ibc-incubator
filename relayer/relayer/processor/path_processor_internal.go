@@ -861,9 +861,8 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			return
 		}
 
-		for k, cs := range pp.PathEnd1.channelStateCache {
+		for k, _ := range pp.PathEnd1.channelStateCache {
 			if k.ChannelID == m.SrcChannelID && k.PortID == m.SrcPortID && k.CounterpartyChannelID != "" && k.CounterpartyPortID != "" {
-				fmt.Println(cs.Open)
 				//if cs.Open {
 				//	// channel is still open on pathEnd1
 				//	break
@@ -914,9 +913,9 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 		//	}
 		//}
 
-		for k, cs := range pp.PathEnd2.channelStateCache {
+		for k, _ := range pp.PathEnd2.channelStateCache {
 			if k.CounterpartyChannelID == m.SrcChannelID && k.CounterpartyPortID == m.SrcPortID && k.ChannelID != "" && k.PortID != "" {
-				fmt.Println(cs.Open)
+				//fmt.Println(cs.Open)
 				//if cs.Open {
 				//	// channel is still open on pathEnd2
 				//	break
