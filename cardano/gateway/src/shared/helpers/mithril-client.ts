@@ -1,12 +1,12 @@
 import { ClientState as ClientStateOuroboros } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { MithrilClientState } from '../types/mithril';
-import { convertString2Hex } from './hex';
+import { convertHex2String, convertString2Hex, fromText } from './hex';
 import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 
 export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {
   return {
     /** Chain id */
-    chain_id: clientStateMsg.chain_id,
+    chain_id: fromText(clientStateMsg.chain_id),
     /** Latest height the client was updated to */
     latest_height: {
       mithril_height: clientStateMsg.latest_height.mithril_height,
@@ -36,7 +36,7 @@ export function getMithrilClientStateForVerifyProofRedeemer(
   mithrilClientState: MithrilClientState,
 ): ClientStateMithril {
   return {
-    chain_id: mithrilClientState.chain_id,
+    chain_id: convertHex2String(mithrilClientState.chain_id),
     latest_height: {
       mithril_height: mithrilClientState.latest_height.mithril_height,
     },
