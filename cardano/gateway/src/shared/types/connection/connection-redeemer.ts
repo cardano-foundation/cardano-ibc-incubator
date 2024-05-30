@@ -346,10 +346,14 @@ export function decodeSpendConnectionRedeemer(
   const MithrilHeightSchema = Data.Object({
     mithril_height: Data.Integer(),
   });
+  const FractionSchema = Data.Object({
+    numerator: Data.Integer(),
+    denominator: Data.Integer(),
+  });
   const MithrilProtocolParametersSchema = Data.Object({
     k: Data.Integer(),
     m: Data.Integer(),
-    phi_f: Data.Integer(),
+    phi_f: Data.Nullable(FractionSchema),
   });
   const MithrilClientStateSchema = Data.Object({
     chain_id: Data.Bytes(),

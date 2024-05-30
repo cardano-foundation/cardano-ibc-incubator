@@ -132,37 +132,6 @@ export class ConnectionService {
   async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
     try {
       this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
-      console.dir({
-        connection_id: data.connection_id,
-        counterparty_connection_id: data.counterparty_connection_id,
-        version: {
-          identifier: data.version.identifier,
-          /** list of features compatible with the specified identifier */
-          features: data.version.features.map((feature) => feature),
-        },
-        client_state: Buffer.from(data.client_state.value).toString('base64'),
-        proof_height: {
-          revision_number: data.proof_height.revision_number,
-          revision_height: data.proof_height.revision_height,
-        },
-        /**
-         * proof of the initialization the connection on Chain B: `UNITIALIZED ->
-         * TRYOPEN`
-         */
-        proof_try: Buffer.from(data.proof_try).toString('base64'),
-        /** proof of client state included in message */
-        proof_client: Buffer.from(data.proof_client).toString('base64'),
-        /** proof of client consensus state */
-        proof_consensus: Buffer.from(data.proof_consensus).toString('base64'),
-        consensus_height: {
-          revision_number: data.consensus_height.revision_number,
-          revision_height: data.consensus_height.revision_height,
-        },
-        signer: data.signer,
-        /** optional proof data for host state machines that are unable to introspect their own consensus state */
-        // host_consensus_state_proof: Buffer.from(data.host_consensus_state_proof).toString('base64'),
-      });
-
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: Tx = await this.buildUnsignedConnectionOpenAckTx(
@@ -464,7 +433,7 @@ export class ConnectionService {
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.lightclients.tendermint.v1.ClientState',
+      type_url: '/ibc.clients.mithril.v1.ClientState',
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
