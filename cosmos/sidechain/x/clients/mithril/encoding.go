@@ -24,13 +24,3 @@ func MustUnmarshalMithrilCertificate(bytesCertificate []byte) MithrilCertificate
 
 	return result
 }
-
-// // MarshalInterface encode interface{} data to bytes
-// func MarshalInterface(i interface{}) ([]byte, error) {
-// 	return json.Marshal(i)
-// }
-
-// // UnmarshalInterface decode bytes to interface{}
-// func UnmarshalInterface(v []byte, result interface{}) error {
-// 	return json.Unmarshal(v, result)
-// }
