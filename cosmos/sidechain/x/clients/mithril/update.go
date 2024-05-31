@@ -2,6 +2,7 @@ package mithril
 
 import (
 	"fmt"
+	"time"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -43,11 +44,11 @@ func (cs *ClientState) verifyHeader(
 		}
 		expectedPreviousCerForTs = firstCertInEpoch
 	} else {
-		if firstCertInEpoch == nilCertificate {
+		if firstCertInPrevEpoch == nilCertificate {
 			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
 		}
 		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
-		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInEpoch.Hash {
+		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
 			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, firstCertInPrevEpoch.Hash)
 		}
 	}
@@ -56,7 +57,12 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first transaction snapshot certificate", header.TransactionSnapshotCertificate.PreviousHash, expectedPreviousCerForTs.Hash)
 	}
 
-	err := header.MithrilStakeDistributionCertificate.verifyCertificate()
+	_, err := time.Parse(Layout, header.TransactionSnapshotCertificate.Metadata.SealedAt)
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v, expected: %v", "invalid timestamp layout", header.TransactionSnapshotCertificate.Metadata.SealedAt, Layout)
+	}
+
+	err = header.MithrilStakeDistributionCertificate.verifyCertificate()
 	if err != nil {
 		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate is invalid")
 	}
@@ -73,7 +79,13 @@ func (c *MithrilCertificate) verifyCertificate() error {
 	return nil
 }
 
-func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage) []exported.Height {
+func (cs *ClientState) UpdateState(
+	ctx sdk.Context,
+	cdc codec.BinaryCodec,
+	clientStore storetypes.KVStore,
+	clientMsg exported.ClientMessage,
+) []exported.Height {
+	// Type assert the client message to MithrilHeader
 	header, ok := clientMsg.(*MithrilHeader)
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &MithrilHeader{}, clientMsg))
@@ -81,40 +93,32 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 
-	// check for duplicate update
-	// if _, found := GetConsensusState(clientStore, cdc, header.GetHeight()); found {
-	// perform no-op
-	// return []exported.Height{header.GetHeight()}
-	// }
-
+	// Retrieve the previous consensus state
 	prevConsensusState, _ := GetConsensusState(clientStore, cdc, cs.LatestHeight)
-	consensusState := &ConsensusState{
-		Timestamp:                header.GetTimestamp(),
-		FirstCertHashLatestEpoch: prevConsensusState.FirstCertHashLatestEpoch,
+
+	// Check for duplicate update
+	if prevConsensusState.LatestCertHashTxSnapshot == header.TransactionSnapshotCertificate.Hash {
+		return []exported.Height{header.GetHeight()} // No-op on duplicate update
 	}
 
+	// Update the latest height and current epoch
 	height := NewHeight(header.TransactionSnapshot.Height.GetRevisionHeight())
-	if height.GT(cs.LatestHeight) {
-		cs.LatestHeight = &height
-	}
+	cs.LatestHeight = &height
+	cs.CurrentEpoch = header.TransactionSnapshot.Epoch
 
-	epoch := header.TransactionSnapshot.Epoch
-	if epoch > cs.CurrentEpoch {
-		cs.CurrentEpoch = epoch
-		consensusState.FirstCertHashLatestEpoch = header.MithrilStakeDistributionCertificate.Hash
-	}
-	consensusState = &ConsensusState{
+	// Create a new consensus state
+	newConsensusState := &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
+		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate.Hash,
 		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
 	}
-	consensusState.LatestCertHashTxSnapshot = header.MithrilStakeDistributionCertificate.Hash
 
-	// set latest certificate of mithril stake distribution and transaction snapshot for epoch
-	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, epoch)
+	// Set the latest certificate of transaction snapshot for the epoch
+	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, cs.CurrentEpoch)
 
-	// set client state, consensus state and associated metadata
-	setClientState(clientStore, cdc, &cs)
-	setConsensusState(clientStore, cdc, consensusState, header.GetHeight())
+	// Update the client state, consensus state, and associated metadata in the store
+	setClientState(clientStore, cdc, cs)
+	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 
 	return []exported.Height{height}

@@ -28,5 +28,6 @@ var (
 	ErrInvalidCertificate                         = errorsmod.Register(ModuleName, 21, "invalid mithril certificate")
 	ErrInvalidMessagePartKey                      = errorsmod.Register(ModuleName, 22, "invalid message part key")
 	ErrUnsupportedGenesisSignature                = errorsmod.Register(ModuleName, 23, "genesis signature is not supported")
-	ErrNotImplemented                             = errorsmod.Register(ModuleName, 24, "not implemented")
+	ErrInvalidTimestamp                           = errorsmod.Register(ModuleName, 24, "invalid timestamp layout")
+	ErrNotImplemented                             = errorsmod.Register(ModuleName, 25, "not implemented")
 )
