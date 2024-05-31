@@ -63,6 +63,17 @@ func TestIBCSuiteOrderedChannel(t *testing.T) {
 	t.Run("TestRelayPacketOrderedChannelWHomeDir", s.TestRelayPacketOrderedChannelWHomeDir)
 }
 
+func TestIBCSuiteCloseChannel(t *testing.T) {
+	s := &IBCTestSuite{
+		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
+	}
+	s.SetupTestHomeDir(t, "")
+	t.Run("TestCreateConnection", s.TestCreateConnection)
+	t.Run("TestCreateOrderedChannel", s.TestCreateOrderedChannel)
+	t.Run("TestCloseChannel", s.TestCloseChannel)
+	t.Run("TestCloseChannelWHomeDir", s.TestCloseChannelWHomeDir)
+}
+
 func TestCreateAndUpdateClients(t *testing.T) {
 	s := &IBCTestSuite{
 		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
@@ -99,6 +110,20 @@ func (s *IBCTestSuite) TestCreateUnorderedChannel(t *testing.T) {
 
 func (s *IBCTestSuite) TestCreateOrderedChannel(t *testing.T) {
 	runResult := s.createOrderedChannel(t, s.System)
+	assert.Nil(t, runResult.Err)
+}
+
+func (s *IBCTestSuite) TestCloseChannel(t *testing.T) {
+	var runResult relayertest.RunResult
+
+	config := s.System.MustGetConfig(t)
+
+	path, err := config.Paths.Get(Path)
+	assert.Nil(t, err)
+	cardanoChannelID, _ := s.getLastOpenedChannels(t, s.System, path.Dst, CosmosChainName)
+
+	_ = cardanoChannelID
+	s.closeChannel(t, s.System, cardanoChannelID)
 	assert.Nil(t, runResult.Err)
 }
 
@@ -249,6 +274,31 @@ func (s *IBCTestSuite) TestRelayPacketOrderedChannelWHomeDir(t *testing.T) {
 	s.TestRelayPacket(t)
 }
 
+func (s *IBCTestSuite) TestCloseChannelWHomeDir(t *testing.T) {
+	dir, err := os.Getwd()
+	assert.Nil(t, err)
+
+	dir = dir + "/test/ibctest"
+	path := dir + "/config"
+
+	if _, err := os.Stat(path); err != nil {
+		assert.True(t, os.IsNotExist(err))
+
+		err := os.Chdir(dir)
+		assert.Nil(t, err)
+
+		s.System = setUp(t, dir)
+
+		s.createConnection(t, s.System)
+		s.createOrderedChannel(t, s.System)
+	} else {
+		s.System.HomeDir = dir
+
+		s.System.MustGetConfig(t)
+	}
+	s.TestCloseChannel(t)
+}
+
 func (s *IBCTestSuite) createClients(t *testing.T, sys *relayertest.System) relayertest.RunResult {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
 	defer cancel()
@@ -303,6 +353,15 @@ func (s *IBCTestSuite) createOrderedChannel(t *testing.T, sys *relayertest.Syste
 		"--dst-port", CosmosPortMockModule,
 		"--order", "ordered",
 		"--version", "ordered-ics20-1")
+}
+
+func (s *IBCTestSuite) closeChannel(t *testing.T, sys *relayertest.System, srcChannelId string) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
+		"transact", "channel-close", Path, srcChannelId, CardanoPortMockModule,
+		"--timeout", TimeForTestTransfer)
 }
 
 func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.System, pathEnd *relayer.PathEnd, chainName string) (string, string) {

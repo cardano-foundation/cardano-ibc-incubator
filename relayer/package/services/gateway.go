@@ -424,3 +424,19 @@ func (gw *Gateway) QueryNextSequenceAck(ctx context.Context, req *pbchannel.Quer
 	}
 	return res, nil
 }
+
+func (gw *Gateway) ChannelCloseInit(ctx context.Context, req *pbchannel.MsgChannelCloseInit) (*pbchannel.MsgChannelCloseInitResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseInit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ChannelCloseConfirm(ctx context.Context, req *pbchannel.MsgChannelCloseConfirm) (*pbchannel.MsgChannelCloseConfirmResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseConfirm(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}

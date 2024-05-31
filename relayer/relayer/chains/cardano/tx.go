@@ -184,7 +184,27 @@ func (cc *CardanoProvider) ConnectionProof(
 }
 
 func (cc *CardanoProvider) MsgChannelCloseInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	return nil, nil
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, err
+	}
+	msg := &chantypes.MsgChannelCloseInit{
+		PortId:    info.PortID,
+		ChannelId: info.ChannelID,
+		Signer:    signer,
+	}
+
+	return NewCardanoMessage(msg, func(signer string) {
+		msg.Signer = signer
+	}), nil
+}
+
+func transformMsgChannelCloseInit(msg *chantypes.MsgChannelCloseInit) *pbchannel.MsgChannelCloseInit {
+	return &pbchannel.MsgChannelCloseInit{
+		PortId:    msg.PortId,
+		ChannelId: msg.ChannelId,
+		Signer:    msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -1482,6 +1502,15 @@ func (cc *CardanoProvider) buildMsgViaGW(ctx context.Context, cardanoMsg Cardano
 		return res.UnsignedTx.Value, nil
 	case *chantypes.MsgChannelOpenAck:
 		res, err := cc.GateWay.ChannelOpenAck(ctx, transformMsgChannelOpenAck(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelCloseInit:
+		res, err := cc.GateWay.ChannelCloseInit(
+			context.Background(),
+			transformMsgChannelCloseInit(msg),
+		)
 		if err != nil {
 			return nil, err
 		}
