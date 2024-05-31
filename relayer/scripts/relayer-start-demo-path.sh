@@ -18,4 +18,3 @@ src_address=addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql
 
 # Start the relayer
 rly start $path
-

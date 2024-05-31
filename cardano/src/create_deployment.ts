@@ -869,7 +869,7 @@ const deployMockModule = async (
     spendMockModule: {
       validator: spendMockModuleValidator,
       scriptHash: spendMockModuleScriptHash,
-      address: spendHandlerAddress,
+      address: spendMockModuleAddress,
     },
   };
 };

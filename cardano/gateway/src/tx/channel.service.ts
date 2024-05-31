@@ -389,16 +389,10 @@ export class ChannelService {
           'iBCModuleRedeemer',
         );
 
-        console.log("eee1")
-        console.log("mockModuleUtxo: ", mockModuleUtxo)
-
         const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
           mockModuleUtxo.datum!,
           'mockModule',
         );
-        console.log({
-          currentMockModuleDatum
-        })
 
         const newMockModuleDatum: MockModuleDatum = {
           ...currentMockModuleDatum,
@@ -408,8 +402,6 @@ export class ChannelService {
           newMockModuleDatum,
           'mockModule',
         );
-
-        console.log("encodedNewMockModuleDatum: ", encodedNewMockModuleDatum)
 
         const unsignedOrderedChannelOpenInitParams: UnsignedOrderedChannelOpenInitDto = {
           handlerUtxo,

@@ -95,8 +95,6 @@ export class PacketService {
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
       this.logger.log('RecvPacket is processing');
-      // console.log('RecvPacket data ', data);
-      // this.logger.log('RecvPacket data ', data);
 
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
 
@@ -313,8 +311,6 @@ export class PacketService {
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const channelEnd = channelDatum.state.channel;
 
-    console.log("channelDatum",channelDatum)
-    console.log("channelEnd")
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
     }
@@ -348,7 +344,6 @@ export class PacketService {
       'connection',
     );
 
-    console.log("connectionDatum", connectionDatum);
     // Get the token unit associated with the client by connection datum
     const clientTokenUnit = this.lucidService.getClientTokenUnit(
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
@@ -931,12 +926,6 @@ export class PacketService {
     // channel id
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
-    // console.log("mockModuleUtxo",mockModuleUtxo.datum)
-    // const  mockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(mockModuleUtxo.datum!, 'mockModule')
-    // console.dir(mockModuleDatum, { depth: 10 })
-    // console.log("haha")
-
-
     // build transfer module redeemer
     let denom =
       sendPacketOperator.token.denom === LOVELACE
@@ -1096,35 +1085,6 @@ export class PacketService {
       return this.lucidService.createUnsignedSendPacketBurnTx(unsignedSendPacketParams);
     }
     // escrow
-    // this.logger.log('send escrow');
-    // const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
-    //   channelUTxO: channelUtxo,
-    //   connectionUTxO: connectionUtxo,
-    //   clientUTxO: clientUtxo,
-    //   spendChannelRefUTxO: spendChannelRefUtxo,
-    //   spendTransferModuleUTxO: spendTransferModuleRefUtxo,
-    //   transferModuleUTxO: transferModuleUtxo,
-
-    //   encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-    //   encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
-    //   encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
-
-    //   transferAmount: BigInt(sendPacketOperator.token.amount),
-    //   senderAddress: sendPacketOperator.sender,
-    //   receiverAddress: sendPacketOperator.receiver,
-
-    //   constructedAddress: sendPacketOperator.signer,
-
-    //   spendChannelAddress: deploymentConfig.validators.spendChannel.address,
-    //   channelTokenUnit: channelTokenUnit,
-    //   transferModuleAddress: deploymentConfig.modules.transfer.address,
-    //   denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
-
-    //   sendPacketPolicyId,
-    //   sendPacketRefUTxO,
-    //   channelToken,
-    // };
-    // return this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
     this.logger.log('send escrow');
     switch(channelDatum.state.channel.ordering) {
       case Order.Unordered:
@@ -1250,8 +1210,6 @@ export class PacketService {
     const transferModuleIdentifier = this.getTransferModuleIdentifier();
     const mockModuleIdentifier = this.getMockModuleIdentifier();
     // Get mock module utxo
-    console.log("transferModuleIdentifier",transferModuleIdentifier)
-    console.log("mockModuleIdentifier",mockModuleIdentifier)
 
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
     const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
@@ -1374,14 +1332,6 @@ export class PacketService {
       if (acknowledgementResponse.result != 'AQ==') {
         throw new GrpcInternalException('Acknowledgement Response invalid: result must be 01');
       }
-      // const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      //   createIBCModuleRedeemer(channelId, fTokenPacketData, {
-      //     AcknowledgementResult: {
-      //       result: '01',
-      //     },
-      //   }),
-      //   'iBCModuleRedeemer',
-      // );
       switch(channelDatum.state.channel.ordering) {
         case Order.Unordered:
           // build update channel datum
@@ -1470,7 +1420,6 @@ export class PacketService {
             }),
             'iBCModuleRedeemer',
           );
-          console.log("haha1396")
           const updatedChannelOrderedDatum: ChannelDatum = {
             ...channelDatum,
             state: {
