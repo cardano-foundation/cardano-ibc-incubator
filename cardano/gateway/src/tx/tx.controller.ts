@@ -35,6 +35,8 @@ import {
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
+  MsgChannelCloseInit,
+  MsgChannelCloseInitResponse
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
@@ -127,6 +129,11 @@ export class TxController {
   @GrpcMethod('Msg', 'TimeoutRefresh')
   async TimeoutRefresh(data: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
     const response: MsgTimeoutRefreshResponse = await this.packetService.timeoutRefresh(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'ChannelCloseInit')
+  async ChannelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
+    const response: MsgChannelCloseInitResponse = await this.channelService.channelCloseInit(data);
     return response;
   }
 }

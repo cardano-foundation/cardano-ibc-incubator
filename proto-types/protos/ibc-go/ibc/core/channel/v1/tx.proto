@@ -158,6 +158,7 @@ message MsgChannelCloseInit {
 
 // MsgChannelCloseInitResponse defines the Msg/ChannelCloseInit response type.
 message MsgChannelCloseInitResponse {
+  google.protobuf.Any unsigned_tx = 1;
 }
 
 // MsgChannelCloseConfirm defines a msg sent by a Relayer to Chain B
@@ -176,7 +177,9 @@ message MsgChannelCloseConfirm {
 
 // MsgChannelCloseConfirmResponse defines the Msg/ChannelCloseConfirm response
 // type.
-message MsgChannelCloseConfirmResponse {}
+message MsgChannelCloseConfirmResponse {
+  google.protobuf.Any unsigned_tx = 1;
+}
 
 // MsgRecvPacket receives incoming IBC packet
 message MsgRecvPacket {
