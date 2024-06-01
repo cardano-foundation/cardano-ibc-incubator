@@ -153,7 +153,7 @@ validator(
         trace @"mint_channel: output contains connection token"
 
         expect
-          channel_datum.is_chan_open_init_valid(
+          channel_datum.validate_chan_open_init(
             channel_output_datum,
             channel_token,
           )
@@ -248,7 +248,7 @@ validator(
         trace @"mint_channel: output contains connection token"
 
         expect
-          channel_datum.is_chan_open_try_valid(
+          channel_datum.validate_chan_open_try(
             channel_output_datum,
             channel_token,
           )

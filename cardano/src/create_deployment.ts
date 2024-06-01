@@ -680,6 +680,8 @@ const deploySpendChannel = async (
   const knownReferredValidatorsName = [
     "chan_open_ack",
     "chan_open_confirm",
+    "chan_close_init",
+    "chan_close_confirm",
     "recv_packet",
     "send_packet",
     "timeout_packet",
@@ -712,7 +714,7 @@ const deploySpendChannel = async (
       mintPortPolicyId,
     ];
 
-    if (name != "send_packet") {
+    if (name != "send_packet" && name != "chan_close_init") {
       args.push(verifyProofScriptHash);
     }
 
