@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sidechain/x/clients/mithril/common/cryptohelpers"
 	"sidechain/x/clients/mithril/crypto"
 )
 
@@ -64,4 +65,8 @@ type ProtocolSignerVerificationKey struct {
 type StmInitializerWrapper struct {
 	StmInitializer crypto.StmInitializer
 	KesSignature   []byte
+}
+
+type ProtocolMkProof struct {
+	Key *cryptohelpers.MKMapProof
 }

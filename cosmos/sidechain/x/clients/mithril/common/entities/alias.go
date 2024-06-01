@@ -26,3 +26,5 @@ type ProtocolStake = Stake
 type ProtocolSigner = crypto.StmSigner
 
 type ProtocolInitializer = StmInitializerWrapper
+
+type HexEncodedKey = string
