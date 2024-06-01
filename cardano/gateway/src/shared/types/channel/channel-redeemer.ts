@@ -61,6 +61,13 @@ export type SpendChannelRedeemer =
         packet: Packet;
       };
     }
+  | 'ChanCloseInit'
+  | {
+      ChanCloseConfirm: { 
+        proof_init: MerkleProof, 
+        proof_height: Height 
+      };
+    }
   | 'RefreshUtxo';
 export async function encodeMintChannelRedeemer(
   mintChannelRedeemer: MintChannelRedeemer,

@@ -50,6 +50,7 @@ import { UnsignedSendPacketBurnDto } from './dtos/packet/send-packet-burn.dto';
 import { UnsignedTimeoutRefreshDto } from './dtos/packet/timeout-refresh-dto';
 import { UnsignedAckPacketSucceedDto, UnsignedAckPacketSucceedForOrderedChannelDto } from './dtos/packet/ack-packet-succeed.dto';
 import { UnsignedConnectionOpenAckDto } from './dtos/connection/connection-open-ack.dto';
+import { UnsignedChannelCloseInitDto } from './dtos/channel/channle-close-init.dto';
 type CodecType =
   | 'client'
   | 'connection'
@@ -551,6 +552,42 @@ export class LucidService {
         dto.encodedVerifyProofRedeemer,
       );
 
+    return tx;
+  }
+  public createUnsignedChannelCloseInitTransaction( dto: UnsignedChannelCloseInitDto): Tx {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+
+    tx.readFrom([
+      dto.spendChannelRefUtxo,
+      dto.spendMockModuleRefUtxo,
+      dto.channelCloseInitRefUtxO,
+    ])
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .payToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          inline: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .payToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          inline: dto.mockModuleUtxo.datum,
+        },
+        dto.mockModuleUtxo.assets,
+      )
+      .mintAssets(
+        {
+          [dto.channelCloseInitPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
     return tx;
   }
   public createUnsignedOrderedChannelOpenAckTransaction(dto: UnsignedOrderedChannelOpenAckDto): Tx {

@@ -485,7 +485,7 @@ export class QueryService {
       spendAddress,
     );
 
-    redeemers = redeemers.filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10);
+    redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
         case REDEEMER_TYPE.MINT:
@@ -551,6 +551,12 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('TimeoutPacket')) {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
+          }
+          if(spendRedeemer === 'ChanCloseInit') {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_INIT;
+          }
+          if(spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
         default:

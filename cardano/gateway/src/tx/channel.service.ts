@@ -5,6 +5,8 @@ import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from 'nestjs-grpc-exceptions';
 import { RpcException } from '@nestjs/microservices';
 import {
+  MsgChannelCloseInit,
+  MsgChannelCloseInitResponse,
   MsgChannelOpenAck,
   MsgChannelOpenAckResponse,
   MsgChannelOpenConfirm,
@@ -18,6 +20,7 @@ import { ChannelOpenInitOperator } from './dto/channel/channel-open-init-operato
 import { ChannelOpenConfirmOperator } from './dto/channel/channel-open-confirm-operator.dto';
 import { ChannelOpenAckOperator } from './dto/channel/channel-open-ack-operator.dto';
 import { ChannelOpenTryOperator } from './dto/channel/channel-open-try-operator.dto';
+import { ChannelCloseInitOperator } from './dto/channel/channel-close-init-operator.dto';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -35,12 +38,14 @@ import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex
 import { ClientDatum } from '@shared/types/client-datum';
 import { UnsignedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
 import { UnsignedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
+import { UnsignedChannelCloseInitDto } from '~@/shared/modules/lucid/dtos/channel/channle-close-init.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
   validateAndFormatChannelOpenConfirmParams,
   validateAndFormatChannelOpenInitParams,
   validateAndFormatChannelOpenTryParams,
+  validateAndFormatChannelCloseInitParams
 } from './helper/channel.validate';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '~@/shared/helpers/verify';
@@ -180,6 +185,41 @@ export class ChannelService {
       return response;
     } catch (error) {
       this.logger.error(`channelOpenConfirm: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async channelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
+    console.log("dataMsgChannelCloseInit");
+    console.dir({
+      ...data
+    }, {depth: 10});
+    try {
+      this.logger.log('Channel Close Init is processing');
+      const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
+      // Build and complete the unsigned transaction
+      const unsignedChannelCloseInitTx: Tx = await this.buildUnsignedChannelCloseInitTx(
+        channelCloseInitOperator,
+        constructedAddress,
+      );
+      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 600 * 1e3);
+
+      const unsignedChannelCloseInitTxCompleted: TxComplete = await unsignedChannelCloseInitTxValidTo.complete();
+
+      this.logger.log(unsignedChannelCloseInitTxCompleted.toHash(), 'channel close init - unsignedTX - hash');
+      const response: MsgChannelCloseInitResponse = {
+        unsigned_tx: {
+          type_url: '',
+          value: unsignedChannelCloseInitTxCompleted.txComplete.to_bytes(),
+        },
+      } as unknown as MsgChannelCloseInitResponse;
+      return response;
+    } catch (error) {
+      this.logger.error(`channelCloseInit: ${error}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
@@ -800,5 +840,115 @@ export class ChannelService {
       encodedNewMockModuleDatum,
       constructedAddress,
     );
+  }
+
+  async buildUnsignedChannelCloseInitTx(
+    channelCloseInitOperator: ChannelCloseInitOperator,
+    constructedAddress: string,
+  ): Promise<Tx> {
+
+    const channelSequence = channelCloseInitOperator.channel_id
+
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence))
+    const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
+    const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    // Get channel datum
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+
+    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
+    // Get the connection token unit with connection id from channel datum
+    const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+      parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
+    );
+    const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+    // Find the UTXO for the client token
+    const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    // Decode connection datum
+    const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
+      connectionUtxo.datum!,
+      'connection',
+    );
+    // Get the token unit associated with the client by connection datum
+    const clientTokenUnit = this.lucidService.getClientTokenUnit(
+      parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
+    );
+    // Get client utxo by client unit associated
+    const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);    
+
+    if(channelDatum.state.channel.state === ChannelState.Close) {
+      throw new GrpcInternalException('Channel is in Close State');
+    }
+
+    // update channel datum
+    const updatedChannelDatum: ChannelDatum = {
+      ...channelDatum,
+      state: {
+        ...channelDatum.state,
+        channel:
+        {
+          ...channelDatum.state.channel,
+          state: ChannelState.Close,
+        }
+      },
+    };
+    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+      updatedChannelDatum,
+      'channel',
+    );
+    
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
+
+    const deploymentConfig = this.configService.get('deployment');
+    const channelCloseInitPolicyId = deploymentConfig.validators.spendChannel.refValidator.chan_close_init.scriptHash;
+    const channelCloseInitRefUtxO = deploymentConfig.validators.spendChannel.refValidator.chan_close_init.refUtxo;
+    
+    const spendChannelRefUtxo = deploymentConfig.validators.spendChannel.refUtxo;
+    const spendMockModuleRefUtxo = deploymentConfig.validators.spendMockModule.refUtxo;
+    const mockModuleIdentifier = deploymentConfig.modules.mock.identifier
+
+    const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+
+    const spendMockModuleRedeemer: IBCModuleRedeemer = {
+      Callback: [
+        {
+          OnChanCloseInit: {
+            channel_id: channelId,
+          },
+        },
+      ]
+    };
+
+    const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
+      spendMockModuleRedeemer,
+      'iBCModuleRedeemer',
+    );
+    
+    const spendChannelRedeemer: SpendChannelRedeemer = 'ChanCloseInit';
+    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
+      spendChannelRedeemer,
+      'spendChannelRedeemer',
+    );
+
+    const unsignedChannelCloseInitParams: UnsignedChannelCloseInitDto = {
+      channelUtxo,
+      connectionUtxo,
+      clientUtxo,
+      spendChannelRefUtxo,
+      spendMockModuleRefUtxo,
+      channelCloseInitRefUtxO,
+      mockModuleUtxo,
+      channelCloseInitPolicyId,
+      encodedSpendChannelRedeemer,
+      encodedSpendMockModuleRedeemer,
+      channelTokenUnit,
+      channelToken,
+      encodedUpdatedChannelDatum,
+      constructedAddress,
+    };
+
+    return this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
   }
 }
