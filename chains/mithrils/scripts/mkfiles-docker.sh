@@ -120,7 +120,7 @@ cat >> docker-compose.yaml <<EOF
       - AGGREGATOR_ENDPOINT=http://mithril-aggregator:8080/aggregator
       - NETWORK=devnet
       - NETWORK_MAGIC=42
-      - RUN_INTERVAL=2000
+      - RUN_INTERVAL=6000
       - DB_DIRECTORY=/data/db
       - DATA_STORES_DIRECTORY=/mithril/signer-${i}/stores
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket
