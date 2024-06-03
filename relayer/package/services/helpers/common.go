@@ -1,6 +1,13 @@
 package helpers
 
-import "math"
+import (
+	"encoding/hex"
+	"errors"
+	"github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/sha3"
+	"math"
+	"strconv"
+)
 
 // Fraction struct to hold the numerator and denominator
 type Fraction struct {
@@ -48,4 +55,48 @@ func FloatToFraction(f float64) Fraction {
 	denominator /= g
 
 	return Fraction{uint64(sign) * numerator, denominator}
+}
+
+type AuthToken struct {
+	PolicyId string
+	Name     string
+}
+
+func GenerateTokenName(baseToken AuthToken, prefix string, postfix int64) (string, error) {
+	if postfix < 0 {
+		return "", errors.New("sequence must be unsigned integer")
+	}
+	postfixHex := ConvertString2Hex(strconv.FormatInt(postfix, 10))
+	if len(postfixHex) > 16 {
+		return "", errors.New("postfix size > 8 bytes")
+	}
+	baseTokenPart := HashSha3_256(baseToken.PolicyId + baseToken.Name)[:40]
+	prefixPart := HashSha3_256(prefix)[:8]
+	fullName := baseTokenPart + prefixPart + postfixHex
+	return fullName, nil
+}
+func ConvertString2Hex(str string) string {
+	if str == "" {
+		return ""
+	}
+	return hex.EncodeToString([]byte(str))
+}
+func HashSha3_256(data string) string {
+	dataBytes, _ := hex.DecodeString(data)
+	hash := sha3.Sum256(dataBytes)
+	return hex.EncodeToString(hash[:])
+}
+
+func GetConnectionGetDatumDetail(datum string) (*ConnectionDatum, error) {
+	datum = datum[2:]
+	var vOutput ConnectionDatum
+	datumBytes, err := hex.DecodeString(datum)
+	if err != nil {
+		return nil, err
+	}
+	err = cbor.Unmarshal(datumBytes, &vOutput)
+	if err != nil {
+		return nil, err
+	}
+	return &vOutput, nil
 }
