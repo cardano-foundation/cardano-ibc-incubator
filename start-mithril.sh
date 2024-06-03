@@ -11,8 +11,19 @@ ROOT_DIR=$(dirname $(realpath $0))
 
 SCRIPT_DIRECTORY=${ROOT_DIR}/chains/mithrils/scripts
 
+set_up_osmosis() {
+  bash ${SCRIPT_DIR}/chains/mithrils/mithril/scripts/setup_submodule.sh || return 1
+  return 0
+}
+
 # Change directory
 pushd ${ROOT_DIR} > /dev/null
+
+if set_permission; then
+    echo >&2 -e "\nSet permission successful!";
+else
+    echo >&2 -e "\nWARNING: Fails to set permission for the files.";
+fi
 
 # Init script
 . $SCRIPT_DIRECTORY/mkfiles-init.sh
