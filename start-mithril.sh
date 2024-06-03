@@ -15,7 +15,6 @@ set_up_mithril() {
   bash ${SCRIPT_DIRECTORY}/setup_submodule.sh || return 1
   return 0
 }
-exit 1;
 # Change directory
 pushd ${ROOT_DIR} > /dev/null
 
