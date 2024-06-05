@@ -5,11 +5,11 @@ SCRIPT_DIR=$(dirname $(realpath $0))
 git submodule update --init --recursive
 
 # Update cosmwasm 
-rm -rf $SCRIPT_DIR/../osmosis/cosmwasm && cp -r $SCRIPT_DIR/../configuration/cosmwasm $SCRIPT_DIR/../osmosis/cosmwasm
+sudo rm -rf $SCRIPT_DIR/../osmosis/cosmwasm && cp -r $SCRIPT_DIR/../configuration/cosmwasm $SCRIPT_DIR/../osmosis/cosmwasm
 
 # Update scripts
 ## Add folder hermes 
-cp -r $SCRIPT_DIR/../configuration/hermes $SCRIPT_DIR/../osmosis/scripts/hermes
+cp -r $SCRIPT_DIR/../configuration/hermes $SCRIPT_DIR/../osmosis/scripts
 ## Add start.sh 
 cp $SCRIPT_DIR/../scripts/start.sh $SCRIPT_DIR/../osmosis/scripts/start.sh
 ## Add stop.sh 
