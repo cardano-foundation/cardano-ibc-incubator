@@ -22,6 +22,10 @@ type LeafOpSchema struct {
 	Prefix       []byte
 }
 
+// TODO: add CommitmentProof_Batch, CommitmentProof_Compressed
+// Data.Literal('CommitmentProof_Batch'),
+// Data.Literal('CommitmentProof_Compressed'),
+
 type ExistenceProofSchema struct {
 	_     struct{} `cbor:",toarray"`
 	Key   []byte
