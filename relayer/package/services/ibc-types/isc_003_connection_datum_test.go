@@ -15,7 +15,7 @@ func TestDecodeConnectionDatumSchema(t *testing.T) {
 		datumBytes, _ := hex.DecodeString(connectionDatumEncoded)
 		err := cbor.Unmarshal(datumBytes, &connectionDatum)
 		require.Equal(t, nil, err)
-		require.Equal(t, "ibc_client-0", connectionDatum.State.ClientId)
-		require.Equal(t, "connection-0", connectionDatum.State.Counterparty.ConnectionId)
+		require.Equal(t, "ibc_client-0", string(connectionDatum.State.ClientId))
+		require.Equal(t, "connection-0", string(connectionDatum.State.Counterparty.ConnectionId))
 	})
 }
