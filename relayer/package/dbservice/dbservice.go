@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
-	"github.com/cardano/relayer/v1/package/services/helpers"
+	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"github.com/fxamacker/cbor/v2"
 	"gorm.io/gorm"
@@ -75,9 +75,10 @@ func (s *DBService) FindUtxoByPolicyAndTokenNameAndState(policyId string, tokenN
 	}
 	proofs := []dto.UtxoDto{}
 	for _, utxo := range result {
+		dataString := *utxo.Datum
 		switch utxo.AssetsPolicy[2:] {
 		case mintConnScriptHash:
-			datumDecoded, err := helpers.GetConnectionGetDatumDetail(*utxo.Datum)
+			datumDecoded, err := ibc_types.DecodeConnectionDatumSchema(dataString[2:])
 			if err != nil {
 				return nil, err
 			}
@@ -90,7 +91,18 @@ func (s *DBService) FindUtxoByPolicyAndTokenNameAndState(policyId string, tokenN
 			}
 			break
 		case minChannelScriptHash:
-			panic("not implemented")
+			datumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+			if err != nil {
+				return nil, err
+			}
+			stateNum, ok := datumDecoded.State.Channel.State.(cbor.Tag)
+			if !ok {
+				return nil, fmt.Errorf("state is not cbor tag")
+			}
+			if channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)] == state {
+				proofs = append(proofs, utxo)
+			}
+			break
 		}
 	}
 	if len(proofs) == 0 {

@@ -6,10 +6,6 @@ import (
 )
 
 type ConnectionDatumSchema struct {
-	_ struct{} `cbor:",toarray"`
-}
-
-type ConnectionDatum struct {
 	_     struct{} `cbor:",toarray"`
 	State ConnectionEndDatum
 	Token AuthTokenSchema
