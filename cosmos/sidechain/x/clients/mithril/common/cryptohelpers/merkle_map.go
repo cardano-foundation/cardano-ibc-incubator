@@ -1,13 +1,61 @@
 package cryptohelpers
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
+
+type SubProof struct {
+	*BlockRange
+	*MKMapProof
+}
 
 type MKMapProof struct {
-	MasterProof *MKProof
-	SubProofs   []*struct {
-		*BlockRange
-		*MKMapProof
+	MasterProof *MKProof    `json:"master_proof"`
+	SubProofs   []*SubProof `json:"sub_proofs,omitempty"`
+}
+
+func (p *SubProof) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
 	}
+
+	var response []interface{}
+	err := json.Unmarshal(data, &response)
+	if err != nil {
+		return err
+	}
+
+	blockRangeMap, ok := response[0].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid sub proof format: invalid block range format")
+	}
+	blockRangeData, err := json.Marshal(blockRangeMap)
+	if err != nil {
+		return err
+	}
+	blockRange := &BlockRange{}
+	if err := json.Unmarshal(blockRangeData, blockRange); err != nil {
+		return err
+	}
+
+	mkMapProofMap, ok := response[1].(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid sub proof format: invalid merkle map proof format")
+	}
+	mkMapProofData, err := json.Marshal(mkMapProofMap)
+	if err != nil {
+		return err
+	}
+	mkMapProof := &MKMapProof{}
+	if err := json.Unmarshal(mkMapProofData, mkMapProof); err != nil {
+		return err
+	}
+
+	p.BlockRange = blockRange
+	p.MKMapProof = mkMapProof
+
+	return nil
 }
 
 func (proof *MKMapProof) ComputeRoot() *MKTreeNode {
@@ -32,10 +80,7 @@ func (proof *MKMapProof) Verify() error {
 	if len(proof.SubProofs) > 0 {
 		var leaves []*MKTreeNode
 		for _, subProof := range proof.SubProofs {
-			key := subProof.BlockRange.InnerRange.Start // Assuming key is based on the range start
-			leaf := &MKTreeNode{
-				Hash: append([]byte{byte(key)}, subProof.MKMapProof.ComputeRoot().Hash...),
-			}
+			leaf := subProof.BlockRange.ToMKTreeNode().Add(subProof.ComputeRoot())
 			leaves = append(leaves, leaf)
 		}
 

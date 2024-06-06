@@ -22,7 +22,6 @@ func (proof *CardanoTransactionsSetProof) Verify() error {
 
 	// Verify each transaction hash
 	for _, hash := range proof.TransactionsHashes {
-
 		if err := proof.TransactionsProof.Key.Contains(&cryptohelpers.MKTreeNode{Hash: []byte(hash)}); err != nil {
 			return err
 		}
