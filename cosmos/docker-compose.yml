@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   sidechain-node-prod:
     container_name: sidechain-node-prod

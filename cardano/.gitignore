@@ -13,3 +13,4 @@ deployments
 .env
 lucid-types/
 gateway/src/deployment/
+deno.lock
