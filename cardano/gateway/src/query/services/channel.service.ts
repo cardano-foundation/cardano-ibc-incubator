@@ -35,9 +35,10 @@ import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '../.
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
 import { GrpcInternalException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
-import { convertHex2String } from '../../shared/helpers/hex';
+import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
+import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 
 @Injectable()
 export class ChannelService {
@@ -46,6 +47,7 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
@@ -163,6 +165,9 @@ export class ChannelService {
         channelDatumDecoded.state.channel.state,
       );
 
+      const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
+      const channelProof = cardanoTxProof?.certified_transactions[0]?.proof;
+
       const response: QueryChannelResponse = {
         channel: {
           /** current state of the channel end */
@@ -187,7 +192,8 @@ export class ChannelService {
           /** opaque channel version, which is agreed upon during the handshake */
           version: convertHex2String(channelDatumDecoded.state.channel.version),
         } as unknown as Channel,
-        proof: bytesFromBase64(btoa(`0-${proof.blockNo}/channel/${proof.txHash}/${proof.index}`)), // TODO
+        // proof: bytesFromBase64(btoa(`0-${proof.blockNo}/channel/${proof.txHash}/${proof.index}`)), // TODO
+        proof: fromHex(channelProof),
         proof_height: {
           revision_number: 0,
           revision_height: proof.blockNo, // TODO
