@@ -634,12 +634,12 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 }
 
 func (cc *CardanoProvider) QueryPacketCommitmentGW(ctx context.Context, msgTransfer provider.PacketInfo) ([]byte, []byte, clienttypes.Height, error) {
-	req := &pbchannel.QueryPacketCommitmentRequest{
+	req := &chantypes.QueryPacketCommitmentRequest{
 		PortId:    msgTransfer.SourcePort,
 		ChannelId: msgTransfer.SourceChannel,
 		Sequence:  msgTransfer.Sequence,
 	}
-	res, err := cc.GateWay.PacketCommitment(ctx, req)
+	res, err := cc.GateWay.QueryPacketCommitment(req)
 	if err != nil {
 		return nil, nil, clienttypes.Height{}, err
 	}
