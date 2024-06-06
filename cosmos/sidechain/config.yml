@@ -73,6 +73,10 @@ genesis:
       registered_counterparty_payees: []
       forward_relayers: []
 
+    packetfowardmiddleware:
+      params:
+        fee_percentage: "0.100000000000000000"
+
 validators:
   - name: alice
     bonded: 10000000stake
