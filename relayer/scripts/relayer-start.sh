@@ -28,7 +28,7 @@ fi
 
 src_rpc_addr=${SRC_RPC_ADDR}
 dst_rpc_addr=${DST_RPC_ADDR}
-
+mithril_endpoint=${MITHRIL_ENDPOINT}
 # Update the rpc-addr for the source chain if the SRC_RPC_ADDR variable is defined
 if [ ! -z "$src_rpc_addr" ]; then
   if [ -f "$src_chain_config_path" ]; then
@@ -51,6 +51,18 @@ if [ ! -z "$dst_rpc_addr" ]; then
   fi
 else
   echo "Environment variable dst_rpc_addr is not defined."
+fi
+
+# Update the mithril endpoint for the source chain if the MITHRIL_ENDPOINT variable is defined
+if [ ! -z "$mithril_endpoint" ]; then
+  if [ -f "$src_chain_config_path" ]; then
+    cat $src_chain_config_path | jq --arg mithril_endpoint "$mithril_endpoint" '.value."mithril-endpoint" = $mithril_endpoint' > temp.json && mv temp.json "$src_chain_config_path"
+    echo "Updated mithril_endpoint in $src_chain_config_path"
+  else
+    echo "Configuration file $src_chain_config_path does not exist."
+  fi
+else
+  echo "Environment variable mithril_endpoint is not defined."
 fi
 
 # Initialize configuration and keys
