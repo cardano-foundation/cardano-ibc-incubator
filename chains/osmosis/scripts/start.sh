@@ -61,8 +61,14 @@ sidechain_client_id=$(awk -F 'client_id: ClientId("([^"]+)"),' '
 ' <<<"$(hermes create client --host-chain sidechain --reference-chain localosmosis --trusting-period 86000s)")
 sidechain_client_id=${sidechain_client_id::-2}
 
+echo "Waiting 10 seconds..."
+sleep 10
+
 hermes create connection --a-chain sidechain --a-client $sidechain_client_id --b-client $localosmosis_client_id
 connectionId=$(hermes --json query connections --chain sidechain | jq -r '.result[-2]' | tail -n 1)
+
+echo "Waiting 10 seconds..."
+sleep 10
 
 echo "Creating channel..."
 channelId=$(hermes --json create channel --a-chain sidechain --a-connection $connectionId --a-port transfer --b-port transfer | jq -r '.result.b_side.channel_id' | tail -n 1)
