@@ -608,7 +608,7 @@ func (cc *CardanoProvider) QueryPacketCommitments(ctx context.Context, height ui
 	commitments := &chantypes.QueryPacketCommitmentsResponse{}
 
 	for {
-		res, err := cc.GateWay.PacketCommitments(ctx, &pbchannel.QueryPacketCommitmentsRequest{
+		res, err := cc.GateWay.QueryPacketCommitments(&chantypes.QueryPacketCommitmentsRequest{
 			PortId:     portid,
 			ChannelId:  channelid,
 			Pagination: p,
@@ -618,7 +618,7 @@ func (cc *CardanoProvider) QueryPacketCommitments(ctx context.Context, height ui
 		}
 
 		for _, commitment := range res.Commitments {
-			commitments.Commitments = append(commitments.Commitments, transformCommitment(commitment))
+			commitments.Commitments = append(commitments.Commitments, commitment)
 		}
 
 		commitments.Height = clienttypes.Height{

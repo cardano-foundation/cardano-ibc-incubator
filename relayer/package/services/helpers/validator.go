@@ -15,3 +15,14 @@ func ValidQueryPacketCommitmentParam(req *channeltypes.QueryPacketCommitmentRequ
 	}
 	return req, nil
 }
+
+func ValidQueryPacketCommitmentsParam(req *channeltypes.QueryPacketCommitmentsRequest) (*channeltypes.QueryPacketCommitmentsRequest, error) {
+	if !strings.HasPrefix(req.ChannelId, "channel") {
+		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+	}
+	if req.Pagination == nil {
+		return nil, fmt.Errorf("invalid pagination: pagination must be not nil")
+	}
+
+	return req, nil
+}
