@@ -46,3 +46,13 @@ func ValidQueryPacketAcksParam(req *channeltypes.QueryPacketAcknowledgementsRequ
 	}
 	return req, nil
 }
+
+func ValidQueryPacketReceipt(req *channeltypes.QueryPacketReceiptRequest) (*channeltypes.QueryPacketReceiptRequest, error) {
+	if !strings.HasPrefix(req.ChannelId, "channel") {
+		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+	}
+	if req.Sequence <= 0 {
+		return nil, fmt.Errorf("invalid argument: sequence must be greate than 0")
+	}
+	return req, nil
+}
