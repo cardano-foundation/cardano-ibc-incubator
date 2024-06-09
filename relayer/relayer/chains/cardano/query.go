@@ -327,30 +327,7 @@ func (cc *CardanoProvider) QueryChannelClient(ctx context.Context, height int64,
 
 // QueryChannels returns all the channels that are registered on a chain
 func (cc *CardanoProvider) QueryChannels(ctx context.Context) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	chans := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.Channels(ctx, &pbchannel.QueryChannelsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, channel := range res.Channels {
-			chans = append(chans, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return chans, nil
+	return cc.GateWay.QueryChannels()
 }
 
 func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chantypes.IdentifiedChannel {
