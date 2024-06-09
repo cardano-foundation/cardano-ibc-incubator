@@ -64,3 +64,10 @@ func ValidQueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*
 	return req, nil
 
 }
+
+func ValidQueryUnrecvAcks(req *channeltypes.QueryUnreceivedAcksRequest) (*channeltypes.QueryUnreceivedAcksRequest, error) {
+	if !strings.HasPrefix(req.ChannelId, "channel") {
+		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+	}
+	return req, nil
+}
