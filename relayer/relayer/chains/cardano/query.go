@@ -779,7 +779,7 @@ func (cc *CardanoProvider) QueryTxs(ctx context.Context, page, limit int, events
 
 // QueryUnreceivedAcknowledgements returns a list of unrelayed packet acks
 func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	res, err := cc.GateWay.QueryUnreceivedAcknowledgements(ctx, &pbchannel.QueryUnreceivedAcksRequest{
+	res, err := cc.GateWay.QueryUnrecvAcks(&chantypes.QueryUnreceivedAcksRequest{
 		PortId:             portid,
 		ChannelId:          channelid,
 		PacketAckSequences: seqs,
