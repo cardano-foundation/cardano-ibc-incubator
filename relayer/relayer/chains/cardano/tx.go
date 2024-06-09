@@ -638,7 +638,11 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	res, err := cc.GateWay.QueryPacketAcknowledgement(ctx, transformPacketAcknowledgement(msgRecvPacket.DestPort, msgRecvPacket.DestChannel, msgRecvPacket.Sequence))
+	res, err := cc.GateWay.QueryPacketAck(&chantypes.QueryPacketAcknowledgementRequest{
+		PortId:    msgRecvPacket.DestPort,
+		ChannelId: msgRecvPacket.DestChannel,
+		Sequence:  msgRecvPacket.Sequence,
+	})
 	if err != nil {
 		return provider.PacketProof{}, err
 	}
@@ -647,16 +651,8 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	}
 	return provider.PacketProof{
 		Proof:       res.Proof,
-		ProofHeight: *res.ProofHeight,
+		ProofHeight: res.ProofHeight,
 	}, nil
-}
-
-func transformPacketAcknowledgement(portId, chanId string, seq uint64) *pbchannel.QueryPacketAcknowledgementRequest {
-	return &pbchannel.QueryPacketAcknowledgementRequest{
-		PortId:    portId,
-		ChannelId: chanId,
-		Sequence:  seq,
-	}
 }
 
 func (cc *CardanoProvider) PacketCommitment(
