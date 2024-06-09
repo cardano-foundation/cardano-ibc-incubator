@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/cardano/relayer/v1/constant"
@@ -100,4 +101,92 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 			RevisionHeight: uint64(proof.BlockNo),
 		},
 	}, nil
+}
+
+func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error) {
+	chainHandler, err := helpers.GetChainHandler()
+	if err != nil {
+		return nil, err
+	}
+	mintConnScriptHash := chainHandler.Validators.MintConnection.ScriptHash
+	prefixTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	}, constant.CONNECTION_TOKEN_PREFIX, 0)
+	if err != nil {
+		return nil, err
+	}
+	utxos, err := gw.DBService.FindUtxosByPolicyIdAndPrefixTokenName(mintConnScriptHash, prefixTokenName[:20])
+	if err != nil {
+		return nil, err
+	}
+	if len(utxos) == 0 {
+		return nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", mintConnScriptHash, prefixTokenName)
+	}
+	var response []*conntypes.IdentifiedConnection
+	for _, utxo := range utxos {
+		if utxo.Datum == nil {
+			continue
+		}
+		dataString := *utxo.Datum
+		connDatumDecoded, err := ibc_types.DecodeConnectionDatumSchema(dataString[2:])
+		if err != nil {
+			return nil, err
+		}
+		newVersions := []*conntypes.Version{}
+		for _, version := range connDatumDecoded.State.Versions {
+			newFeatures := []string{}
+			for _, feature := range version.Features {
+				newFeatures = append(newFeatures, string(feature))
+			}
+			newVersion := conntypes.Version{
+				Identifier: string(version.Identifier),
+				Features:   newFeatures,
+			}
+			newVersions = append(newVersions, &newVersion)
+		}
+		stateNum, ok := connDatumDecoded.State.State.(cbor.Tag)
+		if !ok {
+			return nil, fmt.Errorf("state is not cbor tag")
+		}
+		valueId, err := getConnectionIdByTokenName(
+			utxo.AssetsName[2:], helpers.AuthToken{
+				PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+				Name:     chainHandler.HandlerAuthToken.Name,
+			}, constant.CONNECTION_TOKEN_PREFIX)
+		if err != nil {
+			return nil, err
+		}
+		response = append(response, &conntypes.IdentifiedConnection{
+			Id:       fmt.Sprintf("connection-%v", valueId),
+			ClientId: string(connDatumDecoded.State.ClientId),
+			Versions: newVersions,
+			State:    conntypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			Counterparty: conntypes.Counterparty{
+				ClientId:     string(connDatumDecoded.State.Counterparty.ClientId),
+				ConnectionId: string(connDatumDecoded.State.Counterparty.ConnectionId),
+				Prefix: commitmenttypes.MerklePrefix{
+					KeyPrefix: connDatumDecoded.State.Counterparty.Prefix.KeyPrefix,
+				},
+			},
+			DelayPeriod: connDatumDecoded.State.DelayPeriod,
+		})
+	}
+	return response, nil
+}
+
+func getConnectionIdByTokenName(tokenName string, baseToken helpers.AuthToken, prefix string) (string, error) {
+	baseTokenPart := helpers.HashSha3_256(baseToken.PolicyId + baseToken.Name)[:40]
+	prefixPart := helpers.HashSha3_256(prefix)[:8]
+	prefixFull := baseTokenPart + prefixPart
+
+	if !strings.Contains(tokenName, prefixFull) {
+		return "", nil
+	}
+	connIdHex := strings.ReplaceAll(tokenName, prefixFull, "")
+	res, err := hex.DecodeString(connIdHex)
+	if err != nil {
+		return "", err
+	}
+	return string(res), nil
 }

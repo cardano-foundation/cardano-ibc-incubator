@@ -30,7 +30,7 @@ func (s *DBService) FindUtxosByPolicyIdAndPrefixTokenName(policyId string, prefi
         datum.hash AS datum_hash, 
         CAST(datum.bytes as TEXT)  AS datum,
         ma.policy AS assets_policy, 
-        ma.name AS assets_name,
+        CAST(ma.name AS TEXT) AS assets_name,
         generating_block.block_no AS block_no,
         generating_block.id AS block_id
       FROM tx_out

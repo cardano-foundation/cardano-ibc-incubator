@@ -13,7 +13,6 @@ import (
 	tendermint "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
-	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -463,58 +462,7 @@ func (cc *CardanoProvider) QueryConnectionChannels(ctx context.Context, height i
 
 // QueryConnections gets any connections on a chain
 func (cc *CardanoProvider) QueryConnections(ctx context.Context) ([]*conntypes.IdentifiedConnection, error) {
-	p := DefaultPageRequest()
-	conns := []*conntypes.IdentifiedConnection{}
-
-	for {
-		res, err := cc.GateWay.Connections(ctx, &pbconnection.QueryConnectionsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, connection := range res.Connections {
-			conns = append(conns, transformIdentifiedConnection(connection))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return conns, nil
-}
-
-func transformIdentifiedConnection(ic *pbconnection.IdentifiedConnection) *conntypes.IdentifiedConnection {
-	versions := []*conntypes.Version{}
-	for _, gwVersion := range ic.Versions {
-		version := conntypes.Version{
-			Identifier: gwVersion.Identifier,
-			Features:   gwVersion.Features,
-		}
-		versions = append(versions, &version)
-	}
-
-	idConnection := &conntypes.IdentifiedConnection{
-		Id:       ic.Id,
-		ClientId: ic.ClientId,
-		Versions: versions,
-		State:    conntypes.State(ic.State),
-		Counterparty: conntypes.Counterparty{
-			ClientId:     ic.Counterparty.ClientId,
-			ConnectionId: ic.Counterparty.ConnectionId,
-			Prefix: commitmenttypes.MerklePrefix{
-				KeyPrefix: ic.Counterparty.Prefix.KeyPrefix,
-			},
-		},
-
-		DelayPeriod: ic.DelayPeriod,
-	}
-	return idConnection
+	return cc.GateWay.QueryConnections()
 }
 
 // QueryConnectionsUsingClient gets any connections that exist between chain and counterparty
