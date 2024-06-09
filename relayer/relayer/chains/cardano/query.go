@@ -551,7 +551,7 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 	p := DefaultPageRequest()
 	acknowledgements := []*chantypes.PacketState{}
 	for {
-		res, err := cc.GateWay.QueryPacketAcknowledgements(ctx, &pbchannel.QueryPacketAcknowledgementsRequest{
+		res, err := cc.GateWay.QueryPacketAcks(&chantypes.QueryPacketAcknowledgementsRequest{
 			PortId:     portid,
 			ChannelId:  channelid,
 			Pagination: p,

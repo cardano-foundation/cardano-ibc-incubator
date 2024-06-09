@@ -269,3 +269,102 @@ func (gw *Gateway) QueryPacketAck(req *channeltypes.QueryPacketAcknowledgementRe
 		},
 	}, nil
 }
+
+func (gw *Gateway) QueryPacketAcks(req *channeltypes.QueryPacketAcknowledgementsRequest) (*channeltypes.QueryPacketAcknowledgementsResponse, error) {
+	req, err := helpers.ValidQueryPacketAcksParam(req)
+	if err != nil {
+		return nil, err
+	}
+	channelId := strings.Trim(req.ChannelId, "channel-")
+	channelIdNum, err := strconv.ParseInt(channelId, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	chainHandler, err := helpers.GetChainHandler()
+	if err != nil {
+		return nil, err
+	}
+	policyId := chainHandler.Validators.MintChannel.ScriptHash
+
+	prefixTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	}, constant.CHANNEL_TOKEN_PREFIX, channelIdNum)
+	if err != nil {
+		return nil, err
+	}
+	utxos, err := gw.DBService.FindUtxosByPolicyIdAndPrefixTokenName(policyId, prefixTokenName)
+	if err != nil {
+		return nil, err
+	}
+	if len(utxos) == 0 {
+		return nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", policyId, prefixTokenName)
+	}
+	if utxos[0].Datum == nil {
+
+		return nil, fmt.Errorf("datum is nil")
+	}
+
+	dataString := *utxos[0].Datum
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	if err != nil {
+		return nil, err
+	}
+
+	packetReceiptSeqs := maps.Keys(channelDatumDecoded.State.PacketReceipt)
+
+	if req.Pagination.Reverse {
+		slices.Reverse(packetReceiptSeqs)
+	}
+	if req.Pagination.Key != nil {
+		offset, err := helpers.DecodePaginationKey(req.Pagination.Key)
+		if err != nil {
+			return nil, err
+		}
+		req.Pagination.Offset = offset
+	}
+	var nextKey []byte
+	var total uint64
+	if req.Pagination.CountTotal {
+		total = uint64(len(packetReceiptSeqs))
+	} else {
+		total = 0
+	}
+
+	if len(packetReceiptSeqs) > int(req.Pagination.Limit) {
+		from := req.Pagination.Offset
+		to := req.Pagination.Offset + req.Pagination.Limit
+		packetReceiptSeqs = packetReceiptSeqs[from:to]
+		pageKeyDto := helpers.PaginationKeyDto{
+			Offset: to,
+		}
+
+		if int(to) < len(packetReceiptSeqs) {
+			nextKey = helpers.GeneratePaginationKey(pageKeyDto)
+		} else {
+			nextKey = nil
+		}
+	}
+	var acknowledgements []*channeltypes.PacketState
+	for _, packetSeqs := range packetReceiptSeqs {
+		temp := &channeltypes.PacketState{
+			PortId:    string(channelDatumDecoded.PortId),
+			ChannelId: req.ChannelId,
+			Sequence:  packetSeqs,
+			Data:      channelDatumDecoded.State.PacketCommitment[packetSeqs],
+		}
+		acknowledgements = append(acknowledgements, temp)
+	}
+
+	return &channeltypes.QueryPacketAcknowledgementsResponse{
+		Acknowledgements: acknowledgements,
+		Pagination: &query.PageResponse{
+			NextKey: nextKey,
+			Total:   total,
+		},
+		Height: clienttypes.Height{
+			RevisionNumber: 0,
+			RevisionHeight: 0,
+		},
+	}, nil
+}
