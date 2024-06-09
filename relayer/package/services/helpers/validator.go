@@ -56,3 +56,11 @@ func ValidQueryPacketReceipt(req *channeltypes.QueryPacketReceiptRequest) (*chan
 	}
 	return req, nil
 }
+
+func ValidQueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*channeltypes.QueryUnreceivedPacketsRequest, error) {
+	if !strings.HasPrefix(req.ChannelId, "channel") {
+		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+	}
+	return req, nil
+
+}

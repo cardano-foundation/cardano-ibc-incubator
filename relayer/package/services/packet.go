@@ -448,3 +448,60 @@ func (gw *Gateway) QueryPacketReceipt(req *channeltypes.QueryPacketReceiptReques
 		},
 	}, nil
 }
+
+func (gw *Gateway) QueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*channeltypes.QueryUnreceivedPacketsResponse, error) {
+	req, err := helpers.ValidQueryUnrecvPackets(req)
+	if err != nil {
+		return nil, err
+	}
+	channelId := strings.Trim(req.ChannelId, "channel-")
+	channelIdNum, err := strconv.ParseInt(channelId, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	chainHandler, err := helpers.GetChainHandler()
+	if err != nil {
+		return nil, err
+	}
+	policyId := chainHandler.Validators.MintChannel.ScriptHash
+
+	prefixTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	}, constant.CHANNEL_TOKEN_PREFIX, channelIdNum)
+	if err != nil {
+		return nil, err
+	}
+	utxos, err := gw.DBService.FindUtxosByPolicyIdAndPrefixTokenName(policyId, prefixTokenName)
+	if err != nil {
+		return nil, err
+	}
+	if len(utxos) == 0 {
+		return nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", policyId, prefixTokenName)
+	}
+	if utxos[0].Datum == nil {
+
+		return nil, fmt.Errorf("datum is nil")
+	}
+
+	dataString := *utxos[0].Datum
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	if err != nil {
+		return nil, err
+	}
+
+	packetReceipts := channelDatumDecoded.State.PacketReceipt
+	var sequences []uint64
+	for _, seq := range req.PacketCommitmentSequences {
+		if _, exist := packetReceipts[seq]; !exist {
+			sequences = append(sequences, seq)
+		}
+	}
+	return &channeltypes.QueryUnreceivedPacketsResponse{
+		Sequences: sequences,
+		Height: clienttypes.Height{
+			RevisionNumber: 0,
+			RevisionHeight: 0,
+		},
+	}, nil
+}

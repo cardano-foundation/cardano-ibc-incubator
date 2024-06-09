@@ -792,13 +792,13 @@ func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, 
 
 // QueryUnreceivedPackets returns a list of unrelayed packet commitments
 func (cc *CardanoProvider) QueryUnreceivedPackets(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	req := &pbchannel.QueryUnreceivedPacketsRequest{
+	req := &chantypes.QueryUnreceivedPacketsRequest{
 		PortId:                    portid,
 		ChannelId:                 channelid,
 		PacketCommitmentSequences: seqs,
 	}
 
-	res, err := cc.GateWay.QueryUnreceivedPackets(ctx, req)
+	res, err := cc.GateWay.QueryUnrecvPackets(req)
 	if err != nil {
 		return nil, err
 	}
