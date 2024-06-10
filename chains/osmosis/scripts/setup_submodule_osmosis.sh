@@ -24,4 +24,7 @@ rm $SCRIPT_DIR/../osmosis/tests/localosmosis/docker-compose.yml && cp $SCRIPT_DI
 # Update Dockerfile
 rm $SCRIPT_DIR/../osmosis/Dockerfile && cp $SCRIPT_DIR/../configuration/Dockerfile $SCRIPT_DIR/../osmosis/Dockerfile
 
+# Remove previous chain data
+sudo rm -rf $HOME/.osmosisd-local
+
 cd ${SCRIPT_DIR}/../osmosis && make localnet-init

@@ -37,9 +37,9 @@ MSG=$(
 }
 EOF
 )
-sleep 3
+sleep 5
 $DOCKER_OSMOSISD tx wasm instantiate $SWAPRUOTER_CODE_ID "$MSG" --label "swaprouter" --from ${VALIDATOR} --admin ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 3
+sleep 5
 export SWAPROUTER_ADDRESS=$($DOCKER_OSMOSISD query wasm list-contract-by-code "$SWAPRUOTER_CODE_ID" -o json | jq -r '.contracts[-1]')
 echo "SWAPROUTER_ADDRESS" $SWAPROUTER_ADDRESS
 
@@ -49,45 +49,34 @@ cp ${SCRIPT_DIR}/hermes/config.toml ${HOME}/.hermes/config.toml
 hermes keys add --chain sidechain --mnemonic-file ${SCRIPT_DIR}/hermes/cosmos
 hermes keys add --chain localosmosis --mnemonic-file ${SCRIPT_DIR}/hermes/osmosis
 
-localosmosis_client_id=$(awk -F 'client_id: ClientId("([^"]+)"),' '
-  { max = (split($1, suffixes, "-") > max ? suffixes[3] : max ) }
-  END { print "07-tendermint-" max }
-' <<<"$(hermes create client --host-chain localosmosis --reference-chain sidechain)")
-localosmosis_client_id=${localosmosis_client_id::-2}
+hermes create client --host-chain localosmosis --reference-chain sidechain
+localosmosis_client_id=$(hermes --json query clients --host-chain localosmosis | jq -r 'select(.result) | .result[-1].client_id')
 
-sidechain_client_id=$(awk -F 'client_id: ClientId("([^"]+)"),' '
-  { max = (split($1, suffixes, "-") > max ? suffixes[3] : max ) }
-  END { print "07-tendermint-" max }
-' <<<"$(hermes create client --host-chain sidechain --reference-chain localosmosis --trusting-period 86000s)")
-sidechain_client_id=${sidechain_client_id::-2}
-
-echo "Waiting 10 seconds..."
-sleep 10
+hermes create client --host-chain sidechain --reference-chain localosmosis --trusting-period 86000s
+sidechain_client_id=$(hermes --json query clients --host-chain sidechain | jq -r 'select(.result) | .result[-1].client_id')
 
 hermes create connection --a-chain sidechain --a-client $sidechain_client_id --b-client $localosmosis_client_id
-connectionId=$(hermes --json query connections --chain sidechain | jq -r '.result[-2]' | tail -n 1)
+connectionId=$(hermes --json query connections --chain sidechain | jq -r 'select(.result) | .result[-2]')
 
-echo "Waiting 10 seconds..."
-sleep 10
-
-echo "Creating channel..."
-channelId=$(hermes --json create channel --a-chain sidechain --a-connection $connectionId --a-port transfer --b-port transfer | jq -r '.result.b_side.channel_id' | tail -n 1)
-echo "Channel created with id: $channelId"
+hermes create channel --a-chain sidechain --a-connection $connectionId --a-port transfer --b-port transfer
+channelId=$(hermes --json query channels --chain localosmosis | jq -r 'select(.result) | .result[-1].channel_id')
 
 # Gen code_id crosschain_swap
-sleep 3
+sleep 5
 $DOCKER_OSMOSISD tx wasm store artifacts/crosschain_swaps.wasm --from ${VALIDATOR} "${TX_FLAGS[@]}"
 sleep 5
 CROSSCHAINSWAPS_CODE_ID=$($DOCKER_OSMOSISD query wasm list-code -o json | jq -r '.code_infos[-1].code_id')
+
 echo "CROSSCHAINSWAPS_CODE_ID" $CROSSCHAINSWAPS_CODE_ID
+
 # Initial contract crosschain_swap
 MSG=$(
   cat <<EOF
 {"governor":"${VALIDATOR}","swap_contract":"${SWAPROUTER_ADDRESS}","channels":[["cosmos","${channelId}"]]}
 EOF
 )
-sleep 3
+sleep 5
 $DOCKER_OSMOSISD tx wasm instantiate $CROSSCHAINSWAPS_CODE_ID "$MSG" --label "crosschain_swaps" --from ${VALIDATOR} --admin ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 3
+sleep 5
 export CROSSCHAINSWAPS_ADDRESS=$($DOCKER_OSMOSISD query wasm list-contract-by-code "$CROSSCHAINSWAPS_CODE_ID" -o json | jq -r '.contracts[-1]')
 echo "CROSSCHAINSWAPS_ADDRESS" $CROSSCHAINSWAPS_ADDRESS
