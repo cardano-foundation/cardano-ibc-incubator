@@ -87,8 +87,10 @@ import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
+  MintConnectionRedeemer,
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
+  encodeMintConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
@@ -102,6 +104,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
+import { convertString2Hex } from '../../shared/helpers/hex';
 
 @Injectable()
 export class QueryService {
@@ -637,7 +640,10 @@ export class QueryService {
   }
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
-    this.logger.log('', 'QueryBlockSearch');
+    this.logger.log(
+      `packet_src_channel = ${request.packet_src_channel}, packet_sequence=${request.packet_sequence}`,
+      'QueryBlockSearch',
+    );
     try {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
@@ -695,17 +701,24 @@ export class QueryService {
         }),
       );
       blockResults = blockResults.filter((e) => e);
-      let blockResultsResp = blockResults;
-      if (blockResults.length > limit) {
+      const mithrilHeights = await this.dbService.queryListImmutableFileNoByBlockNos(
+        blockResults.map((e) => Number(e.block.height)),
+      );
+
+      let blockResultsResp = mithrilHeights.map((e) => {
+        return { block_id: 0, block: { height: e } } as unknown as ResultBlockSearch;
+      });
+
+      if (blockResultsResp.length > limit) {
         const offset = page <= 0 ? 0 : limit * (page - 1n);
         const from = parseInt(offset.toString());
         const to = parseInt(offset.toString()) + parseInt(limit.toString());
-        blockResultsResp = blockResults.slice(from, to);
+        blockResultsResp = blockResultsResp.slice(from, to);
       }
 
       const responseBlockSearch: QueryBlockSearchResponse = {
         blocks: blockResultsResp,
-        total_count: blockResults.length,
+        total_count: blockResultsResp.length,
       } as unknown as QueryBlockSearchResponse;
 
       return responseBlockSearch;

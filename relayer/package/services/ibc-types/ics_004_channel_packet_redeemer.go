@@ -12,50 +12,51 @@ type PacketSchema struct {
 	TimeoutTimestamp   uint64
 }
 
-type MintChannelRedeemerSchemaChanOpenInit struct {
+type MintChannelRedeemerChanOpenInit struct {
 	_                struct{} `cbor:",toarray"`
 	HandlerAuthToken AuthTokenSchema
 }
 
-type MintChannelRedeemerSchemaChanOpenTry[ProofInitType any] struct {
+type MintChannelRedeemerChanOpenTry struct {
 	_                   struct{} `cbor:",toarray"`
 	HandlerAuthToken    AuthTokenSchema
 	CounterpartyVersion []byte
-	ProofInit           MerkleProofSchema[ProofInitType]
+	ProofInit           MerkleProofSchema
 	ProofHeight         HeightSchema
 }
 
-type SpendChannelRedeemerChanOpenAck[ProofTryType any] struct {
+type SpendChannelRedeemerChanOpenAck struct {
 	_                   struct{} `cbor:",toarray"`
 	CounterpartyVersion []byte
-	ProofTry            MerkleProofSchema[ProofTryType]
+	ProofTry            MerkleProofSchema
 	ProofHeight         HeightSchema
 }
 
-type SpendChannelRedeemerChanOpenConfirm[ProofAckType any] struct {
+type SpendChannelRedeemerChanOpenConfirm struct {
 	_           struct{} `cbor:",toarray"`
-	ProofAck    MerkleProofSchema[ProofAckType]
+	ProofAck    MerkleProofSchema
 	ProofHeight HeightSchema
 }
 
-type SpendChannelRedeemerRecvPacket[ProofCommitmentType any] struct {
+type SpendChannelRedeemerRecvPacket struct {
 	_               struct{} `cbor:",toarray"`
 	Packet          PacketSchema
-	ProofCommitment MerkleProofSchema[ProofCommitmentType]
+	ProofCommitment MerkleProofSchema
 	ProofHeight     HeightSchema
 }
-type SpendChannelRedeemerTimeoutPacket[ProofUnreceivedType any] struct {
+
+type SpendChannelRedeemerTimeoutPacket struct {
 	_                struct{} `cbor:",toarray"`
 	Packet           PacketSchema
-	ProofUnreceived  MerkleProofSchema[ProofUnreceivedType]
+	ProofUnreceived  MerkleProofSchema
 	ProofHeight      HeightSchema
 	NextSequenceRecv uint64
 }
-type SpendChannelRedeemerAcknowledgePacket[ProofAckedType any] struct {
+type SpendChannelRedeemerAcknowledgePacket struct {
 	_               struct{} `cbor:",toarray"`
 	Packet          PacketSchema
 	Acknowledgement []byte
-	ProofAcked      MerkleProofSchema[ProofAckedType]
+	ProofAcked      MerkleProofSchema
 	ProofHeight     HeightSchema
 }
 type SpendChannelRedeemerSendPacket struct {

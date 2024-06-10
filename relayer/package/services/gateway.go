@@ -245,15 +245,6 @@ func (gw *Gateway) ChannelOpenAck(ctx context.Context, req *pbchannel.MsgChannel
 	return res, nil
 }
 
-func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
-	req := ibcclient.QueryBlockResultsRequest{Height: height}
-	res, err := gw.TypeProvider.BlockResults(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
-
 func (gw *Gateway) Connections(ctx context.Context, req *pbconnection.QueryConnectionsRequest) (*pbconnection.QueryConnectionsResponse, error) {
 	res, err := gw.ConnectionQueryService.Connections(ctx, req)
 	if err != nil {
