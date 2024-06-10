@@ -13,7 +13,6 @@ import (
 	tendermint "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
-	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -328,30 +327,7 @@ func (cc *CardanoProvider) QueryChannelClient(ctx context.Context, height int64,
 
 // QueryChannels returns all the channels that are registered on a chain
 func (cc *CardanoProvider) QueryChannels(ctx context.Context) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	chans := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.Channels(ctx, &pbchannel.QueryChannelsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, channel := range res.Channels {
-			chans = append(chans, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return chans, nil
+	return cc.GateWay.QueryChannels()
 }
 
 func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chantypes.IdentifiedChannel {
@@ -434,87 +410,12 @@ func (cc *CardanoProvider) QueryClients(ctx context.Context) (clienttypes.Identi
 
 // QueryConnectionChannels queries the channels associated with a connection
 func (cc *CardanoProvider) QueryConnectionChannels(ctx context.Context, height int64, connectionid string) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	channels := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.ConnectionChannels(ctx, &pbchannel.QueryConnectionChannelsRequest{
-			Connection: connectionid,
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, channel := range res.Channels {
-			channels = append(channels, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return channels, nil
+	return cc.GateWay.QueryConnectionChannels(connectionid)
 }
 
 // QueryConnections gets any connections on a chain
 func (cc *CardanoProvider) QueryConnections(ctx context.Context) ([]*conntypes.IdentifiedConnection, error) {
-	p := DefaultPageRequest()
-	conns := []*conntypes.IdentifiedConnection{}
-
-	for {
-		res, err := cc.GateWay.Connections(ctx, &pbconnection.QueryConnectionsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, connection := range res.Connections {
-			conns = append(conns, transformIdentifiedConnection(connection))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return conns, nil
-}
-
-func transformIdentifiedConnection(ic *pbconnection.IdentifiedConnection) *conntypes.IdentifiedConnection {
-	versions := []*conntypes.Version{}
-	for _, gwVersion := range ic.Versions {
-		version := conntypes.Version{
-			Identifier: gwVersion.Identifier,
-			Features:   gwVersion.Features,
-		}
-		versions = append(versions, &version)
-	}
-
-	idConnection := &conntypes.IdentifiedConnection{
-		Id:       ic.Id,
-		ClientId: ic.ClientId,
-		Versions: versions,
-		State:    conntypes.State(ic.State),
-		Counterparty: conntypes.Counterparty{
-			ClientId:     ic.Counterparty.ClientId,
-			ConnectionId: ic.Counterparty.ConnectionId,
-			Prefix: commitmenttypes.MerklePrefix{
-				KeyPrefix: ic.Counterparty.Prefix.KeyPrefix,
-			},
-		},
-
-		DelayPeriod: ic.DelayPeriod,
-	}
-	return idConnection
+	return cc.GateWay.QueryConnections()
 }
 
 // QueryConnectionsUsingClient gets any connections that exist between chain and counterparty
