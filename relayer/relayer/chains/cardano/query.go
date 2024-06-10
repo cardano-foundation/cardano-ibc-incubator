@@ -410,31 +410,7 @@ func (cc *CardanoProvider) QueryClients(ctx context.Context) (clienttypes.Identi
 
 // QueryConnectionChannels queries the channels associated with a connection
 func (cc *CardanoProvider) QueryConnectionChannels(ctx context.Context, height int64, connectionid string) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	channels := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.ConnectionChannels(ctx, &pbchannel.QueryConnectionChannelsRequest{
-			Connection: connectionid,
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		for _, channel := range res.Channels {
-			channels = append(channels, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
-	}
-	return channels, nil
+	return cc.GateWay.QueryConnectionChannels(connectionid)
 }
 
 // QueryConnections gets any connections on a chain
