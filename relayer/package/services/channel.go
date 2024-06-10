@@ -174,6 +174,23 @@ func (gw *Gateway) QueryChannels() ([]*chantypes.IdentifiedChannel, error) {
 	return channels, nil
 }
 
+func (gw *Gateway) QueryConnectionChannels(connectionId string) ([]*chantypes.IdentifiedChannel, error) {
+	if !strings.Contains(connectionId, "connection-") {
+		return nil, fmt.Errorf("connectionId should start with connection-")
+	}
+	channels, err := gw.QueryChannels()
+	if err != nil {
+		return nil, err
+	}
+	var connectionChannels []*chantypes.IdentifiedChannel
+	for _, channel := range channels {
+		if channel.ConnectionHops[0] == connectionId {
+			connectionChannels = append(connectionChannels, channel)
+		}
+	}
+	return connectionChannels, nil
+}
+
 func getChannelIdByTokenName(tokenName string, baseToken helpers.AuthToken, prefix string) (string, error) {
 	baseTokenPart := helpers.HashSha3_256(baseToken.PolicyId + baseToken.Name)[:40]
 	prefixPart := helpers.HashSha3_256(prefix)[:8]
