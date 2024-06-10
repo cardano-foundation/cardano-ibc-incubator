@@ -371,4 +371,11 @@ export class DbSyncService {
 
     return blocks.map((block) => block.block_no);
   }
+
+  async queryListImmutableFileNoByBlockNos(blockNos: number[]): Promise<number[]> {
+    const query = `SELECT DISTINCT immutable_file_number FROM cardano_tx WHERE block_number IN (${blockNos.map(() => `?`).join(',')});`;
+    const files = await this.secondConnection.query(query, blockNos);
+
+    return files.map((file) => file.immutable_file_number);
+  }
 }

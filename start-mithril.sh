@@ -19,9 +19,9 @@ set_up_mithril() {
 pushd ${ROOT_DIR} > /dev/null
 
 if set_up_mithril; then
-    echo >&2 -e "\nSet permission successful!";
+    echo >&2 -e "\nSet up successful!";
 else
-    echo >&2 -e "\nWARNING: Fails to set permission for the files.";
+    echo >&2 -e "\nWARNING: Fails to set up for the files.";
 fi
 
 # Init script
