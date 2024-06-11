@@ -1,7 +1,9 @@
 package dbservice
 
 import (
+	"encoding/hex"
 	"fmt"
+
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -109,4 +111,54 @@ func (s *DBService) FindUtxoByPolicyAndTokenNameAndState(policyId string, tokenN
 		return nil, nil
 	}
 	return &proofs[0], nil
+}
+
+func (s *DBService) QueryConnectionAndChannelUTxOs(cardanoHeights []uint64, mintConnScriptHash string, mintChannelScriptHash string) ([]dto.UtxoDto, error) {
+	var utxos []dto.UtxoDto
+	rawQuery := `SELECT
+        tx_out.address AS address, 
+        generating_tx.hash AS tx_hash,
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+        datum.bytes AS datum,
+        ma.policy AS assets_policy, 
+        ma.name AS assets_name
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE generating_block.block_no in (?) AND (position(?::bytea in ma.policy) > 0 or position(?::bytea in ma.policy) > 0 );`
+	err := s.DB.Raw(rawQuery, cardanoHeights, fmt.Sprintf("\\x%s", mintConnScriptHash), fmt.Sprintf("\\x%s", mintChannelScriptHash)).Scan(&utxos).Error
+	if err != nil {
+		return nil, err
+	}
+
+	for _, utxo := range utxos {
+		utxo.TxHash = hex.EncodeToString([]byte(utxo.TxHash))
+	}
+
+	return utxos, nil
+}
+
+func (s *DBService) QueryRedeemersByTransactionId(txId string, mintScriptHash string, spendAddress string) ([]dto.RedeemerDto, error) {
+	rawQuery := `
+    SELECT distinct rd_data.bytes as redeemer_data, rd.purpose as type, rd.script_hash as mint_script_hash, generating_tx_out.address as spend_address, rd.id as redeemer_id
+    FROM redeemer rd
+    INNER JOIN redeemer_data as rd_data on rd.redeemer_data_id = rd_data.id
+    LEFT JOIN tx_in generating_tx_in on generating_tx_in.redeemer_id = rd.id
+    LEFT JOIN tx_out generating_tx_out on generating_tx_in.tx_out_id = generating_tx_out.tx_id and generating_tx_out."index" = generating_tx_in.tx_out_index
+    WHERE rd.tx_id = $1 AND (rd.script_hash = $2 OR generating_tx_out.address = $3)`
+
+	var redeemers []dto.RedeemerDto
+	err := s.DB.Raw(rawQuery, txId, fmt.Sprintf("\\x%s", mintScriptHash), fmt.Sprintf("\\x%s", spendAddress)).Scan(&redeemers).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, redeemer := range redeemers {
+		redeemer.Data = hex.EncodeToString([]byte(redeemer.Data))
+	}
+	return redeemers, nil
 }

@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice"
 	"github.com/cardano/relayer/v1/package/mithril"
 	"github.com/joho/godotenv"
-	"os"
-	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"

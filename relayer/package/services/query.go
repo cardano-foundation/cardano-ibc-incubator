@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
+	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	"slices"
 	"time"
 
@@ -207,4 +209,68 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 	}
 
 	return &mithrilHeader, nil
+}
+
+func (gw *Gateway) QueryBlockResultsDraft(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
+	//req := ibcclient.QueryBlockResultsRequest{Height: height}
+	var txsResults []*ibcclient.ResponseDeliverTx
+	//res, err := gw.TypeProvider.BlockResults(ctx, &req)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	// get connection and channel UTxOs
+	connAndChannelUTxOs, err := gw.DBService.QueryConnectionAndChannelUTxOs([]uint64{1}, "", "")
+	if err != nil {
+		return nil, err
+	}
+	chainHandler, err := helpers.GetChainHandler()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, utxo := range connAndChannelUTxOs {
+		switch utxo.AssetsPolicy {
+		case chainHandler.Validators.MintConnection.ScriptHash:
+			connEvents, err := gw.unmarshalConnectionEvent(utxo)
+			if err != nil {
+				return nil, err
+			}
+			txsResults = append(txsResults, connEvents...)
+		case chainHandler.Validators.MintChannel.ScriptHash:
+			channEvents, err := gw.unmarshalChannelEvent(utxo)
+			if err != nil {
+				return nil, err
+			}
+			txsResults = append(txsResults, channEvents...)
+		}
+	}
+	// get client UTxOs
+	return &ibcclient.QueryBlockResultsResponse{
+		BlockResults: &ibcclient.ResultBlockResults{
+			Height:     nil,
+			TxsResults: txsResults,
+		},
+	}, nil
+}
+
+func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) ([]*ibcclient.ResponseDeliverTx, error) {
+	chainHandler, _ := helpers.GetChainHandler()
+	// query redeemer of connection
+	redeemers, err := gw.DBService.QueryRedeemersByTransactionId(string(connUTxO.TxId), chainHandler.Validators.MintConnection.ScriptHash, chainHandler.Validators.SpendConnection.Address)
+	if err != nil {
+		return nil, err
+	}
+	// decode redeemer connection
+	for _, redeemer := range redeemers {
+		fmt.Println(redeemer)
+	}
+
+	return nil, nil
+}
+
+func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) ([]*ibcclient.ResponseDeliverTx, error) {
+	// query redeemer of connection
+	// decode redeemer connection
+	return nil, nil
 }
