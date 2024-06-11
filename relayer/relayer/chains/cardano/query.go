@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
+	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +35,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	latestHeightQueryBlockSearchRetryDelay = 30 * time.Second
+	latestHeightQueryBlockSearchRetries    = 10
+)
+
 const PaginationDelay = 10 * time.Millisecond
 
 // queryIBCMessages returns an array of IBC messages given a tag
@@ -51,10 +58,20 @@ func (cc *CardanoProvider) queryIBCMessages(ctx context.Context, log *zap.Logger
 	var mu sync.Mutex
 
 	eg.Go(func() error {
-		res, err := cc.GateWay.QueryBlockSearch(ctx, srcChanID, "", sequence, uint64(limit), uint64(page))
-		if err != nil {
+		var res *ibcclient.QueryBlockSearchResponse
+		var err error
+		ctxRetry := context.Background()
+		err = retry.Do(func() error {
+			res, err = cc.GateWay.QueryBlockSearch(ctxRetry, srcChanID, "", sequence, uint64(limit), uint64(page))
+			if err != nil {
+				return err
+			}
+
+			if res.Blocks == nil {
+				return fmt.Errorf("Blocks must be not nil")
+			}
 			return err
-		}
+		}, retry.Context(ctxRetry), retry.Attempts(latestHeightQueryBlockSearchRetries), retry.Delay(latestHeightQueryBlockSearchRetryDelay), retry.LastErrorOnly(true))
 
 		var nestedEg errgroup.Group
 
