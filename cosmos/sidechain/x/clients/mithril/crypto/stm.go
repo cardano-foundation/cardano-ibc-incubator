@@ -119,7 +119,7 @@ func (s *StmAggrSig) UnmarshalJSON(data []byte) error {
 		Signatures [][]interface{} `json:"signatures"`
 		BatchProof *BatchPath      `json:"batch_proof"`
 	}
-	if err := json.Unmarshal([]byte(data), &response); err != nil {
+	if err := json.Unmarshal(data, &response); err != nil {
 		return err
 	}
 	for _, sig := range response.Signatures {

@@ -1,6 +1,10 @@
 package entities
 
-import "sidechain/x/clients/mithril/crypto"
+import (
+	"encoding/hex"
+	"fmt"
+	"sidechain/x/clients/mithril/crypto"
+)
 
 type ImmutableFileNumber = uint64
 
@@ -26,3 +30,16 @@ type ProtocolStake = Stake
 type ProtocolSigner = crypto.StmSigner
 
 type ProtocolInitializer = StmInitializerWrapper
+
+type HexEncodedKey = string
+
+// ToJSONHex converts the proof to a JSON hex string
+func ToJSONHexEncodedKey(key HexEncodedKey) (string, error) {
+	// Assuming TransactionsProof is already a hex-encoded string.
+	// If not, you'll need to convert it to hex here.
+	_, err := hex.DecodeString(string(key))
+	if err != nil {
+		return "", fmt.Errorf("invalid Hex")
+	}
+	return string(key), nil
+}
