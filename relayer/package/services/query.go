@@ -211,7 +211,7 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 	return &mithrilHeader, nil
 }
 
-func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
+func (gw *Gateway) QueryBlockResultsDraft(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
 	//req := ibcclient.QueryBlockResultsRequest{Height: height}
 	var txsResults []*ibcclient.ResponseDeliverTx
 	//res, err := gw.TypeProvider.BlockResults(ctx, &req)

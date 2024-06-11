@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice"
 	"github.com/cardano/relayer/v1/package/mithril"
 	"github.com/joho/godotenv"
-	"os"
-	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -239,6 +240,15 @@ func (gw *Gateway) ChannelOpenInit(ctx context.Context, req *pbchannel.MsgChanne
 
 func (gw *Gateway) ChannelOpenAck(ctx context.Context, req *pbchannel.MsgChannelOpenAck) (*pbchannel.MsgChannelOpenAckResponse, error) {
 	res, err := gw.ChannelMsgService.ChannelOpenAck(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
+	req := ibcclient.QueryBlockResultsRequest{Height: height}
+	res, err := gw.TypeProvider.BlockResults(ctx, &req)
 	if err != nil {
 		return nil, err
 	}

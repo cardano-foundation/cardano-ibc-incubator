@@ -52,7 +52,10 @@ fi
 
 # set permission for the node.socket
 set_up_permission() {
-  chown "${USER:=$(/usr/bin/id -run)}" "./chains/cardano/devnet/node.socket" || return 1
+  chown "${USER:=$(/usr/bin/id -run)}" "./chains/cardano/devnet/node.socket" &&
+  ${SUDO} chmod 777 "./chains/cardano/devnet/node.socket" &&
+  ${SUDO} chmod 777 "./chains/cardano/devnet/kes.skey" &&
+  ${SUDO} chmod 777 "./chains/cardano/devnet/opcert.cert" || return 1
   return 0
 }
 if set_up_permission; then
