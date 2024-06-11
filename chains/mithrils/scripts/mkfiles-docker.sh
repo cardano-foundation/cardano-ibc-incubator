@@ -51,6 +51,8 @@ cat >> docker-compose.yaml <<EOF
       - SIGNED_ENTITY_TYPES=CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
     command:
       [
         "-vvv",
@@ -94,6 +96,8 @@ cat >> docker-compose.yaml <<EOF
       - SIGNED_ENTITY_TYPES=CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
     command:
       [
         "-vvv",
