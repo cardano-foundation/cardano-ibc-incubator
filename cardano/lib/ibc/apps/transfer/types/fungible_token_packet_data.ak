@@ -30,43 +30,57 @@ pub fn validate_basic(ftpd: FungibleTokenPacketData) -> Bool {
 
 pub fn get_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
   let FungibleTokenPacketData { amount, denom, memo, receiver, sender } = ftpd
+
+  let memo =
+    bytearray.foldr(
+      memo,
+      #"",
+      fn(byte, acc) {
+        if byte == 34 {
+          bytearray.push(acc, 34) |> bytearray.push(92)
+        } else {
+          bytearray.push(acc, byte)
+        }
+      },
+    )
+
   #[]
     |> concat("{")
     |> concat(
-         if length(amount) == 0 {
-           ""
-         } else {
-           get_json("amount", amount) |> concat(",")
-         },
-       )
+        if length(amount) == 0 {
+          ""
+        } else {
+          get_json("amount", amount) |> concat(",")
+        },
+      )
     |> concat(
-         if length(denom) == 0 {
-           ""
-         } else {
-           get_json("denom", denom) |> concat(",")
-         },
-       )
+        if length(denom) == 0 {
+          ""
+        } else {
+          get_json("denom", denom) |> concat(",")
+        },
+      )
     |> concat(
-         if length(memo) == 0 {
-           ""
-         } else {
-           get_json("memo", memo) |> concat(",")
-         },
-       )
+        if length(memo) == 0 {
+          ""
+        } else {
+          get_json("memo", memo) |> concat(",")
+        },
+      )
     |> concat(
-         if length(receiver) == 0 {
-           ""
-         } else {
-           get_json("receiver", receiver) |> concat(",")
-         },
-       )
+        if length(receiver) == 0 {
+          ""
+        } else {
+          get_json("receiver", receiver) |> concat(",")
+        },
+      )
     |> concat(
-         if length(sender) == 0 {
-           ""
-         } else {
-           get_json("sender", sender)
-         },
-       )
+        if length(sender) == 0 {
+          ""
+        } else {
+          get_json("sender", sender)
+        },
+      )
     |> concat("}")
 }
 
