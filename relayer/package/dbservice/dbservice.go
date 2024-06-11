@@ -3,13 +3,13 @@ package dbservice
 import (
 	"encoding/hex"
 	"fmt"
-
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"github.com/fxamacker/cbor/v2"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type DBService struct {
@@ -26,7 +26,7 @@ func (s *DBService) FindUtxosByPolicyIdAndPrefixTokenName(policyId string, prefi
 	var result []dto.UtxoDto
 	query := ` SELECT 
         tx_out.address AS address, 
-        generating_tx.hash AS tx_hash, 
+        cast(generating_tx.hash as TEXT) AS tx_hash, 
         generating_tx.id AS tx_id,
         tx_out.index AS output_index, 
         datum.hash AS datum_hash, 
@@ -161,4 +161,53 @@ func (s *DBService) QueryRedeemersByTransactionId(txId string, mintScriptHash st
 		redeemer.Data = hex.EncodeToString([]byte(redeemer.Data))
 	}
 	return redeemers, nil
+}
+
+func (s *DBService) FindUtxoClientOrAuthHandler(policyId string, scHash string, clientTokenName string) ([]dto.UtxoDto, error) {
+	var data []dto.UtxoDto
+	query := `SELECT 
+        tx_out.address AS address, 
+        cast(generating_tx.hash as TEXT)  AS tx_hash, 
+        generating_tx.id AS tx_id, 
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+       	CAST(datum.bytes as TEXT) AS datum,
+        CAST(ma.policy AS TEXT) AS assets_policy, 
+        CAST(ma.name AS TEXT) AS assets_name,
+        generating_block.block_no AS block_no,
+        tx_out.index AS index
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE (ma.policy = ? OR ma.policy = ?);`
+	err := s.DB.Raw(query, fmt.Sprintf("\\x%s", policyId), fmt.Sprintf("\\x%s", scHash)).Scan(&data).Error
+	if err != nil {
+		return nil, err
+	}
+	var result []dto.UtxoDto
+	for _, utxo := range data {
+		if policyId == utxo.AssetsPolicy[2:] {
+			result = append(result, utxo)
+		} else if scHash == utxo.AssetsPolicy[2:] && strings.HasPrefix(utxo.AssetsName[2:], clientTokenName) {
+			result = append(result, utxo)
+		}
+	}
+	return result, nil
+}
+
+func (s *DBService) FindHeightByTxHash(txHash string) (uint64, error) {
+	var height uint64
+	query := ` SELECT
+        generating_block.block_no AS height
+      FROM tx AS generating_tx
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE generating_tx.hash = ?;`
+	err := s.DB.Raw(query, txHash).Scan(&height).Error
+	if err != nil {
+		return 0, err
+	}
+	return height, nil
 }

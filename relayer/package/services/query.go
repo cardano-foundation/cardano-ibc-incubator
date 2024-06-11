@@ -2,11 +2,20 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/cardano/relayer/v1/package/dbservice/dto"
+	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
+	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
+	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cardano/relayer/v1/constant"
@@ -273,4 +282,103 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) ([]*ibcclient.Re
 	// query redeemer of connection
 	// decode redeemer connection
 	return nil, nil
+}
+
+func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported.ClientState, []byte, *clienttypes.Height, error) {
+	clientDatum, spendClientUTXO, err := gw.GetClientDatum(clientId, height)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	clientState := &tmclient.ClientState{
+		ChainId: string(clientDatum.State.ClientState.ChainId),
+		TrustLevel: tmclient.Fraction{
+			Numerator:   clientDatum.State.ClientState.TrustLevel.Numerator,
+			Denominator: clientDatum.State.ClientState.TrustLevel.Denominator,
+		},
+		TrustingPeriod:  time.Duration(clientDatum.State.ClientState.TrustingPeriod),
+		UnbondingPeriod: time.Duration(clientDatum.State.ClientState.UnbondingPeriod),
+		MaxClockDrift:   time.Duration(clientDatum.State.ClientState.MaxClockDrift),
+		FrozenHeight: clienttypes.Height{
+			RevisionNumber: clientDatum.State.ClientState.FrozenHeight.RevisionNumber,
+			RevisionHeight: clientDatum.State.ClientState.FrozenHeight.RevisionHeight,
+		},
+		LatestHeight: clienttypes.Height{
+			RevisionNumber: clientDatum.State.ClientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientDatum.State.ClientState.LatestHeight.RevisionHeight,
+		},
+		ProofSpecs:                   types.GetSDKSpecs(),
+		UpgradePath:                  nil,
+		AllowUpdateAfterExpiry:       false,
+		AllowUpdateAfterMisbehaviour: false,
+	}
+
+	//hash := spendClientUTXO.TxHash[2:]
+	//cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	//if err != nil {
+	//	return nil, nil, nil, err
+	//}
+	//connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
+	return clientState, []byte(""), &clienttypes.Height{
+		RevisionNumber: 0,
+		RevisionHeight: uint64(spendClientUTXO.BlockNo),
+	}, nil
+
+}
+
+func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.ClientDatum, *dto.UtxoDto, error) {
+	clientId = strings.Trim(clientId, "ibc_client-")
+	clientIdNum, err := strconv.ParseInt(clientId, 10, 64)
+	if err != nil {
+		return nil, nil, err
+	}
+	chainHandler, err := helpers.GetChainHandler()
+	if err != nil {
+		return nil, nil, err
+
+	}
+	clientTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	}, constant.CLIENT_PREFIX, clientIdNum)
+
+	handlerUtxos, err := gw.DBService.FindUtxoClientOrAuthHandler(
+		chainHandler.HandlerAuthToken.PolicyID,
+		chainHandler.Validators.MintClient.ScriptHash,
+		clientTokenName)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(handlerUtxos) == 0 {
+		return nil, nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", chainHandler.Validators.MintClient.ScriptHash, clientTokenName)
+	}
+	if handlerUtxos[0].Datum == nil {
+		return nil, nil, fmt.Errorf("datum is nil")
+	}
+	dataString := *handlerUtxos[0].Datum
+	handlerDatum, err := ibc_types.DecodeHandlerDatumSchema(dataString[2:])
+	if err != nil {
+		return nil, nil, err
+	}
+	clientStateTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: hex.EncodeToString(handlerDatum.Token.PolicyId),
+		Name:     hex.EncodeToString(handlerDatum.Token.Name),
+	}, constant.CLIENT_PREFIX, clientIdNum)
+	if err != nil {
+		return nil, nil, err
+	}
+	clientUtxos, err := gw.DBService.FindUtxosByPolicyIdAndPrefixTokenName(
+		chainHandler.Validators.MintClient.ScriptHash,
+		clientStateTokenName)
+	if err != nil {
+		return nil, nil, err
+	}
+	if clientUtxos[0].Datum == nil {
+		return nil, nil, fmt.Errorf("datum is nil")
+	}
+	dataString = *clientUtxos[0].Datum
+	clientDatum, err := ibc_types.DecodeClientDatumSchema(dataString[2:])
+	if err != nil {
+		return nil, nil, err
+	}
+	return clientDatum, &clientUtxos[0], nil
 }
