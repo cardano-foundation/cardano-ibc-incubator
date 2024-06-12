@@ -79,7 +79,9 @@ func (r *RelayMsgs) PrependMsgUpdateClientBeforeBuildMsg(
 		if err != nil {
 			return err
 		}
-		r.Src = append([]provider.RelayerMessage{srcMsgUpdateClient}, r.Src...)
+		if srcMsgUpdateClient != nil {
+			r.Src = []provider.RelayerMessage{srcMsgUpdateClient}
+		}
 		return nil
 	})
 	eg.Go(func() error {
@@ -87,7 +89,9 @@ func (r *RelayMsgs) PrependMsgUpdateClientBeforeBuildMsg(
 		if err != nil {
 			return err
 		}
-		r.Dst = append([]provider.RelayerMessage{dstMsgUpdateClient}, r.Dst...)
+		if dstMsgUpdateClient != nil {
+			r.Dst = []provider.RelayerMessage{dstMsgUpdateClient}
+		}
 		return nil
 	})
 

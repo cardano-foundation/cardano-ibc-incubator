@@ -52,6 +52,7 @@ var (
 	rtyAttNum                   = uint(5)
 	rtyAtt                      = retry.Attempts(rtyAttNum)
 	rtyDel                      = retry.Delay(time.Millisecond * 400)
+	rtyDelMax                   = retry.Delay(time.Minute * 1)
 	rtyErr                      = retry.LastErrorOnly(true)
 	accountSeqRegex             = regexp.MustCompile("account sequence mismatch, expected ([0-9]+), got ([0-9]+)")
 	defaultBroadcastWaitTimeout = 10 * time.Minute
@@ -899,31 +900,67 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	blockData, err := cc.QueryBlockData(ctx, int64(dsth))
+	clientStateRes, err := src.QueryClientStateResponse(ctx, int64(srch), srcClientId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, int64(dsth), &clientState)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := cc.ValidatePacket(msgTransfer, provider.LatestBlock{
 		Height: dsth,
-		Time:   time.Unix(int64(blockData.Timestamp), 0),
+		Time:   time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp())),
 	}); err != nil {
 		switch err.(type) {
 		case *provider.TimeoutHeightError, *provider.TimeoutTimestampError, *provider.TimeoutOnCloseError:
 			var pp provider.PacketProof
 			switch order {
 			case chantypes.UNORDERED:
-				pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
+				retry.Do(func() error {
+					var err error
+					pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
+					if pp.Proof == nil {
+						return fmt.Errorf("proof must be not nil")
+					}
+					if err != nil {
+						return err
+					}
+					return err
+				}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+
+				srcLastestHeight, err := src.QueryLatestHeight(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLastestHeight, srcClientId)
 				if err != nil {
 					return nil, nil, err
 				}
 
-				srcBlockData, err := cc.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+				clientStateUpdate, err := clienttypes.UnpackClientState(clientStateUpdateRes.ClientState)
 				if err != nil {
 					return nil, nil, err
 				}
 
-				msgUpdateClient, err := src.MsgUpdateClient(srcClientId, srcBlockData)
+				ibcHeaderUpdate, err := cc.QueryIBCMithrilHeader(ctx, int64(pp.ProofHeight.RevisionHeight), &clientStateUpdate)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				ibcMithrilHeader, ok := ibcHeaderUpdate.(*mithril.MithrilHeader)
+				if !ok {
+					return nil, nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+				}
+
+				msgUpdateClient, err := src.MsgUpdateClient(srcClientId, ibcMithrilHeader)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -956,13 +993,14 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		}
 	}
 
-	pp, err := src.PacketCommitment(ctx, msgTransfer, srch)
+	srcLastestHeight, err := src.QueryLatestHeight(ctx)
+	pp, err := src.PacketCommitment(ctx, msgTransfer, uint64(srcLastestHeight))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Update client before build MsgRecvPacket to cosmos
-	srcClientState, err := cc.QueryClientState(ctx, int64(srch), dstClientId)
+	srcClientState, err := cc.QueryClientState(ctx, srcLastestHeight, dstClientId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -971,6 +1009,10 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	if err != nil {
 		return nil, nil, err
 	}
+	//dstHeader, err := src.QueryIBCHeader(ctx, int64(srch))
+	//if err != nil {
+	//	return nil, nil, err
+	//}
 
 	srcTrustedHeader, err := src.QueryIBCHeader(ctx, int64(srcClientState.GetLatestHeight().GetRevisionHeight())+1)
 	if err != nil {
