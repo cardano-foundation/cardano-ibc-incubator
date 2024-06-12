@@ -153,9 +153,9 @@ func updateClient(ctx context.Context, src, dst *PathEndRuntime, latestHeader pr
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	newCtx, cancel := context.WithTimeout(ctx, time.Second*20)
 	defer cancel()
-	dst.ChainProvider.SendMessages(ctx, []provider.RelayerMessage{
+	dst.ChainProvider.SendMessages(newCtx, []provider.RelayerMessage{
 		msgUpdateClient,
 	}, "")
 	return nil
@@ -442,6 +442,10 @@ func (mp *messageProcessor) trackAndSendMessages(
 	needsClientUpdate bool,
 ) error {
 	broadcastBatch := dst.ChainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
+	if dst.ChainProvider.ChainId() == "cardano" {
+		//todo: remove when able to send batch tx in cardano
+		broadcastBatch = false
+	}
 	var batch []messageToTrack
 	for _, t := range mp.trackers() {
 

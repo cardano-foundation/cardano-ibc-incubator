@@ -344,7 +344,14 @@ func (cc *CardanoProvider) QueryChannelClient(ctx context.Context, height int64,
 
 // QueryChannels returns all the channels that are registered on a chain
 func (cc *CardanoProvider) QueryChannels(ctx context.Context) ([]*chantypes.IdentifiedChannel, error) {
-	return cc.GateWay.QueryChannels()
+	response, err := cc.GateWay.QueryChannels()
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return response, nil
 }
 
 func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chantypes.IdentifiedChannel {
@@ -427,12 +434,26 @@ func (cc *CardanoProvider) QueryClients(ctx context.Context) (clienttypes.Identi
 
 // QueryConnectionChannels queries the channels associated with a connection
 func (cc *CardanoProvider) QueryConnectionChannels(ctx context.Context, height int64, connectionid string) ([]*chantypes.IdentifiedChannel, error) {
-	return cc.GateWay.QueryConnectionChannels(connectionid)
+	response, err := cc.GateWay.QueryConnectionChannels(connectionid)
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return response, nil
 }
 
 // QueryConnections gets any connections on a chain
 func (cc *CardanoProvider) QueryConnections(ctx context.Context) ([]*conntypes.IdentifiedConnection, error) {
-	return cc.GateWay.QueryConnections()
+	response, err := cc.GateWay.QueryConnections()
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return response, nil
 }
 
 // QueryConnectionsUsingClient gets any connections that exist between chain and counterparty
