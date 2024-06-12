@@ -2,11 +2,13 @@ package cardano
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/avast/retry-go/v4"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"strconv"
 	"strings"
 	"sync"
@@ -214,20 +216,40 @@ func (cc *CardanoProvider) GenerateConnHandshakeProof(ctx context.Context, heigh
 
 // QueryClientStateResponse retrieves the latest consensus state for a client in state at a given height
 func (cc *CardanoProvider) QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error) {
-	clienStateRes, proof, proofHeight, err := cc.GateWay.QueryClientState(srcClientId, uint64(height))
+	//value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
+	value, err := cc.QueryClientState(ctx, height, srcClientId)
+	if err != nil {
+		return nil, err
+	}
+	clienStateRes, err := cc.GateWay.QueryClientState(srcClientId, uint64(height))
 	if err != nil {
 		return nil, err
 	}
 
-	anyClientState, err := clienttypes.PackClientState(clienStateRes)
+	// check if client exists
+	//if len(value) == 0 {
+	//	return nil, sdkerrors.Wrap(clienttypes.ErrClientNotFound, srcClientId)
+	//}
+	//
+	//cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
+	//
+	//clientState, err := clienttypes.UnmarshalClientState(cdc, value)
+	//if err != nil {
+	//	return nil, err
+	//}
+
+	anyClientState, err := clienttypes.PackClientState(value)
 	if err != nil {
 		return nil, err
 	}
 
 	return &clienttypes.QueryClientStateResponse{
 		ClientState: anyClientState,
-		Proof:       proof,
-		ProofHeight: *proofHeight,
+		Proof:       clienStateRes.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: clienStateRes.ProofHeight.RevisionNumber,
+			RevisionHeight: clienStateRes.ProofHeight.RevisionHeight,
+		},
 	}, nil
 }
 
@@ -366,11 +388,40 @@ func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chant
 // QueryClientState retrieves the latest consensus state for a client in state at a given height
 // and unpacks it to exported client state interface
 func (cc *CardanoProvider) QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error) {
-	clientStateRes, _, _, err := cc.GateWay.QueryClientState(clientid, uint64(height))
+	clientStateRes, err := cc.GateWay.QueryClientState(clientid, uint64(height))
 	if err != nil {
 		return nil, err
 	}
-	return clientStateRes, nil
+	var clientState = tendermint.ClientState{}
+	err = clientStateRes.GetClientState().UnmarshalTo(&clientState)
+	if err != nil {
+		return nil, err
+	}
+	stringChainIdBytes, _ := hex.DecodeString(clientState.ChainId)
+	stringChainId := string(stringChainIdBytes[:])
+	clientStateExported := &tmclient.ClientState{
+		ChainId: stringChainId,
+		TrustLevel: tmclient.Fraction{
+			Numerator:   clientState.TrustLevel.Numerator,
+			Denominator: clientState.TrustLevel.Denominator,
+		},
+		TrustingPeriod:  clientState.TrustingPeriod.AsDuration(),
+		UnbondingPeriod: clientState.UnbondingPeriod.AsDuration(),
+		MaxClockDrift:   clientState.MaxClockDrift.AsDuration(),
+		FrozenHeight: clienttypes.Height{
+			RevisionNumber: clientState.FrozenHeight.RevisionNumber,
+			RevisionHeight: clientState.FrozenHeight.RevisionHeight,
+		},
+		LatestHeight: clienttypes.Height{
+			RevisionNumber: clientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientState.LatestHeight.RevisionHeight,
+		},
+		ProofSpecs:                   types.GetSDKSpecs(),
+		UpgradePath:                  clientState.UpgradePath,
+		AllowUpdateAfterExpiry:       clientState.AllowUpdateAfterExpiry,
+		AllowUpdateAfterMisbehaviour: clientState.AllowUpdateAfterMisbehaviour,
+	}
+	return clientStateExported, nil
 }
 
 // QueryUnbondingPeriod returns the unbonding period of the chain
@@ -597,12 +648,12 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 }
 
 func (cc *CardanoProvider) QueryPacketCommitmentGW(ctx context.Context, msgTransfer provider.PacketInfo) ([]byte, []byte, clienttypes.Height, error) {
-	req := &chantypes.QueryPacketCommitmentRequest{
+	req := &pbchannel.QueryPacketCommitmentRequest{
 		PortId:    msgTransfer.SourcePort,
 		ChannelId: msgTransfer.SourceChannel,
 		Sequence:  msgTransfer.Sequence,
 	}
-	res, err := cc.GateWay.QueryPacketCommitment(req)
+	res, err := cc.GateWay.PacketCommitment(ctx, req)
 	if err != nil {
 		return nil, nil, clienttypes.Height{}, err
 	}

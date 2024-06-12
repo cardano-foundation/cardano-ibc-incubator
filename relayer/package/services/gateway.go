@@ -85,17 +85,17 @@ func (gw *Gateway) GetLastHeight() (uint64, error) {
 	return res[0].Beacon.ImmutableFileNumber, nil
 }
 
-//func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
-//	req := &pbclient.QueryClientStateRequest{
-//		ClientId: clientId,
-//		Height:   height,
-//	}
-//	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
-//	if err != nil {
-//		return nil, err
-//	}
-//	return res, nil
-//}
+func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
+	req := &pbclient.QueryClientStateRequest{
+		ClientId: clientId,
+		Height:   height,
+	}
+	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
 
 func (gw *Gateway) QueryConsensusState(clientId string, height uint64) (*pbclient.QueryConsensusStateResponse, error) {
 	req := &pbclient.QueryConsensusStateRequest{
