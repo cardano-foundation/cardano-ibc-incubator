@@ -5,6 +5,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+	"time"
 )
 
 var _ exported.ClientState = (*ClientState)(nil)
@@ -101,8 +102,7 @@ func (m *ConsensusState) ClientType() string {
 }
 
 func (m *ConsensusState) GetTimestamp() uint64 {
-	//TODO implement me
-	panic("implement me")
+	return m.Timestamp
 }
 
 func (m *ConsensusState) ValidateBasic() error {
@@ -116,13 +116,21 @@ func (m *MithrilHeader) Height() uint64 {
 }
 
 func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
-	//TODO implement me
-	panic("implement me")
+	layout := "2006-01-02T15:04:05.000000000Z"
+	t, err := time.Parse(layout, m.TransactionSnapshotCertificate.Metadata.SealedAt)
+	if err != nil {
+		return nil
+	}
+	return &ConsensusState{
+		Timestamp:                uint64(t.UnixNano()),
+		FirstCertHashLatestEpoch: "",
+		LatestCertHashTxSnapshot: "",
+	}
 }
 
 func (m *MithrilHeader) NextValidatorsHash() []byte {
-	//TODO implement me
-	panic("implement me")
+	// TODO: fill data
+	return []byte("")
 }
 
 func (m *MithrilHeader) ClientType() string {

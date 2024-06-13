@@ -14,6 +14,7 @@ export const LucidClient = {
     const chainZeroTime = await querySystemStart(configService.get('ogmiosEndpoint'));
     Lucid.SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
     const lucid = await Lucid.Lucid.new(provider, 'Preview');
+    Lucid.SLOT_CONFIG_NETWORK.Preview.slotLength = 1000;
     // const lucid = await Lucid.Lucid.new(
     //   new Lucid.Blockfrost('https://cardano-preview.blockfrost.io/api/v0', 'preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC'),
     //   'Preview',

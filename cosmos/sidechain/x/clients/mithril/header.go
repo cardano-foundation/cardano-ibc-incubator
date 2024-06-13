@@ -34,8 +34,7 @@ func (h MithrilHeader) GetHeight() exported.Height {
 // the Mithril header is nil.
 func (h MithrilHeader) GetTimestamp() uint64 {
 	sealedAt, _ := time.Parse(Layout, h.TransactionSnapshotCertificate.Metadata.SealedAt)
-	return uint64(sealedAt.Nanosecond())
-	// return h.TransactionSnapshotCertificate.Metadata.SealedAt
+	return uint64(sealedAt.UnixNano())
 }
 
 func (h MithrilHeader) GetTime() time.Time {

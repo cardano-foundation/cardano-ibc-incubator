@@ -36,9 +36,14 @@ import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
-import { UnsignedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
-import { UnsignedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
-import { UnsignedChannelCloseInitDto } from '~@/shared/modules/lucid/dtos/channel/channle-close-init.dto';
+import {
+  UnsignedChannelOpenInitDto,
+  UnsignedOrderedChannelOpenInitDto,
+} from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
+import {
+  UnsignedChannelOpenAckDto,
+  UnsignedOrderedChannelOpenAckDto,
+} from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -76,7 +81,13 @@ export class ChannelService {
         channelOpenInitOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenInitTxValidTo: Tx = unsignedChannelOpenInitTx.validTo(Date.now() + 600 * 1e3);
+      const validToTime = Date.now() + 3 * 1e5;
+      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const currentSlot = this.lucidService.lucid.currentSlot();
+      if (currentSlot > validToSlot) {
+        throw new GrpcInternalException('channel init failed: tx time invalid');
+      }
+      const unsignedChannelOpenInitTxValidTo: Tx = unsignedChannelOpenInitTx.validTo(validToTime);
 
       const unsignedChannelOpenInitTxCompleted: TxComplete = await unsignedChannelOpenInitTxValidTo.complete();
 
@@ -140,8 +151,13 @@ export class ChannelService {
         channelOpenAckOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenAckTxValidTo: Tx = unsignedChannelOpenAckTx.validTo(Date.now() + 600 * 1e3);
-
+      const validToTime = Date.now() + 3 * 1e5;
+      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const currentSlot = this.lucidService.lucid.currentSlot();
+      if (currentSlot > validToSlot) {
+        throw new GrpcInternalException('channel init failed: tx time invalid');
+      }
+      const unsignedChannelOpenAckTxValidTo: Tx = unsignedChannelOpenAckTx.validTo(validToTime);
       const unsignedChannelOpenAckTxCompleted: TxComplete = await unsignedChannelOpenAckTxValidTo.complete();
 
       this.logger.log(unsignedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
@@ -306,8 +322,8 @@ export class ChannelService {
     );
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const spendHandlerRefUtxo = this.configService.get('deployment').validators.spendHandler.refUtxo;
-    const mintChannelRefUtxo = this.configService.get('deployment').validators.mintChannel.refUtxo; 
-    
+    const mintChannelRefUtxo = this.configService.get('deployment').validators.mintChannel.refUtxo;
+
     switch (channelOpenInitOperator.ordering) {
       case Order.Unordered:
         const spendTransferModuleRefUtxo = this.configService.get('deployment').validators.spendTransferModule.refUtxo;
@@ -342,11 +358,12 @@ export class ChannelService {
           encodedChannelDatum,
           constructedAddress,
         };
-        const unsignedUnorderedChannelTx = this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
+        const unsignedUnorderedChannelTx =
+          this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
         return { unsignedTx: unsignedUnorderedChannelTx, channelId: channelId.toString() };
       case Order.Ordered:
         const spendMockModuleRefUtxo = this.configService.get('deployment').validators.spendMockModule.refUtxo;
-        const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier
+        const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
         const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
 
         const spendMockModuleRedeemer: IBCModuleRedeemer = {
@@ -394,8 +411,10 @@ export class ChannelService {
           encodedNewMockModuleDatum,
           constructedAddress,
         };
-        const unsignedOrderedChannelTx = this.lucidService.createUnsignedOrderedChannelOpenInitTransaction(unsignedOrderedChannelOpenInitParams);
-        
+        const unsignedOrderedChannelTx = this.lucidService.createUnsignedOrderedChannelOpenInitTransaction(
+          unsignedOrderedChannelOpenInitParams,
+        );
+
         return { unsignedTx: unsignedOrderedChannelTx, channelId: channelId.toString() };
     }
   }

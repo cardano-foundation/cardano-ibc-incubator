@@ -90,6 +90,18 @@ export class MithrilService {
     return stakeDistributions.map((stakeDistribution) => stakeDistribution as unknown as MithrilStakeDistributionDTO);
   }
 
+  async getProofsCardanoTransactionList(transactionHashes: string[]): Promise<any> {
+    const proofs = await this._request({
+      path: '/proof/cardano-transaction',
+      method: 'GET',
+      params: {
+        transaction_hashes: transactionHashes.join(','),
+      },
+    });
+
+    return proofs;
+  }
+
   private async _request(requestData: { path: string; payload?: any; params?: any; method: Method }): Promise<any> {
     const { path, payload = {}, params = {}, method = 'POST' } = requestData;
     const mithrilEndpoint = this.configService.get('mithrilEndpoint');

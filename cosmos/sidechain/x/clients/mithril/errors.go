@@ -29,5 +29,6 @@ var (
 	ErrInvalidMessagePartKey                      = errorsmod.Register(ModuleName, 22, "invalid message part key")
 	ErrUnsupportedGenesisSignature                = errorsmod.Register(ModuleName, 23, "genesis signature is not supported")
 	ErrInvalidCardanoTransactionsProofs           = errorsmod.Register(ModuleName, 24, "invalid cardano transactions proofs")
-	ErrNotImplemented                             = errorsmod.Register(ModuleName, 25, "not implemented")
+	ErrInvalidTimestamp                           = errorsmod.Register(ModuleName, 25, "invalid timestamp layout")
+	ErrNotImplemented                             = errorsmod.Register(ModuleName, 26, "not implemented")
 )

@@ -33,7 +33,7 @@ cat >> docker-compose.yaml <<EOF
       - NETWORK_MAGIC=42
       - PROTOCOL_PARAMETERS__K=5
       - PROTOCOL_PARAMETERS__M=100
-      - PROTOCOL_PARAMETERS__PHI_F=0.65
+      - PROTOCOL_PARAMETERS__PHI_F=0.85
       - RUN_INTERVAL=6000
       - URL_SNAPSHOT_MANIFEST=
       - SNAPSHOT_STORE_TYPE=local
@@ -51,6 +51,8 @@ cat >> docker-compose.yaml <<EOF
       - SIGNED_ENTITY_TYPES=CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
     command:
       [
         "-vvv",
@@ -75,7 +77,7 @@ cat >> docker-compose.yaml <<EOF
       - NETWORK_MAGIC=42
       - PROTOCOL_PARAMETERS__K=5
       - PROTOCOL_PARAMETERS__M=100
-      - PROTOCOL_PARAMETERS__PHI_F=0.65
+      - PROTOCOL_PARAMETERS__PHI_F=0.85
       - RUN_INTERVAL=6000
       - URL_SNAPSHOT_MANIFEST=
       - SNAPSHOT_STORE_TYPE=local
@@ -94,6 +96,8 @@ cat >> docker-compose.yaml <<EOF
       - SIGNED_ENTITY_TYPES=CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
+      - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
     command:
       [
         "-vvv",
@@ -120,7 +124,7 @@ cat >> docker-compose.yaml <<EOF
       - AGGREGATOR_ENDPOINT=http://mithril-aggregator:8080/aggregator
       - NETWORK=devnet
       - NETWORK_MAGIC=42
-      - RUN_INTERVAL=2000
+      - RUN_INTERVAL=6000
       - DB_DIRECTORY=/data/db
       - DATA_STORES_DIRECTORY=/mithril/signer-${i}/stores
       - CARDANO_NODE_SOCKET_PATH=/data/node.socket

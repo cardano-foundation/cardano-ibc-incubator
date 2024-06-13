@@ -14,6 +14,14 @@ import { MithrilModule } from './shared/modules/mithril/mithril.module';
     // IBCEventWatcherModule,
     // ScheduleModule.forRoot(),
     TypeOrmModule.forRoot(DatabaseConfig),
+    TypeOrmModule.forRoot({
+      name: 'cardano_transaction',
+      type: 'sqlite',
+      database: './../../chains/mithrils/data/aggregator/stores/cardano-transaction.sqlite3',
+      entities: [__dirname + '/**/*.entity{.ts,.js}'],
+      synchronize: true,
+      logging: true,
+    }),
     ConfigModule.forRoot({
       load: [
         configuration,

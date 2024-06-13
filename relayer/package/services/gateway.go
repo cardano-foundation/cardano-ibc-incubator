@@ -3,9 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
+	"github.com/cardano/relayer/v1/constant"
+	"github.com/cardano/relayer/v1/package/dbservice"
 	"github.com/cardano/relayer/v1/package/mithril"
 	"github.com/joho/godotenv"
-	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -31,6 +35,7 @@ type Gateway struct {
 
 	TypeProvider   ibcclient.QueryClient
 	MithrilService *mithril.MithrilService
+	DBService      *dbservice.DBService
 }
 
 func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) error {
@@ -54,7 +59,18 @@ func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) err
 
 	gw.TypeProvider = ibcclient.NewQueryClient(conn)
 	gw.MithrilService = mithril.NewMithrilService(mithrilEndpoint)
-
+	if err := dbservice.ConnectToDb(&dbservice.DatabaseInfo{
+		Name:     os.Getenv(constant.DbName),
+		Driver:   os.Getenv(constant.DbDriver),
+		Username: os.Getenv(constant.DbUsername),
+		Password: os.Getenv(constant.DbPassword),
+		SSLMode:  os.Getenv(constant.DbSslMode),
+		Host:     os.Getenv(constant.DbHost),
+		Port:     os.Getenv(constant.DbPort),
+	}); err != nil {
+		return fmt.Errorf("err connection db %w", err)
+	}
+	gw.DBService = dbservice.NewDBService()
 	return nil
 }
 

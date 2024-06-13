@@ -24,8 +24,9 @@ import { DbSyncService } from './db-sync.service';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { validPagination } from '../helpers/helper';
-import { convertHex2String } from '../../shared/helpers/hex';
+import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 
 @Injectable()
 export class ConnectionService {
@@ -34,6 +35,7 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
@@ -159,6 +161,9 @@ export class ConnectionService {
         connDatumDecoded.state.state,
       );
 
+      const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
+      const connectionProof = cardanoTxProof?.certified_transactions[0]?.proof;
+
       const response: QueryConnectionResponse = {
         connection: {
           client_id: convertHex2String(connDatumDecoded.state.client_id),
@@ -178,7 +183,8 @@ export class ConnectionService {
           },
           delay_period: connDatumDecoded.state.delay_period,
         } as unknown as ConnectionEnd,
-        proof: bytesFromBase64(btoa(`0-${proof.blockNo}/connection/${proof.txHash}/${proof.index}`)), // TODO
+        // proof: bytesFromBase64(btoa(`0-${proof.blockNo}/connection/${proof.txHash}/${proof.index}`)), // TODO
+        proof: fromHex(connectionProof), // TODO
         proof_height: {
           revision_number: 0,
           revision_height: proof.blockNo, // TODO

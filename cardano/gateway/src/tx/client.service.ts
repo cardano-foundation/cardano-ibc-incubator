@@ -56,7 +56,7 @@ export class ClientService {
         constructedAddress,
       );
 
-      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 10n ** 6n);
+      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 3n * 10n ** 5n);
       const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {

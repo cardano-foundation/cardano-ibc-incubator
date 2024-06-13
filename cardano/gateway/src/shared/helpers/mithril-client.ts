@@ -1,23 +1,61 @@
 import { ClientState as ClientStateOuroboros } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { MithrilClientState } from '../types/mithril';
-import { convertString2Hex } from './hex';
+import { convertHex2String, convertString2Hex, fromText } from './hex';
+import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 
-export function initializeMithrilClientState(clientStateMsg: ClientStateOuroboros): MithrilClientState {
+export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {
   return {
-    chain_id: convertString2Hex(clientStateMsg.chain_id),
+    /** Chain id */
+    chain_id: fromText(clientStateMsg.chain_id),
+    /** Latest height the client was updated to */
     latest_height: {
-      mithril_height: clientStateMsg.latest_height.revision_height,
+      mithril_height: clientStateMsg.latest_height.mithril_height,
+    },
+    /** Block height when the client was frozen due to a misbehaviour */
+    frozen_height: {
+      mithril_height: clientStateMsg.frozen_height.mithril_height,
+    },
+    /** Epoch number of current chain state */
+    current_epoch: clientStateMsg.current_epoch,
+    trusting_period:
+      BigInt(clientStateMsg.trusting_period.seconds) * 10n ** 9n + BigInt(clientStateMsg.trusting_period.nanos),
+    protocol_parameters: {
+      k: clientStateMsg.protocol_parameters.k,
+      m: clientStateMsg.protocol_parameters.m,
+      phi_f: {
+        numerator: clientStateMsg.protocol_parameters.phi_f.numerator,
+        denominator: clientStateMsg.protocol_parameters.phi_f.denominator,
+      },
+    },
+    /** Path at which next upgraded client will be committed. */
+    upgrade_path: clientStateMsg.upgrade_path,
+  };
+}
+
+export function getMithrilClientStateForVerifyProofRedeemer(
+  mithrilClientState: MithrilClientState,
+): ClientStateMithril {
+  return {
+    chain_id: convertHex2String(mithrilClientState.chain_id),
+    latest_height: {
+      mithril_height: mithrilClientState.latest_height.mithril_height,
     },
     frozen_height: {
-      mithril_height: clientStateMsg.frozen_height.revision_height,
+      mithril_height: mithrilClientState.frozen_height.mithril_height,
     },
-    current_epoch: clientStateMsg.current_epoch,
-    trusting_period: clientStateMsg.trusting_period,
+    current_epoch: mithrilClientState.current_epoch,
+    trusting_period: {
+      seconds: mithrilClientState.trusting_period / 10n ** 9n,
+      nanos: Number(mithrilClientState.trusting_period % 10n ** 9n),
+    },
     protocol_parameters: {
-      k: 5n,
-      m: 100n,
-      phi_f: 65n,
+      k: mithrilClientState.protocol_parameters.k,
+      m: mithrilClientState.protocol_parameters.m,
+      phi_f: {
+        numerator: mithrilClientState.protocol_parameters.phi_f.numerator,
+        denominator: mithrilClientState.protocol_parameters.phi_f.denominator,
+      },
     },
-    upgrade_path: clientStateMsg.upgrade_path,
+    upgrade_path: mithrilClientState.upgrade_path,
   };
 }

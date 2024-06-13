@@ -7,8 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
+
 	"github.com/avast/retry-go/v4"
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -125,7 +126,7 @@ func (ccp *CardanoChainProcessor) Run(ctx context.Context, initialBlockHistory u
 		break
 	}
 	// this will make initial QueryLoop iteration look back initialBlockHistory blocks in history
-	latestQueriedBlock := persistence.latestHeight - int64(initialBlockHistory)
+	latestQueriedBlock := persistence.latestHeight - 1
 
 	if latestQueriedBlock < 0 {
 		latestQueriedBlock = 0
@@ -267,12 +268,15 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 	if src.ChainProvider.Type() != "cardano" {
 		src, dst = dst, src
 	}
-
+	dsth, err := dst.ChainProvider.QueryLatestHeight(ctx)
+	if err != nil {
+		return fmt.Errorf("error querying latest height for chain_id: %s, %w", dst.Info.ChainID, err)
+	}
 	var updateClientMessages []provider.RelayerMessage
 	for i := persistence.latestQueriedBlock + 1; i <= persistence.latestHeight; i++ {
 		var eg errgroup.Group
 		var blockRes *ctypes.ResultBlockResults
-		var cardanoBlockData *module.BlockData
+		var ibcHeader provider.IBCHeader
 		i := i
 		eg.Go(func() (err error) {
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, blockResultsQueryTimeout)
@@ -283,22 +287,32 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		eg.Go(func() (err error) {
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, queryTimeout)
 			defer cancelQueryCtx()
-			cardanoBlockData, err = ccp.chainProvider.QueryBlockData(queryCtx, i)
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(queryCtx, dsth, dst.Info.ClientID)
+			if err != nil {
+				return fmt.Errorf("failed to query the client state response: %w", err)
+			}
+			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+			if err != nil {
+				return fmt.Errorf("failed to unpack client state: %w", err)
+			}
+			ibcHeader, err = src.ChainProvider.QueryIBCMithrilHeader(queryCtx, i, &clientState)
 			return err
 		})
 		if err := eg.Wait(); err != nil {
+			if strings.Contains(err.Error(), "SkipImmutableFile: Missing mithril height") {
+				ccp.log.Info("Skipping block", zap.Int64("height", i))
+				continue
+			}
 			ccp.log.Warn("Error querying block data", zap.Error(err))
 			break
 		}
 
-		latestHeader = provider.CardanoIBCHeader{
-			CardanoBlockData: cardanoBlockData,
-		}
+		latestHeader = ibcHeader.(*mithril.MithrilHeader)
 
 		heightUint64 := uint64(i)
 		ccp.latestBlock = provider.LatestBlock{
 			Height: heightUint64,
-			Time:   time.Unix(int64(cardanoBlockData.Timestamp), 0),
+			Time:   time.Unix(0, int64(latestHeader.ConsensusState().GetTimestamp())),
 		}
 		ibcHeaderCache[heightUint64] = latestHeader
 
@@ -323,18 +337,28 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		}
 
 		if hasIBCEvents {
-			blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(i))
+			dsth, err := dst.ChainProvider.QueryLatestHeight(ctx)
 			if err != nil {
-				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-					i, src.Info.ChainID, err)
+				return fmt.Errorf("error querying latest height for chain_id: %s, %w", dst.Info.ChainID, err)
 			}
-
-			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(dst.Info.ClientID, blockData)
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, dsth, dst.Info.ClientID)
+			if err != nil {
+				return fmt.Errorf("failed to query the client state response: %w", err)
+			}
+			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+			if err != nil {
+				return fmt.Errorf("failed to unpack client state: %w", err)
+			}
+			ibcHeader, err = src.ChainProvider.QueryIBCMithrilHeader(ctx, i, &clientState)
+			data, ok := ibcHeader.(*mithril.MithrilHeader)
+			if !ok {
+				return fmt.Errorf("failed to cast IBC header to MithrilHeader")
+			}
+			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(dst.Info.ClientID, data)
 			if err != nil {
 				return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
 					i, src.Info.ChainID, err)
 			}
-
 			updateClientMessages = append(updateClientMessages, msgUpdateClient)
 		}
 

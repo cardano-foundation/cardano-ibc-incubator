@@ -1,12 +1,12 @@
 use aiken/dict
-use ibc/client/cardano_client/protos/cardano_pb.{
-  AnyCardanoClientState, CardanoClientState,
-}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/mithril_client/protos/mithril_pb.{
+  AnyMithrilClientState, MithrilClientState,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/params
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
@@ -55,7 +55,7 @@ pub fn verify_connection_state(
 pub fn verify_client_state(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
-  counterparty_client_state: CardanoClientState,
+  counterparty_client_state: MithrilClientState,
   proof: MerkleProof,
   proof_height: Height,
 ) -> Bool {
@@ -77,10 +77,10 @@ pub fn verify_client_state(
     0,
     proof,
     merkle_path,
-    cardano_pb.marshal_for_any_client_state(
+    mithril_pb.marshal_for_any_client_state(
       Some(
-        AnyCardanoClientState {
-          type_url: "/ibc.clients.cardano.v1.ClientState",
+        AnyMithrilClientState {
+          type_url: "/ibc.clients.mithril.v1.ClientState",
           value: Some(counterparty_client_state),
         },
       ),

@@ -80,12 +80,13 @@ export function normalizeMithrilStakeDistributionCertificate(
     messageParts = Object.keys(stakeDistributionCertificate.protocol_message.message_parts).map((key) => {
       let protocolMessagePartKey: ProtocolMessagePartKey = ProtocolMessagePartKey.UNRECOGNIZED;
       if (key === 'next_aggregate_verification_key')
-        protocolMessagePartKey = ProtocolMessagePartKey.NEXT_AGGREGATE_VERIFICATION_KEY;
-      if (key === 'snapshot_digest') protocolMessagePartKey = ProtocolMessagePartKey.SNAPSHOT_DIGEST;
+        protocolMessagePartKey = ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY;
+      if (key === 'snapshot_digest')
+        protocolMessagePartKey = ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST;
       if (key === 'cardano_transactions_merkle_root')
-        protocolMessagePartKey = ProtocolMessagePartKey.CARDANO_TRANSACTIONS_MERKLE_ROOT;
+        protocolMessagePartKey = ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT;
       if (key === 'latest_immutable_file_number')
-        protocolMessagePartKey = ProtocolMessagePartKey.LATEST_IMMUTABLE_FILE_NUMBER;
+        protocolMessagePartKey = ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER;
 
       return {
         protocol_message_part_key: protocolMessagePartKey,
@@ -104,6 +105,7 @@ export function normalizeMithrilStakeDistributionCertificate(
     epoch: BigInt(stakeDistributionCertificate.epoch),
     signed_entity_type: stakeDistributionSignedEntityType,
     metadata: {
+      network: stakeDistributionCertificate.metadata.network,
       protocol_version: stakeDistributionCertificate.metadata.version,
       protocol_parameters: {
         k: BigInt(stakeDistributionCertificate.metadata.parameters.k),
@@ -113,12 +115,8 @@ export function normalizeMithrilStakeDistributionCertificate(
           denominator: BigInt(doubleToFraction(stakeDistributionCertificate.metadata.parameters.phi_f).denominator),
         },
       },
-      initiatedAt:
-        BigInt(new Date(stakeDistributionCertificate.metadata.initiated_at).valueOf()) * 10n ** 9n +
-        BigInt(getNanoseconds(stakeDistributionCertificate.metadata.initiated_at)),
-      sealedAt:
-        BigInt(new Date(stakeDistributionCertificate.metadata.sealed_at).valueOf()) * 10n ** 9n +
-        BigInt(getNanoseconds(stakeDistributionCertificate.metadata.sealed_at)),
+      initiated_at: stakeDistributionCertificate.metadata.initiated_at,
+      sealed_at: stakeDistributionCertificate.metadata.sealed_at,
       signers: stakeDistributionCertificate.metadata.signers ?? [],
     },
     protocol_message: {
@@ -126,19 +124,7 @@ export function normalizeMithrilStakeDistributionCertificate(
     },
     signed_message: stakeDistributionCertificate.signed_message,
     aggregate_verification_key: stakeDistributionCertificate.aggregate_verification_key,
-    signature: {
-      genesis_signature: {
-        protocol_genesis_signature: {
-          signature: fromHex(stakeDistributionCertificate.genesis_signature),
-        },
-      },
-      multi_signature: {
-        entity_type: stakeDistributionSignedEntityType,
-        signature: {
-          batch_proof: fromHex(multiSignature ? convertString2Hex(JSON.stringify(multiSignature.batch_proof)) : ''),
-          signatures: multiSignature.signatures.map((signature) => fromHex(convertString2Hex(signature))),
-        },
-      },
-    },
+    genesis_signature: stakeDistributionCertificate.genesis_signature,
+    multi_signature: stakeDistributionCertificate.multi_signature,
   } as MithrilCertificate;
 }

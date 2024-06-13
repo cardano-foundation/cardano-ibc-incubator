@@ -63,9 +63,9 @@ export type SpendChannelRedeemer =
     }
   | 'ChanCloseInit'
   | {
-      ChanCloseConfirm: { 
-        proof_init: MerkleProof, 
-        proof_height: Height 
+      ChanCloseConfirm: {
+        proof_init: MerkleProof;
+        proof_height: Height;
       };
     }
   | 'RefreshUtxo';
@@ -255,6 +255,13 @@ export async function encodeSpendChannelRedeemer(
     Data.Object({
       SendPacket: Data.Object({
         packet: PacketSchema,
+      }),
+    }),
+    Data.Literal('ChanCloseInit'),
+    Data.Object({
+      ChanCloseConfirm: Data.Object({
+        proof_init: MerkleProofSchema,
+        proof_height: HeightSchema,
       }),
     }),
     Data.Literal('RefreshUtxo'),
@@ -450,6 +457,13 @@ export function decodeSpendChannelRedeemer(
     Data.Object({
       SendPacket: Data.Object({
         packet: PacketSchema,
+      }),
+    }),
+    Data.Literal('ChanCloseInit'),
+    Data.Object({
+      ChanCloseConfirm: Data.Object({
+        proof_init: MerkleProofSchema,
+        proof_height: HeightSchema,
       }),
     }),
     Data.Literal('RefreshUtxo'),

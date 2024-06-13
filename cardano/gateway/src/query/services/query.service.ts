@@ -87,8 +87,10 @@ import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
+  MintConnectionRedeemer,
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
+  encodeMintConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
@@ -102,6 +104,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
+import { convertString2Hex } from '../../shared/helpers/hex';
 
 @Injectable()
 export class QueryService {
@@ -340,13 +343,24 @@ export class QueryService {
 
   async queryBlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const { height } = request;
-    this.logger.log(height, 'queryBlockResults');
+    this.logger.log(`immutable_file_number: ${height}`, 'queryBlockResults');
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
+    const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
+
     const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
-    if (!blockDto) {
-      throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
+    if (!listBlockNo.length) {
+      // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
+      return {
+        block_results: {
+          height: {
+            revision_height: request.height,
+            revision_number: BigInt(0),
+          },
+          txs_results: [],
+        },
+      } as unknown as QueryBlockResultsResponse;
     }
 
     try {
@@ -354,34 +368,39 @@ export class QueryService {
       const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
       const mintChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
 
-      // connection +channel
-      const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(request.height.toString()));
-      const txsResults = await Promise.all(
-        utxosInBlock
-          .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
-          .map(async (utxo) => {
-            switch (utxo.assetsPolicy) {
-              case mintConnScriptHash:
-                return await this._parseEventConnection(utxo, handlerAuthToken);
-              case mintChannelScriptHash:
-                return await this._parseEventChannel(utxo, handlerAuthToken);
-            }
-          }),
-      );
+      const totalEventResults: ResponseDeliverTx[] = [];
+      for (const blockNo of listBlockNo) {
+        // connection +channel
+        const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
+        const txsResults = await Promise.all(
+          utxosInBlock
+            .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
+            .map(async (utxo) => {
+              switch (utxo.assetsPolicy) {
+                case mintConnScriptHash:
+                  return await this._parseEventConnection(utxo, handlerAuthToken);
+                case mintChannelScriptHash:
+                  return await this._parseEventChannel(utxo, handlerAuthToken);
+              }
+            }),
+        );
 
-      // client state + consensus state
-      const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(request.height.toString()));
-      const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
+        // client state + consensus state
+        const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
+        const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
 
-      // register/unregister event spo
-      const spoEvents = await this._querySpoEvents(request.height);
+        // register/unregister event spo
+        const spoEvents = await this._querySpoEvents(BigInt(blockNo));
+        const eventInBlock = [...txsAuthOrClientsResults, ...txsResults, ...spoEvents];
+        totalEventResults.push(...eventInBlock);
+      }
 
       const blockResults: ResultBlockResults = {
         height: {
           revision_height: request.height,
           revision_number: BigInt(0),
         },
-        txs_results: [...txsAuthOrClientsResults, ...txsResults, ...spoEvents],
+        txs_results: totalEventResults,
       } as unknown as ResultBlockResults;
 
       const responseBlockResults: QueryBlockResultsResponse = {
@@ -621,7 +640,10 @@ export class QueryService {
   }
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
-    this.logger.log('', 'QueryBlockSearch');
+    this.logger.log(
+      `packet_src_channel = ${request.packet_src_channel}, packet_sequence=${request.packet_sequence}`,
+      'QueryBlockSearch',
+    );
     try {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
@@ -679,17 +701,24 @@ export class QueryService {
         }),
       );
       blockResults = blockResults.filter((e) => e);
-      let blockResultsResp = blockResults;
-      if (blockResults.length > limit) {
+      const mithrilHeights = await this.dbService.queryListImmutableFileNoByBlockNos(
+        blockResults.map((e) => Number(e.block.height)),
+      );
+
+      let blockResultsResp = mithrilHeights.map((e) => {
+        return { block_id: 0, block: { height: e } } as unknown as ResultBlockSearch;
+      });
+
+      if (blockResultsResp.length > limit) {
         const offset = page <= 0 ? 0 : limit * (page - 1n);
         const from = parseInt(offset.toString());
         const to = parseInt(offset.toString()) + parseInt(limit.toString());
-        blockResultsResp = blockResults.slice(from, to);
+        blockResultsResp = blockResultsResp.slice(from, to);
       }
 
       const responseBlockSearch: QueryBlockSearchResponse = {
         blocks: blockResultsResp,
-        total_count: blockResults.length,
+        total_count: blockResultsResp.length,
       } as unknown as QueryBlockSearchResponse;
 
       return responseBlockSearch;
