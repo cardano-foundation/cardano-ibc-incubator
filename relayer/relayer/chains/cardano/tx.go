@@ -530,6 +530,8 @@ func (cc *CardanoProvider) MsgTransfer(
 		Sender:           senderPublicKeyHash,
 		Receiver:         dstAddr,
 		TimeoutTimestamp: info.TimeoutTimestamp,
+		//todo: find better solution for this
+		Memo: info.DestChannel,
 	}
 
 	// If the timeoutHeight is 0 then we don't need to explicitly set it on the MsgTransfer
@@ -561,6 +563,7 @@ func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer, signer strin
 		},
 		TimeoutTimestamp: msg.TimeoutTimestamp,
 		Signer:           signer,
+		Memo:             msg.Memo,
 	}
 
 }

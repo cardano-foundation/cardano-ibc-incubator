@@ -18,7 +18,7 @@ const defaultTimeoutOffset = 1000
 // SendTransferMsg initiates an ics20 transfer from src to dst with the specified args
 //
 //nolint:lll
-func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain, amount sdk.Coin, dstAddr string, toHeightOffset uint64, toTimeOffset time.Duration, srcChannel *chantypes.IdentifiedChannel) error {
+func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain, amount sdk.Coin, dstAddr string, memo string, toHeightOffset uint64, toTimeOffset time.Duration, srcChannel *chantypes.IdentifiedChannel) error {
 	var (
 		timeoutHeight    uint64
 		timeoutTimestamp uint64
@@ -92,6 +92,8 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 			RevisionHeight: timeoutHeight,
 		},
 		TimeoutTimestamp: timeoutTimestamp,
+		//todo: find better solution for this to include memo on cardano chain
+		DestChannel: memo,
 	}
 	msg, err := c.ChainProvider.MsgTransfer(dstAddr, amount, pi)
 	if err != nil {
@@ -102,7 +104,7 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 		Src: []provider.RelayerMessage{msg},
 	}
 
-	result := txs.Send(ctx, log, AsRelayMsgSender(c), AsRelayMsgSender(dst), "")
+	result := txs.Send(ctx, log, AsRelayMsgSender(c), AsRelayMsgSender(dst), memo)
 	if err := result.Error(); err != nil {
 		if result.PartiallySent() {
 			c.log.Info(
