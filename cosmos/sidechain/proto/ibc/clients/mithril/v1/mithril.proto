@@ -100,15 +100,17 @@ message MithrilStakeDistribution {
 message CardanoTransactionSnapshot {
   option (gogoproto.goproto_getters) = false;
 
-  string snapshot_hash = 1;
+  string merkle_root = 1;
 
-  string merkle_root = 2;
+  uint64 epoch = 2;
 
-  string certificate_hash = 3;
+  uint64 block_number = 3;
 
-  uint64 epoch = 4;
+  string hash = 4;
 
-  Height height = 5;
+  string certificate_hash = 5;
+
+  string created_at = 6;
 }
 
 // Mithril Certificate
@@ -208,6 +210,9 @@ enum ProtocolMessagePartKey {
   
   // key "latest_immutable_file_number"
   PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER = 4;
+
+  // key "latest_block_number"
+  PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER = 5;
 }
 
 // ProtocolGenesisSignature wraps a cryptographic signature.
