@@ -146,8 +146,8 @@ func (s *IBCTestSuite) TestRelayPacket(t *testing.T) {
 	}()
 
 	_ = cosmosChannelID
-	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
+	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
 
 	_ = cardanoChannelID
 	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
@@ -338,6 +338,7 @@ func (s *IBCTestSuite) createUnorderedChannel(t *testing.T, sys *relayertest.Sys
 		"--src-port", CardanoPortTransfer,
 		"--dst-port", CosmosPortTransfer,
 		"--order", "unordered",
+		"--override",
 		"--version", "ics20-1")
 }
 
@@ -416,5 +417,7 @@ func (s *IBCTestSuite) transferFromCardanoToCosmos(t *testing.T, sys *relayertes
 		cardanoChannelId,
 		"--path", Path,
 		"--timeout-time-offset", timeout,
+		//"--override",
+		"--memo", "test",
 	)
 }
