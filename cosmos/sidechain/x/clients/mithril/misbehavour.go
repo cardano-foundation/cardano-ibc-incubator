@@ -13,7 +13,7 @@ import (
 var _ exported.ClientMessage = (*Misbehaviour)(nil)
 
 // FrozenHeight is same for all misbehaviour
-var FrozenHeight = NewHeight(1)
+var FrozenHeight = NewHeight(0, 1)
 
 // NewMisbehaviour creates a new Misbehaviour instance.
 func NewMisbehaviour(clientID string, header1, header2 *MithrilHeader) *Misbehaviour {
@@ -48,10 +48,10 @@ func (misbehaviour Misbehaviour) ValidateBasic() error {
 	if misbehaviour.MithrilHeader2 == nil {
 		return errorsmod.Wrap(ErrInvalidMithrilHeader, "misbehaviour MithrilHeader2 cannot be nil")
 	}
-	if misbehaviour.MithrilHeader1.TransactionSnapshot.Height.MithrilHeight == 0 {
+	if misbehaviour.MithrilHeader1.TransactionSnapshot.Height.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "misbehaviour MithrilHeader1 cannot have zero mithril height")
 	}
-	if misbehaviour.MithrilHeader2.TransactionSnapshot.Height.MithrilHeight == 0 {
+	if misbehaviour.MithrilHeader2.TransactionSnapshot.Height.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "misbehaviour MithrilHeader2 cannot have zero mithril height")
 	}
 	if err := host.ClientIdentifierValidator(misbehaviour.ClientId); err != nil {

@@ -119,7 +119,7 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
 	}
 
-	if cs.LatestHeight.MithrilHeight == 0 {
+	if cs.LatestHeight.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height revision height cannot be zero")
 	}
 

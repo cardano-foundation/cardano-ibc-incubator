@@ -102,7 +102,7 @@ func (cs *ClientState) UpdateState(
 	}
 
 	// Update the latest height and current epoch
-	height := NewHeight(header.TransactionSnapshot.Height.GetRevisionHeight())
+	height := NewHeight(0, header.TransactionSnapshot.Height.GetRevisionHeight())
 	cs.LatestHeight = &height
 	cs.CurrentEpoch = header.TransactionSnapshot.Epoch
 
