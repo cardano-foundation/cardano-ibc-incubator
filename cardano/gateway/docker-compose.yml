@@ -5,6 +5,8 @@ services:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
     network_mode: "host"
+    volumes:
+      - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
     env_file:
       - .env
 
