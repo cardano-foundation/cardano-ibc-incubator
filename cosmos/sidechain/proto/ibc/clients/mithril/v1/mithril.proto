@@ -243,7 +243,8 @@ message CardanoImmutableFilesFull {
 
 // Cardano transactions
 message CardanoTransactions {
-  CardanoDbBeacon beacon = 1;
+  uint64 epoch = 1;
+  uint64 block_number = 2;
 }
 
 // Cardano db beacon
