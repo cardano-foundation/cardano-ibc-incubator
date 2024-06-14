@@ -2,13 +2,10 @@ package cardano
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"github.com/avast/retry-go/v4"
-	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
-	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +26,6 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
@@ -106,32 +102,14 @@ func (cc *CardanoProvider) queryIBCMessages(ctx context.Context, log *zap.Logger
 
 // QueryChannel returns the channel associated with a channelID
 func (cc *CardanoProvider) QueryChannel(ctx context.Context, height int64, channelid, portid string) (chanRes *chantypes.QueryChannelResponse, err error) {
-	res, err := cc.GateWay.Channel(ctx, &pbchannel.QueryChannelRequest{
-		PortId:    portid,
-		ChannelId: channelid,
-	})
-	if err != nil && strings.Contains(err.Error(), "not found") {
-		return &chantypes.QueryChannelResponse{
-			Channel: &chantypes.Channel{
-				State:    chantypes.UNINITIALIZED,
-				Ordering: chantypes.UNORDERED,
-				Counterparty: chantypes.Counterparty{
-					PortId:    "port",
-					ChannelId: "channel",
-				},
-				ConnectionHops: []string{},
-				Version:        "version",
-			},
-			Proof: []byte{},
-			ProofHeight: clienttypes.Height{
-				RevisionNumber: 0,
-				RevisionHeight: 0,
-			},
-		}, nil
-	} else if err != nil {
+	res, err := cc.GateWay.QueryChannel(channelid)
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return &chantypes.QueryChannelResponse{}, nil
+		}
 		return nil, err
 	}
-	return transformQueryChannelResponse(res), nil
+	return res, nil
 }
 
 func transformQueryChannelResponse(res *pbchannel.QueryChannelResponse) *chantypes.QueryChannelResponse {
@@ -216,40 +194,21 @@ func (cc *CardanoProvider) GenerateConnHandshakeProof(ctx context.Context, heigh
 
 // QueryClientStateResponse retrieves the latest consensus state for a client in state at a given height
 func (cc *CardanoProvider) QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error) {
-	//value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
-	value, err := cc.QueryClientState(ctx, height, srcClientId)
+	clienStateRes, proof, proofHeight, err := cc.GateWay.QueryClientState(srcClientId, uint64(height))
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return &clienttypes.QueryClientStateResponse{}, nil
+		}
+		return nil, err
+	}
+	anyClientState, err := clienttypes.PackClientState(clienStateRes)
 	if err != nil {
 		return nil, err
 	}
-	clienStateRes, err := cc.GateWay.QueryClientState(srcClientId, uint64(height))
-	if err != nil {
-		return nil, err
-	}
-
-	// check if client exists
-	//if len(value) == 0 {
-	//	return nil, sdkerrors.Wrap(clienttypes.ErrClientNotFound, srcClientId)
-	//}
-	//
-	//cdc := codec.NewProtoCodec(cc.Cdc.InterfaceRegistry)
-	//
-	//clientState, err := clienttypes.UnmarshalClientState(cdc, value)
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	anyClientState, err := clienttypes.PackClientState(value)
-	if err != nil {
-		return nil, err
-	}
-
 	return &clienttypes.QueryClientStateResponse{
 		ClientState: anyClientState,
-		Proof:       clienStateRes.Proof,
-		ProofHeight: clienttypes.Height{
-			RevisionNumber: clienStateRes.ProofHeight.RevisionNumber,
-			RevisionHeight: clienStateRes.ProofHeight.RevisionHeight,
-		},
+		Proof:       proof,
+		ProofHeight: *proofHeight,
 	}, nil
 }
 
@@ -290,26 +249,12 @@ func (cc *CardanoProvider) QueryClientConsensusState(ctx context.Context, chainH
 // QueryConnection returns the remote end of a given connection
 func (cc *CardanoProvider) QueryConnection(ctx context.Context, height int64, connectionid string) (*conntypes.QueryConnectionResponse, error) {
 	res, err := cc.GateWay.QueryConnection(connectionid)
-	if err != nil && strings.Contains(err.Error(), "not found") {
-		return &conntypes.QueryConnectionResponse{
-			Connection: &conntypes.ConnectionEnd{
-				ClientId: "client",
-				Versions: []*conntypes.Version{},
-				State:    conntypes.UNINITIALIZED,
-				Counterparty: conntypes.Counterparty{
-					ClientId:     "client",
-					ConnectionId: "connection",
-					Prefix:       commitmenttypes.MerklePrefix{KeyPrefix: []byte{}},
-				},
-				DelayPeriod: 0,
-			},
-			Proof:       []byte{},
-			ProofHeight: clienttypes.Height{RevisionNumber: 0, RevisionHeight: 0},
-		}, nil
-	} else if err != nil {
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return &conntypes.QueryConnectionResponse{}, nil
+		}
 		return nil, err
 	}
-
 	return res, nil
 }
 
@@ -343,30 +288,14 @@ func (cc *CardanoProvider) QueryChannelClient(ctx context.Context, height int64,
 
 // QueryChannels returns all the channels that are registered on a chain
 func (cc *CardanoProvider) QueryChannels(ctx context.Context) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	chans := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.Channels(ctx, &pbchannel.QueryChannelsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
+	res, err := cc.GateWay.QueryChannels()
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return []*chantypes.IdentifiedChannel{}, nil
 		}
-
-		for _, channel := range res.Channels {
-			chans = append(chans, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
+		return nil, err
 	}
-	return chans, nil
+	return res, nil
 }
 
 func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chantypes.IdentifiedChannel {
@@ -388,40 +317,14 @@ func transformIdentifiedChannel(gwIdChannel *pbchannel.IdentifiedChannel) *chant
 // QueryClientState retrieves the latest consensus state for a client in state at a given height
 // and unpacks it to exported client state interface
 func (cc *CardanoProvider) QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error) {
-	clientStateRes, err := cc.GateWay.QueryClientState(clientid, uint64(height))
+	clientStateRes, _, _, err := cc.GateWay.QueryClientState(clientid, uint64(height))
 	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return &tmclient.ClientState{}, nil
+		}
 		return nil, err
 	}
-	var clientState = tendermint.ClientState{}
-	err = clientStateRes.GetClientState().UnmarshalTo(&clientState)
-	if err != nil {
-		return nil, err
-	}
-	stringChainIdBytes, _ := hex.DecodeString(clientState.ChainId)
-	stringChainId := string(stringChainIdBytes[:])
-	clientStateExported := &tmclient.ClientState{
-		ChainId: stringChainId,
-		TrustLevel: tmclient.Fraction{
-			Numerator:   clientState.TrustLevel.Numerator,
-			Denominator: clientState.TrustLevel.Denominator,
-		},
-		TrustingPeriod:  clientState.TrustingPeriod.AsDuration(),
-		UnbondingPeriod: clientState.UnbondingPeriod.AsDuration(),
-		MaxClockDrift:   clientState.MaxClockDrift.AsDuration(),
-		FrozenHeight: clienttypes.Height{
-			RevisionNumber: clientState.FrozenHeight.RevisionNumber,
-			RevisionHeight: clientState.FrozenHeight.RevisionHeight,
-		},
-		LatestHeight: clienttypes.Height{
-			RevisionNumber: clientState.LatestHeight.RevisionNumber,
-			RevisionHeight: clientState.LatestHeight.RevisionHeight,
-		},
-		ProofSpecs:                   types.GetSDKSpecs(),
-		UpgradePath:                  clientState.UpgradePath,
-		AllowUpdateAfterExpiry:       clientState.AllowUpdateAfterExpiry,
-		AllowUpdateAfterMisbehaviour: clientState.AllowUpdateAfterMisbehaviour,
-	}
-	return clientStateExported, nil
+	return clientStateRes, nil
 }
 
 // QueryUnbondingPeriod returns the unbonding period of the chain
@@ -449,86 +352,27 @@ func (cc *CardanoProvider) QueryClients(ctx context.Context) (clienttypes.Identi
 
 // QueryConnectionChannels queries the channels associated with a connection
 func (cc *CardanoProvider) QueryConnectionChannels(ctx context.Context, height int64, connectionid string) ([]*chantypes.IdentifiedChannel, error) {
-	p := DefaultPageRequest()
-	channels := []*chantypes.IdentifiedChannel{}
-
-	for {
-		res, err := cc.GateWay.ConnectionChannels(ctx, &pbchannel.QueryConnectionChannelsRequest{
-			Connection: connectionid,
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
+	res, err := cc.GateWay.QueryConnectionChannels(connectionid)
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return []*chantypes.IdentifiedChannel{}, nil
 		}
-
-		for _, channel := range res.Channels {
-			channels = append(channels, transformIdentifiedChannel(channel))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
+		return nil, err
 	}
-	return channels, nil
+	return res, nil
 }
 
 // QueryConnections gets any connections on a chain
 func (cc *CardanoProvider) QueryConnections(ctx context.Context) ([]*conntypes.IdentifiedConnection, error) {
-	p := DefaultPageRequest()
-	conns := []*conntypes.IdentifiedConnection{}
-
-	for {
-		res, err := cc.GateWay.Connections(ctx, &pbconnection.QueryConnectionsRequest{
-			Pagination: p,
-		})
-		if err != nil {
-			return nil, err
+	response, err := cc.GateWay.QueryConnections()
+	if err != nil {
+		if strings.Contains(err.Error(), "no utxos found") {
+			return []*conntypes.IdentifiedConnection{}, nil
 		}
-
-		for _, connection := range res.Connections {
-			conns = append(conns, transformIdentifiedConnection(connection))
-		}
-
-		next := res.GetPagination().GetNextKey()
-		if len(next) == 0 {
-			break
-		}
-
-		time.Sleep(PaginationDelay)
-		p.Key = next
+		return nil, err
 	}
-	return conns, nil
-}
-func transformIdentifiedConnection(ic *pbconnection.IdentifiedConnection) *conntypes.IdentifiedConnection {
-	versions := []*conntypes.Version{}
-	for _, gwVersion := range ic.Versions {
-		version := conntypes.Version{
-			Identifier: gwVersion.Identifier,
-			Features:   gwVersion.Features,
-		}
-		versions = append(versions, &version)
-	}
+	return response, nil
 
-	idConnection := &conntypes.IdentifiedConnection{
-		Id:       ic.Id,
-		ClientId: ic.ClientId,
-		Versions: versions,
-		State:    conntypes.State(ic.State),
-		Counterparty: conntypes.Counterparty{
-			ClientId:     ic.Counterparty.ClientId,
-			ConnectionId: ic.Counterparty.ConnectionId,
-			Prefix: commitmenttypes.MerklePrefix{
-				KeyPrefix: ic.Counterparty.Prefix.KeyPrefix,
-			},
-		},
-
-		DelayPeriod: ic.DelayPeriod,
-	}
-	return idConnection
 }
 
 // QueryConnectionsUsingClient gets any connections that exist between chain and counterparty
