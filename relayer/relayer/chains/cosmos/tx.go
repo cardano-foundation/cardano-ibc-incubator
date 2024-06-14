@@ -1550,8 +1550,8 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 		TrustingPeriod: clientState.TrustingPeriod,
 		// side chain return time in second format
 		LatestHeight: clienttypes.Height{
-			RevisionNumber: 0,
-			RevisionHeight: clientState.LatestHeight.MithrilHeight,
+			RevisionNumber: clientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientState.LatestHeight.RevisionHeight,
 		},
 	}
 

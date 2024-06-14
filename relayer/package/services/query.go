@@ -8,6 +8,10 @@ import (
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
+	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
+	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,9 +31,9 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 	if err != nil {
 		return nil, err
 	}
-	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshot, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Beacon.ImmutableFileNumber == uint64(h) })
+	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshot, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.BlockNumber == uint64(h) })
 	if snapshotIdx == -1 {
-		latestHeight := cardanoTxsSetSnapshot[0].Beacon.ImmutableFileNumber
+		latestHeight := cardanoTxsSetSnapshot[0].BlockNumber
 		if h < int64(latestHeight) {
 			return nil, errors.New(fmt.Sprintf("SkipImmutableFile: Missing mithril height %d", h))
 		}
@@ -41,7 +45,7 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 	if err != nil {
 		return nil, err
 	}
-	if cs.CurrentEpoch < snapshot.Beacon.Epoch {
+	if cs.CurrentEpoch < snapshot.Epoch {
 		//fmt.Printf("Client State has Current epoch: %v, ", cs.CurrentEpoch)
 		//fmt.Printf("Snapshot has epoch: %v \n", snapshot.Beacon.Epoch)
 		return gw.QueryIBCGenesisCertHeader(ctx, int64(cs.CurrentEpoch+1))
@@ -52,9 +56,9 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 		return nil, err
 	}
 
-	mithrilStakeDistributionIdx := slices.IndexFunc(mithrilStakeDistributionList, func(c dtos.MithrilStakeDistribution) bool { return c.Epoch == snapshot.Beacon.Epoch })
+	mithrilStakeDistributionIdx := slices.IndexFunc(mithrilStakeDistributionList, func(c dtos.MithrilStakeDistribution) bool { return c.Epoch == snapshot.Epoch })
 	if mithrilStakeDistributionIdx == -1 {
-		return nil, errors.New(fmt.Sprintf("Could not find stake distribution with epoch %d", snapshot.Beacon.Epoch))
+		return nil, errors.New(fmt.Sprintf("Could not find stake distribution with epoch %d", snapshot.Epoch))
 	}
 	mithrilStakeDistribution := mithrilStakeDistributionList[mithrilStakeDistributionIdx]
 	mithrilDistributionCertificate, err := gw.MithrilService.GetCertificateByHash(mithrilStakeDistribution.CertificateHash)
@@ -66,17 +70,16 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 		MithrilStakeDistribution:            helpers.ConvertMithrilStakeDistribution(mithrilStakeDistribution, *mithrilDistributionCertificate),
 		MithrilStakeDistributionCertificate: helpers.ConvertMithrilStakeDistributionCertificate(mithrilStakeDistribution, *mithrilDistributionCertificate),
 		TransactionSnapshot: &mithril.CardanoTransactionSnapshot{
-			SnapshotHash:    snapshot.Hash,
 			MerkleRoot:      snapshot.MerkleRoot,
+			Epoch:           snapshot.Epoch,
+			BlockNumber:     snapshot.BlockNumber,
+			Hash:            snapshot.Hash,
 			CertificateHash: snapshot.CertificateHash,
-			Epoch:           snapshot.Beacon.Epoch,
-			Height: &mithril.Height{
-				MithrilHeight: snapshot.Beacon.ImmutableFileNumber,
-			},
+			CreatedAt:       snapshot.CreatedAt.String(),
 		},
 		TransactionSnapshotCertificate: helpers.ConvertMithrilStakeDistributionCertificate(dtos.MithrilStakeDistribution{
 			Hash:            snapshot.Hash,
-			Epoch:           snapshot.Beacon.Epoch,
+			Epoch:           snapshot.Epoch,
 			CertificateHash: snapshot.CertificateHash,
 			CreatedAt:       snapshot.CreatedAt,
 		}, *snapshotCertificate),
@@ -121,19 +124,21 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 		return nil, nil, fmt.Errorf("GetListSnapshots returned empty list")
 	}
 	latestSnapshot := listSnapshots[0]
-	latestSnapshotCertificate, err := gw.MithrilService.GetCertificateByHash(latestSnapshot.CertificateHash)
-	if err != nil {
-		return nil, nil, err
-	}
+	//latestSnapshotCertificate, err := gw.MithrilService.GetCertificateByHash(latestSnapshot.CertificateHash)
+	//if err != nil {
+	//	return nil, nil, err
+	//}
 
 	phifFraction := helpers.FloatToFraction(currentEpochSettings.Protocol.PhiF)
 	clientState := &mithril.ClientState{
 		ChainId: os.Getenv(constant.CardanoChainNetworkMagic),
 		LatestHeight: &mithril.Height{
-			MithrilHeight: latestSnapshotCertificate.Beacon.ImmutableFileNumber,
+			RevisionNumber: 0,
+			RevisionHeight: latestSnapshot.BlockNumber,
 		},
 		FrozenHeight: &mithril.Height{
-			MithrilHeight: 0,
+			RevisionNumber: 0,
+			RevisionHeight: 0,
 		},
 		CurrentEpoch:   currentEpochSettings.Epoch,
 		TrustingPeriod: 0,
@@ -185,7 +190,7 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 
 	cardanoTxsSetSnapshotReverse := slices.Clone(cardanoTxsSetSnapshot)
 	slices.Reverse(cardanoTxsSetSnapshotReverse)
-	firstSnapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshotReverse, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Beacon.Epoch == uint64(epoch) })
+	firstSnapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshotReverse, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.Epoch == uint64(epoch) })
 	if firstSnapshotIdx == -1 {
 		return nil, errors.New(fmt.Sprintf("Could not find snapshot with epoch %d", epoch))
 	}
@@ -196,17 +201,16 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 		MithrilStakeDistribution:            helpers.ConvertMithrilStakeDistribution(mithrilStakeDistribution, *mithrilDistributionCertificate),
 		MithrilStakeDistributionCertificate: helpers.ConvertMithrilStakeDistributionCertificate(mithrilStakeDistribution, *mithrilDistributionCertificate),
 		TransactionSnapshot: &mithril.CardanoTransactionSnapshot{
-			SnapshotHash:    firstSnapshot.Hash,
 			MerkleRoot:      firstSnapshot.MerkleRoot,
+			Epoch:           firstSnapshot.Epoch,
+			BlockNumber:     firstSnapshot.BlockNumber,
+			Hash:            firstSnapshot.Hash,
 			CertificateHash: firstSnapshot.CertificateHash,
-			Epoch:           firstSnapshot.Beacon.Epoch,
-			Height: &mithril.Height{
-				MithrilHeight: firstSnapshot.Beacon.ImmutableFileNumber,
-			},
+			CreatedAt:       firstSnapshot.CreatedAt.String(),
 		},
 		TransactionSnapshotCertificate: helpers.ConvertMithrilStakeDistributionCertificate(dtos.MithrilStakeDistribution{
 			Hash:            firstSnapshot.Hash,
-			Epoch:           firstSnapshot.Beacon.Epoch,
+			Epoch:           firstSnapshot.Epoch,
 			CertificateHash: firstSnapshot.CertificateHash,
 			CreatedAt:       firstSnapshot.CreatedAt,
 		}, *snapshotCertificate),
@@ -279,46 +283,46 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) ([]*ibcclient.Re
 	return nil, nil
 }
 
-//func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported.ClientState, []byte, *clienttypes.Height, error) {
-//	clientDatum, spendClientUTXO, err := gw.GetClientDatum(clientId, height)
-//	if err != nil {
-//		return nil, nil, nil, err
-//	}
-//	clientState := &tmclient.ClientState{
-//		ChainId: string(clientDatum.State.ClientState.ChainId),
-//		TrustLevel: tmclient.Fraction{
-//			Numerator:   clientDatum.State.ClientState.TrustLevel.Numerator,
-//			Denominator: clientDatum.State.ClientState.TrustLevel.Denominator,
-//		},
-//		TrustingPeriod:  time.Duration(clientDatum.State.ClientState.TrustingPeriod),
-//		UnbondingPeriod: time.Duration(clientDatum.State.ClientState.UnbondingPeriod),
-//		MaxClockDrift:   time.Duration(clientDatum.State.ClientState.MaxClockDrift),
-//		FrozenHeight: clienttypes.Height{
-//			RevisionNumber: clientDatum.State.ClientState.FrozenHeight.RevisionNumber,
-//			RevisionHeight: clientDatum.State.ClientState.FrozenHeight.RevisionHeight,
-//		},
-//		LatestHeight: clienttypes.Height{
-//			RevisionNumber: clientDatum.State.ClientState.LatestHeight.RevisionNumber,
-//			RevisionHeight: clientDatum.State.ClientState.LatestHeight.RevisionHeight,
-//		},
-//		ProofSpecs:                   types.GetSDKSpecs(),
-//		UpgradePath:                  nil,
-//		AllowUpdateAfterExpiry:       false,
-//		AllowUpdateAfterMisbehaviour: false,
-//	}
-//
-//	//hash := spendClientUTXO.TxHash[2:]
-//	//cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
-//	//if err != nil {
-//	//	return nil, nil, nil, err
-//	//}
-//	//connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
-//	return clientState, []byte(""), &clienttypes.Height{
-//		RevisionNumber: 0,
-//		RevisionHeight: uint64(spendClientUTXO.BlockNo),
-//	}, nil
-//
-//}
+func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported.ClientState, []byte, *clienttypes.Height, error) {
+	clientDatum, spendClientUTXO, err := gw.GetClientDatum(clientId, height)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	clientState := &tmclient.ClientState{
+		ChainId: string(clientDatum.State.ClientState.ChainId),
+		TrustLevel: tmclient.Fraction{
+			Numerator:   clientDatum.State.ClientState.TrustLevel.Numerator,
+			Denominator: clientDatum.State.ClientState.TrustLevel.Denominator,
+		},
+		TrustingPeriod:  time.Duration(clientDatum.State.ClientState.TrustingPeriod),
+		UnbondingPeriod: time.Duration(clientDatum.State.ClientState.UnbondingPeriod),
+		MaxClockDrift:   time.Duration(clientDatum.State.ClientState.MaxClockDrift),
+		FrozenHeight: clienttypes.Height{
+			RevisionNumber: clientDatum.State.ClientState.FrozenHeight.RevisionNumber,
+			RevisionHeight: clientDatum.State.ClientState.FrozenHeight.RevisionHeight,
+		},
+		LatestHeight: clienttypes.Height{
+			RevisionNumber: clientDatum.State.ClientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientDatum.State.ClientState.LatestHeight.RevisionHeight,
+		},
+		ProofSpecs:                   types.GetSDKSpecs(),
+		UpgradePath:                  nil,
+		AllowUpdateAfterExpiry:       false,
+		AllowUpdateAfterMisbehaviour: false,
+	}
+
+	//hash := spendClientUTXO.TxHash[2:]
+	//cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	//if err != nil {
+	//	return nil, nil, nil, err
+	//}
+	//connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
+	return clientState, []byte(""), &clienttypes.Height{
+		RevisionNumber: 0,
+		RevisionHeight: uint64(spendClientUTXO.BlockNo),
+	}, nil
+
+}
 
 func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.ClientDatum, *dto.UtxoDto, error) {
 	clientId = strings.Trim(clientId, "ibc_client-")

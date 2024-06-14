@@ -27,7 +27,7 @@ type MessageParts struct {
 	SnapshotDigest                *string `json:"snapshot_digest"`
 	NextAggregateVerificationKey  *string `json:"next_aggregate_verification_key"`
 	CardanoTransactionsMerkleRoot *string `json:"cardano_transactions_merkle_root,omitempty"`
-	LatestImmutableFileNumber     *string `json:"latest_immutable_file_number,omitempty"`
+	LatestBlockNumber             *string `json:"latest_block_number,omitempty"`
 }
 
 // ProtocolMessage represents the protocol message structure
@@ -62,7 +62,7 @@ type EpochSetting struct {
 // SignedEntityType represents the signed entity type which can be either CardanoImmutableFilesFull or CardanoTransactions
 type SignedEntityType struct {
 	CardanoImmutableFilesFull *CardanoImmutableFilesFull `json:"CardanoImmutableFilesFull,omitempty"`
-	CardanoTransactions       *CardanoTransactions       `json:"CardanoTransactions,omitempty"`
+	CardanoTransactions       *[]uint64                  `json:"CardanoTransactions,omitempty"`
 	MithrilStakeDistribution  *uint64                    `json:"MithrilStakeDistribution,omitempty"`
 	CardanoStakeDistribution  *CardanoStakeDistribution  `json:"CardanoStakeDistribution,omitempty"`
 }
