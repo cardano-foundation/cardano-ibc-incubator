@@ -52,7 +52,7 @@ var (
 	rtyAttNum                   = uint(5)
 	rtyAtt                      = retry.Attempts(rtyAttNum)
 	rtyDel                      = retry.Delay(time.Millisecond * 400)
-	rtyDelMax                   = retry.Delay(time.Minute * 1)
+	rtyDelMax                   = retry.Delay(time.Minute * 2)
 	rtyErr                      = retry.LastErrorOnly(true)
 	accountSeqRegex             = regexp.MustCompile("account sequence mismatch, expected ([0-9]+), got ([0-9]+)")
 	defaultBroadcastWaitTimeout = 10 * time.Minute
@@ -639,11 +639,7 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	res, err := cc.GateWay.QueryPacketAck(&chantypes.QueryPacketAcknowledgementRequest{
-		PortId:    msgRecvPacket.DestPort,
-		ChannelId: msgRecvPacket.DestChannel,
-		Sequence:  msgRecvPacket.Sequence,
-	})
+	res, err := cc.GateWay.QueryPacketAcknowledgement(ctx, transformPacketAcknowledgement(msgRecvPacket.DestPort, msgRecvPacket.DestChannel, msgRecvPacket.Sequence))
 	if err != nil {
 		return provider.PacketProof{}, err
 	}
@@ -652,8 +648,16 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	}
 	return provider.PacketProof{
 		Proof:       res.Proof,
-		ProofHeight: res.ProofHeight,
+		ProofHeight: *res.ProofHeight,
 	}, nil
+}
+
+func transformPacketAcknowledgement(portId, chanId string, seq uint64) *pbchannel.QueryPacketAcknowledgementRequest {
+	return &pbchannel.QueryPacketAcknowledgementRequest{
+		PortId:    portId,
+		ChannelId: chanId,
+		Sequence:  seq,
+	}
 }
 
 func (cc *CardanoProvider) PacketCommitment(
@@ -926,7 +930,20 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, int64(dsth), &clientState)
+	var dsthLastestHeight int64
+	dsthLastestHeight = int64(dsth)
+	retry.Do(func() error {
+		dsthLastestHeight, err = cc.QueryLatestHeight(ctx)
+		if err != nil {
+			return err
+		}
+		if dsthLastestHeight <= int64(dsth) {
+			return fmt.Errorf("not yet update transaction snapshot certificate")
+		}
+		return err
+	}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+
+	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, dsthLastestHeight, &clientState)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1010,6 +1027,9 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	}
 
 	srcLastestHeight, err := src.QueryLatestHeight(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	pp, err := src.PacketCommitment(ctx, msgTransfer, uint64(srcLastestHeight))
 	if err != nil {
 		return nil, nil, err
