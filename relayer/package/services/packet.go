@@ -9,7 +9,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/query"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/exp/maps"
 	"slices"
 	"strconv"
@@ -51,7 +50,7 @@ func (gw *Gateway) QueryPacketCommitment(req *channeltypes.QueryPacketCommitment
 		return nil, fmt.Errorf("datum is nil")
 	}
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -61,14 +60,11 @@ func (gw *Gateway) QueryPacketCommitment(req *channeltypes.QueryPacketCommitment
 		return nil, sdkerrors.Wrapf(channeltypes.ErrPacketCommitmentNotFound, "portID (%s), channelID (%s), sequence (%d)", req.PortId, req.ChannelId, req.Sequence)
 	}
 
-	stateNum, ok := channelDatumDecoded.State.Channel.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
+	stateNum := int32(channelDatumDecoded.State.Channel.State)
 	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
 		policyId,
 		prefixTokenName,
-		channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
+		channeltypes.State_name[stateNum],
 		chainHandler.Validators.MintConnection.ScriptHash,
 		chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
@@ -128,7 +124,7 @@ func (gw *Gateway) QueryPacketCommitments(req *channeltypes.QueryPacketCommitmen
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +223,7 @@ func (gw *Gateway) QueryPacketAck(req *channeltypes.QueryPacketAcknowledgementRe
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -237,15 +233,12 @@ func (gw *Gateway) QueryPacketAck(req *channeltypes.QueryPacketAcknowledgementRe
 		return nil, sdkerrors.Wrapf(channeltypes.ErrInvalidAcknowledgement, "portID (%s), channelID (%s), sequence (%d)", req.PortId, req.ChannelId, req.Sequence)
 	}
 
-	stateNum, ok := channelDatumDecoded.State.Channel.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
+	stateNum := int32(channelDatumDecoded.State.Channel.State)
 
 	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
 		policyId,
 		prefixTokenName,
-		channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
+		channeltypes.State_name[stateNum],
 		chainHandler.Validators.MintConnection.ScriptHash,
 		chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
@@ -306,7 +299,7 @@ func (gw *Gateway) QueryPacketAcks(req *channeltypes.QueryPacketAcknowledgements
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +398,7 @@ func (gw *Gateway) QueryPacketReceipt(req *channeltypes.QueryPacketReceiptReques
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -416,15 +409,12 @@ func (gw *Gateway) QueryPacketReceipt(req *channeltypes.QueryPacketReceiptReques
 		received = true
 	}
 
-	stateNum, ok := channelDatumDecoded.State.Channel.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
+	stateNum := int32(channelDatumDecoded.State.Channel.State)
 
 	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
 		policyId,
 		prefixTokenName,
-		channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
+		channeltypes.State_name[stateNum],
 		chainHandler.Validators.MintConnection.ScriptHash,
 		chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
@@ -485,7 +475,7 @@ func (gw *Gateway) QueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRe
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +532,7 @@ func (gw *Gateway) QueryUnrecvAcks(req *channeltypes.QueryUnreceivedAcksRequest)
 	}
 
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}

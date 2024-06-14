@@ -48,17 +48,17 @@ type MintConnectionRedeemerConnOpenTry struct {
 	ProofHeight      HeightSchema
 }
 
-type MintConnectionRedeemer struct {
+type MintConnectionRedeemerSchema struct {
 	Type  MintConnectionRedeemerType
 	Value interface{}
 }
 
-type SpendConnectionRedeemer struct {
+type SpendConnectionRedeemerSchema struct {
 	Type  SpendConnectionRedeemerType
 	Value interface{}
 }
 
-func DecodeMintConnectionRedeemerSchema(mintConnEncoded string) (MintConnectionRedeemer, error) {
+func DecodeMintConnectionRedeemerSchema(mintConnEncoded string) (MintConnectionRedeemerSchema, error) {
 	datumBytes, _ := hex.DecodeString(mintConnEncoded)
 	tags := cbor.NewTagSet()
 	err := tags.Add(
@@ -78,9 +78,9 @@ func DecodeMintConnectionRedeemerSchema(mintConnEncoded string) (MintConnectionR
 	var result interface{}
 	err = dm.Unmarshal(datumBytes, &result)
 	if err != nil {
-		return MintConnectionRedeemer{}, err
+		return MintConnectionRedeemerSchema{}, err
 	}
-	var mintConnRedeemer MintConnectionRedeemer
+	var mintConnRedeemer MintConnectionRedeemerSchema
 	switch result.(type) {
 	case MintConnectionRedeemerConnOpenInit: // custom type
 		mintConnRedeemer.Type = ConnOpenInit
@@ -92,7 +92,7 @@ func DecodeMintConnectionRedeemerSchema(mintConnEncoded string) (MintConnectionR
 	return mintConnRedeemer, nil
 }
 
-func DecodeSpendConnectionRedeemerSchema(spendConnEncoded string) (SpendConnectionRedeemer, error) {
+func DecodeSpendConnectionRedeemerSchema(spendConnEncoded string) (SpendConnectionRedeemerSchema, error) {
 	datumBytes, _ := hex.DecodeString(spendConnEncoded)
 	tags := cbor.NewTagSet()
 	err := tags.Add(
@@ -112,9 +112,9 @@ func DecodeSpendConnectionRedeemerSchema(spendConnEncoded string) (SpendConnecti
 	var result interface{}
 	err = dm.Unmarshal(datumBytes, &result)
 	if err != nil {
-		return SpendConnectionRedeemer{}, err
+		return SpendConnectionRedeemerSchema{}, err
 	}
-	var spendConnRedeemer SpendConnectionRedeemer
+	var spendConnRedeemer SpendConnectionRedeemerSchema
 	switch result.(type) {
 	case SpendConnectionRedeemerConnOpenAck: // custom type
 		spendConnRedeemer.Type = ConnOpenAck

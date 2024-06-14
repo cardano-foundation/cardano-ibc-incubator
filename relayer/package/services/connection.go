@@ -3,7 +3,6 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -62,14 +61,11 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 		}
 		newVersions = append(newVersions, &newVersion)
 	}
-	stateNum, ok := connDatumDecoded.State.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
+	stateNum := int32(connDatumDecoded.State.State)
 	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
 		policyId,
 		prefixTokenName,
-		channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
+		channeltypes.State_name[stateNum],
 		chainHandler.Validators.MintConnection.ScriptHash,
 		chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
@@ -85,7 +81,7 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 		Connection: &conntypes.ConnectionEnd{
 			ClientId: string(connDatumDecoded.State.ClientId),
 			Versions: newVersions,
-			State:    conntypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    conntypes.State(stateNum),
 			Counterparty: conntypes.Counterparty{
 				ClientId:     string(connDatumDecoded.State.Counterparty.ClientId),
 				ConnectionId: string(connDatumDecoded.State.Counterparty.ConnectionId),
@@ -145,10 +141,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 			}
 			newVersions = append(newVersions, &newVersion)
 		}
-		stateNum, ok := connDatumDecoded.State.State.(cbor.Tag)
-		if !ok {
-			return nil, fmt.Errorf("state is not cbor tag")
-		}
+		stateNum := int32(connDatumDecoded.State.State)
 		valueId, err := getConnectionIdByTokenName(
 			utxo.AssetsName[2:], helpers.AuthToken{
 				PolicyId: chainHandler.HandlerAuthToken.PolicyID,
@@ -161,7 +154,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 			Id:       fmt.Sprintf("connection-%v", valueId),
 			ClientId: string(connDatumDecoded.State.ClientId),
 			Versions: newVersions,
-			State:    conntypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    conntypes.State(stateNum),
 			Counterparty: conntypes.Counterparty{
 				ClientId:     string(connDatumDecoded.State.Counterparty.ClientId),
 				ConnectionId: string(connDatumDecoded.State.Counterparty.ConnectionId),

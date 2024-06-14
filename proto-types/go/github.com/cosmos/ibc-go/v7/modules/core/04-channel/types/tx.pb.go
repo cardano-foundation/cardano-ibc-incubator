@@ -7,7 +7,7 @@
 package types
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
+  sdk "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/cosmos/gogoproto/gogoproto"
 	types "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -1176,6 +1176,15 @@ func (x *MsgTimeoutOnClose) String() string {
 
 func (*MsgTimeoutOnClose) ProtoMessage() {}
 
+func (x *MsgTimeoutRefresh) ValidateBasic() error {
+  //TODO implement me
+  panic("implement me")
+}
+
+func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
+  //TODO implement me
+  panic("implement me")
+}
 func (x *MsgTimeoutOnClose) ProtoReflect() protoreflect.Message {
 	mi := &file_ibc_core_channel_v1_tx_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
@@ -1547,16 +1556,6 @@ type MsgTransferResponse struct {
 
 	Result     ResponseResultType `protobuf:"varint,1,opt,name=result,proto3,enum=ibc.core.channel.v1.ResponseResultType" json:"result,omitempty"`
 	UnsignedTx *anypb.Any         `protobuf:"bytes,2,opt,name=unsigned_tx,json=unsignedTx,proto3" json:"unsigned_tx,omitempty"`
-}
-
-func (x *MsgTimeoutRefresh) ValidateBasic() error {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
-	//TODO implement me
-	panic("implement me")
 }
 
 func (x *MsgTransferResponse) Reset() {
