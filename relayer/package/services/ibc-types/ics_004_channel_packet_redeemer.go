@@ -1,5 +1,11 @@
 package ibc_types
 
+import (
+	"encoding/hex"
+	"github.com/fxamacker/cbor/v2"
+	"reflect"
+)
+
 type PacketSchema struct {
 	_                  struct{} `cbor:",toarray"`
 	Sequence           uint64
@@ -12,6 +18,20 @@ type PacketSchema struct {
 	TimeoutTimestamp   uint64
 }
 
+type MintChannelRedeemerType int
+
+const (
+	ChanOpenInit MintChannelRedeemerType = 121
+	ChanOpenTry  MintChannelRedeemerType = 122
+)
+
+type SpendChannelRedeemerType int
+
+const (
+	ChanOpenAck     SpendChannelRedeemerType = 121
+	ChanOpenConfirm SpendChannelRedeemerType = 122
+)
+
 type MintChannelRedeemerChanOpenInit struct {
 	_                struct{} `cbor:",toarray"`
 	HandlerAuthToken AuthTokenSchema
@@ -23,6 +43,16 @@ type MintChannelRedeemerChanOpenTry struct {
 	CounterpartyVersion []byte
 	ProofInit           MerkleProofSchema
 	ProofHeight         HeightSchema
+}
+
+type MintChannelRedeemerSchema struct {
+	Type  MintChannelRedeemerType
+	Value interface{}
+}
+
+type SpendChannelRedeemerSchema struct {
+	Type  SpendChannelRedeemerType
+	Value interface{}
 }
 
 type SpendChannelRedeemerChanOpenAck struct {
@@ -67,4 +97,73 @@ type SpendChannelRedeemerSendPacket struct {
 // Data.Literal('RefreshUtxo')
 
 type SpendChannelRedeemerRefreshUtxo interface {
+}
+
+func DecodeMintChannelRedeemerSchema(mintChannEncoded string) (MintChannelRedeemerSchema, error) {
+	datumBytes, _ := hex.DecodeString(mintChannEncoded)
+	tags := cbor.NewTagSet()
+	err := tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(MintChannelRedeemerChanOpenInit{}), // your custom type
+		121, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(MintChannelRedeemerChanOpenTry{}), // your custom type
+		122, // CBOR tag number for your custom type
+	)
+
+	// Create decoding mode with TagSet
+	dm, err := cbor.DecOptions{}.DecModeWithTags(tags)
+
+	var result interface{}
+	err = dm.Unmarshal(datumBytes, &result)
+	if err != nil {
+		return MintChannelRedeemerSchema{}, err
+	}
+	var mintChannRedeemer MintChannelRedeemerSchema
+	switch result.(type) {
+	case MintChannelRedeemerChanOpenInit: // custom type
+		mintChannRedeemer.Type = ChanOpenInit
+		mintChannRedeemer.Value = result.(MintChannelRedeemerChanOpenInit)
+	case MintChannelRedeemerChanOpenTry:
+		mintChannRedeemer.Type = ChanOpenTry
+		mintChannRedeemer.Value = result.(MintChannelRedeemerChanOpenTry)
+	}
+	return mintChannRedeemer, nil
+}
+
+func DecodeSpendChannelRedeemerSchema(spendChannEncoded string) (SpendChannelRedeemerSchema, error) {
+	datumBytes, _ := hex.DecodeString(spendChannEncoded)
+	tags := cbor.NewTagSet()
+	err := tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerChanOpenAck{}), // your custom type
+		121, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerChanOpenConfirm{}), // your custom type
+		122, // CBOR tag number for your custom type
+	)
+
+	// Create decoding mode with TagSet
+	dm, err := cbor.DecOptions{}.DecModeWithTags(tags)
+
+	var result interface{}
+	err = dm.Unmarshal(datumBytes, &result)
+	if err != nil {
+		return SpendChannelRedeemerSchema{}, err
+	}
+	var spendChannRedeemer SpendChannelRedeemerSchema
+	switch result.(type) {
+	case SpendChannelRedeemerChanOpenAck: // custom type
+		spendChannRedeemer.Type = ChanOpenAck
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerChanOpenAck)
+	case SpendChannelRedeemerChanOpenConfirm:
+		spendChannRedeemer.Type = ChanOpenConfirm
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerChanOpenConfirm)
+	}
+	return spendChannRedeemer, nil
+
 }

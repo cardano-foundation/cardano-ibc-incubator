@@ -9,6 +9,8 @@ import (
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
+	connectiontypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
+	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
@@ -219,20 +221,15 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 	return &mithrilHeader, nil
 }
 
-func (gw *Gateway) QueryBlockResultsDraft(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
-	//req := ibcclient.QueryBlockResultsRequest{Height: height}
+func (gw *Gateway) QueryBlockResultsDraft(height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
 	var txsResults []*ibcclient.ResponseDeliverTx
-	//res, err := gw.TypeProvider.BlockResults(ctx, &req)
-	//if err != nil {
-	//	return nil, err
-	//}
-
-	// get connection and channel UTxOs
-	connAndChannelUTxOs, err := gw.DBService.QueryConnectionAndChannelUTxOs([]uint64{1}, "", "")
+	chainHandler, err := helpers.GetChainHandler()
 	if err != nil {
 		return nil, err
 	}
-	chainHandler, err := helpers.GetChainHandler()
+
+	// get connection and channel UTxOs
+	connAndChannelUTxOs, err := gw.DBService.QueryConnectionAndChannelUTxOs([]uint64{height}, chainHandler.Validators.MintConnection.ScriptHash, chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
 		return nil, err
 	}
@@ -240,20 +237,37 @@ func (gw *Gateway) QueryBlockResultsDraft(ctx context.Context, height uint64) (*
 	for _, utxo := range connAndChannelUTxOs {
 		switch utxo.AssetsPolicy {
 		case chainHandler.Validators.MintConnection.ScriptHash:
-			connEvents, err := gw.unmarshalConnectionEvent(utxo)
+			connEvent, err := gw.unmarshalConnectionEvent(utxo)
 			if err != nil {
 				return nil, err
 			}
-			txsResults = append(txsResults, connEvents...)
+			txsResults = append(txsResults, connEvent)
 		case chainHandler.Validators.MintChannel.ScriptHash:
-			channEvents, err := gw.unmarshalChannelEvent(utxo)
+			channEvent, err := gw.unmarshalChannelEvent(utxo)
 			if err != nil {
 				return nil, err
 			}
-			txsResults = append(txsResults, channEvents...)
+			txsResults = append(txsResults, channEvent)
 		}
 	}
 	// get client UTxOs
+	clientTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	}, constant.CLIENT_PREFIX, 0)
+	authOrClientUTxos, err := gw.DBService.QueryClientOrAuthHandlerUTxOsByHeight(
+		chainHandler.HandlerAuthToken.PolicyID,
+		chainHandler.Validators.MintClient.ScriptHash,
+		clientTokenName[0:40],
+		height)
+	clientEvent, err := gw.unmarshalClientEvents(authOrClientUTxos)
+	if err != nil {
+		return nil, err
+	}
+	if clientEvent != nil {
+		txsResults = append(txsResults, clientEvent)
+	}
+
 	return &ibcclient.QueryBlockResultsResponse{
 		BlockResults: &ibcclient.ResultBlockResults{
 			Height:     nil,
@@ -262,25 +276,161 @@ func (gw *Gateway) QueryBlockResultsDraft(ctx context.Context, height uint64) (*
 	}, nil
 }
 
-func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) ([]*ibcclient.ResponseDeliverTx, error) {
+func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) (*ibcclient.ResponseDeliverTx, error) {
 	chainHandler, _ := helpers.GetChainHandler()
+	// decode connection datum
+	connDatumDecoded, err := ibc_types.DecodeConnectionDatumSchema(*connUTxO.Datum)
+	if err != nil {
+		return nil, err
+	}
 	// query redeemer of connection
-	redeemers, err := gw.DBService.QueryRedeemersByTransactionId(string(connUTxO.TxId), chainHandler.Validators.MintConnection.ScriptHash, chainHandler.Validators.SpendConnection.Address)
+	redeemers, err := gw.DBService.QueryRedeemersByTransactionId(connUTxO.TxId, chainHandler.Validators.MintConnection.ScriptHash, chainHandler.Validators.SpendConnection.Address)
 	if err != nil {
 		return nil, err
 	}
 	// decode redeemer connection
+	connId := helpers.GetEntityIdFromTokenName(connUTxO.AssetsName, helpers.AuthToken{
+		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
+		Name:     chainHandler.HandlerAuthToken.Name,
+	},
+		constant.CONNECTION_TOKEN_PREFIX,
+	)
+	var event ibcclient.Event
 	for _, redeemer := range redeemers {
-		fmt.Println(redeemer)
+		switch redeemer.Type {
+		case "mint":
+			mintConnRedeemer, err := ibc_types.DecodeMintConnectionRedeemerSchema(hex.EncodeToString(redeemer.Data))
+			if err != nil {
+				return nil, err
+			}
+
+			eventType := connectiontypes.EventTypeConnectionOpenInit
+			if mintConnRedeemer.Type == ibc_types.ConnOpenTry {
+				eventType = connectiontypes.EventTypeConnectionOpenTry
+			}
+			event, err = helpers.NormalizeEventFromConnDatum(*connDatumDecoded, connId, eventType)
+		case "spend":
+			spendConnRedeemer, err := ibc_types.DecodeSpendConnectionRedeemerSchema(hex.EncodeToString(redeemer.Data))
+			if err != nil {
+				return nil, err
+			}
+			eventType := connectiontypes.EventTypeConnectionOpenAck
+			if spendConnRedeemer.Type == ibc_types.ConnOpenConfirm {
+				eventType = connectiontypes.EventTypeConnectionOpenConfirm
+			}
+			event, err = helpers.NormalizeEventFromConnDatum(*connDatumDecoded, connId, eventType)
+		}
 	}
 
-	return nil, nil
+	return &ibcclient.ResponseDeliverTx{
+		Code: 0,
+		Events: []*ibcclient.Event{
+			&event,
+		},
+	}, nil
 }
 
-func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) ([]*ibcclient.ResponseDeliverTx, error) {
-	// query redeemer of connection
-	// decode redeemer connection
-	return nil, nil
+func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*ibcclient.ResponseDeliverTx, error) {
+	chainHandler, _ := helpers.GetChainHandler()
+	// decode channel datum
+	channDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(*channUTxO.Datum)
+	if err != nil {
+		return nil, err
+	}
+	// query redeemer of channel
+	redeemers, err := gw.DBService.QueryRedeemersByTransactionId(channUTxO.TxId, chainHandler.Validators.MintChannel.ScriptHash, chainHandler.Validators.SpendChannel.Address)
+	if err != nil {
+		return nil, err
+	}
+
+	channelId := helpers.GetEntityIdFromTokenName(channUTxO.AssetsName, helpers.AuthToken{
+		chainHandler.HandlerAuthToken.PolicyID,
+		chainHandler.HandlerAuthToken.Name,
+	}, constant.CHANNEL_TOKEN_PREFIX)
+	connId := string(channDatumDecoded.State.Channel.ConnectionHops[0])
+	// decode redeemer channel
+	var event ibcclient.Event
+	for _, redeemer := range redeemers {
+		switch redeemer.Type {
+		case "mint":
+			mintChannRedeemer, err := ibc_types.DecodeMintChannelRedeemerSchema(hex.EncodeToString(redeemer.Data))
+			if err != nil {
+				return nil, err
+			}
+
+			eventType := channeltypes.EventTypeChannelOpenInit
+			if mintChannRedeemer.Type == ibc_types.ChanOpenInit {
+				eventType = channeltypes.EventTypeChannelOpenInit
+			}
+			event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+		case "spend":
+			spendChannelRedeemer, err := ibc_types.DecodeSpendChannelRedeemerSchema(hex.EncodeToString(redeemer.Data))
+			if err != nil {
+				return nil, err
+			}
+			eventType := channeltypes.EventTypeChannelOpenAck
+			if spendChannelRedeemer.Type == ibc_types.ChanOpenConfirm {
+				eventType = channeltypes.EventTypeChannelOpenConfirm
+			}
+			event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+		}
+	}
+	return &ibcclient.ResponseDeliverTx{
+		Code: 0,
+		Events: []*ibcclient.Event{
+			&event,
+		},
+	}, nil
+}
+
+func (gw *Gateway) unmarshalClientEvents(clientUTxOs []dto.UtxoRawDto) (*ibcclient.ResponseDeliverTx, error) {
+	chainHandler, _ := helpers.GetChainHandler()
+	var event ibcclient.Event
+	firstSnapshotIdx := slices.IndexFunc(clientUTxOs, func(c dto.UtxoRawDto) bool {
+		return hex.EncodeToString(c.AssetsPolicy) == chainHandler.HandlerAuthToken.PolicyID
+	})
+	for _, utxo := range clientUTxOs {
+		if hex.EncodeToString(utxo.AssetsPolicy) != chainHandler.Validators.MintClient.ScriptHash {
+			continue
+		}
+		clientId := helpers.GetEntityIdFromTokenName(hex.EncodeToString(utxo.AssetsName), helpers.AuthToken{
+			chainHandler.HandlerAuthToken.PolicyID,
+			chainHandler.HandlerAuthToken.Name,
+		}, constant.CLIENT_PREFIX)
+		clientDatum, err := ibc_types.DecodeClientDatumSchema(hex.EncodeToString(utxo.Datum))
+		if err != nil {
+			return nil, err
+		}
+		clientRedeemers, err := gw.DBService.QueryRedeemersByTransactionId(utxo.TxId, chainHandler.Validators.MintClient.ScriptHash, chainHandler.Validators.SpendClient.Address)
+		if err != nil {
+			return nil, err
+		}
+		spendClientIdx := slices.IndexFunc(clientRedeemers, func(c dto.RedeemerDto) bool { return c.Type == "spend" })
+		var spendClientRedeemer *ibc_types.SpendClientRedeemerSchema
+		if spendClientIdx != -1 {
+			spendClient := clientRedeemers[spendClientIdx]
+			spendClientRD, _ := ibc_types.DecodeSpendClientRedeemerSchema(hex.EncodeToString(spendClient.Data))
+			spendClientRedeemer = &spendClientRD
+		}
+
+		if err != nil {
+			return nil, err
+		}
+		eventClient := clienttypes.EventTypeCreateClient
+		if firstSnapshotIdx == -1 {
+			eventClient = clienttypes.EventTypeUpdateClient
+		}
+		event, err = helpers.NormalizeEventFromClientDatum(*clientDatum, spendClientRedeemer, clientId, eventClient)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &ibcclient.ResponseDeliverTx{
+		Code: 0,
+		Events: []*ibcclient.Event{
+			&event,
+		},
+	}, nil
 }
 
 func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported.ClientState, []byte, *clienttypes.Height, error) {
@@ -324,7 +474,7 @@ func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported
 
 }
 
-func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.ClientDatum, *dto.UtxoDto, error) {
+func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.ClientDatumSchema, *dto.UtxoDto, error) {
 	clientId = strings.Trim(clientId, "ibc_client-")
 	clientIdNum, err := strconv.ParseInt(clientId, 10, 64)
 	if err != nil {
@@ -340,7 +490,7 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 		Name:     chainHandler.HandlerAuthToken.Name,
 	}, constant.CLIENT_PREFIX, clientIdNum)
 
-	handlerUtxos, err := gw.DBService.FindUtxoClientOrAuthHandler(
+	handlerUtxos, err := gw.DBService.QueryClientOrAuthHandlerUTxOs(
 		chainHandler.HandlerAuthToken.PolicyID,
 		chainHandler.Validators.MintClient.ScriptHash,
 		clientTokenName)
@@ -353,8 +503,8 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 	if handlerUtxos[0].Datum == nil {
 		return nil, nil, fmt.Errorf("datum is nil")
 	}
-	dataString := *handlerUtxos[0].Datum
-	handlerDatum, err := ibc_types.DecodeHandlerDatumSchema(dataString[2:])
+	dataString := hex.EncodeToString(handlerUtxos[0].Datum)
+	handlerDatum, err := ibc_types.DecodeHandlerDatumSchema(dataString)
 	if err != nil {
 		return nil, nil, err
 	}
