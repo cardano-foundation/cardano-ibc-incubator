@@ -1,11 +1,16 @@
 #!/bin/bash
 # osmosis version v24.0.0
 
-SCRIPT_DIR=$(dirname $(realpath $0))
-
-cd ${SCRIPT_DIR}/.. && make localnet-startd
-
 OSMOSISD_CONTAINER_NAME="localosmosis-osmosisd-1"
+
+script_dir=$(dirname $(realpath $0))
+
+# Start osmosisd
+cd ${script_dir}/.. && make localnet-startd
+
+# Build contracts while waiting for osmosis started
+cd ${script_dir}/../cosmwasm && bash ./build_wasm.sh
+docker cp ${script_dir}/../cosmwasm/artifacts $OSMOSISD_CONTAINER_NAME:osmosis/artifacts # copy built contracts to container
 
 # Check if the container is running
 while ! docker ps --format '{{.Names}}' | grep -q "^$OSMOSISD_CONTAINER_NAME$"; do
@@ -13,70 +18,23 @@ while ! docker ps --format '{{.Names}}' | grep -q "^$OSMOSISD_CONTAINER_NAME$"; 
   sleep 1
 done
 
-# Build contracts
-cd ${SCRIPT_DIR}/../cosmwasm && bash ./build_wasm.sh
-docker cp ${SCRIPT_DIR}/../cosmwasm/artifacts $OSMOSISD_CONTAINER_NAME:osmosis/artifacts # copy built contracts to container
+#=============================Set up channel==============================
+cp ${script_dir}/hermes/config.toml ${HOME}/.hermes/config.toml
+hermes keys add --chain sidechain --mnemonic-file ${script_dir}/hermes/cosmos
+hermes keys add --chain localosmosis --mnemonic-file ${script_dir}/hermes/osmosis
 
-DOCKER_OSMOSISD="docker exec -it $OSMOSISD_CONTAINER_NAME osmosisd"
-
-VALIDATOR=$($DOCKER_OSMOSISD keys show val --keyring-backend test -a)
-VALIDATOR=$(echo "$VALIDATOR" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//') # trim spaces
-
-TX_FLAGS=(--node http://localhost:26657 --keyring-backend test --chain-id localosmosis --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 -y)
-
-# Gen code_id swaprouter
-$DOCKER_OSMOSISD tx wasm store artifacts/swaprouter.wasm --from ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 5
-SWAPRUOTER_CODE_ID=$($DOCKER_OSMOSISD query wasm list-code -o json | jq -r '.code_infos[-1].code_id')
-echo "SWAPRUOTER_CODE_ID" $SWAPRUOTER_CODE_ID
-# Initial contract swaprouter
-MSG=$(
-  cat <<EOF
-{
-  "owner": "${VALIDATOR}"
-}
-EOF
-)
-sleep 5
-$DOCKER_OSMOSISD tx wasm instantiate $SWAPRUOTER_CODE_ID "$MSG" --label "swaprouter" --from ${VALIDATOR} --admin ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 5
-export SWAPROUTER_ADDRESS=$($DOCKER_OSMOSISD query wasm list-contract-by-code "$SWAPRUOTER_CODE_ID" -o json | jq -r '.contracts[-1]')
-echo "SWAPROUTER_ADDRESS" $SWAPROUTER_ADDRESS
-
-# Set up channel
-## Using hermes
-cp ${SCRIPT_DIR}/hermes/config.toml ${HOME}/.hermes/config.toml
-hermes keys add --chain sidechain --mnemonic-file ${SCRIPT_DIR}/hermes/cosmos
-hermes keys add --chain localosmosis --mnemonic-file ${SCRIPT_DIR}/hermes/osmosis
-
+# Create osmosis client
 hermes create client --host-chain localosmosis --reference-chain sidechain
 localosmosis_client_id=$(hermes --json query clients --host-chain localosmosis | jq -r 'select(.result) | .result[-1].client_id')
 
+# Create sidechain client
 hermes create client --host-chain sidechain --reference-chain localosmosis --trusting-period 86000s
 sidechain_client_id=$(hermes --json query clients --host-chain sidechain | jq -r 'select(.result) | .result[-1].client_id')
 
+# Create connection
 hermes create connection --a-chain sidechain --a-client $sidechain_client_id --b-client $localosmosis_client_id
 connectionId=$(hermes --json query connections --chain sidechain | jq -r 'select(.result) | .result[-2]')
 
+# Create channel
 hermes create channel --a-chain sidechain --a-connection $connectionId --a-port transfer --b-port transfer
-channelId=$(hermes --json query channels --chain localosmosis | jq -r 'select(.result) | .result[-1].channel_id')
-
-# Gen code_id crosschain_swap
-sleep 5
-$DOCKER_OSMOSISD tx wasm store artifacts/crosschain_swaps.wasm --from ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 5
-CROSSCHAINSWAPS_CODE_ID=$($DOCKER_OSMOSISD query wasm list-code -o json | jq -r '.code_infos[-1].code_id')
-
-echo "CROSSCHAINSWAPS_CODE_ID" $CROSSCHAINSWAPS_CODE_ID
-
-# Initial contract crosschain_swap
-MSG=$(
-  cat <<EOF
-{"governor":"${VALIDATOR}","swap_contract":"${SWAPROUTER_ADDRESS}","channels":[["cosmos","${channelId}"]]}
-EOF
-)
-sleep 5
-$DOCKER_OSMOSISD tx wasm instantiate $CROSSCHAINSWAPS_CODE_ID "$MSG" --label "crosschain_swaps" --from ${VALIDATOR} --admin ${VALIDATOR} "${TX_FLAGS[@]}"
-sleep 5
-export CROSSCHAINSWAPS_ADDRESS=$($DOCKER_OSMOSISD query wasm list-contract-by-code "$CROSSCHAINSWAPS_CODE_ID" -o json | jq -r '.contracts[-1]')
-echo "CROSSCHAINSWAPS_ADDRESS" $CROSSCHAINSWAPS_ADDRESS
+channel_id=$(hermes --json query channels --chain localosmosis | jq -r 'select(.result) | .result[-1].channel_id')

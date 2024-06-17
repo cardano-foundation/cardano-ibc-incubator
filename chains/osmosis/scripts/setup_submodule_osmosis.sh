@@ -4,18 +4,20 @@ SCRIPT_DIR=$(dirname $(realpath $0))
 
 git submodule update --init --recursive
 
-# Update cosmwasm 
+# Update cosmwasm
 sudo rm -rf $SCRIPT_DIR/../osmosis/cosmwasm && cp -r $SCRIPT_DIR/../configuration/cosmwasm $SCRIPT_DIR/../osmosis/cosmwasm
 
 # Update scripts
-## Add folder hermes 
+## Add folder hermes
 cp -r $SCRIPT_DIR/../configuration/hermes $SCRIPT_DIR/../osmosis/scripts
-## Add start.sh 
+## Add start.sh
 cp $SCRIPT_DIR/../scripts/start.sh $SCRIPT_DIR/../osmosis/scripts/start.sh
-## Add stop.sh 
+## Add stop.sh
 cp $SCRIPT_DIR/../scripts/stop.sh $SCRIPT_DIR/../osmosis/scripts/stop.sh
 
-# Update scripts run docker 
+cp $SCRIPT_DIR/../scripts/setup_crosschain_swaps.sh $SCRIPT_DIR/../osmosis/scripts
+
+# Update scripts run docker
 rm $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh && cp $SCRIPT_DIR/../scripts/setup_osmosis_local.sh $SCRIPT_DIR/../osmosis/tests/localosmosis/scripts/setup.sh
 
 # Update docker-compose.yml
