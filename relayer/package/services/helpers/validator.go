@@ -20,10 +20,6 @@ func ValidQueryPacketCommitmentsParam(req *channeltypes.QueryPacketCommitmentsRe
 	if !strings.HasPrefix(req.ChannelId, "channel") {
 		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
 	}
-	if req.Pagination == nil {
-		return nil, fmt.Errorf("invalid pagination: pagination must be not nil")
-	}
-
 	return req, nil
 }
 
@@ -40,9 +36,6 @@ func ValidQueryPacketAckParam(req *channeltypes.QueryPacketAcknowledgementReques
 func ValidQueryPacketAcksParam(req *channeltypes.QueryPacketAcknowledgementsRequest) (*channeltypes.QueryPacketAcknowledgementsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
 		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
-	}
-	if req.Pagination == nil {
-		return nil, fmt.Errorf("invalid pagination: pagination must be not nil")
 	}
 	return req, nil
 }
