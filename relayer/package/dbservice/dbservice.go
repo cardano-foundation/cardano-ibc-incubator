@@ -161,7 +161,7 @@ func (s *DBService) QueryRedeemersByTransactionId(txId uint64, mintScriptHash st
     WHERE rd.tx_id = ? AND (rd.script_hash = ? OR generating_tx_out.address = ?)`
 
 	var redeemers []dto.RedeemerDto
-	err := s.DB.Debug().Raw(rawQuery, txId, fmt.Sprintf("\\x%s", mintScriptHash), spendAddress).Scan(&redeemers).Error
+	err := s.DB.Raw(rawQuery, txId, fmt.Sprintf("\\x%s", mintScriptHash), spendAddress).Scan(&redeemers).Error
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +223,7 @@ func (s *DBService) QueryClientOrAuthHandlerUTxOs(policyId string, scHash string
       INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
       INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
       INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
-      WHERE generating_block.block_no = ? AND (ma.policy = ? OR ma.policy = ?);`
+      WHERE  (ma.policy = ? OR ma.policy = ?);`
 	err := s.DB.Raw(query, fmt.Sprintf("\\x%s", policyId), fmt.Sprintf("\\x%s", scHash)).Scan(&data).Error
 	if err != nil {
 		return nil, err

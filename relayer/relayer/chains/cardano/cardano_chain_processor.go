@@ -126,7 +126,7 @@ func (ccp *CardanoChainProcessor) Run(ctx context.Context, initialBlockHistory u
 		break
 	}
 	// this will make initial QueryLoop iteration look back initialBlockHistory blocks in history
-	latestQueriedBlock := persistence.latestHeight - 1
+	latestQueriedBlock := persistence.latestHeight - 15
 
 	if latestQueriedBlock < 0 {
 		latestQueriedBlock = 0
@@ -282,6 +282,10 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, blockResultsQueryTimeout)
 			defer cancelQueryCtx()
 			blockRes, err = ccp.chainProvider.QueryBlockResults(queryCtx, i)
+			fmt.Println("Block results: ", *blockRes)
+			if len(blockRes.TxsResults) > 0 {
+				fmt.Printf("Event %d - has %d events\n", i, len(blockRes.TxsResults))
+			}
 			return err
 		})
 		eg.Go(func() (err error) {
@@ -335,7 +339,10 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 				hasIBCEvents = true
 			}
 		}
-
+		fmt.Println("-----------------", i)
+		if i < persistence.latestHeight {
+			continue
+		}
 		if hasIBCEvents {
 			dsth, err := dst.ChainProvider.QueryLatestHeight(ctx)
 			if err != nil {

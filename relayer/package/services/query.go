@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -159,6 +160,9 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	}
 
 	layout := "2006-01-02T15:04:05.000000000Z"
+	if len(fcCertificateMsd.Metadata.SealedAt) < len(layout) {
+		fcCertificateMsd.Metadata.SealedAt = fcCertificateMsd.Metadata.SealedAt[:len(fcCertificateMsd.Metadata.SealedAt)-1] + strings.Repeat("0", len(layout)-len(fcCertificateMsd.Metadata.SealedAt)) + "Z"
+	}
 	tt, err := time.Parse(layout, fcCertificateMsd.Metadata.SealedAt)
 	if err != nil {
 		return nil, nil, err
@@ -466,13 +470,22 @@ func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported
 		AllowUpdateAfterMisbehaviour: false,
 	}
 
-	//hash := spendClientUTXO.TxHash[2:]
-	//cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
-	//if err != nil {
-	//	return nil, nil, nil, err
-	//}
-	//connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
-	return clientState, []byte(""), &clienttypes.Height{
+	hash := spendClientUTXO.TxHash[2:]
+	proof := ""
+
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions found")
+		}
+		proof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
+
+	return clientState, []byte(proof), &clienttypes.Height{
 		RevisionNumber: 0,
 		RevisionHeight: uint64(spendClientUTXO.BlockNo),
 	}, nil
@@ -494,7 +507,9 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
 		Name:     chainHandler.HandlerAuthToken.Name,
 	}, constant.CLIENT_PREFIX, clientIdNum)
-
+	if err != nil {
+		return nil, nil, err
+	}
 	handlerUtxos, err := gw.DBService.QueryClientOrAuthHandlerUTxOs(
 		chainHandler.HandlerAuthToken.PolicyID,
 		chainHandler.Validators.MintClient.ScriptHash,

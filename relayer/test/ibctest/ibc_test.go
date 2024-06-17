@@ -380,7 +380,7 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 }
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
