@@ -33,16 +33,18 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 	if err != nil {
 		return nil, err
 	}
-	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshot, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.BlockNumber == uint64(h) })
+	cardanoTxsSetSnapshotReverse := slices.Clone(cardanoTxsSetSnapshot)
+	slices.Reverse(cardanoTxsSetSnapshotReverse)
+	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshotReverse, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.BlockNumber >= uint64(h) })
 	if snapshotIdx == -1 {
 		latestHeight := cardanoTxsSetSnapshot[0].BlockNumber
 		if h < int64(latestHeight) {
-			return nil, errors.New(fmt.Sprintf("SkipImmutableFile: Missing mithril height %d", h))
+			return nil, errors.New(fmt.Sprintf("BlockNumber: Missing mithril height %d", h))
 		}
 		return nil, errors.New(fmt.Sprintf("Could not find snapshot with height %d", h))
 	}
 
-	snapshot := &cardanoTxsSetSnapshot[snapshotIdx]
+	snapshot := &cardanoTxsSetSnapshotReverse[snapshotIdx]
 	snapshotCertificate, err := gw.MithrilService.GetCertificateByHash(snapshot.CertificateHash)
 	if err != nil {
 		return nil, err
