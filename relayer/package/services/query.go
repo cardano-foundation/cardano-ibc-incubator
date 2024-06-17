@@ -426,6 +426,10 @@ func (gw *Gateway) unmarshalClientEvents(clientUTxOs []dto.UtxoRawDto) (*abci.Re
 			return nil, err
 		}
 	}
+
+	if event.Type == "" {
+		return nil, nil
+	}
 	return &abci.ResponseDeliverTx{
 		Code: 0,
 		Events: []abci.Event{
