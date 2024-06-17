@@ -30,9 +30,9 @@ set_permission() {
 
 run() {
     bash ${SCRIPT_DIR}/${CARDANO_SCRIPT_DIR}/start.sh && \
-    bash ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/start.sh &&
-    # bash ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/start.sh &&
-    bash ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/start.sh || return 1
+    bash ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/start.sh && \
+    bash ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/start.sh && \
+    bash ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/start.sh  || return 1
   return 0
 }
 
