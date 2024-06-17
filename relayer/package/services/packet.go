@@ -7,11 +7,9 @@ import (
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/types/query"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"golang.org/x/exp/maps"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -132,38 +130,6 @@ func (gw *Gateway) QueryPacketCommitments(req *channeltypes.QueryPacketCommitmen
 
 	packetCommitmentSeqs := maps.Keys(channelDatumDecoded.State.PacketCommitment)
 
-	if req.Pagination.Reverse == true {
-		slices.Reverse(packetCommitmentSeqs)
-	}
-	if req.Pagination.Key != nil {
-		offset, err := helpers.DecodePaginationKey(req.Pagination.Key)
-		if err != nil {
-			return nil, err
-		}
-		req.Pagination.Offset = offset
-	}
-	var nextKey []byte
-	var total uint64
-	if req.Pagination.CountTotal {
-		total = uint64(len(packetCommitmentSeqs))
-	} else {
-		total = 0
-	}
-
-	if len(packetCommitmentSeqs) > int(req.Pagination.Limit) {
-		from := req.Pagination.Offset
-		to := req.Pagination.Offset + req.Pagination.Limit
-		packetCommitmentSeqs = packetCommitmentSeqs[from:to]
-		pageKeyDto := helpers.PaginationKeyDto{
-			Offset: to,
-		}
-
-		if int(to) < len(packetCommitmentSeqs) {
-			nextKey = helpers.GeneratePaginationKey(pageKeyDto)
-		} else {
-			nextKey = nil
-		}
-	}
 	var commitments []*channeltypes.PacketState
 	for _, packetSeqs := range packetCommitmentSeqs {
 		temp := &channeltypes.PacketState{
@@ -177,10 +143,6 @@ func (gw *Gateway) QueryPacketCommitments(req *channeltypes.QueryPacketCommitmen
 
 	return &channeltypes.QueryPacketCommitmentsResponse{
 		Commitments: commitments,
-		Pagination: &query.PageResponse{
-			NextKey: nextKey,
-			Total:   total,
-		},
 		Height: clienttypes.Height{
 			RevisionNumber: 0,
 			RevisionHeight: 0,
@@ -307,38 +269,6 @@ func (gw *Gateway) QueryPacketAcks(req *channeltypes.QueryPacketAcknowledgements
 
 	packetReceiptSeqs := maps.Keys(channelDatumDecoded.State.PacketReceipt)
 
-	if req.Pagination.Reverse {
-		slices.Reverse(packetReceiptSeqs)
-	}
-	if req.Pagination.Key != nil {
-		offset, err := helpers.DecodePaginationKey(req.Pagination.Key)
-		if err != nil {
-			return nil, err
-		}
-		req.Pagination.Offset = offset
-	}
-	var nextKey []byte
-	var total uint64
-	if req.Pagination.CountTotal {
-		total = uint64(len(packetReceiptSeqs))
-	} else {
-		total = 0
-	}
-
-	if len(packetReceiptSeqs) > int(req.Pagination.Limit) {
-		from := req.Pagination.Offset
-		to := req.Pagination.Offset + req.Pagination.Limit
-		packetReceiptSeqs = packetReceiptSeqs[from:to]
-		pageKeyDto := helpers.PaginationKeyDto{
-			Offset: to,
-		}
-
-		if int(to) < len(packetReceiptSeqs) {
-			nextKey = helpers.GeneratePaginationKey(pageKeyDto)
-		} else {
-			nextKey = nil
-		}
-	}
 	var acknowledgements []*channeltypes.PacketState
 	for _, packetSeqs := range packetReceiptSeqs {
 		temp := &channeltypes.PacketState{
@@ -352,10 +282,6 @@ func (gw *Gateway) QueryPacketAcks(req *channeltypes.QueryPacketAcknowledgements
 
 	return &channeltypes.QueryPacketAcknowledgementsResponse{
 		Acknowledgements: acknowledgements,
-		Pagination: &query.PageResponse{
-			NextKey: nextKey,
-			Total:   total,
-		},
 		Height: clienttypes.Height{
 			RevisionNumber: 0,
 			RevisionHeight: 0,
