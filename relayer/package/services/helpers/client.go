@@ -4,13 +4,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/package/services/constants"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
+	abci "github.com/cometbft/cometbft/abci/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 )
 
-func NormalizeEventFromClientDatum(clientDatum ibc_types.ClientDatumSchema, spendClientRedeemer *ibc_types.SpendClientRedeemerSchema, clientId string, eventType string) (types.Event, error) {
+func NormalizeEventFromClientDatum(clientDatum ibc_types.ClientDatumSchema, spendClientRedeemer *ibc_types.SpendClientRedeemerSchema, clientId string, eventType string) (abci.Event, error) {
 	if eventType == "" {
 		eventType = clienttypes.EventTypeCreateClient
 	}
@@ -32,22 +32,22 @@ func NormalizeEventFromClientDatum(clientDatum ibc_types.ClientDatumSchema, spen
 
 	}
 
-	eventAttribute := []*types.EventAttribute{
-		&types.EventAttribute{
+	eventAttribute := []abci.EventAttribute{
+		abci.EventAttribute{
 			Key:   clienttypes.AttributeKeyClientID,
 			Value: fmt.Sprintf("%s-%s", constants.ClientIDPrefix, clientId),
 		},
-		&types.EventAttribute{
+		abci.EventAttribute{
 			Key:   clienttypes.AttributeKeyConsensusHeight,
 			Value: fmt.Sprint(latestHeight.RevisionHeight),
 		},
-		&types.EventAttribute{
+		abci.EventAttribute{
 			Key:   clienttypes.AttributeKeyHeader,
 			Value: header,
 		},
 	}
-	return types.Event{
-		Type:           eventType,
-		EventAttribute: eventAttribute,
+	return abci.Event{
+		Type:       eventType,
+		Attributes: eventAttribute,
 	}, nil
 }

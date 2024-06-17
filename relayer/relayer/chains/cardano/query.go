@@ -17,7 +17,6 @@ import (
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
-	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -718,39 +717,12 @@ func (cc *CardanoProvider) QueryBlockData(ctx context.Context, h int64) (*module
 }
 
 func (cc *CardanoProvider) QueryBlockResults(ctx context.Context, h int64) (*ctypes.ResultBlockResults, error) {
-	res, err := cc.GateWay.QueryBlockResults(ctx, uint64(h))
+	res, err := cc.GateWay.QueryBlockResults(uint64(h))
 	if err != nil {
 		return nil, err
 	}
-	//get all event
-	txResults := []*abci.ResponseDeliverTx{}
 
-	for _, txr := range res.BlockResults.TxsResults {
-		events := []abci.Event{}
-		for _, event := range txr.Events {
-			attributes := []abci.EventAttribute{}
-			for _, attr := range event.EventAttribute {
-				eventAttr := abci.EventAttribute{
-					Key:   attr.Key,
-					Value: attr.Value,
-					Index: attr.Index,
-				}
-				attributes = append(attributes, eventAttr)
-			}
-			events = append(events, abci.Event{
-				Type:       event.Type,
-				Attributes: attributes,
-			})
-		}
-		txResults = append(txResults, &abci.ResponseDeliverTx{
-			Events: events,
-		})
-	}
-
-	return &ctypes.ResultBlockResults{
-		Height:     int64(res.BlockResults.Height.RevisionHeight),
-		TxsResults: txResults,
-	}, nil
+	return res, nil
 }
 
 func (cc *CardanoProvider) QueryProofUnreceivedPackets(ctx context.Context, channelId, portId string, sequence, revisionHeight uint64) (provider.PacketProof, error) {

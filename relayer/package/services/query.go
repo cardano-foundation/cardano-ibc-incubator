@@ -5,9 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
+	abci "github.com/cometbft/cometbft/abci/types"
+	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	connectiontypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -223,8 +224,8 @@ func (gw *Gateway) QueryIBCGenesisCertHeader(ctx context.Context, epoch int64) (
 	return &mithrilHeader, nil
 }
 
-func (gw *Gateway) QueryBlockResultsDraft(height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
-	var txsResults []*ibcclient.ResponseDeliverTx
+func (gw *Gateway) QueryBlockResults(height uint64) (*ctypes.ResultBlockResults, error) {
+	var txsResults []*abci.ResponseDeliverTx
 	chainHandler, err := helpers.GetChainHandler()
 	if err != nil {
 		return nil, err
@@ -270,18 +271,13 @@ func (gw *Gateway) QueryBlockResultsDraft(height uint64) (*ibcclient.QueryBlockR
 		txsResults = append(txsResults, clientEvent)
 	}
 
-	return &ibcclient.QueryBlockResultsResponse{
-		BlockResults: &ibcclient.ResultBlockResults{
-			Height: &clienttypes.Height{
-				RevisionNumber: 0,
-				RevisionHeight: height,
-			},
-			TxsResults: txsResults,
-		},
+	return &ctypes.ResultBlockResults{
+		Height:     int64(height),
+		TxsResults: []*abci.ResponseDeliverTx{},
 	}, nil
 }
 
-func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) (*ibcclient.ResponseDeliverTx, error) {
+func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) (*abci.ResponseDeliverTx, error) {
 	chainHandler, _ := helpers.GetChainHandler()
 	// decode connection datum
 	connDatumDecoded, err := ibc_types.DecodeConnectionDatumSchema(*connUTxO.Datum)
@@ -300,7 +296,7 @@ func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) (*ibcclient.Re
 	},
 		constant.CONNECTION_TOKEN_PREFIX,
 	)
-	var event ibcclient.Event
+	var event abci.Event
 	for _, redeemer := range redeemers {
 		switch redeemer.Type {
 		case "mint":
@@ -327,15 +323,15 @@ func (gw *Gateway) unmarshalConnectionEvent(connUTxO dto.UtxoDto) (*ibcclient.Re
 		}
 	}
 
-	return &ibcclient.ResponseDeliverTx{
+	return &abci.ResponseDeliverTx{
 		Code: 0,
-		Events: []*ibcclient.Event{
-			&event,
+		Events: []abci.Event{
+			event,
 		},
 	}, nil
 }
 
-func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*ibcclient.ResponseDeliverTx, error) {
+func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*abci.ResponseDeliverTx, error) {
 	chainHandler, _ := helpers.GetChainHandler()
 	// decode channel datum
 	channDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(*channUTxO.Datum)
@@ -354,7 +350,7 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*ibcclient.Resp
 	}, constant.CHANNEL_TOKEN_PREFIX)
 	connId := string(channDatumDecoded.State.Channel.ConnectionHops[0])
 	// decode redeemer channel
-	var event ibcclient.Event
+	var event abci.Event
 	for _, redeemer := range redeemers {
 		switch redeemer.Type {
 		case "mint":
@@ -380,17 +376,17 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*ibcclient.Resp
 			event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
 		}
 	}
-	return &ibcclient.ResponseDeliverTx{
+	return &abci.ResponseDeliverTx{
 		Code: 0,
-		Events: []*ibcclient.Event{
-			&event,
+		Events: []abci.Event{
+			event,
 		},
 	}, nil
 }
 
-func (gw *Gateway) unmarshalClientEvents(clientUTxOs []dto.UtxoRawDto) (*ibcclient.ResponseDeliverTx, error) {
+func (gw *Gateway) unmarshalClientEvents(clientUTxOs []dto.UtxoRawDto) (*abci.ResponseDeliverTx, error) {
 	chainHandler, _ := helpers.GetChainHandler()
-	var event ibcclient.Event
+	var event abci.Event
 	firstSnapshotIdx := slices.IndexFunc(clientUTxOs, func(c dto.UtxoRawDto) bool {
 		return hex.EncodeToString(c.AssetsPolicy) == chainHandler.HandlerAuthToken.PolicyID
 	})
@@ -430,10 +426,10 @@ func (gw *Gateway) unmarshalClientEvents(clientUTxOs []dto.UtxoRawDto) (*ibcclie
 			return nil, err
 		}
 	}
-	return &ibcclient.ResponseDeliverTx{
+	return &abci.ResponseDeliverTx{
 		Code: 0,
-		Events: []*ibcclient.Event{
-			&event,
+		Events: []abci.Event{
+			event,
 		},
 	}, nil
 }
