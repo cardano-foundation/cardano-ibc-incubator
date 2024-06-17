@@ -272,7 +272,10 @@ func (gw *Gateway) QueryBlockResultsDraft(height uint64) (*ibcclient.QueryBlockR
 
 	return &ibcclient.QueryBlockResultsResponse{
 		BlockResults: &ibcclient.ResultBlockResults{
-			Height:     nil,
+			Height: &clienttypes.Height{
+				RevisionNumber: 0,
+				RevisionHeight: height,
+			},
 			TxsResults: txsResults,
 		},
 	}, nil
