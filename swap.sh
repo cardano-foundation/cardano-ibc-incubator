@@ -1,3 +1,7 @@
+#==================================Assign contract address=======================================
+CROSSCHAIN_SWAPS_ADDRESS=""
+[ -z "$CROSSCHAIN_SWAPS_ADDRESS" ] && echo "crosschain_swaps contract address not specified!" && exit 1
+CARDANO_RECEIVER="247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8"
 #==================================Setup relayer=======================================
 RLY_CONTAINER_NAME="relayer"
 if ! docker ps --format '{{.Names}}' | grep -q "^$RLY_CONTAINER_NAME$"; then
@@ -13,8 +17,6 @@ SENT_AMOUNT="12345-9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f6
 SIDECHAIN_RECEIVER="pfm"
 HERMES_OSMOSIS_NAME="localosmosis"
 HERMES_SIDECHAIN_NAME="sidechain"
-CROSSCHAIN_SWAPS_ADDRESS="osmo1nc5tatafv6eyq7llkr2gv50ff9e22mnf70qgjlv737ktmt4eswrqvlx82r"
-CARDANO_RECEIVER="247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8"
 
 cardano_sidechain_conn_id=$($rly config show --json | jq -r --arg path "$RELAYER_PATH" '.paths[$path].src."connection-id"')
 
