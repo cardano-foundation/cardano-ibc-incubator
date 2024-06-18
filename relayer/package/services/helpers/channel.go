@@ -16,7 +16,7 @@ func NormalizeEventFromChannelDatum(channDatum ibc_types.ChannelDatumSchema, con
 	eventAttribute := []abci.EventAttribute{
 		abci.EventAttribute{
 			Key:   channeltypes.AttributeKeyConnectionID,
-			Value: fmt.Sprintf("%s-%s", constants.ConnectionTokenPrefix, connId),
+			Value: connId,
 			Index: true,
 		},
 		abci.EventAttribute{

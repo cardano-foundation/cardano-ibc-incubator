@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelResponse, error) {
@@ -62,11 +64,22 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 		return nil, err
 	}
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var channelProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions found")
+		}
+		channelProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(10*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-	channelProof := cardanoTxProof.CertifiedTransactions[0].Proof
+
 	return &chantypes.QueryChannelResponse{
 		Channel: &chantypes.Channel{
 			State:    chantypes.State(stateNum),
