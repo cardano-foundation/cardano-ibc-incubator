@@ -53,6 +53,16 @@ func (c *ConnectionEndState) UnmarshalCBOR(data []byte) error {
 	if err != nil {
 		return err
 	}
+	switch result.(cbor.Tag).Number {
+	case 121:
+		*c = ConnectionStateUninitialized
+	case 122:
+		*c = ConnectionStateInit
+	case 123:
+		*c = ConnectionStateTryOpen
+	case 124:
+		*c = ConnectionStateOpen
+	}
 
 	return nil
 }
