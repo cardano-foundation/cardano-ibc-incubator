@@ -273,6 +273,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		return fmt.Errorf("error querying latest height for chain_id: %s, %w", dst.Info.ChainID, err)
 	}
 	var updateClientMessages []provider.RelayerMessage
+	hasIBCEvents := false
 	for i := persistence.latestQueriedBlock + 1; i <= persistence.latestHeight; i++ {
 		var eg errgroup.Group
 		var blockRes *ctypes.ResultBlockResults
@@ -317,8 +318,6 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		ibcHeaderCache[heightUint64] = latestHeader
 
 		ppChanged = true
-
-		hasIBCEvents := false
 
 		for _, tx := range blockRes.TxsResults {
 			if tx.Code != 0 {
@@ -365,6 +364,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		}
 
 		newLatestQueriedBlock = i
+		hasIBCEvents = false
 	}
 	if len(updateClientMessages) > 0 {
 		dst := ccp.pathProcessors[0].PathEnd2
