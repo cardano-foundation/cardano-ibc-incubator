@@ -282,10 +282,6 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, blockResultsQueryTimeout)
 			defer cancelQueryCtx()
 			blockRes, err = ccp.chainProvider.QueryBlockResults(queryCtx, i)
-			fmt.Println("Block results: ", *blockRes)
-			if len(blockRes.TxsResults) > 0 {
-				fmt.Printf("Event %d - has %d events\n", i, len(blockRes.TxsResults))
-			}
 			return err
 		})
 		eg.Go(func() (err error) {
@@ -339,7 +335,6 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 				hasIBCEvents = true
 			}
 		}
-		fmt.Println("-----------------", i)
 		if i < persistence.latestHeight {
 			continue
 		}

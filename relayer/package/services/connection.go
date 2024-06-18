@@ -86,7 +86,9 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
 		return nil
 	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
-
+	if err != nil {
+		return nil, err
+	}
 	return &conntypes.QueryConnectionResponse{
 		Connection: &conntypes.ConnectionEnd{
 			ClientId: string(connDatumDecoded.State.ClientId),

@@ -483,11 +483,15 @@ func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported
 		}
 		proof = cardanoTxProof.CertifiedTransactions[0].Proof
 		return nil
-	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
+	}, retry.Attempts(5), retry.Delay(10*time.Second), retry.LastErrorOnly(true))
+
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	return clientState, []byte(proof), &clienttypes.Height{
 		RevisionNumber: 0,
-		RevisionHeight: uint64(spendClientUTXO.BlockNo),
+		RevisionHeight: spendClientUTXO.BlockNo,
 	}, nil
 
 }
