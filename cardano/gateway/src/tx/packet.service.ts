@@ -94,7 +94,7 @@ export class PacketService {
 
       // Build and complete the unsigned transaction
       const unsignedRecvPacketTx: Tx = await this.buildUnsignedRecvPacketTx(recvPacketOperator, constructedAddress);
-      const unsignedRecvPacketTxValidTo: Tx = unsignedRecvPacketTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedRecvPacketTxValidTo: Tx = unsignedRecvPacketTx.validTo(Date.now() + 200 * 1e3);
 
       const unsignedRecvPacketCompleted: TxComplete = await unsignedRecvPacketTxValidTo.complete();
 
