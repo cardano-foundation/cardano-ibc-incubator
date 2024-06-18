@@ -277,7 +277,7 @@ func (gw *Gateway) QueryBlockResults(height uint64) (*ctypes.ResultBlockResults,
 
 	return &ctypes.ResultBlockResults{
 		Height:     int64(height),
-		TxsResults: []*abci.ResponseDeliverTx{},
+		TxsResults: txsResults,
 	}, nil
 }
 
