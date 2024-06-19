@@ -3,16 +3,17 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
 func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelResponse, error) {
@@ -54,16 +55,7 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 	for _, hop := range channelDatumDecoded.State.Channel.ConnectionHops {
 		connectionHops = append(connectionHops, string(hop))
 	}
-	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
-		policyId,
-		prefixTokenName,
-		chantypes.State_name[stateNum],
-		chainHandler.Validators.MintConnection.ScriptHash,
-		chainHandler.Validators.MintChannel.ScriptHash)
-	if err != nil {
-		return nil, err
-	}
-	hash := proof.TxHash[2:]
+	hash := utxos[0].TxHash[2:]
 	var channelProof string
 	err = retry.Do(func() error {
 		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
@@ -94,7 +86,7 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 		Proof: []byte(channelProof),
 		ProofHeight: clienttypes.Height{
 			RevisionNumber: 0,
-			RevisionHeight: uint64(proof.BlockNo),
+			RevisionHeight: uint64(utxos[0].BlockNo),
 		},
 	}, nil
 }
