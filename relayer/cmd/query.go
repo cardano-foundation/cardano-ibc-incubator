@@ -674,17 +674,19 @@ $ %s query connection-channels ibc-2 ibcconnection2 --offset 2 --limit 30`,
 			if err != nil {
 				return err
 			}
-
+			var result string
 			for _, channel := range chans {
 				s, err := chain.ChainProvider.Sprint(channel)
 				if err != nil {
 					fmt.Fprintf(cmd.ErrOrStderr(), "Failed to marshal channel: %v\n", err)
 					continue
 				}
-
-				fmt.Fprintln(cmd.OutOrStdout(), s)
+				result += s + ","
 			}
-
+			if len(result) > 1 {
+				result = "[" + result[:len(result)-1] + "]"
+				fmt.Fprintln(cmd.OutOrStdout(), result)
+			}
 			return nil
 		},
 	}
