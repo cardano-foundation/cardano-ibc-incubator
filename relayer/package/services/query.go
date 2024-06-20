@@ -376,6 +376,9 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*abci.ResponseD
 			}
 			eventType := channeltypes.EventTypeChannelOpenAck
 			switch spendChannelRedeemer.Type {
+			case ibc_types.ChanOpenAck:
+				eventType = channeltypes.EventTypeChannelOpenAck
+				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
 			case ibc_types.ChanOpenConfirm:
 				eventType = channeltypes.EventTypeChannelOpenConfirm
 				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
