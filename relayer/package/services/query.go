@@ -5,6 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -16,10 +21,6 @@ import (
 	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-	"slices"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/cardano/relayer/v1/constant"
 
@@ -374,10 +375,42 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*abci.ResponseD
 				return nil, err
 			}
 			eventType := channeltypes.EventTypeChannelOpenAck
-			if spendChannelRedeemer.Type == ibc_types.ChanOpenConfirm {
+			switch spendChannelRedeemer.Type {
+			case ibc_types.ChanOpenConfirm:
 				eventType = channeltypes.EventTypeChannelOpenConfirm
+				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+			case ibc_types.ChanCloseInit:
+				eventType = channeltypes.EventTypeChannelCloseInit
+				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+			case ibc_types.ChanCloseConfirm:
+				eventType = channeltypes.EventTypeChannelCloseConfirm
+				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+			case ibc_types.AcknowledgePacket:
+			case ibc_types.TimeoutPacket:
+			case ibc_types.SendPacket:
+				event, err = helpers.NormalizeEventPacketFromChannelRedeemer(spendChannelRedeemer, *channDatumDecoded)
+			case ibc_types.RecvPacket:
+				ibcModuleRedeemers, err := gw.DBService.QueryRedeemersByTransactionId(channUTxO.TxId, "", chainHandler.Modules.Transfer.Address)
+				if err != nil {
+					return nil, err
+				}
+				if len(ibcModuleRedeemers) > 0 {
+					ibcModuleRedeemer, err := ibc_types.DecodeIBCModuleRedeemerSchema(hex.EncodeToString(ibcModuleRedeemers[0].Data))
+					if err != nil {
+						return nil, err
+					}
+					recvPacketEvents, err := helpers.NormalizeEventRecvPacketFromIBCModuleRedeemer(spendChannelRedeemer, *channDatumDecoded, *ibcModuleRedeemer)
+					if err != nil {
+						return nil, err
+					}
+
+					return &abci.ResponseDeliverTx{
+						Code:   0,
+						Events: recvPacketEvents,
+					}, nil
+				}
 			}
-			event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
+
 		}
 	}
 	return &abci.ResponseDeliverTx{

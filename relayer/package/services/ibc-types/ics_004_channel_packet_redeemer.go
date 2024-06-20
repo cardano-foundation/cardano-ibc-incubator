@@ -2,8 +2,9 @@ package ibc_types
 
 import (
 	"encoding/hex"
-	"github.com/fxamacker/cbor/v2"
 	"reflect"
+
+	"github.com/fxamacker/cbor/v2"
 )
 
 type PacketSchema struct {
@@ -28,8 +29,15 @@ const (
 type SpendChannelRedeemerType int
 
 const (
-	ChanOpenAck     SpendChannelRedeemerType = 121
-	ChanOpenConfirm SpendChannelRedeemerType = 122
+	ChanOpenAck       SpendChannelRedeemerType = 121
+	ChanOpenConfirm   SpendChannelRedeemerType = 122
+	RecvPacket        SpendChannelRedeemerType = 123
+	TimeoutPacket     SpendChannelRedeemerType = 124
+	AcknowledgePacket SpendChannelRedeemerType = 125
+	SendPacket        SpendChannelRedeemerType = 126
+	ChanCloseInit     SpendChannelRedeemerType = 127
+	ChanCloseConfirm  SpendChannelRedeemerType = 128
+	RefreshUtxo       SpendChannelRedeemerType = 129
 )
 
 type MintChannelRedeemerChanOpenInit struct {
@@ -94,10 +102,13 @@ type SpendChannelRedeemerSendPacket struct {
 	Packet PacketSchema
 }
 
-// Data.Literal('RefreshUtxo')
-
-type SpendChannelRedeemerRefreshUtxo interface {
+type SpendChannelRedeemerChanCloseInit []byte
+type SpendChannelRedeemerChanCloseConfirm struct {
+	_           struct{} `cbor:",toarray"`
+	ProofInit   MerkleProofSchema
+	ProofHeight HeightSchema
 }
+type SpendChannelRedeemerRefreshUtxo []byte
 
 func DecodeMintChannelRedeemerSchema(mintChannEncoded string) (MintChannelRedeemerSchema, error) {
 	datumBytes, _ := hex.DecodeString(mintChannEncoded)
@@ -146,6 +157,41 @@ func DecodeSpendChannelRedeemerSchema(spendChannEncoded string) (SpendChannelRed
 		reflect.TypeOf(SpendChannelRedeemerChanOpenConfirm{}), // your custom type
 		122, // CBOR tag number for your custom type
 	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerRecvPacket{}), // your custom type
+		123, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerTimeoutPacket{}), // your custom type
+		124, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerAcknowledgePacket{}), // your custom type
+		125, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerSendPacket{}), // your custom type
+		126, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerChanCloseInit{}), // your custom type
+		127, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerChanCloseConfirm{}), // your custom type
+		128, // CBOR tag number for your custom type
+	)
+	err = tags.Add(
+		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
+		reflect.TypeOf(SpendChannelRedeemerRefreshUtxo{}), // your custom type
+		129, // CBOR tag number for your custom type
+	)
 
 	// Create decoding mode with TagSet
 	dm, err := cbor.DecOptions{}.DecModeWithTags(tags)
@@ -163,7 +209,27 @@ func DecodeSpendChannelRedeemerSchema(spendChannEncoded string) (SpendChannelRed
 	case SpendChannelRedeemerChanOpenConfirm:
 		spendChannRedeemer.Type = ChanOpenConfirm
 		spendChannRedeemer.Value = result.(SpendChannelRedeemerChanOpenConfirm)
+	case SpendChannelRedeemerRecvPacket:
+		spendChannRedeemer.Type = RecvPacket
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerRecvPacket)
+	case SpendChannelRedeemerTimeoutPacket:
+		spendChannRedeemer.Type = TimeoutPacket
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerTimeoutPacket)
+	case SpendChannelRedeemerAcknowledgePacket:
+		spendChannRedeemer.Type = AcknowledgePacket
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerAcknowledgePacket)
+	case SpendChannelRedeemerSendPacket:
+		spendChannRedeemer.Type = SendPacket
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerSendPacket)
+	case SpendChannelRedeemerChanCloseInit:
+		spendChannRedeemer.Type = ChanCloseInit
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerChanCloseInit)
+	case SpendChannelRedeemerChanCloseConfirm:
+		spendChannRedeemer.Type = ChanCloseConfirm
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerChanCloseConfirm)
+	case SpendChannelRedeemerRefreshUtxo:
+		spendChannRedeemer.Type = RefreshUtxo
+		spendChannRedeemer.Value = result.(SpendChannelRedeemerRefreshUtxo)
 	}
 	return spendChannRedeemer, nil
-
 }
