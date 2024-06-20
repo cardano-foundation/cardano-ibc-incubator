@@ -115,6 +115,7 @@ func (cs *ClientState) UpdateState(
 
 	// Set the latest certificate of transaction snapshot for the epoch
 	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, cs.CurrentEpoch)
+	setFcInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, cs.CurrentEpoch)
 
 	// Update the client state, consensus state, and associated metadata in the store
 	setClientState(clientStore, cdc, cs)

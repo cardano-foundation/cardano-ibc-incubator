@@ -57,3 +57,16 @@ done
 
 echo ">> Bootstrap the Genesis certificate"
 docker compose -f docker-compose.yaml --profile mithril-genesis run mithril-aggregator-genesis
+
+DOCKER_COMPOSE_CMD=
+if docker compose --version > /dev/null 2>&1; then
+  DOCKER_COMPOSE_CMD="docker compose"
+else
+  DOCKER_COMPOSE_CMD="docker-compose"
+fi
+# Start gateway
+cd ./cardano/gateway
+cp ./.env.example .env
+# ${DOCKER_COMPOSE_CMD} build
+${DOCKER_COMPOSE_CMD} stop
+${DOCKER_COMPOSE_CMD} up -d --build
