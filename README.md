@@ -262,6 +262,25 @@ cd /root && ./bin/rly start demo --processor legacy
 
 After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you current balance, notice that your token will be return back.
 
+### Test Crosschain Swap
+**Prerequisite:**
+  - [`osmosisd`]("https://github.com/osmosis-labs/osmosis"), [`hermes`](https://github.com/informalsystems/hermes) installed on host machine.
+  - Channels between `Cardano<=>Sidechain` and `Sidechain<=>Osmosis` are already established.
+  - Go relayer and Hermes relayer are running.
+
+1. Run:
+  ```sh
+  chains/osmosis/osmosis/scripts/setup_crosschain_swaps.sh
+  ```
+  to transfer Cardano mock token to Osmosis via IBC, create swap pool with this token and deploy contracts relates to crosschain swap. 
+
+2. Copy address of `crosschain_swaps` contract in result of the previous command to variable `CROSSCHAIN_SWAPS_ADDRESS` of file `swap.sh`.
+
+3. Run:
+  ```sh
+  swap.sh
+  ```
+  This command will send mock token in Cardano to Osmosis via IBC Packet Forward Middleware, swap this token to `uosmo` on created pool and send swapped token back to Cardano via Packet Forward Middleware again.
 
 ## :blue_heart: Contributing
 All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.
