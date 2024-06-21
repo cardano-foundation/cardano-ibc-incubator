@@ -8,6 +8,7 @@ import (
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"strings"
 	"sync"
 	"time"
 
@@ -180,11 +181,6 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 
 	var consensusHeightTime time.Time
 
-	clientConsensusHeight := dst.ClientState.ConsensusHeight
-	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
-	if trustedConsensusHeight.EQ(clientConsensusHeight) {
-		return false, nil
-	}
 	dsth := dst.latestBlock.Height
 	var dstClientState ibcexported.ClientState
 	if err := retry.Do(func() error {
@@ -206,7 +202,7 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 		var timestamp uint64
 		switch src.ChainProvider.Type() {
 		case "cardano":
-			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dst.latestBlock.Height), dst.Info.ClientID)
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dsth), dst.Info.ClientID)
 			if err != nil {
 				return false, fmt.Errorf("failed to query the client state response: %w", err)
 			}
@@ -235,7 +231,7 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 			if !ok {
 				return false, fmt.Errorf("failed to cast consensus state to MithrilHeader")
 			}
-			if h.TransactionSnapshotCertificate.Hash == consensusState.LatestCertHashTxSnapshot {
+			if strings.Compare(h.TransactionSnapshotCertificate.Hash, consensusState.LatestCertHashTxSnapshot) == 0 {
 				return false, nil
 			}
 			return true, nil
@@ -364,6 +360,34 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 	clientID := dst.Info.ClientID
 	clientConsensusHeight := dst.ClientState.ConsensusHeight
 	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
+
+	if src.ChainProvider.Type() == "cardano" {
+		clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dst.latestBlock.Height), dst.Info.ClientID)
+		if err != nil {
+			return fmt.Errorf("failed to query the client state response: %w", err)
+		}
+		clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+		if err != nil {
+			return fmt.Errorf("failed to unpack client state: %w", err)
+		}
+		ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+		if err != nil {
+			return err
+		}
+		msgUpdate, ok := ibcHeader.(*mithril.MithrilHeader)
+		if !ok {
+			return fmt.Errorf("failed to cast IBC header to MithrilHeader")
+		}
+
+		msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, msgUpdate)
+		if err != nil {
+			return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
+				int64(dst.latestBlock.Height), src.Info.ChainID, err)
+		}
+		mp.msgUpdateClient = msgUpdateClient
+		return nil
+	}
+
 	var trustedNextValidatorsHash []byte
 	//TODO: remove this comment and below
 	// check clientTrustedState.IBCHeader
@@ -385,7 +409,7 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 
 		switch src.ChainProvider.Type() {
 		case "cardano":
-			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(clientConsensusHeight.RevisionHeight+1), dst.Info.ClientID)
+			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dst.latestBlock.Height), dst.Info.ClientID)
 			if err != nil {
 				return fmt.Errorf("failed to query the client state response: %w", err)
 			}
