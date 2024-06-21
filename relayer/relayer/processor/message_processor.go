@@ -5,8 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
-	"strconv"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"sync"
 	"time"
 
@@ -17,6 +18,16 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+var (
+	RtyAttNum = uint(5)
+	RtyAtt    = retry.Attempts(RtyAttNum)
+	RtyDel    = retry.Delay(time.Millisecond * 400)
+	RtyErr    = retry.LastErrorOnly(true)
+
+	defaultCoinType uint32 = 118
+	defaultAlgo     string = string(hd.Secp256k1Type)
 )
 
 // messageProcessor is used for concurrent IBC message assembly and sending
@@ -97,18 +108,17 @@ func (mp *messageProcessor) processMessages(
 	var needsClientUpdate bool
 
 	// Localhost IBC does not permit client updates
-	//if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID &&
-	//	src.ChainProvider.Type() != "cosmos" {
-	//	var err error
-	//	needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
-	//	if err != nil {
-	//		return err
-	//	}
-	//	if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
-	//		return err
-	//	}
-	//	fmt.Println("assembleMsgUpdateClient")
-	//}
+	if src.ClientState.ClientID != ibcexported.LocalhostClientID && dst.ClientState.ClientID != ibcexported.LocalhostConnectionID &&
+		src.ChainProvider.Type() != "cosmos" {
+		var err error
+		needsClientUpdate, err = mp.shouldUpdateClientNow(ctx, src, dst)
+		if err != nil {
+			return err
+		}
+		if err := mp.assembleMsgUpdateClient(ctx, src, dst); err != nil {
+			return err
+		}
+	}
 	if src.ChainProvider.Type() == "cosmos" &&
 		len(messages.channelMessages)+len(messages.connectionMessages)+len(messages.packetMessages) > 0 {
 		updateClient(ctx, src, dst, src.latestHeader.(provider.TendermintIBCHeader))
@@ -175,7 +185,23 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 	if trustedConsensusHeight.EQ(clientConsensusHeight) {
 		return false, nil
 	}
-
+	dsth := dst.latestBlock.Height
+	var dstClientState ibcexported.ClientState
+	if err := retry.Do(func() error {
+		var err error
+		dstClientState, err = dst.ChainProvider.QueryClientState(ctx, int64(dsth), dst.Info.ClientID)
+		return err
+	}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		dst.log.Info(
+			"Failed to query client state when updating clients",
+			zap.String("client_id", dst.Info.ClientID),
+			zap.Uint("attempt", n+1),
+			zap.Uint("max_attempts", RtyAttNum),
+			zap.Error(err),
+		)
+	})); err != nil {
+		return false, err
+	}
 	if dst.ClientState.ConsensusTime.IsZero() {
 		var timestamp uint64
 		switch src.ChainProvider.Type() {
@@ -196,12 +222,23 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 			if !ok {
 				return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
 			}
-			i, err := strconv.ParseInt(h.TransactionSnapshotCertificate.Metadata.SealedAt, 10, 64)
+			// get cardano client consensus state
+			clientConsensusState, err := dst.ChainProvider.QueryClientConsensusState(ctx, int64(dsth), dst.Info.ClientID, dstClientState.GetLatestHeight())
 			if err != nil {
 				return false, err
 			}
-			timestamp = uint64(i)
-			consensusHeightTime = time.Unix(0, int64(timestamp))
+			consensusStateData, err := clienttypes.UnpackClientMessage(clientConsensusState.ConsensusState)
+			if err != nil {
+				return false, err
+			}
+			consensusState, ok := consensusStateData.(*mithril.ConsensusState)
+			if !ok {
+				return false, fmt.Errorf("failed to cast consensus state to MithrilHeader")
+			}
+			if h.TransactionSnapshotCertificate.Hash == consensusState.LatestCertHashTxSnapshot {
+				return false, nil
+			}
+			return true, nil
 		case "cosmos":
 			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
 			if err != nil {
@@ -364,20 +401,6 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 			if !ok {
 				return fmt.Errorf("failed to cast IBC header to MithrilHeader")
 			}
-			//blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(clientConsensusHeight.RevisionHeight+1))
-			//if err != nil {
-			//	return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-			//		clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
-			//}
-
-			//counterpartyHeader = blockData
-			//TODO: check this condition
-			//if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
-			//	!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
-			//	return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
-			//		"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
-			//		trustedConsensusHeight.RevisionHeight)
-			//}
 
 			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, msgUpdate)
 			if err != nil {
