@@ -5,8 +5,8 @@ check_string_empty() {
 
 # Function to extract and print txhash from piped input
 log_tx() {
-  local txhash=$(sed -n 's/^\(txhash: .*\)/\1/p')
-  echo "$txhash"
+  _log_tx_txhash=$(sed -n 's/^\(txhash: .*\)/\1/p')
+  echo "$_log_tx_txhash"
 }
 #==================================Check required tools=====================================
 osmosisd_location=$(which osmosisd)
