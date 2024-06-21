@@ -1399,9 +1399,6 @@ export class PacketService {
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
       this.logger.log('AcknowledgementResult');
-      if (acknowledgementResponse.result != 'AQ==') {
-        throw new GrpcInternalException('Acknowledgement Response invalid: result must be 01');
-      }
 
       switch (channelDatum.state.channel.ordering) {
         case Order.Unordered:
@@ -1409,7 +1406,7 @@ export class PacketService {
           const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
             createIBCModuleRedeemer(channelId, fTokenPacketData, {
               AcknowledgementResult: {
-                result: '01',
+                result: convertString2Hex(acknowledgementResponse.result as string),
               },
             }),
             'iBCModuleRedeemer',
