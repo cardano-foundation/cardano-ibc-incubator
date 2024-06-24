@@ -9,7 +9,8 @@ export type MithrilClientState = {
 };
 
 export type MithrilHeight = {
-  mithril_height: bigint;
+  revisionNumber: bigint;
+  revisionHeight: bigint;
 };
 
 export type MithrilProtocolParameters = {
@@ -25,8 +26,8 @@ export type Fraction = {
 
 export type MithrilConsensusState = {
   timestamp: bigint;
-  mithril_stake_distribution_certificate: MithrilCertificate;
-  transaction_snapshot_certificate: MithrilCertificate;
+  first_cert_hash_latest_epoch: string;
+  latest_cert_hash_tx_snapshot: string;
 };
 
 export type MithrilCertificate = {

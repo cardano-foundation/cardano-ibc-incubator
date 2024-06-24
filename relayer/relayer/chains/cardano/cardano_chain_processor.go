@@ -126,7 +126,7 @@ func (ccp *CardanoChainProcessor) Run(ctx context.Context, initialBlockHistory u
 		break
 	}
 	// this will make initial QueryLoop iteration look back initialBlockHistory blocks in history
-	latestQueriedBlock := persistence.latestHeight - 1
+	latestQueriedBlock := persistence.latestHeight - 15
 
 	if latestQueriedBlock < 0 {
 		latestQueriedBlock = 0
@@ -273,6 +273,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		return fmt.Errorf("error querying latest height for chain_id: %s, %w", dst.Info.ChainID, err)
 	}
 	var updateClientMessages []provider.RelayerMessage
+	hasIBCEvents := false
 	for i := persistence.latestQueriedBlock + 1; i <= persistence.latestHeight; i++ {
 		var eg errgroup.Group
 		var blockRes *ctypes.ResultBlockResults
@@ -318,8 +319,6 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 
 		ppChanged = true
 
-		hasIBCEvents := false
-
 		for _, tx := range blockRes.TxsResults {
 			if tx.Code != 0 {
 				// tx was not successful
@@ -335,7 +334,9 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 				hasIBCEvents = true
 			}
 		}
-
+		if i < persistence.latestHeight {
+			continue
+		}
 		if hasIBCEvents {
 			dsth, err := dst.ChainProvider.QueryLatestHeight(ctx)
 			if err != nil {
@@ -363,6 +364,7 @@ func (ccp *CardanoChainProcessor) queryCycle(ctx context.Context, persistence *q
 		}
 
 		newLatestQueriedBlock = i
+		hasIBCEvents = false
 	}
 	if len(updateClientMessages) > 0 {
 		dst := ccp.pathProcessors[0].PathEnd2

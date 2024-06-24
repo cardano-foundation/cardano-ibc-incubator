@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"os"
 	"sync"
 	"testing"
@@ -373,14 +374,23 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 
 	assert.Nil(t, runResult.Err)
 
-	cosmosChannel := &chantypes.IdentifiedChannel{}
-	json.Unmarshal(runResult.Stdout.Bytes(), cosmosChannel)
+	cosmosChannel := []chantypes.IdentifiedChannel{}
+	json.Unmarshal(runResult.Stdout.Bytes(), &cosmosChannel)
+	err := gw.NewGateWayService(CardanoRPCAddr, MithrilEndpoint)
+	require.NoError(t, err)
+	for _, channel := range cosmosChannel {
+		channelDetail, err := gw.QueryChannel(channel.Counterparty.ChannelId)
+		require.NoError(t, err)
+		if channelDetail.Channel.State == chantypes.OPEN {
+			return channel.Counterparty.ChannelId, channel.ChannelId
+		}
+	}
 
-	return cosmosChannel.Counterparty.ChannelId, cosmosChannel.ChannelId
+	return "", ""
 }
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),

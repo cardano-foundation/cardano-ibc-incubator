@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -12,6 +13,7 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnectionResponse, error) {
@@ -72,11 +74,21 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 		return nil, err
 	}
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var connectionProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions found")
+		}
+		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-	connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
 	return &conntypes.QueryConnectionResponse{
 		Connection: &conntypes.ConnectionEnd{
 			ClientId: string(connDatumDecoded.State.ClientId),

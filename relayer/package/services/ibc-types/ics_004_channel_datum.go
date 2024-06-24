@@ -31,59 +31,57 @@ type ChannelSchema struct {
 	State ConnectionEndState
 	// Little hack with this kind of Enum
 	// (Ordering.(cbor.Tag)).Number => None: 121, Unordered: 122, Ordered: 123
-	Ordering       ChannelState
+	Ordering       ChannelOrdering
 	Counterparty   ChannelCounterpartyDatum
 	ConnectionHops [][]byte
 	Version        []byte
 }
+
 type ChannelCounterpartyDatum struct {
 	_         struct{} `cbor:",toarray"`
 	PortId    []byte
 	ChannelId []byte
 }
 
-type ChannelState int32
+type ChannelOrdering int32
 
 const (
-	ChannelStateUninitialized ConnectionEndState = 0
-	ChannelStateInit          ConnectionEndState = 1
-	ChannelStateTryOpen       ConnectionEndState = 2
-	ChannelStateOpen          ConnectionEndState = 3
-	ChannelStateClose         ConnectionEndState = 4
+	ChannelOrderingNone      ChannelOrdering = 0
+	ChannelOrderingUnordered ChannelOrdering = 1
+	ChannelOrderingOrdered   ChannelOrdering = 2
 )
 
-func (c *ChannelState) UnmarshalCBOR(data []byte) error {
+func (c *ChannelOrdering) UnmarshalCBOR(data []byte) error {
 	tags := cbor.NewTagSet()
 	err := tags.Add(
 		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
-		reflect.TypeOf(ChannelState(ChannelStateUninitialized)), // your custom type
+		reflect.TypeOf(ChannelOrdering(ChannelOrderingNone)), // your custom type
 		121, // CBOR tag number for your custom type
 	)
 	err = tags.Add(
 		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
-		reflect.TypeOf(ChannelState(ChannelStateInit)), // your custom type
+		reflect.TypeOf(ChannelOrdering(ChannelOrderingUnordered)), // your custom type
 		122, // CBOR tag number for your custom type
 	)
 	err = tags.Add(
 		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
-		reflect.TypeOf(ChannelState(ChannelStateTryOpen)), // your custom type
+		reflect.TypeOf(ChannelOrdering(ChannelOrderingOrdered)), // your custom type
 		123, // CBOR tag number for your custom type
-	)
-	err = tags.Add(
-		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
-		reflect.TypeOf(ChannelState(ChannelStateOpen)), // your custom type
-		124, // CBOR tag number for your custom type
-	)
-	err = tags.Add(
-		cbor.TagOptions{EncTag: cbor.EncTagRequired, DecTag: cbor.DecTagRequired},
-		reflect.TypeOf(ChannelState(ChannelStateClose)), // your custom type
-		125, // CBOR tag number for your custom type
 	)
 	dm, err := cbor.DecOptions{}.DecModeWithTags(tags)
 	var result interface{}
 	err = dm.Unmarshal(data, &result)
 	if err != nil {
 		return err
+	}
+
+	switch result.(cbor.Tag).Number {
+	case 121:
+		*c = ChannelOrderingNone
+	case 122:
+		*c = ChannelOrderingUnordered
+	case 123:
+		*c = ChannelOrderingOrdered
 	}
 
 	return nil
