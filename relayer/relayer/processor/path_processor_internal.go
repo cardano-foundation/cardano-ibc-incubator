@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -341,6 +342,9 @@ func (pp *PathProcessor) unrelayedPacketFlowMessages(
 	return res
 }
 
+var once sync.Once
+var handshakeChecker map[string]bool
+
 func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 	pathEndConnectionHandshakeMessages pathEndConnectionHandshakeMessages,
 ) pathEndConnectionHandshakeResponse {
@@ -422,7 +426,11 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenAck, pathEndConnectionHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+			if !handshakeChecker[conntypes.EventTypeConnectionOpenAck] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+				handshakeChecker[conntypes.EventTypeConnectionOpenAck] = true
+				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenAck)
+			}
 		}
 
 		counterpartyKey := connKey.Counterparty()
@@ -463,7 +471,14 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenInit, pathEndConnectionHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+			if !handshakeChecker[conntypes.EventTypeConnectionOpenInit] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+				handshakeChecker[conntypes.EventTypeConnectionOpenInit] = true
+				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenInit)
+			}
+			//onceConnectionInit.Do(func() {
+			//	res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+			//})
 		}
 		toDeleteSrc[preInitKey] = append(toDeleteSrc[preInitKey], connKey.PreInitKey())
 	}
@@ -471,6 +486,10 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 	return res
 }
 
+func enableHandshakeChecker(name string) {
+	time.Sleep(5 * time.Minute)
+	handshakeChecker[name] = false
+}
 func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 	pathEndChannelHandshakeMessages pathEndChannelHandshakeMessages,
 ) pathEndChannelHandshakeResponse {
@@ -551,7 +570,11 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenAck, pathEndChannelHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+			if !handshakeChecker[chantypes.EventTypeChannelOpenAck] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+				handshakeChecker[chantypes.EventTypeChannelOpenAck] = true
+				go enableHandshakeChecker(chantypes.EventTypeChannelOpenAck)
+			}
 		}
 
 		counterpartyKey := chanKey.Counterparty()
@@ -593,7 +616,11 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenInit, pathEndChannelHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+			if !handshakeChecker[chantypes.EventTypeChannelOpenInit] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+				handshakeChecker[chantypes.EventTypeChannelOpenInit] = true
+				go enableHandshakeChecker(chantypes.EventTypeChannelOpenInit)
+			}
 		}
 	}
 
@@ -929,7 +956,9 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	channelPairs := pp.channelPairs()
 
 	pp.queuePreInitMessages(cancel)
-
+	once.Do(func() {
+		handshakeChecker = make(map[string]bool)
+	})
 	pathEnd1ConnectionHandshakeMessages := pathEndConnectionHandshakeMessages{
 		Src:                         pp.PathEnd1,
 		Dst:                         pp.PathEnd2,
