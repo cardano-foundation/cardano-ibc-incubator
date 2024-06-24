@@ -289,7 +289,7 @@ func (cc *CardanoProvider) QueryClientConsensusState(ctx context.Context, chainH
 
 // QueryConnection returns the remote end of a given connection
 func (cc *CardanoProvider) QueryConnection(ctx context.Context, height int64, connectionid string) (*conntypes.QueryConnectionResponse, error) {
-	res, err := cc.GateWay.QueryConnection(connectionid)
+	res, err := cc.GateWay.QueryConnectionDetail(ctx, connectionid)
 	if err != nil && strings.Contains(err.Error(), "not found") {
 		return &conntypes.QueryConnectionResponse{
 			Connection: &conntypes.ConnectionEnd{
@@ -310,7 +310,30 @@ func (cc *CardanoProvider) QueryConnection(ctx context.Context, height int64, co
 		return nil, err
 	}
 
-	return res, nil
+	newVersions := []*conntypes.Version{}
+
+	for _, version := range res.Connection.Versions {
+		newVersions = append(newVersions, &conntypes.Version{
+			Identifier: version.Identifier,
+			Features:   version.Features,
+		})
+	}
+
+	return &conntypes.QueryConnectionResponse{
+		Connection: &conntypes.ConnectionEnd{
+			ClientId: res.Connection.ClientId,
+			Versions: newVersions,
+			State:    conntypes.State(res.Connection.State),
+			Counterparty: conntypes.Counterparty{
+				ClientId:     res.Connection.Counterparty.ClientId,
+				ConnectionId: res.Connection.Counterparty.ConnectionId,
+				Prefix:       commitmenttypes.MerklePrefix{KeyPrefix: res.Connection.Counterparty.Prefix.KeyPrefix},
+			},
+			DelayPeriod: res.Connection.DelayPeriod,
+		},
+		Proof:       res.Proof,
+		ProofHeight: clienttypes.Height{RevisionNumber: res.ProofHeight.RevisionNumber, RevisionHeight: res.ProofHeight.RevisionHeight},
+	}, nil
 }
 
 func (cc *CardanoProvider) queryConnectionABCI(ctx context.Context, height int64, connectionID string) (*conntypes.QueryConnectionResponse, error) {
