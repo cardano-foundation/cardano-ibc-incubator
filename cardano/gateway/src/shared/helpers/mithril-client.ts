@@ -9,11 +9,13 @@ export function initializeMithrilClientState(clientStateMsg: ClientStateMithril)
     chain_id: fromText(clientStateMsg.chain_id),
     /** Latest height the client was updated to */
     latest_height: {
-      mithril_height: clientStateMsg.latest_height.mithril_height,
+      revisionNumber: clientStateMsg.latest_height.revision_number,
+      revisionHeight: clientStateMsg.latest_height.revision_height,
     },
     /** Block height when the client was frozen due to a misbehaviour */
     frozen_height: {
-      mithril_height: clientStateMsg.frozen_height.mithril_height,
+      revisionNumber: clientStateMsg.frozen_height.revision_number,
+      revisionHeight: clientStateMsg.frozen_height.revision_height,
     },
     /** Epoch number of current chain state */
     current_epoch: clientStateMsg.current_epoch,
@@ -38,10 +40,12 @@ export function getMithrilClientStateForVerifyProofRedeemer(
   return {
     chain_id: convertHex2String(mithrilClientState.chain_id),
     latest_height: {
-      mithril_height: mithrilClientState.latest_height.mithril_height,
+      revision_number: mithrilClientState.latest_height.revisionNumber,
+      revision_height: mithrilClientState.latest_height.revisionHeight,
     },
     frozen_height: {
-      mithril_height: mithrilClientState.frozen_height.mithril_height,
+      revision_number: mithrilClientState.frozen_height.revisionNumber,
+      revision_height: mithrilClientState.frozen_height.revisionHeight,
     },
     current_epoch: mithrilClientState.current_epoch,
     trusting_period: {

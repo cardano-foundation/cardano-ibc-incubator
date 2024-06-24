@@ -56,13 +56,8 @@ export function normalizeMithrilStakeDistributionCertificate(
     };
   if (stakeDistributionCertificate.signed_entity_type.hasOwnProperty('CardanoTransactions'))
     stakeDistributionSignedEntityType.cardano_transactions = {
-      beacon: {
-        network: stakeDistributionCertificate.signed_entity_type.CardanoTransactions.network,
-        epoch: BigInt(stakeDistributionCertificate.signed_entity_type.CardanoTransactions.epoch),
-        immutable_file_number: BigInt(
-          stakeDistributionCertificate.signed_entity_type.CardanoTransactions.immutable_file_number,
-        ),
-      },
+      epoch: stakeDistributionCertificate.CardanoTransactions[0],
+      block_number: 0n,
     };
   if (stakeDistributionCertificate.signed_entity_type.hasOwnProperty('CardanoImmutableFilesFull'))
     stakeDistributionSignedEntityType.cardano_immutable_files_full = {

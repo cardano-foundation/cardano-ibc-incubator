@@ -84,7 +84,7 @@ func NormalizeEventPacketFromChannelRedeemer(spendChannRedeemer ibc_types.SpendC
 		},
 		abci.EventAttribute{
 			Key:   channeltypes.AttributeKeyDataHex,
-			Value: string(packetData.Data),
+			Value: hex.EncodeToString(packetData.Data),
 		},
 		abci.EventAttribute{
 			Key:   channeltypes.AttributeKeyAckHex,
@@ -176,7 +176,7 @@ func NormalizeEventRecvPacketFromIBCModuleRedeemer(spendChannRedeemer ibc_types.
 				},
 				abci.EventAttribute{
 					Key:   channeltypes.AttributeKeyDataHex,
-					Value: string(packetData.Data),
+					Value: hex.EncodeToString(packetData.Data),
 				},
 				abci.EventAttribute{
 					Key:   channeltypes.AttributeKeyAckHex,

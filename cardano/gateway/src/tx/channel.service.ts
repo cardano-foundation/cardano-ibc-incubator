@@ -50,7 +50,7 @@ import {
   validateAndFormatChannelOpenConfirmParams,
   validateAndFormatChannelOpenInitParams,
   validateAndFormatChannelOpenTryParams,
-  validateAndFormatChannelCloseInitParams
+  validateAndFormatChannelCloseInitParams,
 } from './helper/channel.validate';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '~@/shared/helpers/verify';
@@ -62,6 +62,7 @@ import {
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 import { Order } from '~@/shared/types/channel/order';
+import { UnsignedChannelCloseInitDto } from '../shared/modules/lucid/dtos/channel/channle-close-init.dto';
 
 @Injectable()
 export class ChannelService {
@@ -210,10 +211,13 @@ export class ChannelService {
   }
 
   async channelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
-    console.log("dataMsgChannelCloseInit");
-    console.dir({
-      ...data
-    }, {depth: 10});
+    console.log('dataMsgChannelCloseInit');
+    console.dir(
+      {
+        ...data,
+      },
+      { depth: 10 },
+    );
     try {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
@@ -865,10 +869,9 @@ export class ChannelService {
     channelCloseInitOperator: ChannelCloseInitOperator,
     constructedAddress: string,
   ): Promise<Tx> {
+    const channelSequence = channelCloseInitOperator.channel_id;
 
-    const channelSequence = channelCloseInitOperator.channel_id
-
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence))
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
     const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
@@ -892,9 +895,9 @@ export class ChannelService {
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
     );
     // Get client utxo by client unit associated
-    const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);    
+    const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
 
-    if(channelDatum.state.channel.state === ChannelState.Close) {
+    if (channelDatum.state.channel.state === ChannelState.Close) {
       throw new GrpcInternalException('Channel is in Close State');
     }
 
@@ -903,18 +906,17 @@ export class ChannelService {
       ...channelDatum,
       state: {
         ...channelDatum.state,
-        channel:
-        {
+        channel: {
           ...channelDatum.state.channel,
           state: ChannelState.Close,
-        }
+        },
       },
     };
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
       updatedChannelDatum,
       'channel',
     );
-    
+
     const channelToken = {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
@@ -923,10 +925,10 @@ export class ChannelService {
     const deploymentConfig = this.configService.get('deployment');
     const channelCloseInitPolicyId = deploymentConfig.validators.spendChannel.refValidator.chan_close_init.scriptHash;
     const channelCloseInitRefUtxO = deploymentConfig.validators.spendChannel.refValidator.chan_close_init.refUtxo;
-    
+
     const spendChannelRefUtxo = deploymentConfig.validators.spendChannel.refUtxo;
     const spendMockModuleRefUtxo = deploymentConfig.validators.spendMockModule.refUtxo;
-    const mockModuleIdentifier = deploymentConfig.modules.mock.identifier
+    const mockModuleIdentifier = deploymentConfig.modules.mock.identifier;
 
     const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
 
@@ -937,14 +939,14 @@ export class ChannelService {
             channel_id: channelId,
           },
         },
-      ]
+      ],
     };
 
     const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
       spendMockModuleRedeemer,
       'iBCModuleRedeemer',
     );
-    
+
     const spendChannelRedeemer: SpendChannelRedeemer = 'ChanCloseInit';
     const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
       spendChannelRedeemer,
