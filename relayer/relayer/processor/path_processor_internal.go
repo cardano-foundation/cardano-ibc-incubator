@@ -342,8 +342,11 @@ func (pp *PathProcessor) unrelayedPacketFlowMessages(
 	return res
 }
 
-var once sync.Once
-var handshakeChecker map[string]bool
+var (
+	once             sync.Once
+	handshakeChecker map[string]bool
+	mutex            sync.Mutex
+)
 
 func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 	pathEndConnectionHandshakeMessages pathEndConnectionHandshakeMessages,
@@ -426,11 +429,13 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenAck, pathEndConnectionHandshakeMessages.Dst,
 		) {
+			mutex.Lock()
 			if !handshakeChecker[conntypes.EventTypeConnectionOpenAck] {
 				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
 				handshakeChecker[conntypes.EventTypeConnectionOpenAck] = true
 				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenAck)
 			}
+			mutex.Unlock()
 		}
 
 		counterpartyKey := connKey.Counterparty()
@@ -471,14 +476,13 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenInit, pathEndConnectionHandshakeMessages.Dst,
 		) {
+			mutex.Lock()
 			if !handshakeChecker[conntypes.EventTypeConnectionOpenInit] {
 				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
 				handshakeChecker[conntypes.EventTypeConnectionOpenInit] = true
 				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenInit)
 			}
-			//onceConnectionInit.Do(func() {
-			//	res.SrcMessages = append(res.SrcMessages, msgOpenInit)
-			//})
+			mutex.Unlock()
 		}
 		toDeleteSrc[preInitKey] = append(toDeleteSrc[preInitKey], connKey.PreInitKey())
 	}
@@ -488,7 +492,9 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 
 func enableHandshakeChecker(name string) {
 	time.Sleep(5 * time.Minute)
+	mutex.Lock()
 	handshakeChecker[name] = false
+	mutex.Unlock()
 }
 func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 	pathEndChannelHandshakeMessages pathEndChannelHandshakeMessages,
@@ -570,11 +576,13 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenAck, pathEndChannelHandshakeMessages.Dst,
 		) {
+			mutex.Lock()
 			if !handshakeChecker[chantypes.EventTypeChannelOpenAck] {
 				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
 				handshakeChecker[chantypes.EventTypeChannelOpenAck] = true
 				go enableHandshakeChecker(chantypes.EventTypeChannelOpenAck)
 			}
+			mutex.Unlock()
 		}
 
 		counterpartyKey := chanKey.Counterparty()
@@ -616,11 +624,13 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenInit, pathEndChannelHandshakeMessages.Dst,
 		) {
+			mutex.Lock()
 			if !handshakeChecker[chantypes.EventTypeChannelOpenInit] {
 				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
 				handshakeChecker[chantypes.EventTypeChannelOpenInit] = true
 				go enableHandshakeChecker(chantypes.EventTypeChannelOpenInit)
 			}
+			mutex.Unlock()
 		}
 	}
 
