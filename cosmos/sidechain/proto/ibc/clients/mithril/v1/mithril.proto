@@ -52,7 +52,7 @@ message ConsensusState {
 
   uint64 timestamp = 1;
 
-  string first_cert_hash_latest_epoch = 2;
+  MithrilCertificate first_cert_hash_latest_epoch = 2;
 
   string latest_cert_hash_tx_snapshot = 3;
 }
