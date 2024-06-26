@@ -68,26 +68,55 @@ func (cs *ClientState) verifyHeader(
 		},
 	}
 
-	msdCertificate, parseMSDCertificateError := FromCertificateProto(header.MithrilStakeDistributionCertificate)
-	if parseMSDCertificateError != nil {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v", "invalid MithrilStakeDistributionCertificate", header.MithrilStakeDistributionCertificate)
+	// new epoch
+	if firstCertInEpoch == nilCertificate {
+		msdCertificate, parseMSDCertificateError := FromCertificateProto(header.MithrilStakeDistributionCertificate)
+		if parseMSDCertificateError != nil {
+			return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v", "invalid MithrilStakeDistributionCertificate", header.MithrilStakeDistributionCertificate)
+		}
+
+		protocolMultiSignature, err := FromCertificateSignatureProto(header.MithrilStakeDistributionCertificate.SignedEntityType, header.MithrilStakeDistributionCertificate.MultiSignature, "")
+
+		if err != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate cannot be parsed: error: %v", err)
+		}
+
+		_, verifyStandardCertificateError := msdVerifier.VerifyStandardCertificate(
+			msdCertificate,
+			protocolMultiSignature.MultiSignature.ProtocolMultiSignature,
+		)
+
+		if verifyStandardCertificateError != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate is invalid: error: %v", verifyStandardCertificateError)
+		}
+
+		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
 	}
 
-	protocolMultiSignature, err := FromCertificateSignatureProto(header.MithrilStakeDistributionCertificate.SignedEntityType, header.MithrilStakeDistributionCertificate.MultiSignature, "")
-	_, verifyStandardCertificateError := msdVerifier.VerifyStandardCertificate(
-		msdCertificate,
-		protocolMultiSignature.MultiSignature.ProtocolMultiSignature,
+	// refill data for MSD Cert
+	if firstCertInEpoch != nilCertificate && firstCertInEpoch.Hash == header.MithrilStakeDistributionCertificate.Hash && firstCertInEpoch.MultiSignature == "" {
+		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
+	}
+
+	tsCertificate, parseTsCertificateError := FromCertificateProto(header.TransactionSnapshotCertificate)
+	if parseTsCertificateError != nil {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v : error: %v", "invalid TransactionSnapshotCertificate", header.TransactionSnapshotCertificate, parseTsCertificateError)
+	}
+
+	tsMultiSignature, err := FromCertificateSignatureProto(header.TransactionSnapshotCertificate.SignedEntityType, header.TransactionSnapshotCertificate.MultiSignature, "")
+
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate cannot be parsed: error: %v", err)
+	}
+
+	_, verifyTsStandardCertificateError := msdVerifier.VerifyStandardCertificate(
+		tsCertificate,
+		tsMultiSignature.MultiSignature.ProtocolMultiSignature,
 	)
 
-	if verifyStandardCertificateError != nil {
-		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate is invalid")
+	if verifyTsStandardCertificateError != nil {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate is invalid: error: %v", verifyTsStandardCertificateError)
 	}
-
-	// TODO: check TransactionSnapshotCertificate
-	// err = header.TransactionSnapshotCertificate.verifyCertificate()
-	// if err != nil {
-	//	 return errorsmod.Wrapf(ErrInvalidCertificate, "transaction snapshot certificate is invalid")
-	// }
 
 	return nil
 }
