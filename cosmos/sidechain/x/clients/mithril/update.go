@@ -62,20 +62,33 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v, expected: %v", "invalid timestamp layout", header.TransactionSnapshotCertificate.Metadata.SealedAt, Layout)
 	}
 
-	err = header.MithrilStakeDistributionCertificate.verifyCertificate()
-	if err != nil {
+	msdVerifier := &MithrilCertificateVerifier{
+		CertificateRetriever: &MSDCertificateRetriever{
+			ClientStore: clientStore,
+		},
+	}
+
+	msdCertificate, parseMSDCertificateError := FromCertificateProto(header.MithrilStakeDistributionCertificate)
+	if parseMSDCertificateError != nil {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v", "invalid MithrilStakeDistributionCertificate", header.MithrilStakeDistributionCertificate)
+	}
+
+	protocolMultiSignature, err := FromCertificateSignatureProto(header.MithrilStakeDistributionCertificate.SignedEntityType, header.MithrilStakeDistributionCertificate.MultiSignature, "")
+	_, verifyStandardCertificateError := msdVerifier.VerifyStandardCertificate(
+		msdCertificate,
+		protocolMultiSignature.MultiSignature.ProtocolMultiSignature,
+	)
+
+	if verifyStandardCertificateError != nil {
 		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate is invalid")
 	}
 
-	err = header.TransactionSnapshotCertificate.verifyCertificate()
-	if err != nil {
-		return errorsmod.Wrapf(ErrInvalidCertificate, "transaction snapshot certificate is invalid")
-	}
-	return nil
-}
+	// TODO: check TransactionSnapshotCertificate
+	// err = header.TransactionSnapshotCertificate.verifyCertificate()
+	// if err != nil {
+	//	 return errorsmod.Wrapf(ErrInvalidCertificate, "transaction snapshot certificate is invalid")
+	// }
 
-func (c *MithrilCertificate) verifyCertificate() error {
-	// TO-DO: not implemented
 	return nil
 }
 

@@ -311,10 +311,27 @@ func setFcInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate
 	key := FcInEpochKey(epoch)
 	val := MustMarshalMithrilCertificate(certificate)
 	clientStore.Set(key, val)
+	setMSDCertificateWithHash(clientStore, certificate)
 }
 
 func getFcInEpoch(clientStore storetypes.KVStore, epoch uint64) MithrilCertificate {
 	key := FcInEpochKey(epoch)
+	bz := clientStore.Get(key)
+	if len(bz) == 0 {
+		return MithrilCertificate{}
+	}
+	return MustUnmarshalMithrilCertificate(bz)
+}
+
+// setMSDCertificateWithHash stores the Mithril Certificate (mithril stake distribution certificate) with key hash
+func setMSDCertificateWithHash(clientStore storetypes.KVStore, certificate MithrilCertificate) {
+	key := MSDCertificateHashKey(certificate.Hash)
+	val := MustMarshalMithrilCertificate(certificate)
+	clientStore.Set(key, val)
+}
+
+func getMSDCertificateWithHash(clientStore storetypes.KVStore, hash string) MithrilCertificate {
+	key := MSDCertificateHashKey(hash)
 	bz := clientStore.Get(key)
 	if len(bz) == 0 {
 		return MithrilCertificate{}
