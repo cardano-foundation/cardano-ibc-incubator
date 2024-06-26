@@ -93,11 +93,6 @@ func (cs *ClientState) verifyHeader(
 		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
 	}
 
-	// refill data for MSD Cert
-	if firstCertInEpoch != nilCertificate && firstCertInEpoch.Hash == header.MithrilStakeDistributionCertificate.Hash && firstCertInEpoch.MultiSignature == "" {
-		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
-	}
-
 	tsCertificate, parseTsCertificateError := FromCertificateProto(header.TransactionSnapshotCertificate)
 	if parseTsCertificateError != nil {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v : error: %v", "invalid TransactionSnapshotCertificate", header.TransactionSnapshotCertificate, parseTsCertificateError)
@@ -151,7 +146,7 @@ func (cs *ClientState) UpdateState(
 	// Create a new consensus state
 	newConsensusState := &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
-		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate.Hash,
+		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate,
 		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
 	}
 
