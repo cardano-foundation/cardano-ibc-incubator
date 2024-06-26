@@ -1013,7 +1013,7 @@ test succeed_recv_packet() {
     [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
-  let ack = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let ack = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let bz_ack = acknowledgement_mod.acknowledgement(ack)
   let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
 
@@ -1811,7 +1811,7 @@ test succeed_acknowledge_packet() {
       OnAcknowledgementPacket {
         channel_id,
         data: OtherModuleData,
-        acknowledgement: acknowledgement_mod.new_result_acknowledgement(#"01"),
+        acknowledgement: acknowledgement_mod.new_result_acknowledgement("AQ=="),
       },
     )
 

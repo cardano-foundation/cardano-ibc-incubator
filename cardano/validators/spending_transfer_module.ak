@@ -1242,7 +1242,7 @@ test on_recv_packet_mint_voucher_succeed() {
     [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   let (ftpd, packet) =
     build_packet(
@@ -1365,7 +1365,7 @@ test on_recv_packet_unescrow_succeed() {
     [module_output, mock.channel_output, receiver_output]
 
   //==========================arrange redeemers=========================
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   let source_port = "port-0"
   let source_channel = "channel-0"
@@ -1889,7 +1889,7 @@ test on_acknowledgement_packet_result_succeed() {
       "channel-0",
     )
 
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   let packet_data = TransferModuleData(ftpd)
 
@@ -2114,7 +2114,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       mock.channel_id,
     )
 
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   let packet_data = TransferModuleData(ftpd)
 

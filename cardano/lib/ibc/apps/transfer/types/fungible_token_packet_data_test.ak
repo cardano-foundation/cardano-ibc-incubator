@@ -89,9 +89,9 @@ test test_get_bytes() {
       ),
       (
         FungibleTokenPacketData {
-          denom: "9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b",
+          denom: #"39666333336136666661613864316636303063313631616133383337333964356166333738303765643833333437636331333335323163393664366636333662",
           amount: "100",
-          sender: "247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8",
+          sender: #"3234373537306238626137646337323565396666333765393735376238313438623464356131323539353865646163326664343431376238",
           receiver: "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6",
           memo: "{\"forward\":{\"receiver\":\"osmo12smx2wdlyttvyzvzg54y2vnqwq2qjateuf7thj\",\"port\": \"transfer\",\"channel\":\"channel-0\"}}",
         },

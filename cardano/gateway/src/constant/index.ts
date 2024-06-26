@@ -44,7 +44,7 @@ export const DEFAULT_IDENTIFIER_VERSION = '31'; // fromText("1")
 export const DEFAULT_FEATURES_VERSION_ORDER_ORDERED = '4f524445525f4f524445524544'; // fromText("ORDER_ORDERED")
 export const DEFAULT_FEATURES_VERSION_ORDER_UNORDERED = '4f524445525f554e4f524445524544'; // fromText("connection")
 export const DEFAULT_MERKLE_PREFIX =  "696263"; // fromText("ibc")
-export const ACK_RESULT = '01';
+export const ACK_RESULT = 'AQ==';
 
 export const LOVELACE = 'lovelace';
 

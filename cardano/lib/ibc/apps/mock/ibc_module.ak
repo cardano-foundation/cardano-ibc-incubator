@@ -55,7 +55,7 @@ pub fn validate_on_chan_open_confirm(
 }
 
 pub fn validate_on_chan_recv_packet(acknowledgement: Acknowledgement) -> Bool {
-  expect acknowledgement == acknowledgement_mod.new_result_acknowledgement(#[1])
+  expect acknowledgement == acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   True
 }
