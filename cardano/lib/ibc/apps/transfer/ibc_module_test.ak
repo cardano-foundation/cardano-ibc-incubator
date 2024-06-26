@@ -112,7 +112,7 @@ test validate_on_chan_open_ack_fail_if_counterpary_version_is_invalid() fail {
 //===========================================validate_on_recv_packet=====================================
 
 test validate_on_chan_recv_packet_succeed() {
-  let ack = acknowledgement_mod.new_result_acknowledgement(#"01")
+  let ack = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
   transfer_ibc_module.validate_on_chan_recv_packet(ack)
 }

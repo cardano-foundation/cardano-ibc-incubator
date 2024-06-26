@@ -738,7 +738,7 @@ test succeed_acknowledge_packet() {
       OnAcknowledgementPacket {
         channel_id,
         data: OtherModuleData,
-        acknowledgement: acknowledgement_mod.new_result_acknowledgement(#"01"),
+        acknowledgement: acknowledgement_mod.new_result_acknowledgement("AQ=="),
       },
     )
 

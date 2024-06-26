@@ -473,7 +473,7 @@ export class PacketService {
               TransferModuleData: [fTokenPacketData],
             },
             acknowledgement: {
-              response: { AcknowledgementResult: { result: ACK_RESULT } },
+              response: { AcknowledgementResult: { result: convertString2Hex(ACK_RESULT) } },
             },
           },
         },
