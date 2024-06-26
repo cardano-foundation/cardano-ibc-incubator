@@ -701,19 +701,12 @@ export class QueryService {
         }),
       );
       blockResults = blockResults.filter((e) => e);
-      const mithrilHeights = await this.dbService.queryListImmutableFileNoByBlockNos(
-        blockResults.map((e) => Number(e.block.height)),
-      );
-
-      let blockResultsResp = mithrilHeights.map((e) => {
-        return { block_id: 0, block: { height: e } } as unknown as ResultBlockSearch;
-      });
-
-      if (blockResultsResp.length > limit) {
+      let blockResultsResp = blockResults;
+      if (blockResults.length > limit) {
         const offset = page <= 0 ? 0 : limit * (page - 1n);
         const from = parseInt(offset.toString());
         const to = parseInt(offset.toString()) + parseInt(limit.toString());
-        blockResultsResp = blockResultsResp.slice(from, to);
+        blockResultsResp = blockResults.slice(from, to);
       }
 
       const responseBlockSearch: QueryBlockSearchResponse = {
