@@ -2,6 +2,7 @@ package mithril
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
@@ -112,6 +113,23 @@ func (cs *ClientState) verifyHeader(
 	if verifyTsStandardCertificateError != nil {
 		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate is invalid: error: %v", verifyTsStandardCertificateError)
 	}
+
+	if header.TransactionSnapshot.CertificateHash != header.TransactionSnapshotCertificate.Hash {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate hash not match: TS.CertHash: %v, TSC.Hash: %v", header.TransactionSnapshot.CertificateHash, header.TransactionSnapshotCertificate.Hash)
+	}
+
+	tsCertificateProtocolMessage := tsCertificate.ProtocolMessage
+	cardanoTxMerkleRoot, merkleRootExist := tsCertificateProtocolMessage.GetMessagePart("cardano_transactions_merkle_root")
+
+	if !merkleRootExist || cardanoTxMerkleRoot == "" {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate merkle root not exist")
+	}
+
+	if strings.Compare(header.TransactionSnapshot.MerkleRoot, string(cardanoTxMerkleRoot)) != 0 {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate merkle root not match: TS.MerkleRoot: %v, TSC.cardano_transactions_merkle_root: %v", header.TransactionSnapshot.MerkleRoot, string(cardanoTxMerkleRoot))
+	}
+
+	//check cardano_transactions_merkle_root
 
 	return nil
 }
