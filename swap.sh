@@ -72,5 +72,5 @@ $rly transact transfer $CARDANO_CHAIN_NAME $SIDECHAIN_CHAIN_NAME $SENT_AMOUNT $S
     --memo $memo ||
     exit 1
 echo "Waiting for transfer tx complete..."
-sleep 60
+sleep 600
 echo "Crosschain swap tx done!"

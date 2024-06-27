@@ -8,14 +8,18 @@ script_dir=$(dirname $(realpath $0))
 # Start osmosisd
 cd ${script_dir}/.. && make localnet-startd
 
-# Build contracts while waiting for osmosis started
-cd ${script_dir}/../cosmwasm && bash ./build_wasm.sh
-docker cp ${script_dir}/../cosmwasm/artifacts $OSMOSISD_CONTAINER_NAME:osmosis/artifacts # copy built contracts to container
-
 # Check if the container is running
-while ! docker ps --format '{{.Names}}' | grep -q "^$OSMOSISD_CONTAINER_NAME$"; do
-  echo "Container $OSMOSISD_CONTAINER_NAME is not running yet, waiting..."
-  sleep 1
+LOCAL_OSMOSIS_URL="http://localhost:26658/health?"
+while true; do
+  response=$(curl -s -o /dev/null -w "%{http_code}" $LOCAL_OSMOSIS_URL)
+
+  if [[ $response == "200" ]]; then
+    echo >&2 "Osmosis is ready!"
+    break
+  else
+    echo >&2 "Osmosis is starting. Continue checking..."
+    sleep 15
+  fi
 done
 
 #=============================Set up channel==============================
