@@ -171,7 +171,7 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	}
 	consensusState := &mithril.ConsensusState{
 		Timestamp:                uint64(tt.UnixNano()),
-		FirstCertHashLatestEpoch: mithrilDistribution.CertificateHash,
+		FirstCertHashLatestEpoch: helpers.ConvertMithrilStakeDistributionCertificate(mithrilDistribution, *fcCertificateMsd),
 		LatestCertHashTxSnapshot: latestSnapshot.CertificateHash,
 	}
 	return clientState, consensusState, nil
