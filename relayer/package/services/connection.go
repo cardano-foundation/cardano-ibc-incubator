@@ -81,7 +81,7 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 			return err
 		}
 		if len(cardanoTxProof.CertifiedTransactions) == 0 {
-			return fmt.Errorf("no certified transactions found")
+			return fmt.Errorf("no certified transactions with proof found for connection")
 		}
 		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
 		return nil
