@@ -125,7 +125,7 @@ func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
 	}
 	return &ConsensusState{
 		Timestamp:                uint64(t.UnixNano()),
-		FirstCertHashLatestEpoch: "",
+		FirstCertHashLatestEpoch: m.TransactionSnapshotCertificate,
 		LatestCertHashTxSnapshot: "",
 	}
 }

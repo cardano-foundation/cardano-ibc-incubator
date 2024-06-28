@@ -63,7 +63,7 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 			return err
 		}
 		if len(cardanoTxProof.CertifiedTransactions) == 0 {
-			return fmt.Errorf("no certified transactions found")
+			return fmt.Errorf("no certified transactions with proof found for channel")
 		}
 		channelProof = cardanoTxProof.CertifiedTransactions[0].Proof
 		return nil

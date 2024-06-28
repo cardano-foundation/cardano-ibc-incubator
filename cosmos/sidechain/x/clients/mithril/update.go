@@ -2,6 +2,7 @@ package mithril
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	errorsmod "cosmossdk.io/errors"
@@ -93,11 +94,6 @@ func (cs *ClientState) verifyHeader(
 		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
 	}
 
-	// refill data for MSD Cert
-	if firstCertInEpoch != nilCertificate && firstCertInEpoch.Hash == header.MithrilStakeDistributionCertificate.Hash && firstCertInEpoch.MultiSignature == "" {
-		setMSDCertificateWithHash(clientStore, *header.MithrilStakeDistributionCertificate)
-	}
-
 	tsCertificate, parseTsCertificateError := FromCertificateProto(header.TransactionSnapshotCertificate)
 	if parseTsCertificateError != nil {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v : error: %v", "invalid TransactionSnapshotCertificate", header.TransactionSnapshotCertificate, parseTsCertificateError)
@@ -116,6 +112,41 @@ func (cs *ClientState) verifyHeader(
 
 	if verifyTsStandardCertificateError != nil {
 		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate is invalid: error: %v", verifyTsStandardCertificateError)
+	}
+
+	// compare data TransactionSnapshot and TransactionSnapshotCertificate
+	if header.TransactionSnapshot.CertificateHash != header.TransactionSnapshotCertificate.Hash {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate hash not match: TS.CertHash: %v, TSC.Hash: %v", header.TransactionSnapshot.CertificateHash, header.TransactionSnapshotCertificate.Hash)
+	}
+
+	tsCertificateProtocolMessage := tsCertificate.ProtocolMessage
+	cardanoTxMerkleRoot, merkleRootExist := tsCertificateProtocolMessage.GetMessagePart("cardano_transactions_merkle_root")
+
+	if !merkleRootExist || cardanoTxMerkleRoot == "" {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate merkle root not exist")
+	}
+
+	if strings.Compare(header.TransactionSnapshot.MerkleRoot, string(cardanoTxMerkleRoot)) != 0 {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate merkle root not match: TS.MerkleRoot: %v, TSC.cardano_transactions_merkle_root: %v", header.TransactionSnapshot.MerkleRoot, string(cardanoTxMerkleRoot))
+	}
+
+	tscCardanoTransactions := header.TransactionSnapshotCertificate.SignedEntityType.GetCardanoTransactions()
+
+	if tscCardanoTransactions == nil {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate CardanoTransactions not found")
+	}
+
+	if header.TransactionSnapshot.Epoch != tscCardanoTransactions.Epoch {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate epoch not match: TS.Epoch: %v, TSC.Epoch: %v", header.TransactionSnapshot.Epoch, tscCardanoTransactions.Epoch)
+	}
+
+	if header.TransactionSnapshot.BlockNumber != tscCardanoTransactions.BlockNumber {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril transaction snapshot certificate BlockNumber not match: TS.BlockNumber: %v, TSC.BlockNumber: %v", header.TransactionSnapshot.BlockNumber, tscCardanoTransactions.BlockNumber)
+	}
+
+	// not allow old one
+	if header.TransactionSnapshot.Epoch < cs.CurrentEpoch || header.TransactionSnapshot.BlockNumber < cs.LatestHeight.RevisionHeight {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "Expect newer header: TS.Epoch: %v, cs.Epoch: %v, TS.BlockNumber: %v, cs.LatestHeight.RevisionHeight: %v", header.TransactionSnapshot.Epoch, cs.CurrentEpoch, header.TransactionSnapshot.BlockNumber, cs.LatestHeight.RevisionHeight)
 	}
 
 	return nil
@@ -151,7 +182,7 @@ func (cs *ClientState) UpdateState(
 	// Create a new consensus state
 	newConsensusState := &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
-		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate.Hash,
+		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate,
 		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
 	}
 

@@ -171,7 +171,7 @@ func (gw *Gateway) QueryNewMithrilClient() (*mithril.ClientState, *mithril.Conse
 	}
 	consensusState := &mithril.ConsensusState{
 		Timestamp:                uint64(tt.UnixNano()),
-		FirstCertHashLatestEpoch: mithrilDistribution.CertificateHash,
+		FirstCertHashLatestEpoch: helpers.ConvertMithrilStakeDistributionCertificate(mithrilDistribution, *fcCertificateMsd),
 		LatestCertHashTxSnapshot: latestSnapshot.CertificateHash,
 	}
 	return clientState, consensusState, nil
@@ -515,7 +515,7 @@ func (gw *Gateway) QueryClientState(clientId string, height uint64) (ibcexported
 			return err
 		}
 		if len(cardanoTxProof.CertifiedTransactions) == 0 {
-			return fmt.Errorf("no certified transactions found")
+			return fmt.Errorf("no certified transactions with proof found for client")
 		}
 		proof = cardanoTxProof.CertifiedTransactions[0].Proof
 		return nil
