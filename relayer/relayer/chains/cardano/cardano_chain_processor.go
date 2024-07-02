@@ -126,7 +126,7 @@ func (ccp *CardanoChainProcessor) Run(ctx context.Context, initialBlockHistory u
 		break
 	}
 	// this will make initial QueryLoop iteration look back initialBlockHistory blocks in history
-	latestQueriedBlock := persistence.latestHeight - 15
+	latestQueriedBlock := persistence.latestHeight - int64(initialBlockHistory)
 
 	if latestQueriedBlock < 0 {
 		latestQueriedBlock = 0
