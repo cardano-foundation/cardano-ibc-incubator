@@ -25,7 +25,7 @@ func TestQueryBlockResultsDraft(t *testing.T) {
 		//result, err := gw.QueryBlockResults(166928) // channel ack
 		//gw.QueryBlockResults(20435) // create client
 		//gw.QueryBlockResults(20436) // update client
-		result, err := gw.QueryBlockResults(170950) // send packet
+		result, err := gw.QueryBlockResults(70749) // send packet
 		//result, err := gw.QueryConnection("connection-76")
 		//result, err := gw.QueryChannel("channel-61")
 		fmt.Println(result)

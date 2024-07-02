@@ -491,7 +491,7 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 }
 
 func enableHandshakeChecker(name string) {
-	time.Sleep(5 * time.Minute)
+	time.Sleep(6 * time.Minute)
 	mutex.Lock()
 	handshakeChecker[name] = false
 	mutex.Unlock()
