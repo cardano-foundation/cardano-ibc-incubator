@@ -131,7 +131,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 	if len(utxos) == 0 {
 		return nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", mintConnScriptHash, prefixTokenName)
 	}
-	var response []*conntypes.IdentifiedConnection
+	var data []*conntypes.IdentifiedConnection
 	for _, utxo := range utxos {
 		if utxo.Datum == nil {
 			continue
@@ -162,7 +162,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 		if err != nil {
 			return nil, err
 		}
-		response = append(response, &conntypes.IdentifiedConnection{
+		data = append(data, &conntypes.IdentifiedConnection{
 			Id:       fmt.Sprintf("connection-%v", valueId),
 			ClientId: string(connDatumDecoded.State.ClientId),
 			Versions: newVersions,
@@ -176,6 +176,17 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 			},
 			DelayPeriod: connDatumDecoded.State.DelayPeriod,
 		})
+	}
+	connectionFilters := make(map[string]*conntypes.IdentifiedConnection)
+	for _, currentValue := range data {
+		key := fmt.Sprintf("%s_%s", currentValue.ClientId, currentValue.Id)
+		if existing, found := connectionFilters[key]; !found || existing.State < currentValue.State {
+			connectionFilters[key] = currentValue
+		}
+	}
+	var response []*conntypes.IdentifiedConnection
+	for _, value := range connectionFilters {
+		response = append(response, value)
 	}
 	return response, nil
 }
