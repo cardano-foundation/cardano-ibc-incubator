@@ -389,7 +389,9 @@ func (gw *Gateway) unmarshalChannelEvent(channUTxO dto.UtxoDto) (*abci.ResponseD
 				eventType = channeltypes.EventTypeChannelCloseConfirm
 				event, err = helpers.NormalizeEventFromChannelDatum(*channDatumDecoded, connId, channelId, eventType)
 			case ibc_types.AcknowledgePacket:
+				fallthrough
 			case ibc_types.TimeoutPacket:
+				fallthrough
 			case ibc_types.SendPacket:
 				event, err = helpers.NormalizeEventPacketFromChannelRedeemer(spendChannelRedeemer, *channDatumDecoded)
 			case ibc_types.RecvPacket:

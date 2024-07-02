@@ -1133,17 +1133,29 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 
 	// Currently only supports sending 1 message per transaction for Cardano
 	for _, msg := range msgs {
-		txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
-
-		if err != nil {
-			// Account sequence mismatch errors can happen on the simulated transaction also.
-			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
-				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+		var seq uint64
+		err = retry.Do(func() error {
+			txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
+			seq = sequence
+			if err != nil {
+				if strings.Contains(err.Error(), "Invalid proof height") || strings.Contains(err.Error(), "PacketReceivedException") || strings.Contains(err.Error(), "PacketAcknowledgedException") {
+					fmt.Println("Error build message from gw: ", err.Error())
+					return nil
+				}
+				//fmt.Println(base64.StdEncoding.EncodeToString(txBytes))
+				return err
 			}
-
-			return err
-		}
-		if err := cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks); err != nil {
+			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)
+		}, retry.Context(ctx), rtyAtt, retry.Delay(time.Second*10), rtyErr, retry.OnRetry(func(n uint, err error) {
+			cc.log.Info(
+				"Error broadcasting transaction",
+				zap.String("chain_id", cc.PCfg.ChainID),
+				zap.Uint("attempt", n+1),
+				zap.Uint("max_attempts", rtyAttNum),
+				zap.Error(err),
+			)
+		}))
+		if err != nil {
 			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
 				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
 			}
@@ -1152,7 +1164,7 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 		}
 
 		// we had a successful tx broadcast with this sequence, so update it to the next
-		cc.updateNextAccountSequence(sequenceGuard, sequence+1)
+		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 	}
 
 	return nil
