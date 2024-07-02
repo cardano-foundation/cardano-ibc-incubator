@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -13,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (gw *Gateway) QueryPacketCommitment(req *channeltypes.QueryPacketCommitmentRequest) (*channeltypes.QueryPacketCommitmentResponse, error) {
@@ -246,12 +248,21 @@ func (gw *Gateway) QueryPacketAck(req *channeltypes.QueryPacketAcknowledgementRe
 	}
 
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var acknowledgementProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions with proof found for packet acknowledgement")
+		}
+		acknowledgementProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-
-	acknowledgementProof := cardanoTxProof.CertifiedTransactions[0].Proof
 
 	return &channeltypes.QueryPacketAcknowledgementResponse{
 		Acknowledgement: packetAcknowledgement,
