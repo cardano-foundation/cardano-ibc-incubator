@@ -545,17 +545,37 @@ func (gw *Gateway) QueryProofUnreceivedPackets(req *pbchannel.QueryProofUnreceiv
 	}
 
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var connectionProof string
+	var certHashProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions found")
+		}
+		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		certHashProof = cardanoTxProof.CertificateHash
+		return nil
+	}, retry.Attempts(5), retry.Delay(10*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-	connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
+	certificateProof, err := gw.MithrilService.GetCertificateByHash(certHashProof)
+	if err != nil {
+		return nil, err
+	}
+	revisionHeight, err := strconv.ParseInt(*certificateProof.ProtocolMessage.MessageParts.LatestBlockNumber, 10, 64)
+	if err != nil {
+		return nil, err
+	}
 
 	return &pbchannel.QueryProofUnreceivedPacketsResponse{
 		Proof: []byte(connectionProof),
 		ProofHeight: &clienttypes.Height{
 			RevisionNumber: 0,
-			RevisionHeight: proof.BlockNo,
+			RevisionHeight: uint64(revisionHeight),
 		},
 	}, nil
 }
