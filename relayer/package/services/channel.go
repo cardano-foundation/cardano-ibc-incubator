@@ -116,7 +116,7 @@ func (gw *Gateway) QueryChannels() ([]*chantypes.IdentifiedChannel, error) {
 		if utxo.Datum == nil {
 			continue
 		}
-		dataString := *utxos[0].Datum
+		dataString := *utxo.Datum
 		channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 		if err != nil {
 			return nil, err
