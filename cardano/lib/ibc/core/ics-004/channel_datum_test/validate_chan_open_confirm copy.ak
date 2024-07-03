@@ -48,7 +48,7 @@ fn setup() -> (ChannelDatum, ChannelDatum) {
 
 test succeed() {
   let (input_datum, output_datum) = setup()
-  channel_datum_mod.is_channel_open_confirm_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_confirm(input_datum, output_datum)
 }
 
 test fail_if_input_channel_state_is_not_tryopen() fail {
@@ -63,7 +63,7 @@ test fail_if_input_channel_state_is_not_tryopen() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_confirm_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_confirm(input_datum, output_datum)
 }
 
 test fail_if_output_channel_state_is_not_open() fail {
@@ -78,5 +78,5 @@ test fail_if_output_channel_state_is_not_open() fail {
       },
     }
 
-  channel_datum_mod.is_channel_open_confirm_valid(input_datum, output_datum)
+  channel_datum_mod.validate_chan_open_confirm(input_datum, output_datum)
 }

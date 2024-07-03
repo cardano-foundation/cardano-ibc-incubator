@@ -3,14 +3,16 @@ package cardano
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cometbft/cometbft/abci/types"
 	"os"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cometbft/cometbft/abci/types"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -23,6 +25,7 @@ import (
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"github.com/cardano/relayer/v1/constant"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
@@ -36,6 +39,7 @@ import (
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	echovl "github.com/echovl/cardano-go"
@@ -48,6 +52,7 @@ var (
 	rtyAttNum                   = uint(5)
 	rtyAtt                      = retry.Attempts(rtyAttNum)
 	rtyDel                      = retry.Delay(time.Millisecond * 400)
+	rtyDelMax                   = retry.Delay(time.Minute * 2)
 	rtyErr                      = retry.LastErrorOnly(true)
 	accountSeqRegex             = regexp.MustCompile("account sequence mismatch, expected ([0-9]+), got ([0-9]+)")
 	defaultBroadcastWaitTimeout = 10 * time.Minute
@@ -180,7 +185,27 @@ func (cc *CardanoProvider) ConnectionProof(
 }
 
 func (cc *CardanoProvider) MsgChannelCloseInit(info provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
-	return nil, nil
+	signer, err := cc.Address()
+	if err != nil {
+		return nil, err
+	}
+	msg := &chantypes.MsgChannelCloseInit{
+		PortId:    info.PortID,
+		ChannelId: info.ChannelID,
+		Signer:    signer,
+	}
+
+	return NewCardanoMessage(msg, func(signer string) {
+		msg.Signer = signer
+	}), nil
+}
+
+func transformMsgChannelCloseInit(msg *chantypes.MsgChannelCloseInit) *pbchannel.MsgChannelCloseInit {
+	return &pbchannel.MsgChannelCloseInit{
+		PortId:    msg.PortId,
+		ChannelId: msg.ChannelId,
+		Signer:    msg.Signer,
+	}
 }
 
 func (cc *CardanoProvider) MsgChannelCloseConfirm(msgCloseInit provider.ChannelInfo, proof provider.ChannelProof) (provider.RelayerMessage, error) {
@@ -855,7 +880,21 @@ func (cc *CardanoProvider) mkTxResult(resTx *coretypes.ResultTx) (*sdk.TxRespons
 
 // QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
 func (cc *CardanoProvider) QueryIBCHeader(ctx context.Context, h int64) (provider.IBCHeader, error) {
-	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h)
+	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return mithrilHeader, nil
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *CardanoProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
+	var clientState mithril.ClientState
+	bytes, _ := json.Marshal(cs)
+	json.Unmarshal(bytes, &clientState)
+
+	mithrilHeader, err := cc.GateWay.QueryIBCHeader(ctx, h, &clientState)
 	if err != nil {
 		return nil, err
 	}
@@ -881,31 +920,80 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	blockData, err := cc.QueryBlockData(ctx, int64(dsth))
+	clientStateRes, err := src.QueryClientStateResponse(ctx, int64(srch), srcClientId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var dsthLastestHeight int64
+	dsthLastestHeight = int64(dsth)
+	retry.Do(func() error {
+		dsthLastestHeight, err = cc.QueryLatestHeight(ctx)
+		if err != nil {
+			return err
+		}
+		if dsthLastestHeight <= int64(dsth) {
+			return fmt.Errorf("not yet update transaction snapshot certificate")
+		}
+		return err
+	}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+
+	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, dsthLastestHeight, &clientState)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := cc.ValidatePacket(msgTransfer, provider.LatestBlock{
 		Height: dsth,
-		Time:   time.Unix(int64(blockData.Timestamp), 0),
+		Time:   time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp())),
 	}); err != nil {
 		switch err.(type) {
 		case *provider.TimeoutHeightError, *provider.TimeoutTimestampError, *provider.TimeoutOnCloseError:
 			var pp provider.PacketProof
 			switch order {
 			case chantypes.UNORDERED:
-				pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
+				retry.Do(func() error {
+					var err error
+					pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
+					if pp.Proof == nil {
+						return fmt.Errorf("proof must be not nil")
+					}
+					if err != nil {
+						return err
+					}
+					return err
+				}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+
+				srcLastestHeight, err := src.QueryLatestHeight(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLastestHeight, srcClientId)
 				if err != nil {
 					return nil, nil, err
 				}
 
-				srcBlockData, err := cc.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+				clientStateUpdate, err := clienttypes.UnpackClientState(clientStateUpdateRes.ClientState)
 				if err != nil {
 					return nil, nil, err
 				}
 
-				msgUpdateClient, err := src.MsgUpdateClient(srcClientId, srcBlockData)
+				ibcHeaderUpdate, err := cc.QueryIBCMithrilHeader(ctx, int64(pp.ProofHeight.RevisionHeight), &clientStateUpdate)
+				if err != nil {
+					return nil, nil, err
+				}
+
+				ibcMithrilHeader, ok := ibcHeaderUpdate.(*mithril.MithrilHeader)
+				if !ok {
+					return nil, nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+				}
+
+				msgUpdateClient, err := src.MsgUpdateClient(srcClientId, ibcMithrilHeader)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -938,13 +1026,17 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		}
 	}
 
-	pp, err := src.PacketCommitment(ctx, msgTransfer, srch)
+	srcLastestHeight, err := src.QueryLatestHeight(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	pp, err := src.PacketCommitment(ctx, msgTransfer, uint64(srcLastestHeight))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Update client before build MsgRecvPacket to cosmos
-	srcClientState, err := cc.QueryClientState(ctx, int64(srch), dstClientId)
+	srcClientState, err := cc.QueryClientState(ctx, srcLastestHeight, dstClientId)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -953,6 +1045,10 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	if err != nil {
 		return nil, nil, err
 	}
+	//dstHeader, err := src.QueryIBCHeader(ctx, int64(srch))
+	//if err != nil {
+	//	return nil, nil, err
+	//}
 
 	srcTrustedHeader, err := src.QueryIBCHeader(ctx, int64(srcClientState.GetLatestHeight().GetRevisionHeight())+1)
 	if err != nil {
@@ -1006,20 +1102,23 @@ func (cc *CardanoProvider) SendMessages(ctx context.Context, msgs []provider.Rel
 	}
 
 	wg.Add(1)
-
-	if err := retry.Do(func() error {
-		return cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback})
-	}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr, retry.OnRetry(func(n uint, err error) {
-		cc.log.Info(
-			"Error building or broadcasting transaction",
-			zap.String("chain_id", cc.PCfg.ChainID),
-			zap.Uint("attempt", n+1),
-			zap.Uint("max_attempts", rtyAttNum),
-			zap.Error(err),
-		)
-	})); err != nil {
+	if err := cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback}); err != nil {
 		return nil, false, err
 	}
+
+	//if err := retry.Do(func() error {
+	//	return cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback})
+	//}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr, retry.OnRetry(func(n uint, err error) {
+	//	cc.log.Info(
+	//		"Error building or broadcasting transaction",
+	//		zap.String("chain_id", cc.PCfg.ChainID),
+	//		zap.Uint("attempt", n+1),
+	//		zap.Uint("max_attempts", rtyAttNum),
+	//		zap.Error(err),
+	//	)
+	//})); err != nil {
+	//	return nil, false, err
+	//}
 
 	wg.Wait()
 
@@ -1057,17 +1156,24 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 
 	// Currently only supports sending 1 message per transaction for Cardano
 	for _, msg := range msgs {
-		txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
-
-		if err != nil {
-			// Account sequence mismatch errors can happen on the simulated transaction also.
-			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
-				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
+		var seq uint64
+		err = retry.Do(func() error {
+			txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
+			seq = sequence
+			if err != nil {
+				return err
 			}
-
-			return err
-		}
-		if err := cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks); err != nil {
+			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)
+		}, retry.Context(ctx), rtyAtt, retry.Delay(time.Second*10), rtyErr, retry.OnRetry(func(n uint, err error) {
+			cc.log.Info(
+				"Error broadcasting transaction",
+				zap.String("chain_id", cc.PCfg.ChainID),
+				zap.Uint("attempt", n+1),
+				zap.Uint("max_attempts", rtyAttNum),
+				zap.Error(err),
+			)
+		}))
+		if err != nil {
 			if strings.Contains(err.Error(), sdkerrors.ErrWrongSequence.Error()) {
 				cc.handleAccountSequenceMismatchError(sequenceGuard, err)
 			}
@@ -1076,7 +1182,7 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 		}
 
 		// we had a successful tx broadcast with this sequence, so update it to the next
-		cc.updateNextAccountSequence(sequenceGuard, sequence+1)
+		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 	}
 
 	return nil
@@ -1464,6 +1570,15 @@ func (cc *CardanoProvider) buildMsgViaGW(ctx context.Context, cardanoMsg Cardano
 		return res.UnsignedTx.Value, nil
 	case *chantypes.MsgChannelOpenAck:
 		res, err := cc.GateWay.ChannelOpenAck(ctx, transformMsgChannelOpenAck(msg))
+		if err != nil {
+			return nil, err
+		}
+		return res.UnsignedTx.Value, nil
+	case *chantypes.MsgChannelCloseInit:
+		res, err := cc.GateWay.ChannelCloseInit(
+			context.Background(),
+			transformMsgChannelCloseInit(msg),
+		)
 		if err != nil {
 			return nil, err
 		}

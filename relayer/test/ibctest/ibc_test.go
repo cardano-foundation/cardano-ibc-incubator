@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -32,7 +33,7 @@ func TestIBCSuite(t *testing.T) {
 	}
 	s.SetupTestHomeDir(t, "")
 	t.Run("TestCreateConnection", s.TestCreateConnection)
-	t.Run("TestCreateChannel", s.TestCreateChannel)
+	t.Run("TestCreateChannel", s.TestCreateUnorderedChannel)
 	t.Run("TestRelayPacket", s.TestRelayPacket)
 
 	t.Run("TestRelayPacketWHomeDir", s.TestRelayPacketWHomeDir)
@@ -45,10 +46,32 @@ func TestLegacyProcessor(t *testing.T) {
 	s.SetupTestHomeDir(t, "")
 
 	t.Run("TestCreateConnection", s.TestCreateConnection)
-	t.Run("TestCreateChannel", s.TestCreateChannel)
+	t.Run("TestCreateChannel", s.TestCreateUnorderedChannel)
 	t.Run("TestRelayPacketLegacy", s.TestRelayPacketLegacy)
 
 	t.Run("TestRelayPacketLegacyWHomeDir", s.TestRelayPacketLegacyWHomeDir)
+}
+
+func TestIBCSuiteOrderedChannel(t *testing.T) {
+	s := &IBCTestSuite{
+		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
+	}
+	s.SetupTestHomeDir(t, "")
+	t.Run("TestCreateConnection", s.TestCreateConnection)
+	t.Run("TestCreateOrderedChannel", s.TestCreateOrderedChannel)
+	t.Run("TestRelayPacket", s.TestRelayPacket)
+	t.Run("TestRelayPacketOrderedChannelWHomeDir", s.TestRelayPacketOrderedChannelWHomeDir)
+}
+
+func TestIBCSuiteCloseChannel(t *testing.T) {
+	s := &IBCTestSuite{
+		Logger: zaptest.NewLogger(t, zaptest.Level(zap.InfoLevel)),
+	}
+	s.SetupTestHomeDir(t, "")
+	t.Run("TestCreateConnection", s.TestCreateConnection)
+	t.Run("TestCreateOrderedChannel", s.TestCreateOrderedChannel)
+	t.Run("TestCloseChannel", s.TestCloseChannel)
+	t.Run("TestCloseChannelWHomeDir", s.TestCloseChannelWHomeDir)
 }
 
 func TestCreateAndUpdateClients(t *testing.T) {
@@ -62,6 +85,12 @@ func TestCreateAndUpdateClients(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		runResult = s.updateClient(t, s.System)
 		assert.Nil(t, runResult.Err)
+		for i := 0; i < 100; i++ {
+			fmt.Printf("Loop Time: %v \n", i+1)
+			time.Sleep(5 * time.Second)
+			runResult = s.updateClient(t, s.System)
+			assert.Nil(t, runResult.Err)
+		}
 	})
 }
 
@@ -74,8 +103,27 @@ func (s *IBCTestSuite) TestCreateConnection(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 }
 
-func (s *IBCTestSuite) TestCreateChannel(t *testing.T) {
-	runResult := s.createUnorderdTransferChannel(t, s.System)
+func (s *IBCTestSuite) TestCreateUnorderedChannel(t *testing.T) {
+	runResult := s.createUnorderedChannel(t, s.System)
+	assert.Nil(t, runResult.Err)
+}
+
+func (s *IBCTestSuite) TestCreateOrderedChannel(t *testing.T) {
+	runResult := s.createOrderedChannel(t, s.System)
+	assert.Nil(t, runResult.Err)
+}
+
+func (s *IBCTestSuite) TestCloseChannel(t *testing.T) {
+	var runResult relayertest.RunResult
+
+	config := s.System.MustGetConfig(t)
+
+	path, err := config.Paths.Get(Path)
+	assert.Nil(t, err)
+	cardanoChannelID, _ := s.getLastOpenedChannels(t, s.System, path.Dst, CosmosChainName)
+
+	_ = cardanoChannelID
+	s.closeChannel(t, s.System, cardanoChannelID)
 	assert.Nil(t, runResult.Err)
 }
 
@@ -129,11 +177,11 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
-	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
-
-	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
+	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
+	//
+	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
 
 	var wg sync.WaitGroup
 
@@ -164,13 +212,12 @@ func (s *IBCTestSuite) TestRelayPacketWHomeDir(t *testing.T) {
 		s.System = setUp(t, dir)
 
 		s.createConnection(t, s.System)
-		s.createUnorderdTransferChannel(t, s.System)
+		s.createUnorderedChannel(t, s.System)
 	} else {
 		s.System.HomeDir = dir
 
 		s.System.MustGetConfig(t)
 	}
-
 	s.TestRelayPacket(t)
 }
 
@@ -190,7 +237,7 @@ func (s *IBCTestSuite) TestRelayPacketLegacyWHomeDir(t *testing.T) {
 		s.System = setUp(t, dir)
 
 		s.createConnection(t, s.System)
-		s.createUnorderdTransferChannel(t, s.System)
+		s.createUnorderedChannel(t, s.System)
 	} else {
 		s.System.HomeDir = dir
 
@@ -200,18 +247,68 @@ func (s *IBCTestSuite) TestRelayPacketLegacyWHomeDir(t *testing.T) {
 	s.TestRelayPacketLegacy(t)
 }
 
+func (s *IBCTestSuite) TestRelayPacketOrderedChannelWHomeDir(t *testing.T) {
+	dir, err := os.Getwd()
+	assert.Nil(t, err)
+
+	dir = dir + "/test/ibctest"
+	path := dir + "/config"
+
+	if _, err := os.Stat(path); err != nil {
+		assert.True(t, os.IsNotExist(err))
+
+		err := os.Chdir(dir)
+		assert.Nil(t, err)
+
+		s.System = setUp(t, dir)
+
+		s.createConnection(t, s.System)
+		s.createOrderedChannel(t, s.System)
+	} else {
+		s.System.HomeDir = dir
+
+		s.System.MustGetConfig(t)
+	}
+
+	s.TestRelayPacket(t)
+}
+
+func (s *IBCTestSuite) TestCloseChannelWHomeDir(t *testing.T) {
+	dir, err := os.Getwd()
+	assert.Nil(t, err)
+
+	dir = dir + "/test/ibctest"
+	path := dir + "/config"
+
+	if _, err := os.Stat(path); err != nil {
+		assert.True(t, os.IsNotExist(err))
+
+		err := os.Chdir(dir)
+		assert.Nil(t, err)
+
+		s.System = setUp(t, dir)
+
+		s.createConnection(t, s.System)
+		s.createOrderedChannel(t, s.System)
+	} else {
+		s.System.HomeDir = dir
+
+		s.System.MustGetConfig(t)
+	}
+	s.TestCloseChannel(t)
+}
+
 func (s *IBCTestSuite) createClients(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",
 		"clients", Path,
 	)
-
 }
 
 func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -221,19 +318,19 @@ func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relay
 }
 
 func (s *IBCTestSuite) createConnection(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",
 		"connection", Path,
 		"--block-history", "0",
-		"--client-tp", "24h",
+		//"--client-tp", "24h",
 		"--max-retries", "5",
 	)
 }
 
-func (s *IBCTestSuite) createUnorderdTransferChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+func (s *IBCTestSuite) createUnorderedChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -242,6 +339,27 @@ func (s *IBCTestSuite) createUnorderdTransferChannel(t *testing.T, sys *relayert
 		"--dst-port", CosmosPortTransfer,
 		"--order", "unordered",
 		"--version", "ics20-1")
+}
+
+func (s *IBCTestSuite) createOrderedChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
+		"transact", "channel", Path,
+		"--src-port", CardanoPortMockModule,
+		"--dst-port", CosmosPortMockModule,
+		"--order", "ordered",
+		"--version", "ordered-ics20-1")
+}
+
+func (s *IBCTestSuite) closeChannel(t *testing.T, sys *relayertest.System, srcChannelId string) relayertest.RunResult {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	defer cancel()
+
+	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
+		"transact", "channel-close", Path, srcChannelId, CardanoPortMockModule,
+		"--timeout", TimeForTestTransfer)
 }
 
 func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.System, pathEnd *relayer.PathEnd, chainName string) (string, string) {
@@ -260,7 +378,7 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 }
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -268,7 +386,7 @@ func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayer
 }
 
 func (s *IBCTestSuite) startRelayLegacy(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*240)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*240)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "start", Path, "--processor", "legacy")

@@ -2,6 +2,7 @@ package mithril
 
 import (
 	"fmt"
+	"time"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -32,39 +33,36 @@ func (cs *ClientState) verifyHeader(
 	header *MithrilHeader,
 ) error {
 	nilCertificate := MithrilCertificate{}
+	expectedPreviousCerForTs := nilCertificate
 
-	fcMsdInEpoch := getFcMsdInEpoch(clientStore, header.MithrilStakeDistribution.Epoch)
-	fcTsInEpoch := getFcTsInEpoch(clientStore, header.TransactionSnapshot.Epoch)
-	fcMsdInPrevEpoch := getFcMsdInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
-	fcTsInPrevEpoch := getFcTsInEpoch(clientStore, header.TransactionSnapshot.Epoch-1)
+	firstCertInEpoch := getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch)
+	firstCertInPrevEpoch := getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
 
-	if fcMsdInEpoch != nilCertificate {
-		if header.MithrilStakeDistribution.CertificateHash != fcMsdInEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "%s %v != %v", "invalid latest mithril state distribution certificate:", header.MithrilStakeDistributionCertificate.Hash, fcMsdInEpoch.Hash)
+	if firstCertInEpoch != nilCertificate {
+		if header.MithrilStakeDistribution.CertificateHash != firstCertInEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid latest mithril state distribution certificate:", header.MithrilStakeDistribution.CertificateHash, firstCertInEpoch.Hash)
 		}
+		expectedPreviousCerForTs = firstCertInEpoch
 	} else {
-		if fcMsdInPrevEpoch == nilCertificate {
+		if firstCertInPrevEpoch == nilCertificate {
 			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
 		}
-		if header.MithrilStakeDistributionCertificate.PreviousHash != fcMsdInPrevEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid first mithril state distribution certificate")
+		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
+		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, firstCertInPrevEpoch.Hash)
 		}
 	}
 
-	if fcTsInEpoch != nilCertificate {
-		if header.TransactionSnapshotCertificate.PreviousHash != fcTsInEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "%s %v != %v", "invalid latest transaction snapshot certificate:", header.TransactionSnapshotCertificate.PreviousHash, fcTsInEpoch.Hash)
-		}
-	} else {
-		if fcTsInPrevEpoch == nilCertificate {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first transaction snapshot certificate")
-		}
-		if header.TransactionSnapshotCertificate.PreviousHash != fcTsInPrevEpoch.Hash {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "invalid first transaction snapshot certificate")
-		}
+	if header.TransactionSnapshotCertificate.PreviousHash != expectedPreviousCerForTs.Hash {
+		return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first transaction snapshot certificate", header.TransactionSnapshotCertificate.PreviousHash, expectedPreviousCerForTs.Hash)
 	}
 
-	err := header.MithrilStakeDistributionCertificate.verifyCertificate()
+	_, err := time.Parse(Layout, header.TransactionSnapshotCertificate.Metadata.SealedAt)
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v, expected: %v", "invalid timestamp layout", header.TransactionSnapshotCertificate.Metadata.SealedAt, Layout)
+	}
+
+	err = header.MithrilStakeDistributionCertificate.verifyCertificate()
 	if err != nil {
 		return errorsmod.Wrapf(ErrInvalidCertificate, "mithril state distribution certificate is invalid")
 	}
@@ -81,7 +79,13 @@ func (c *MithrilCertificate) verifyCertificate() error {
 	return nil
 }
 
-func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, clientMsg exported.ClientMessage) []exported.Height {
+func (cs *ClientState) UpdateState(
+	ctx sdk.Context,
+	cdc codec.BinaryCodec,
+	clientStore storetypes.KVStore,
+	clientMsg exported.ClientMessage,
+) []exported.Height {
+	// Type assert the client message to MithrilHeader
 	header, ok := clientMsg.(*MithrilHeader)
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &MithrilHeader{}, clientMsg))
@@ -89,44 +93,33 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 
-	// check for duplicate update
-	if _, found := GetConsensusState(clientStore, cdc, header.GetHeight()); found {
-		// perform no-op
-		return []exported.Height{header.GetHeight()}
+	// Retrieve the previous consensus state
+	prevConsensusState, _ := GetConsensusState(clientStore, cdc, cs.LatestHeight)
+
+	// Check for duplicate update
+	if prevConsensusState.LatestCertHashTxSnapshot == header.TransactionSnapshotCertificate.Hash {
+		return []exported.Height{header.GetHeight()} // No-op on duplicate update
 	}
 
+	// Update the latest height and current epoch
 	height := NewHeight(header.TransactionSnapshot.Height.GetRevisionHeight())
-	if height.GT(cs.LatestHeight) {
-		cs.LatestHeight = &height
+	cs.LatestHeight = &height
+	cs.CurrentEpoch = header.TransactionSnapshot.Epoch
+
+	// Create a new consensus state
+	newConsensusState := &ConsensusState{
+		Timestamp:                header.GetTimestamp(),
+		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate.Hash,
+		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
 	}
 
-	consensusState := &ConsensusState{}
+	// Set the latest certificate of transaction snapshot for the epoch
+	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, cs.CurrentEpoch)
+	setFcInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, cs.CurrentEpoch)
 
-	epoch := header.TransactionSnapshot.Epoch
-	if epoch > cs.CurrentEpoch {
-		cs.CurrentEpoch = epoch
-		consensusState = &ConsensusState{
-			Timestamp:            header.GetTimestamp(),
-			FcHashLatestEpochMsd: header.MithrilStakeDistributionCertificate.Hash,
-			FcHashLatestEpochTs:  header.TransactionSnapshotCertificate.Hash,
-		}
-		// set first certificate of mithril stake distribution and transaction snapshot for epoch
-		setFcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
-		setFcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, epoch)
-	}
-	consensusState = &ConsensusState{
-		Timestamp:         header.GetTimestamp(),
-		LatestCertHashMsd: header.MithrilStakeDistributionCertificate.Hash,
-		LatestCertHashTs:  header.TransactionSnapshotCertificate.Hash,
-	}
-
-	// set latest certificate of mithril stake distribution and transaction snapshot for epoch
-	setLcMsdInEpoch(clientStore, *header.MithrilStakeDistributionCertificate, epoch)
-	setLcTsInEpoch(clientStore, *header.TransactionSnapshotCertificate, epoch)
-
-	// set client state, consensus state and associated metadata
-	setClientState(clientStore, cdc, &cs)
-	setConsensusState(clientStore, cdc, consensusState, header.GetHeight())
+	// Update the client state, consensus state, and associated metadata in the store
+	setClientState(clientStore, cdc, cs)
+	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 
 	return []exported.Height{height}
@@ -168,7 +161,6 @@ func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.Binar
 // UpdateStateOnMisbehaviour updates state upon misbehaviour, freezing the ClientState. This method should only be called when misbehaviour is detected
 // as it does not perform any misbehaviour checks.
 func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage) {
-	cs.FrozenHeight = &FrozenHeight
-
+	// cs.FrozenHeight = &FrozenHeight
 	clientStore.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, &cs))
 }

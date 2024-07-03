@@ -6,6 +6,9 @@ import "google/protobuf/duration.proto";
 
 option go_package = "sidechain/x/clients/mithril";
 
+// Currently, the height of the certificate corresponds to the immutable file number in Cardano node
+// However, it is possible to have two certificates on the same immutable file.
+// This needs to be fixed in the future by using something unique like block height.
 message Height {
   option (gogoproto.goproto_getters)  = false;
   option (gogoproto.goproto_stringer) = false;
@@ -14,6 +17,10 @@ message Height {
   uint64 mithril_height = 1;
 }
 
+// MithrilClientState represents the client state in the Mithril system.
+// Currently, this message includes protocol parameters.
+// However, these protocol parameters might be removed in the future,
+// as they can change across different epochs in Mithril.
 message ClientState {
   option (gogoproto.goproto_getters) = false;
 
@@ -29,28 +36,25 @@ message ClientState {
   google.protobuf.Duration trusting_period = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
 
   MithrilProtocolParameters protocol_parameters = 6;
+
   // Path at which next upgraded client will be committed.
   repeated string upgrade_path = 7;
 }
 
+// MithrilConsensusState represents the consensus state in the Mithril system.
+// This message stores the latest transaction snapshot hash and the first certificate hash of the latest epoch.
+// These are used to verify the latest transaction snapshot.
 message ConsensusState {
   option (gogoproto.goproto_getters) = false;
 
   uint64 timestamp = 1;
 
-  // First certificate hash of latest epoch of mithril stake distribution
-  string fc_hash_latest_epoch_msd = 2;
+  string first_cert_hash_latest_epoch = 2;
 
-  // Latest certificate hash of mithril stake distribution
-  string latest_cert_hash_msd = 3;
-
-    // First certificate hash of latest epoch of transaction snapshot
-  string fc_hash_latest_epoch_ts = 4;
-
-  // Latest certificate hash of transaction snapshot
-  string latest_cert_hash_ts = 5;
+  string latest_cert_hash_tx_snapshot = 3;
 }
 
+// Misbehavior represents a conflict between two headers.
 message Misbehaviour {
   option (gogoproto.goproto_getters) = false;
   // ClientID is deprecated
@@ -59,6 +63,7 @@ message Misbehaviour {
   MithrilHeader mithril_header_2  = 3 [(gogoproto.customname) = "MithrilHeader2"];
 }
 
+// Mithril Header
 message MithrilHeader {
   option (gogoproto.goproto_getters) = false;
 
@@ -71,6 +76,7 @@ message MithrilHeader {
   MithrilCertificate transaction_snapshot_certificate = 4;
 }
 
+// Mithril Stake Distribution
 message MithrilStakeDistribution {
   option (gogoproto.goproto_getters) = false;
 
@@ -87,6 +93,7 @@ message MithrilStakeDistribution {
   MithrilProtocolParameters protocol_parameter = 6;
 }
 
+// Cardano Transaction Snapshot
 message CardanoTransactionSnapshot {
   option (gogoproto.goproto_getters) = false;
 
@@ -101,6 +108,7 @@ message CardanoTransactionSnapshot {
   Height height = 5;
 }
 
+// Mithril Certificate
 message MithrilCertificate {
   option (gogoproto.goproto_getters) = false;
 
@@ -120,23 +128,29 @@ message MithrilCertificate {
 
   string aggregate_verification_key = 8;
 
-  CertificateSignature signature = 9;
+  string multi_signature = 9;
+
+  string genesis_signature = 10;
 }
 
+// Certificate Metadata
 message CertificateMetadata {
   option (gogoproto.goproto_getters) = false;
 
-  string protocol_version = 1;
+  string network = 1;
 
-  MithrilProtocolParameters protocol_parameters = 2;
+  string protocol_version = 2;
 
-  uint64 initiatedAt = 3;
+  MithrilProtocolParameters protocol_parameters = 3;
 
-  uint64 sealedAt = 4;
+  string initiated_at = 4;
 
-  repeated SignerWithStake signers = 5;
+  string sealed_at = 5;
+
+  repeated SignerWithStake signers = 6;
 }
 
+// Signer With Stake
 message SignerWithStake {
   option (gogoproto.goproto_getters) = false;
 
@@ -145,12 +159,14 @@ message SignerWithStake {
   uint64 stake = 2;
 }
 
+// Protocol Message
 message ProtocolMessage {
   option (gogoproto.goproto_getters) = false;
   
   repeated MessagePart message_parts = 1;
 }
 
+// Message Part
 message MessagePart {
   option (gogoproto.goproto_getters) = false;
 
@@ -159,6 +175,7 @@ message MessagePart {
   string protocol_message_part_value = 2;
 }
 
+// Mithril Protocol Parameters
 message MithrilProtocolParameters {
   option (gogoproto.goproto_getters) = false;
 
@@ -170,27 +187,24 @@ message MithrilProtocolParameters {
   Fraction phi_f = 3 [(gogoproto.nullable) = false];
 }
 
+// Protocol Message Part Key
 enum ProtocolMessagePartKey {
   option (gogoproto.goproto_enum_prefix) = false;
-  
-  SNAPSHOT_DIGEST = 0;
-  
-  CARDANO_TRANSACTIONS_MERKLE_ROOT = 1;
-  
-  NEXT_AGGREGATE_VERIFICATION_KEY = 2;
-  
-  LATEST_IMMUTABLE_FILE_NUMBER = 3;
-}
 
-message CertificateSignature {
-  oneof sig_type {
-    GenesisSignature genesis_signature = 1;
-    MultiSignature multi_signature = 2;
-  }
-}
-
-message GenesisSignature {
-  ProtocolGenesisSignature protocol_genesis_signature = 1;
+  // Invalid message part key
+  PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED = 0;
+  
+  // key "snapshot_digest"
+  PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST = 1;
+  
+  // key "cardano_transactions_merkle_root"
+  PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT = 2;
+  
+  // key "next_aggregate_verification_key"
+  PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY = 3;
+  
+  // key "latest_immutable_file_number"
+  PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER = 4;
 }
 
 // ProtocolGenesisSignature wraps a cryptographic signature.
@@ -198,14 +212,9 @@ message ProtocolGenesisSignature {
   bytes signature = 1;
 }
 
-// MultiSignature represents a collective signature.
-message MultiSignature {
-  SignedEntityType entity_type = 1;
-  ProtocolMultiSignature signature = 2;
-}
-
 // An entity type associated with the signature.
 message SignedEntityType {
+  // MithrilStakeDistribution(epoch), CardanoStakeDistribution(epoch), CardanoImmutableFilesFull(CardanoDbBeacon), CardanoTransactions(CardanoDbBeacon) 
   oneof entity {
     MithrilStakeDistribution mithril_stake_distribution = 1;
     CardanoStakeDistribution cardano_stake_distribution = 2;
@@ -214,28 +223,26 @@ message SignedEntityType {
   }
 }
 
+// Cardano stake distribution
 message CardanoStakeDistribution {
   uint64 epoch = 1;
 }
 
+// Cardano immutable files full
 message CardanoImmutableFilesFull {
   CardanoDbBeacon beacon = 1;
 }
 
+// Cardano transactions
 message CardanoTransactions {
   CardanoDbBeacon beacon = 1;
 }
 
+// Cardano db beacon
 message CardanoDbBeacon {
   string network = 1;
   uint64 epoch = 2;
   uint64 immutable_file_number = 3;
-}
-
-// ProtocolMultiSignature wraps a multi-signature.
-message ProtocolMultiSignature {
-  repeated bytes signatures = 1;
-  bytes batch_proof = 2; // Assuming serialization of BatchPath is handled elsewhere.
 }
 
 // Fraction defines the protobuf message type for tmmath.Fraction that only

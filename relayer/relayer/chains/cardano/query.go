@@ -5,6 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
+	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
+	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,7 +17,6 @@ import (
 	tendermint "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
-	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -26,12 +29,16 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+)
+
+const (
+	latestHeightQueryBlockSearchRetryDelay = 30 * time.Second
+	latestHeightQueryBlockSearchRetries    = 10
 )
 
 const PaginationDelay = 10 * time.Millisecond
@@ -52,10 +59,20 @@ func (cc *CardanoProvider) queryIBCMessages(ctx context.Context, log *zap.Logger
 	var mu sync.Mutex
 
 	eg.Go(func() error {
-		res, err := cc.GateWay.QueryBlockSearch(ctx, srcChanID, "", sequence, uint64(limit), uint64(page))
-		if err != nil {
+		var res *ibcclient.QueryBlockSearchResponse
+		var err error
+		ctxRetry := context.Background()
+		err = retry.Do(func() error {
+			res, err = cc.GateWay.QueryBlockSearch(ctxRetry, srcChanID, "", sequence, uint64(limit), uint64(page))
+			if err != nil {
+				return err
+			}
+
+			if res.Blocks == nil {
+				return fmt.Errorf("Blocks must be not nil")
+			}
 			return err
-		}
+		}, retry.Context(ctxRetry), retry.Attempts(latestHeightQueryBlockSearchRetries), retry.Delay(latestHeightQueryBlockSearchRetryDelay), retry.LastErrorOnly(true))
 
 		var nestedEg errgroup.Group
 
@@ -199,8 +216,6 @@ func (cc *CardanoProvider) GenerateConnHandshakeProof(ctx context.Context, heigh
 
 // QueryClientStateResponse retrieves the latest consensus state for a client in state at a given height
 func (cc *CardanoProvider) QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error) {
-	//key := host.FullClientStateKey(srcClientId)
-
 	//value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
 	value, err := cc.QueryClientState(ctx, height, srcClientId)
 	if err != nil {
@@ -511,7 +526,6 @@ func (cc *CardanoProvider) QueryConnections(ctx context.Context) ([]*conntypes.I
 	}
 	return conns, nil
 }
-
 func transformIdentifiedConnection(ic *pbconnection.IdentifiedConnection) *conntypes.IdentifiedConnection {
 	versions := []*conntypes.Version{}
 	for _, gwVersion := range ic.Versions {
@@ -576,12 +590,44 @@ func (cc *CardanoProvider) QueryLatestHeight(ctx context.Context) (int64, error)
 
 // QueryNextSeqAck returns the next seqAck for a configured channel
 func (cc *CardanoProvider) QueryNextSeqAck(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	return nil, nil
+	res, err := cc.GateWay.QueryNextSequenceAck(ctx, &pbchannel.QueryNextSequenceReceiveRequest{
+		PortId:    portid,
+		ChannelId: channelid,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	recvRes = &chantypes.QueryNextSequenceReceiveResponse{
+		NextSequenceReceive: res.NextSequenceReceive,
+		Proof:               res.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: res.ProofHeight.RevisionHeight,
+			RevisionHeight: res.ProofHeight.RevisionNumber,
+		},
+	}
+	return recvRes, nil
 }
 
 // QueryNextSeqRecv returns the next seqRecv for a configured channel
 func (cc *CardanoProvider) QueryNextSeqRecv(ctx context.Context, height int64, channelid, portid string) (recvRes *chantypes.QueryNextSequenceReceiveResponse, err error) {
-	return nil, nil
+	res, err := cc.GateWay.QueryNextSequenceReceive(ctx, &pbchannel.QueryNextSequenceReceiveRequest{
+		PortId:    portid,
+		ChannelId: channelid,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	recvRes = &chantypes.QueryNextSequenceReceiveResponse{
+		NextSequenceReceive: res.NextSequenceReceive,
+		Proof:               res.Proof,
+		ProofHeight: clienttypes.Height{
+			RevisionNumber: res.ProofHeight.RevisionHeight,
+			RevisionHeight: res.ProofHeight.RevisionNumber,
+		},
+	}
+	return recvRes, nil
 }
 
 // QueryPacketAcknowledgement returns the packet ack proof at a given height

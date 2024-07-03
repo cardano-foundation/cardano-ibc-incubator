@@ -11,8 +11,18 @@ ROOT_DIR=$(dirname $(realpath $0))
 
 SCRIPT_DIRECTORY=${ROOT_DIR}/chains/mithrils/scripts
 
+set_up_mithril() {
+  bash ${SCRIPT_DIRECTORY}/setup_submodule.sh || return 1
+  return 0
+}
 # Change directory
 pushd ${ROOT_DIR} > /dev/null
+
+if set_up_mithril; then
+    echo >&2 -e "\nSet up successful!";
+else
+    echo >&2 -e "\nWARNING: Fails to set up for the files.";
+fi
 
 # Init script
 . $SCRIPT_DIRECTORY/mkfiles-init.sh

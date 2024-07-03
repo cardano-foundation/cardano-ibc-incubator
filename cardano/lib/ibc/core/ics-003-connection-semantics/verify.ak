@@ -1,12 +1,12 @@
 use aiken/dict
-use ibc/client/cardano_client/protos/cardano_pb.{
-  AnyCardanoClientState, CardanoClientState,
-}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/mithril_client/protos/mithril_pb.{
+  AnyMithrilClientState, MithrilClientState,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/params
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
@@ -17,6 +17,7 @@ use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/math
+use ibc/utils/bits
 
 pub fn verify_connection_state(
   client_datum_state: ClientDatumState,
@@ -54,7 +55,7 @@ pub fn verify_connection_state(
 pub fn verify_client_state(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
-  counterparty_client_state: CardanoClientState,
+  counterparty_client_state: MithrilClientState,
   proof: MerkleProof,
   proof_height: Height,
 ) -> Bool {
@@ -76,10 +77,10 @@ pub fn verify_client_state(
     0,
     proof,
     merkle_path,
-    cardano_pb.marshal_for_any_client_state(
+    mithril_pb.marshal_for_any_client_state(
       Some(
-        AnyCardanoClientState {
-          type_url: "/ibc.clients.cardano.v1.ClientState",
+        AnyMithrilClientState {
+          type_url: "/ibc.clients.mithril.v1.ClientState",
           value: Some(counterparty_client_state),
         },
       ),
@@ -229,13 +230,37 @@ pub fn get_block_delay(connection: ConnectionEnd) -> Int {
 }
 
 pub fn verify_next_sequence_recv(
-  _client_datum_state: ClientDatumState,
-  _connection: ConnectionEnd,
-  _proof_height: Height,
-  _proof: MerkleProof,
-  _port_id: ByteArray,
-  _channel_id: ByteArray,
-  _next_sequence_recv: Int,
+  client_datum_state: ClientDatumState,
+  connection: ConnectionEnd,
+  proof_height: Height,
+  proof: MerkleProof,
+  port_id: ByteArray,
+  channel_id: ByteArray,
+  next_sequence_recv: Int,
 ) -> Bool {
-  True
+  let time_delay = connection.delay_period
+  let block_delay = get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [packet_keys.next_sequence_recv_path(port_id, channel_id)],
+      ),
+    )
+
+  expect Some(consensus_state) =
+    dict.from_list(client_datum_state.consensus_states, height.compare)
+      |> dict.get(proof_height)
+
+  client_state.verify_membership(
+    client_datum_state.client_state,
+    consensus_state,
+    proof_height,
+    time_delay,
+    block_delay,
+    proof,
+    merkle_path,
+    bits.put_uint64_big_endian(next_sequence_recv),
+  )
 }

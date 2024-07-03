@@ -25,7 +25,12 @@ pub type MithrilHeight {
 pub type MithrilProtocolParameters {
   k: Int,
   m: Int,
-  phi_f: Int,
+  phi_f: Option<Fraction>,
+}
+
+pub type Fraction {
+  numerator: Int,
+  denominator: Int,
 }
 
 pub type AnyMithrilClientState {
@@ -341,9 +346,9 @@ pub fn marshal_for_protocol_parameters(
         |> concat(ite(m == 0, #[], m |> uint64() |> encode_varint() |> push(0x10)))
         |> concat(
             ite(
-              phi_f == 0,
+              is_none(phi_f),
               #[],
-              phi_f |> uint64() |> encode_varint() |> push(0x18),
+              phi_f |> size_for_fraction() |> uint64() |> encode_varint() |> concat(marshal_for_fraction(phi_f)) |> push(0x1a)
             ),
           )
     },
@@ -362,7 +367,16 @@ pub fn size_for_protocol_parameters(
       0
         |> add(ite(k == 0, 0, k |> uint64() |> sov() |> add(1)))
         |> add(ite(m == 0, 0, m |> uint64() |> sov() |> add(1)))
-        |> add(ite(phi_f == 0, 0, phi_f |> uint64() |> sov() |> add(1)))
+        |> add(
+          ite(
+            is_none(phi_f),
+            0,
+            {
+              let l = size_for_fraction(phi_f)
+              l |> uint64() |> sov() |> add(l + 1)
+            }
+          )
+        )
     },
   )
 }
@@ -416,6 +430,45 @@ pub fn size_for_duration(duration_opt: Option<MithrilDuration>) -> Int {
   )
 }
 
+pub fn size_for_fraction(fraction_opt: Option<Fraction>) -> Int {
+  ite(
+    is_none(fraction_opt),
+    0,
+    {
+      expect Some(fraction) = fraction_opt
+      let Fraction { numerator, denominator } = fraction
+      0 
+        |> add(ite(numerator == 0, 0, numerator |> uint64() |> sov() |> add(1)))
+        |> add(ite(denominator == 0, 0, denominator |> uint64() |> sov() |> add(1)))
+    }
+  )
+}
+
+pub fn marshal_for_fraction(fraction_opt: Option<Fraction>) -> ByteArray {
+  ite(
+    is_none(fraction_opt),
+    #[],
+    {
+      expect Some(fraction) = fraction_opt
+      let Fraction { numerator, denominator } = fraction
+      #[] |> concat(
+        ite(
+          numerator == 0,
+          #[],
+          numerator |> uint64() |> encode_varint() |> push(8),
+        )
+      )
+      |> concat(
+        ite(
+          denominator == 0,
+          #[],
+          denominator |> uint64() |> encode_varint() |> push(0x10),
+        )
+      )
+    }
+  )
+}
+
 test test_marshal_for_client_state() {
   let cs =
     Some(
@@ -426,10 +479,17 @@ test test_marshal_for_client_state() {
         current_epoch: 2,
         trusting_period: 10000,
         protocol_parameters: Some(
-          MithrilProtocolParameters { k: 2, m: 3, phi_f: 4 },
+          MithrilProtocolParameters { 
+            k: 2, 
+            m: 3, 
+            phi_f: Some(Fraction {
+              numerator: 20,
+              denominator: 100
+            })
+          },
         ),
         upgrade_path: ["abc", "xyz"],
       },
     )
-  marshal_for_client_state(cs) == #"0a08636861696e2d69641202080b1a02080c20022a0310904e32060802100318043a036162633a0378797a"
+  marshal_for_client_state(cs) == #"0a08636861696e2d69641202080b1a02080c20022a0310904e320a080210031a04081410643a036162633a0378797a"
 }

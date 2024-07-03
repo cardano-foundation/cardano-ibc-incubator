@@ -861,22 +861,22 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			return
 		}
 
-		for k, cs := range pp.PathEnd1.channelStateCache {
+		for k, _ := range pp.PathEnd1.channelStateCache {
 			if k.ChannelID == m.SrcChannelID && k.PortID == m.SrcPortID && k.CounterpartyChannelID != "" && k.CounterpartyPortID != "" {
-				if cs.Open {
-					// channel is still open on pathEnd1
-					break
-				}
+				//if cs.Open {
+				//	// channel is still open on pathEnd1
+				//	break
+				//}
 				if counterpartyState, ok := pp.PathEnd2.channelStateCache[k.Counterparty()]; ok && !counterpartyState.Open {
 					pp.log.Info("Channel already closed on both sides")
 					cancel()
 					return
 				}
 				// queue channel close init on pathEnd1
-				if _, ok := pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit]; !ok {
-					pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit] = make(ChannelMessageCache)
+				if _, ok := pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey]; !ok {
+					pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey] = make(ChannelMessageCache)
 				}
-				pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit][k] = provider.ChannelInfo{
+				pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey][k] = provider.ChannelInfo{
 					PortID:                k.PortID,
 					ChannelID:             k.ChannelID,
 					CounterpartyPortID:    k.CounterpartyPortID,
@@ -887,12 +887,12 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			}
 		}
 
-		for k, cs := range pp.PathEnd2.channelStateCache {
+		for k, _ := range pp.PathEnd2.channelStateCache {
 			if k.CounterpartyChannelID == m.SrcChannelID && k.CounterpartyPortID == m.SrcPortID && k.ChannelID != "" && k.PortID != "" {
-				if cs.Open {
-					// channel is still open on pathEnd2
-					break
-				}
+				//if cs.Open {
+				//	// channel is still open on pathEnd2
+				//	break
+				//}
 				if counterpartyChanState, ok := pp.PathEnd1.channelStateCache[k.Counterparty()]; ok && !counterpartyChanState.Open {
 					pp.log.Info("Channel already closed on both sides")
 					cancel()
@@ -1078,10 +1078,16 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	// if sending messages fails to one pathEnd, we don't need to halt sending to the other pathEnd.
 	var eg errgroup.Group
 	eg.Go(func() error {
+		if len(pathEnd1Messages.connectionMessages) > 0 {
+			fmt.Println("pathEnd1Messages.connectionMessages", pathEnd1Messages.connectionMessages)
+		}
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
 		return mp.processMessages(ctx, pathEnd1Messages, pp.PathEnd2, pp.PathEnd1)
 	})
 	eg.Go(func() error {
+		if len(pathEnd2Messages.connectionMessages) > 0 {
+			fmt.Println("pathEnd2Messages.connectionMessages", pathEnd2Messages.connectionMessages)
+		}
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
 		return mp.processMessages(ctx, pathEnd2Messages, pp.PathEnd1, pp.PathEnd2)
 	})

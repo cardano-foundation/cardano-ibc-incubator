@@ -42,6 +42,8 @@ import {
   QueryUnreceivedAcksResponse,
   QueryProofUnreceivedPacketsRequest,
   QueryProofUnreceivedPacketsResponse,
+  QueryNextSequenceReceiveRequest,
+  QueryNextSequenceReceiveResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import {
   QueryBlockResultsRequest,
@@ -199,5 +201,19 @@ export class QueryController {
   async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
     const response: QueryIBCHeaderResponse = await this.queryService.queryIBCHeader(request);
     return response as unknown as QueryIBCHeaderResponse;
+  }
+  @GrpcMethod('Query', 'NextSequenceReceive')
+  async queryNextSequenceReceive(
+    request: QueryNextSequenceReceiveRequest
+  ): Promise<QueryNextSequenceReceiveResponse> {
+    const response: QueryNextSequenceReceiveResponse = await this.packetService.queryNextSequenceReceive(request);
+    return response as unknown as QueryNextSequenceReceiveResponse;
+  }
+  @GrpcMethod('Query', 'NextSequenceAck')
+  async queryNextSequenceAck(
+    request: QueryNextSequenceReceiveRequest
+  ): Promise<QueryNextSequenceReceiveResponse> {
+    const response: QueryNextSequenceReceiveResponse = await this.packetService.QueryNextSequenceAck(request);
+    return response as unknown as QueryNextSequenceReceiveResponse;
   }
 }

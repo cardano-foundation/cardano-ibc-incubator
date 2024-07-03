@@ -15,11 +15,16 @@ export type MithrilHeight = {
 export type MithrilProtocolParameters = {
   k: bigint;
   m: bigint;
-  phi_f: bigint;
+  phi_f: Fraction;
+};
+
+export type Fraction = {
+  numerator: bigint;
+  denominator: bigint;
 };
 
 export type MithrilConsensusState = {
-  timestamp: number;
+  timestamp: bigint;
   mithril_stake_distribution_certificate: MithrilCertificate;
   transaction_snapshot_certificate: MithrilCertificate;
 };

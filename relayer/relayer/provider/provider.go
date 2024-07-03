@@ -18,6 +18,7 @@ import (
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tendermint "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
@@ -604,6 +605,9 @@ type QueryProvider interface {
 
 	// QueryIBCHeader returns the IBC compatible block header at a specific height.
 	QueryIBCHeader(ctx context.Context, h int64) (IBCHeader, error)
+
+	// QueryIBCMithrilHeader return IBC compatible block header from mithril
+	QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (IBCHeader, error)
 
 	// QueryBlockData from cardano
 	QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error)

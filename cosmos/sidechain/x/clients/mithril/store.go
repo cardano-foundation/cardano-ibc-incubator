@@ -306,50 +306,15 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height exported.Hei
 	deleteIterationKey(clientStore, height)
 }
 
-// setFcMsdInEpoch stores the first Mithril Stake Distribution certificate in epoch
-func setFcMsdInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
-	key := FcMsdInEpochKey(epoch)
+// setFcInEpoch stores the first Mithril Certificate (mithril stake distribution certificate) in epoch
+func setFcInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
+	key := FcInEpochKey(epoch)
 	val := MustMarshalMithrilCertificate(certificate)
 	clientStore.Set(key, val)
 }
 
-// getFcMsdInEpoch get the first Mithril Stake Distribution certificate in epoch
-func getFcMsdInEpoch(clientStore storetypes.KVStore, epoch uint64) MithrilCertificate {
-	key := FcMsdInEpochKey(epoch)
-	bz := clientStore.Get(key)
-	if len(bz) == 0 {
-		return MithrilCertificate{}
-	}
-	return MustUnmarshalMithrilCertificate(bz)
-}
-
-// setLcMsdInEpoch stores the latest Mithril Stake Distribution certificate in epoch
-func setLcMsdInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
-	key := LcMsdInEpochKey(epoch)
-	val := MustMarshalMithrilCertificate(certificate)
-	clientStore.Set(key, val)
-}
-
-// getLcMsdInEpoch get the latest Mithril Stake Distribution certificate in epoch
-func getLcMsdInEpoch(clientStore storetypes.KVStore, epoch uint64) MithrilCertificate {
-	key := LcMsdInEpochKey(epoch)
-	bz := clientStore.Get(key)
-	if len(bz) == 0 {
-		return MithrilCertificate{}
-	}
-	return MustUnmarshalMithrilCertificate(bz)
-}
-
-// setFcTsInEpoch stores the first Transaction Snapshot certificate in epoch
-func setFcTsInEpoch(clientStore storetypes.KVStore, certificate MithrilCertificate, epoch uint64) {
-	key := FcTsInEpochKey(epoch)
-	val := MustMarshalMithrilCertificate(certificate)
-	clientStore.Set(key, val)
-}
-
-// getFcTsInEpoch get the first Transaction Snapshot certificate in epoch
-func getFcTsInEpoch(clientStore storetypes.KVStore, epoch uint64) MithrilCertificate {
-	key := FcTsInEpochKey(epoch)
+func getFcInEpoch(clientStore storetypes.KVStore, epoch uint64) MithrilCertificate {
+	key := FcInEpochKey(epoch)
 	bz := clientStore.Get(key)
 	if len(bz) == 0 {
 		return MithrilCertificate{}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sidechain/x/clients/mithril/common/cryptohelpers"
 	"sidechain/x/clients/mithril/crypto"
 )
 
@@ -55,4 +56,30 @@ func (k *ProtocolAggregateVerificationKey) ToJsonHex() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(keyBytes), nil
+}
+
+type ProtocolSignerVerificationKey struct {
+	Key *crypto.StmVerificationKeyPoP
+}
+
+type StmInitializerWrapper struct {
+	StmInitializer crypto.StmInitializer
+	KesSignature   []byte
+}
+
+type ProtocolMkProof struct {
+	Key *cryptohelpers.MKMapProof
+}
+
+func (p *ProtocolMkProof) FromJSONHex(hexString string) (*ProtocolMkProof, error) {
+	p.Key = &cryptohelpers.MKMapProof{}
+	keyBytes, err := hex.DecodeString(hexString)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(keyBytes, p.Key)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }

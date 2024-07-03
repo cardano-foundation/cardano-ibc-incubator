@@ -14,9 +14,8 @@ var _ exported.ClientMessage = (*MithrilHeader)(nil)
 // ConsensusState returns the updated consensus state associated with the header
 func (h MithrilHeader) ConsensusState() *ConsensusState {
 	return &ConsensusState{
-		Timestamp:         h.GetTimestamp(),
-		LatestCertHashMsd: h.MithrilStakeDistributionCertificate.Hash,
-		LatestCertHashTs:  h.TransactionSnapshotCertificate.Hash,
+		Timestamp:                h.GetTimestamp(),
+		LatestCertHashTxSnapshot: h.TransactionSnapshot.CertificateHash,
 	}
 }
 
@@ -34,7 +33,8 @@ func (h MithrilHeader) GetHeight() exported.Height {
 // GetTimestamp returns the current block timestamp. It returns a zero time if
 // the Mithril header is nil.
 func (h MithrilHeader) GetTimestamp() uint64 {
-	return h.TransactionSnapshotCertificate.Metadata.SealedAt
+	sealedAt, _ := time.Parse(Layout, h.TransactionSnapshotCertificate.Metadata.SealedAt)
+	return uint64(sealedAt.UnixNano())
 }
 
 func (h MithrilHeader) GetTime() time.Time {

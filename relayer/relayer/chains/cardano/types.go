@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
@@ -119,6 +120,7 @@ func query(ctx context.Context, payload interface{}, v interface{}, endpoint str
 	if err != nil {
 		return fmt.Errorf("failed to connect to ogmios, %v: %w", endpoint, err)
 	}
+	conn.SetReadDeadline(time.Now().Add(45 * time.Second))
 	defer func() {
 		if v := atomic.AddInt64(&closed, 1); v == 1 {
 			conn.Close()

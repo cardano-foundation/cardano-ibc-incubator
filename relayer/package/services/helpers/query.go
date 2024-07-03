@@ -1,8 +1,6 @@
 package helpers
 
 import (
-	"encoding/hex"
-	"encoding/json"
 	"github.com/cardano/relayer/v1/package/mithril/dtos"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 )
@@ -93,79 +91,79 @@ func convertSignedEntityType(req *dtos.SignedEntityType, stakeDistribution dtos.
 	return nil
 }
 
-func convertCertificateSignatureSigType(stakeDistribution dtos.MithrilStakeDistribution, stakeDistributionCertificate dtos.CertificateDetail) *mithril.CertificateSignature {
-	if stakeDistributionCertificate.GenesisSignature != "" {
-		signature, _ := hex.DecodeString(stakeDistributionCertificate.GenesisSignature)
-
-		return &mithril.CertificateSignature{
-			SigType: &mithril.CertificateSignature_GenesisSignature{
-				GenesisSignature: &mithril.GenesisSignature{
-					ProtocolGenesisSignature: &mithril.ProtocolGenesisSignature{
-						Signature: signature,
-					},
-				},
-			},
-		}
-	}
-
-	if stakeDistributionCertificate.MultiSignature != "" {
-		var multiSignature dtos.CertificateMultiSignature
-		json.Unmarshal([]byte(stakeDistributionCertificate.MultiSignature), &multiSignature)
-
-		batchProofBytes, err1 := json.Marshal(multiSignature.BatchProof)
-		if err1 != nil {
-			return nil
-		}
-
-		signatures := make([][]byte, 0)
-		for _, signature := range multiSignature.Signatures {
-			sigBytes, _ := json.Marshal(signature)
-			signatures = append(signatures, sigBytes)
-		}
-
-		return &mithril.CertificateSignature{
-			SigType: &mithril.CertificateSignature_MultiSignature{
-				MultiSignature: &mithril.MultiSignature{
-					EntityType: convertSignedEntityType(&stakeDistributionCertificate.SignedEntityType, stakeDistribution, stakeDistributionCertificate),
-					Signature: &mithril.ProtocolMultiSignature{
-						Signatures: signatures,
-						BatchProof: batchProofBytes,
-					},
-				},
-			},
-		}
-	}
-
-	return nil
-}
+//func convertCertificateSignatureSigType(stakeDistribution dtos.MithrilStakeDistribution, stakeDistributionCertificate dtos.CertificateDetail) *mithril.CertificateSignature {
+//	if stakeDistributionCertificate.GenesisSignature != "" {
+//		signature, _ := hex.DecodeString(stakeDistributionCertificate.GenesisSignature)
+//
+//		return &mithril.CertificateSignature{
+//			SigType: &mithril.CertificateSignature_GenesisSignature{
+//				GenesisSignature: &mithril.GenesisSignature{
+//					ProtocolGenesisSignature: &mithril.ProtocolGenesisSignature{
+//						Signature: signature,
+//					},
+//				},
+//			},
+//		}
+//	}
+//
+//	if stakeDistributionCertificate.MultiSignature != "" {
+//		var multiSignature dtos.CertificateMultiSignature
+//		json.Unmarshal([]byte(stakeDistributionCertificate.MultiSignature), &multiSignature)
+//
+//		batchProofBytes, err1 := json.Marshal(multiSignature.BatchProof)
+//		if err1 != nil {
+//			return nil
+//		}
+//
+//		signatures := make([][]byte, 0)
+//		for _, signature := range multiSignature.Signatures {
+//			sigBytes, _ := json.Marshal(signature)
+//			signatures = append(signatures, sigBytes)
+//		}
+//
+//		return &mithril.CertificateSignature{
+//			SigType: &mithril.CertificateSignature_MultiSignature{
+//				MultiSignature: &mithril.MultiSignature{
+//					EntityType: convertSignedEntityType(&stakeDistributionCertificate.SignedEntityType, stakeDistribution, stakeDistributionCertificate),
+//					Signature: &mithril.ProtocolMultiSignature{
+//						Signatures: signatures,
+//						BatchProof: batchProofBytes,
+//					},
+//				},
+//			},
+//		}
+//	}
+//
+//	return nil
+//}
 
 func convertMessageParts(messagePart dtos.MessageParts) []*mithril.MessagePart {
 	var messageParts []*mithril.MessagePart
 
 	if messagePart.NextAggregateVerificationKey != nil {
 		element := &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.NEXT_AGGREGATE_VERIFICATION_KEY,
+			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY,
 			ProtocolMessagePartValue: *messagePart.NextAggregateVerificationKey,
 		}
 		messageParts = append(messageParts, element)
 	}
 	if messagePart.SnapshotDigest != nil {
 		element := &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.SNAPSHOT_DIGEST,
+			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST,
 			ProtocolMessagePartValue: *messagePart.SnapshotDigest,
 		}
 		messageParts = append(messageParts, element)
 	}
 	if messagePart.CardanoTransactionsMerkleRoot != nil {
 		element := &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.CARDANO_TRANSACTIONS_MERKLE_ROOT,
+			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT,
 			ProtocolMessagePartValue: *messagePart.CardanoTransactionsMerkleRoot,
 		}
 		messageParts = append(messageParts, element)
 	}
 	if messagePart.LatestImmutableFileNumber != nil {
 		element := &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.LATEST_IMMUTABLE_FILE_NUMBER,
+			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER,
 			ProtocolMessagePartValue: *messagePart.LatestImmutableFileNumber,
 		}
 		messageParts = append(messageParts, element)
@@ -190,8 +188,8 @@ func ConvertMithrilStakeDistributionCertificate(stakeDistribution dtos.MithrilSt
 					Denominator: FloatToFraction(stakeDistributionCertificate.Metadata.Parameters.PhiF).Denominator,
 				},
 			},
-			InitiatedAt: uint64(stakeDistributionCertificate.Metadata.InitiatedAt.UnixNano()),
-			SealedAt:    uint64(stakeDistributionCertificate.Metadata.SealedAt.UnixNano()),
+			InitiatedAt: stakeDistributionCertificate.Metadata.InitiatedAt,
+			SealedAt:    stakeDistributionCertificate.Metadata.SealedAt,
 			Signers:     convertSignerWithStake(stakeDistributionCertificate.Metadata.Signers),
 		},
 		ProtocolMessage: &mithril.ProtocolMessage{
@@ -199,6 +197,7 @@ func ConvertMithrilStakeDistributionCertificate(stakeDistribution dtos.MithrilSt
 		},
 		SignedMessage:            stakeDistributionCertificate.SignedMessage,
 		AggregateVerificationKey: stakeDistributionCertificate.AggregateVerificationKey,
-		Signature:                convertCertificateSignatureSigType(stakeDistribution, stakeDistributionCertificate),
+		MultiSignature:           stakeDistributionCertificate.MultiSignature,
+		GenesisSignature:         stakeDistributionCertificate.GenesisSignature,
 	}
 }

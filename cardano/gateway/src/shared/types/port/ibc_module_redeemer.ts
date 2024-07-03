@@ -49,6 +49,17 @@ export type IBCModuleCallback =
         acknowledgement: Acknowledgement;
         data: IBCModulePacketData;
       };
+    }
+  | {
+      OnChanCloseInit: {
+        channel_id: string;
+      };
+    }
+  | {
+      OnChanOpenConfirm: 
+      {
+        channel_id: string;
+      };
     };
 
 export type IBCModuleOperator =
@@ -118,6 +129,16 @@ export async function encodeIBCModuleRedeemer(
     }),
     Data.Object({
       OnChanOpenConfirm: Data.Object({
+        channel_id: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      OnChanCloseInit: Data.Object({
+        channel_id: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      OnChanCloseConfirm: Data.Object({
         channel_id: Data.Bytes(),
       }),
     }),
@@ -224,6 +245,16 @@ export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof
     }),
     Data.Object({
       OnChanOpenConfirm: Data.Object({
+        channel_id: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      OnChanCloseInit: Data.Object({
+        channel_id: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      OnChanCloseConfirm: Data.Object({
         channel_id: Data.Bytes(),
       }),
     }),

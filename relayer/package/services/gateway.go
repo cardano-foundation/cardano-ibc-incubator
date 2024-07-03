@@ -3,9 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
+	"github.com/cardano/relayer/v1/constant"
+	"github.com/cardano/relayer/v1/package/dbservice"
 	"github.com/cardano/relayer/v1/package/mithril"
 	"github.com/joho/godotenv"
-	"strings"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -31,6 +35,7 @@ type Gateway struct {
 
 	TypeProvider   ibcclient.QueryClient
 	MithrilService *mithril.MithrilService
+	DBService      *dbservice.DBService
 }
 
 func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) error {
@@ -54,7 +59,18 @@ func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) err
 
 	gw.TypeProvider = ibcclient.NewQueryClient(conn)
 	gw.MithrilService = mithril.NewMithrilService(mithrilEndpoint)
-
+	if err := dbservice.ConnectToDb(&dbservice.DatabaseInfo{
+		Name:     os.Getenv(constant.DbName),
+		Driver:   os.Getenv(constant.DbDriver),
+		Username: os.Getenv(constant.DbUsername),
+		Password: os.Getenv(constant.DbPassword),
+		SSLMode:  os.Getenv(constant.DbSslMode),
+		Host:     os.Getenv(constant.DbHost),
+		Port:     os.Getenv(constant.DbPort),
+	}); err != nil {
+		return fmt.Errorf("err connection db %w", err)
+	}
+	gw.DBService = dbservice.NewDBService()
 	return nil
 }
 
@@ -403,6 +419,38 @@ func (gw *Gateway) ProofUnreceivedPackets(ctx context.Context, req *pbchannel.Qu
 
 func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbchannel.QueryUnreceivedAcksRequest) (*pbchannel.QueryUnreceivedAcksResponse, error) {
 	res, err := gw.ChannelQueryService.UnreceivedAcks(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryNextSequenceReceive(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceReceive(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryNextSequenceAck(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceAck(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ChannelCloseInit(ctx context.Context, req *pbchannel.MsgChannelCloseInit) (*pbchannel.MsgChannelCloseInitResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseInit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ChannelCloseConfirm(ctx context.Context, req *pbchannel.MsgChannelCloseConfirm) (*pbchannel.MsgChannelCloseConfirmResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseConfirm(ctx, req)
 	if err != nil {
 		return nil, err
 	}

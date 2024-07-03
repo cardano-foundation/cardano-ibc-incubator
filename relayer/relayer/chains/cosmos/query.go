@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+	"github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 
@@ -466,7 +468,11 @@ func (cc *CosmosProvider) QueryClientState(ctx context.Context, height int64, cl
 
 // QueryClientConsensusState retrieves the latest consensus state for a client in state at a given height
 func (cc *CosmosProvider) QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
-	key := host.FullConsensusStateKey(clientid, clientHeight)
+	newClientHeight := types.Height{
+		RevisionNumber: 0,
+		RevisionHeight: clientHeight.GetRevisionHeight(),
+	}
+	key := host.FullConsensusStateKey(clientid, newClientHeight)
 
 	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, chainHeight, key)
 	if err != nil {
@@ -1324,6 +1330,12 @@ func (cc *CosmosProvider) QueryMainConsensusState(ctx context.Context, height in
 }
 
 func (cc *CosmosProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *CosmosProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
 	//TODO implement me
 	panic("implement me")
 }

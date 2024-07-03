@@ -35,7 +35,7 @@ chains/cardano/postgres/
 chains/cardano/baseinfo/
 chains/cardano/persistence/
 
-chains/mithrils/mithril
+# chains/mithrils/mithril
 chains/mithrils/data
 docker-compose.yaml
 cardano-cli

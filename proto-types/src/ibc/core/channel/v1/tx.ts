@@ -127,7 +127,9 @@ export interface MsgChannelCloseInit {
   signer: string;
 }
 /** MsgChannelCloseInitResponse defines the Msg/ChannelCloseInit response type. */
-export interface MsgChannelCloseInitResponse {}
+export interface MsgChannelCloseInitResponse {
+  unsigned_tx?: Any;
+}
 /**
  * MsgChannelCloseConfirm defines a msg sent by a Relayer to Chain B
  * to acknowledge the change of channel state to CLOSED on Chain A.
@@ -143,7 +145,9 @@ export interface MsgChannelCloseConfirm {
  * MsgChannelCloseConfirmResponse defines the Msg/ChannelCloseConfirm response
  * type.
  */
-export interface MsgChannelCloseConfirmResponse {}
+export interface MsgChannelCloseConfirmResponse {
+  unsigned_tx?: Any;
+}
 /** MsgRecvPacket receives incoming IBC packet */
 export interface MsgRecvPacket {
   packet: Packet;
@@ -891,11 +895,16 @@ export const MsgChannelCloseInit = {
   }
 };
 function createBaseMsgChannelCloseInitResponse(): MsgChannelCloseInitResponse {
-  return {};
+  return {
+    unsigned_tx: undefined
+  };
 }
 export const MsgChannelCloseInitResponse = {
   typeUrl: "/ibc.core.channel.v1.MsgChannelCloseInitResponse",
-  encode(_: MsgChannelCloseInitResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgChannelCloseInitResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgChannelCloseInitResponse {
@@ -905,6 +914,9 @@ export const MsgChannelCloseInitResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -912,16 +924,21 @@ export const MsgChannelCloseInitResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgChannelCloseInitResponse {
+  fromJSON(object: any): MsgChannelCloseInitResponse {
     const obj = createBaseMsgChannelCloseInitResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgChannelCloseInitResponse): unknown {
+  toJSON(message: MsgChannelCloseInitResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgChannelCloseInitResponse>, I>>(_: I): MsgChannelCloseInitResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgChannelCloseInitResponse>, I>>(object: I): MsgChannelCloseInitResponse {
     const message = createBaseMsgChannelCloseInitResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   }
 };
@@ -1014,11 +1031,16 @@ export const MsgChannelCloseConfirm = {
   }
 };
 function createBaseMsgChannelCloseConfirmResponse(): MsgChannelCloseConfirmResponse {
-  return {};
+  return {
+    unsigned_tx: undefined
+  };
 }
 export const MsgChannelCloseConfirmResponse = {
   typeUrl: "/ibc.core.channel.v1.MsgChannelCloseConfirmResponse",
-  encode(_: MsgChannelCloseConfirmResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(message: MsgChannelCloseConfirmResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgChannelCloseConfirmResponse {
@@ -1028,6 +1050,9 @@ export const MsgChannelCloseConfirmResponse = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1035,16 +1060,21 @@ export const MsgChannelCloseConfirmResponse = {
     }
     return message;
   },
-  fromJSON(_: any): MsgChannelCloseConfirmResponse {
+  fromJSON(object: any): MsgChannelCloseConfirmResponse {
     const obj = createBaseMsgChannelCloseConfirmResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
     return obj;
   },
-  toJSON(_: MsgChannelCloseConfirmResponse): unknown {
+  toJSON(message: MsgChannelCloseConfirmResponse): unknown {
     const obj: any = {};
+    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgChannelCloseConfirmResponse>, I>>(_: I): MsgChannelCloseConfirmResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgChannelCloseConfirmResponse>, I>>(object: I): MsgChannelCloseConfirmResponse {
     const message = createBaseMsgChannelCloseConfirmResponse();
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
     return message;
   }
 };

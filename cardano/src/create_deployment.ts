@@ -22,6 +22,7 @@ import {
 import {
   EMULATOR_ENV,
   HANDLER_TOKEN_NAME,
+  MOCK_MODULE_PORT,
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
@@ -39,6 +40,7 @@ import {
   OutputReferenceSchema,
 } from "../lucid-types/aiken/transaction/OutputReference.ts";
 import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+import { MockModuleDatum } from "../lucid-types/ibc/apps/mock/datum/MockModuleDatum.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -175,6 +177,19 @@ export const createDeployment = async (
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
+  const {
+    identifierTokenUnit: mockModuleIdentifier,
+    spendMockModule,
+  } = await deployMockModule(
+    lucid,
+    handlerToken,
+    spendHandlerValidator,
+    mintPortValidator,
+    mintIdentifierValidator,
+    MOCK_MODULE_PORT,
+  );
+  referredValidators.push(spendMockModule.validator);
+
   const refUtxosInfo = await createReferenceUtxos(
     lucid,
     provider,
@@ -275,6 +290,13 @@ export const createDeployment = async (
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
+      spendMockModule: {
+        title: "spending_mock_module.spend_mock_module",
+        script: spendMockModule.validator.script,
+        scriptHash: spendMockModule.scriptHash,
+        address: spendMockModule.address,
+        refUtxo: refUtxosInfo[spendMockModule.scriptHash],
+      },
       mintVoucher: {
         title: "minting_voucher.mint_voucher",
         script: mintVoucher.validator.script,
@@ -302,6 +324,10 @@ export const createDeployment = async (
       transfer: {
         identifier: transferModuleIdentifier,
         address: spendTransferModule.address,
+      },
+      mock: {
+        identifier: mockModuleIdentifier,
+        address: spendMockModule.address,
       },
     },
     tokens: {
@@ -654,6 +680,8 @@ const deploySpendChannel = async (
   const knownReferredValidatorsName = [
     "chan_open_ack",
     "chan_open_confirm",
+    "chan_close_init",
+    "chan_close_confirm",
     "recv_packet",
     "send_packet",
     "timeout_packet",
@@ -686,7 +714,7 @@ const deploySpendChannel = async (
       mintPortPolicyId,
     ];
 
-    if (name != "send_packet") {
+    if (name != "send_packet" && name != "chan_close_init") {
       args.push(verifyProofScriptHash);
     }
 
@@ -717,6 +745,132 @@ const deploySpendChannel = async (
       address,
     },
     referredValidators,
+  };
+};
+
+const deployMockModule = async (
+  lucid: Lucid,
+  handlerToken: AuthToken,
+  spendHandlerValidator: SpendingValidator,
+  mintPortValidator: MintingPolicy,
+  mintIdentifierValidator: MintingPolicy,
+  mockModulePort: bigint,
+) => {
+  console.log("Create Mock Module");
+
+  const [
+    spendMockModuleValidator,
+    spendMockModuleScriptHash,
+    spendMockModuleAddress,
+  ] = readValidator(
+    "spending_mock_module.spend_mock_module",
+    lucid,
+  );
+
+  const mintPortPolicyId = lucid.utils.mintingPolicyToId(mintPortValidator);
+  const spendHandlerAddress = lucid.utils.validatorToAddress(
+    spendHandlerValidator,
+  );
+
+  const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
+  const handlerUtxo = await lucid.utxoByUnit(handlerTokenUnit);
+  const currentHandlerDatum = Data.from(handlerUtxo.datum!, HandlerDatum);
+  const updatedHandlerPorts = [
+    ...currentHandlerDatum.state.bound_port,
+    mockModulePort,
+  ]
+    .sort((a, b) => Number(a - b));
+  const updatedHandlerDatum: HandlerDatum = {
+    ...currentHandlerDatum,
+    state: {
+      ...currentHandlerDatum.state,
+      bound_port: updatedHandlerPorts,
+    },
+  };
+  const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
+
+  const portTokenName = generateTokenName(
+    handlerToken,
+    PORT_PREFIX,
+    mockModulePort,
+  );
+  const portTokenUnit = mintPortPolicyId + portTokenName;
+  const mintPortRedeemer: MintPortRedeemer = {
+    handler_token: handlerToken,
+    spend_module_script_hash: spendMockModuleScriptHash,
+    port_number: mockModulePort,
+  };
+
+  // load nonce UTXO
+  const signerUtxos = await lucid.wallet.getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO founded");
+  const NONCE_UTXO = signerUtxos[0];
+
+  const outputReference: OutputReference = {
+    transaction_id: {
+      hash: NONCE_UTXO.txHash,
+    },
+    output_index: BigInt(NONCE_UTXO.outputIndex),
+  };
+
+  const mintIdentifierPolicyId = lucid.utils.validatorToScriptHash(
+    mintIdentifierValidator,
+  );
+  const identifierTokenName = generateIdentifierTokenName(outputReference);
+  const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+
+  const initModuleDatum: MockModuleDatum = {
+    received_packets: [],
+  };
+
+  const mintModuleTx = lucid
+    .newTx()
+    .collectFrom([NONCE_UTXO], Data.void())
+    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator))
+    .attachSpendingValidator(spendHandlerValidator)
+    .attachMintingPolicy(mintPortValidator)
+    .mintAssets(
+      {
+        [portTokenUnit]: 1n,
+      },
+      Data.to(mintPortRedeemer, MintPortRedeemer),
+    )
+    .attachMintingPolicy(mintIdentifierValidator)
+    .mintAssets(
+      {
+        [identifierTokenUnit]: 1n,
+      },
+      Data.to(outputReference, OutputReference),
+    )
+    .payToContract(
+      spendHandlerAddress,
+      {
+        inline: Data.to(updatedHandlerDatum, HandlerDatum),
+      },
+      {
+        [handlerTokenUnit]: 1n,
+      },
+    )
+    .payToContract(
+      spendMockModuleAddress,
+      {
+        inline: Data.to(initModuleDatum, MockModuleDatum),
+      },
+      {
+        [identifierTokenUnit]: 1n,
+        [portTokenUnit]: 1n,
+      },
+    );
+
+  await submitTx(mintModuleTx, lucid, "Mint Mock Module");
+
+  return {
+    identifierTokenUnit,
+    spendMockModule: {
+      validator: spendMockModuleValidator,
+      scriptHash: spendMockModuleScriptHash,
+      address: spendHandlerAddress,
+    },
   };
 };
 

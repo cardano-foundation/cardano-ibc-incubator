@@ -84,3 +84,14 @@ func (mithril *MithrilService) GetCardanoTransactionSetSnapshotByHash(hash strin
 
 	return result, err
 }
+
+func (mithril MithrilService) GetProofOfACardanoTransactionList(hashes string) (*dtos.ProofTransaction, error) {
+	var result *dtos.ProofTransaction
+	err := mithril.client.Get(&result, fmt.Sprintf("/proof/cardano-transaction?transaction_hashes=%s", hashes), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, err
+
+}

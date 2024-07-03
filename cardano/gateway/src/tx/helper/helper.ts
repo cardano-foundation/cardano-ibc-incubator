@@ -6,6 +6,7 @@ import {
   ClientState as ClientStateOuroboros,
   Misbehaviour,
 } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
+import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
   denom = denom.trim();
@@ -26,6 +27,14 @@ export function decodeClientStateOuroboros(value: Uint8Array): ClientStateOurobo
     return ClientStateOuroboros.decode(value);
   } catch (error) {
     throw new GrpcInvalidArgumentException(`Error decoding client state ouroboros: ${error}`);
+  }
+}
+
+export function decodeClientStateMithril(value: Uint8Array): ClientStateMithril {
+  try {
+    return ClientStateMithril.decode(value);
+  } catch (error) {
+    throw new GrpcInvalidArgumentException(`Error decoding client state mithril: ${error}`);
   }
 }
 

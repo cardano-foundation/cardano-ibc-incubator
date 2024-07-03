@@ -3,6 +3,7 @@ version: "3.9"
 services:
   cardano-node:
     image: ghcr.io/intersectmbo/cardano-node:8.9.1
+    container_name: cardano-node
     volumes:
       - ./devnet:/devnet
     environment:
