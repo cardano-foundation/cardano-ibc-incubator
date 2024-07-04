@@ -926,13 +926,30 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, int64(dsth), &clientState)
+	dstLatestHeight := int64(dsth)
+
+	err = retry.Do(func() error {
+		dstLatestHeight, err = cc.QueryLatestHeight(ctx)
+		if err != nil {
+			return err
+		}
+		if dstLatestHeight <= int64(dsth) {
+			return fmt.Errorf("not yet update transaction snapshot certificate")
+		}
+
+		return err
+	}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, dstLatestHeight, &clientState)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := cc.ValidatePacket(msgTransfer, provider.LatestBlock{
-		Height: dsth,
+		Height: uint64(dstLatestHeight),
 		Time:   time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp())),
 	}); err != nil {
 		switch err.(type) {
@@ -940,7 +957,7 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 			var pp provider.PacketProof
 			switch order {
 			case chantypes.UNORDERED:
-				retry.Do(func() error {
+				err = retry.Do(func() error {
 					var err error
 					pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
 					if pp.Proof == nil {
@@ -951,12 +968,15 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 					}
 					return err
 				}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
-
-				srcLastestHeight, err := src.QueryLatestHeight(ctx)
 				if err != nil {
 					return nil, nil, err
 				}
-				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLastestHeight, srcClientId)
+
+				srcLatestHeight, err := src.QueryLatestHeight(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLatestHeight, srcClientId)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1025,10 +1045,6 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	if err != nil {
 		return nil, nil, err
 	}
-	//dstHeader, err := src.QueryIBCHeader(ctx, int64(srch))
-	//if err != nil {
-	//	return nil, nil, err
-	//}
 
 	srcTrustedHeader, err := src.QueryIBCHeader(ctx, int64(srcClientState.GetLatestHeight().GetRevisionHeight())+1)
 	if err != nil {

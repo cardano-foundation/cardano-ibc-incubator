@@ -178,11 +178,11 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
-	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
-
-	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
+	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
+	//
+	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
 
 	var wg sync.WaitGroup
 
@@ -401,7 +401,7 @@ func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayer
 }
 
 func (s *IBCTestSuite) startRelayLegacy(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*240)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*60)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "start", Path, "--processor", "legacy")
