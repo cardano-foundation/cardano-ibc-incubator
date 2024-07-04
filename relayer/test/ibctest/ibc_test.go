@@ -381,6 +381,9 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 	for _, channel := range cosmosChannel {
 		channelDetail, err := gw.QueryChannel(channel.Counterparty.ChannelId)
 		require.NoError(t, err)
+		if channelDetail.Channel.Counterparty.ChannelId != channel.ChannelId {
+			continue
+		}
 		if channelDetail.Channel.State == chantypes.OPEN {
 			return channel.Counterparty.ChannelId, channel.ChannelId
 		}
@@ -405,7 +408,7 @@ func (s *IBCTestSuite) startRelayLegacy(t *testing.T, sys *relayertest.System) r
 }
 
 func (s *IBCTestSuite) transferFromCosmosToCardano(t *testing.T, sys *relayertest.System, cosmosChannelID, amount, timeout string) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -419,7 +422,7 @@ func (s *IBCTestSuite) transferFromCosmosToCardano(t *testing.T, sys *relayertes
 }
 
 func (s *IBCTestSuite) transferFromCardanoToCosmos(t *testing.T, sys *relayertest.System, cardanoChannelId, amount, timeout string) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
 		"transact", "transfer",

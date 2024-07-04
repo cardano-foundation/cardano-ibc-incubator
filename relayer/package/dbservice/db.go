@@ -34,7 +34,7 @@ func ConnectToDb(cexplorer *DatabaseInfo) (err error) {
 		})
 		postgreDB, err := Connections[constant.CardanoDB].DB()
 		if err != nil {
-			log.Printf("Connect dbBeWallet fail with error: %v", err.Error())
+			log.Printf("Connect db-sync fail with error: %v", err.Error())
 		}
 		postgreDB.SetMaxIdleConns(20)
 		postgreDB.SetMaxOpenConns(200)

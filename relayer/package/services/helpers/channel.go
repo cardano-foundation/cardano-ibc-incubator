@@ -68,7 +68,8 @@ func NormalizeEventPacketFromChannelRedeemer(spendChannRedeemer ibc_types.SpendC
 		packetData = spendChannRedeemer.Value.(ibc_types.SpendChannelRedeemerRecvPacket).Packet
 	case ibc_types.AcknowledgePacket:
 		eventType = channeltypes.EventTypeAcknowledgePacket
-		acknowledgement = string(spendChannRedeemer.Value.(ibc_types.SpendChannelRedeemerAcknowledgePacket).Acknowledgement)
+		packetData = spendChannRedeemer.Value.(ibc_types.SpendChannelRedeemerAcknowledgePacket).Packet
+		acknowledgement = hex.EncodeToString(spendChannRedeemer.Value.(ibc_types.SpendChannelRedeemerAcknowledgePacket).Acknowledgement)
 	case ibc_types.TimeoutPacket:
 		eventType = channeltypes.EventTypeTimeoutPacket
 		packetData = spendChannRedeemer.Value.(ibc_types.SpendChannelRedeemerTimeoutPacket).Packet
@@ -88,7 +89,7 @@ func NormalizeEventPacketFromChannelRedeemer(spendChannRedeemer ibc_types.SpendC
 		},
 		abci.EventAttribute{
 			Key:   channeltypes.AttributeKeyAckHex,
-			Value: hex.EncodeToString(packetData.Data),
+			Value: acknowledgement,
 		},
 		abci.EventAttribute{
 			Key:   channeltypes.AttributeKeyTimeoutHeight,
