@@ -121,7 +121,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: Tx = unsignedChannelOpenTryTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedChannelOpenTryTxValidTo: Tx = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedChannelOpenTryTxCompleted: TxComplete = await unsignedChannelOpenTryTxValidTo.complete();
 
@@ -223,7 +223,7 @@ export class ChannelService {
         channelCloseInitOperator,
         constructedAddress,
       );
-      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedChannelCloseInitTxCompleted: TxComplete = await unsignedChannelCloseInitTxValidTo.complete();
 

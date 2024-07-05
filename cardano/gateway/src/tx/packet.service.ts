@@ -316,7 +316,7 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const unsignedAckPacketTxValidTo: Tx = unsignedAckPacketTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedAckPacketTxValidTo: Tx = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedAckPacketCompleted: TxComplete = await unsignedAckPacketTxValidTo.complete();
 
@@ -473,7 +473,7 @@ export class PacketService {
               TransferModuleData: [fTokenPacketData],
             },
             acknowledgement: {
-              response: { AcknowledgementResult: { result: ACK_RESULT } },
+              response: { AcknowledgementResult: { result: convertString2Hex(ACK_RESULT) } },
             },
           },
         },

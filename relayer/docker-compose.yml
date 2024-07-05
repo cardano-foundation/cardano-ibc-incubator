@@ -1,4 +1,3 @@
-version: '3.9'
 services:
   relayer-service:
     container_name: relayer
