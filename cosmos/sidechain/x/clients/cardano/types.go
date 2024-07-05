@@ -1,29 +1,6 @@
 package cardano
 
-type BlockHexCbor struct {
-	_             struct{} `cbor:",toarray"`
-	Flag          int
-	HeaderCbor    string
-	Eta0          string
-	Spk           int
-	BlockBodyCbor string
-}
-
-type UTXOOutputToken struct {
-	_              struct{} `cbor:",toarray"`
-	Flag           int
-	TokenAssetName string
-	TokenValue     string
-}
-
-type UTXOOutput struct {
-	_           struct{} `cbor:",toarray"`
-	Flag        int
-	TxHash      string
-	OutputIndex string
-	Tokens      []UTXOOutputToken
-	DatumHex    string
-}
+import "github.com/blinklabs-io/gouroboros/ledger"
 
 type SPOState struct {
 	IsRegisCert bool
@@ -31,22 +8,6 @@ type SPOState struct {
 	PoolVrf     string
 	BlockNo     uint64
 	TxIndex     uint64
-}
-
-type RegisCert struct {
-	_            struct{} `cbor:",toarray"`
-	Flag         int
-	RegisPoolId  string
-	RegisPoolVrf string
-	TxIndex      int
-}
-
-type DeRegisCert struct {
-	_             struct{} `cbor:",toarray"`
-	Flag          int
-	DeRegisPoolId string
-	DeRegisEpoch  string
-	TxIndex       int
 }
 
 type VerifyBlockOutput struct {
@@ -61,9 +22,9 @@ type VerifyBlockOutput struct {
 type ExtractBlockOutput struct {
 	_            struct{} `cbor:",toarray"`
 	Flag         int
-	Outputs      []UTXOOutput
-	RegisCerts   []RegisCert
-	DeRegisCerts []DeRegisCert
+	Outputs      []ledger.UTXOOutput
+	RegisCerts   []ledger.RegisCert
+	DeRegisCerts []ledger.DeRegisCert
 }
 
 //////////////////////////////////////////////////////
@@ -224,26 +185,6 @@ type ChannelDatumWithPort struct {
 	State  ChannelDatumState
 	PortId []byte
 	Token  TokenDatum
-}
-
-func GetListRegisCertPoolId(regisCerts []RegisCert) []string {
-	poolId := make([]string, 0)
-	if len(regisCerts) > 0 {
-		for _, cert := range regisCerts {
-			poolId = append(poolId, cert.RegisPoolId)
-		}
-	}
-	return poolId
-}
-
-func GetListUnregisCertPoolId(deRegisCerts []DeRegisCert) []string {
-	poolId := make([]string, 0)
-	if len(deRegisCerts) > 0 {
-		for _, cert := range deRegisCerts {
-			poolId = append(poolId, cert.DeRegisPoolId)
-		}
-	}
-	return poolId
 }
 
 //
