@@ -136,6 +136,49 @@ await (new Command()
       console.log("Failed to query channel");
     }
   })
+  .command(
+    "balance",
+    "Query balance of an address or public key hash",
+  )
+  .arguments("<address-or-pk-hash:string>")
+  .action(async ({ handler, kupo, ogmios }, id) => {
+    const isAddress = id.startsWith("addr");
+
+    console.log(
+      `Query balance of ${isAddress ? "address" : "public key hash"}:`,
+      id,
+    );
+    const lucid = await setupLucid(kupo, ogmios);
+
+    try {
+      const address = isAddress
+        ? id
+        : lucid.utils.credentialToAddress({ hash: id, type: "Key" });
+
+      const utxos = await lucid.utxosAt(address);
+
+      const tokens: Map<string, bigint> = new Map();
+
+      for (const utxo of utxos) {
+        for (const [name, quantity] of Object.entries(utxo.assets)) {
+          const prevAmount = tokens.get(name);
+
+          if (prevAmount === undefined) {
+            tokens.set(name, quantity);
+          } else {
+            tokens.set(name, prevAmount + quantity);
+          }
+        }
+      }
+
+      console.log("Balances:");
+      for (const [name, amount] of tokens.entries()) {
+        console.log(`${name}: ${amount}`);
+      }
+    } catch (_error) {
+      console.log("Failed to query channel");
+    }
+  })
   .parse(Deno.args));
 
 async function setupLucid(kupoUrl: string, ogmiosUrl: string) {

@@ -52,7 +52,7 @@ var (
 	rtyAttNum                   = uint(5)
 	rtyAtt                      = retry.Attempts(rtyAttNum)
 	rtyDel                      = retry.Delay(time.Millisecond * 400)
-	rtyDelMax                   = retry.Delay(time.Minute * 1)
+	rtyDelMax                   = retry.Delay(time.Minute * 2)
 	rtyErr                      = retry.LastErrorOnly(true)
 	accountSeqRegex             = regexp.MustCompile("account sequence mismatch, expected ([0-9]+), got ([0-9]+)")
 	defaultBroadcastWaitTimeout = 10 * time.Minute
@@ -512,6 +512,8 @@ func (cc *CardanoProvider) MsgTransfer(
 		Sender:           senderPublicKeyHash,
 		Receiver:         dstAddr,
 		TimeoutTimestamp: info.TimeoutTimestamp,
+		//todo: find better solution for this
+		Memo: info.DestChannel,
 	}
 
 	// If the timeoutHeight is 0 then we don't need to explicitly set it on the MsgTransfer
@@ -540,6 +542,7 @@ func tranMsgTransferToGWMsgTransfer(msg *transfertypes.MsgTransfer, signer strin
 		},
 		TimeoutTimestamp: msg.TimeoutTimestamp,
 		Signer:           signer,
+		Memo:             msg.Memo,
 	}
 
 }
@@ -639,11 +642,7 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	msgRecvPacket provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	res, err := cc.GateWay.QueryPacketAck(&chantypes.QueryPacketAcknowledgementRequest{
-		PortId:    msgRecvPacket.DestPort,
-		ChannelId: msgRecvPacket.DestChannel,
-		Sequence:  msgRecvPacket.Sequence,
-	})
+	res, err := cc.GateWay.QueryPacketAcknowledgement(ctx, transformPacketAcknowledgement(msgRecvPacket.DestPort, msgRecvPacket.DestChannel, msgRecvPacket.Sequence))
 	if err != nil {
 		return provider.PacketProof{}, err
 	}
@@ -652,8 +651,16 @@ func (cc *CardanoProvider) PacketAcknowledgement(
 	}
 	return provider.PacketProof{
 		Proof:       res.Proof,
-		ProofHeight: res.ProofHeight,
+		ProofHeight: *res.ProofHeight,
 	}, nil
+}
+
+func transformPacketAcknowledgement(portId, chanId string, seq uint64) *pbchannel.QueryPacketAcknowledgementRequest {
+	return &pbchannel.QueryPacketAcknowledgementRequest{
+		PortId:    portId,
+		ChannelId: chanId,
+		Sequence:  seq,
+	}
 }
 
 func (cc *CardanoProvider) PacketCommitment(
@@ -1030,6 +1037,9 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	}
 
 	srcLastestHeight, err := src.QueryLatestHeight(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	pp, err := src.PacketCommitment(ctx, msgTransfer, uint64(srcLastestHeight))
 	if err != nil {
 		return nil, nil, err
@@ -1098,20 +1108,23 @@ func (cc *CardanoProvider) SendMessages(ctx context.Context, msgs []provider.Rel
 	}
 
 	wg.Add(1)
-
-	if err := retry.Do(func() error {
-		return cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback})
-	}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr, retry.OnRetry(func(n uint, err error) {
-		cc.log.Info(
-			"Error building or broadcasting transaction",
-			zap.String("chain_id", cc.PCfg.ChainID),
-			zap.Uint("attempt", n+1),
-			zap.Uint("max_attempts", rtyAttNum),
-			zap.Error(err),
-		)
-	})); err != nil {
+	if err := cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback}); err != nil {
 		return nil, false, err
 	}
+
+	//if err := retry.Do(func() error {
+	//	return cc.SendMessagesToMempool(ctx, msgs, memo, ctx, []func(*provider.RelayerTxResponse, error){callback})
+	//}, retry.Context(ctx), rtyAtt, rtyDel, rtyErr, retry.OnRetry(func(n uint, err error) {
+	//	cc.log.Info(
+	//		"Error building or broadcasting transaction",
+	//		zap.String("chain_id", cc.PCfg.ChainID),
+	//		zap.Uint("attempt", n+1),
+	//		zap.Uint("max_attempts", rtyAttNum),
+	//		zap.Error(err),
+	//	)
+	//})); err != nil {
+	//	return nil, false, err
+	//}
 
 	wg.Wait()
 
@@ -1180,6 +1193,7 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 		}
 
 		// we had a successful tx broadcast with this sequence, so update it to the next
+		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 	}
 

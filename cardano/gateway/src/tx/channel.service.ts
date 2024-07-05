@@ -44,6 +44,7 @@ import {
   UnsignedChannelOpenAckDto,
   UnsignedOrderedChannelOpenAckDto,
 } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
+import { UnsignedChannelCloseInitDto} from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -121,7 +122,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: Tx = unsignedChannelOpenTryTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedChannelOpenTryTxValidTo: Tx = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedChannelOpenTryTxCompleted: TxComplete = await unsignedChannelOpenTryTxValidTo.complete();
 
@@ -226,7 +227,7 @@ export class ChannelService {
         channelCloseInitOperator,
         constructedAddress,
       );
-      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedChannelCloseInitTxCompleted: TxComplete = await unsignedChannelCloseInitTxValidTo.complete();
 

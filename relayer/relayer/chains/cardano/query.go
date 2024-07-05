@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/avast/retry-go/v4"
-	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/avast/retry-go/v4"
+	ibcclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/types"
 
 	tendermint "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
@@ -460,7 +461,7 @@ func (cc *CardanoProvider) QueryPacketAcknowledgements(ctx context.Context, heig
 	p := DefaultPageRequest()
 	acknowledgements := []*chantypes.PacketState{}
 	for {
-		res, err := cc.GateWay.QueryPacketAcks(&chantypes.QueryPacketAcknowledgementsRequest{
+		res, err := cc.GateWay.QueryPacketAcknowledgements(ctx, &pbchannel.QueryPacketAcknowledgementsRequest{
 			PortId:     portid,
 			ChannelId:  channelid,
 			Pagination: p,
@@ -517,7 +518,7 @@ func (cc *CardanoProvider) QueryPacketCommitments(ctx context.Context, height ui
 	commitments := &chantypes.QueryPacketCommitmentsResponse{}
 
 	for {
-		res, err := cc.GateWay.QueryPacketCommitments(&chantypes.QueryPacketCommitmentsRequest{
+		res, err := cc.GateWay.PacketCommitments(ctx, &pbchannel.QueryPacketCommitmentsRequest{
 			PortId:     portid,
 			ChannelId:  channelid,
 			Pagination: p,
@@ -527,7 +528,7 @@ func (cc *CardanoProvider) QueryPacketCommitments(ctx context.Context, height ui
 		}
 
 		for _, commitment := range res.Commitments {
-			commitments.Commitments = append(commitments.Commitments, commitment)
+			commitments.Commitments = append(commitments.Commitments, transformCommitment(commitment))
 		}
 
 		commitments.Height = clienttypes.Height{
@@ -636,7 +637,7 @@ func (cc *CardanoProvider) QueryTxs(ctx context.Context, page, limit int, events
 
 // QueryUnreceivedAcknowledgements returns a list of unrelayed packet acks
 func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	res, err := cc.GateWay.QueryUnrecvAcks(&chantypes.QueryUnreceivedAcksRequest{
+	res, err := cc.GateWay.QueryUnreceivedAcknowledgements(ctx, &pbchannel.QueryUnreceivedAcksRequest{
 		PortId:             portid,
 		ChannelId:          channelid,
 		PacketAckSequences: seqs,
@@ -649,13 +650,13 @@ func (cc *CardanoProvider) QueryUnreceivedAcknowledgements(ctx context.Context, 
 
 // QueryUnreceivedPackets returns a list of unrelayed packet commitments
 func (cc *CardanoProvider) QueryUnreceivedPackets(ctx context.Context, height uint64, channelid, portid string, seqs []uint64) ([]uint64, error) {
-	req := &chantypes.QueryUnreceivedPacketsRequest{
+	req := &pbchannel.QueryUnreceivedPacketsRequest{
 		PortId:                    portid,
 		ChannelId:                 channelid,
 		PacketCommitmentSequences: seqs,
 	}
 
-	res, err := cc.GateWay.QueryUnrecvPackets(req)
+	res, err := cc.GateWay.QueryUnreceivedPackets(ctx, req)
 	if err != nil {
 		return nil, err
 	}

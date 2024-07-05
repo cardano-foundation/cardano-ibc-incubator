@@ -41,10 +41,10 @@ docker compose -f docker-compose.yaml --profile mithril up --remove-orphans --fo
 #     cat node-pool2/info.json | jq -r '"\(.name),\(.pool_id),\(.description)"' | column -t -s,
 
 echo ">> Wait for Mithril signers to be registered"
-EPOCH_NOW=$(docker exec cardano-cardano-node-1 cardano-cli query tip --cardano-mode --testnet-magic 42 2> /dev/null | jq -r .epoch)
+EPOCH_NOW=$(docker exec cardano-node cardano-cli query tip --cardano-mode --testnet-magic 42 2> /dev/null | jq -r .epoch)
 while true
 do
-    EPOCH=$(docker exec cardano-cardano-node-1 cardano-cli query tip --cardano-mode --testnet-magic 42 2> /dev/null | jq -r .epoch)
+    EPOCH=$(docker exec cardano-node cardano-cli query tip --cardano-mode --testnet-magic 42 2> /dev/null | jq -r .epoch)
     EPOCH_DELTA=$(( $EPOCH - $EPOCH_NOW ))
     if [ $EPOCH_DELTA -ge 2 ] ; then
         echo ">>>> Ready!"
@@ -57,3 +57,16 @@ done
 
 echo ">> Bootstrap the Genesis certificate"
 docker compose -f docker-compose.yaml --profile mithril-genesis run mithril-aggregator-genesis
+
+DOCKER_COMPOSE_CMD=
+if docker compose --version > /dev/null 2>&1; then
+  DOCKER_COMPOSE_CMD="docker compose"
+else
+  DOCKER_COMPOSE_CMD="docker-compose"
+fi
+# Start gateway
+cd ./cardano/gateway
+cp ./.env.example .env
+# ${DOCKER_COMPOSE_CMD} build
+${DOCKER_COMPOSE_CMD} stop
+${DOCKER_COMPOSE_CMD} up -d --build

@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"context"
-	"cosmossdk.io/math"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"cosmossdk.io/math"
 
 	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/relayer"
@@ -1026,10 +1027,14 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 				dstAddr = rawDstAddr
 			}
 
-			return src.SendTransferMsg(cmd.Context(), a.log, dst, amount, dstAddr, toHeightOffset, toTimeOffset, srcChannel)
+			memo, err := cmd.Flags().GetString(flagMemo)
+			if err != nil {
+				return err
+			}
+			return src.SendTransferMsg(cmd.Context(), a.log, dst, amount, dstAddr, memo, toHeightOffset, toTimeOffset, srcChannel)
 		},
 	}
-
+	cmd = memoFlag(a.viper, cmd)
 	return timeoutFlags(a.viper, pathFlag(a.viper, cmd))
 }
 
@@ -1108,12 +1113,12 @@ $ %s reg-cpt channel-1 cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9nf39lk juno1g0ny48
 
 			relayerAddr := args[3]
 			counterpartyPayee := args[4]
-
+			memo := a.config.memo(cmd)
 			msg, err := chain.ChainProvider.MsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee)
 			if err != nil {
 				return err
 			}
-			res, success, err := chain.ChainProvider.SendMessage(cmd.Context(), msg, "")
+			res, success, err := chain.ChainProvider.SendMessage(cmd.Context(), msg, memo)
 			fmt.Println(res, success, err)
 			return nil
 		},

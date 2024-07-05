@@ -13,6 +13,7 @@ import (
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
 
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
@@ -75,7 +76,7 @@ func getClientSPOs(clientStore storetypes.KVStore, epochNo uint64) []*Validator 
 }
 
 // updateRegisterCert stores the client RegisterCert
-func UpdateRegisterCert(clientStore storetypes.KVStore, registerCerts []RegisCert, epochNo uint64, blockNo uint64) {
+func UpdateRegisterCert(clientStore storetypes.KVStore, registerCerts []ledger.RegisCert, epochNo uint64, blockNo uint64) {
 	if len(registerCerts) > 0 {
 		currentState := getSPOState(clientStore, epochNo)
 		// val := MustMarshalSPOState(RemoveDuplicateRegisterCert(append(currentRegisterCert, registerCert...)))
@@ -94,7 +95,7 @@ func UpdateRegisterCert(clientStore storetypes.KVStore, registerCerts []RegisCer
 }
 
 // updateUnregisterCert stores the client UnregisterCert
-func UpdateUnregisterCert(clientStore storetypes.KVStore, unregisterCert []DeRegisCert, blockNo uint64) {
+func UpdateUnregisterCert(clientStore storetypes.KVStore, unregisterCert []ledger.DeRegisCert, blockNo uint64) {
 	if len(unregisterCert) > 0 {
 		groups := classifyUnregisterCert(unregisterCert)
 		for _, certs := range groups {
@@ -126,11 +127,11 @@ func getSPOState(clientStore storetypes.KVStore, epochNo uint64) []SPOState {
 }
 
 // classifyUnregisterCert classify a slide to groups
-func classifyUnregisterCert(unregisterCert []DeRegisCert) map[string][]DeRegisCert {
-	result := map[string][]DeRegisCert{}
+func classifyUnregisterCert(unregisterCert []ledger.DeRegisCert) map[string][]ledger.DeRegisCert {
+	result := map[string][]ledger.DeRegisCert{}
 	for _, e := range unregisterCert {
 		if _, ok := result[e.DeRegisEpoch]; !ok {
-			result[e.DeRegisEpoch] = make([]DeRegisCert, 0)
+			result[e.DeRegisEpoch] = make([]ledger.DeRegisCert, 0)
 		}
 		result[e.DeRegisEpoch] = append(result[e.DeRegisEpoch], e)
 	}
@@ -411,22 +412,22 @@ func deleteConsensusMetadata(clientStore storetypes.KVStore, height exported.Hei
 	deleteIterationKey(clientStore, height)
 }
 
-func setUTXOs(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, UTXOs []UTXOOutput, height exported.Height) {
+func setUTXOs(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, UTXOs []ledger.UTXOOutput, height exported.Height) {
 	if len(UTXOs) > 0 {
 		for _, UTXO := range UTXOs {
 			// IBC UTXO will always have datum, and also included a custom token
 			if UTXO.DatumHex != "" && len(UTXO.Tokens) > 1 {
-				UTXO.extractAndSaveIBCData(ctx, tokenConfigs, clientStore, height)
+				extractAndSaveIBCData(ctx, UTXO, tokenConfigs, clientStore, height)
 			}
 		}
 	}
 }
 
-func (utxo UTXOOutput) extractAndSaveIBCData(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) {
+func extractAndSaveIBCData(ctx sdk.Context, utxo ledger.UTXOOutput, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) {
 	// default key
 	key := ClientUTXOKey(height, utxo.TxHash, utxo.OutputIndex)
 	val := MustMarshalUTXO(utxo)
-	tryFindType := utxo.TryMatchAndSaveIBCType(ctx, tokenConfigs, clientStore, height)
+	tryFindType := TryMatchAndSaveIBCType(ctx, utxo, tokenConfigs, clientStore, height)
 	// fallback if we cannot identify UTXO IBC
 	if tryFindType == "" {
 		clientStore.Set(key, val)
@@ -434,7 +435,7 @@ func (utxo UTXOOutput) extractAndSaveIBCData(ctx sdk.Context, tokenConfigs Token
 }
 
 // Try to match UTXO related to IBC action, will return "" if cannot match any
-func (utxo UTXOOutput) TryMatchAndSaveIBCType(ctx sdk.Context, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) string {
+func TryMatchAndSaveIBCType(ctx sdk.Context, utxo ledger.UTXOOutput, tokenConfigs TokenConfigs, clientStore storetypes.KVStore, height exported.Height) string {
 	clientTokenPrefix := strings.ToLower(tokenConfigs.ClientPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOClientStateTokenPrefix))
 	connectionTokenPrefix := strings.ToLower(tokenConfigs.ConnectionPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOConnectionStatePrefix))
 	channelTokenPrefix := strings.ToLower(tokenConfigs.ChannelPolicyId + IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, KeyUTXOChannelStatePrefix))

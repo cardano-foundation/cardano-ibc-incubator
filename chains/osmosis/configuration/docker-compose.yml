@@ -1,5 +1,3 @@
-version: "4"
-
 services:
   osmosisd:
     image: local:osmosis

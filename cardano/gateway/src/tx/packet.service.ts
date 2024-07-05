@@ -316,7 +316,7 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const unsignedAckPacketTxValidTo: Tx = unsignedAckPacketTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedAckPacketTxValidTo: Tx = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
 
       const unsignedAckPacketCompleted: TxComplete = await unsignedAckPacketTxValidTo.complete();
 
@@ -479,7 +479,7 @@ export class PacketService {
               TransferModuleData: [fTokenPacketData],
             },
             acknowledgement: {
-              response: { AcknowledgementResult: { result: ACK_RESULT } },
+              response: { AcknowledgementResult: { result: convertString2Hex(ACK_RESULT) } },
             },
           },
         },
@@ -1410,9 +1410,6 @@ export class PacketService {
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
       this.logger.log('AcknowledgementResult');
-      if (acknowledgementResponse.result != 'AQ==') {
-        throw new GrpcInternalException('Acknowledgement Response invalid: result must be 01');
-      }
 
       switch (channelDatum.state.channel.ordering) {
         case Order.Unordered:
@@ -1420,7 +1417,7 @@ export class PacketService {
           const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
             createIBCModuleRedeemer(channelId, fTokenPacketData, {
               AcknowledgementResult: {
-                result: '01',
+                result: convertString2Hex(acknowledgementResponse.result as string),
               },
             }),
             'iBCModuleRedeemer',

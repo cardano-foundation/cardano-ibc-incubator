@@ -80,7 +80,7 @@ rly keys restore $dst_chain_name faucet-key "$dst_mnemonic"
 rly keys use $dst_chain_name faucet-key
 
 # Establish connection
-rly transact connection $path --block-history 5
+rly transact connection $path --block-history 5 --client-tp 36h
 
 # Establish channel
 rly transact channel $path --src-port $src_port --dst-port $dst_port --order unordered --version ics20-1

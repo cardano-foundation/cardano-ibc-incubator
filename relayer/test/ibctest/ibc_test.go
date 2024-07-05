@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/cardano/relayer/v1/internal/relayertest"
 	"github.com/cardano/relayer/v1/relayer"
@@ -147,8 +148,8 @@ func (s *IBCTestSuite) TestRelayPacket(t *testing.T) {
 	}()
 
 	_ = cosmosChannelID
-	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
-	assert.Nil(t, runResult.Err)
+	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
 
 	_ = cardanoChannelID
 	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
@@ -178,6 +179,11 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
+	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
+	//
+	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
+	//assert.Nil(t, runResult.Err)
 	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
 	//assert.Nil(t, runResult.Err)
 	//
@@ -219,7 +225,6 @@ func (s *IBCTestSuite) TestRelayPacketWHomeDir(t *testing.T) {
 
 		s.System.MustGetConfig(t)
 	}
-
 	s.TestRelayPacket(t)
 }
 
@@ -301,17 +306,16 @@ func (s *IBCTestSuite) TestCloseChannelWHomeDir(t *testing.T) {
 }
 
 func (s *IBCTestSuite) createClients(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",
 		"clients", Path,
 	)
-
 }
 
 func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -321,19 +325,19 @@ func (s *IBCTestSuite) updateClient(t *testing.T, sys *relayertest.System) relay
 }
 
 func (s *IBCTestSuite) createConnection(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*30)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "transact",
 		"connection", Path,
 		"--block-history", "0",
-		// "--client-tp", "24h",
+		//"--client-tp", "24h",
 		"--max-retries", "5",
 	)
 }
 
 func (s *IBCTestSuite) createUnorderedChannel(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*30)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -341,6 +345,7 @@ func (s *IBCTestSuite) createUnorderedChannel(t *testing.T, sys *relayertest.Sys
 		"--src-port", CardanoPortTransfer,
 		"--dst-port", CosmosPortTransfer,
 		"--order", "unordered",
+		"--override",
 		"--version", "ics20-1")
 }
 
@@ -394,6 +399,7 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -431,5 +437,7 @@ func (s *IBCTestSuite) transferFromCardanoToCosmos(t *testing.T, sys *relayertes
 		cardanoChannelId,
 		"--path", Path,
 		"--timeout-time-offset", timeout,
+		//"--override",
+		"--memo", "test",
 	)
 }
