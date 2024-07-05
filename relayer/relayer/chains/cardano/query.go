@@ -732,7 +732,7 @@ func (cc *CardanoProvider) QueryProofUnreceivedPackets(ctx context.Context, chan
 		Sequence:       sequence,
 		RevisionHeight: revisionHeight,
 	}
-	res, err := cc.GateWay.ProofUnreceivedPackets(ctx, req)
+	res, err := cc.GateWay.QueryProofUnreceivedPackets(req)
 	if err != nil {
 		return provider.PacketProof{}, err
 	}
