@@ -14,3 +14,4 @@ deployments
 lucid-types/
 gateway/src/deployment/
 deno.lock
+keys/
