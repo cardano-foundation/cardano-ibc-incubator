@@ -197,52 +197,50 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 	})); err != nil {
 		return false, err
 	}
+	if src.ChainProvider.Type() == "cardano" {
+		clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dsth), dst.Info.ClientID)
+		if err != nil {
+			return false, fmt.Errorf("failed to query the client state response: %w", err)
+		}
+		clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+		if err != nil {
+			return false, fmt.Errorf("failed to unpack client state: %w", err)
+		}
+		ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+		if err != nil {
+			return false, err
+		}
+		h, ok := ibcHeader.(*mithril.MithrilHeader)
+		if !ok {
+			return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+		}
+		// get cardano client consensus state
+		clientConsensusState, err := dst.ChainProvider.QueryClientConsensusState(ctx, int64(dsth), dst.Info.ClientID, dstClientState.GetLatestHeight())
+		if err != nil {
+			return false, err
+		}
+		consensusStateData, err := clienttypes.UnpackClientMessage(clientConsensusState.ConsensusState)
+		if err != nil {
+			return false, err
+		}
+		consensusState, ok := consensusStateData.(*mithril.ConsensusState)
+		if !ok {
+			return false, fmt.Errorf("failed to cast consensus state to MithrilHeader")
+		}
+		if strings.Compare(h.TransactionSnapshotCertificate.Hash, consensusState.LatestCertHashTxSnapshot) == 0 {
+			return false, nil
+		}
+		mp.logShouldUpdateClient(src, dst, time.Unix(0, int64(consensusState.Timestamp)))
+		return true, nil
+	}
 	if dst.ClientState.ConsensusTime.IsZero() {
 		var timestamp uint64
-		switch src.ChainProvider.Type() {
-		case "cardano":
-			clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dsth), dst.Info.ClientID)
-			if err != nil {
-				return false, fmt.Errorf("failed to query the client state response: %w", err)
-			}
-			clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
-			if err != nil {
-				return false, fmt.Errorf("failed to unpack client state: %w", err)
-			}
-			ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
-			if err != nil {
-				return false, err
-			}
-			h, ok := ibcHeader.(*mithril.MithrilHeader)
-			if !ok {
-				return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
-			}
-			// get cardano client consensus state
-			clientConsensusState, err := dst.ChainProvider.QueryClientConsensusState(ctx, int64(dsth), dst.Info.ClientID, dstClientState.GetLatestHeight())
-			if err != nil {
-				return false, err
-			}
-			consensusStateData, err := clienttypes.UnpackClientMessage(clientConsensusState.ConsensusState)
-			if err != nil {
-				return false, err
-			}
-			consensusState, ok := consensusStateData.(*mithril.ConsensusState)
-			if !ok {
-				return false, fmt.Errorf("failed to cast consensus state to MithrilHeader")
-			}
-			if strings.Compare(h.TransactionSnapshotCertificate.Hash, consensusState.LatestCertHashTxSnapshot) == 0 {
-				return false, nil
-			}
-			mp.logShouldUpdateClient(src, dst, time.Unix(0, int64(consensusState.Timestamp)))
-			return true, nil
-		case "cosmos":
-			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
-			if err != nil {
-				return false, fmt.Errorf("failed to get header height: %w", err)
-			}
-			timestamp = h.ConsensusState().GetTimestamp()
-			consensusHeightTime = time.Unix(0, int64(timestamp))
+		h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
+		if err != nil {
+			return false, fmt.Errorf("failed to get header height: %w", err)
 		}
+		timestamp = h.ConsensusState().GetTimestamp()
+		consensusHeightTime = time.Unix(0, int64(timestamp))
 	} else {
 		consensusHeightTime = dst.ClientState.ConsensusTime
 	}
