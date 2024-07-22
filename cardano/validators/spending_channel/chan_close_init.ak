@@ -1,4 +1,3 @@
-use aiken/dict.{Dict}
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
@@ -110,7 +109,7 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"chan_close_init: client status is active"
 
@@ -259,9 +258,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(consensus_state_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(consensus_state_height, cons_state)],
       },
       token: AuthToken { policy_id: "", name: "" },
     }
@@ -395,28 +392,20 @@ test chan_close_init_succeed() {
   let validity_range = fake_data.validity_range
 
   //========================arrange redeemers=======================
-  let spend_channel_redeemer = ChanCloseInit
+  let spend_channel_redeemer: Redeemer = ChanCloseInit
 
   let module_redeemer: Redeemer =
     Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(fake_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(fake_data.chan_close_init_policy_id),
-          fake_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let chan_close_init_policy_id_redeemer: Redeemer = fake_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(fake_data.chan_close_init_policy_id),
+      chan_close_init_policy_id_redeemer),
+    ]
 
   //==========================arrange context=========================
   let context =

@@ -1,6 +1,6 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -106,10 +106,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"mint_connection: client status is active"
 
@@ -169,10 +166,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"mint_connection: client status is active\n"
 
@@ -225,7 +219,7 @@ fn validate_conn_open_try_proof(
   proof_init: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect cardano_client.validate_self_client(counterparty_client_state)
@@ -266,8 +260,7 @@ fn validate_conn_open_try_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
@@ -285,7 +278,7 @@ fn validate_conn_open_try_proof(
     )
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   expect
@@ -457,9 +450,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -559,21 +550,17 @@ test conn_open_init_succeed() {
   //========================arrange redeemers=======================
   let handler_redeemer: Redeemer = HandlerConnOpenInit
 
-  let mint_conn_redeemer =
+  let mint_conn_redeemer: Redeemer =
     ConnOpenInit { handler_auth_token: mock.handler_token }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.connection_minting_policy_id),
-          mint_conn_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock.connection_minting_policy_id), mint_conn_redeemer),
+    ]
+
+  let mint_conn_redeemer =
+    ConnOpenInit { handler_auth_token: mock.handler_token }
 
   //==========================arrange context=========================
   let context =

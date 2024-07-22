@@ -1,5 +1,5 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
@@ -15,10 +15,11 @@ use ibc/utils/tx_time.{TxTime} as tx_time_mod
 pub fn verify_header(
   cs: ClientState,
   tx_time: TxTime,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   header: Header,
 ) {
-  expect Some(cons_state) = dict.get(consensus_states, header.trusted_height)
+  expect Some(cons_state) =
+    pairs.get_first(consensus_states, header.trusted_height)
 
   expect check_trusted_header(header, cons_state)
   expect
