@@ -32,6 +32,7 @@ The current implementation leverages a number of frameworks maintained by the Ca
 - [Ogmios](https://github.com/cardanosolutions/ogmios)
 - [Kupo](https://github.com/cardanosolutions/kupo)
 - [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
+- [gOuroboros](https://github.com/blinklabs-io/gouroboros)
 
 ### Build from source
 ```sh
