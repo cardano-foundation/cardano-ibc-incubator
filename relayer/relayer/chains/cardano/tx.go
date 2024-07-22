@@ -1025,6 +1025,7 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 				}
 				return nil, timeout, nil
 			} else {
+				time.Sleep(time.Minute)
 				timeout, err := src.MsgTimeout(msgTransfer, pp)
 				if err != nil {
 					return nil, nil, err

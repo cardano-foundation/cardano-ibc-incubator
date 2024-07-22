@@ -148,8 +148,8 @@ func (s *IBCTestSuite) TestRelayPacket(t *testing.T) {
 	}()
 
 	_ = cosmosChannelID
-	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
+	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
 
 	_ = cardanoChannelID
 	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
@@ -179,11 +179,6 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
-	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
-	//
-	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
 	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
 	//assert.Nil(t, runResult.Err)
 	//
@@ -398,7 +393,6 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 }
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
