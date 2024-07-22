@@ -1,0 +1,1 @@
+This will implement dapp client for IBC Swap (and Transfer) between Cardano, sidechain and Cosmos (osmosis)
