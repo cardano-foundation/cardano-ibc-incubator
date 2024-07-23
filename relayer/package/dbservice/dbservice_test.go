@@ -1,13 +1,10 @@
 package dbservice
 
 import (
-	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 	"testing"
 )
 
@@ -30,25 +27,6 @@ import (
 //	fmt.Println(utxos)
 //	require.Contains(t, err, "EXPIRED")
 //}
-
-func SetUpMockDb(t *testing.T) (*DBService, *sql.DB, sqlmock.Sqlmock) {
-	mockDB, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
-	}
-	dialector := postgres.New(postgres.Config{
-		Conn:       mockDB,
-		DriverName: "postgres",
-	})
-	db, err := gorm.Open(dialector, &gorm.Config{})
-	if err != nil {
-		t.Fatalf("an error '%s' was not expected when opening a gorm database connection", err)
-
-	}
-	return &DBService{
-		DB: db,
-	}, mockDB, mock
-}
 
 func TestFindUtxosByPolicyIdAndPrefixTokenName(t *testing.T) {
 	dbService, mockDB, mockSql := SetUpMockDb(t)

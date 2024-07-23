@@ -3,13 +3,12 @@ package dbservice
 import (
 	"encoding/hex"
 	"fmt"
-	"strings"
-
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/dbservice/dto"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"gorm.io/gorm"
+	"strings"
 )
 
 type DBService struct {
