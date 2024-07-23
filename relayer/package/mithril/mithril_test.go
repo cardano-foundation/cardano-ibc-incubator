@@ -194,7 +194,7 @@ func TestGetProofOfACardanoTransactionList(t *testing.T) {
 				Get("/aggregator/proof/cardano-transaction").MatchParam("transaction_hashes", "hash_value").
 				Reply(tc.statusCode).
 				JSON(map[string]string{"message": "fail"})
-
+			defer gock.Off()
 			mithril.client = http_client.InitClient("https://aggregator.testing-preview.api.mithril.network/aggregator", nil)
 			_, err := mithril.GetProofOfACardanoTransactionList("hash_value")
 			if tc.statusCode == http.StatusOK {
