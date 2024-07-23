@@ -68,6 +68,7 @@ func TestPost(t *testing.T) {
 		Post("/aggregator").
 		Reply(http.StatusOK).
 		JSON(map[string]string{"message": "success"})
+	defer gock.Off()
 	client := InitClient("https://aggregator.testing-preview.api.mithril.network/aggregator", nil)
 	var response interface{}
 	err := client.Post(&response, "/aggregator", nil)
