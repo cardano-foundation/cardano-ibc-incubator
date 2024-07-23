@@ -57,6 +57,7 @@ require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.1 // indirect
 	github.com/ChainSafe/go-schnorrkel v0.0.0-20200405005733-88cbf1b4c40d // indirect
+	github.com/DATA-DOG/go-sqlmock v1.5.2 // indirect
 	github.com/Salvionied/apollo v1.0.11 // indirect
 	github.com/Salvionied/cbor/v2 v2.6.0 // indirect
 	github.com/SundaeSwap-finance/kugo v1.0.5 // indirect
