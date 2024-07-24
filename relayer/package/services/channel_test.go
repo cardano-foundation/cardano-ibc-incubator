@@ -16,7 +16,7 @@ func TestQueryChannel(t *testing.T) {
 
 	err := os.Chdir("../../")
 	require.Nil(t, err)
-
+	defer os.Chdir("./package/services")
 	testCases := []struct {
 		name        string
 		channelId   string
@@ -121,6 +121,148 @@ func TestQueryChannel(t *testing.T) {
 				JSON(fmt.Sprintf("{\"certificate_hash\":\"36c93aedd5e22bbdaca1a4df211c2f7720881f2b9f30289e9be551571e66913e\",\"certified_transactions\":%v,\"non_certified_transactions\":[],\"latest_block_number\":27675}", tc.returnData))
 			defer gock.Off()
 			channel, err := gateway.QueryChannel(tc.channelId)
+			if tc.expectedErr != nil {
+				require.ErrorContains(t, err, tc.expectedErr.Error())
+			} else {
+				require.NotEmpty(t, channel)
+			}
+		})
+	}
+}
+
+func TestQueryChannels(t *testing.T) {
+	err := os.Chdir("../../")
+	require.Nil(t, err)
+	defer os.Chdir("./package/services")
+	testCases := []struct {
+		name        string
+		rows        *sqlmock.Rows
+		queryDbErr  error
+		expectedErr error
+	}{
+		{
+			name:        "fail to query db",
+			rows:        sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "datum", "assets_policy", "assets_name", 1, 1),
+			queryDbErr:  fmt.Errorf("query db error"),
+			expectedErr: fmt.Errorf("query db error"),
+		},
+		{
+			name:        "query does not return any value",
+			rows:        sqlmock.NewRows([]string{}),
+			expectedErr: fmt.Errorf("no utxos found for policyId"),
+		},
+		{
+			name: "query utxo[0]'s datum empty",
+			rows: sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", nil, "assets_policy", "assets_name", 1, 1).AddRow("address", "__hash_value", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d33ff4769637332302d31ff030101a0a0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722033ffff", "assets_policy", "assets_name", 1, 1),
+		},
+		{
+			name:        "decode datum fail",
+			rows:        sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\x", "assets_policy", "assets_name", 1, 1),
+			expectedErr: fmt.Errorf("EOF"),
+		},
+		{
+			name: "success",
+			rows: sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "__hash_value", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d33ff4769637332302d31ff030101a0a0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722033ffff", "assets_policy", "assets_name", 1, 1),
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+
+			//		setup mock db
+			dbService, mockDB, mockSql := dbservice.SetUpMockDb(t)
+			defer mockDB.Close()
+			gateway := &Gateway{}
+			gateway.DBService = dbService
+
+			mockSql.ExpectQuery(`SELECT 
+        tx_out.address AS address, 
+        cast\(generating_tx.hash as TEXT\) AS tx_hash, 
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+        CAST\(datum.bytes as TEXT\)  AS datum,
+        ma.policy AS assets_policy, 
+        CAST\(ma.name AS TEXT\) AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id`).
+				WillReturnError(tc.queryDbErr).
+				WillReturnRows(tc.rows)
+			channel, err := gateway.QueryChannels()
+			if tc.expectedErr != nil {
+				require.ErrorContains(t, err, tc.expectedErr.Error())
+			} else {
+				require.NotEmpty(t, channel)
+			}
+		})
+	}
+}
+
+func TestQueryConnectionChannels(t *testing.T) {
+	err := os.Chdir("../../")
+	require.Nil(t, err)
+	defer os.Chdir("./package/services")
+	testCases := []struct {
+		name         string
+		connectionId string
+		rows         *sqlmock.Rows
+		queryDbErr   error
+		expectedErr  error
+	}{
+		{
+			name:         "fail to validate connectionId",
+			connectionId: "connectionId",
+			rows:         sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "datum", "assets_policy", "assets_name", 1, 1),
+			expectedErr:  fmt.Errorf("connectionId should start with connection-"),
+		},
+		{
+			name:         "decode datum fail",
+			connectionId: "connection-3",
+			rows:         sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\x", "assets_policy", "assets_name", 1, 1),
+			expectedErr:  fmt.Errorf("EOF"),
+		},
+		{
+			name:         "success",
+			connectionId: "connection-3",
+			rows:         sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "__hash_value", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d32ff9f4c636f6e6e656374696f6e2d33ff4769637332302d31ff030101a0a0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722033ffff", "assets_policy", "assets_name", 1, 1),
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+
+			//		setup mock db
+			dbService, mockDB, mockSql := dbservice.SetUpMockDb(t)
+			defer mockDB.Close()
+			gateway := &Gateway{}
+			gateway.DBService = dbService
+
+			mockSql.ExpectQuery(`SELECT 
+        tx_out.address AS address, 
+        cast\(generating_tx.hash as TEXT\) AS tx_hash, 
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+        CAST\(datum.bytes as TEXT\)  AS datum,
+        ma.policy AS assets_policy, 
+        CAST\(ma.name AS TEXT\) AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id`).
+				WillReturnError(nil).
+				WillReturnRows(tc.rows)
+			channel, err := gateway.QueryConnectionChannels(tc.connectionId)
 			if tc.expectedErr != nil {
 				require.ErrorContains(t, err, tc.expectedErr.Error())
 			} else {

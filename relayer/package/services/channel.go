@@ -131,6 +131,9 @@ func (gw *Gateway) QueryChannels() ([]*chantypes.IdentifiedChannel, error) {
 			PolicyId: chainHandler.HandlerAuthToken.PolicyID,
 			Name:     chainHandler.HandlerAuthToken.Name,
 		}, constant.CHANNEL_TOKEN_PREFIX)
+		if err != nil {
+			return nil, err
+		}
 		identifiedChannels = append(identifiedChannels, &chantypes.IdentifiedChannel{
 			State:    chantypes.State(stateNum),
 			Ordering: chantypes.Order(orderNum),
