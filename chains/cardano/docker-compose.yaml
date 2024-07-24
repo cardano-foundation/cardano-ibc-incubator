@@ -60,6 +60,31 @@ services:
         "/devnet/node.socket"
       ]
 
+  cardano-node-ogmios-v6:
+    image: cardanosolutions/ogmios:v6.2.0
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "400k"
+        max-file: "20"
+    ports:
+      - ${OGMIOS_PORT_V6:-1338}:1337
+    restart: on-failure
+    depends_on:
+      - cardano-node
+    volumes:
+      - ./devnet:/devnet
+      - ./devnet/db:/db
+    command:
+      [
+        "--node-config",
+        "/devnet/cardano-node.json",
+        "--host",
+        "0.0.0.0",
+        "--node-socket",
+        "/devnet/node.socket"
+      ]
+
   kupo:
     image: cardanosolutions/kupo:v2.5.0
     logging:

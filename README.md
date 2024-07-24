@@ -33,6 +33,7 @@ The current implementation leverages a number of frameworks maintained by the Ca
 - [Kupo](https://github.com/cardanosolutions/kupo)
 - [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
 - [gOuroboros](https://github.com/blinklabs-io/gouroboros)
+- [Cardano Dev Wallet](https://github.com/mlabs-haskell/cardano-dev-wallet)
 
 ### Build from source
 ```sh

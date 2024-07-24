@@ -28,8 +28,8 @@ fi
 # fi
 
 "${SCRIPT_DIR}/prepare-devnet.sh"
-${DOCKER_COMPOSE_CMD} stop cardano-node postgres kupo cardano-node-ogmios
-${DOCKER_COMPOSE_CMD} up -d cardano-node postgres kupo cardano-node-ogmios
+${DOCKER_COMPOSE_CMD} stop cardano-node postgres kupo cardano-node-ogmios cardano-node-ogmios-v6
+${DOCKER_COMPOSE_CMD} up -d cardano-node postgres kupo cardano-node-ogmios cardano-node-ogmios-v6
 # ${DOCKER_COMPOSE_CMD} --profile cardano-node up -d
 
 echo >&2 -e "\n# Sleep 5 sec"
