@@ -19,7 +19,7 @@ func ValidQueryPacketCommitmentParam(req *channeltypes.QueryPacketCommitmentRequ
 
 func ValidQueryPacketCommitmentsParam(req *channeltypes.QueryPacketCommitmentsRequest) (*channeltypes.QueryPacketCommitmentsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	return req, nil
 }
