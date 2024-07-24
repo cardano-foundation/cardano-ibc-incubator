@@ -278,13 +278,8 @@ export class ClientService {
       throw new GrpcInternalException(`Invalid proof height: ${headerHeight}`);
     }
 
-    currentConsStateInArray.push([newHeight, newConsState]);
-    currentConsStateInArray.sort(([height1], [height2]) => {
-      if (height1.revisionNumber == height2.revisionNumber) {
-        return Number(height1.revisionHeight - height2.revisionHeight);
-      }
-      return Number(height1.revisionNumber - height2.revisionNumber);
-    });
+    currentConsStateInArray.unshift([newHeight, newConsState]);
+
     const newConsStates = new Map(currentConsStateInArray);
     const newClientDatum: ClientDatum = {
       ...updateClientOperator.clientDatum,

@@ -24,13 +24,7 @@ import { Packet } from "src/shared/types/channel/packet";
 import { SpendChannelRedeemer } from "@shared/types/channel/channel-redeemer";
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from "src/constant";
 import { IBCModuleRedeemer } from "@shared/types/port/ibc_module_redeemer";
-import {
-  deleteKeySortMap,
-  deleteSortMap,
-  getDenomPrefix,
-  insertSortMapWithNumberKey,
-  sortedStringify,
-} from "@shared/helpers/helper";
+import { deleteKeySortMap, deleteSortMap, getDenomPrefix, prependToMap, sortedStringify } from "@shared/helpers/helper";
 import { RpcException } from "@nestjs/microservices";
 import { SendPacketOperator } from "./dto/packet/send-packet-operator.dto";
 import { FungibleTokenPacketDatum } from "@shared/types/apps/transfer/types/fungible-token-packet-data";
@@ -530,8 +524,8 @@ export class PacketService {
         ...channelDatum,
         state: {
           ...channelDatum.state,
-          packet_receipt: insertSortMapWithNumberKey(channelDatum.state.packet_receipt, packet.sequence, ""),
-          packet_acknowledgement: insertSortMapWithNumberKey(
+          packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ""),
+          packet_acknowledgement: prependToMap(
             channelDatum.state.packet_acknowledgement,
             packet.sequence,
             "08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C",
@@ -603,8 +597,8 @@ export class PacketService {
           ...channelDatum,
           state: {
             ...channelDatum.state,
-            packet_receipt: insertSortMapWithNumberKey(channelDatum.state.packet_receipt, packet.sequence, ""),
-            packet_acknowledgement: insertSortMapWithNumberKey(
+            packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ""),
+            packet_acknowledgement: prependToMap(
               channelDatum.state.packet_acknowledgement,
               packet.sequence,
               "08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C",
@@ -675,7 +669,7 @@ export class PacketService {
           state: {
             ...channelDatum.state,
             next_sequence_recv: channelDatum.state.next_sequence_recv + BigInt(1),
-            packet_acknowledgement: insertSortMapWithNumberKey(
+            packet_acknowledgement: prependToMap(
               channelDatum.state.packet_acknowledgement,
               packet.sequence,
               "08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C",
@@ -1053,11 +1047,7 @@ export class PacketService {
       state: {
         ...channelDatum.state,
         next_sequence_send: channelDatum.state.next_sequence_send + 1n,
-        packet_commitment: insertSortMapWithNumberKey(
-          channelDatum.state.packet_commitment,
-          packet.sequence,
-          commitPacket(packet),
-        ),
+        packet_commitment: prependToMap(channelDatum.state.packet_commitment, packet.sequence, commitPacket(packet)),
       },
     };
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(

@@ -122,3 +122,11 @@ export function sortedStringify(obj) {
 
   return JSON.stringify(sortedObj);
 }
+
+export const prependToMap = <K, V>(map: Map<K, V>, key: K, val: V): Map<K, V> => {
+  const newMap = new Map<K, V>([[key, val]]);
+  for (const [k, v] of map) {
+    newMap.set(k, v);
+  }
+  return newMap;
+};
