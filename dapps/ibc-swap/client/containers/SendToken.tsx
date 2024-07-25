@@ -58,6 +58,7 @@ const SendToken = () => {
             onChange={handleChangeAmount}
           />
           <button
+            type="button"
             onClick={handleSendToken}
             style={{ height: '40px', width: '100px' }}
           >

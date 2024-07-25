@@ -1,15 +1,8 @@
 import type { NextPage } from 'next';
-import { CardanoWallet } from '@meshsdk/react';
-import SendToken from '@/containers/SendToken';
+import { Heading } from '@chakra-ui/react';
 
 const Home: NextPage = () => {
-  return (
-    <div>
-      <h1>Connect Wallet</h1>
-      <CardanoWallet />
-      <SendToken />
-    </div>
-  );
+  return <Heading>Home Page</Heading>;
 };
 
 export default Home;

@@ -40,3 +40,5 @@ chains/mithrils/data
 docker-compose.yaml
 cardano-cli
 cardano-node
+
+node_modules
