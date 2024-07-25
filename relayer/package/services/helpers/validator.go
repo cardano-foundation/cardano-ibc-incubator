@@ -26,7 +26,7 @@ func ValidQueryPacketCommitmentsParam(req *channeltypes.QueryPacketCommitmentsRe
 
 func ValidQueryPacketAckParam(req *channeltypes.QueryPacketAcknowledgementRequest) (*channeltypes.QueryPacketAcknowledgementRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	if req.Sequence <= 0 {
 		return nil, fmt.Errorf("invalid argument: sequence must be greate than 0")
@@ -36,14 +36,14 @@ func ValidQueryPacketAckParam(req *channeltypes.QueryPacketAcknowledgementReques
 
 func ValidQueryPacketAcksParam(req *channeltypes.QueryPacketAcknowledgementsRequest) (*channeltypes.QueryPacketAcknowledgementsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	return req, nil
 }
 
 func ValidQueryPacketReceipt(req *channeltypes.QueryPacketReceiptRequest) (*channeltypes.QueryPacketReceiptRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	if req.Sequence <= 0 {
 		return nil, fmt.Errorf("invalid argument: sequence must be greate than 0")
@@ -53,7 +53,7 @@ func ValidQueryPacketReceipt(req *channeltypes.QueryPacketReceiptRequest) (*chan
 
 func ValidQueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*channeltypes.QueryUnreceivedPacketsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	return req, nil
 
@@ -61,14 +61,14 @@ func ValidQueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*
 
 func ValidQueryUnrecvAcks(req *channeltypes.QueryUnreceivedAcksRequest) (*channeltypes.QueryUnreceivedAcksRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	return req, nil
 }
 
 func ValidQueryProofUnreceivedPackets(req *pbchannel.QueryProofUnreceivedPacketsRequest) (*pbchannel.QueryProofUnreceivedPacketsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
-		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+		return nil, fmt.Errorf("invalid channel-id: %s", req.ChannelId)
 	}
 	return req, nil
 }
