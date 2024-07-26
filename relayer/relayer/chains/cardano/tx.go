@@ -668,18 +668,18 @@ func (cc *CardanoProvider) PacketCommitment(
 	msgTransfer provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	commitment, proof, proofHeight, err := cc.QueryPacketCommitmentGW(ctx, msgTransfer)
+	res, err := cc.QueryPacketCommitment(ctx, int64(msgTransfer.Height), msgTransfer.SourceChannel, msgTransfer.SourcePort, msgTransfer.Sequence)
 	if err != nil {
 		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for packet commitment: %w", err)
 	}
 	// check if packet commitment exists
-	if len(commitment) == 0 {
+	if len(res.Commitment) == 0 {
 		return provider.PacketProof{}, chantypes.ErrPacketCommitmentNotFound
 	}
 
 	return provider.PacketProof{
-		Proof:       proof,
-		ProofHeight: proofHeight,
+		Proof:       res.Proof,
+		ProofHeight: res.ProofHeight,
 	}, nil
 }
 
