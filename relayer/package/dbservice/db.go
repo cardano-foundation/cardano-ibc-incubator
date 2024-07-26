@@ -1,13 +1,16 @@
 package dbservice
 
 import (
+	"database/sql"
 	"fmt"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/cardano/relayer/v1/constant"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 	"log"
 	"sync"
+	"testing"
 )
 
 var Connections map[string]*gorm.DB
@@ -40,4 +43,23 @@ func ConnectToDb(cexplorer *DatabaseInfo) (err error) {
 		postgreDB.SetMaxOpenConns(200)
 	})
 	return err
+}
+
+func SetUpMockDb(t *testing.T) (*DBService, *sql.DB, sqlmock.Sqlmock) {
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when opening a stub database connection", err)
+	}
+	dialector := postgres.New(postgres.Config{
+		Conn:       mockDB,
+		DriverName: "postgres",
+	})
+	db, err := gorm.Open(dialector, &gorm.Config{})
+	if err != nil {
+		t.Fatalf("an error '%s' was not expected when opening a gorm database connection", err)
+
+	}
+	return &DBService{
+		DB: db,
+	}, mockDB, mock
 }
