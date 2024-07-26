@@ -1,9 +1,9 @@
-import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
+import { MsgUpdateClientResponse } from "@plus/proto-types/build/ibc/core/client/v1/tx";
+import { type Tx, TxComplete, UTxO } from "@dinhbx/lucid-custom";
 
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { LucidService } from "src/shared/modules/lucid/lucid.service";
+import { GrpcInternalException } from "nestjs-grpc-exceptions";
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -13,40 +13,40 @@ import {
   MsgConnectionOpenInitResponse,
   MsgConnectionOpenTry,
   MsgConnectionOpenTryResponse,
-} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
-import { RpcException } from '@nestjs/microservices';
-import { ConnectionOpenInitOperator } from './dto/connection/connection-open-init-operator.dto';
-import { ConnectionOpenTryOperator } from './dto/connection/connection-open-try-operator.dto';
-import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
-import { ConnectionOpenAckOperator } from './dto/connection/connection-open-ack-operator.dto';
-import { ConnectionOpenConfirmOperator } from './dto/connection/connection-open-confirm-operator.dto';
-import { HandlerDatum } from 'src/shared/types/handler-datum';
-import { HandlerOperator } from 'src/shared/types/handler-operator';
-import { AuthToken } from 'src/shared/types/auth-token';
-import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
-import { State } from 'src/shared/types/connection/state';
-import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/connection/connection-redeemer';
-import { ConfigService } from '@nestjs/config';
-import { parseClientSequence } from 'src/shared/helpers/sequence';
-import { convertHex2String, convertString2Hex, fromHex, fromText, toHex, toHexString } from '@shared/helpers/hex';
-import { ClientDatum } from '@shared/types/client-datum';
-import { isValidProofHeight } from './helper/height.validate';
+} from "@plus/proto-types/build/ibc/core/connection/v1/tx";
+import { RpcException } from "@nestjs/microservices";
+import { ConnectionOpenInitOperator } from "./dto/connection/connection-open-init-operator.dto";
+import { ConnectionOpenTryOperator } from "./dto/connection/connection-open-try-operator.dto";
+import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from "src/constant";
+import { ConnectionOpenAckOperator } from "./dto/connection/connection-open-ack-operator.dto";
+import { ConnectionOpenConfirmOperator } from "./dto/connection/connection-open-confirm-operator.dto";
+import { HandlerDatum } from "src/shared/types/handler-datum";
+import { HandlerOperator } from "src/shared/types/handler-operator";
+import { AuthToken } from "src/shared/types/auth-token";
+import { ConnectionDatum } from "src/shared/types/connection/connection-datum";
+import { State } from "src/shared/types/connection/state";
+import { MintConnectionRedeemer, SpendConnectionRedeemer } from "@shared/types/connection/connection-redeemer";
+import { ConfigService } from "@nestjs/config";
+import { parseClientSequence } from "src/shared/helpers/sequence";
+import { convertHex2String, convertString2Hex, fromHex, toHex } from "@shared/helpers/hex";
+import { ClientDatum } from "@shared/types/client-datum";
+import { isValidProofHeight } from "./helper/height.validate";
 import {
   validateAndFormatConnectionOpenAckParams,
   validateAndFormatConnectionOpenConfirmParams,
   validateAndFormatConnectionOpenInitParams,
   validateAndFormatConnectionOpenTryParams,
-} from './helper/connection.validate';
-import { UnsignedConnectionOpenAckDto } from '../shared/modules/lucid/dtos/connection/connection-open-ack.dto';
-import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
-import { getBlockDelay } from '../shared/helpers/verify';
-import { connectionPath } from '../shared/helpers/connection';
-import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
-import { clientStatePath, getCardanoClientStateForVerifyProofRedeemer } from '~@/shared/helpers/client-state';
-import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
-import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
-import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+} from "./helper/connection.validate";
+import { UnsignedConnectionOpenAckDto } from "../shared/modules/lucid/dtos/connection/connection-open-ack.dto";
+import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from "../shared/types/connection/verify-proof-redeemer";
+import { getBlockDelay } from "../shared/helpers/verify";
+import { connectionPath } from "../shared/helpers/connection";
+import { ConnectionEnd, State as ConnectionState } from "@plus/proto-types/build/ibc/core/connection/v1/connection";
+import { clientStatePath } from "~@/shared/helpers/client-state";
+import { Any } from "@plus/proto-types/build/google/protobuf/any";
+import { getMithrilClientStateForVerifyProofRedeemer } from "../shared/helpers/mithril-client";
+import { ClientState as MithrilClientState } from "@plus/proto-types/build/ibc/lightclients/mithril/mithril";
+
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -61,7 +61,7 @@ export class ConnectionService {
    */
   async connectionOpenInit(data: MsgConnectionOpenInit): Promise<MsgConnectionOpenInitResponse> {
     try {
-      this.logger.log('Connection Open Init is processing');
+      this.logger.log("Connection Open Init is processing");
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenInitTx: Tx = await this.buildUnsignedConnectionOpenInitTx(
@@ -72,10 +72,10 @@ export class ConnectionService {
 
       const unsignedConnectionOpenInitTxCompleted: TxComplete = await unsignedConnectionOpenInitTxValidTo.complete();
 
-      this.logger.log(unsignedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
+      this.logger.log(unsignedConnectionOpenInitTxCompleted.toHash(), "connection open init - unsignedTX - hash");
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
-          type_url: '',
+          type_url: "",
           value: unsignedConnectionOpenInitTxCompleted.txComplete.to_bytes(),
         },
       } as unknown as MsgUpdateClientResponse;
@@ -107,10 +107,10 @@ export class ConnectionService {
 
       const unsignedConnectionOpenTryTxCompleted: TxComplete = await unsignedConnectionOpenTryTxValidTo.complete();
 
-      this.logger.log(unsignedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
+      this.logger.log(unsignedConnectionOpenTryTxCompleted.toHash(), "connection open try - unsignedTX - hash");
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
-          type_url: '',
+          type_url: "",
           value: unsignedConnectionOpenTryTxCompleted.txComplete.to_bytes(),
         },
       } as unknown as MsgConnectionOpenTryResponse;
@@ -131,7 +131,7 @@ export class ConnectionService {
    */
   async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
     try {
-      this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
+      this.logger.log("Connection Open Ack is processing", "connectionOpenAck");
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: Tx = await this.buildUnsignedConnectionOpenAckTx(
@@ -142,16 +142,16 @@ export class ConnectionService {
 
       const unsignedConnectionOpenAckTxCompleted: TxComplete = await unsignedConnectionOpenAckTxValidTo.complete();
 
-      this.logger.log(unsignedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
+      this.logger.log(unsignedConnectionOpenAckTxCompleted.toHash(), "connection open ack - unsignedTX - hash");
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
-          type_url: '',
+          type_url: "",
           value: unsignedConnectionOpenAckTxCompleted.txComplete.to_bytes(),
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
     } catch (error) {
-      this.logger.error(error, 'connectionOpenAck');
+      this.logger.error(error, "connectionOpenAck");
       this.logger.error(`connectionOpenAck: ${error.stack}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
@@ -168,7 +168,7 @@ export class ConnectionService {
   /* istanbul ignore next */
   async connectionOpenConfirm(data: MsgConnectionOpenConfirm): Promise<MsgConnectionOpenConfirmResponse> {
     try {
-      this.logger.log('Connection Open Confirm is processing');
+      this.logger.log("Connection Open Confirm is processing");
       const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenConfirmTx: Tx = await this.buildUnsignedConnectionOpenConfirmTx(
@@ -181,10 +181,10 @@ export class ConnectionService {
       const unsignedConnectionOpenConfirmTxCompleted: TxComplete =
         await unsignedConnectionOpenConfirmTxValidTo.complete();
 
-      this.logger.log(unsignedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
+      this.logger.log(unsignedConnectionOpenConfirmTxCompleted.toHash(), "connection open confirm - unsignedTX - hash");
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
-          type_url: '',
+          type_url: "",
           value: unsignedConnectionOpenConfirmTxCompleted.txComplete.to_bytes(),
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
@@ -211,7 +211,7 @@ export class ConnectionService {
     constructedAddress: string,
   ): Promise<Tx> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, "handler");
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
     // Find the UTXO for the client token
@@ -224,7 +224,7 @@ export class ConnectionService {
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
       },
     };
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
+    const spendHandlerRedeemer: HandlerOperator = "HandlerConnOpenInit";
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       handlerDatum.state.next_connection_sequence,
     );
@@ -235,7 +235,7 @@ export class ConnectionService {
     };
     const connectionDatum: ConnectionDatum = {
       state: {
-        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenInitOperator.clientId),
+        client_id: CLIENT_PREFIX + convertString2Hex("-" + connectionOpenInitOperator.clientId),
         counterparty: connectionOpenInitOperator.counterparty,
         delay_period: 0n,
         versions: connectionOpenInitOperator.versions,
@@ -245,25 +245,25 @@ export class ConnectionService {
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
       ConnOpenInit: {
-        handler_auth_token: this.configService.get('deployment').handlerAuthToken,
+        handler_auth_token: this.configService.get("deployment").handlerAuthToken,
       },
     };
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
       mintConnectionRedeemer,
-      'mintConnectionRedeemer',
+      "mintConnectionRedeemer",
     );
 
     const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
       spendHandlerRedeemer,
-      'handlerOperator',
+      "handlerOperator",
     );
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
       updatedHandlerDatum,
-      'handler',
+      "handler",
     );
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
-      'connection',
+      "connection",
     );
     return this.lucidService.createUnsignedConnectionOpenInitTransaction(
       handlerUtxo,
@@ -283,7 +283,7 @@ export class ConnectionService {
     constructedAddress: string,
   ): Promise<Tx> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, "handler");
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
@@ -296,7 +296,7 @@ export class ConnectionService {
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
       },
     };
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';
+    const spendHandlerRedeemer: HandlerOperator = "HandlerConnOpenTry";
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       handlerDatum.state.next_connection_sequence,
     );
@@ -307,7 +307,7 @@ export class ConnectionService {
     };
     const connectionDatum: ConnectionDatum = {
       state: {
-        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenTryOperator.clientId),
+        client_id: CLIENT_PREFIX + convertString2Hex("-" + connectionOpenTryOperator.clientId),
         counterparty: connectionOpenTryOperator.counterparty,
         delay_period: 0n,
         versions: connectionOpenTryOperator.versions,
@@ -317,7 +317,7 @@ export class ConnectionService {
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
       ConnOpenTry: {
-        handler_auth_token: this.configService.get('deployment').handlerAuthToken,
+        handler_auth_token: this.configService.get("deployment").handlerAuthToken,
         client_state: connectionOpenTryOperator.counterpartyClientState,
         proof_init: connectionOpenTryOperator.proofInit,
         proof_client: connectionOpenTryOperator.proofClient,
@@ -326,19 +326,19 @@ export class ConnectionService {
     };
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
       mintConnectionRedeemer,
-      'mintConnectionRedeemer',
+      "mintConnectionRedeemer",
     );
     const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
       spendHandlerRedeemer,
-      'handlerOperator',
+      "handlerOperator",
     );
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
       updatedHandlerDatum,
-      'handler',
+      "handler",
     );
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
-      'connection',
+      "connection",
     );
     return this.lucidService.createUnsignedConnectionOpenTryTransaction(
       handlerUtxo,
@@ -374,7 +374,7 @@ export class ConnectionService {
 
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
-      'connection',
+      "connection",
     );
 
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
@@ -392,7 +392,7 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, "client");
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
@@ -401,17 +401,17 @@ export class ConnectionService {
     }
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
-      'spendConnectionRedeemer',
+      "spendConnectionRedeemer",
     );
     const encodedUpdatedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       updatedConnectionDatum,
-      'connection',
+      "connection",
     );
 
-    const spendConnectionRefUtxo = this.configService.get('deployment').validators.mintConnection.refUtxo;
-    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
-    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
+    const spendConnectionRefUtxo = this.configService.get("deployment").validators.mintConnection.refUtxo;
+    const verifyProofRefUTxO = this.configService.get("deployment").validators.verifyProof.refUtxo;
+    const verifyProofPolicyId = this.configService.get("deployment").validators.verifyProof.scriptHash;
+    const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === connectionOpenAckOperator.proofHeight.revisionHeight,
     );
     const cardanoConnectionEnd: ConnectionEnd = {
@@ -433,7 +433,7 @@ export class ConnectionService {
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.clients.mithril.v1.ClientState',
+      type_url: "/ibc.clients.mithril.v1.ClientState",
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
@@ -515,10 +515,10 @@ export class ConnectionService {
     };
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
-      'connection',
+      "connection",
     );
     if (connectionDatum.state.state !== State.Init) {
-      throw new Error('ConnOpenAck to a Connection not in Init state');
+      throw new Error("ConnOpenAck to a Connection not in Init state");
     }
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const updatedConnectionDatum: ConnectionDatum = {
@@ -533,11 +533,11 @@ export class ConnectionService {
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
-      'spendConnectionRedeemer',
+      "spendConnectionRedeemer",
     );
     const encodedUpdatedConnectionDatum = await this.lucidService.encode<ConnectionDatum>(
       updatedConnectionDatum,
-      'connection',
+      "connection",
     );
     return this.lucidService.createUnsignedConnectionOpenConfirmTransaction(
       connectionUtxo,

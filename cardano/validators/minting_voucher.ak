@@ -1,8 +1,9 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
+use aiken/dict
 use aiken/hash
 use aiken/int
 use aiken/list
+use aiken/pairs
 use aiken/string
 use aiken/transaction.{
   Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptContext,
@@ -23,7 +24,6 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
 use ibc/utils/string as string_utils
-use ibc/utils/validator_utils
 
 validator(module_token: AuthToken) {
   fn mint_voucher(redeemer: MintVoucherRedeemer, context: ScriptContext) -> Bool {
@@ -71,7 +71,7 @@ validator(module_token: AuthToken) {
           expect
             minted_tokens == (
               dict.new()
-                |> dict.insert(token_name, transfer_amount, bytearray.compare)
+                |> dict.insert(token_name, transfer_amount)
             )
           trace @"mint_voucher: minted token is valid"
 
@@ -152,7 +152,7 @@ validator(module_token: AuthToken) {
           expect
             minted_tokens == (
               dict.new()
-                |> dict.insert(token_name, -transfer_amount, bytearray.compare)
+                |> dict.insert(token_name, -transfer_amount)
             )
           trace @"mint_voucher: burned token is valid"
 
@@ -190,7 +190,7 @@ validator(module_token: AuthToken) {
           expect
             minted_tokens == (
               dict.new()
-                |> dict.insert(token_name, transfer_amount, bytearray.compare)
+                |> dict.insert(token_name, transfer_amount)
             )
           trace @"mint_voucher: minted token is valid"
 
@@ -253,7 +253,7 @@ validator(module_token: AuthToken) {
 
 fn extract_module_redeemer(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   module_token: AuthToken,
 ) -> IBCModuleRedeemer {
   expect Some(module_input) =
@@ -264,7 +264,7 @@ fn extract_module_redeemer(
 
   // validate spend channel redeemer
   expect Some(spend_module_redeemer) =
-    dict.get(redeemers, Spend(module_input.output_reference))
+    pairs.get_first(redeemers, Spend(module_input.output_reference))
 
   expect spend_module_redeemer: IBCModuleRedeemer = spend_module_redeemer
 
@@ -348,22 +348,15 @@ test test_mint_voucher() {
 
   let purpose = Mint(mock_data.voucher_minting_policy_id)
 
-  // let redeemers: Dict<ScriptPurpose, Redeemer> =
-  // dict.new() |> dict.insert(purpose, mint_voucher_redeemer, fn(_key1, _key2) { Greater })
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.from_list(
-      [
-        (purpose, mint_voucher_redeemer_in_data),
-        (
-          Spend(mock_data.module_input.output_reference),
-          spend_module_redeemer_in_data,
-        ),
-      ],
-      validator_utils.compare_purpose,
-    )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(purpose, mint_voucher_redeemer_in_data),
+      Pair(Spend(mock_data.module_input.output_reference),
+      spend_module_redeemer_in_data),
+    ]
 
   let source_prefix =
     transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
@@ -440,17 +433,12 @@ test test_burn_voucher() {
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.from_list(
-      [
-        (purpose, mint_voucher_redeemer_in_data),
-        (
-          Spend(mock_data.module_input.output_reference),
-          spend_module_redeemer_in_data,
-        ),
-      ],
-      validator_utils.compare_purpose,
-    )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(purpose, mint_voucher_redeemer_in_data),
+      Pair(Spend(mock_data.module_input.output_reference),
+      spend_module_redeemer_in_data),
+    ]
 
   let token_name = hash.sha3_256(packet_data.denom)
 
@@ -540,17 +528,12 @@ test test_refund_voucher() {
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.from_list(
-      [
-        (purpose, mint_voucher_redeemer_in_data),
-        (
-          Spend(mock_data.module_input.output_reference),
-          spend_module_redeemer_in_data,
-        ),
-      ],
-      validator_utils.compare_purpose,
-    )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(purpose, mint_voucher_redeemer_in_data),
+      Pair(Spend(mock_data.module_input.output_reference),
+      spend_module_redeemer_in_data),
+    ]
 
   let transaction =
     Transaction {

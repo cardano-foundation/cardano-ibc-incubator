@@ -1,5 +1,4 @@
-use aiken/dict
-use aiken/int
+use aiken/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -47,9 +46,7 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
         next_sequence_send: packet.sequence + 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: dict.new()
-          |> dict.insert(packet.sequence, commitment, int.compare)
-          |> dict.to_list(),
+        packet_commitment: [Pair(packet.sequence, commitment)],
         packet_receipt: [],
         packet_acknowledgement: [],
       },
@@ -62,12 +59,10 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 

@@ -1,4 +1,4 @@
-use aiken/dict
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
@@ -16,8 +16,8 @@ use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
-use ibc/utils/math
 use ibc/utils/bits
+use ibc/utils/math
 
 pub fn verify_connection_state(
   client_datum_state: ClientDatumState,
@@ -34,8 +34,8 @@ pub fn verify_connection_state(
       ),
     )
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -66,9 +66,10 @@ pub fn verify_client_state(
         [client_keys.full_client_state_path(connection.counterparty.client_id)],
       ),
     )
+
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -102,9 +103,10 @@ pub fn verify_channel_state(
       connection.counterparty.prefix,
       merkle.new_merkle_path([channel_keys.channel_path(port_id, channel_id)]),
     )
+
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -138,9 +140,10 @@ pub fn verify_packet_commitment(
         [packet_keys.packet_commitment_path(port_id, channel_id, sequence)],
       ),
     )
+
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -174,8 +177,7 @@ pub fn verify_packet_acknowledgement(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
@@ -209,9 +211,10 @@ pub fn verify_packet_receipt_absence(
         [packet_keys.packet_receipt_path(port_id, channel_id, sequence)],
       ),
     )
+
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
   client_state.verify_non_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -250,8 +253,7 @@ pub fn verify_next_sequence_recv(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,

@@ -1,7 +1,7 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
 use aiken/int
 use aiken/list
+use aiken/pairs
 use aiken/string
 use aiken/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
@@ -36,9 +36,9 @@ use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
-  OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
-  OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator,
-  TransferModuleData, TransferModuleOperator,
+  OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
+  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket,
+  OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
@@ -309,7 +309,7 @@ fn handler_callback(
         True
       } else {
         expect Some(mint_voucher_redeemer) =
-          dict.get(redeemers, Mint(voucher_minting_policy_id))
+          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
         expect mint_voucher_redeemer: MintVoucherRedeemer =
           mint_voucher_redeemer
         expect MintVoucher {
@@ -441,7 +441,8 @@ fn handler_operator(
         data.denom,
       ){
       
-        expect dict.get(redeemers, Mint(voucher_minting_policy_id)) == None
+        expect
+          pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) == None
         trace @"spend_transfer_module: tx not mint voucher token"
 
         expect Some(escrowed_token_unit) =
@@ -473,7 +474,7 @@ fn handler_operator(
         True
       } else {
         expect Some(mint_voucher_redeemer) =
-          dict.get(redeemers, Mint(voucher_minting_policy_id))
+          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
         expect mint_voucher_redeemer: MintVoucherRedeemer =
           mint_voucher_redeemer
         expect BurnVoucher { packet_source_port, packet_source_channel } =
@@ -490,7 +491,7 @@ fn handler_operator(
 }
 
 fn validate_channel_open_init(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
   outputs: List<Output>,
@@ -499,7 +500,7 @@ fn validate_channel_open_init(
 ) -> Option<Channel> {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
-    dict.get(redeemers, Mint(channel_minting_policy_id))
+    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
   expect ChanOpenInit { handler_token: chan_handler_token } =
     mint_channel_redeemer
@@ -535,7 +536,7 @@ fn validate_channel_open_init(
 }
 
 fn validate_channel_open_try(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
   outputs: List<Output>,
@@ -544,7 +545,7 @@ fn validate_channel_open_try(
 ) -> Option<(Channel, ByteArray)> {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
-    dict.get(redeemers, Mint(channel_minting_policy_id))
+    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
   expect ChanOpenTry {
     handler_token: chan_handler_token,
@@ -583,7 +584,7 @@ fn validate_channel_open_try(
 
 fn validate_chan_open_ack(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
   outputs: List<Output>,
@@ -609,7 +610,7 @@ fn validate_chan_open_ack(
 
   // validate spend channel redeemer
   expect Some(spend_channel_redeemer) =
-    dict.get(redeemers, Spend(channel_input.output_reference))
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
   expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
   expect ChanOpenAck { counterparty_version, .. } = spend_channel_redeemer
 
@@ -630,7 +631,7 @@ fn validate_chan_open_ack(
 
 fn validate_chan_open_confirm(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
   outputs: List<Output>,
@@ -656,7 +657,7 @@ fn validate_chan_open_confirm(
 
   // validate spend channel redeemer
   expect Some(spend_channel_redeemer) =
-    dict.get(redeemers, Spend(channel_input.output_reference))
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
   expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
   expect ChanOpenConfirm { .. } = spend_channel_redeemer
 
@@ -677,7 +678,7 @@ fn validate_chan_open_confirm(
 
 fn extract_channel_redeemer(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
   channel_id: ByteArray,
@@ -701,7 +702,7 @@ fn extract_channel_redeemer(
 
   // validate spend channel redeemer
   expect Some(spend_channel_redeemer) =
-    dict.get(redeemers, Spend(channel_input.output_reference))
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
   expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
 
   Some(spend_channel_redeemer)
@@ -711,7 +712,7 @@ fn validate_refund_packet_token(
   voucher_minting_policy_id: PolicyId,
   inputs: List<Input>,
   outputs: List<Output>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   spent_output: Output,
   updated_output: Output,
   data: FungibleTokenPacketData,
@@ -798,7 +799,7 @@ fn validate_refund_packet_token(
     True
   } else {
     expect Some(mint_voucher_redeemer) =
-      dict.get(redeemers, Mint(voucher_minting_policy_id))
+      pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
     expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
     expect RefundVoucher { packet_source_port, packet_source_channel } =
       mint_voucher_redeemer
@@ -1009,18 +1010,11 @@ test on_chan_open_init_succeed() {
   let channel_redeemer: Redeemer =
     ChanOpenInit { handler_token: mock.handler_token }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.channel_minting_policy_id),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1072,18 +1066,11 @@ test on_chan_open_try_succeed() {
       proof_height: mock.proof_height,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.channel_minting_policy_id),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1134,18 +1121,11 @@ test on_chan_open_ack_succeed() {
       proof_height: mock.proof_height,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1192,18 +1172,11 @@ test on_chan_open_confirm_succeed() {
   let channel_redeemer: Redeemer =
     ChanOpenConfirm { proof_ack: mock.proof, proof_height: mock.proof_height }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1284,23 +1257,12 @@ test on_recv_packet_mint_voucher_succeed() {
       packet_dest_channel: packet.destination_channel,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.voucher_minting_policy_id),
-          mint_voucher_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1406,18 +1368,11 @@ test on_recv_packet_unescrow_succeed() {
       proof_height: mock.proof_height,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1496,18 +1451,11 @@ test transfer_escrow_succeed() {
 
   let channel_redeemer: Redeemer = SendPacket { packet }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1608,23 +1556,12 @@ test transfer_burn_voucher_succeed() {
       packet_source_channel: packet.source_channel,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.voucher_minting_policy_id),
-          mint_voucher_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1705,23 +1642,12 @@ test on_timeout_packet_mint_voucher_succeed() {
       packet_source_channel: packet.source_channel,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.voucher_minting_policy_id),
-          mint_voucher_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1818,18 +1744,11 @@ test on_timeout_packet_unescrow_succeed() {
       next_sequence_recv: 1,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -1914,18 +1833,11 @@ test on_acknowledgement_packet_result_succeed() {
       proof_height: mock.proof_height,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -2016,23 +1928,12 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
       packet_source_channel: packet.source_channel,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.voucher_minting_policy_id),
-          mint_voucher_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -2139,18 +2040,11 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       proof_height: mock.proof_height,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Spend(mock.channel_input.output_reference),
-          channel_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let purpose = Spend(mock.module_input.output_reference)
 
@@ -2196,13 +2090,8 @@ test on_chan_close_init_given_any_input_returns_false() {
   let module_redeemer: Redeemer =
     Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(fake_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
   let purpose = Spend(fake_data.module_input.output_reference)
 
@@ -2248,13 +2137,8 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   let module_redeemer: Redeemer =
     Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(fake_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
   let purpose = Spend(fake_data.module_input.output_reference)
 

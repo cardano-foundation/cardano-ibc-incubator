@@ -1,8 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/int
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -150,13 +149,12 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"acknowledge_packet: client status is active"
 
     expect Some(commitment) =
-      dict.from_list(cur_packet_commitment, int.compare)
-        |> dict.get(packet.sequence)
+      pairs.get_first(cur_packet_commitment, packet.sequence)
     trace @"acknowledge_packet: packet commitment existed"
 
     let packet_commitment = packet_mod.commit_packet(packet)
@@ -215,7 +213,7 @@ fn validate_acknowledge_packet_proof(
   proof: MerkleProof,
   packet: Packet,
   acknowledgement: ByteArray,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let time_delay = connection.delay_period
@@ -235,11 +233,10 @@ fn validate_acknowledge_packet_proof(
       ),
     )
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
@@ -454,9 +451,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -608,12 +603,10 @@ test succeed_acknowledge_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -728,7 +721,7 @@ test succeed_acknowledge_packet() {
   let acknowledgement =
     #"7b22726573756c74223a226257396a6179426859327475623364735a57526e5a57316c626e513d227d"
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     AcknowledgePacket { packet, proof_acked, proof_height, acknowledgement }
 
   let channel_id =
@@ -768,12 +761,11 @@ test succeed_acknowledge_packet() {
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum_state.client_state,
       cons_state: consensus_state,
@@ -785,28 +777,16 @@ test succeed_acknowledge_packet() {
       value: commit_ack,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.acknowledge_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let acknowledge_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.acknowledge_packet_policy_id),
+      acknowledge_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
 
   //==========================arrange context=========================
   let context =

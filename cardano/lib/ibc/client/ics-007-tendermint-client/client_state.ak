@@ -1,7 +1,7 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
 use aiken/math/rational
 use aiken/option
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{max_chain_id_len}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -98,10 +98,10 @@ pub fn get_latest_height(cs: ClientState) -> Height {
 /// as a "method" of ClientState struct.
 pub fn get_timestamp_at_height(
   _cs: ClientState,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   height: Height,
 ) -> Option<Int> {
-  dict.get(consensus_states, height)
+  pairs.get_first(consensus_states, height)
     |> option.map(fn(cons_state) { cons_state.timestamp })
 }
 
@@ -113,13 +113,13 @@ pub fn is_expired(cs: ClientState, latest_timestamp: Time, now: Time) -> Bool {
 pub fn status(
   client_state: ClientState,
   now: Time,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
 ) -> Status {
   if !height.is_zero(client_state.frozen_height) {
     Frozen
   } else {
     let latest_height = get_latest_height(client_state)
-    let consensus_state = consensus_states |> dict.get(latest_height)
+    let consensus_state = pairs.get_first(consensus_states, latest_height)
     when consensus_state is {
       None -> Expired
       Some(cons_state) ->

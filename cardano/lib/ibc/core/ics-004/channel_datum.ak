@@ -1,6 +1,5 @@
-use aiken/dict
-use aiken/int
 use aiken/list
+use aiken/pairs
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -21,9 +20,9 @@ pub type ChannelDatumState {
   next_sequence_send: Int,
   next_sequence_recv: Int,
   next_sequence_ack: Int,
-  packet_commitment: List<(Int, ByteArray)>,
-  packet_receipt: List<(Int, ByteArray)>,
-  packet_acknowledgement: List<(Int, ByteArray)>,
+  packet_commitment: Pairs<Int, ByteArray>,
+  packet_receipt: Pairs<Int, ByteArray>,
+  packet_acknowledgement: Pairs<Int, ByteArray>,
 }
 
 pub fn validate_chan_open_init(
@@ -223,9 +222,7 @@ pub fn validate_recv_packet(
         )
       order.Unordered ->
         (
-          dict.from_list(input_datum.state.packet_receipt, int.compare)
-            |> dict.insert(packet.sequence, "", int.compare)
-            |> dict.to_list(),
+          [Pair(packet.sequence, ""), ..input_datum.state.packet_receipt],
           input_datum.state.next_sequence_recv,
         )
       _ -> fail
@@ -238,12 +235,10 @@ pub fn validate_recv_packet(
         ..input_datum.state,
         next_sequence_recv: expected_next_sequence_recv,
         packet_receipt: expected_packet_receipt,
-        packet_acknowledgement: dict.from_list(
-          input_datum.state.packet_acknowledgement,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, ack, int.compare)
-          |> dict.to_list(),
+        packet_acknowledgement: [
+          Pair(packet.sequence, ack),
+          ..input_datum.state.packet_acknowledgement
+        ],
       },
     }
 
@@ -262,12 +257,10 @@ pub fn validate_send_packet(
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_send: input_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.from_list(
-          input_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, commitment, int.compare)
-          |> dict.to_list(),
+        packet_commitment: [
+          Pair(packet.sequence, commitment),
+          ..input_datum.state.packet_commitment
+        ],
       },
     }
 
@@ -295,12 +288,10 @@ pub fn validate_timeout_packet(
           ..input_datum.state.channel,
           state: expected_channel_state,
         },
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -324,12 +315,10 @@ pub fn validate_acknowledge_packet(
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
         next_sequence_ack: expected_next_seq_ack,
       },
     }

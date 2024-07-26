@@ -1,7 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId,
@@ -50,7 +50,7 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
 
     // spent handler redeemer is CreateClient operator
     expect Some(spent_handler_redeemer) =
-      redeemers |> dict.get(Spend(handler_input.output_reference))
+      pairs.get_first(redeemers, Spend(handler_input.output_reference))
     expect handler_operator: HandlerOperator = spent_handler_redeemer
     expect handler_operator == HandlerCreateClient
 
@@ -90,10 +90,7 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
         client_output_datum.state.client_state,
         // posix time in cardano is millisecond while time of cosmos tendermint is nanosecond
         tx_valid_to * 1_000_000,
-        dict.from_list(
-          client_output_datum.state.consensus_states,
-          height.compare,
-        ),
+        client_output_datum.state.consensus_states,
       ) == Active
 
     True
@@ -148,10 +145,9 @@ test test_create_valid_client() {
         reference_script: None,
       },
     }
-  let redeemer: Data = HandlerCreateClient
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    [(Spend(mock_spent_output_reference), redeemer)]
-      |> dict.from_list(fn(_key1, _key2) { Greater })
+  let redeemer: Redeemer = HandlerCreateClient
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(mock_spent_output_reference), redeemer)]
 
   //========================arrange mint=======================
   let client_token_name =
@@ -188,9 +184,7 @@ test test_create_valid_client() {
     ClientDatum {
       state: ClientDatumState {
         client_state: new_client_state,
-        consensus_states: dict.new()
-          |> dict.insert(mock_latest_height, new_consensus_state, height.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(mock_latest_height, new_consensus_state)],
       },
       token: client_token,
     }

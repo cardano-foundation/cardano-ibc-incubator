@@ -1,49 +1,48 @@
-use aiken/dict.{Dict}
-use aiken/list
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 
 pub fn get_consensus_state(
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   height: Height,
 ) -> Option<ConsensusState> {
-  consensus_states |> dict.get(height)
+  pairs.get_first(consensus_states, height)
 }
 
 /// get_next_consensus_state() returns the lowest consensus state that is larger than the given height.
+/// consensus_states must be sorted in ascending order before
 pub fn get_next_consensus_state(
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   height: Height,
 ) -> Option<ConsensusState> {
-  // the list should be sorted by height ascending before
-  dict.to_list(consensus_states)
-    |> list.reduce(
-        None,
-        fn(acc, cur) {
-          if acc == None && height_mod.compare(cur.1st, height) == Greater {
-            Some(cur.2nd)
-          } else {
-            acc
-          }
-        },
-      )
+  pairs.foldl(
+    consensus_states,
+    None,
+    fn(key, val, acc) {
+      if acc == None && height_mod.compare(key, height) == Greater {
+        Some(val)
+      } else {
+        acc
+      }
+    },
+  )
 }
 
 /// get_prev_consensus_state() returns the highest consensus state that is lower than the given height.
+/// consensus_states must be sorted in ascending order before
 pub fn get_prev_consensus_state(
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   height: Height,
 ) -> Option<ConsensusState> {
-  // the list should be sorted by height ascending before
-  dict.to_list(consensus_states)
-    |> list.reduce(
-        None,
-        fn(acc, cur) {
-          if height_mod.compare(cur.1st, height) == Less {
-            Some(cur.2nd)
-          } else {
-            acc
-          }
-        },
-      )
+  pairs.foldr(
+    consensus_states,
+    None,
+    fn(key, val, acc) {
+      if acc == None && height_mod.compare(key, height) == Less {
+        Some(val)
+      } else {
+        acc
+      }
+    },
+  )
 }

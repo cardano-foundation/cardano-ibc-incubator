@@ -1,6 +1,4 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/int
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
@@ -127,7 +125,7 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"send_packet: client status is active"
 
@@ -143,7 +141,7 @@ validator(
     expect Some(latest_timestamp) =
       client_state_mod.get_timestamp_at_height(
         client_datum.state.client_state,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
         latest_height,
       )
     expect
@@ -370,9 +368,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -510,12 +506,10 @@ test succeed_send_packet() {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.from_list(
-          input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, commitment, int.compare)
-          |> dict.to_list(),
+        packet_commitment: [
+          Pair(packet.sequence, commitment),
+          ..input_channel_datum.state.packet_commitment
+        ],
       },
     }
 
@@ -532,27 +526,18 @@ test succeed_send_packet() {
   let validity_range = mock_data.validity_range
 
   //========================arrange redeemers=======================
-  let spend_channel_redeemer = SendPacket { packet }
+  let spend_channel_redeemer: Redeemer = SendPacket { packet }
 
   let module_redeemer: Redeemer = Operator(OtherModuleOperator)
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.send_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let send_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer),
+    ]
 
   //==========================arrange context=========================
   let context =

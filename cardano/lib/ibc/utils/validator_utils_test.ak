@@ -1,5 +1,4 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/list
 use aiken/transaction.{
@@ -481,7 +480,7 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
 //==============================extract_module_redeemer===============================
 fn setup_extract_module_redeemer() -> (
   List<Input>,
-  Dict<ScriptPurpose, Redeemer>,
+  Pairs<ScriptPurpose, Redeemer>,
   ByteArray,
   PolicyId,
   ByteArray,
@@ -529,14 +528,8 @@ fn setup_extract_module_redeemer() -> (
   let module_redeemer: Redeemer =
     Callback(OnChanOpenInit { channel_id: "channel-1" })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(out_ref),
-          module_redeemer,
-          validator_utils.compare_purpose,
-        )
-
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(out_ref), module_redeemer)]
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   (
@@ -600,7 +593,8 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
-  let redeemers = dict.new()
+  let redeemers =
+    []
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -625,13 +619,8 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
 
   expect [module_input] = inputs
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(module_input.output_reference),
-          invalid_module_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(module_input.output_reference), invalid_module_redeemer)]
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -742,7 +731,7 @@ test extract_token_unit_fail_if_unit_length_invalid() {
 //===================================validate_handler_redeemer==========================
 fn setup_validate_handler_redeemer() -> (
   List<Input>,
-  Dict<ScriptPurpose, Redeemer>,
+  Pairs<ScriptPurpose, Redeemer>,
   AuthToken,
   HandlerOperator,
   HandlerDatum,
@@ -780,13 +769,8 @@ fn setup_validate_handler_redeemer() -> (
 
   let handler_redeemer: Redeemer = CreateClient
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(out_ref),
-          handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(out_ref), handler_redeemer)]
 
   expect handler_redeemer: HandlerOperator = handler_redeemer
 
@@ -824,7 +808,8 @@ test validate_handler_redeemer_fail_redeemers_not_contain_handler_redeemer() {
   let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
-  let redeemers = dict.new()
+  let redeemers =
+    []
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -841,13 +826,8 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fai
   let invalid_handler_redeemer: Redeemer = Void
   expect [handler_input, ..] = inputs
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(handler_input.output_reference),
-          invalid_handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -865,13 +845,8 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() {
 
   expect [handler_input, ..] = inputs
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(handler_input.output_reference),
-          invalid_handler_redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
 
   validator_utils.validate_handler_redeemer(
     inputs,
@@ -952,22 +927,20 @@ fn setup_validate_referred_client() -> (
       [],
     )
   let mock_consensus_states =
-    dict.new()
-      |> dict.insert(
-          height.zero_height(),
-          ConsensusState {
-            timestamp: 1,
-            next_validators_hash: "mock_next_validators_hash",
-            root: merkle.new_merkle_root("mock_app_hash"),
-          },
-          height.compare,
-        )
+    [
+      Pair(height.zero_height(),
+      ConsensusState {
+        timestamp: 1,
+        next_validators_hash: "mock_next_validators_hash",
+        root: merkle.new_merkle_root("mock_app_hash"),
+      }),
+    ]
 
   let client_datum =
     ClientDatum {
       state: ClientDatumState {
         client_state: mock_client_state,
-        consensus_states: mock_consensus_states |> dict.to_list(),
+        consensus_states: mock_consensus_states,
       },
       token: client_token,
     }

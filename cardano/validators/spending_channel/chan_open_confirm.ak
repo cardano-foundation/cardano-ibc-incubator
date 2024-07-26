@@ -1,7 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -123,7 +123,7 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"chan_open_confirm: client status is active"
 
@@ -166,7 +166,7 @@ fn validate_chan_open_confirm_proof(
   channel_datum: ChannelDatum,
   proof: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let counterparty_hops =
@@ -185,7 +185,7 @@ fn validate_chan_open_confirm_proof(
     }
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let time_delay = connection.delay_period
@@ -205,8 +205,7 @@ fn validate_chan_open_confirm_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let channel_bz =
     channel_pb.marshal_for_channel(
@@ -423,9 +422,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -673,7 +670,8 @@ test succeed_chan_open_confirm() {
       ],
     }
 
-  let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
+  let spend_channel_redeemer: Redeemer =
+    ChanOpenConfirm { proof_ack, proof_height }
 
   let channel_id =
     chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
@@ -722,7 +720,7 @@ test succeed_chan_open_confirm() {
       Some(channel.convert_to_channel_proto(expected_channel)),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -734,28 +732,16 @@ test succeed_chan_open_confirm() {
       value: channel_bz,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.chan_open_confirm_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let chan_open_confirm_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.chan_open_confirm_policy_id),
+      chan_open_confirm_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
 
   //==========================arrange context=========================
   let context =

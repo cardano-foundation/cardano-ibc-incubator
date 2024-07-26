@@ -1,8 +1,8 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
 use aiken/interval.{Finite}
 use aiken/list
 use aiken/option
+use aiken/pairs
 use aiken/time.{PosixTime}
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, Redeemer, ScriptContext, ScriptPurpose,
@@ -98,7 +98,7 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> Option<PosixTime> {
 
 pub fn validate_handler_redeemer(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   expected_redeemer: HandlerOperator,
 ) -> Option<HandlerDatum> {
@@ -109,7 +109,9 @@ pub fn validate_handler_redeemer(
     )
   is {
     Some(handler_input) ->
-      when dict.get(redeemers, Spend(handler_input.output_reference)) is {
+      when
+        pairs.get_first(redeemers, Spend(handler_input.output_reference))
+      is {
         Some(spent_handler_redeemer) -> {
           expect handler_operator: HandlerOperator = spent_handler_redeemer
           if handler_operator == expected_redeemer {
@@ -129,7 +131,7 @@ pub fn validate_handler_redeemer(
 
 pub fn extract_module_redeemer(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
@@ -151,7 +153,7 @@ pub fn extract_module_redeemer(
     )
 
   expect Some(spent_module_redeemer) =
-    dict.get(redeemers, Spend(module_input.output_reference))
+    pairs.get_first(redeemers, Spend(module_input.output_reference))
   expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
 
   Some(ibc_module_redeemer)
@@ -308,7 +310,7 @@ pub fn compare_script_purpose(
 
 pub fn extract_channel(
   inputs: List<Input>,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_token: AuthToken,
 ) -> Option<(ChannelDatum, SpendChannelRedeemer, Output)> {
   when
@@ -321,7 +323,7 @@ pub fn extract_channel(
       expect channel_datum: ChannelDatum =
         get_inline_datum(channel_input.output)
 
-      dict.get(redeemers, Spend(channel_input.output_reference))
+      pairs.get_first(redeemers, Spend(channel_input.output_reference))
         |> option.map(
             fn(spend_channel_redeemer) {
               expect spend_channel_redeemer: SpendChannelRedeemer =

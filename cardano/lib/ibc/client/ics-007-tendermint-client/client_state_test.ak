@@ -1,4 +1,3 @@
-use aiken/dict.{Dict}
 use aiken/list
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -242,8 +241,7 @@ test test_get_timestamp_at_height() {
     }
   client_state.get_timestamp_at_height(
     mock_client_state,
-    dict.new()
-      |> dict.insert(mock_height, mock_consensus_state, height.compare),
+    [Pair(mock_height, mock_consensus_state)],
     mock_height,
   ) == Some(mock_timestamp)
 }
@@ -364,10 +362,10 @@ test test_is_expired() {
 
   test_cases
     |> list.all(
-         fn(case) {
-           client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          client_state.is_expired(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }
 
 // Tests the correctness of the new_client_state method.
@@ -389,7 +387,7 @@ test status() {
   let proof_specs =
     []
   let test_cases: List<
-    (ClientState, Time, Dict<Height, ConsensusState>, Status),
+    (ClientState, Time, Pairs<Height, ConsensusState>, Status),
   > =
     [
       // Frozen - Frozen height of the client state is non-zero
@@ -405,16 +403,14 @@ test status() {
           proof_specs,
         },
         10000000,
-        dict.new()
-          |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 0,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+        [
+          Pair(latest_height,
+          ConsensusState {
+            timestamp: 0,
+            next_validators_hash,
+            root: sample_root,
+          }),
+        ],
         Frozen,
       ),
       // Expired when consensus state is not found
@@ -430,7 +426,7 @@ test status() {
           proof_specs,
         },
         10000000,
-        dict.new(),
+        [],
         Expired,
       ),
       // Expired when consensus state time + trusting period <= now
@@ -446,16 +442,14 @@ test status() {
           proof_specs,
         },
         10000000,
-        dict.new()
-          |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 9999000,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+        [
+          Pair(latest_height,
+          ConsensusState {
+            timestamp: 9999000,
+            next_validators_hash,
+            root: sample_root,
+          }),
+        ],
         Expired,
       ),
       //Active consensus state time + trusting period > now
@@ -471,23 +465,21 @@ test status() {
           proof_specs,
         },
         10000000,
-        dict.new()
-          |> dict.insert(
-               latest_height,
-               ConsensusState {
-                 timestamp: 10000000,
-                 next_validators_hash,
-                 root: sample_root,
-               },
-               height.compare,
-             ),
+        [
+          Pair(latest_height,
+          ConsensusState {
+            timestamp: 10000000,
+            next_validators_hash,
+            root: sample_root,
+          }),
+        ],
         Active,
       ),
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           client_state.status(case.1st, case.2nd, case.3rd) == case.4th
-         },
-       )
+        fn(case) {
+          client_state.status(case.1st, case.2nd, case.3rd) == case.4th
+        },
+      )
 }

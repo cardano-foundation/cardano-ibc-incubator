@@ -1,5 +1,3 @@
-use aiken/dict
-use aiken/int
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -61,12 +59,10 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.from_list(
-          input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, commitment, int.compare)
-          |> dict.to_list(),
+        packet_commitment: [
+          Pair(packet.sequence, commitment),
+          ..input_channel_datum.state.packet_commitment
+        ],
       },
     }
 

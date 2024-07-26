@@ -1,4 +1,3 @@
-use aiken/dict.{Dict}
 use aiken/list
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
@@ -19,12 +18,13 @@ fn create_fake_consensus_state(timestamp: Int) -> ConsensusState {
 
 fn make_fake_consensus_states_store(
   revision_heights: List<Int>,
-) -> Dict<Height, ConsensusState> {
+) -> Pairs<Height, ConsensusState> {
   list.indexed_map(
     revision_heights,
-    fn(index, cur) { (create_height(cur), create_fake_consensus_state(index)) },
+    fn(index, cur) {
+      Pair(create_height(cur), create_fake_consensus_state(index))
+    },
   )
-    |> dict.from_list(height_mod.compare)
 }
 
 //===========================get_consensus_state===============================

@@ -1,4 +1,3 @@
-use aiken/dict
 use aiken/list
 use aiken/transaction.{Mint, ScriptContext}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
@@ -173,9 +172,7 @@ fn setup() -> MockData {
   let client_datum_state =
     ClientDatumState {
       client_state,
-      consensus_states: dict.new()
-        |> dict.insert(init_height, cons_state, height_mod.compare)
-        |> dict.to_list(),
+      consensus_states: [Pair(init_height, cons_state)],
     }
 
   //========================Connection==============================
@@ -214,9 +211,10 @@ fn insert_proof_cons_state(
   proof_cons_state: ConsensusState,
 ) -> ClientDatumState {
   let updated_cons_states =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.insert(proof_height, proof_cons_state, height_mod.compare)
-      |> dict.to_list()
+    [
+      Pair(proof_height, proof_cons_state),
+      ..client_datum_state.consensus_states
+    ]
 
   ClientDatumState {
     ..client_datum_state,

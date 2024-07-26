@@ -1,4 +1,3 @@
-use aiken/dict
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
@@ -79,7 +78,7 @@ validator {
           client_state_mod.status(
             datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
           ) == client_status_mod.Active
         trace @"spend_client: client status is Active"
 
@@ -92,7 +91,7 @@ validator {
           update_mod.verify_client_message(
             datum.state.client_state,
             tx_time,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
             msg,
           )
         trace @"spend_client: verify client msg succeeded"
@@ -100,7 +99,7 @@ validator {
         let found_misbehaviour =
           misbehaviour_handle_mod.check_for_misbehaviour(
             msg,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
           )
 
         if found_misbehaviour {
@@ -363,16 +362,14 @@ test update_client_misbehaviour_conflict_header() {
   let conflicted_height = header_mod.get_height(header)
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
-      |> dict.insert(conflicted_height, conflicted_consensus_state, height.compare)
+    [
+      Pair(trusted_height, consensus_state),
+      Pair(conflicted_height, conflicted_consensus_state),
+    ]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -606,16 +603,14 @@ test update_client_misbehaviour_monotonic_time_violation() {
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
-      |> dict.insert(prev_height, prev_consensus_state, height.compare)
+    [
+      Pair(trusted_height, consensus_state),
+      Pair(prev_height, prev_consensus_state),
+    ]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -839,15 +834,11 @@ test update_client_verify_adjacent_succeed() {
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
+    [Pair(trusted_height, consensus_state)]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -869,13 +860,10 @@ test update_client_verify_adjacent_succeed() {
           ..client_datum.state.client_state,
           latest_height: header_mod.get_height(header),
         },
-        consensus_states: dict.new()
-          |> dict.insert(
-              header_mod.get_height(header),
-              header_mod.consensus_state(header),
-              height.compare,
-            )
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(header_mod.get_height(header),
+          header_mod.consensus_state(header)),
+        ],
       },
     }
 
@@ -1077,15 +1065,11 @@ test update_client_verify_non_adjacent_succeed() {
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
+    [Pair(trusted_height, consensus_state)]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -1107,13 +1091,10 @@ test update_client_verify_non_adjacent_succeed() {
           ..client_datum.state.client_state,
           latest_height: header_mod.get_height(header),
         },
-        consensus_states: dict.new()
-          |> dict.insert(
-              header_mod.get_height(header),
-              header_mod.consensus_state(header),
-              height.compare,
-            )
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(header_mod.get_height(header),
+          header_mod.consensus_state(header)),
+        ],
       },
     }
 

@@ -149,7 +149,7 @@ test fail_if_packet_commitment_is_not_empty() fail {
       ..chan_datum,
       state: ChannelDatumState {
         ..chan_datum.state,
-        packet_commitment: [(1, "")],
+        packet_commitment: [Pair(1, "")],
       },
     }
 
@@ -162,7 +162,7 @@ test fail_if_packet_receipt_is_not_empty() fail {
   let chan_datum =
     ChannelDatum {
       ..chan_datum,
-      state: ChannelDatumState { ..chan_datum.state, packet_receipt: [(1, "")] },
+      state: ChannelDatumState { ..chan_datum.state, packet_receipt: [Pair(1, "")] },
     }
 
   channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)
@@ -176,7 +176,7 @@ test fail_if_packet_acknowledgement_is_not_empty() fail {
       ..chan_datum,
       state: ChannelDatumState {
         ..chan_datum.state,
-        packet_acknowledgement: [(1, "")],
+        packet_acknowledgement: [Pair(1, "")],
       },
     }
 

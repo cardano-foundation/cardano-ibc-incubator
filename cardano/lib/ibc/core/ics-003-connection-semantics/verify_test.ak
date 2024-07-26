@@ -1,4 +1,3 @@
-use aiken/dict
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -210,9 +209,7 @@ test succeed_verify_channel_state() {
   let client_datum_state =
     ClientDatumState {
       client_state,
-      consensus_states: dict.new()
-        |> dict.insert(proof_height, cons_state, height_mod.compare)
-        |> dict.to_list(),
+      consensus_states: [Pair(proof_height, cons_state)]
     }
 
   verify_mod.verify_channel_state(
