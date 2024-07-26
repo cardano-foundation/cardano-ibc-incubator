@@ -101,7 +101,7 @@ func (s *DBService) FindUtxoByPolicyAndTokenNameAndState(policyId string, tokenN
 		}
 	}
 	if len(proofs) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("utxo not found")
 	}
 	return &proofs[0], nil
 }
