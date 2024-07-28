@@ -4,3 +4,14 @@ export const THEME_MODE = {
 };
 
 export const defaultChainName = 'osmosis';
+
+export const routes = [
+  {
+    name: 'Swap',
+    path: '/swap',
+  },
+  {
+    name: 'Transfer',
+    path: '/transfer',
+  },
+];
