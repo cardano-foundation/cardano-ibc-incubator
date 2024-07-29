@@ -1,13 +1,26 @@
-import { Button, Menu, MenuButton, MenuItem, MenuList } from '@chakra-ui/react';
+import {
+  Button,
+  Menu,
+  MenuButton,
+  MenuItem,
+  MenuList,
+  Spacer,
+} from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import Image from 'next/image';
 import { COLOR } from '@/styles/color';
 import PinkPlusIcon from '@/assets/icons/pink_plus.svg';
 import BluePlusIcon from '@/assets/icons/blue_plus.svg';
+import LogoutIcon from '@/assets/icons/Logout.svg';
 import { UseCosmosWallet } from './UseCosmosWallet';
 
 export const ConnectWalletDropdown = () => {
-  const { connect: connectCosmosWalet, username } = UseCosmosWallet();
+  const {
+    connect: connectCosmosWalet,
+    wallet,
+    status,
+    disconnect,
+  } = UseCosmosWallet();
 
   return (
     <Menu>
@@ -54,10 +67,30 @@ export const ConnectWalletDropdown = () => {
           gap="8px"
           color={COLOR.neutral_1}
           background={COLOR.neutral_6}
-          onClick={connectCosmosWalet}
+          onClick={status === 'Connected' ? () => {} : connectCosmosWalet}
         >
-          <Image src={PinkPlusIcon} alt="Cosmos Wallet" />
-          <span>{username || 'Cosmos Wallet'}</span>
+          {status !== 'Connected' ? (
+            <>
+              <Image src={PinkPlusIcon} alt="Cosmos Wallet" />
+              <span>Cosmos Wallet</span>
+            </>
+          ) : (
+            <>
+              <Image
+                width={24}
+                height={24}
+                src={wallet?.logo?.toString() || ''}
+                alt="Cosmos Wallet"
+              />
+              <span>{wallet?.name}</span>
+              <Spacer />
+              <Image
+                src={LogoutIcon}
+                alt="Cosmos Wallet"
+                onClick={disconnect}
+              />
+            </>
+          )}
         </MenuItem>
       </MenuList>
     </Menu>
