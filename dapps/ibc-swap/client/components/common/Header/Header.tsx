@@ -1,22 +1,13 @@
-import { COLOR } from '@/styles/color';
-import { Box, Center, Container, Flex, Spacer } from '@chakra-ui/react';
-import CardanoLogo from 'assets/icons/cardano-logo-blue 1.svg';
+import { Box, Center, Flex, Spacer } from '@chakra-ui/react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import CardanoLogo from '@/assets/icons/cardano-logo-blue 1.svg';
+import { COLOR } from '@/styles/color';
+import { routes } from '@/constants';
 
 import styles from './Header.module.css';
-
-const routes = [
-  {
-    name: 'Swap',
-    path: '/swap',
-  },
-  {
-    name: 'Transfer',
-    path: '/transfer',
-  },
-];
+import { ConnectWalletDropdown } from './ConnectWalletDropdown';
 
 export const Header = () => {
   const isActive = (path: String) => {
@@ -47,7 +38,9 @@ export const Header = () => {
         </Box>
       </Flex>
       <Spacer />
-      <Box className="header-connect-wallet">connect wallet</Box>
+      <Box className="header-connect-wallet">
+        <ConnectWalletDropdown />
+      </Box>
     </Box>
   );
 };
