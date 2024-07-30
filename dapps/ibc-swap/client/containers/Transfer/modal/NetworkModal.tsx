@@ -1,8 +1,6 @@
 import {
   Box,
   Button,
-  List,
-  ListItem,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -10,13 +8,12 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
-  Text,
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
-import { NetworkItem } from '@/components/NetworkItem/NetworkItem';
-import { NetworkBox, NetworkBoxHeader } from '../index.styled';
 import { NetworkList } from '@/components/NetworkList/NetworkList';
+
+import { NetworkBox, NetworkBoxHeader } from '../index.styled';
 
 const NetworkListData = [
   {

@@ -1,8 +1,8 @@
-import { Heading } from '@chakra-ui/react';
 import React from 'react';
+import SwapContainer from '@/containers/Swap';
 
 const SwapPage = () => {
-  return <Heading>Swap Page</Heading>;
+  return <SwapContainer />;
 };
 
 export default SwapPage;

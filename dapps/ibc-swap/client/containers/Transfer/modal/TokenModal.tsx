@@ -1,7 +1,6 @@
 import {
   Box,
   Button,
-  Divider,
   List,
   ListItem,
   Modal,
@@ -11,12 +10,12 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
-  Text,
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
-import { TokenBox } from '../index.styled';
 import { TransferTokenItem } from '@/components/TransferTokenItem/TransferTokenItem';
+
+import { TokenBox } from '../index.styled';
 
 const TokenListData = [
   {

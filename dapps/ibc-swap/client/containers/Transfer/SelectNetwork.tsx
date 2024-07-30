@@ -1,9 +1,10 @@
-import { Box, Text } from '@chakra-ui/react';
+import { Text } from '@chakra-ui/react';
 import React from 'react';
 import { IoChevronDown } from 'react-icons/io5';
 import Image from 'next/image';
-import { NetworkSection, SelectBox, SwitchNetwork } from './index.styled';
 import SwitchIcon from '@/assets/icons/transfer.svg';
+
+import { NetworkSection, SelectBox, SwitchNetwork } from './index.styled';
 
 export type SelectNetworkProps = {
   onOpenNetworkModal: () => void;

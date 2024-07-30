@@ -1,6 +1,6 @@
 import { Box, Image, Text } from '@chakra-ui/react';
-import { CustomTokenItemName, CustomTokenItemWrapper } from './index.styled';
 import { COLOR } from '@/styles/color';
+import { CustomTokenItemName, CustomTokenItemWrapper } from './index.styled';
 
 export type TokenItemProps = {
   tokenName: string;

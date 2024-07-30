@@ -1,16 +1,19 @@
-import { Heading, Input, Text, useDisclosure } from '@chakra-ui/react';
+import { Heading, Text, useDisclosure } from '@chakra-ui/react';
 import React from 'react';
+
+import { COLOR } from '@/styles/color';
+import CustomInput from '@/components/CustomInput';
+
+import SelectNetwork from './SelectNetwork';
+import SelectToken from './SelectToken';
+import { NetworkModal } from './modal/NetworkModal';
+import { TokenModal } from './modal/TokenModal';
+
 import {
   WrapContainer,
   TransferContainer,
-  AddressInput,
   TransferButton,
 } from './index.styled';
-import SelectNetwork from './SelectNetwork';
-import SelectToken from './SelectToken';
-import { COLOR } from '@/styles/color';
-import { NetworkModal } from './modal/NetworkModal';
-import { TokenModal } from './modal/TokenModal';
 
 const Transfer = () => {
   const {
@@ -34,27 +37,10 @@ const Transfer = () => {
           </Heading>
           <SelectNetwork onOpenNetworkModal={onOpenNetworkModal} />
           <SelectToken onOpenTokenModal={onOpenTokenModal} />
-          <AddressInput>
-            <Text
-              color={COLOR.neutral_3}
-              fontSize={12}
-              fontWeight={400}
-              lineHeight="18px"
-            >
-              Destination address
-            </Text>
-            <Input
-              variant="unstyled"
-              placeholder="Enter destination address here..."
-              color={COLOR.neutral_1}
-              fontSize={16}
-              fontWeight={400}
-              lineHeight="22px"
-              _placeholder={{
-                color: COLOR.neutral_2,
-              }}
-            />
-          </AddressInput>
+          <CustomInput
+            title="Destination address"
+            placeholder="Enter destination address here..."
+          />
           <TransferButton>
             <Text
               fontSize={18}

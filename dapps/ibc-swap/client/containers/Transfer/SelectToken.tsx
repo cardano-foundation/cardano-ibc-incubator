@@ -1,10 +1,10 @@
 import React from 'react';
-
 import { Box } from '@interchain-ui/react';
 import { Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
-import { SelectTokenBox, TokenSection } from './index.styled';
 import { COLOR } from '@/styles/color';
+
+import { SelectTokenBox, TokenSection } from './index.styled';
 
 type SelectTokenProps = {
   onOpenTokenModal: () => void;
