@@ -2,11 +2,16 @@ package services
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/cardano/relayer/v1/package/dbservice"
 	mithrilservice "github.com/cardano/relayer/v1/package/mithril"
+	"github.com/cardano/relayer/v1/package/services/helpers"
 	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/stretchr/testify/require"
 	"net/http"
+	"os"
 
 	"github.com/h2non/gock"
 
@@ -120,5 +125,157 @@ func TestQueryIBCHeader(t *testing.T) {
 				require.NotEmpty(t, response)
 			}
 		})
+	}
+}
+
+func TestGetClientDatum(t *testing.T) {
+	err := os.Chdir("../../")
+	require.Nil(t, err)
+	defer os.Chdir("./package/services")
+	chainHandler, err := helpers.GetChainHandler()
+	require.NoError(t, err)
+	policyIdDecodeString, err := hex.DecodeString(chainHandler.HandlerAuthToken.PolicyID)
+	require.NoError(t, err)
+
+	datumDecodeString, err := hex.DecodeString("d8799fd8799f00000080ffd8799f581c8bc24e12ec136dbff5ccb05380fdaae66089182bde45bfd22be0a67b4768616e646c6572ffff")
+	testCase := []struct {
+		name            string
+		clientId        string
+		firstQueryRows  *sqlmock.Rows
+		secondQueryRows *sqlmock.Rows
+		firstQueryErr   error
+		secondQueryErr  error
+		expectedErr     error
+	}{
+		{
+			name:            "fail convert clientId",
+			clientId:        "ibc_client-id",
+			firstQueryRows:  sqlmock.NewRows([]string{}),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			expectedErr:     fmt.Errorf("invalid syntax"),
+		},
+		{
+			name:            "fail query ClientOrAuthHandlerUTxOs",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{}),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			firstQueryErr:   fmt.Errorf("query error"),
+			expectedErr:     fmt.Errorf("query error"),
+		},
+		{
+			name:            "query ClientOrAuthHandlerUTxOs dose not return any value",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{}),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			expectedErr:     fmt.Errorf("no utxos found for policyId"),
+		},
+		{
+			name:            "query handlerUtxos's datum empty",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", nil, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			expectedErr:     fmt.Errorf("datum is nil"),
+		},
+		{
+			name:            "decode handler datum fail",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\x", policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			expectedErr:     fmt.Errorf("cbor: invalid additional"),
+		},
+		{
+			name:            "fail query FindUtxosByPolicyIdAndPrefixTokenName",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", datumDecodeString, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			secondQueryErr:  fmt.Errorf("query error"),
+			expectedErr:     fmt.Errorf("query error"),
+		},
+		{
+			name:            "query FindUtxosByPolicyIdAndPrefixTokenName dose not return any value",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", datumDecodeString, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{}),
+			expectedErr:     fmt.Errorf("no utxos found for policyId"),
+		},
+		{
+			name:            "query clientUtxos's datum empty",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", datumDecodeString, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", nil, policyIdDecodeString, "assets_name", 1, 1),
+			expectedErr:     fmt.Errorf("datum is nil"),
+		},
+		{
+			name:            "decode client datum fail",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", datumDecodeString, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\x", policyIdDecodeString, "assets_name", 1, 1),
+			expectedErr:     fmt.Errorf("EOF"),
+		},
+		{
+			name:            "success",
+			clientId:        "ibc_client-1",
+			firstQueryRows:  sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", datumDecodeString, policyIdDecodeString, "assets_name", 1, 1),
+			secondQueryRows: sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799f4973696465636861696ed8799f0103ff1b0005795974ab80001b0006722feb7b00001b0000008bb2c97000d8799f0000ffd8799f001a00054016ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffffffb818d8799f001a00052bdaffd8799f1b17e5b06d783201ce58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582039095cb1a45a8c10c8c9808402a690bd9e19934739540d2f3266ffa132ed160dffffd8799f001a00052c99ffd8799f1b17e5b09c92a65f1758201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820697de8555cab4cd5a78ef8c23baea3e3054c9c06a506ea6deeb0d8123447c287ffffd8799f001a00052dd8ffd8799f1b17e5b0ea71b2904f58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820b589ddf3182e5f4bf3c98a5f5002745c127ba5640c844c9ccff53c599286f56bffffd8799f001a00052ed7ffd8799f1b17e5b1296f948c7058201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820c18d6f820883518e675d5135e19a02a3168d37757baa26e55c5fe0d5ef1d9c4effffd8799f001a00053031ffd8799f1b17e5b17db2245fc858201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582085dcbf989a764762d889165ed061abc017ff518d993714236a974ade659a0cbdffffd8799f001a000530f3ffd8799f1b17e5b1aed84a851858201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58209db53eaadc8eb8b0981568b02b110c863dc06074e74c92aa5290c3632df8b490ffffd8799f001a000531b9ffd8799f1b17e5b1df41515ebd58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582089b5325eac7a266a200f2735f7e767d4844eba770453ab53894512ae81ef05c6ffffd8799f001a0005332cffd8799f1b17e5b239f12d1f0758201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820c2d185687e6e3b40a9d8123a524dd461397cf642270b22097f6e4c7bb0dabb62ffffd8799f001a000533aaffd8799f1b17e5b2590e0b07b458201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820778de6ce2e247597e7e742f92a1dbcb6ffc1f5217c7b07fe99580a56cbc2d860ffffd8799f001a000533d0ffd8799f1b17e5b2628ae799a158201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820036e1cc246b2a7baebb36a33fb6409b2bdf4babbcd692dc57fe2808f31b1b928ffffd8799f001a00053468ffd8799f1b17e5b288b783cacd58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58203baffd27bd267acd1f6d366b47b734d7504e86ffd909f29f826ed95439dc2521ffffd8799f001a000535eeffd8799f1b17e5b2e7e13f0ca358201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58205c123613e400f17c8609a89bbe4548e39f755ddd0e3621f3a510f6b2e9b1b304ffffd8799f001a0005369cffd8799f1b17e5b3127b8eb88158201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820cde97211bdd53ce67b179ddfbfa89be6b9d3aa4dd725c480e95465a6e5cce07dffffd8799f001a00053732ffd8799f1b17e5b33756e889d958201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582061e3e2ba215aa1eb3ca903632ce1743a222a007822d31fc3552a5d411140a36dffffd8799f001a000537ccffd8799f1b17e5b35ccf30cc7e58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58201c42f44e4638996b45307db8fd8cec0c6e3d4aad4a433ad3db968c11b77baf89ffffd8799f001a00053930ffd8799f1b17e5b3b432dddc8c58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820a4bcd1c51ff36aa94c0a9073ea90b901eefd49c23e98438ed99cfa71fece682bffffd8799f001a000539e8ffd8799f1b17e5b3e1c22fb66058201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820f240e7efb3127201802e1232a845fbeee27fe05a323a4e659a9f2f5faaa0b95fffffd8799f001a00053b23ffd8799f1b17e5b42f19e91bac58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820352cb6b89f71c20eac74eae16e6f4234c5c8eaed1dc9150482ed97902049df41ffffd8799f001a00053bd2ffd8799f1b17e5b45a4864b30558201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58209a481f5153ecc266662989dbf14fa18c61dc42dc78b09518b1c8a2a49b46c911ffffd8799f001a00053ca3ffd8799f1b17e5b48d85b9115558201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f5820489c9d659c5a4c5b73d721e47cc3f424d34812e16567c25830879ffb70ff27c2ffffd8799f001a00053de3ffd8799f1b17e5b4dc45a34bb558201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f58202d2ce832e17ff0494969c0aeb1d64bf52eac6fdb1213b6b6325c8adafffe22f7ffffd8799f001a00053f1affd8799f1b17e5b5285090d03b58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582061d02f3bf942447fb77a88e40a7e4d54d39d51c2908451b8b1cfcaa9df141a36ffffd8799f001a00053ffaffd8799f1b17e5b55efc1a6c1b58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582016657d75e8348b19a4f3c6d9c926b952ed830fea0aa6cff29aee019f806b591dffffd8799f001a00054016ffd8799f1b17e5b565f64ff8ba58201348fa29c20bc10dd1597b91337b65b75772abcdc5306d53e593ae10421fb4b8d8799f582039598d84b377e7db2a471752b9dae5ff9b6451794fb2a2ec2cb3fd1b56a0e0aeffffffd8799f581c13cd4d50ea648ba4572068250c6fa9a24c7284dfdbef6fa066541c6a581a14807575bdd0c3aa43547c44f70b3c0552b5cb66f2c9db643136ffff", policyIdDecodeString, "assets_name", 1, 1),
+		},
+	}
+
+	for _, tc := range testCase {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dbservice, mockDB, mockSql := dbservice.SetUpMockDb(t)
+			defer mockDB.Close()
+			gateway := &Gateway{
+				DBService: dbservice,
+			}
+			mockSql.ExpectQuery(`SELECT 
+        tx_out.address AS address, 
+        generating_tx.hash AS tx_hash, 
+        generating_tx.id AS tx_id, 
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+       	datum.bytes AS datum,
+        ma.policy  AS assets_policy, 
+        ma.name AS assets_name,
+        generating_block.block_no AS block_no,
+        tx_out.index AS index
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id`).
+				WillReturnError(tc.firstQueryErr).
+				WillReturnRows(tc.firstQueryRows)
+
+			mockSql.ExpectQuery(`SELECT 
+        tx_out.address AS address, 
+        cast\(generating_tx.hash as TEXT\) AS tx_hash, 
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index, 
+        datum.hash AS datum_hash, 
+        CAST\(datum.bytes as TEXT\)  AS datum,
+        ma.policy AS assets_policy, 
+        CAST\(ma.name AS TEXT\) AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id 
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id`).
+				WillReturnError(tc.secondQueryErr).
+				WillReturnRows(tc.secondQueryRows)
+
+			clientDatum, spendClientUTXO, err := gateway.GetClientDatum(tc.clientId, 123)
+			if tc.expectedErr != nil {
+				require.ErrorContains(t, err, tc.expectedErr.Error())
+			} else {
+				require.NotEmpty(t, clientDatum)
+				require.NotEmpty(t, spendClientUTXO)
+			}
+		})
+
 	}
 }

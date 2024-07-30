@@ -543,7 +543,6 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 	chainHandler, err := helpers.GetChainHandler()
 	if err != nil {
 		return nil, nil, err
-
 	}
 	clientTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
 		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
@@ -582,6 +581,9 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 		clientStateTokenName)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(clientUtxos) == 0 {
+		return nil, nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", chainHandler.Validators.MintClient.ScriptHash, clientTokenName)
 	}
 	if clientUtxos[0].Datum == nil {
 		return nil, nil, fmt.Errorf("datum is nil")
