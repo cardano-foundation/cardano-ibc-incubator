@@ -11,6 +11,7 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
     address,
     message,
     wallet,
+    disconnect,
     chain: chainInfo,
   } = useChain(providedChainName || defaultChainName);
 
@@ -22,6 +23,7 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
     address,
     message,
     wallet,
+    disconnect,
     chainInfo,
   };
 };

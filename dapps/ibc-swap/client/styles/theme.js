@@ -9,6 +9,23 @@ export const theme = extendTheme({
         backgroundColor: COLOR.background,
         color: COLOR.neutral_1,
       },
+
+      '::-webkit-scrollbar': {
+        width: '4px',
+      },
+      '::-webkit-scrollbar-track': {
+        background: COLOR.neutral_6,
+      },
+
+      '::-webkit-scrollbar-thumb': {
+        background: COLOR.neutral_5,
+        borderRadius: '2px',
+      },
+
+      /* Handle on hover */
+      '::-webkit-scrollbar-thumb:hover': {
+        background: COLOR.neutral_4,
+      },
     },
   },
 });
