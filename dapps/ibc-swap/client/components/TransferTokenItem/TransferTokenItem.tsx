@@ -1,6 +1,6 @@
 import { Box, Image, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
-import { CustomTokenItemName, CustomTokenItemWrapper } from './index.styled';
+import { StyledTokenItemName, StyledTokenItemWrapper } from './index.style';
 
 export type TokenItemProps = {
   tokenName: string;
@@ -14,13 +14,13 @@ export const TransferTokenItem = ({
   tokenSymbol,
 }: TokenItemProps) => {
   return (
-    <CustomTokenItemWrapper>
+    <StyledTokenItemWrapper>
       <Box display="flex" gap="16px" alignItems="center">
         <Box borderRadius="100%">
           <Image src={tokenLogo} alt={tokenName} width={30} height={30} />
         </Box>
         <Box display="block">
-          <CustomTokenItemName>{tokenName}</CustomTokenItemName>
+          <StyledTokenItemName>{tokenName}</StyledTokenItemName>
           <Text
             fontSize={12}
             fontWeight={400}
@@ -41,6 +41,6 @@ export const TransferTokenItem = ({
           0.00
         </Text>
       </Box>
-    </CustomTokenItemWrapper>
+    </StyledTokenItemWrapper>
   );
 };

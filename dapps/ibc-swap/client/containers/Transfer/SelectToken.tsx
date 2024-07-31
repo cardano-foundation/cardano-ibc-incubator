@@ -3,8 +3,7 @@ import { Box } from '@interchain-ui/react';
 import { Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
-
-import { SelectTokenBox, TokenSection } from './index.styled';
+import { StyledSelectTokenBox, StyledTokenSection } from './index.style';
 
 type SelectTokenProps = {
   onOpenTokenModal: () => void;
@@ -12,7 +11,7 @@ type SelectTokenProps = {
 
 const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
   return (
-    <TokenSection>
+    <StyledTokenSection>
       <Box display="flex" justifyContent="space-between">
         <Text fontSize={14} lineHeight="20px" fontWeight={400}>
           Asset
@@ -28,12 +27,12 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
         alignItems="center"
         pt="16px"
       >
-        <SelectTokenBox onClick={onOpenTokenModal}>
+        <StyledSelectTokenBox onClick={onOpenTokenModal}>
           <Text fontSize={18} lineHeight="24px" fontWeight={700}>
             Select token
           </Text>
           <IoChevronDown />
-        </SelectTokenBox>
+        </StyledSelectTokenBox>
         <Input
           textAlign="right"
           width="50%"
@@ -48,7 +47,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           }}
         />
       </Box>
-    </TokenSection>
+    </StyledTokenSection>
   );
 };
 
