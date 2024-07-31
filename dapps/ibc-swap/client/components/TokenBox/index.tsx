@@ -3,7 +3,11 @@ import { Box, Button, Input, Text } from '@chakra-ui/react';
 import { FaChevronDown } from 'react-icons/fa';
 import StyledTokenBox from './index.style';
 
-const TokenBox = () => {
+type TokenBoxProps = {
+  handleClick: () => void;
+};
+
+const TokenBox = ({ handleClick }: TokenBoxProps) => {
   return (
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
@@ -19,6 +23,7 @@ const TokenBox = () => {
             border="none"
             padding="0"
             fontWeight="700"
+            onClick={handleClick}
           >
             Select Network
           </Button>

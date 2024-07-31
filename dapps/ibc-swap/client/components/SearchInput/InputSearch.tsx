@@ -3,13 +3,17 @@ import { IoSearchOutline } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
 import { StyledSearchInput, StyledSearchInputGroup } from './index.style';
 
-export const SearchInput = () => {
+type SearchInputProps = {
+  placeholder: string;
+};
+
+export const SearchInput = ({ placeholder }: SearchInputProps) => {
   return (
     <StyledSearchInputGroup>
       <InputLeftElement pointerEvents="none">
         <IoSearchOutline color={COLOR.neutral_1} />
       </InputLeftElement>
-      <StyledSearchInput placeholder="Search network" />
+      <StyledSearchInput placeholder={placeholder} />
     </StyledSearchInputGroup>
   );
 };

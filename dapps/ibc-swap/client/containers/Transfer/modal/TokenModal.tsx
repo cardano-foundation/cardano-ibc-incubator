@@ -83,7 +83,7 @@ const TokenBoxComponent = () => {
         pb="16px"
         borderBottomColor={COLOR.neutral_5}
       >
-        <SearchInput />
+        <SearchInput placeholder="Search Token" />
       </Box>
       <List maxH="416px" overflowY="scroll">
         <ListItem mb={4}>

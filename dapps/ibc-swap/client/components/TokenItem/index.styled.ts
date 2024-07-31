@@ -2,7 +2,7 @@ import { COLOR } from '@/styles/color';
 import { Box, Text } from '@chakra-ui/react';
 import styled from '@emotion/styled';
 
-const StyledNetworkItemWrapper = styled(Box)`
+const StyledCustomTokenItemWrapper = styled(Box)`
   display: flex;
   gap: 16px;
   align-content: center;
@@ -14,12 +14,13 @@ const StyledNetworkItemWrapper = styled(Box)`
   opacity: 0px;
   margin: 8px 0px;
   background-color: ${(props) => props.isActive && COLOR.neutral_5};
+
   :hover {
     background-color: ${COLOR.neutral_5};
   }
 `;
 
-const StyledNetworkItemName = styled(Text)`
+const StyledCustomTokenItemName = styled(Text)`
   align-content: center;
   font-size: 16px;
   font-weight: 600;
@@ -27,4 +28,4 @@ const StyledNetworkItemName = styled(Text)`
   display: block;
 `;
 
-export { StyledNetworkItemName, StyledNetworkItemWrapper };
+export { StyledCustomTokenItemWrapper, StyledCustomTokenItemName };

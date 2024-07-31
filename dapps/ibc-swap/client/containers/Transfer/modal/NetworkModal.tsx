@@ -78,7 +78,7 @@ const NetworkBoxComponent = () => {
     <StyledNetworkBox>
       <StyledNetworkBoxHeader>From Cosmos Hub</StyledNetworkBoxHeader>
       <Box p="16px" borderBottomWidth="1px" borderBottomColor={COLOR.neutral_5}>
-        <SearchInput />
+        <SearchInput placeholder="Search network" />
       </Box>
       <Box maxH="368px" overflowY="scroll">
         <NetworkList networkList={NetworkListData} />

@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { Box, Button, Checkbox, Heading, Image } from '@chakra-ui/react';
+import {
+  Box,
+  Button,
+  Checkbox,
+  Heading,
+  Image,
+  useDisclosure,
+} from '@chakra-ui/react';
 
 import SwapIcon from '@/assets/icons/swap.svg';
 import TokenBox from '@/components/TokenBox';
@@ -9,10 +16,16 @@ import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 
 import StyledSwap from './index.style';
+import SelectNetworkModal from './SelectNetworkModal';
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
     useState<boolean>(false);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const openModalSelectNetwork = () => {
+    onOpen();
+  };
 
   return (
     <StyledSwap>
@@ -20,11 +33,12 @@ const SwapContainer = () => {
         <Heading className="title">Swap</Heading>
         <SettingSlippage />
       </Box>
-      <TokenBox />
+      <SelectNetworkModal isOpen={isOpen} onClose={onClose} />
+      <TokenBox handleClick={openModalSelectNetwork} />
       <Box>
         <Image className="swap-icon" src={SwapIcon.src} alt="" />
       </Box>
-      <TokenBox />
+      <TokenBox handleClick={openModalSelectNetwork} />
       <TransactionFee />
       <Checkbox
         isChecked={isCheckedAnotherWallet}
