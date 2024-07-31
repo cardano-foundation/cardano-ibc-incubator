@@ -15,7 +15,7 @@ import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
 import { TransferTokenItem } from '@/components/TransferTokenItem/TransferTokenItem';
 
-import { TokenBox } from '../index.styled';
+import { StyledTokenBox } from '../index.style';
 
 const TokenListData = [
   {
@@ -77,7 +77,7 @@ const TokenListData = [
 
 const TokenBoxComponent = () => {
   return (
-    <TokenBox>
+    <StyledTokenBox>
       <Box
         borderBottomWidth="1px"
         pb="16px"
@@ -97,7 +97,7 @@ const TokenBoxComponent = () => {
           ))}
         </ListItem>
       </List>
-    </TokenBox>
+    </StyledTokenBox>
   );
 };
 

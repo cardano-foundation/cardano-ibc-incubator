@@ -1,5 +1,5 @@
 import { Heading, Text, useDisclosure } from '@chakra-ui/react';
-import React from 'react';
+import React, { useState } from 'react';
 
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
@@ -8,14 +8,17 @@ import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
 import { TokenModal } from './modal/TokenModal';
+import { TransferResult } from './TransferResult';
 
 import {
-  WrapContainer,
-  TransferContainer,
-  TransferButton,
-} from './index.styled';
+  StyledTransferButton,
+  StyledTransferContainer,
+  StyledWrapContainer,
+} from './index.style';
 
 const Transfer = () => {
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
   const {
     isOpen: isOpenNetworkModal,
     onOpen: onOpenNetworkModal,
@@ -28,10 +31,12 @@ const Transfer = () => {
     onClose: onCloseTokenModal,
   } = useDisclosure();
 
-  return (
+  return isSubmitted ? (
+    <TransferResult />
+  ) : (
     <>
-      <WrapContainer>
-        <TransferContainer>
+      <StyledWrapContainer>
+        <StyledTransferContainer>
           <Heading fontSize={20} lineHeight="28px" fontWeight={700}>
             Transfer
           </Heading>
@@ -41,7 +46,7 @@ const Transfer = () => {
             title="Destination address"
             placeholder="Enter destination address here..."
           />
-          <TransferButton>
+          <StyledTransferButton onClick={() => setIsSubmitted(true)}>
             <Text
               fontSize={18}
               fontWeight={700}
@@ -50,9 +55,9 @@ const Transfer = () => {
             >
               Transfer
             </Text>
-          </TransferButton>
-        </TransferContainer>
-      </WrapContainer>
+          </StyledTransferButton>
+        </StyledTransferContainer>
+      </StyledWrapContainer>
       <NetworkModal onClose={onCloseNetworkModal} isOpen={isOpenNetworkModal} />
       <TokenModal onClose={onCloseTokenModal} isOpen={isOpenTokenModal} />
     </>

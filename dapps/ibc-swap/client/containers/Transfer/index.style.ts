@@ -1,13 +1,13 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@/styles/color';
 
-const WrapContainer = styled.div`
+const StyledWrapContainer = styled.div`
   display: flex;
   justify-content: center;
   position: relative;
 `;
 
-const TransferContainer = styled.div`
+const StyledTransferContainer = styled.div`
   position: fixed;
   top: 152px;
   width: 484px;
@@ -21,7 +21,7 @@ const TransferContainer = styled.div`
   background: ${COLOR.neutral_6};
 `;
 
-const NetworkSection = styled.div`
+const StyledNetworkSection = styled.div`
   margin-top: 16px;
   height: 56px;
   position: relative;
@@ -29,9 +29,10 @@ const NetworkSection = styled.div`
   border-radius: 10px;
   justify-content: space-between;
   align-items: center;
+  gap: 18px;
 `;
 
-const SelectBox = styled.div`
+const StyledSelectBox = styled.div`
   padding: 16px;
   background: ${COLOR.neutral_5};
   display: flex;
@@ -46,7 +47,7 @@ const SelectBox = styled.div`
   }
 `;
 
-const SwitchNetwork = styled.div`
+const StyledSwitchNetwork = styled.div`
   width: 36px;
   height: 36px;
   padding: 8px;
@@ -58,13 +59,17 @@ const SwitchNetwork = styled.div`
   border: 1px solid #47474b;
   box-shadow: 0px 0px 8px 0px #00000040;
   cursor: pointer;
+  position: absolute;
+  top: 13%;
+  left: 50%;
+  transform: translateX(-50%);
 
   :hover {
     background: ${COLOR.neutral_4};
   }
 `;
 
-const TokenSection = styled.div`
+const StyledTokenSection = styled.div`
   margin-top: 16px;
   width: 100%;
   height: 108px;
@@ -76,7 +81,7 @@ const TokenSection = styled.div`
   align-items: stretch;
 `;
 
-const SelectTokenBox = styled.div`
+const StyledSelectTokenBox = styled.div`
   display: flex;
   justify-content: space-between;
   bottom: 0;
@@ -85,7 +90,7 @@ const SelectTokenBox = styled.div`
   cursor: pointer;
 `;
 
-const TransferButton = styled.button`
+const StyledTransferButton = styled.button`
   width: 100%;
   margin-top: 16px;
   height: 48px;
@@ -95,16 +100,12 @@ const TransferButton = styled.button`
   opacity: 0px;
   background: ${COLOR.neutral_4};
 
-  :hover {
-    background: ${COLOR.neutral_5};
-  }
-
   :disabled {
     background: ${COLOR.neutral_4};
   }
 `;
 
-const NetworkBox = styled.div`
+const StyledNetworkBox = styled.div`
   width: 320px;
   height: 100%;
   gap: 16px;
@@ -113,7 +114,7 @@ const NetworkBox = styled.div`
   background: #0e0e124d;
 `;
 
-const NetworkBoxHeader = styled.div`
+const StyledNetworkBoxHeader = styled.div`
   width: 100%;
   height: 56px;
   padding: 14px 12px 14px 12px;
@@ -125,7 +126,7 @@ const NetworkBoxHeader = styled.div`
   justify-content: center;
 `;
 
-const TokenBox = styled.div`
+const StyledTokenBox = styled.div`
   width: 416px;
   height: 100%;
   padding: 0px 0px 16px 0px;
@@ -134,15 +135,15 @@ const TokenBox = styled.div`
 `;
 
 export {
-  WrapContainer,
-  TransferContainer,
-  NetworkSection,
-  SelectBox,
-  SwitchNetwork,
-  TokenSection,
-  TransferButton,
-  NetworkBox,
-  NetworkBoxHeader,
-  SelectTokenBox,
-  TokenBox,
+  StyledWrapContainer,
+  StyledTransferContainer,
+  StyledNetworkSection,
+  StyledSelectBox,
+  StyledSwitchNetwork,
+  StyledTokenSection,
+  StyledTransferButton,
+  StyledNetworkBox,
+  StyledNetworkBoxHeader,
+  StyledSelectTokenBox,
+  StyledTokenBox,
 };

@@ -2,7 +2,7 @@ import { COLOR } from '@/styles/color';
 import { Input, InputGroup } from '@chakra-ui/react';
 import styled from '@emotion/styled';
 
-const CustomSearchInput = styled(Input)`
+const StyledSearchInput = styled(Input)`
   width: 100%;
   gap: 0px;
   opacity: 0px;
@@ -19,7 +19,7 @@ const CustomSearchInput = styled(Input)`
   }
 `;
 
-const CustomSearchInputGroup = styled(InputGroup)`
+const StyledSearchInputGroup = styled(InputGroup)`
   width: 100%;
   height: 42px;
   gap: 0px;
@@ -31,4 +31,4 @@ const CustomSearchInputGroup = styled(InputGroup)`
   align-items: center;
 `;
 
-export { CustomSearchInput, CustomSearchInputGroup };
+export { StyledSearchInput, StyledSearchInputGroup };

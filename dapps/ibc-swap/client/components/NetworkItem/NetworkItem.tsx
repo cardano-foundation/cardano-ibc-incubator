@@ -1,8 +1,5 @@
 import { Box, Image } from '@chakra-ui/react';
-import {
-  CustomNetworkItemName,
-  CustomNetworkItemWrapper,
-} from './index.styled';
+import { StyledNetworkItemName, StyledNetworkItemWrapper } from './index.style';
 
 export type NetworkItemProps = {
   networkName: string;
@@ -11,11 +8,11 @@ export type NetworkItemProps = {
 
 export const NetworkItem = ({ networkName, networkLogo }: NetworkItemProps) => {
   return (
-    <CustomNetworkItemWrapper>
+    <StyledNetworkItemWrapper>
       <Box borderRadius="100%">
         <Image src={networkLogo} alt={networkName} width={30} height={30} />
       </Box>
-      <CustomNetworkItemName>{networkName}</CustomNetworkItemName>
-    </CustomNetworkItemWrapper>
+      <StyledNetworkItemName>{networkName}</StyledNetworkItemName>
+    </StyledNetworkItemWrapper>
   );
 };

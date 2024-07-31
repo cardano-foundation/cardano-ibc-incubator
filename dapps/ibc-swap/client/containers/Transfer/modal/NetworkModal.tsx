@@ -9,11 +9,16 @@ import {
   ModalHeader,
   ModalOverlay,
 } from '@chakra-ui/react';
+import Image from 'next/image';
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
 import { NetworkList } from '@/components/NetworkList/NetworkList';
-
-import { NetworkBox, NetworkBoxHeader } from '../index.styled';
+import SwitchIcon from '@/assets/icons/transfer.svg';
+import {
+  StyledNetworkBox,
+  StyledNetworkBoxHeader,
+  StyledSwitchNetwork,
+} from '../index.style';
 
 const NetworkListData = [
   {
@@ -70,15 +75,15 @@ const NetworkListData = [
 
 const NetworkBoxComponent = () => {
   return (
-    <NetworkBox>
-      <NetworkBoxHeader>From Cosmos Hub</NetworkBoxHeader>
+    <StyledNetworkBox>
+      <StyledNetworkBoxHeader>From Cosmos Hub</StyledNetworkBoxHeader>
       <Box p="16px" borderBottomWidth="1px" borderBottomColor={COLOR.neutral_5}>
         <SearchInput />
       </Box>
       <Box maxH="368px" overflowY="scroll">
         <NetworkList networkList={NetworkListData} />
       </Box>
-    </NetworkBox>
+    </StyledNetworkBox>
   );
 };
 
@@ -110,6 +115,9 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               justifyContent="space-between"
             >
               <NetworkBoxComponent />
+              <StyledSwitchNetwork>
+                <Image src={SwitchIcon} alt="switch icon" />
+              </StyledSwitchNetwork>
               <NetworkBoxComponent />
             </Box>
           </ModalBody>
