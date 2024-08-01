@@ -179,11 +179,11 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
-	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
-	//
-	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
+	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
+
+	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
 
 	var wg sync.WaitGroup
 

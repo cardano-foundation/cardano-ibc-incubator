@@ -182,8 +182,10 @@ func (r *RelayMsgs) Send(ctx context.Context, log *zap.Logger, src, dst RelayMsg
 		result SendMsgsResult
 	)
 	if len(r.Src) > 0 {
-		wg.Add(1)
-		go r.send(ctx, log, &wg, src, r.Src, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
+		wg.Add(len(r.Src))
+		for _, msg := range r.Src {
+			go r.send(ctx, log, &wg, src, []provider.RelayerMessage{msg}, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
+		}
 	}
 
 	if len(r.Dst) > 0 {

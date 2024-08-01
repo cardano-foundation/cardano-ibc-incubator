@@ -509,7 +509,16 @@ func (cc *CardanoProvider) QueryPacketCommitmentGW(ctx context.Context, msgTrans
 
 // QueryPacketCommitment returns the packet commitment proof at a given height
 func (cc *CardanoProvider) QueryPacketCommitment(ctx context.Context, height int64, channelid, portid string, seq uint64) (comRes *chantypes.QueryPacketCommitmentResponse, err error) {
-	return nil, nil
+	req := &chantypes.QueryPacketCommitmentRequest{
+		PortId:    portid,
+		ChannelId: channelid,
+		Sequence:  seq,
+	}
+	res, err := cc.GateWay.QueryPacketCommitment(req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
 }
 
 // QueryPacketCommitments returns an array of packet commitments
