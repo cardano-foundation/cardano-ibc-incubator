@@ -1,16 +1,23 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@/styles/color';
+import { BoxProps } from '@chakra-ui/react';
+import { Box } from '@interchain-ui/react';
 
-const StyledNetworkBox = styled.div`
+interface StyledNetworkBoxProps extends BoxProps {
+  isChoseToken?: boolean;
+}
+
+const StyledNetworkBox = styled(Box)<StyledNetworkBoxProps>`
   width: 984px;
   height: 100%;
   gap: 16px;
   border-radius: 12px;
   opacity: 0px;
   background: #0e0e124d;
+  border: ${(props) => !props.isChoseToken && `1px solid #fd4c80`};
 `;
 
-const StyledNetworkBoxHeader = styled.div`
+const StyledNetworkBoxHeader = styled(Box)<StyledNetworkBoxProps>`
   width: 100%;
   height: 56px;
   padding: 14px 12px 14px 12px;
@@ -20,6 +27,7 @@ const StyledNetworkBoxHeader = styled.div`
   background: ${COLOR.neutral_5};
   display: flex;
   justify-content: center;
+  background: ${(props) => !props.isChoseToken && `#fd4c8014`}; ;
 `;
 
 const StyledTokenBox = styled.div`

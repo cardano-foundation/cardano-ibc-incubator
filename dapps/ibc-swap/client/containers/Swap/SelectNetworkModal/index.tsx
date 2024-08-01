@@ -51,7 +51,7 @@ const SelectNetworkModal = ({ isOpen, onClose }: SelectNetworkModalProps) => {
               zIndex="1000"
               mt="5px"
             />
-            <NetworkTokenBox />
+            <NetworkTokenBox fromOrTo="To" />
           </Box>
         </ModalBody>
         <ModalFooter p={0}>

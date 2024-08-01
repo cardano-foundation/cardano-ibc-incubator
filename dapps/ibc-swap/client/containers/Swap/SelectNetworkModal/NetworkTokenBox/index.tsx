@@ -1,34 +1,59 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Image, Text } from '@chakra-ui/react';
 
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
-import { NetworkList } from '@/components/NetworkList/NetworkList';
-import { TokenList } from '@/components/TokenList/TokenList';
+import {
+  NetworkItemProps,
+  NetworkList,
+} from '@/components/NetworkList/NetworkList';
+import { TokenItemProps, TokenList } from '@/components/TokenList/TokenList';
+import EarchIcon from '@/assets/icons/earth.svg';
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
 import { NetworkListData, TokenListData } from '../data';
 
-const NetworkTokenBox = () => {
+type NetworkTokenBoxProps = {
+  fromOrTo?: string;
+};
+
+const NetworkTokenBox = ({ fromOrTo = 'From' }: NetworkTokenBoxProps) => {
+  const [tokenSelected, setTokenSelected] = useState<TokenItemProps>();
+  const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
+
+  const handleClickTokenItem = (token: TokenItemProps) => {
+    setTokenSelected(token);
+  };
+
+  const handleClickNetworkItem = (network: NetworkItemProps) => {
+    setNetworkSelected(network);
+  };
+
   return (
-    <StyledNetworkBox>
-      <StyledNetworkBoxHeader>
+    <StyledNetworkBox isChoseToken={!!tokenSelected?.tokenId}>
+      <StyledNetworkBoxHeader isChoseToken={!!tokenSelected?.tokenId}>
         <Text display="flex" alignItems="center">
-          From
+          {fromOrTo}
         </Text>
         <Box borderRadius="100%" display="flex">
           <Image
-            src="https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png"
-            alt="ADA"
+            src={tokenSelected?.tokenLogo || EarchIcon.src}
+            alt={tokenSelected?.tokenName || ''}
             width="32px"
             height="32px"
           />
           <Box ml="10px" display="flex" alignItems="center">
             <Box>
               <Text fontWeight="700" fontSize="18px">
-                ADA
+                {tokenSelected?.tokenName}
               </Text>
-              <Text fontSize="12px">Cardano</Text>
+              <Text fontSize="12px">
+                {networkSelected?.networkId ? (
+                  networkSelected?.networkName
+                ) : (
+                  <Text fontSize="18px">Select Network</Text>
+                )}
+              </Text>
             </Box>
           </Box>
         </Box>
@@ -49,7 +74,11 @@ const NetworkTokenBox = () => {
             borderColor={COLOR.neutral_5}
             overflowY="scroll"
           >
-            <NetworkList networkList={NetworkListData} />
+            <NetworkList
+              networkList={NetworkListData}
+              networkSelected={networkSelected}
+              onClickNetwork={handleClickNetworkItem}
+            />
           </Box>
         </Box>
         <Box>
@@ -67,7 +96,11 @@ const NetworkTokenBox = () => {
             borderRightWidth="1px"
             borderColor={COLOR.neutral_5}
           >
-            <TokenList tokenList={TokenListData} />
+            <TokenList
+              tokenList={TokenListData}
+              tokenSelected={tokenSelected}
+              onClickToken={handleClickTokenItem}
+            />
           </Box>
         </Box>
       </Box>

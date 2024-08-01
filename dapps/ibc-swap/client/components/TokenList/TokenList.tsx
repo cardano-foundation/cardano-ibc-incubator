@@ -1,8 +1,8 @@
+import React from 'react';
 import { List, ListItem } from '@chakra-ui/react';
-import React, { useState } from 'react';
 import { TokenItem } from '../TokenItem/TokenItem';
 
-type TokenItemProps = {
+export type TokenItemProps = {
   tokenId: number;
   tokenName?: string;
   tokenLogo?: string;
@@ -12,12 +12,18 @@ type TokenItemProps = {
 
 type TokenListProps = {
   tokenList: Array<TokenItemProps>;
+  tokenSelected?: TokenItemProps;
+  // eslint-disable-next-line no-unused-vars
+  onClickToken?: (token: TokenItemProps) => void;
 };
 
-export const TokenList: React.FC<TokenListProps> = ({ tokenList }) => {
-  const [tokenSelected, setTokenSelected] = useState<number>();
-  const handleClickTokenItem = (tokenId: number) => {
-    setTokenSelected(tokenId);
+export const TokenList: React.FC<TokenListProps> = ({
+  tokenSelected,
+  tokenList,
+  onClickToken,
+}) => {
+  const handleClickTokenItem = (token: TokenItemProps) => {
+    onClickToken?.(token);
   };
 
   return (
@@ -28,8 +34,8 @@ export const TokenList: React.FC<TokenListProps> = ({ tokenList }) => {
             key={token.tokenName}
             tokenName={token.tokenName}
             tokenLogo={token.tokenLogo}
-            isActive={tokenSelected === token.tokenId}
-            onClick={() => handleClickTokenItem(token.tokenId)}
+            isActive={tokenSelected?.tokenId === token.tokenId}
+            onClick={() => handleClickTokenItem(token)}
           />
         ))}
       </ListItem>

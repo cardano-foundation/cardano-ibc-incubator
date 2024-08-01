@@ -1,8 +1,7 @@
 import { List, ListItem } from '@chakra-ui/react';
-import { useState } from 'react';
 import { NetworkItem } from '../NetworkItem/NetworkItem';
 
-type NetworkItemProps = {
+export type NetworkItemProps = {
   networkId: number;
   networkName?: string;
   networkLogo?: string;
@@ -12,12 +11,18 @@ type NetworkItemProps = {
 
 type NetworkListProps = {
   networkList: Array<NetworkItemProps>;
+  networkSelected?: NetworkItemProps;
+  // eslint-disable-next-line no-unused-vars
+  onClickNetwork?: (token: NetworkItemProps) => void;
 };
 
-export const NetworkList = ({ networkList }: NetworkListProps) => {
-  const [networkSelected, setNetworkSelected] = useState<number>();
-  const handleClickNetworkItem = (networkId: number) => {
-    setNetworkSelected(networkId);
+export const NetworkList = ({
+  networkSelected,
+  networkList,
+  onClickNetwork,
+}: NetworkListProps) => {
+  const handleClickNetworkItem = (network: NetworkItemProps) => {
+    onClickNetwork?.(network);
   };
 
   return (
@@ -28,8 +33,8 @@ export const NetworkList = ({ networkList }: NetworkListProps) => {
             key={network.networkId}
             networkName={network.networkName}
             networkLogo={network.networkLogo}
-            isActive={networkSelected === network.networkId}
-            onClick={() => handleClickNetworkItem(network.networkId)}
+            isActive={networkSelected?.networkId === network.networkId}
+            onClick={() => handleClickNetworkItem(network)}
           />
         ))}
       </ListItem>
