@@ -4,6 +4,7 @@ import Image from 'next/image';
 
 import { Text } from '@chakra-ui/react';
 import SwitchIcon from '@/assets/icons/transfer.svg';
+import { COLOR } from '@/styles/color';
 
 import {
   StyledNetworkSection,
@@ -24,7 +25,11 @@ const SelectNetwork = ({ onOpenNetworkModal }: SelectNetworkProps) => {
         </Text>
         <IoChevronDown />
       </StyledSelectBox>
-      <StyledSwitchNetwork>
+      <StyledSwitchNetwork
+        _hover={{
+          bgColor: COLOR.neutral_4,
+        }}
+      >
         <Image src={SwitchIcon} alt="switch icon" />
       </StyledSwitchNetwork>
       <StyledSelectBox onClick={onOpenNetworkModal}>

@@ -32,7 +32,7 @@ const Transfer = () => {
   } = useDisclosure();
 
   return isSubmitted ? (
-    <TransferResult />
+    <TransferResult setIsSubmitted={setIsSubmitted} />
   ) : (
     <>
       <StyledWrapContainer>

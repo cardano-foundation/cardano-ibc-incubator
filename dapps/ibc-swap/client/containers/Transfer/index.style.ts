@@ -1,5 +1,6 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@/styles/color';
+import { Box, Button } from '@chakra-ui/react';
 
 const StyledWrapContainer = styled.div`
   display: flex;
@@ -47,7 +48,7 @@ const StyledSelectBox = styled.div`
   }
 `;
 
-const StyledSwitchNetwork = styled.div`
+const StyledSwitchNetwork = styled(Box)`
   width: 36px;
   height: 36px;
   padding: 8px;
@@ -60,13 +61,9 @@ const StyledSwitchNetwork = styled.div`
   box-shadow: 0px 0px 8px 0px #00000040;
   cursor: pointer;
   position: absolute;
-  top: 13%;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
-
-  :hover {
-    background: ${COLOR.neutral_4};
-  }
+  translate: -50% -50%;
 `;
 
 const StyledTokenSection = styled.div`
@@ -134,6 +131,52 @@ const StyledTokenBox = styled.div`
   opacity: 0px;
 `;
 
+const StyledTransferDetailButton = styled(Button)`
+  width: 100%;
+  height: 48px;
+  padding: 12px 24px 12px 24px;
+  gap: 8px;
+  border-radius: 12px;
+  opacity: 0px;
+`;
+
+const StyledTransferFromToBox = styled.div`
+  width: 100%;
+  height: 66px;
+  padding: 10px 16px 10px 16px;
+  gap: 4px;
+  border-radius: 10px;
+  opacity: 0px;
+  background: ${COLOR.neutral_5};
+`;
+
+const StyledTransferCalculatorBox = styled.div`
+  display: inline-grid;
+  width: 100%;
+  height: 70px;
+  padding: 9px 16px 11px 16px;
+  gap: 4px;
+  border-radius: 10px;
+  opacity: 0px;
+  background: ${COLOR.neutral_5};
+`;
+
+const StyledTimerBox = styled.div`
+  position: absolute;
+  width: 92px;
+  height: 92px;
+  top: -25%;
+  left: 50%;
+  translate: -50% 25%;
+  gap: 0px;
+  opacity: 0px;
+  z-index: 10;
+  background: ${COLOR.neutral_6};
+  border-radius: 100%;
+  display: flex;
+  justify-content: center;
+`;
+
 export {
   StyledWrapContainer,
   StyledTransferContainer,
@@ -146,4 +189,8 @@ export {
   StyledNetworkBoxHeader,
   StyledSelectTokenBox,
   StyledTokenBox,
+  StyledTransferDetailButton,
+  StyledTransferFromToBox,
+  StyledTransferCalculatorBox,
+  StyledTimerBox,
 };
