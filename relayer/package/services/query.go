@@ -40,10 +40,10 @@ func (gw *Gateway) QueryIBCHeader(ctx context.Context, h int64, cs *mithril.Clie
 	slices.Reverse(cardanoTxsSetSnapshotReverse)
 	snapshotIdx := slices.IndexFunc(cardanoTxsSetSnapshotReverse, func(c dtos.CardanoTransactionSetSnapshot) bool { return c.BlockNumber >= uint64(h) })
 	if snapshotIdx == -1 {
-		latestHeight := cardanoTxsSetSnapshot[0].BlockNumber
-		if h < int64(latestHeight) {
-			return nil, errors.New(fmt.Sprintf("BlockNumber: Missing mithril height %d", h))
-		}
+		//latestHeight := cardanoTxsSetSnapshot[0].BlockNumber
+		//if h < int64(latestHeight) {
+		//	return nil, errors.New(fmt.Sprintf("BlockNumber: Missing mithril height %d", h))
+		//}
 		return nil, errors.New(fmt.Sprintf("Could not find snapshot with height %d", h))
 	}
 
@@ -543,7 +543,6 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 	chainHandler, err := helpers.GetChainHandler()
 	if err != nil {
 		return nil, nil, err
-
 	}
 	clientTokenName, err := helpers.GenerateTokenName(helpers.AuthToken{
 		PolicyId: chainHandler.HandlerAuthToken.PolicyID,
@@ -582,6 +581,9 @@ func (gw *Gateway) GetClientDatum(clientId string, height uint64) (*ibc_types.Cl
 		clientStateTokenName)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(clientUtxos) == 0 {
+		return nil, nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", chainHandler.Validators.MintClient.ScriptHash, clientTokenName)
 	}
 	if clientUtxos[0].Datum == nil {
 		return nil, nil, fmt.Errorf("datum is nil")
