@@ -6,10 +6,10 @@ import {
 } from './index.styled';
 
 export type TokenItemProps = {
-  tokenName: string;
-  tokenLogo: string;
-  isActive: boolean;
-  onClick: () => void;
+  tokenName?: string;
+  tokenLogo?: string;
+  isActive?: boolean;
+  onClick?: () => void;
 };
 
 export const TokenItem = ({

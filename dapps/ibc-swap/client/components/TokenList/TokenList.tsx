@@ -1,22 +1,22 @@
 import { List, ListItem } from '@chakra-ui/react';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { TokenItem } from '../TokenItem/TokenItem';
 
-type NetworkItemProps = {
-  tokenId: string;
-  tokenName: string;
-  tokenLogo: string;
-  isActive: boolean;
-  onClick: () => void;
+type TokenItemProps = {
+  tokenId: number;
+  tokenName?: string;
+  tokenLogo?: string;
+  isActive?: boolean;
+  onClick?: () => void;
 };
 
 type TokenListProps = {
-  tokenList: Array<NetworkItemProps>;
+  tokenList: Array<TokenItemProps>;
 };
 
-export const TokenList = ({ tokenList }: TokenListProps) => {
-  const [tokenSelected, setTokenSelected] = useState<string>();
-  const handleClickTokenItem = (tokenId: string) => {
+export const TokenList: React.FC<TokenListProps> = ({ tokenList }) => {
+  const [tokenSelected, setTokenSelected] = useState<number>();
+  const handleClickTokenItem = (tokenId: number) => {
     setTokenSelected(tokenId);
   };
 

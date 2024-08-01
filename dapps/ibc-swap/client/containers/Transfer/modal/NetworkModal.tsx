@@ -22,51 +22,61 @@ import {
 
 const NetworkListData = [
   {
+    networkId: 1,
     networkName: 'Cosmos Hub',
     networkLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
   },
   {
+    networkId: 2,
     networkName: 'BitCanna',
     networkLogo:
       'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
   },
   {
+    networkId: 3,
     networkName: 'Cosmos Hub',
     networkLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
   },
   {
+    networkId: 4,
     networkName: 'BitCanna',
     networkLogo:
       'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
   },
   {
+    networkId: 5,
     networkName: 'Cosmos Hub',
     networkLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
   },
   {
+    networkId: 6,
     networkName: 'BitCanna',
     networkLogo:
       'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
   },
   {
+    networkId: 7,
     networkName: 'Cosmos Hub',
     networkLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
   },
   {
+    networkId: 8,
     networkName: 'BitCanna',
     networkLogo:
       'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
   },
   {
+    networkId: 9,
     networkName: 'Cosmos Hub',
     networkLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
   },
   {
+    networkId: 10,
     networkName: 'BitCanna',
     networkLogo:
       'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',

@@ -1,8 +1,14 @@
 import { COLOR } from '@/styles/color';
-import { Box, Text } from '@chakra-ui/react';
+import { Box, BoxProps, Text } from '@chakra-ui/react';
 import styled from '@emotion/styled';
 
-const StyledCustomTokenItemWrapper = styled(Box)`
+interface StyledCustomTokenItemWrapperProps extends BoxProps {
+  isActive?: boolean;
+}
+
+const StyledCustomTokenItemWrapper = styled(
+  Box,
+)<StyledCustomTokenItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-content: center;

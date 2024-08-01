@@ -3,11 +3,11 @@ import { useState } from 'react';
 import { NetworkItem } from '../NetworkItem/NetworkItem';
 
 type NetworkItemProps = {
-  networkId: string;
-  networkName: string;
-  networkLogo: string;
-  isActive: boolean;
-  onClick: () => void;
+  networkId: number;
+  networkName?: string;
+  networkLogo?: string;
+  isActive?: boolean;
+  onClick?: () => void;
 };
 
 type NetworkListProps = {
@@ -15,8 +15,8 @@ type NetworkListProps = {
 };
 
 export const NetworkList = ({ networkList }: NetworkListProps) => {
-  const [networkSelected, setNetworkSelected] = useState<string>();
-  const handleClickNetworkItem = (networkId: string) => {
+  const [networkSelected, setNetworkSelected] = useState<number>();
+  const handleClickNetworkItem = (networkId: number) => {
     setNetworkSelected(networkId);
   };
 

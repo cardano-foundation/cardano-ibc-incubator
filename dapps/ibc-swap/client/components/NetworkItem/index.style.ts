@@ -1,8 +1,12 @@
 import { COLOR } from '@/styles/color';
-import { Box, Text } from '@chakra-ui/react';
+import { Box, BoxProps, Text } from '@chakra-ui/react';
 import styled from '@emotion/styled';
 
-const StyledNetworkItemWrapper = styled(Box)`
+interface StyledNetworkItemWrapperProps extends BoxProps {
+  isActive?: boolean;
+}
+
+const StyledNetworkItemWrapper = styled(Box)<StyledNetworkItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-content: center;
