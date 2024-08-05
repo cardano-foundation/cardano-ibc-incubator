@@ -80,7 +80,7 @@ func (gw *Gateway) QueryPacketCommitment(req *channeltypes.QueryPacketCommitment
 			return err
 		}
 		if len(cardanoTxProof.CertifiedTransactions) == 0 {
-			return fmt.Errorf("no certified transactions found")
+			return fmt.Errorf("no certified transactions with proof found for packet commitment")
 		}
 		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
 		certHashProof = cardanoTxProof.CertificateHash

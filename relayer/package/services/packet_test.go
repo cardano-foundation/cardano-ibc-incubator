@@ -22,16 +22,18 @@ func TestQueryPacketCommitment(t *testing.T) {
 	chainHandler, err := helpers.GetChainHandler()
 	require.NoError(t, err)
 	testCases := []struct {
-		name        string
-		channelId   string
-		sequence    uint64
-		rows        *sqlmock.Rows
-		rows1       *sqlmock.Rows
-		httpStatus  int
-		mithrilData string
-		queryDbErr  error
-		queryDbErr1 error
-		expectedErr error
+		name              string
+		channelId         string
+		sequence          uint64
+		rows              *sqlmock.Rows
+		rows1             *sqlmock.Rows
+		httpStatus        int
+		httpStatus2       int
+		mithrilData       string
+		queryDbErr        error
+		queryDbErr1       error
+		expectedErr       error
+		latestBlockNumber string
 	}{
 		{
 			name:        "fail to ValidQueryPacketCommitmentParam channelId",
@@ -125,13 +127,38 @@ func TestQueryPacketCommitment(t *testing.T) {
 			expectedErr: fmt.Errorf("no certified transactions with proof found for packet commitment"),
 		},
 		{
-			name:        "success",
+			name:        "query certificates fail",
 			channelId:   "channel-1",
 			sequence:    2,
 			rows:        sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", "assets_policy", "assets_name", 1, 1),
 			rows1:       sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", fmt.Sprintf("\\x%v", chainHandler.Validators.MintChannel.ScriptHash), "assets_name", 1, 1),
 			httpStatus:  http.StatusOK,
 			mithrilData: "{\"transactions_hashes\":[\"89a81febe6c19bbf5ce26d96530c70b811623df73296cf03f033cffb830fbec9\"],\"proof\":\"7b226d61737465725\"}",
+			httpStatus2: http.StatusBadRequest,
+			expectedErr: fmt.Errorf("400"),
+		},
+		{
+			name:              "fail to parse latest block",
+			channelId:         "channel-1",
+			sequence:          2,
+			rows:              sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", "assets_policy", "assets_name", 1, 1),
+			rows1:             sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", fmt.Sprintf("\\x%v", chainHandler.Validators.MintChannel.ScriptHash), "assets_name", 1, 1),
+			httpStatus:        http.StatusOK,
+			mithrilData:       "{\"transactions_hashes\":[\"89a81febe6c19bbf5ce26d96530c70b811623df73296cf03f033cffb830fbec9\"],\"proof\":\"7b226d61737465725\"}",
+			httpStatus2:       http.StatusOK,
+			latestBlockNumber: "latestBlockNumber",
+			expectedErr:       fmt.Errorf("invalid syntax"),
+		},
+		{
+			name:              "success",
+			channelId:         "channel-1",
+			sequence:          2,
+			rows:              sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", "assets_policy", "assets_name", 1, 1),
+			rows1:             sqlmock.NewRows([]string{"address", "tx_hash", "tx_id", "output_index", "datum_hash", "datum", "assets_policy", "assets_name", "block_no", "block_id"}).AddRow("address", "tx_hash", 1, 1, "datum_hash", "\\xd8799fd8799fd8799fd87c80d87a80d8799f487472616e73666572496368616e6e656c2d31ff9f4c636f6e6e656374696f6e2d31ff4769637332302d31ff030101a10258202efc892b80c9a45d11a7b82a5eb3250e518a223787ec86cfc1a6fd2dc84655bda0a0ff48706f72742d313030d8799f581c0282bc48b32d7cf199cacc7acbef3069e9a94067e620546e17962bec581914807575bdd0c3aa43547c44f70b3c0552b5cb66239b722031ffff", fmt.Sprintf("\\x%v", chainHandler.Validators.MintChannel.ScriptHash), "assets_name", 1, 1),
+			httpStatus:        http.StatusOK,
+			mithrilData:       "{\"transactions_hashes\":[\"89a81febe6c19bbf5ce26d96530c70b811623df73296cf03f033cffb830fbec9\"],\"proof\":\"7b226d61737465725\"}",
+			httpStatus2:       http.StatusOK,
+			latestBlockNumber: "12",
 		},
 	}
 
@@ -193,6 +220,11 @@ func TestQueryPacketCommitment(t *testing.T) {
 				Persist().
 				Reply(tc.httpStatus).
 				JSON(fmt.Sprintf("{\"certificate_hash\":\"36c93aedd5e22bbdaca1a4df211c2f7720881f2b9f30289e9be551571e66913e\",\"certified_transactions\":[%s],\"non_certified_transactions\":[],\"latest_block_number\":27675}", tc.mithrilData))
+
+			gock.New("https://aggregator.testing-preview.api.mithril.network/aggregator").
+				Get("/certificate/36c93aedd5e22bbdaca1a4df211c2f7720881f2b9f30289e9be551571e66913e").
+				Reply(tc.httpStatus2).
+				JSON(fmt.Sprintf("{\"hash\":\"eb3f5452bfc2f27022c566dd26deaa57b0b626fd3ea96d637831a6509e592550\",\"previous_hash\":\"0f2a960cfbfec1f194e55b88188e06abce8d3c8410f648d86f8b5419c9453af2\",\"epoch\":573,\"signed_entity_type\":{\"CardanoImmutableFilesFull\":{\"network\":\"preview\",\"epoch\":573,\"immutable_file_number\":11464}},\"beacon\":{\"network\":\"preview\",\"epoch\":573,\"immutable_file_number\":11464},\"metadata\":{\"network\":\"preview\",\"version\":\"0.1.0\",\"parameters\":{\"k\":2422,\"m\":20973,\"phi_f\":0.2},\"initiated_at\":\"2024-05-20T09:05:38.997912265Z\",\"sealed_at\":\"2024-05-20T09:09:39.584164398Z\",\"signers\":[]},\"protocol_message\":{\"message_parts\":{\"snapshot_digest\":\"\",\"next_aggregate_verification_key\":\"\",\"latest_block_number\":\"%v\"}},\"signed_message\":\"\",\"aggregate_verification_key\":\"\",\"multi_signature\":\"\",\"genesis_signature\":\"\"}", tc.latestBlockNumber))
 			defer gock.Off()
 			response, err := gateway.QueryPacketCommitment(
 				&channeltypes.QueryPacketCommitmentRequest{
