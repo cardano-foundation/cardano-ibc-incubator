@@ -1,13 +1,5 @@
 import { List, ListItem } from '@chakra-ui/react';
-import { NetworkItem } from '../NetworkItem/NetworkItem';
-
-export type NetworkItemProps = {
-  networkId: number;
-  networkName?: string;
-  networkLogo?: string;
-  isActive?: boolean;
-  onClick?: () => void;
-};
+import { NetworkItem, NetworkItemProps } from '../NetworkItem/NetworkItem';
 
 type NetworkListProps = {
   networkList: Array<NetworkItemProps>;

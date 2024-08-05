@@ -2,19 +2,29 @@ import { Box, Image, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import { StyledTokenItemName, StyledTokenItemWrapper } from './index.style';
 
-export type TokenItemProps = {
-  tokenName: string;
-  tokenLogo: string;
-  tokenSymbol: string;
+export type TransferTokenItemProps = {
+  tokenId?: number;
+  tokenName?: string;
+  tokenLogo?: string;
+  tokenSymbol?: string;
+  isActive?: boolean;
+  onClick?: () => void;
 };
 
 export const TransferTokenItem = ({
+  tokenId,
   tokenLogo,
   tokenName,
   tokenSymbol,
-}: TokenItemProps) => {
+  isActive,
+  onClick,
+}: TransferTokenItemProps) => {
   return (
-    <StyledTokenItemWrapper>
+    <StyledTokenItemWrapper
+      onClick={onClick}
+      isActive={isActive}
+      id={`${tokenId}`}
+    >
       <Box display="flex" gap="16px" alignItems="center">
         <Box borderRadius="100%">
           <Image src={tokenLogo} alt={tokenName} width={30} height={30} />

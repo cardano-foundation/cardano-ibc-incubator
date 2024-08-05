@@ -27,7 +27,7 @@ const StyledNetworkBoxHeader = styled(Box)<StyledNetworkBoxProps>`
   background: ${COLOR.neutral_5};
   display: flex;
   justify-content: center;
-  background: ${(props) => !props.isChoseToken && `#fd4c8014`}; ;
+  background: ${(props) => !props.isChoseToken && `#fd4c8014`};
 `;
 
 const StyledTokenBox = styled.div`

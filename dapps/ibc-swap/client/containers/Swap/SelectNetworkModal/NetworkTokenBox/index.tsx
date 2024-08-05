@@ -4,10 +4,8 @@ import { Box, Image, Text } from '@chakra-ui/react';
 
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
-import {
-  NetworkItemProps,
-  NetworkList,
-} from '@/components/NetworkList/NetworkList';
+import { NetworkList } from '@/components/NetworkList/NetworkList';
+import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { TokenItemProps, TokenList } from '@/components/TokenList/TokenList';
 import EarchIcon from '@/assets/icons/earth.svg';
 import { FROM_TO } from '@/constants';
