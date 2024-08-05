@@ -6,20 +6,21 @@ use aiken/bytearray.{concat, length, push}
 use aiken/list
 use aiken/option.{is_none}
 use ibc/utils/bytes.{encode_varint, sov}
-use ibc/utils/int.{uint64}
+use ibc/utils/int.{uint64, Uint64}
 
 pub type MithrilClientState {
   chain_id: ByteArray,
-  latest_height: Option<MithrilHeight>,
-  frozen_height: Option<MithrilHeight>,
+  latest_height: Option<CardanoHeight>,
+  frozen_height: Option<CardanoHeight>,
   current_epoch: Int,
   trusting_period: Int,
   protocol_parameters: Option<MithrilProtocolParameters>,
   upgrade_path: List<ByteArray>,
 }
 
-pub type MithrilHeight {
-  mithril_height: Int,
+pub type CardanoHeight {
+  revision_number: Uint64,
+  revision_height: Uint64,
 }
 
 pub type MithrilProtocolParameters {
@@ -294,40 +295,57 @@ pub fn size_for_client_state(
   )
 }
 
-pub fn marshal_for_height(height_opt: Option<MithrilHeight>) -> ByteArray {
+pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
   ite(
     is_none(height_opt),
     #[],
     {
       expect Some(height) = height_opt
-      let MithrilHeight { mithril_height } = height
+      let CardanoHeight { revision_number, revision_height } = height
       #[]
         |> concat(
-            ite(
-              mithril_height == 0,
-              #[],
-              mithril_height |> uint64() |> encode_varint() |> push(8),
-            ),
-          )
+             ite(
+               revision_number == 0,
+               #[],
+               revision_number |> uint64() |> encode_varint() |> push(8),
+             ),
+           )
+        |> concat(
+             ite(
+               revision_height == 0,
+               #[],
+               revision_height
+                 |> uint64()
+                 |> encode_varint()
+                 |> push(0x10),
+             ),
+           )
     },
   )
 }
 
-pub fn size_for_height(height_opt: Option<MithrilHeight>) -> Int {
+pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
   ite(
     is_none(height_opt),
     0,
     {
       expect Some(height) = height_opt
-      let MithrilHeight { mithril_height } = height
+      let CardanoHeight { revision_number, revision_height } = height
       0
         |> add(
-            ite(
-              mithril_height == 0,
-              0,
-              mithril_height |> uint64() |> sov() |> add(1),
-            ),
-          )
+             ite(
+               revision_number == 0,
+               0,
+               revision_number |> uint64() |> sov() |> add(1),
+             ),
+           )
+        |> add(
+             ite(
+               revision_height == 0,
+               0,
+               revision_height |> uint64() |> sov() |> add(1),
+             ),
+           )
     },
   )
 }
@@ -474,8 +492,8 @@ test test_marshal_for_client_state() {
     Some(
       MithrilClientState {
         chain_id: "chain-id",
-        latest_height: Some(MithrilHeight { mithril_height: 11 }),
-        frozen_height: Some(MithrilHeight { mithril_height: 12 }),
+        latest_height: Some(CardanoHeight { revision_height: 11, revision_number: 0}),
+        frozen_height: Some(CardanoHeight { revision_height: 12, revision_number: 0 }),
         current_epoch: 2,
         trusting_period: 10000,
         protocol_parameters: Some(
@@ -491,5 +509,5 @@ test test_marshal_for_client_state() {
         upgrade_path: ["abc", "xyz"],
       },
     )
-  marshal_for_client_state(cs) == #"0a08636861696e2d69641202080b1a02080c20022a0310904e320a080210031a04081410643a036162633a0378797a"
+  marshal_for_client_state(cs) == #"0a08636861696e2d69641202100b1a02100c20022a0310904e320a080210031a04081410643a036162633a0378797a"
 }

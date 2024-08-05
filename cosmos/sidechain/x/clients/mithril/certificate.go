@@ -259,11 +259,8 @@ func FromCertificateSignatureProto(setProto *SignedEntityType, multiSigProto str
 			}
 		case *SignedEntityType_CardanoTransactions:
 			set.CardanoTransactions = &entities.CardanoTransactions{
-				CardanoDbBeacon: &entities.CardanoDbBeacon{
-					Network:             s.CardanoTransactions.Beacon.Network,
-					Epoch:               entities.Epoch(s.CardanoTransactions.Beacon.Epoch),
-					ImmutableFileNumber: s.CardanoTransactions.Beacon.ImmutableFileNumber,
-				},
+				Epoch:       entities.Epoch(s.CardanoTransactions.Epoch),
+				BlockNumber: s.CardanoTransactions.BlockNumber,
 			}
 		}
 

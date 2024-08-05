@@ -212,7 +212,7 @@ export class QueryService {
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
 
     const latestHeightResponse = {
-      height: listSnapshots[0].beacon.immutable_file_number,
+      height: listSnapshots[0].block_number,
     };
     this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
@@ -347,21 +347,21 @@ export class QueryService {
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
-    const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
+    // const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
 
-    const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
-    if (!listBlockNo.length) {
-      // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
-      return {
-        block_results: {
-          height: {
-            revision_height: request.height,
-            revision_number: BigInt(0),
-          },
-          txs_results: [],
-        },
-      } as unknown as QueryBlockResultsResponse;
-    }
+    // const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
+    // if (!listBlockNo.length) {
+    //   // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
+    //   return {
+    //     block_results: {
+    //       height: {
+    //         revision_height: request.height,
+    //         revision_number: BigInt(0),
+    //       },
+    //       txs_results: [],
+    //     },
+    //   } as unknown as QueryBlockResultsResponse;
+    // }
 
     try {
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
@@ -369,7 +369,7 @@ export class QueryService {
       const mintChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
 
       const totalEventResults: ResponseDeliverTx[] = [];
-      for (const blockNo of listBlockNo) {
+      for (const blockNo of [height]) {
         // connection +channel
         const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
         const txsResults = await Promise.all(
@@ -571,10 +571,10 @@ export class QueryService {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
           }
-          if(spendRedeemer === 'ChanCloseInit') {
+          if (spendRedeemer === 'ChanCloseInit') {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_INIT;
           }
-          if(spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
+          if (spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
@@ -701,19 +701,12 @@ export class QueryService {
         }),
       );
       blockResults = blockResults.filter((e) => e);
-      const mithrilHeights = await this.dbService.queryListImmutableFileNoByBlockNos(
-        blockResults.map((e) => Number(e.block.height)),
-      );
-
-      let blockResultsResp = mithrilHeights.map((e) => {
-        return { block_id: 0, block: { height: e } } as unknown as ResultBlockSearch;
-      });
-
-      if (blockResultsResp.length > limit) {
+      let blockResultsResp = blockResults;
+      if (blockResults.length > limit) {
         const offset = page <= 0 ? 0 : limit * (page - 1n);
         const from = parseInt(offset.toString());
         const to = parseInt(offset.toString()) + parseInt(limit.toString());
-        blockResultsResp = blockResultsResp.slice(from, to);
+        blockResultsResp = blockResults.slice(from, to);
       }
 
       const responseBlockSearch: QueryBlockSearchResponse = {
@@ -772,7 +765,7 @@ export class QueryService {
     );
 
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const snapshot = listSnapshots.find((e) => BigInt(e.beacon.immutable_file_number) === BigInt(height));
+    const snapshot = listSnapshots.find((e) => BigInt(e.block_number) === BigInt(height));
     if (!snapshot) throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
     const snapshotCertificate = await await this.mithrilService.mithrilClient.get_mithril_certificate(
       snapshot.certificate_hash,
@@ -785,17 +778,16 @@ export class QueryService {
         distributionCertificate,
       ),
       transaction_snapshot: {
-        snapshot_hash: snapshot.hash,
         merkle_root: snapshot.merkle_root,
+        hash: snapshot.hash,
         certificate_hash: snapshot.certificate_hash,
-        epoch: BigInt(snapshotCertificate.beacon.epoch),
-        height: {
-          mithril_height: BigInt(snapshotCertificate.beacon.immutable_file_number),
-        },
+        epoch: BigInt(snapshotCertificate.epoch),
+        block_number: BigInt(snapshot.block_number),
+        created_at: snapshot.created_at,
       },
       transaction_snapshot_certificate: normalizeMithrilStakeDistributionCertificate(
         {
-          epoch: snapshot.beacon.epoch,
+          epoch: snapshot.epoch,
           hash: snapshot.hash,
           certificate_hash: snapshot.certificate_hash,
           created_at: snapshot.created_at,

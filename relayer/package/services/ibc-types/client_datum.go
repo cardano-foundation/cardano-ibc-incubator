@@ -5,9 +5,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-type ClientDatum struct {
+type ClientDatumSchema struct {
 	_     struct{} `cbor:",toarray"`
-	State ClientDatumState
+	State ClientDatumStateSchema
 	Token TokenDatum
 }
 type TokenDatum struct {
@@ -16,25 +16,21 @@ type TokenDatum struct {
 	Name     []byte
 }
 
-type ClientDatumState struct {
+type ClientDatumStateSchema struct {
 	_               struct{} `cbor:",toarray"`
-	ClientState     ClientStateDatum
-	ConsensusStates map[HeightDatum]ConsensusStateDatum
+	ClientState     ClientStateDatumSchema
+	ConsensusStates map[HeightSchema]ConsensusStateDatumSchema
 }
-type HeightDatum struct {
-	_              struct{} `cbor:",toarray"`
-	RevisionNumber uint64
-	RevisionHeight uint64
-}
-type ClientStateDatum struct {
+
+type ClientStateDatumSchema struct {
 	_               struct{} `cbor:",toarray"`
 	ChainId         []byte
 	TrustLevel      TrustLevelDatum
 	TrustingPeriod  uint64
 	UnbondingPeriod uint64
 	MaxClockDrift   uint64
-	FrozenHeight    HeightDatum
-	LatestHeight    HeightDatum
+	FrozenHeight    HeightSchema
+	LatestHeight    HeightSchema
 	ProofSpecs      []ProofSpecsDatum
 }
 type TrustLevelDatum struct {
@@ -68,7 +64,7 @@ type InnerSpecDatum struct {
 	EmptyChild      []byte
 	Hash            int32
 }
-type ConsensusStateDatum struct {
+type ConsensusStateDatumSchema struct {
 	_                  struct{} `cbor:",toarray"`
 	Timestamp          uint64
 	NextValidatorsHash []byte
@@ -79,8 +75,8 @@ type RootHashInDatum struct {
 	Hash []byte
 }
 
-func DecodeClientDatumSchema(datumEncoded string) (*ClientDatum, error) {
-	var vOutput ClientDatum
+func DecodeClientDatumSchema(datumEncoded string) (*ClientDatumSchema, error) {
+	var vOutput ClientDatumSchema
 	datumBytes, err := hex.DecodeString(datumEncoded)
 	if err != nil {
 		return nil, err

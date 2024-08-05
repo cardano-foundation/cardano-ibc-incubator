@@ -1,8 +1,9 @@
 package ibc_types
 
 type MithrilHeightSchema struct {
-	_             struct{} `cbor:",toarray"`
-	MithrilHeight uint64
+	_              struct{} `cbor:",toarray"`
+	RevisionNumber uint64
+	RevisionHeight uint64
 }
 
 type MithrilProtocolParametersSchema struct {

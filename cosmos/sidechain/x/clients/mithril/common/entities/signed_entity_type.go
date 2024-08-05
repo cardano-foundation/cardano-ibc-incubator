@@ -25,7 +25,8 @@ type CardanoImmutableFilesFull struct {
 }
 
 type CardanoTransactions struct {
-	*CardanoDbBeacon
+	Epoch
+	BlockNumber
 }
 
 func (s *SignedEntityType) FeedHash(hasher hash.Hash) {
@@ -70,11 +71,10 @@ func (ciff *CardanoImmutableFilesFull) FeedHash(hasher hash.Hash) {
 }
 
 func (ct *CardanoTransactions) FeedHash(hasher hash.Hash) {
-	hasher.Write([]byte(ct.CardanoDbBeacon.Network))
 	epochBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(epochBytes, uint64(ct.CardanoDbBeacon.Epoch))
+	binary.BigEndian.PutUint64(epochBytes, uint64(ct.Epoch))
 	hasher.Write(epochBytes)
-	fileNumberBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(fileNumberBytes, uint64(ct.CardanoDbBeacon.ImmutableFileNumber))
-	hasher.Write(fileNumberBytes)
+	blockNumberBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(blockNumberBytes, uint64(ct.BlockNumber))
+	hasher.Write(blockNumberBytes)
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"time"
 )
 
@@ -12,7 +13,7 @@ var _ exported.ClientState = (*ClientState)(nil)
 var _ exported.ConsensusState = (*ConsensusState)(nil)
 
 func (m *Height) String() string {
-	return fmt.Sprintf("%v", m.MithrilHeight)
+	return fmt.Sprintf("RevisionNumber: %v, RevisionHeight", m.GetRevisionNumber(), m.GetRevisionHeight())
 }
 
 func (m *ClientState) ClientType() string {
@@ -22,7 +23,8 @@ func (m *ClientState) ClientType() string {
 
 func (m *ClientState) GetLatestHeight() exported.Height {
 	return &Height{
-		MithrilHeight: m.LatestHeight.MithrilHeight,
+		RevisionNumber: m.LatestHeight.RevisionNumber,
+		RevisionHeight: m.LatestHeight.RevisionHeight,
 	}
 }
 
@@ -123,7 +125,7 @@ func (m *MithrilHeader) ConsensusState() exported.ConsensusState {
 	}
 	return &ConsensusState{
 		Timestamp:                uint64(t.UnixNano()),
-		FirstCertHashLatestEpoch: "",
+		FirstCertHashLatestEpoch: m.TransactionSnapshotCertificate,
 		LatestCertHashTxSnapshot: "",
 	}
 }
@@ -139,6 +141,53 @@ func (m *MithrilHeader) ClientType() string {
 }
 
 func (m *MithrilHeader) ValidateBasic() error {
+	//TODO implement me
+	panic("implement me")
+}
+func (m *Height) IsZero() bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) LT(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) LTE(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) EQ(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GT(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GTE(height ibcexported.Height) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) GetRevisionNumber() uint64 {
+	return 0
+}
+
+func (m *Height) GetRevisionHeight() uint64 {
+	return m.RevisionHeight
+}
+
+func (m *Height) Increment() ibcexported.Height {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *Height) Decrement() (ibcexported.Height, bool) {
 	//TODO implement me
 	panic("implement me")
 }

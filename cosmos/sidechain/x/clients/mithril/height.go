@@ -20,9 +20,10 @@ func ZeroHeight() Height {
 }
 
 // NewHeight is a constructor for the IBC height type
-func NewHeight(mithrilHeight uint64) Height {
+func NewHeight(revisionNumber uint64, revisionHeight uint64) Height {
 	return Height{
-		MithrilHeight: mithrilHeight,
+		RevisionNumber: revisionNumber,
+		RevisionHeight: revisionHeight,
 	}
 }
 
@@ -33,7 +34,7 @@ func (h Height) GetRevisionNumber() uint64 {
 
 // GetMithrilHeight returns the mithril-height of the height
 func (h Height) GetRevisionHeight() uint64 {
-	return h.MithrilHeight
+	return h.RevisionHeight
 }
 
 // Compare implements a method to compare two heights. When comparing two heights a, b
@@ -43,7 +44,7 @@ func (h Height) GetRevisionHeight() uint64 {
 // 1  if a > b
 func (h Height) Compare(other exported.Height) int64 {
 	var a, b big.Int
-	a.SetUint64(h.MithrilHeight)
+	a.SetUint64(h.RevisionHeight)
 	b.SetUint64(other.GetRevisionHeight())
 	return int64(a.Cmp(&b))
 }
@@ -77,26 +78,26 @@ func (h Height) EQ(other exported.Height) bool {
 
 // String returns a string representation of Height
 func (h Height) String() string {
-	return fmt.Sprintf("%d-%d", 0, h.MithrilHeight)
+	return fmt.Sprintf("%d-%d", 0, h.RevisionHeight)
 }
 
 // Decrement will return a new height with the MithrilHeight decremented
 // If the MithrilHeight is already at lowest value (1), then false success flag is returend
 func (h Height) Decrement() (decremented exported.Height, success bool) {
-	if h.MithrilHeight == 0 {
+	if h.RevisionHeight == 0 {
 		return Height{}, false
 	}
-	return NewHeight(h.MithrilHeight - 1), true
+	return NewHeight(0, h.RevisionHeight-1), true
 }
 
 // Increment will return a height with an incremented mithril height
 func (h Height) Increment() exported.Height {
-	return NewHeight(h.MithrilHeight + 1)
+	return NewHeight(0, h.RevisionHeight+1)
 }
 
 // IsZero returns true if mithril height is 0
 func (h Height) IsZero() bool {
-	return h.MithrilHeight == 0
+	return h.RevisionHeight == 0
 }
 
 // MustParseHeight will attempt to parse a string representation of a height and panic if
@@ -113,14 +114,14 @@ func MustParseHeight(heightStr string) Height {
 // ParseHeight is a utility function that takes a string representation of the height
 // and returns a Height struct
 func ParseHeight(heightStr string) (Height, error) {
-	mithrilHeight, err := strconv.ParseUint(heightStr, 10, 64)
+	revisionHeight, err := strconv.ParseUint(heightStr, 10, 64)
 	if err != nil {
 		return Height{}, errorsmod.Wrapf(ibcerrors.ErrInvalidHeight, "invalid mithril height. parse err: %s", err)
 	}
-	return NewHeight(mithrilHeight), nil
+	return NewHeight(0, revisionHeight), nil
 }
 
 // GetSelfHeight is a utility function that returns self height given context
 func GetSelfHeight(ctx sdk.Context) Height {
-	return NewHeight(uint64(ctx.BlockHeight()))
+	return NewHeight(0, uint64(ctx.BlockHeight()))
 }

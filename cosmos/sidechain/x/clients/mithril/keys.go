@@ -11,6 +11,7 @@ const (
 	KeyFirstCertificateTsInEpochPrefix   = "fcTsInEpoch"
 	KeyLatestCertificateMsdInEpochPrefix = "LcMsdInEpoch"
 	KeyLatestCertificateTsInEpochPrefix  = "LcTsInEpoch"
+	KeyMSDCertificateHashPrefix          = "MSDCertificateHash"
 )
 
 func FcInEpochKey(epoch uint64) []byte {
@@ -19,6 +20,14 @@ func FcInEpochKey(epoch uint64) []byte {
 
 func FcInEpochPath(epoch uint64) string {
 	return fmt.Sprintf("%s/%v", KeyFirstCertificateInEpochPrefix, epoch)
+}
+
+func MSDCertificateHashKey(hash string) []byte {
+	return []byte(MSDCertificateHashPath(hash))
+}
+
+func MSDCertificateHashPath(hash string) string {
+	return fmt.Sprintf("%s/%s", KeyMSDCertificateHashPrefix, hash)
 }
 
 func FcMsdInEpochKey(epoch uint64) []byte {

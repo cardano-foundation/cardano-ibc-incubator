@@ -3,7 +3,7 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
-	"github.com/blinklabs-io/gouroboros/cbor"
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
@@ -13,6 +13,7 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnectionResponse, error) {
@@ -62,30 +63,37 @@ func (gw *Gateway) QueryConnection(connectionId string) (*conntypes.QueryConnect
 		}
 		newVersions = append(newVersions, &newVersion)
 	}
-	stateNum, ok := connDatumDecoded.State.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
+	stateNum := int32(connDatumDecoded.State.State)
 	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
 		policyId,
 		prefixTokenName,
-		channeltypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
+		channeltypes.State_name[stateNum],
 		chainHandler.Validators.MintConnection.ScriptHash,
 		chainHandler.Validators.MintChannel.ScriptHash)
 	if err != nil {
 		return nil, err
 	}
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var connectionProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions with proof found for connection")
+		}
+		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(5*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-	connectionProof := cardanoTxProof.CertifiedTransactions[0].Proof
 	return &conntypes.QueryConnectionResponse{
 		Connection: &conntypes.ConnectionEnd{
 			ClientId: string(connDatumDecoded.State.ClientId),
 			Versions: newVersions,
-			State:    conntypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    conntypes.State(stateNum),
 			Counterparty: conntypes.Counterparty{
 				ClientId:     string(connDatumDecoded.State.Counterparty.ClientId),
 				ConnectionId: string(connDatumDecoded.State.Counterparty.ConnectionId),
@@ -123,7 +131,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 	if len(utxos) == 0 {
 		return nil, fmt.Errorf("no utxos found for policyId %s and prefixTokenName %s", mintConnScriptHash, prefixTokenName)
 	}
-	var response []*conntypes.IdentifiedConnection
+	var data []*conntypes.IdentifiedConnection
 	for _, utxo := range utxos {
 		if utxo.Datum == nil {
 			continue
@@ -145,10 +153,7 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 			}
 			newVersions = append(newVersions, &newVersion)
 		}
-		stateNum, ok := connDatumDecoded.State.State.(cbor.Tag)
-		if !ok {
-			return nil, fmt.Errorf("state is not cbor tag")
-		}
+		stateNum := int32(connDatumDecoded.State.State)
 		valueId, err := getConnectionIdByTokenName(
 			utxo.AssetsName[2:], helpers.AuthToken{
 				PolicyId: chainHandler.HandlerAuthToken.PolicyID,
@@ -157,11 +162,11 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 		if err != nil {
 			return nil, err
 		}
-		response = append(response, &conntypes.IdentifiedConnection{
+		data = append(data, &conntypes.IdentifiedConnection{
 			Id:       fmt.Sprintf("connection-%v", valueId),
 			ClientId: string(connDatumDecoded.State.ClientId),
 			Versions: newVersions,
-			State:    conntypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    conntypes.State(stateNum),
 			Counterparty: conntypes.Counterparty{
 				ClientId:     string(connDatumDecoded.State.Counterparty.ClientId),
 				ConnectionId: string(connDatumDecoded.State.Counterparty.ConnectionId),
@@ -171,6 +176,17 @@ func (gw *Gateway) QueryConnections() ([]*conntypes.IdentifiedConnection, error)
 			},
 			DelayPeriod: connDatumDecoded.State.DelayPeriod,
 		})
+	}
+	connectionFilters := make(map[string]*conntypes.IdentifiedConnection)
+	for _, currentValue := range data {
+		key := fmt.Sprintf("%s_%s", currentValue.ClientId, currentValue.Id)
+		if existing, found := connectionFilters[key]; !found || existing.State < currentValue.State {
+			connectionFilters[key] = currentValue
+		}
+	}
+	var response []*conntypes.IdentifiedConnection
+	for _, value := range connectionFilters {
+		response = append(response, value)
 	}
 	return response, nil
 }

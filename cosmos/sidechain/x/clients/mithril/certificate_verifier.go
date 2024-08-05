@@ -1,6 +1,7 @@
 package mithril
 
 import (
+	storetypes "cosmossdk.io/store/types"
 	"fmt"
 	"sidechain/x/clients/mithril/common/entities"
 	"sidechain/x/clients/mithril/crypto"
@@ -14,6 +15,23 @@ type MithrilCertificateRetriever interface {
 
 type MithrilCertificateVerifier struct {
 	CertificateRetriever MithrilCertificateRetriever
+}
+
+type MSDCertificateRetriever struct {
+	ClientStore storetypes.KVStore
+}
+
+func (m *MSDCertificateRetriever) GetCertificateDetails(hash string) (*Certificate, error) {
+	cert := getMSDCertificateWithHash(m.ClientStore, hash)
+	nilCert := MithrilCertificate{}
+	if cert == nilCert {
+		return nil, fmt.Errorf("hash not found: %v", hash)
+	}
+	certData, err := FromCertificateProto(&cert)
+	if err != nil {
+		return nil, err
+	}
+	return certData, nil
 }
 
 func (v *MithrilCertificateVerifier) VerifyMultiSignature(

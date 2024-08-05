@@ -151,6 +151,8 @@ export class ConnectionService {
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
     } catch (error) {
+      console.error(error);
+
       this.logger.error(error, 'connectionOpenAck');
       this.logger.error(`connectionOpenAck: ${error.stack}`);
       if (!(error instanceof RpcException)) {

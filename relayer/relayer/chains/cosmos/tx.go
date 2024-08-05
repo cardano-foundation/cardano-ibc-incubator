@@ -1412,13 +1412,32 @@ func (cc *CosmosProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	// Update Client To Cosmos
-	srcBlockData, err := src.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+	srcLatestHeight, err := cc.QueryLatestHeight(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, srcBlockData)
+	clientStateUpdateRes, err := cc.QueryClientStateResponse(ctx, srcLatestHeight, dstClientId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientStateUpdate, err := clienttypes.UnpackClientState(clientStateUpdateRes.ClientState)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcHeaderUpdate, err := src.QueryIBCMithrilHeader(ctx, int64(pp.ProofHeight.RevisionHeight), &clientStateUpdate)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcMithrilHeader, ok := ibcHeaderUpdate.(*mithril.MithrilHeader)
+	if !ok {
+		return nil, nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+	}
+
+	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, ibcMithrilHeader)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1550,8 +1569,8 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 		TrustingPeriod: clientState.TrustingPeriod,
 		// side chain return time in second format
 		LatestHeight: clienttypes.Height{
-			RevisionNumber: 0,
-			RevisionHeight: clientState.LatestHeight.MithrilHeight,
+			RevisionNumber: clientState.LatestHeight.RevisionNumber,
+			RevisionHeight: clientState.LatestHeight.RevisionHeight,
 		},
 	}
 

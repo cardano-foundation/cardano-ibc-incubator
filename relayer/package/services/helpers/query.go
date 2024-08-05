@@ -75,14 +75,12 @@ func convertSignedEntityType(req *dtos.SignedEntityType, stakeDistribution dtos.
 	}
 
 	if req.CardanoTransactions != nil {
+		txs := *req.CardanoTransactions
 		return &mithril.SignedEntityType{
 			Entity: &mithril.SignedEntityType_CardanoTransactions{
 				CardanoTransactions: &mithril.CardanoTransactions{
-					Beacon: &mithril.CardanoDbBeacon{
-						Network:             req.CardanoTransactions.Network,
-						Epoch:               req.CardanoTransactions.Epoch,
-						ImmutableFileNumber: req.CardanoTransactions.ImmutableFileNumber,
-					},
+					Epoch:       txs[0],
+					BlockNumber: txs[1],
 				},
 			},
 		}
@@ -161,10 +159,10 @@ func convertMessageParts(messagePart dtos.MessageParts) []*mithril.MessagePart {
 		}
 		messageParts = append(messageParts, element)
 	}
-	if messagePart.LatestImmutableFileNumber != nil {
+	if messagePart.LatestBlockNumber != nil {
 		element := &mithril.MessagePart{
-			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER,
-			ProtocolMessagePartValue: *messagePart.LatestImmutableFileNumber,
+			ProtocolMessagePartKey:   mithril.PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER,
+			ProtocolMessagePartValue: *messagePart.LatestBlockNumber,
 		}
 		messageParts = append(messageParts, element)
 	}

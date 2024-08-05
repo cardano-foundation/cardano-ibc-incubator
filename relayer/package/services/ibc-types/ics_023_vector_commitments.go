@@ -26,8 +26,6 @@ type CommitmentProofCompressed []byte
 
 // Define custom unmarshal function to handle the enum-like structure
 func (cp *CommitmentProofProofSchema) UnmarshalCBOR(data []byte) error {
-	var rs interface{}
-	cbor.Unmarshal(data, &rs)
 	//var raw CommitmentProofProofSchema
 	tags := cbor.NewTagSet()
 	err := tags.Add(

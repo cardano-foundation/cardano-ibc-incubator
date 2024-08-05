@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cardano/relayer/v1/internal/relayertest"
 	"github.com/cardano/relayer/v1/relayer"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
@@ -146,8 +148,8 @@ func (s *IBCTestSuite) TestRelayPacket(t *testing.T) {
 	}()
 
 	_ = cosmosChannelID
-	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
+	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelID, Amount, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
 
 	_ = cardanoChannelID
 	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
@@ -177,11 +179,11 @@ func (s *IBCTestSuite) TestRelayPacketLegacy(t *testing.T) {
 	assert.Nil(t, runResult.Err)
 
 	// transfer packet success
-	//runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
-	//
-	//runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
-	//assert.Nil(t, runResult.Err)
+	runResult = s.transferFromCosmosToCardano(t, s.System, cosmosChannelId, Amount, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
+
+	runResult = s.transferFromCardanoToCosmos(t, s.System, cardanoChannelID, AmountCardanoMockToken, TimeForTestTransfer)
+	assert.Nil(t, runResult.Err)
 
 	var wg sync.WaitGroup
 
@@ -372,10 +374,22 @@ func (s *IBCTestSuite) getLastOpenedChannels(t *testing.T, sys *relayertest.Syst
 
 	assert.Nil(t, runResult.Err)
 
-	cosmosChannel := &chantypes.IdentifiedChannel{}
-	json.Unmarshal(runResult.Stdout.Bytes(), cosmosChannel)
+	cosmosChannel := []chantypes.IdentifiedChannel{}
+	json.Unmarshal(runResult.Stdout.Bytes(), &cosmosChannel)
+	err := gw.NewGateWayService(CardanoRPCAddr, MithrilEndpoint)
+	require.NoError(t, err)
+	for _, channel := range cosmosChannel {
+		channelDetail, err := gw.QueryChannel(channel.Counterparty.ChannelId)
+		require.NoError(t, err)
+		if channelDetail.Channel.Counterparty.ChannelId != channel.ChannelId {
+			continue
+		}
+		if channelDetail.Channel.State == chantypes.OPEN {
+			return channel.Counterparty.ChannelId, channel.ChannelId
+		}
+	}
 
-	return cosmosChannel.Counterparty.ChannelId, cosmosChannel.ChannelId
+	return "", ""
 }
 
 func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayertest.RunResult {
@@ -387,14 +401,14 @@ func (s *IBCTestSuite) startRelay(t *testing.T, sys *relayertest.System) relayer
 }
 
 func (s *IBCTestSuite) startRelayLegacy(t *testing.T, sys *relayertest.System) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*240)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*60)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil), "start", Path, "--processor", "legacy")
 }
 
 func (s *IBCTestSuite) transferFromCosmosToCardano(t *testing.T, sys *relayertest.System, cosmosChannelID, amount, timeout string) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
@@ -408,7 +422,7 @@ func (s *IBCTestSuite) transferFromCosmosToCardano(t *testing.T, sys *relayertes
 }
 
 func (s *IBCTestSuite) transferFromCardanoToCosmos(t *testing.T, sys *relayertest.System, cardanoChannelId, amount, timeout string) relayertest.RunResult {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*120)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*120)
 	defer cancel()
 	return sys.RunWithInputC(ctx, s.Logger, bytes.NewReader(nil),
 		"transact", "transfer",

@@ -146,7 +146,8 @@ export async function encodeSpendConnectionRedeemer(
     revisionHeight: Data.Integer(),
   });
   const MithrilHeightSchema = Data.Object({
-    mithril_height: Data.Integer(),
+    revisionNumber: Data.Integer(),
+    revisionHeight: Data.Integer(),
   });
   const FractionSchema = Data.Object({
     numerator: Data.Integer(),
@@ -344,7 +345,8 @@ export function decodeSpendConnectionRedeemer(
     revisionHeight: Data.Integer(),
   });
   const MithrilHeightSchema = Data.Object({
-    mithril_height: Data.Integer(),
+    revisionNumber: Data.Integer(),
+    revisionHeight: Data.Integer(),
   });
   const FractionSchema = Data.Object({
     numerator: Data.Integer(),

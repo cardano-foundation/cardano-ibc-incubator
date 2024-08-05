@@ -3,15 +3,17 @@ package services
 import (
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/avast/retry-go/v4"
 	"github.com/cardano/relayer/v1/constant"
 	"github.com/cardano/relayer/v1/package/services/helpers"
 	ibc_types "github.com/cardano/relayer/v1/package/services/ibc-types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/fxamacker/cbor/v2"
-	"sort"
-	"strconv"
-	"strings"
 )
 
 func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelResponse, error) {
@@ -43,41 +45,37 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 		return nil, fmt.Errorf("datum is nil")
 	}
 	dataString := *utxos[0].Datum
-	channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+	channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 	if err != nil {
 		return nil, err
 	}
-	stateNum, ok := channelDatumDecoded.State.Channel.State.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("state is not cbor tag")
-	}
-	orderNum, ok := channelDatumDecoded.State.Channel.Ordering.(cbor.Tag)
-	if !ok {
-		return nil, fmt.Errorf("order is not cbor tag")
-	}
+	stateNum := int32(channelDatumDecoded.State.Channel.State)
+	orderNum := int32(channelDatumDecoded.State.Channel.Ordering)
 	connectionHops := make([]string, 0)
 	for _, hop := range channelDatumDecoded.State.Channel.ConnectionHops {
 		connectionHops = append(connectionHops, string(hop))
 	}
-	proof, err := gw.DBService.FindUtxoByPolicyAndTokenNameAndState(
-		policyId,
-		prefixTokenName,
-		chantypes.State_name[int32(stateNum.Number-constant.CBOR_TAG_MAGIC_NUMBER)],
-		chainHandler.Validators.MintConnection.ScriptHash,
-		chainHandler.Validators.MintChannel.ScriptHash)
+	hash := utxos[0].TxHash[2:]
+	var channelProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions with proof found for channel")
+		}
+		channelProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(10*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
-	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
-	if err != nil {
-		return nil, err
-	}
-	channelProof := cardanoTxProof.CertifiedTransactions[0].Proof
+
 	return &chantypes.QueryChannelResponse{
 		Channel: &chantypes.Channel{
-			State:    chantypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
-			Ordering: chantypes.Order(orderNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    chantypes.State(stateNum),
+			Ordering: chantypes.Order(orderNum),
 			Counterparty: chantypes.Counterparty{
 				PortId:    string(channelDatumDecoded.State.Channel.Counterparty.PortId),
 				ChannelId: string(channelDatumDecoded.State.Channel.Counterparty.ChannelId),
@@ -88,7 +86,7 @@ func (gw *Gateway) QueryChannel(channelId string) (*chantypes.QueryChannelRespon
 		Proof: []byte(channelProof),
 		ProofHeight: clienttypes.Height{
 			RevisionNumber: 0,
-			RevisionHeight: uint64(proof.BlockNo),
+			RevisionHeight: uint64(utxos[0].BlockNo),
 		},
 	}, nil
 }
@@ -118,19 +116,13 @@ func (gw *Gateway) QueryChannels() ([]*chantypes.IdentifiedChannel, error) {
 		if utxo.Datum == nil {
 			continue
 		}
-		dataString := *utxos[0].Datum
-		channelDatumDecoded, err := ibc_types.DecodeChannelDatumWithPort(dataString[2:])
+		dataString := *utxo.Datum
+		channelDatumDecoded, err := ibc_types.DecodeChannelDatumSchema(dataString[2:])
 		if err != nil {
 			return nil, err
 		}
-		stateNum, ok := channelDatumDecoded.State.Channel.State.(cbor.Tag)
-		if !ok {
-			return nil, fmt.Errorf("state is not cbor tag")
-		}
-		orderNum, ok := channelDatumDecoded.State.Channel.Ordering.(cbor.Tag)
-		if !ok {
-			return nil, fmt.Errorf("order is not cbor tag")
-		}
+		stateNum := int32(channelDatumDecoded.State.Channel.State)
+		orderNum := int32(channelDatumDecoded.State.Channel.Ordering)
 		connectionHops := make([]string, 0)
 		for _, hop := range channelDatumDecoded.State.Channel.ConnectionHops {
 			connectionHops = append(connectionHops, string(hop))
@@ -139,9 +131,12 @@ func (gw *Gateway) QueryChannels() ([]*chantypes.IdentifiedChannel, error) {
 			PolicyId: chainHandler.HandlerAuthToken.PolicyID,
 			Name:     chainHandler.HandlerAuthToken.Name,
 		}, constant.CHANNEL_TOKEN_PREFIX)
+		if err != nil {
+			return nil, err
+		}
 		identifiedChannels = append(identifiedChannels, &chantypes.IdentifiedChannel{
-			State:    chantypes.State(stateNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
-			Ordering: chantypes.Order(orderNum.Number - constant.CBOR_TAG_MAGIC_NUMBER),
+			State:    chantypes.State(stateNum),
+			Ordering: chantypes.Order(orderNum),
 			Counterparty: chantypes.Counterparty{
 				PortId:    string(channelDatumDecoded.State.Channel.Counterparty.PortId),
 				ChannelId: string(channelDatumDecoded.State.Channel.Counterparty.ChannelId),

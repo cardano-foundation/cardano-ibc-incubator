@@ -15,6 +15,8 @@ export enum ProtocolMessagePartKey {
   PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY = 3,
   /** PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER - key "latest_immutable_file_number" */
   PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER = 4,
+  /** PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER - key "latest_block_number" */
+  PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER = 5,
   UNRECOGNIZED = -1,
 }
 export function protocolMessagePartKeyFromJSON(object: any): ProtocolMessagePartKey {
@@ -34,6 +36,9 @@ export function protocolMessagePartKeyFromJSON(object: any): ProtocolMessagePart
     case 4:
     case "PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER":
       return ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER;
+    case 5:
+    case "PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER":
+      return ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -52,6 +57,8 @@ export function protocolMessagePartKeyToJSON(object: ProtocolMessagePartKey): st
       return "PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY";
     case ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER:
       return "PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER";
+    case ProtocolMessagePartKey.PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER:
+      return "PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER";
     case ProtocolMessagePartKey.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -63,8 +70,10 @@ export function protocolMessagePartKeyToJSON(object: ProtocolMessagePartKey): st
  * This needs to be fixed in the future by using something unique like block height.
  */
 export interface Height {
-  /** the immutable file number */
-  mithril_height: bigint;
+  /** the revision that the client is currently on */
+  revision_number: bigint;
+  /** the height within the given revision */
+  revision_height: bigint;
 }
 /**
  * MithrilClientState represents the client state in the Mithril system.
@@ -122,11 +131,12 @@ export interface MithrilStakeDistribution {
 }
 /** Cardano Transaction Snapshot */
 export interface CardanoTransactionSnapshot {
-  snapshot_hash: string;
   merkle_root: string;
-  certificate_hash: string;
   epoch: bigint;
-  height?: Height;
+  block_number: bigint;
+  hash: string;
+  certificate_hash: string;
+  created_at: string;
 }
 /** Mithril Certificate */
 export interface MithrilCertificate {
@@ -194,7 +204,8 @@ export interface CardanoImmutableFilesFull {
 }
 /** Cardano transactions */
 export interface CardanoTransactions {
-  beacon?: CardanoDbBeacon;
+  epoch: bigint;
+  block_number: bigint;
 }
 /** Cardano db beacon */
 export interface CardanoDbBeacon {
@@ -212,14 +223,18 @@ export interface Fraction {
 }
 function createBaseHeight(): Height {
   return {
-    mithril_height: BigInt(0)
+    revision_number: BigInt(0),
+    revision_height: BigInt(0)
   };
 }
 export const Height = {
   typeUrl: "/ibc.clients.mithril.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.mithril_height !== BigInt(0)) {
-      writer.uint32(8).uint64(message.mithril_height);
+    if (message.revision_number !== BigInt(0)) {
+      writer.uint32(8).uint64(message.revision_number);
+    }
+    if (message.revision_height !== BigInt(0)) {
+      writer.uint32(16).uint64(message.revision_height);
     }
     return writer;
   },
@@ -231,7 +246,10 @@ export const Height = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.mithril_height = reader.uint64();
+          message.revision_number = reader.uint64();
+          break;
+        case 2:
+          message.revision_height = reader.uint64();
           break;
         default:
           reader.skipType(tag & 7);
@@ -242,18 +260,23 @@ export const Height = {
   },
   fromJSON(object: any): Height {
     const obj = createBaseHeight();
-    if (isSet(object.mithril_height)) obj.mithril_height = BigInt(object.mithril_height.toString());
+    if (isSet(object.revision_number)) obj.revision_number = BigInt(object.revision_number.toString());
+    if (isSet(object.revision_height)) obj.revision_height = BigInt(object.revision_height.toString());
     return obj;
   },
   toJSON(message: Height): unknown {
     const obj: any = {};
-    message.mithril_height !== undefined && (obj.mithril_height = (message.mithril_height || BigInt(0)).toString());
+    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Height>, I>>(object: I): Height {
     const message = createBaseHeight();
-    if (object.mithril_height !== undefined && object.mithril_height !== null) {
-      message.mithril_height = BigInt(object.mithril_height.toString());
+    if (object.revision_number !== undefined && object.revision_number !== null) {
+      message.revision_number = BigInt(object.revision_number.toString());
+    }
+    if (object.revision_height !== undefined && object.revision_height !== null) {
+      message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
   }
@@ -708,30 +731,34 @@ export const MithrilStakeDistribution = {
 };
 function createBaseCardanoTransactionSnapshot(): CardanoTransactionSnapshot {
   return {
-    snapshot_hash: "",
     merkle_root: "",
-    certificate_hash: "",
     epoch: BigInt(0),
-    height: undefined
+    block_number: BigInt(0),
+    hash: "",
+    certificate_hash: "",
+    created_at: ""
   };
 }
 export const CardanoTransactionSnapshot = {
   typeUrl: "/ibc.clients.mithril.v1.CardanoTransactionSnapshot",
   encode(message: CardanoTransactionSnapshot, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.snapshot_hash !== "") {
-      writer.uint32(10).string(message.snapshot_hash);
-    }
     if (message.merkle_root !== "") {
-      writer.uint32(18).string(message.merkle_root);
-    }
-    if (message.certificate_hash !== "") {
-      writer.uint32(26).string(message.certificate_hash);
+      writer.uint32(10).string(message.merkle_root);
     }
     if (message.epoch !== BigInt(0)) {
-      writer.uint32(32).uint64(message.epoch);
+      writer.uint32(16).uint64(message.epoch);
     }
-    if (message.height !== undefined) {
-      Height.encode(message.height, writer.uint32(42).fork()).ldelim();
+    if (message.block_number !== BigInt(0)) {
+      writer.uint32(24).uint64(message.block_number);
+    }
+    if (message.hash !== "") {
+      writer.uint32(34).string(message.hash);
+    }
+    if (message.certificate_hash !== "") {
+      writer.uint32(42).string(message.certificate_hash);
+    }
+    if (message.created_at !== "") {
+      writer.uint32(50).string(message.created_at);
     }
     return writer;
   },
@@ -743,19 +770,22 @@ export const CardanoTransactionSnapshot = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.snapshot_hash = reader.string();
-          break;
-        case 2:
           message.merkle_root = reader.string();
           break;
-        case 3:
-          message.certificate_hash = reader.string();
-          break;
-        case 4:
+        case 2:
           message.epoch = reader.uint64();
           break;
+        case 3:
+          message.block_number = reader.uint64();
+          break;
+        case 4:
+          message.hash = reader.string();
+          break;
         case 5:
-          message.height = Height.decode(reader, reader.uint32());
+          message.certificate_hash = reader.string();
+          break;
+        case 6:
+          message.created_at = reader.string();
           break;
         default:
           reader.skipType(tag & 7);
@@ -766,33 +796,36 @@ export const CardanoTransactionSnapshot = {
   },
   fromJSON(object: any): CardanoTransactionSnapshot {
     const obj = createBaseCardanoTransactionSnapshot();
-    if (isSet(object.snapshot_hash)) obj.snapshot_hash = String(object.snapshot_hash);
     if (isSet(object.merkle_root)) obj.merkle_root = String(object.merkle_root);
-    if (isSet(object.certificate_hash)) obj.certificate_hash = String(object.certificate_hash);
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
+    if (isSet(object.block_number)) obj.block_number = BigInt(object.block_number.toString());
+    if (isSet(object.hash)) obj.hash = String(object.hash);
+    if (isSet(object.certificate_hash)) obj.certificate_hash = String(object.certificate_hash);
+    if (isSet(object.created_at)) obj.created_at = String(object.created_at);
     return obj;
   },
   toJSON(message: CardanoTransactionSnapshot): unknown {
     const obj: any = {};
-    message.snapshot_hash !== undefined && (obj.snapshot_hash = message.snapshot_hash);
     message.merkle_root !== undefined && (obj.merkle_root = message.merkle_root);
-    message.certificate_hash !== undefined && (obj.certificate_hash = message.certificate_hash);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
-    message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
+    message.block_number !== undefined && (obj.block_number = (message.block_number || BigInt(0)).toString());
+    message.hash !== undefined && (obj.hash = message.hash);
+    message.certificate_hash !== undefined && (obj.certificate_hash = message.certificate_hash);
+    message.created_at !== undefined && (obj.created_at = message.created_at);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CardanoTransactionSnapshot>, I>>(object: I): CardanoTransactionSnapshot {
     const message = createBaseCardanoTransactionSnapshot();
-    message.snapshot_hash = object.snapshot_hash ?? "";
     message.merkle_root = object.merkle_root ?? "";
-    message.certificate_hash = object.certificate_hash ?? "";
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
-    if (object.height !== undefined && object.height !== null) {
-      message.height = Height.fromPartial(object.height);
+    if (object.block_number !== undefined && object.block_number !== null) {
+      message.block_number = BigInt(object.block_number.toString());
     }
+    message.hash = object.hash ?? "";
+    message.certificate_hash = object.certificate_hash ?? "";
+    message.created_at = object.created_at ?? "";
     return message;
   }
 };
@@ -1506,14 +1539,18 @@ export const CardanoImmutableFilesFull = {
 };
 function createBaseCardanoTransactions(): CardanoTransactions {
   return {
-    beacon: undefined
+    epoch: BigInt(0),
+    block_number: BigInt(0)
   };
 }
 export const CardanoTransactions = {
   typeUrl: "/ibc.clients.mithril.v1.CardanoTransactions",
   encode(message: CardanoTransactions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.beacon !== undefined) {
-      CardanoDbBeacon.encode(message.beacon, writer.uint32(10).fork()).ldelim();
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    if (message.block_number !== BigInt(0)) {
+      writer.uint32(16).uint64(message.block_number);
     }
     return writer;
   },
@@ -1525,7 +1562,10 @@ export const CardanoTransactions = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.beacon = CardanoDbBeacon.decode(reader, reader.uint32());
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.block_number = reader.uint64();
           break;
         default:
           reader.skipType(tag & 7);
@@ -1536,18 +1576,23 @@ export const CardanoTransactions = {
   },
   fromJSON(object: any): CardanoTransactions {
     const obj = createBaseCardanoTransactions();
-    if (isSet(object.beacon)) obj.beacon = CardanoDbBeacon.fromJSON(object.beacon);
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (isSet(object.block_number)) obj.block_number = BigInt(object.block_number.toString());
     return obj;
   },
   toJSON(message: CardanoTransactions): unknown {
     const obj: any = {};
-    message.beacon !== undefined && (obj.beacon = message.beacon ? CardanoDbBeacon.toJSON(message.beacon) : undefined);
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    message.block_number !== undefined && (obj.block_number = (message.block_number || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CardanoTransactions>, I>>(object: I): CardanoTransactions {
     const message = createBaseCardanoTransactions();
-    if (object.beacon !== undefined && object.beacon !== null) {
-      message.beacon = CardanoDbBeacon.fromPartial(object.beacon);
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    if (object.block_number !== undefined && object.block_number !== null) {
+      message.block_number = BigInt(object.block_number.toString());
     }
     return message;
   }

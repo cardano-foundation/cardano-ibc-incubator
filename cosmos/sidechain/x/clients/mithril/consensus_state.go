@@ -19,7 +19,7 @@ const SentinelRoot = "sentinel_root"
 // NewConsensusState creates a new ConsensusState instance.
 func NewConsensusState(
 	timestamp uint64,
-	firstCertHashLatestEpoch string,
+	firstCertHashLatestEpoch *MithrilCertificate,
 	latestCertHashTxSnapshot string,
 ) *ConsensusState {
 	return &ConsensusState{
@@ -46,7 +46,7 @@ func (cs ConsensusState) GetTime() time.Time {
 
 // ValidateBasic defines a basic validation for the mithril consensus state.
 func (cs ConsensusState) ValidateBasic() error {
-	if data, err := hex.DecodeString(cs.FirstCertHashLatestEpoch); err != nil || cmttypes.ValidateHash(data) != nil {
+	if data, err := hex.DecodeString(cs.FirstCertHashLatestEpoch.Hash); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "first certificate hash of latest epoch of mithril stake distribution is invalid")
 	}
 	if data, err := hex.DecodeString(cs.LatestCertHashTxSnapshot); err != nil || cmttypes.ValidateHash(data) != nil {

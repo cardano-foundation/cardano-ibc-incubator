@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"fmt"
+	pbchannel "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	channeltypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	"strings"
 )
@@ -20,10 +21,6 @@ func ValidQueryPacketCommitmentsParam(req *channeltypes.QueryPacketCommitmentsRe
 	if !strings.HasPrefix(req.ChannelId, "channel") {
 		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
 	}
-	if req.Pagination == nil {
-		return nil, fmt.Errorf("invalid pagination: pagination must be not nil")
-	}
-
 	return req, nil
 }
 
@@ -40,9 +37,6 @@ func ValidQueryPacketAckParam(req *channeltypes.QueryPacketAcknowledgementReques
 func ValidQueryPacketAcksParam(req *channeltypes.QueryPacketAcknowledgementsRequest) (*channeltypes.QueryPacketAcknowledgementsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
 		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
-	}
-	if req.Pagination == nil {
-		return nil, fmt.Errorf("invalid pagination: pagination must be not nil")
 	}
 	return req, nil
 }
@@ -66,6 +60,13 @@ func ValidQueryUnrecvPackets(req *channeltypes.QueryUnreceivedPacketsRequest) (*
 }
 
 func ValidQueryUnrecvAcks(req *channeltypes.QueryUnreceivedAcksRequest) (*channeltypes.QueryUnreceivedAcksRequest, error) {
+	if !strings.HasPrefix(req.ChannelId, "channel") {
+		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
+	}
+	return req, nil
+}
+
+func ValidQueryProofUnreceivedPackets(req *pbchannel.QueryProofUnreceivedPacketsRequest) (*pbchannel.QueryProofUnreceivedPacketsRequest, error) {
 	if !strings.HasPrefix(req.ChannelId, "channel") {
 		return nil, fmt.Errorf("innvalid channel-id: %s", req.ChannelId)
 	}
