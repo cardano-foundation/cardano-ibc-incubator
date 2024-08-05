@@ -80,7 +80,7 @@ func (gw *Gateway) QueryPacketCommitment(req *channeltypes.QueryPacketCommitment
 			return err
 		}
 		if len(cardanoTxProof.CertifiedTransactions) == 0 {
-			return fmt.Errorf("no certified transactions found")
+			return fmt.Errorf("no certified transactions with proof found for packet commitment")
 		}
 		connectionProof = cardanoTxProof.CertifiedTransactions[0].Proof
 		certHashProof = cardanoTxProof.CertificateHash
@@ -381,16 +381,25 @@ func (gw *Gateway) QueryPacketReceipt(req *channeltypes.QueryPacketReceiptReques
 	}
 
 	hash := proof.TxHash[2:]
-	cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+	var packetReceiptProof string
+	err = retry.Do(func() error {
+		cardanoTxProof, err := gw.MithrilService.GetProofOfACardanoTransactionList(hash)
+		if err != nil {
+			return err
+		}
+		if len(cardanoTxProof.CertifiedTransactions) == 0 {
+			return fmt.Errorf("no certified transactions with proof found for packet receipt")
+		}
+		packetReceiptProof = cardanoTxProof.CertifiedTransactions[0].Proof
+		return nil
+	}, retry.Attempts(5), retry.Delay(10*time.Second), retry.LastErrorOnly(true))
 	if err != nil {
 		return nil, err
 	}
 
-	acknowledgementProof := cardanoTxProof.CertifiedTransactions[0].Proof
-
 	return &channeltypes.QueryPacketReceiptResponse{
 		Received: received,
-		Proof:    []byte(acknowledgementProof),
+		Proof:    []byte(packetReceiptProof),
 		ProofHeight: clienttypes.Height{
 			RevisionNumber: 0,
 			RevisionHeight: uint64(proof.BlockNo),
