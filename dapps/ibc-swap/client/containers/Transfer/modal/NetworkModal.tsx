@@ -1,6 +1,10 @@
+import { useContext } from 'react';
+import Image from 'next/image';
+
 import {
   Box,
   Button,
+  Img,
   Modal,
   ModalBody,
   ModalCloseButton,
@@ -8,12 +12,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalOverlay,
+  Text,
 } from '@chakra-ui/react';
-import Image from 'next/image';
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
 import { NetworkList } from '@/components/NetworkList/NetworkList';
+import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwitchIcon from '@/assets/icons/transfer.svg';
+import EarchIcon from '@/assets/icons/earth.svg';
+import TransferContext from '@/contexts/TransferContext';
+
 import {
   StyledNetworkBox,
   StyledNetworkBoxHeader,
@@ -83,15 +91,58 @@ const NetworkListData = [
   },
 ];
 
-const NetworkBoxComponent = () => {
+type NetworkBoxComponentProps = {
+  title?: string;
+  networkList: Array<NetworkItemProps>;
+  selectedNetwork: NetworkItemProps;
+  // eslint-disable-next-line no-unused-vars
+  onSelectNetwork: (token: NetworkItemProps) => void;
+};
+
+const NetworkBoxComponent = ({
+  title,
+  networkList,
+  selectedNetwork,
+  onSelectNetwork,
+}: NetworkBoxComponentProps) => {
   return (
     <StyledNetworkBox>
-      <StyledNetworkBoxHeader>From Cosmos Hub</StyledNetworkBoxHeader>
+      <StyledNetworkBoxHeader>
+        <Text
+          display="flex"
+          alignItems="center"
+          fontWeight={400}
+          fontSize={14}
+          lineHeight="20px"
+          color={COLOR.neutral_2}
+        >
+          {title}
+        </Text>
+        <Box display="flex">
+          <Img
+            src={selectedNetwork?.networkLogo || EarchIcon.src}
+            alt={selectedNetwork?.networkName || ''}
+            width="32px"
+            height="32px"
+          />
+          <Box ml="10px" display="flex" alignItems="center">
+            <Box>
+              <Text fontWeight="700" fontSize="16px" lineHeight="22px">
+                {selectedNetwork?.networkName || 'Select Network'}
+              </Text>
+            </Box>
+          </Box>
+        </Box>
+      </StyledNetworkBoxHeader>
       <Box p="16px" borderBottomWidth="1px" borderBottomColor={COLOR.neutral_5}>
         <SearchInput placeholder="Search network" />
       </Box>
       <Box maxH="368px" overflowY="scroll">
-        <NetworkList networkList={NetworkListData} />
+        <NetworkList
+          networkList={networkList}
+          networkSelected={selectedNetwork}
+          onClickNetwork={onSelectNetwork}
+        />
       </Box>
     </StyledNetworkBox>
   );
@@ -103,6 +154,14 @@ export type NetworkModalProps = {
 };
 
 export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
+  const {
+    fromNetwork,
+    toNetwork,
+    setFromNetwork,
+    setToNetwork,
+    switchNetwork,
+  } = useContext(TransferContext);
+
   return (
     <>
       <Modal isCentered onClose={onClose} isOpen={isOpen}>
@@ -124,7 +183,12 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               display="flex"
               justifyContent="space-between"
             >
-              <NetworkBoxComponent />
+              <NetworkBoxComponent
+                title="From"
+                selectedNetwork={fromNetwork}
+                onSelectNetwork={setFromNetwork}
+                networkList={NetworkListData}
+              />
               <StyledSwitchNetwork
                 _hover={{
                   bgColor: COLOR.neutral_4,
@@ -133,10 +197,16 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
                   top: '15%',
                   translate: '-50% -50%',
                 }}
+                onClick={switchNetwork}
               >
                 <Image src={SwitchIcon} alt="switch icon" />
               </StyledSwitchNetwork>
-              <NetworkBoxComponent />
+              <NetworkBoxComponent
+                title="To"
+                selectedNetwork={toNetwork}
+                onSelectNetwork={setToNetwork}
+                networkList={NetworkListData}
+              />
             </Box>
           </ModalBody>
           <ModalFooter p={0}>
@@ -170,6 +240,7 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               fontSize={16}
               fontWeight={700}
               lineHeight="22px"
+              onClick={onClose}
               _hover={{
                 bg: COLOR.primary,
               }}

@@ -16,6 +16,7 @@ import {
 } from './index.style';
 
 type TransferResultProps = {
+  // eslint-disable-next-line no-unused-vars
   setIsSubmitted: (isSubmitted: boolean) => void;
 };
 

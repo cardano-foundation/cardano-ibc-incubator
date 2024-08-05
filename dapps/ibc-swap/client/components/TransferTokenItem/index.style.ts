@@ -1,8 +1,12 @@
 import { COLOR } from '@/styles/color';
-import { Box, Text } from '@chakra-ui/react';
+import { Box, BoxProps, Text } from '@chakra-ui/react';
 import styled from '@emotion/styled';
 
-const StyledTokenItemWrapper = styled(Box)`
+interface StyledTokenItemWrapperProps extends BoxProps {
+  isActive?: boolean;
+}
+
+const StyledTokenItemWrapper = styled(Box)<StyledTokenItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-content: center;
@@ -15,6 +19,7 @@ const StyledTokenItemWrapper = styled(Box)`
   opacity: 0px;
   margin-top: 8px;
   margin-bottom: 16px;
+  background-color: ${(props) => props.isActive && COLOR.neutral_5};
 
   :hover {
     background-color: ${COLOR.neutral_5};

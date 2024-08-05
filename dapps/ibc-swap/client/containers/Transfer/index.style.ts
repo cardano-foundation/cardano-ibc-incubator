@@ -12,7 +12,6 @@ const StyledTransferContainer = styled.div`
   position: fixed;
   top: 152px;
   width: 484px;
-  height: 424px;
   border-radius: 16px;
   border-width: 1px;
   padding: 24px 24px 28px 24px;
@@ -121,6 +120,7 @@ const StyledNetworkBoxHeader = styled.div`
   background: ${COLOR.neutral_5};
   display: flex;
   justify-content: center;
+  align-items: center;
 `;
 
 const StyledTokenBox = styled.div`
@@ -152,6 +152,7 @@ const StyledTransferFromToBox = styled.div`
 
 const StyledTransferCalculatorBox = styled.div`
   display: inline-grid;
+  margin-top: 16px;
   width: 100%;
   height: 70px;
   padding: 9px 16px 11px 16px;

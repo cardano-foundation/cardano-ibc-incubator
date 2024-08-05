@@ -1,3 +1,4 @@
+import { useContext } from 'react';
 import {
   Box,
   Button,
@@ -13,69 +14,89 @@ import {
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
-import { TransferTokenItem } from '@/components/TransferTokenItem/TransferTokenItem';
+import {
+  TransferTokenItem,
+  TransferTokenItemProps,
+} from '@/components/TransferTokenItem/TransferTokenItem';
+import TransferContext from '@/contexts/TransferContext';
 
 import { StyledTokenBox } from '../index.style';
 
 const TokenListData = [
   {
+    tokenId: 1,
     tokenName: 'Cosmos Hub',
     tokenLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 2,
     tokenName: 'BitCanna',
     tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 3,
     tokenName: 'Cosmos Hub',
     tokenLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 4,
     tokenName: 'BitCanna',
     tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 5,
     tokenName: 'Cosmos Hub',
     tokenLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 6,
     tokenName: 'BitCanna',
     tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 7,
     tokenName: 'Cosmos Hub',
     tokenLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 7,
     tokenName: 'BitCanna',
     tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 8,
     tokenName: 'Cosmos Hub',
     tokenLogo:
       'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
     tokenSymbol: 'ETH',
   },
   {
+    tokenId: 9,
     tokenName: 'BitCanna',
     tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
     tokenSymbol: 'ETH',
   },
 ];
 
-const TokenBoxComponent = () => {
+type TokenBoxComponentProps = {
+  tokenList: Array<TransferTokenItemProps>;
+};
+
+const TokenBoxComponent = ({ tokenList }: TokenBoxComponentProps) => {
+  const { selectedToken, setSelectedToken } = useContext(TransferContext);
+
   return (
     <StyledTokenBox>
       <Box
@@ -87,12 +108,14 @@ const TokenBoxComponent = () => {
       </Box>
       <List maxH="416px" overflowY="scroll">
         <ListItem mb={4}>
-          {TokenListData.map((token) => (
+          {tokenList.map((token) => (
             <TransferTokenItem
               key={token.tokenName}
               tokenName={token.tokenName}
               tokenLogo={token.tokenLogo}
               tokenSymbol={token.tokenSymbol}
+              onClick={() => setSelectedToken(token)}
+              isActive={selectedToken?.tokenId === token.tokenId}
             />
           ))}
         </ListItem>
@@ -128,7 +151,7 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               display="flex"
               justifyContent="space-between"
             >
-              <TokenBoxComponent />
+              <TokenBoxComponent tokenList={TokenListData} />
             </Box>
           </ModalBody>
           <ModalFooter p={0} display="flex" justifyContent="space-between">
@@ -164,6 +187,7 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               fontSize={16}
               fontWeight={700}
               lineHeight="22px"
+              onClick={onClose}
               _hover={{
                 bg: COLOR.primary,
               }}
