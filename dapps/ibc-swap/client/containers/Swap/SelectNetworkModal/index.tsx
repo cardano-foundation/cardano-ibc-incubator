@@ -13,17 +13,19 @@ import {
   Image,
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
-import SwapIcon from '@/assets/icons/swap-horizontal.svg';
+import SwitchIcon from '@/assets/icons/transfer.svg';
 import NetworkTokenBox, {
   TokenNetworkSelectedProps,
   TokenSelectedProps,
 } from './NetworkTokenBox';
+import { StyledSwitchNetwork } from './index.style';
 
 type SelectNetworkModalProps = {
   isOpen: boolean;
   onClose: () => void;
   onSave?: ({ tokenFrom, tokenTo }: TokenNetworkSelectedProps) => void;
   selectedToken?: TokenNetworkSelectedProps;
+  onChangeToken?: (token: TokenNetworkSelectedProps) => void;
 };
 
 const SelectNetworkModal = ({
@@ -31,6 +33,7 @@ const SelectNetworkModal = ({
   onClose,
   onSave,
   selectedToken,
+  onChangeToken,
 }: SelectNetworkModalProps) => {
   const [tokenFromSelected, setTokenFromSelected] =
     useState<TokenSelectedProps>();
@@ -46,6 +49,28 @@ const SelectNetworkModal = ({
 
   const handleChooseTokenTo = ({ token, network }: TokenSelectedProps) => {
     setTokenToSelected({ token, network });
+  };
+
+  const handleChangePositionToken = () => {
+    const tokenFrom: TokenSelectedProps = {
+      token: tokenFromSelected?.token,
+      network: tokenFromSelected?.network,
+    };
+
+    const tokenTo: TokenSelectedProps = {
+      token: tokenToSelected?.token,
+      network: tokenToSelected?.network,
+    };
+
+    // set data when save popup
+    setTokenFromSelected(tokenTo);
+    setTokenToSelected(tokenFrom);
+
+    // set data on popup
+    onChangeToken?.({
+      tokenFrom: tokenTo,
+      tokenTo: tokenFrom,
+    });
   };
 
   return (
@@ -72,15 +97,16 @@ const SelectNetworkModal = ({
               selectedToken={selectedToken}
               onChooseToken={handleChooseTokenFrom}
             />
-            <Image
-              src={SwapIcon.src}
-              alt=""
-              width="50px"
-              height="50px"
-              mx="-30px"
-              zIndex="1000"
-              mt="5px"
-            />
+            <StyledSwitchNetwork
+              _hover={{
+                bgColor: tokenToSelected?.token?.tokenId && COLOR.neutral_4,
+                cursor: tokenToSelected?.token?.tokenId ? 'pointer' : 'default',
+              }}
+              onClick={handleChangePositionToken}
+            >
+              <Image src={SwitchIcon.src} alt="" />
+            </StyledSwitchNetwork>
+
             <NetworkTokenBox
               fromOrTo="To"
               selectedToken={selectedToken}

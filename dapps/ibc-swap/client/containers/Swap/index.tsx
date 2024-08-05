@@ -59,6 +59,9 @@ const SwapContainer = () => {
         onClose={onClose}
         onSave={handleSaveModal}
         selectedToken={tokenSelected}
+        onChangeToken={(token: TokenNetworkSelectedProps) =>
+          setTokenSelected(token)
+        }
       />
       <TokenBox
         handleClick={openModalSelectNetwork}
@@ -66,7 +69,8 @@ const SwapContainer = () => {
       />
       <StyledSwitchNetwork
         _hover={{
-          bgColor: COLOR.neutral_4,
+          bgColor: tokenSelected?.tokenFrom?.token && COLOR.neutral_4,
+          cursor: tokenSelected?.tokenFrom?.token ? 'pointer' : 'default',
         }}
         onClick={handleChangePositionToken}
       >

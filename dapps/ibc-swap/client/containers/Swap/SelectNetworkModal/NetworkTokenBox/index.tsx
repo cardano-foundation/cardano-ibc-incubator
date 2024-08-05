@@ -44,12 +44,14 @@ const NetworkTokenBox = ({
   const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
 
   const handleClickTokenItem = (token: TokenItemProps) => {
+    if (!networkSelected) return;
     setTokenSelected(token);
     onChooseToken?.({ token, network: networkSelected });
   };
 
   const handleClickNetworkItem = (network: NetworkItemProps) => {
     setNetworkSelected(network);
+    setTokenSelected(undefined);
   };
 
   useEffect(() => {
