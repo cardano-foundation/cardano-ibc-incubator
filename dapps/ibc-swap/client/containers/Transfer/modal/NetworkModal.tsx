@@ -125,7 +125,15 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               justifyContent="space-between"
             >
               <NetworkBoxComponent />
-              <StyledSwitchNetwork>
+              <StyledSwitchNetwork
+                _hover={{
+                  bgColor: COLOR.neutral_4,
+                }}
+                style={{
+                  top: '15%',
+                  translate: '-50% -50%',
+                }}
+              >
                 <Image src={SwitchIcon} alt="switch icon" />
               </StyledSwitchNetwork>
               <NetworkBoxComponent />
