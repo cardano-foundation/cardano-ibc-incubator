@@ -1,6 +1,6 @@
 import Image from 'next/image';
 
-import { Box, Spacer, Text } from '@chakra-ui/react';
+import { Box, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';

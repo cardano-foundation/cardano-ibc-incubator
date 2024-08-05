@@ -2,7 +2,7 @@ import styled from '@emotion/styled';
 
 const StyledTokenBox = styled.div`
   width: 100%;
-  height: 108px;
+  height: 120px;
   padding: 16px 16px 20px 16px;
   border-radius: 11px;
   opacity: 0px;

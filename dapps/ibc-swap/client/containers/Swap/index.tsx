@@ -15,13 +15,26 @@ import CustomInput from '@/components/CustomInput';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 
-import StyledSwap from './index.style';
+import { TokenNetworkSelectedProps } from './SelectNetworkModal/NetworkTokenBox';
 import SelectNetworkModal from './SelectNetworkModal';
+
+import StyledSwap from './index.style';
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
     useState<boolean>(false);
   const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const [tokenSelected, setTokenSelected] =
+    useState<TokenNetworkSelectedProps>();
+
+  const handleSaveModal = ({
+    tokenFrom,
+    tokenTo,
+  }: TokenNetworkSelectedProps) => {
+    setTokenSelected({ tokenFrom, tokenTo });
+    onClose();
+  };
 
   const openModalSelectNetwork = () => {
     onOpen();
@@ -33,12 +46,24 @@ const SwapContainer = () => {
         <Heading className="title">Swap</Heading>
         <SettingSlippage />
       </Box>
-      <SelectNetworkModal isOpen={isOpen} onClose={onClose} />
-      <TokenBox handleClick={openModalSelectNetwork} />
+      <SelectNetworkModal
+        isOpen={isOpen}
+        onClose={onClose}
+        onSave={handleSaveModal}
+        selectedToken={tokenSelected}
+      />
+      <TokenBox
+        handleClick={openModalSelectNetwork}
+        token={tokenSelected?.tokenFrom}
+      />
       <Box>
         <Image className="swap-icon" src={SwapIcon.src} alt="" />
       </Box>
-      <TokenBox handleClick={openModalSelectNetwork} />
+      <TokenBox
+        fromOrTo="To"
+        handleClick={openModalSelectNetwork}
+        token={tokenSelected?.tokenTo}
+      />
       <TransactionFee />
       <Checkbox
         isChecked={isCheckedAnotherWallet}

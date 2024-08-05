@@ -5,6 +5,11 @@ export const THEME_MODE = {
 
 export const defaultChainName = 'osmosis';
 
+export const FROM_TO = {
+  FROM: 'From',
+  TO: 'To',
+};
+
 export const routes = [
   {
     name: 'Swap',

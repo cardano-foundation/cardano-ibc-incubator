@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+/* eslint-disable no-unused-vars */
+import React, { useEffect, useState } from 'react';
 import { Box, Image, Text } from '@chakra-ui/react';
 
 import { COLOR } from '@/styles/color';
@@ -9,25 +10,59 @@ import {
 } from '@/components/NetworkList/NetworkList';
 import { TokenItemProps, TokenList } from '@/components/TokenList/TokenList';
 import EarchIcon from '@/assets/icons/earth.svg';
+import { FROM_TO } from '@/constants';
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
 import { NetworkListData, TokenListData } from '../data';
 
+export interface TokenSelectedProps {
+  token?: TokenItemProps;
+  network?: NetworkItemProps;
+}
+
+export interface TokenNetworkSelectedProps {
+  tokenFrom?: TokenSelectedProps;
+  tokenTo?: TokenSelectedProps;
+}
+
 type NetworkTokenBoxProps = {
   fromOrTo?: string;
+  onChooseToken?: ({
+    token,
+    network,
+  }: {
+    token?: TokenItemProps;
+    network?: NetworkItemProps;
+  }) => void;
+  selectedToken?: TokenNetworkSelectedProps;
 };
 
-const NetworkTokenBox = ({ fromOrTo = 'From' }: NetworkTokenBoxProps) => {
+const NetworkTokenBox = ({
+  fromOrTo = FROM_TO.FROM,
+  onChooseToken,
+  selectedToken,
+}: NetworkTokenBoxProps) => {
   const [tokenSelected, setTokenSelected] = useState<TokenItemProps>();
   const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
 
   const handleClickTokenItem = (token: TokenItemProps) => {
     setTokenSelected(token);
+    onChooseToken?.({ token, network: networkSelected });
   };
 
   const handleClickNetworkItem = (network: NetworkItemProps) => {
     setNetworkSelected(network);
   };
+
+  useEffect(() => {
+    if (fromOrTo === FROM_TO.TO) {
+      setTokenSelected(selectedToken?.tokenTo?.token);
+      setNetworkSelected(selectedToken?.tokenTo?.network);
+    } else {
+      setTokenSelected(selectedToken?.tokenFrom?.token);
+      setNetworkSelected(selectedToken?.tokenFrom?.network);
+    }
+  }, [selectedToken, fromOrTo]);
 
   return (
     <StyledNetworkBox isChoseToken={!!tokenSelected?.tokenId}>

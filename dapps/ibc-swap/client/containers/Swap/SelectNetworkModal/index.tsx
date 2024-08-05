@@ -1,4 +1,5 @@
-import React from 'react';
+/* eslint-disable no-unused-vars */
+import React, { useState } from 'react';
 import {
   Modal,
   ModalOverlay,
@@ -13,14 +14,40 @@ import {
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import SwapIcon from '@/assets/icons/swap-horizontal.svg';
-import NetworkTokenBox from './NetworkTokenBox';
+import NetworkTokenBox, {
+  TokenNetworkSelectedProps,
+  TokenSelectedProps,
+} from './NetworkTokenBox';
 
 type SelectNetworkModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  onSave?: ({ tokenFrom, tokenTo }: TokenNetworkSelectedProps) => void;
+  selectedToken?: TokenNetworkSelectedProps;
 };
 
-const SelectNetworkModal = ({ isOpen, onClose }: SelectNetworkModalProps) => {
+const SelectNetworkModal = ({
+  isOpen,
+  onClose,
+  onSave,
+  selectedToken,
+}: SelectNetworkModalProps) => {
+  const [tokenFromSelected, setTokenFromSelected] =
+    useState<TokenSelectedProps>();
+  const [tokenToSelected, setTokenToSelected] = useState<TokenSelectedProps>();
+
+  const handleSaveModal = () => {
+    onSave?.({ tokenFrom: tokenFromSelected, tokenTo: tokenToSelected });
+  };
+
+  const handleChooseTokenFrom = ({ token, network }: TokenSelectedProps) => {
+    setTokenFromSelected({ token, network });
+  };
+
+  const handleChooseTokenTo = ({ token, network }: TokenSelectedProps) => {
+    setTokenToSelected({ token, network });
+  };
+
   return (
     <Modal isCentered onClose={onClose} isOpen={isOpen}>
       <ModalOverlay backdropFilter="blur(2px)" />
@@ -41,7 +68,10 @@ const SelectNetworkModal = ({ isOpen, onClose }: SelectNetworkModalProps) => {
             display="flex"
             justifyContent="space-between"
           >
-            <NetworkTokenBox />
+            <NetworkTokenBox
+              selectedToken={selectedToken}
+              onChooseToken={handleChooseTokenFrom}
+            />
             <Image
               src={SwapIcon.src}
               alt=""
@@ -51,7 +81,11 @@ const SelectNetworkModal = ({ isOpen, onClose }: SelectNetworkModalProps) => {
               zIndex="1000"
               mt="5px"
             />
-            <NetworkTokenBox fromOrTo="To" />
+            <NetworkTokenBox
+              fromOrTo="To"
+              selectedToken={selectedToken}
+              onChooseToken={handleChooseTokenTo}
+            />
           </Box>
         </ModalBody>
         <ModalFooter p={0}>
@@ -88,6 +122,7 @@ const SelectNetworkModal = ({ isOpen, onClose }: SelectNetworkModalProps) => {
             _hover={{
               bg: COLOR.primary,
             }}
+            onClick={handleSaveModal}
           >
             Save & Close
           </Button>
