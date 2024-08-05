@@ -8,17 +8,18 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 
-import SwapIcon from '@/assets/icons/swap.svg';
+import SwitchIcon from '@/assets/icons/transfer.svg';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
 
+import { COLOR } from '@/styles/color';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 
 import { TokenNetworkSelectedProps } from './SelectNetworkModal/NetworkTokenBox';
 import SelectNetworkModal from './SelectNetworkModal';
 
-import StyledSwap from './index.style';
+import StyledSwap, { StyledSwitchNetwork } from './index.style';
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
@@ -40,6 +41,13 @@ const SwapContainer = () => {
     onOpen();
   };
 
+  const handleChangePositionToken = () => {
+    setTokenSelected({
+      tokenFrom: tokenSelected?.tokenTo,
+      tokenTo: tokenSelected?.tokenFrom,
+    });
+  };
+
   return (
     <StyledSwap>
       <Box display="flex" justifyContent="space-between">
@@ -56,9 +64,14 @@ const SwapContainer = () => {
         handleClick={openModalSelectNetwork}
         token={tokenSelected?.tokenFrom}
       />
-      <Box>
-        <Image className="swap-icon" src={SwapIcon.src} alt="" />
-      </Box>
+      <StyledSwitchNetwork
+        _hover={{
+          bgColor: COLOR.neutral_4,
+        }}
+        onClick={handleChangePositionToken}
+      >
+        <Image src={SwitchIcon.src} alt="" />
+      </StyledSwitchNetwork>
       <TokenBox
         fromOrTo="To"
         handleClick={openModalSelectNetwork}

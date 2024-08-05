@@ -1,6 +1,7 @@
 import styled from '@emotion/styled';
 
 const StyledSettingSlippage = styled.div`
+  cursor: pointer;
   .chakra-popover__popper {
     transform: translate3d(830px, 236px, 0px) !important;
   }
