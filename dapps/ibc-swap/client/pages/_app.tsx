@@ -13,6 +13,7 @@ import { MeshProvider } from '@meshsdk/react';
 import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
+import { CustomAppProvider } from '@/contexts';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,7 +44,9 @@ function MyApp({ Component, pageProps }: AppProps) {
           <MeshProvider>
             <Layout>
               <main id="main" className={manrope.className}>
-                <Component {...pageProps} />
+                <CustomAppProvider>
+                  <Component {...pageProps} />
+                </CustomAppProvider>
               </main>
             </Layout>
           </MeshProvider>

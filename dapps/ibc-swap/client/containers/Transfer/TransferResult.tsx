@@ -1,9 +1,11 @@
+import { useContext } from 'react';
 import Image from 'next/image';
 
 import { Box, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
+import TransferContext from '@/contexts/TransferContext';
 
 import {
   StyledSwitchNetwork,
@@ -21,7 +23,10 @@ type TransferResultProps = {
 };
 
 export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
+  const { handleReset } = useContext(TransferContext);
+
   const handleBackToTransfer = () => {
+    handleReset();
     setIsSubmitted(false);
   };
 
