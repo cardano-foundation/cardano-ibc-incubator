@@ -9,16 +9,18 @@ import { StyledSelectTokenBox, StyledTokenSection } from './index.style';
 
 type SelectTokenProps = {
   onOpenTokenModal: () => void;
-  // eslint-disable-next-line no-unused-vars
-  setSendAmount: (value: string) => void;
 };
 
-const SelectToken = ({ onOpenTokenModal, setSendAmount }: SelectTokenProps) => {
-  const { selectedToken } = useContext(TransferContext);
+const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
+  const { selectedToken, fromNetwork, toNetwork, setSendAmount } =
+    useContext(TransferContext);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     setSendAmount(event.target.value);
   };
+
+  const isDisabledAmountInput =
+    !selectedToken.tokenId || !fromNetwork.networkId || !toNetwork.networkId;
 
   return (
     <StyledTokenSection>
@@ -71,6 +73,7 @@ const SelectToken = ({ onOpenTokenModal, setSendAmount }: SelectTokenProps) => {
           variant="unstyled"
           placeholder="0"
           onChange={handleChange}
+          disabled={isDisabledAmountInput}
           _placeholder={{
             color: COLOR.neutral_3,
           }}

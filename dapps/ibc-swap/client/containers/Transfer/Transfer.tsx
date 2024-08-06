@@ -6,11 +6,11 @@ import {
   Tooltip,
   useDisclosure,
 } from '@chakra-ui/react';
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
-import { TransferProvider } from '@/contexts/TransferContext';
+import TransferContext from '@/contexts/TransferContext';
 import InfoIcon from '@/assets/icons/info.svg';
 
 import SelectNetwork from './SelectNetwork';
@@ -28,7 +28,8 @@ import {
 
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [sendAmount, setSendAmount] = useState<string>('');
+  const { sendAmount, setDestinationAddress, getDataTransfer } =
+    useContext(TransferContext);
 
   const {
     isOpen: isOpenNetworkModal,
@@ -108,48 +109,43 @@ const Transfer = () => {
     );
   };
 
-  return (
-    <TransferProvider>
-      {isSubmitted ? (
-        <TransferResult setIsSubmitted={setIsSubmitted} />
-      ) : (
-        <>
-          <StyledWrapContainer>
-            <StyledTransferContainer>
-              <Heading fontSize={20} lineHeight="28px" fontWeight={700}>
-                Transfer
-              </Heading>
-              <SelectNetwork onOpenNetworkModal={onOpenNetworkModal} />
-              <SelectToken
-                setSendAmount={setSendAmount}
-                onOpenTokenModal={onOpenTokenModal}
-              />
-              {showCalculatorBox()}
-              <CustomInput
-                title="Destination address"
-                placeholder="Enter destination address here..."
-                onChange={setSendAmount}
-              />
-              <StyledTransferButton onClick={() => setIsSubmitted(true)}>
-                <Text
-                  fontSize={18}
-                  fontWeight={700}
-                  lineHeight="24px"
-                  color={COLOR.neutral_2}
-                >
-                  Transfer
-                </Text>
-              </StyledTransferButton>
-            </StyledTransferContainer>
-          </StyledWrapContainer>
-          <NetworkModal
-            onClose={onCloseNetworkModal}
-            isOpen={isOpenNetworkModal}
+  const handleTransfer = () => {
+    console.log(getDataTransfer());
+    setIsSubmitted(true);
+  };
+
+  return isSubmitted ? (
+    <TransferResult setIsSubmitted={setIsSubmitted} />
+  ) : (
+    <>
+      <StyledWrapContainer>
+        <StyledTransferContainer>
+          <Heading fontSize={20} lineHeight="28px" fontWeight={700}>
+            Transfer
+          </Heading>
+          <SelectNetwork onOpenNetworkModal={onOpenNetworkModal} />
+          <SelectToken onOpenTokenModal={onOpenTokenModal} />
+          {showCalculatorBox()}
+          <CustomInput
+            title="Destination address"
+            placeholder="Enter destination address here..."
+            onChange={setDestinationAddress}
           />
-          <TokenModal onClose={onCloseTokenModal} isOpen={isOpenTokenModal} />
-        </>
-      )}
-    </TransferProvider>
+          <StyledTransferButton onClick={handleTransfer}>
+            <Text
+              fontSize={18}
+              fontWeight={700}
+              lineHeight="24px"
+              color={COLOR.neutral_2}
+            >
+              Transfer
+            </Text>
+          </StyledTransferButton>
+        </StyledTransferContainer>
+      </StyledWrapContainer>
+      <NetworkModal onClose={onCloseNetworkModal} isOpen={isOpenNetworkModal} />
+      <TokenModal onClose={onCloseTokenModal} isOpen={isOpenTokenModal} />
+    </>
   );
 };
 

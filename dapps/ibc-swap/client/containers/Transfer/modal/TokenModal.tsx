@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -92,11 +92,16 @@ const TokenListData = [
 
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
+  currentToken: TransferTokenItemProps;
+  // eslint-disable-next-line no-unused-vars
+  setCurrentToken: (token: TransferTokenItemProps) => void;
 };
 
-const TokenBoxComponent = ({ tokenList }: TokenBoxComponentProps) => {
-  const { selectedToken, setSelectedToken } = useContext(TransferContext);
-
+const TokenBoxComponent = ({
+  tokenList,
+  currentToken,
+  setCurrentToken,
+}: TokenBoxComponentProps) => {
   return (
     <StyledTokenBox>
       <Box
@@ -114,8 +119,8 @@ const TokenBoxComponent = ({ tokenList }: TokenBoxComponentProps) => {
               tokenName={token.tokenName}
               tokenLogo={token.tokenLogo}
               tokenSymbol={token.tokenSymbol}
-              onClick={() => setSelectedToken(token)}
-              isActive={selectedToken?.tokenId === token.tokenId}
+              onClick={() => setCurrentToken(token)}
+              isActive={currentToken?.tokenId === token.tokenId}
             />
           ))}
         </ListItem>
@@ -130,9 +135,30 @@ export type NetworkModalProps = {
 };
 
 export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
+  const { selectedToken, setSelectedToken } = useContext(TransferContext);
+
+  const [currentToken, setCurrentToken] =
+    useState<TransferTokenItemProps>(selectedToken);
+
+  const handleSave = () => {
+    setSelectedToken(currentToken);
+    onClose();
+  };
+
+  const handleClose = () => {
+    setCurrentToken(selectedToken);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (selectedToken) {
+      setCurrentToken(selectedToken);
+    }
+  }, [selectedToken]);
+
   return (
     <>
-      <Modal isCentered onClose={onClose} isOpen={isOpen}>
+      <Modal isCentered onClose={handleClose} isOpen={isOpen}>
         <ModalOverlay backdropFilter="blur(2px)" />
         <ModalContent
           backgroundColor={COLOR.neutral_6}
@@ -151,7 +177,11 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               display="flex"
               justifyContent="space-between"
             >
-              <TokenBoxComponent tokenList={TokenListData} />
+              <TokenBoxComponent
+                tokenList={TokenListData}
+                currentToken={currentToken}
+                setCurrentToken={setCurrentToken}
+              />
             </Box>
           </ModalBody>
           <ModalFooter p={0} display="flex" justifyContent="space-between">
@@ -165,7 +195,7 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               shadow="1px 1px 2px 0px #FCFCFC1F inset"
               p="10px 18px 10px 18px"
               mr={3}
-              onClick={onClose}
+              onClick={handleClose}
               color={COLOR.neutral_1}
               fontSize={16}
               fontWeight={700}
@@ -187,7 +217,7 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               fontSize={16}
               fontWeight={700}
               lineHeight="22px"
-              onClick={onClose}
+              onClick={handleSave}
               _hover={{
                 bg: COLOR.primary,
               }}

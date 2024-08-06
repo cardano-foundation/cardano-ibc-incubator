@@ -1,4 +1,4 @@
-import { useContext } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
 import {
@@ -154,17 +154,45 @@ export type NetworkModalProps = {
 };
 
 export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
-  const {
-    fromNetwork,
-    toNetwork,
-    setFromNetwork,
-    setToNetwork,
-    switchNetwork,
-  } = useContext(TransferContext);
+  const { fromNetwork, toNetwork, setFromNetwork, setToNetwork } =
+    useContext(TransferContext);
+
+  const [currentFromNetwork, setCurrentFromNetwork] =
+    useState<NetworkItemProps>(fromNetwork);
+  const [currentToNetwork, setCurrentToNetwork] =
+    useState<NetworkItemProps>(toNetwork);
+
+  const HandleSwitchNetwork = () => {
+    const newToNetwork = currentFromNetwork;
+    const newFromNetwork = currentToNetwork;
+    setCurrentFromNetwork(newFromNetwork);
+    setCurrentToNetwork(newToNetwork);
+  };
+
+  const handleSave = () => {
+    setFromNetwork(currentFromNetwork);
+    setToNetwork(currentToNetwork);
+    onClose();
+  };
+
+  const handleClose = () => {
+    setCurrentFromNetwork(fromNetwork);
+    setCurrentToNetwork(toNetwork);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (fromNetwork) {
+      setCurrentFromNetwork(fromNetwork);
+    }
+    if (toNetwork) {
+      setCurrentToNetwork(toNetwork);
+    }
+  }, [fromNetwork, toNetwork]);
 
   return (
     <>
-      <Modal isCentered onClose={onClose} isOpen={isOpen}>
+      <Modal isCentered onClose={handleClose} isOpen={isOpen}>
         <ModalOverlay backdropFilter="blur(2px)" />
         <ModalContent
           backgroundColor={COLOR.neutral_6}
@@ -185,8 +213,8 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
             >
               <NetworkBoxComponent
                 title="From"
-                selectedNetwork={fromNetwork}
-                onSelectNetwork={setFromNetwork}
+                selectedNetwork={currentFromNetwork}
+                onSelectNetwork={setCurrentFromNetwork}
                 networkList={NetworkListData}
               />
               <StyledSwitchNetwork
@@ -197,14 +225,14 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
                   top: '15%',
                   translate: '-50% -50%',
                 }}
-                onClick={switchNetwork}
+                onClick={HandleSwitchNetwork}
               >
                 <Image src={SwitchIcon} alt="switch icon" />
               </StyledSwitchNetwork>
               <NetworkBoxComponent
                 title="To"
-                selectedNetwork={toNetwork}
-                onSelectNetwork={setToNetwork}
+                selectedNetwork={currentToNetwork}
+                onSelectNetwork={setCurrentToNetwork}
                 networkList={NetworkListData}
               />
             </Box>
@@ -220,7 +248,7 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               shadow="1px 1px 2px 0px #FCFCFC1F inset"
               p="10px 18px 10px 18px"
               mr={3}
-              onClick={onClose}
+              onClick={handleClose}
               color={COLOR.neutral_1}
               fontSize={16}
               fontWeight={700}
@@ -240,7 +268,7 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
               fontSize={16}
               fontWeight={700}
               lineHeight="22px"
-              onClick={onClose}
+              onClick={handleSave}
               _hover={{
                 bg: COLOR.primary,
               }}
