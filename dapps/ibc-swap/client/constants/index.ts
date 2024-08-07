@@ -3,7 +3,7 @@ export const THEME_MODE = {
   DARK: 'dark',
 };
 
-export const defaultChainName = 'osmosis';
+export const defaultChainName = 'localosmosis';
 
 export const FROM_TO = {
   FROM: 'From',

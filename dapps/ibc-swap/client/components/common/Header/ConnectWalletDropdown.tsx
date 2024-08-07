@@ -20,6 +20,7 @@ export const ConnectWalletDropdown = () => {
     wallet,
     status,
     disconnect,
+    connect,
   } = UseCosmosWallet();
 
   return (
@@ -87,7 +88,7 @@ export const ConnectWalletDropdown = () => {
               <Image
                 src={LogoutIcon}
                 alt="Cosmos Wallet"
-                onClick={disconnect}
+                onClick={() => disconnect()}
               />
             </>
           )}

@@ -14,6 +14,7 @@ import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
 import { CustomAppProvider } from '@/contexts';
+import { customChains } from '@/configs/customChianInfo';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,7 +36,7 @@ function MyApp({ Component, pageProps }: AppProps) {
   return (
     <ChakraProvider theme={theme}>
       <ChainProvider
-        chains={chains}
+        chains={[...chains, ...customChains]}
         assetLists={assets}
         wallets={wallets}
         signerOptions={signerOptions}
