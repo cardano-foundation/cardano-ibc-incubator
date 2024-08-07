@@ -1,7 +1,20 @@
 import { Box, Container } from '@interchain-ui/react';
+import { useWallet } from '@meshsdk/react';
+import { useEffect } from 'react';
 import { Header } from './Header';
 
 export const Layout = ({ children }: { children?: React.ReactNode }) => {
+  const { connect } = useWallet();
+
+  useEffect(() => {
+    const walletConnected = localStorage?.getItem('cardano-wallet');
+
+    if (walletConnected) {
+      const cardanoWallet = JSON.parse(walletConnected);
+      connect(cardanoWallet?.name);
+    }
+  }, []);
+
   return (
     <Box
       top="0"

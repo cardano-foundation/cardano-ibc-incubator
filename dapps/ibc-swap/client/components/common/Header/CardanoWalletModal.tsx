@@ -37,6 +37,7 @@ const CardanoWalletModal = ({
   const handleChooseWallet = async (wal: WalletProps) => {
     connect(wal.name);
     onChooseWallet(wal);
+    localStorage.setItem('cardano-wallet', JSON.stringify(wal));
     onClose();
   };
 

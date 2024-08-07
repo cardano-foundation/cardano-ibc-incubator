@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -16,7 +17,6 @@ import BluePlusIcon from '@/assets/icons/blue_plus.svg';
 import CosmosIcon from '@/assets/icons/cosmos-icon.svg';
 import LogoutIcon from '@/assets/icons/Logout.svg';
 import CardanoIcon from '@/assets/icons/cardano.svg';
-import { useState } from 'react';
 import { capitalizeString } from '@/utils/string';
 import { useWallet } from '@meshsdk/react';
 import { UseCosmosWallet } from './UseCosmosWallet';
@@ -50,6 +50,15 @@ export const ConnectWalletDropdown = () => {
     setWalletCardano(undefined);
     disconnectCardanoWallet();
   };
+
+  useEffect(() => {
+    const walletConnected = localStorage?.getItem('cardano-wallet');
+
+    if (walletConnected) {
+      const cardanoWallet = JSON.parse(walletConnected);
+      setWalletCardano(cardanoWallet);
+    }
+  }, []);
 
   return (
     <Menu>
@@ -104,6 +113,7 @@ export const ConnectWalletDropdown = () => {
         borderWidth={0}
         padding="9px 10px"
         borderRadius="10px"
+        minW="none"
       >
         <MenuItem
           h="42px"
@@ -111,6 +121,7 @@ export const ConnectWalletDropdown = () => {
           gap="8px"
           color={COLOR.neutral_1}
           background={COLOR.neutral_6}
+          cursor="default"
         >
           {walletCardano?.name ? (
             <>
@@ -127,6 +138,7 @@ export const ConnectWalletDropdown = () => {
               display="flex"
               gap="8px"
               onClick={handleOpenCardanoWalletModal}
+              cursor="pointer"
             >
               <Image src={BluePlusIcon} alt="Cardano Wallet" />
               <span>Cardano Wallet</span>
@@ -135,11 +147,13 @@ export const ConnectWalletDropdown = () => {
           {walletCardano?.name && (
             <>
               <Spacer />
-              <Image
-                src={LogoutIcon}
-                alt="Cardano Wallet"
-                onClick={handleDisconnectCardanoWallet}
-              />
+              <Box cursor="pointer">
+                <Image
+                  src={LogoutIcon}
+                  alt="Cardano Wallet"
+                  onClick={handleDisconnectCardanoWallet}
+                />
+              </Box>
             </>
           )}
           <CardanoWalletModal
@@ -154,6 +168,7 @@ export const ConnectWalletDropdown = () => {
           gap="8px"
           color={COLOR.neutral_1}
           background={COLOR.neutral_6}
+          cursor="default"
           onClick={
             statusCosmosWallet === 'Connected' ? () => {} : connectCosmosWalet
           }
@@ -173,11 +188,13 @@ export const ConnectWalletDropdown = () => {
               />
               <span>{cosmosWallet?.prettyName}</span>
               <Spacer />
-              <Image
-                src={LogoutIcon}
-                alt="Cosmos Wallet"
-                onClick={() => disconnectCosmosWallet()}
-              />
+              <Box cursor="pointer">
+                <Image
+                  src={LogoutIcon}
+                  alt="Cosmos Wallet"
+                  onClick={() => disconnectCosmosWallet()}
+                />
+              </Box>
             </>
           )}
         </MenuItem>
