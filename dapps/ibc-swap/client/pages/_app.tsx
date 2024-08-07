@@ -14,7 +14,7 @@ import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
 import { CustomAppProvider } from '@/contexts';
-import { customChains } from '@/configs/customChianInfo';
+import { customChains } from '@/configs/customChainInfo';
 
 const queryClient = new QueryClient({
   defaultOptions: {

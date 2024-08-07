@@ -2,8 +2,8 @@ import { AssetList, Chain } from '@chain-registry/types';
 
 const sideChainConfig: Chain = {
   chain_name: 'sidechain-localnet',
-  status: 'active', // You can set the appropriate status
-  network_type: 'testnet', // Assuming it's a local testnet
+  status: 'active',
+  network_type: 'testnet',
   pretty_name: 'Sidechain Localnet',
   chain_id: 'sidechain',
   bech32_prefix: 'cosmos',
@@ -43,9 +43,9 @@ const sideChainConfig: Chain = {
       },
     ],
   },
-  key_algos: ['secp256k1'], // Add any key algorithms you are using
+  key_algos: ['secp256k1'],
   codebase: {
-    ics_enabled: ['ibc-go'], // Assuming "ibc-go" is an ICS feature
+    ics_enabled: ['ibc-go'],
   },
 };
 
@@ -54,7 +54,7 @@ const sideChainAssetList: AssetList = {
   assets: [
     {
       description:
-        'IBC token from transfer/channel-9/9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b',
+        'Token from transfer/channel-9/9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b',
       denom_units: [
         {
           denom: 'token',
@@ -72,8 +72,8 @@ const sideChainAssetList: AssetList = {
 
 const localOsmosisChainConfig: Chain = {
   chain_name: 'localosmosis',
-  status: 'active', // Assuming the status is active
-  network_type: 'testnet', // Assuming this is a testnet
+  status: 'active',
+  network_type: 'testnet',
   pretty_name: 'Local Osmosis',
   chain_id: 'localosmosis',
   bech32_prefix: 'osmo',
@@ -82,7 +82,7 @@ const localOsmosisChainConfig: Chain = {
     fee_tokens: [
       {
         denom: 'uosmo',
-        fixed_min_gas_price: 0.0025, // Using low gas price as fixed min gas price
+        fixed_min_gas_price: 0.0025,
         low_gas_price: 0.0025,
         average_gas_price: 0.025,
         high_gas_price: 0.04,
@@ -119,7 +119,7 @@ const localOsmosisAssetList: AssetList = {
       denom_units: [
         {
           denom: 'uosmo',
-          exponent: 6,
+          exponent: 0,
           aliases: [],
         },
       ],

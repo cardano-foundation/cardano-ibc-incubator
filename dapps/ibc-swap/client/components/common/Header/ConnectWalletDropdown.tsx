@@ -20,7 +20,6 @@ export const ConnectWalletDropdown = () => {
     wallet,
     status,
     disconnect,
-    connect,
   } = UseCosmosWallet();
 
   return (
