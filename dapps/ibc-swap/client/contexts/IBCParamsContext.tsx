@@ -1,12 +1,13 @@
 import { createContext, useMemo, useState, useEffect } from 'react';
 
 import { RawChannelMapping, IBCDenomTrace } from '@/types/IBCParams';
-import osmosisServices from '@/services/Osmosis';
+import { fetchOsmosisDenomTraces } from '@/services/Osmosis';
+import { fetchAllChannels } from '@/services/CommonCosmosServices';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
   osmosisIBCTokenTraces: IBCDenomTrace;
-  updateOsmosisDenomTrace: () => Promise<void>
+  updateOsmosisDenomTrace: () => Promise<void>;
 };
 
 const IBCParamsContext = createContext<IBCParamsContextType>(
@@ -25,13 +26,24 @@ export const IBCParamsProvider = ({
     useState<IBCDenomTrace>({});
 
   const updateOsmosisDenomTrace = async () => {
-    osmosisServices.fetchOsmosisDenomTraces().then((res: IBCDenomTrace) => {
+    fetchOsmosisDenomTraces().then((res: IBCDenomTrace) => {
       setOsmosisIBCTokenTraces(res);
+    });
+  };
+
+  const fetchRawChannelsMapping = async () => {
+    // fetchAllChannels(process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!).then((res: RawChannelMapping[]) => {
+    fetchAllChannels(
+      'sidechain',
+      process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!,
+    ).then((res: RawChannelMapping[]) => {
+      setRawChannelMappings(res);
     });
   };
 
   useEffect(() => {
     // fetch and update channel mappings
+    fetchRawChannelsMapping();
   }, []);
 
   useEffect(() => {
