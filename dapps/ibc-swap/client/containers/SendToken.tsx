@@ -1,11 +1,18 @@
-import { Transaction } from '@meshsdk/core';
-import { useWallet } from '@meshsdk/react';
-import React, { useState } from 'react';
+import { Transaction, BrowserWallet } from '@meshsdk/core';
+import { CardanoWallet, useWallet } from '@meshsdk/react';
+import React, { useEffect, useState } from 'react';
 
 const SendToken = () => {
   const { connected, wallet } = useWallet();
   const [formData, setFormData] = useState({ address: '', amount: '' });
   const [transactioSuccessMsg, setTransactionSuccessMsg] = useState('');
+
+  useEffect(() => {
+    const getListWallet = async () => {
+      const wallets = await BrowserWallet.getInstalledWallets();
+    };
+    getListWallet();
+  }, []);
 
   async function handleSendToken() {
     const { address, amount } = formData;
@@ -35,6 +42,7 @@ const SendToken = () => {
 
   return (
     <>
+      <CardanoWallet />
       {connected && (
         <div
           style={{
@@ -47,20 +55,25 @@ const SendToken = () => {
         >
           <input
             placeholder="Address"
-            style={{ height: '40px' }}
+            style={{ height: '40px', color: 'black' }}
             value={formData.address}
             onChange={handleChangeAddress}
           />
           <input
             placeholder="Amount in Lovelace"
-            style={{ height: '40px' }}
+            style={{ height: '40px', color: 'black' }}
             value={formData.amount}
             onChange={handleChangeAmount}
           />
           <button
             type="button"
             onClick={handleSendToken}
-            style={{ height: '40px', width: '100px' }}
+            style={{
+              height: '40px',
+              width: '100px',
+              background: 'white',
+              color: 'black',
+            }}
           >
             Send token
           </button>
