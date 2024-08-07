@@ -13,6 +13,7 @@ import Image from 'next/image';
 import { COLOR } from '@/styles/color';
 import PinkPlusIcon from '@/assets/icons/pink_plus.svg';
 import BluePlusIcon from '@/assets/icons/blue_plus.svg';
+import CosmosIcon from '@/assets/icons/cosmos-icon.svg';
 import LogoutIcon from '@/assets/icons/Logout.svg';
 import CardanoIcon from '@/assets/icons/cardano.svg';
 import { useState } from 'react';
@@ -68,7 +69,7 @@ export const ConnectWalletDropdown = () => {
           {/* cardano */}
           {walletCardano?.icon ? (
             <Image
-              src={CardanoIcon.src}
+              src={CardanoIcon}
               width={24}
               height={24}
               alt="cardano-icon"
@@ -78,8 +79,15 @@ export const ConnectWalletDropdown = () => {
           )}
           <>
             {/* cosmos */}
-            {statusCosmosWallet !== 'Connected' && (
+            {statusCosmosWallet !== 'Connected' ? (
               <Image src={PinkPlusIcon} alt="plus-icon" />
+            ) : (
+              <Image
+                width={24}
+                height={24}
+                src={CosmosIcon}
+                alt="Cosmos Wallet"
+              />
             )}
           </>
         </Box>
@@ -160,10 +168,10 @@ export const ConnectWalletDropdown = () => {
               <Image
                 width={24}
                 height={24}
-                src={cosmosWallet?.logo?.toString() || ''}
+                src={CosmosIcon}
                 alt="Cosmos Wallet"
               />
-              <span>{cosmosWallet?.name}</span>
+              <span>{cosmosWallet?.prettyName}</span>
               <Spacer />
               <Image
                 src={LogoutIcon}
