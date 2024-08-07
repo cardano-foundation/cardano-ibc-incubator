@@ -1,3 +1,6 @@
+/* eslint-disable no-await-in-loop */
+/* eslint-disable camelcase */
+
 import { sha256 } from 'js-sha256';
 import { DenomTrace } from 'cosmjs-types/ibc/applications/transfer/v1/transfer';
 import { State, stateFromJSON } from 'cosmjs-types/ibc/core/channel/v1/channel';
@@ -18,7 +21,7 @@ export async function fetchAllDenomTraces(
   restUrl: string,
 ): Promise<IBCDenomTrace> {
   const fetchUrl = `${restUrl}/${queryAllDenomTracesUrl}?pagination.limit=10000`;
-  let tmpTrace: IBCDenomTrace = {};
+  const tmpTrace: IBCDenomTrace = {};
   const firstFetch = await fetch(fetchUrl).then((res) => res.json());
   const denomTraces = (firstFetch?.denom_traces || []) as DenomTrace[];
   denomTraces.forEach((tracing) => {
@@ -33,8 +36,8 @@ export async function fetchAllDenomTraces(
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${fetchUrl}&pagination.key=${nextKey}`;
     const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
-    const denomTraces = (nextFetch?.denom_traces || []) as DenomTrace[];
-    denomTraces.forEach((tracing) => {
+    const denomTracesNext = (nextFetch?.denom_traces || []) as DenomTrace[];
+    denomTracesNext.forEach((tracing) => {
       const { path, baseDenom } = tracing;
       const ibcHash = `ibc/${sha256(`${path}/${baseDenom}`).toUpperCase()}`;
       tmpTrace[`${ibcHash}`] = {
@@ -47,11 +50,21 @@ export async function fetchAllDenomTraces(
   return tmpTrace;
 }
 
+export async function fetchClientStateFromChannel(
+  restUrl: string,
+  channelId: string,
+  portId: string,
+): Promise<QueryClientStateResponse> {
+  const queryUrl = `${restUrl}${queryChannelsPrefixUrl}/${channelId}/ports/${portId}/client_state`;
+  const data = await fetch(queryUrl).then((res) => res.json());
+  return (data?.identified_client_state || {}) as QueryClientStateResponse;
+}
+
 export async function fetchAllChannels(
   chainId: string,
   restUrl: string,
 ): Promise<RawChannelMapping[]> {
-  let tmpData: RawChannelMapping[] = [];
+  const tmpData: RawChannelMapping[] = [];
 
   const fetchUrl = `${restUrl}${queryAllChannelsUrl}`;
   const firstFetch = await fetch(fetchUrl).then((res) => res.json());
@@ -100,14 +113,4 @@ export async function fetchAllChannels(
     }),
   );
   return tmpData;
-}
-
-export async function fetchClientStateFromChannel(
-  restUrl: string,
-  channelId: string,
-  portId: string,
-): Promise<QueryClientStateResponse> {
-  const queryUrl = `${restUrl}${queryChannelsPrefixUrl}/${channelId}/ports/${portId}/client_state`;
-  const data = await fetch(queryUrl).then((res) => res.json());
-  return (data?.identified_client_state || {}) as QueryClientStateResponse;
 }
