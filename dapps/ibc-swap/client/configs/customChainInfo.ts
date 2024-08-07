@@ -53,8 +53,7 @@ const sideChainAssetList: AssetList = {
   chain_name: 'sidechain-localnet',
   assets: [
     {
-      description:
-        'Registered denom token for sidechain testing',
+      description: 'Registered denom token for sidechain testing',
       denom_units: [
         {
           denom: 'token',
@@ -66,6 +65,20 @@ const sideChainAssetList: AssetList = {
       display: 'token',
       name: 'token',
       symbol: 'token',
+    },
+    {
+      description: 'Registered denom token for sidechain testing',
+      denom_units: [
+        {
+          denom: 'stake',
+          exponent: 0,
+          aliases: [],
+        },
+      ],
+      base: 'stake',
+      display: 'stake',
+      name: 'stake',
+      symbol: 'stake',
     },
   ],
 };
@@ -125,16 +138,25 @@ const localOsmosisAssetList: AssetList = {
           exponent: 0,
           aliases: [],
         },
+      ],
+      base: 'uosmo',
+      display: 'uosmo',
+      name: 'uosmo',
+      symbol: 'uosmo',
+    },
+    {
+      description: 'Registered denom uosmo for localosmosis testing',
+      denom_units: [
         {
           denom: 'osmo',
           exponent: 6,
           aliases: [],
         },
       ],
-      base: 'uosmo',
-      display: 'uosmo',
-      name: 'uosmo',
-      symbol: 'uosmo',
+      base: 'osmo',
+      display: 'osmo',
+      name: 'osmo',
+      symbol: 'osmo',
     },
   ],
 };

@@ -19,80 +19,16 @@ import {
   TransferTokenItemProps,
 } from '@/components/TransferTokenItem/TransferTokenItem';
 import TransferContext from '@/contexts/TransferContext';
+import { useChain } from '@cosmos-kit/react';
+import { cosmos } from 'interchain';
+import { defaultChainName } from '@/constants';
 
 import { StyledTokenBox } from '../index.style';
-
-const TokenListData = [
-  {
-    tokenId: 1,
-    tokenName: 'Cosmos Hub',
-    tokenLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 2,
-    tokenName: 'BitCanna',
-    tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 3,
-    tokenName: 'Cosmos Hub',
-    tokenLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 4,
-    tokenName: 'BitCanna',
-    tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 5,
-    tokenName: 'Cosmos Hub',
-    tokenLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 6,
-    tokenName: 'BitCanna',
-    tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 7,
-    tokenName: 'Cosmos Hub',
-    tokenLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 7,
-    tokenName: 'BitCanna',
-    tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 8,
-    tokenName: 'Cosmos Hub',
-    tokenLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-    tokenSymbol: 'ETH',
-  },
-  {
-    tokenId: 9,
-    tokenName: 'BitCanna',
-    tokenLogo: 'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-    tokenSymbol: 'ETH',
-  },
-];
 
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
   currentToken: TransferTokenItemProps;
+  balanceList: string[];
   // eslint-disable-next-line no-unused-vars
   setCurrentToken: (token: TransferTokenItemProps) => void;
 };
@@ -100,6 +36,7 @@ type TokenBoxComponentProps = {
 const TokenBoxComponent = ({
   tokenList,
   currentToken,
+  balanceList,
   setCurrentToken,
 }: TokenBoxComponentProps) => {
   return (
@@ -113,13 +50,17 @@ const TokenBoxComponent = ({
       </Box>
       <List maxH="416px" overflowY="scroll">
         <ListItem mb={4}>
-          {tokenList.map((token) => (
+          {tokenList?.map((token, i) => (
             <TransferTokenItem
               key={token.tokenName}
+              tokenId={token.tokenId}
               tokenName={token.tokenName}
               tokenLogo={token.tokenLogo}
               tokenSymbol={token.tokenSymbol}
-              onClick={() => setCurrentToken(token)}
+              balance={balanceList?.[i] || '0.00'}
+              onClick={() =>
+                setCurrentToken({ ...token, balance: balanceList?.[i] })
+              }
               isActive={currentToken?.tokenId === token.tokenId}
             />
           ))}
@@ -132,10 +73,19 @@ const TokenBoxComponent = ({
 export type NetworkModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  tokenList: TransferTokenItemProps[];
+  chainName?: string;
 };
 
-export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
+export const TokenModal = ({
+  isOpen,
+  onClose,
+  tokenList,
+  chainName,
+}: NetworkModalProps) => {
   const { selectedToken, setSelectedToken } = useContext(TransferContext);
+  const { address, getRpcEndpoint } = useChain(chainName || defaultChainName);
+  const [balanceList, setbalanceList] = useState<string[]>([]);
 
   const [currentToken, setCurrentToken] =
     useState<TransferTokenItemProps>(selectedToken);
@@ -155,6 +105,34 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
       setCurrentToken(selectedToken);
     }
   }, [selectedToken]);
+
+  useEffect(() => {
+    setbalanceList([]);
+    const fetchBalances = async () => {
+      const rpcEndpoint = (await getRpcEndpoint()) as string;
+      if (!rpcEndpoint || !address) {
+        return;
+      }
+      const client = await cosmos.ClientFactory.createRPCQueryClient({
+        rpcEndpoint,
+      });
+      if (!client) {
+        return;
+      }
+
+      const allBl = await client.cosmos.bank.v1beta1.allBalances({
+        address,
+      });
+
+      const balances = tokenList.map((token) => {
+        return allBl?.balances?.find(
+          (balance) => balance.denom === token.tokenId,
+        )?.amount;
+      }) as string[];
+      setbalanceList(balances);
+    };
+    fetchBalances();
+  }, [tokenList, address, chainName]);
 
   return (
     <>
@@ -178,7 +156,8 @@ export const TokenModal = ({ isOpen, onClose }: NetworkModalProps) => {
               justifyContent="space-between"
             >
               <TokenBoxComponent
-                tokenList={TokenListData}
+                tokenList={tokenList}
+                balanceList={balanceList}
                 currentToken={currentToken}
                 setCurrentToken={setCurrentToken}
               />

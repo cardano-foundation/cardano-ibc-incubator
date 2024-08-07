@@ -28,69 +28,6 @@ import {
   StyledSwitchNetwork,
 } from '../index.style';
 
-const NetworkListData = [
-  {
-    networkId: 1,
-    networkName: 'Cosmos Hub',
-    networkLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-  },
-  {
-    networkId: 2,
-    networkName: 'BitCanna',
-    networkLogo:
-      'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-  },
-  {
-    networkId: 3,
-    networkName: 'Cosmos Hub',
-    networkLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-  },
-  {
-    networkId: 4,
-    networkName: 'BitCanna',
-    networkLogo:
-      'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-  },
-  {
-    networkId: 5,
-    networkName: 'Cosmos Hub',
-    networkLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-  },
-  {
-    networkId: 6,
-    networkName: 'BitCanna',
-    networkLogo:
-      'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-  },
-  {
-    networkId: 7,
-    networkName: 'Cosmos Hub',
-    networkLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-  },
-  {
-    networkId: 8,
-    networkName: 'BitCanna',
-    networkLogo:
-      'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-  },
-  {
-    networkId: 9,
-    networkName: 'Cosmos Hub',
-    networkLogo:
-      'https://crypto-central.io/library/uploads/Cosmos-Atom-Logo-300x300.png',
-  },
-  {
-    networkId: 10,
-    networkName: 'BitCanna',
-    networkLogo:
-      'https://s2.coinmarketcap.com/static/img/coins/200x200/4263.png',
-  },
-];
-
 type NetworkBoxComponentProps = {
   title?: string;
   networkList: Array<NetworkItemProps>;
@@ -151,9 +88,14 @@ const NetworkBoxComponent = ({
 export type NetworkModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  networkList: NetworkItemProps[];
 };
 
-export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
+export const NetworkModal = ({
+  isOpen,
+  onClose,
+  networkList,
+}: NetworkModalProps) => {
   const { fromNetwork, toNetwork, setFromNetwork, setToNetwork } =
     useContext(TransferContext);
 
@@ -215,7 +157,7 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
                 title="From"
                 selectedNetwork={currentFromNetwork}
                 onSelectNetwork={setCurrentFromNetwork}
-                networkList={NetworkListData}
+                networkList={networkList}
               />
               <StyledSwitchNetwork
                 _hover={{
@@ -233,7 +175,7 @@ export const NetworkModal = ({ isOpen, onClose }: NetworkModalProps) => {
                 title="To"
                 selectedNetwork={currentToNetwork}
                 onSelectNetwork={setCurrentToNetwork}
-                networkList={NetworkListData}
+                networkList={networkList}
               />
             </Box>
           </ModalBody>

@@ -1,12 +1,16 @@
 import { Box, Image, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
+
 import { StyledTokenItemName, StyledTokenItemWrapper } from './index.style';
 
 export type TransferTokenItemProps = {
-  tokenId?: number;
+  tokenId?: number | string;
   tokenName?: string;
   tokenLogo?: string;
   tokenSymbol?: string;
+  balance?: string;
+  // eslint-disable-next-line react/no-unused-prop-types
+  tokenExponent?: number;
   isActive?: boolean;
   onClick?: () => void;
 };
@@ -16,6 +20,7 @@ export const TransferTokenItem = ({
   tokenLogo,
   tokenName,
   tokenSymbol,
+  balance,
   isActive,
   onClick,
 }: TransferTokenItemProps) => {
@@ -48,7 +53,7 @@ export const TransferTokenItem = ({
           lineHeight="20px"
           color={COLOR.neutral_3}
         >
-          0.00
+          {balance}
         </Text>
       </Box>
     </StyledTokenItemWrapper>

@@ -6,13 +6,17 @@ import {
   Tooltip,
   useDisclosure,
 } from '@chakra-ui/react';
-import React, { useContext, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
 import InfoIcon from '@/assets/icons/info.svg';
+import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
+import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
+import { customChainassets, customChains } from '@/configs/customChainInfo';
+import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -28,8 +32,15 @@ import {
 
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const { sendAmount, setDestinationAddress, getDataTransfer } =
-    useContext(TransferContext);
+  const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
+  const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
+  const {
+    sendAmount,
+    setDestinationAddress,
+    getDataTransfer,
+    fromNetwork,
+    toNetwork,
+  } = useContext(TransferContext);
 
   const {
     isOpen: isOpenNetworkModal,
@@ -114,6 +125,45 @@ const Transfer = () => {
     setIsSubmitted(true);
   };
 
+  const fetchNetworkList = async () => {
+    const networkListData: NetworkItemProps[] = customChains.map((chain) => ({
+      networkId: chain.chain_id,
+      networkLogo: chain?.logo_URIs?.svg || DefaultNetworkIcon.src,
+      networkName: chain.chain_name,
+    }));
+    setNetworkList(networkListData);
+  };
+
+  const fetchTokenList = async () => {
+    const tokenListFrom = customChainassets.find(
+      (assetList) => assetList.chain_name === fromNetwork.networkName,
+    )?.assets;
+    const tokenListTo = customChainassets.find(
+      (assetList) => assetList.chain_name === toNetwork.networkName,
+    )?.assets;
+    const tokenListData: TransferTokenItemProps[] =
+      tokenListFrom
+        ?.filter((asset) => tokenListTo?.includes(asset))
+        ?.map((asset) => ({
+          tokenId: asset.base,
+          tokenLogo: asset.logo_URIs?.svg || DefaultNetworkIcon.src,
+          tokenName: asset.name,
+          tokenSymbol: asset.symbol,
+          tokenExponent: asset.denom_units?.[0]?.exponent,
+        })) || [];
+    setTokenList(tokenListData);
+  };
+
+  useEffect(() => {
+    fetchNetworkList();
+  }, []);
+
+  useEffect(() => {
+    if (!!fromNetwork.networkId && !!toNetwork.networkId) {
+      fetchTokenList();
+    }
+  }, [fromNetwork.networkId, toNetwork.networkId]);
+
   return isSubmitted ? (
     <TransferResult setIsSubmitted={setIsSubmitted} />
   ) : (
@@ -143,8 +193,17 @@ const Transfer = () => {
           </StyledTransferButton>
         </StyledTransferContainer>
       </StyledWrapContainer>
-      <NetworkModal onClose={onCloseNetworkModal} isOpen={isOpenNetworkModal} />
-      <TokenModal onClose={onCloseTokenModal} isOpen={isOpenTokenModal} />
+      <NetworkModal
+        onClose={onCloseNetworkModal}
+        isOpen={isOpenNetworkModal}
+        networkList={networkList}
+      />
+      <TokenModal
+        onClose={onCloseTokenModal}
+        isOpen={isOpenTokenModal}
+        tokenList={tokenList}
+        chainName={fromNetwork?.networkName}
+      />
     </>
   );
 };

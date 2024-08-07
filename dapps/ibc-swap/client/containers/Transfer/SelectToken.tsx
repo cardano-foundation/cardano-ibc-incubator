@@ -19,6 +19,11 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
     setSendAmount(event.target.value);
   };
 
+  const handleOpenTokenModal = () => {
+    if (!fromNetwork?.networkId || !toNetwork?.networkId) return;
+    onOpenTokenModal();
+  };
+
   const isDisabledAmountInput =
     !selectedToken.tokenId || !fromNetwork.networkId || !toNetwork.networkId;
 
@@ -29,7 +34,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           Asset
         </Text>
         <Text fontSize={14} lineHeight="20px" fontWeight={600}>
-          Balance: 0
+          Balance: {selectedToken?.balance || 0.00}
         </Text>
       </Box>
       <Spacer />
@@ -39,7 +44,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
         alignItems="center"
         pt="16px"
       >
-        <StyledSelectTokenBox onClick={onOpenTokenModal}>
+        <StyledSelectTokenBox onClick={handleOpenTokenModal}>
           {selectedToken?.tokenId ? (
             <Box display="flex">
               <Img

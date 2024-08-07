@@ -38,7 +38,7 @@ function MyApp({ Component, pageProps }: AppProps) {
       <ChainProvider
         chains={customChains}
         assetLists={customChainassets}
-        wallets={wallets}
+        wallets={[...wallets.keplr]}
         signerOptions={signerOptions}
       >
         <QueryClientProvider client={queryClient}>
