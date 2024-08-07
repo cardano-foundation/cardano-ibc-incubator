@@ -30,10 +30,12 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
         assetList,
       };
     });
-    // eslint-disable-next-line no-restricted-syntax
-    for (const chain of suggestChains) {
-      // eslint-disable-next-line no-await-in-loop
-      await client?.addChain?.(chain);
+    try {
+      await Promise.all(
+        suggestChains.map((chain) => client?.addChain?.(chain)),
+      );
+    } catch (error) {
+      console.log(error);
     }
   };
 

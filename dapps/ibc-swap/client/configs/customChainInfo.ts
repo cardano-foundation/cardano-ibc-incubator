@@ -94,6 +94,9 @@ const localOsmosisChainConfig: Chain = {
       {
         denom: 'uosmo',
       },
+      {
+        denom: 'osmo',
+      },
     ],
   },
   apis: {
@@ -112,7 +115,7 @@ const localOsmosisChainConfig: Chain = {
 };
 
 const localOsmosisAssetList: AssetList = {
-  chain_name: 'sidechain-localnet',
+  chain_name: 'localosmosis',
   assets: [
     {
       description: 'Registered denom uosmo for localosmosis testing',
@@ -120,6 +123,11 @@ const localOsmosisAssetList: AssetList = {
         {
           denom: 'uosmo',
           exponent: 0,
+          aliases: [],
+        },
+        {
+          denom: 'osmo',
+          exponent: 6,
           aliases: [],
         },
       ],
