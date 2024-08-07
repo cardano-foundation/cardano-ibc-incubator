@@ -1,18 +1,11 @@
-import { Transaction, BrowserWallet } from '@meshsdk/core';
+import { Transaction } from '@meshsdk/core';
 import { CardanoWallet, useWallet } from '@meshsdk/react';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 const SendToken = () => {
   const { connected, wallet } = useWallet();
   const [formData, setFormData] = useState({ address: '', amount: '' });
   const [transactioSuccessMsg, setTransactionSuccessMsg] = useState('');
-
-  useEffect(() => {
-    const getListWallet = async () => {
-      const wallets = await BrowserWallet.getInstalledWallets();
-    };
-    getListWallet();
-  }, []);
 
   async function handleSendToken() {
     const { address, amount } = formData;
