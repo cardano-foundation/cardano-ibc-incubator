@@ -20,3 +20,6 @@ export const routes = [
     path: '/transfer',
   },
 ];
+
+export const allDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces'
+ 

@@ -1,9 +1,14 @@
 import { TransferProvider } from './TransferContext';
+import { IBCParamsProvider } from './IBCParamsContext';
 
 export const CustomAppProvider = ({
   children,
 }: {
   children?: React.ReactNode;
 }) => {
-  return <TransferProvider>{children}</TransferProvider>;
+  return (
+    <IBCParamsProvider>
+      <TransferProvider>{children}</TransferProvider>
+    </IBCParamsProvider>
+  );
 };

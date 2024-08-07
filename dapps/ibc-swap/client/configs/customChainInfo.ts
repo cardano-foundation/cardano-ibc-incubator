@@ -54,7 +54,7 @@ const sideChainAssetList: AssetList = {
   assets: [
     {
       description:
-        'Token from transfer/channel-9/9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b',
+        'Registered denom token for sidechain testing',
       denom_units: [
         {
           denom: 'token',
