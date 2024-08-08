@@ -27,7 +27,6 @@ const TokenBox = ({
         <Box display="flex" alignItems="center">
           <Box>
             <Button
-              _hover={{ background: COLOR.neutral_4, padding: '5px' }}
               rightIcon={<FaChevronDown />}
               colorScheme="white"
               variant="outline"
