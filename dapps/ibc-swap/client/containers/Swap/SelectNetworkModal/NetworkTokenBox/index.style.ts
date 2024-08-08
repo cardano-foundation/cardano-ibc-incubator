@@ -1,7 +1,6 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@/styles/color';
-import { BoxProps } from '@chakra-ui/react';
-import { Box } from '@interchain-ui/react';
+import { Box, BoxProps } from '@chakra-ui/react';
 
 interface StyledNetworkBoxProps extends BoxProps {
   isChoseToken?: boolean;

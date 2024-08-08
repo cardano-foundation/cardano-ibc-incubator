@@ -1,4 +1,4 @@
-import { Box, Container } from '@interchain-ui/react';
+import { Box, Container } from '@chakra-ui/react';
 import { useWallet } from '@meshsdk/react';
 import { useEffect } from 'react';
 import { Header } from './Header';
@@ -25,12 +25,7 @@ export const Layout = ({ children }: { children?: React.ReactNode }) => {
       data-part-id="layout-container"
     >
       <Header />
-      <Container
-        maxWidth="64rem"
-        attributes={{
-          paddingY: '$14',
-        }}
-      >
+      <Container maxWidth="64rem" paddingY={14}>
         <div id="body">{children}</div>
       </Container>
     </Box>

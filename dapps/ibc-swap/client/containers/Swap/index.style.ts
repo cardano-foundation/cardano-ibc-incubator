@@ -6,8 +6,9 @@ const StyledSwap = styled.div`
   background: #26262a;
   color: white;
   padding: 20px;
-  border-radius: 10px;
-  margin: 100px auto;
+  border-radius: 16px;
+  margin: 20px auto;
+  box-shadow: 1px 1px 2px 0px #fcfcfc1f inset;
 
   .title {
     color: padding;

@@ -6,7 +6,6 @@ import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { getSigningCosmosClientOptions } from 'interchain';
-import { assets, chains } from 'chain-registry';
 import { SignerOptions, wallets } from 'cosmos-kit';
 import { Chain } from '@chain-registry/types';
 import { MeshProvider } from '@meshsdk/react';

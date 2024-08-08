@@ -1,6 +1,5 @@
 import React, { ChangeEvent, useContext } from 'react';
-import { Box } from '@interchain-ui/react';
-import { Img, Input, Spacer, Text } from '@chakra-ui/react';
+import { Box, Img, Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
 import TransferContext from '@/contexts/TransferContext';
@@ -34,7 +33,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           Asset
         </Text>
         <Text fontSize={14} lineHeight="20px" fontWeight={600}>
-          Balance: {selectedToken?.balance || 0.00}
+          Balance: {selectedToken?.balance || 0.0}
         </Text>
       </Box>
       <Spacer />
