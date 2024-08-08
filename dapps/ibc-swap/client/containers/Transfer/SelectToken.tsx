@@ -20,7 +20,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
   };
 
   const handleOpenTokenModal = () => {
-    if (!fromNetwork?.networkId || !toNetwork?.networkId) return;
+    if (!fromNetwork?.networkId) return;
     onOpenTokenModal();
   };
 

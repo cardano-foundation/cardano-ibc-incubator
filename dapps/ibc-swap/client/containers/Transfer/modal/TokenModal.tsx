@@ -28,7 +28,6 @@ import { StyledTokenBox } from '../index.style';
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
   currentToken: TransferTokenItemProps;
-  balanceList: string[];
   // eslint-disable-next-line no-unused-vars
   setCurrentToken: (token: TransferTokenItemProps) => void;
 };
@@ -36,7 +35,6 @@ type TokenBoxComponentProps = {
 const TokenBoxComponent = ({
   tokenList,
   currentToken,
-  balanceList,
   setCurrentToken,
 }: TokenBoxComponentProps) => {
   return (
@@ -57,10 +55,8 @@ const TokenBoxComponent = ({
               tokenName={token.tokenName}
               tokenLogo={token.tokenLogo}
               tokenSymbol={token.tokenSymbol}
-              balance={balanceList?.[i] || '0.00'}
-              onClick={() =>
-                setCurrentToken({ ...token, balance: balanceList?.[i] })
-              }
+              balance={token.balance}
+              onClick={() => setCurrentToken(token)}
               isActive={currentToken?.tokenId === token.tokenId}
             />
           ))}
@@ -74,18 +70,14 @@ export type NetworkModalProps = {
   isOpen: boolean;
   onClose: () => void;
   tokenList: TransferTokenItemProps[];
-  chainName?: string;
 };
 
 export const TokenModal = ({
   isOpen,
   onClose,
   tokenList,
-  chainName,
 }: NetworkModalProps) => {
   const { selectedToken, setSelectedToken } = useContext(TransferContext);
-  const { address, getRpcEndpoint } = useChain(chainName || defaultChainName);
-  const [balanceList, setbalanceList] = useState<string[]>([]);
 
   const [currentToken, setCurrentToken] =
     useState<TransferTokenItemProps>(selectedToken);
@@ -105,34 +97,6 @@ export const TokenModal = ({
       setCurrentToken(selectedToken);
     }
   }, [selectedToken]);
-
-  useEffect(() => {
-    setbalanceList([]);
-    const fetchBalances = async () => {
-      const rpcEndpoint = (await getRpcEndpoint()) as string;
-      if (!rpcEndpoint || !address) {
-        return;
-      }
-      const client = await cosmos.ClientFactory.createRPCQueryClient({
-        rpcEndpoint,
-      });
-      if (!client) {
-        return;
-      }
-
-      const allBl = await client.cosmos.bank.v1beta1.allBalances({
-        address,
-      });
-
-      const balances = tokenList.map((token) => {
-        return allBl?.balances?.find(
-          (balance) => balance.denom === token.tokenId,
-        )?.amount;
-      }) as string[];
-      setbalanceList(balances);
-    };
-    fetchBalances();
-  }, [tokenList, address, chainName]);
 
   return (
     <>
@@ -157,7 +121,6 @@ export const TokenModal = ({
             >
               <TokenBoxComponent
                 tokenList={tokenList}
-                balanceList={balanceList}
                 currentToken={currentToken}
                 setCurrentToken={setCurrentToken}
               />

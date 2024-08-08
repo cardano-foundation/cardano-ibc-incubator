@@ -7,7 +7,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import React, { useContext, useEffect, useState } from 'react';
-
+import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
@@ -18,6 +18,9 @@ import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { allChains, customChainassets } from '@/configs/customChainInfo';
 import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
+import { useCosmosChain } from '@/hooks/useCosmosChain';
+import { cosmosChainsSupported, defaultChainName } from '@/constants';
+
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -55,6 +58,10 @@ const Transfer = () => {
     onOpen: onOpenTokenModal,
     onClose: onCloseTokenModal,
   } = useDisclosure();
+
+  const cosmosChain = useCosmosChain(
+    fromNetwork.networkName || defaultChainName,
+  );
 
   const showCalculatorBox = () => {
     return (
@@ -144,23 +151,27 @@ const Transfer = () => {
   };
 
   const fetchTokenList = async () => {
-    const tokenListFrom = customChainassets.find(
-      (assetList) => assetList.chain_name === fromNetwork.networkName,
-    )?.assets;
-    const tokenListTo = customChainassets.find(
-      (assetList) => assetList.chain_name === toNetwork.networkName,
-    )?.assets;
-    const tokenListData: TransferTokenItemProps[] =
-      tokenListFrom
-        ?.filter((asset) => tokenListTo?.includes(asset))
-        ?.map((asset) => ({
-          tokenId: asset.base,
-          tokenLogo: asset.logo_URIs?.svg || DefaultNetworkIcon.src,
-          tokenName: asset.name,
-          tokenSymbol: asset.symbol,
-          tokenExponent: asset.denom_units?.[0]?.exponent,
+    setTokenList([]);
+    let allBalances: Coin[] | undefined = [];
+    if (
+      fromNetwork.networkName &&
+      cosmosChainsSupported.includes(fromNetwork.networkName)
+    ) {
+      allBalances = await cosmosChain?.getAllBalances();
+    }
+
+    if (allBalances?.length) {
+      const tokenListData: TransferTokenItemProps[] =
+        allBalances?.map((asset) => ({
+          tokenId: asset.denom,
+          tokenLogo: DefaultNetworkIcon.src,
+          tokenName: asset.denom,
+          tokenSymbol: asset.denom,
+          tokenExponent: 0,
+          balance: asset.amount,
         })) || [];
-    setTokenList(tokenListData);
+      setTokenList(tokenListData);
+    }
   };
 
   useEffect(() => {
@@ -168,10 +179,10 @@ const Transfer = () => {
   }, []);
 
   useEffect(() => {
-    if (!!fromNetwork.networkId && !!toNetwork.networkId) {
+    if (!!fromNetwork.networkId) {
       fetchTokenList();
     }
-  }, [fromNetwork.networkId, toNetwork.networkId]);
+  }, [fromNetwork.networkId]);
 
   return isSubmitted ? (
     <TransferResult setIsSubmitted={setIsSubmitted} />
@@ -211,7 +222,6 @@ const Transfer = () => {
         onClose={onCloseTokenModal}
         isOpen={isOpenTokenModal}
         tokenList={tokenList}
-        chainName={fromNetwork?.networkName}
       />
     </>
   );

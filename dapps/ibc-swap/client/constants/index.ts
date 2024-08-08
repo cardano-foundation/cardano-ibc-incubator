@@ -26,3 +26,5 @@ export const CARDANO_MAINNET_MAGIC = '764824073';
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
+
+export const cosmosChainsSupported = ['localosmosis', 'sidechain-localnet'];
