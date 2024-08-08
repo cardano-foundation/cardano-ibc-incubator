@@ -21,7 +21,13 @@ type TransferContextType = {
   destinationAddress: string;
   setDestinationAddress: Dispatch<SetStateAction<string>>;
   switchNetwork: () => void;
-  getDataTransfer: () => void;
+  getDataTransfer: () => {
+    fromNetwork: NetworkItemProps;
+    toNetwork: NetworkItemProps;
+    selectedToken: TransferTokenItemProps;
+    sendAmount: string;
+    destinationAddress: string;
+  };
   handleReset: () => void;
 };
 
