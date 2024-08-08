@@ -15,7 +15,8 @@ import InfoIcon from '@/assets/icons/info.svg';
 import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import { allChains, customChainassets, customChains } from '@/configs/customChainInfo';
+import { allChains, customChainassets } from '@/configs/customChainInfo';
+import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
@@ -35,6 +36,7 @@ const Transfer = () => {
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
   const {
+    destinationAddress,
     sendAmount,
     setDestinationAddress,
     getDataTransfer,
@@ -121,6 +123,13 @@ const Transfer = () => {
   };
 
   const handleTransfer = () => {
+    // do verify address:
+    const isValidAddress = verifyAddress(
+      destinationAddress,
+      toNetwork?.networkId?.toString() || undefined,
+    );
+    console.log(`isValidAddress:`, isValidAddress);
+
     console.log(getDataTransfer());
     setIsSubmitted(true);
   };

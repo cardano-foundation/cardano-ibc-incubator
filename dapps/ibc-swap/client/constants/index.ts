@@ -21,7 +21,7 @@ export const routes = [
   },
 ];
 
-export const CARDANO_MAINNET_MAGIC = '764824073'
+export const CARDANO_MAINNET_MAGIC = '764824073';
 
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
