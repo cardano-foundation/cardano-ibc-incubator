@@ -1,3 +1,4 @@
+import { CARDANO_MAINNET_MAGIC } from '@/constants';
 import { AssetList, Chain } from '@chain-registry/types';
 
 const sideChainConfig: Chain = {
@@ -124,6 +125,9 @@ const localOsmosisChainConfig: Chain = {
       },
     ],
   },
+  logo_URIs: {
+    svg: 'https://app.osmosis.zone/tokens/generated/osmo.svg'
+  },
   keywords: ['ibc-go'], // Assuming features map to keywords
 };
 
@@ -163,6 +167,21 @@ const localOsmosisAssetList: AssetList = {
 
 export const customChains: Chain[] = [sideChainConfig, localOsmosisChainConfig];
 
+const isCardanoMainnet = process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC
+
+const cardanoChain: Chain = {
+  chain_name: 'cardano',
+  status: 'active',
+  network_type: isCardanoMainnet ? 'mainnet' : 'devnet',
+  pretty_name: 'Cardano',
+  chain_id: process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID || CARDANO_MAINNET_MAGIC,
+  bech32_prefix: isCardanoMainnet ? 'addr' : 'addr_test',
+  slip44: 1815,
+  logo_URIs: {
+    svg: 'https://beta.explorer.cardano.org/assets/ada-price-dark-D1XAVnue.svg'
+  }
+}
+export const allChains: any[] = [...customChains, cardanoChain]
 export const customChainassets: AssetList[] = [
   sideChainAssetList,
   localOsmosisAssetList,

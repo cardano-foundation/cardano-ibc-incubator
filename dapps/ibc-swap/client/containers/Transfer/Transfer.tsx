@@ -15,7 +15,7 @@ import InfoIcon from '@/assets/icons/info.svg';
 import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import { customChainassets, customChains } from '@/configs/customChainInfo';
+import { allChains, customChainassets, customChains } from '@/configs/customChainInfo';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
@@ -126,7 +126,7 @@ const Transfer = () => {
   };
 
   const fetchNetworkList = async () => {
-    const networkListData: NetworkItemProps[] = customChains.map((chain) => ({
+    const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
       networkId: chain.chain_id,
       networkLogo: chain?.logo_URIs?.svg || DefaultNetworkIcon.src,
       networkName: chain.chain_name,
