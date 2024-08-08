@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { ChangeEvent, useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
 import {
@@ -27,6 +27,7 @@ import {
   StyledNetworkBoxHeader,
   StyledSwitchNetwork,
 } from '../index.style';
+import { debounce } from '@/utils/helper';
 
 type NetworkBoxComponentProps = {
   title?: string;
@@ -34,6 +35,7 @@ type NetworkBoxComponentProps = {
   selectedNetwork: NetworkItemProps;
   // eslint-disable-next-line no-unused-vars
   onSelectNetwork: (token: NetworkItemProps) => void;
+  onSearch?: (event: any) => void;
 };
 
 const NetworkBoxComponent = ({
@@ -41,6 +43,7 @@ const NetworkBoxComponent = ({
   networkList,
   selectedNetwork,
   onSelectNetwork,
+  onSearch,
 }: NetworkBoxComponentProps) => {
   return (
     <StyledNetworkBox>
@@ -72,7 +75,7 @@ const NetworkBoxComponent = ({
         </Box>
       </StyledNetworkBoxHeader>
       <Box p="16px" borderBottomWidth="1px" borderBottomColor={COLOR.neutral_5}>
-        <SearchInput placeholder="Search network" />
+        <SearchInput placeholder="Search network" onChange={onSearch} />
       </Box>
       <Box maxH="368px" overflowY="scroll">
         <NetworkList
@@ -103,12 +106,24 @@ export const NetworkModal = ({
     useState<NetworkItemProps>(fromNetwork);
   const [currentToNetwork, setCurrentToNetwork] =
     useState<NetworkItemProps>(toNetwork);
+  const [toNetworkList, setToNetworkList] = useState<NetworkItemProps[]>([]);
+  const [fromNetworkList, setFromNetworkList] =
+    useState<NetworkItemProps[]>(networkList);
+
+  const handleSelectFromNetwork = (network: NetworkItemProps) => {
+    const newToNetworkList = networkList.filter(
+      (networkItem) => networkItem.networkId !== network.networkId,
+    );
+    setToNetworkList(newToNetworkList);
+    setCurrentFromNetwork(network);
+    setCurrentToNetwork({});
+  };
 
   const HandleSwitchNetwork = () => {
     const newToNetwork = currentFromNetwork;
     const newFromNetwork = currentToNetwork;
-    setCurrentFromNetwork(newFromNetwork);
     setCurrentToNetwork(newToNetwork);
+    handleSelectFromNetwork(newFromNetwork);
   };
 
   const handleSave = () => {
@@ -123,14 +138,37 @@ export const NetworkModal = ({
     onClose();
   };
 
+  const handleSearch = debounce(
+    (setCurrentList: any, searchString: string, isToNetWorkList?: boolean) => {
+      if (networkList?.length) {
+        let newList = networkList.filter((item) =>
+          item.networkName?.toLowerCase()?.includes(searchString.toLowerCase()),
+        );
+        if (isToNetWorkList) {
+          newList = newList.filter(
+            (item) => item.networkId !== currentFromNetwork.networkId,
+          );
+        }
+        setCurrentList(newList);
+      }
+    },
+    500,
+  );
+
   useEffect(() => {
     if (fromNetwork) {
-      setCurrentFromNetwork(fromNetwork);
+      handleSelectFromNetwork(fromNetwork);
     }
     if (toNetwork) {
       setCurrentToNetwork(toNetwork);
     }
   }, [fromNetwork, toNetwork]);
+
+  useEffect(() => {
+    if (networkList.length) {
+      setFromNetworkList(networkList);
+    }
+  }, [networkList]);
 
   return (
     <>
@@ -156,8 +194,12 @@ export const NetworkModal = ({
               <NetworkBoxComponent
                 title="From"
                 selectedNetwork={currentFromNetwork}
-                onSelectNetwork={setCurrentFromNetwork}
-                networkList={networkList}
+                onSelectNetwork={handleSelectFromNetwork}
+                networkList={fromNetworkList}
+                onSearch={(e: any) => {
+                  const searchString = e.target.value;
+                  handleSearch(setFromNetworkList, searchString, false);
+                }}
               />
               <StyledSwitchNetwork
                 _hover={{
@@ -175,7 +217,11 @@ export const NetworkModal = ({
                 title="To"
                 selectedNetwork={currentToNetwork}
                 onSelectNetwork={setCurrentToNetwork}
-                networkList={networkList}
+                networkList={toNetworkList}
+                onSearch={(e: any) => {
+                  const searchString = e.target.value;
+                  handleSearch(setToNetworkList, searchString, true);
+                }}
               />
             </Box>
           </ModalBody>

@@ -24,18 +24,21 @@ import { cosmos } from 'interchain';
 import { defaultChainName } from '@/constants';
 
 import { StyledTokenBox } from '../index.style';
+import { debounce } from '@/utils/helper';
 
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
   currentToken: TransferTokenItemProps;
   // eslint-disable-next-line no-unused-vars
   setCurrentToken: (token: TransferTokenItemProps) => void;
+  onSearch?: (event: any) => void;
 };
 
 const TokenBoxComponent = ({
   tokenList,
   currentToken,
   setCurrentToken,
+  onSearch,
 }: TokenBoxComponentProps) => {
   return (
     <StyledTokenBox>
@@ -44,7 +47,7 @@ const TokenBoxComponent = ({
         pb="16px"
         borderBottomColor={COLOR.neutral_5}
       >
-        <SearchInput placeholder="Search Token" />
+        <SearchInput placeholder="Search Token" onChange={onSearch} />
       </Box>
       <List maxH="416px" overflowY="scroll">
         <ListItem mb={4}>
@@ -81,6 +84,8 @@ export const TokenModal = ({
 
   const [currentToken, setCurrentToken] =
     useState<TransferTokenItemProps>(selectedToken);
+  const [displayTokenList, setDisplayTokenList] =
+    useState<TransferTokenItemProps[]>(tokenList);
 
   const handleSave = () => {
     setSelectedToken(currentToken);
@@ -91,6 +96,21 @@ export const TokenModal = ({
     setCurrentToken(selectedToken);
     onClose();
   };
+
+  useEffect(() => {
+    if (tokenList.length) {
+      setDisplayTokenList(tokenList);
+    }
+  }, [tokenList]);
+
+  const handleSearch = debounce((setCurrentList: any, searchString: string) => {
+    if (tokenList?.length) {
+      let newList = tokenList.filter((item) =>
+        item.tokenName?.toLowerCase()?.includes(searchString.toLowerCase()),
+      );
+      setCurrentList(newList);
+    }
+  }, 500);
 
   useEffect(() => {
     if (selectedToken) {
@@ -120,9 +140,13 @@ export const TokenModal = ({
               justifyContent="space-between"
             >
               <TokenBoxComponent
-                tokenList={tokenList}
+                tokenList={displayTokenList}
                 currentToken={currentToken}
                 setCurrentToken={setCurrentToken}
+                onSearch={(e) => {
+                  const searchString = e.target.value;
+                  handleSearch(setDisplayTokenList, searchString);
+                }}
               />
             </Box>
           </ModalBody>

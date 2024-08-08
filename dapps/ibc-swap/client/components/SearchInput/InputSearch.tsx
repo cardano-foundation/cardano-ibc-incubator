@@ -5,15 +5,16 @@ import { StyledSearchInput, StyledSearchInputGroup } from './index.style';
 
 type SearchInputProps = {
   placeholder: string;
+  onChange?: (event: any) => void;
 };
 
-export const SearchInput = ({ placeholder }: SearchInputProps) => {
+export const SearchInput = ({ placeholder, onChange }: SearchInputProps) => {
   return (
     <StyledSearchInputGroup>
       <InputLeftElement pointerEvents="none">
         <IoSearchOutline color={COLOR.neutral_1} />
       </InputLeftElement>
-      <StyledSearchInput placeholder={placeholder} />
+      <StyledSearchInput placeholder={placeholder} onChange={onChange} />
     </StyledSearchInputGroup>
   );
 };

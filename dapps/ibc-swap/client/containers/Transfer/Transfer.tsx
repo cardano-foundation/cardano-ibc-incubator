@@ -39,6 +39,7 @@ const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
+  const [validationAddress, setValidationAddress] = useState<string>('');
   const {
     destinationAddress,
     sendAmount,
@@ -130,13 +131,29 @@ const Transfer = () => {
     );
   };
 
-  const handleTransfer = () => {
-    // do verify address:
+  const validateAddress = () => {
+    setValidationAddress('');
+    if (!destinationAddress) {
+      setValidationAddress('Address is required');
+      return false;
+    }
     const isValidAddress = verifyAddress(
       destinationAddress,
       toNetwork?.networkId?.toString() || undefined,
     );
-    if (!isValidAddress) return;
+    console.log(`isValidAddress:`, isValidAddress);
+    if (!isValidAddress) {
+      setValidationAddress('Invalid address');
+      return false;
+    }
+    return true;
+  };
+
+  const handleTransfer = () => {
+    // do verify address:
+    if (!validateAddress()) {
+      return;
+    }
     const { chains, foundRoute, routes } = calculateTransferRoutes(
       fromNetwork.networkId!,
       toNetwork.networkId!,
@@ -147,6 +164,7 @@ const Transfer = () => {
       return;
     }
     console.log(chains, routes);
+    console.log(getDataTransfer());
     setIsSubmitted(true);
   };
 
@@ -209,6 +227,7 @@ const Transfer = () => {
             title="Destination address"
             placeholder="Enter destination address here..."
             onChange={setDestinationAddress}
+            errorMsg={validationAddress}
           />
           <StyledTransferButton onClick={handleTransfer}>
             <Text
