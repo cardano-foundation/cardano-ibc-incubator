@@ -34,6 +34,9 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
+import { useChain } from '@cosmos-kit/react';
+import { unsignedTxTransferFromCosmos } from '@/utils/buildTransferTx';
+import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -47,7 +50,13 @@ const Transfer = () => {
     getDataTransfer,
     fromNetwork,
     toNetwork,
+    selectedToken,
   } = useContext(TransferContext);
+
+  const { getAccount, estimateFee } = useChain(
+    fromNetwork?.networkId || defaultChainName,
+    true,
+  );
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
   const {
     isOpen: isOpenNetworkModal,
@@ -137,9 +146,10 @@ const Transfer = () => {
       setValidationAddress('Address is required');
       return false;
     }
+    const dataTransfer = getDataTransfer();
     const isValidAddress = verifyAddress(
       destinationAddress,
-      toNetwork?.networkId?.toString() || undefined,
+      dataTransfer?.toNetwork?.networkId?.toString() || undefined,
     );
     console.log(`isValidAddress:`, isValidAddress);
     if (!isValidAddress) {
@@ -149,7 +159,7 @@ const Transfer = () => {
     return true;
   };
 
-  const handleTransfer = () => {
+  const handleTransfer = async () => {
     // do verify address:
     if (!validateAddress()) {
       return;
@@ -164,8 +174,22 @@ const Transfer = () => {
       return;
     }
     console.log(chains, routes);
-    console.log(getDataTransfer());
-    setIsSubmitted(true);
+
+    const senderAddress = await getAccount();
+    const msg = unsignedTxTransferFromCosmos(
+      chains,
+      routes,
+      senderAddress?.address,
+      destinationAddress,
+      BigInt(0),
+      { amount: sendAmount, denom: selectedToken.tokenName! },
+    );
+    console.log(msg);
+    // const
+    const est = await estimateFee(msg);
+    console.log(est);
+    console.log(chains, routes);
+    // setIsSubmitted(true);
   };
 
   const fetchNetworkList = async () => {

@@ -1,6 +1,7 @@
 /* global BigInt */
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
+import { ibc } from 'interchain';
 
 const pfmReceiver = 'pfm';
 
@@ -37,9 +38,8 @@ export function unsignedTxTransferFromCosmos(
   receiver: string,
   timeoutTimeOffset: bigint, // nanosec
   coin: Coin,
-): MsgTransfer[] {
+): { typeUrl: string; value: any }[] {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
-
   let msg: MsgTransfer;
   if (routes.length === 1) {
     // normal transfer
@@ -56,7 +56,7 @@ export function unsignedTxTransferFromCosmos(
       ).toString(),
       memo: '',
     });
-    return [msg];
+    return [{ typeUrl: MsgTransfer.typeUrl, value: msg }];
   }
   // pfm
   const [route, ...restRoutes] = routes;
@@ -70,7 +70,7 @@ export function unsignedTxTransferFromCosmos(
     timeoutTimestamp: (currentTimeStamp + BigInt(timeoutTimeOffset)).toString(),
     memo: buildForwardMemo(restRoutes, receiver),
   });
-  return [msg];
+  return [{ typeUrl: MsgTransfer.typeUrl, value: msg }];
 }
 
 export function unsignedTxTransferFromCardano() {}

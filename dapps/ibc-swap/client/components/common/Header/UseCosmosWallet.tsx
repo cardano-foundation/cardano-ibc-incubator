@@ -1,19 +1,19 @@
-import { useChain, useWalletClient } from '@cosmos-kit/react';
+import { useChain, useChains, useWalletClient } from '@cosmos-kit/react';
 import { ChainName } from 'cosmos-kit';
 import { defaultChainName } from '@/constants';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
 import { useEffect } from 'react';
 
 export const UseCosmosWallet = (providedChainName?: ChainName) => {
+  const chains = useChains(customChains.map(i => i.chain_id));
+
   const {
-    connect,
     openView,
     status,
     username,
     address,
     message,
     wallet,
-    disconnect,
     chain: chainInfo,
   } = useChain(providedChainName || defaultChainName);
 
@@ -46,14 +46,14 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
   }, [status]);
 
   return {
-    connect,
+    connect: chains.sidechain.connect,
     openView,
     status,
     username,
     address,
     message,
     wallet,
-    disconnect,
+    disconnect: chains.sidechain.disconnect,
     chainInfo,
   };
 };

@@ -2,7 +2,7 @@ import { CARDANO_MAINNET_MAGIC } from '@/constants';
 import { AssetList, Chain } from '@chain-registry/types';
 
 const sideChainConfig: Chain = {
-  chain_name: 'sidechain-localnet',
+  chain_name: 'sidechain',
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Sidechain Localnet',
@@ -51,7 +51,7 @@ const sideChainConfig: Chain = {
 };
 
 const sideChainAssetList: AssetList = {
-  chain_name: 'sidechain-localnet',
+  chain_name: 'sidechain',
   assets: [
     {
       description: 'Registered denom token for sidechain testing',

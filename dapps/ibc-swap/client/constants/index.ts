@@ -3,7 +3,7 @@ export const THEME_MODE = {
   DARK: 'dark',
 };
 
-export const defaultChainName = 'localosmosis';
+export const defaultChainName = 'sidechain';
 
 export const FROM_TO = {
   FROM: 'From',
@@ -27,4 +27,4 @@ export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 
-export const cosmosChainsSupported = ['localosmosis', 'sidechain-localnet'];
+export const cosmosChainsSupported = ['localosmosis', 'sidechain'];

@@ -14,6 +14,8 @@ export const useCosmosChain = (chainName: string) => {
   const getAllBalances = async () => {
     const rpcEndpoint = (await getRpcEndpoint()) as string;
     console.log(rpcEndpoint);
+    console.log(address);
+    console.log(_chainName);
     if (!rpcEndpoint || !address) {
       return;
     }

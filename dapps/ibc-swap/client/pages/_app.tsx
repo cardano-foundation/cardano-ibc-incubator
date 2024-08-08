@@ -1,6 +1,19 @@
 import '@interchain-ui/react/globalStyles';
 import '@interchain-ui/react/styles';
 
+import { GeneratedType, Registry } from '@cosmjs/proto-signing';
+import { AminoTypes } from '@cosmjs/stargate';
+import {
+  cosmosAminoConverters,
+  cosmosProtoRegistry,
+  cosmwasmAminoConverters,
+  cosmwasmProtoRegistry,
+  ibcProtoRegistry,
+  ibcAminoConverters,
+  osmosisAminoConverters,
+  osmosisProtoRegistry,
+} from 'osmojs';
+
 import type { AppProps } from 'next/app';
 import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
@@ -28,7 +41,26 @@ function MyApp({ Component, pageProps }: AppProps) {
   const signerOptions: SignerOptions = {
     // @ts-ignore
     signingStargate: (_chain: Chain) => {
-      return getSigningCosmosClientOptions();
+      const protoRegistry: ReadonlyArray<[string, GeneratedType]> = [
+        ...cosmosProtoRegistry,
+        ...cosmwasmProtoRegistry,
+        ...ibcProtoRegistry,
+        ...osmosisProtoRegistry,
+      ];
+
+      const aminoConverters = {
+        ...cosmosAminoConverters,
+        ...cosmwasmAminoConverters,
+        ...ibcAminoConverters,
+        ...osmosisAminoConverters,
+      };
+      const registry = new Registry(protoRegistry);
+      const aminoTypes = new AminoTypes(aminoConverters);
+      const signing = getSigningCosmosClientOptions();
+      if (_chain.chain_id === 'sidechain') {
+        return { ...signing, registry, aminoTypes, gasPrice: "0.001stake" };
+      }
+      return { ...signing, registry, aminoTypes };
     },
   };
 
