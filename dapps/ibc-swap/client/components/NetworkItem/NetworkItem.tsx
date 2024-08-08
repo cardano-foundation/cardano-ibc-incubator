@@ -3,7 +3,7 @@ import EllipseIcon from '@/assets/icons/elippse.svg';
 import { StyledNetworkItemName, StyledNetworkItemWrapper } from './index.style';
 
 export type NetworkItemProps = {
-  networkId?: number | string;
+  networkId?: string;
   networkName?: string;
   networkLogo?: string;
   isActive?: boolean;

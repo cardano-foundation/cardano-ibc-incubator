@@ -60,12 +60,25 @@ export async function fetchClientStateFromChannel(
   return (data?.identified_client_state || {}) as QueryClientStateResponse;
 }
 
+const getMaxChannelId = (channel1: string, channel2: string) => {
+  const [, id1] = channel1.split('-');
+  const [, id2] = channel2.split('-');
+  return `channel-${Math.max(parseInt(id1, 10), parseInt(id2, 10))}`;
+};
+type maxSrcChannelIdType = {
+  [key: string]: {
+    channel: string;
+    index: number;
+  };
+};
+
+// TODO: need backend to collect instead of client
 export async function fetchAllChannels(
   chainId: string,
   restUrl: string,
 ): Promise<RawChannelMapping[]> {
   const tmpData: RawChannelMapping[] = [];
-
+  const maxSrcChannelId: maxSrcChannelIdType = {};
   const fetchUrl = `${restUrl}${queryAllChannelsUrl}`;
   const firstFetch = await fetch(fetchUrl).then((res) => res.json());
   (firstFetch?.channels || []).forEach((channel: QueryChannelResponse) => {
@@ -108,9 +121,31 @@ export async function fetchAllChannels(
             client_state: { chain_id },
           } = res;
           tmpData[index].destChain = chain_id;
+          // only keep largest channel of each pair
+          if (!maxSrcChannelId[chain_id]) {
+            maxSrcChannelId[chain_id] = {
+              index,
+              channel: tmpData[index].srcChannel,
+            };
+          } else {
+            const lgChannel = getMaxChannelId(
+              tmpData[index].srcChannel,
+              maxSrcChannelId[chain_id].channel,
+            );
+            maxSrcChannelId[chain_id] = {
+              index:
+                lgChannel === tmpData[index].srcChannel
+                  ? index
+                  : maxSrcChannelId[chain_id].index,
+              channel: lgChannel,
+            };
+          }
         },
       );
     }),
   );
-  return tmpData;
+  return Object.keys(maxSrcChannelId).map((item) => {
+    const { index } = maxSrcChannelId[item];
+    return tmpData[index];
+  });
 }

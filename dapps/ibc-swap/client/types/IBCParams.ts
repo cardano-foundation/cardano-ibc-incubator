@@ -55,3 +55,9 @@ export type RawChannelMapping = {
 export type IBCDenomTrace = {
   [key: string]: DenomTrace;
 };
+
+export type TransferRoutes = {
+  foundRoute: boolean;
+  chains: string[];
+  routes: string[];
+};

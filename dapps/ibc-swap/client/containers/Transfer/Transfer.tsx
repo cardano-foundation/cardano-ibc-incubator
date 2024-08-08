@@ -11,6 +11,7 @@ import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
+import IBCParamsContext from '@/contexts/IBCParamsContext';
 import InfoIcon from '@/assets/icons/info.svg';
 import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
@@ -46,7 +47,7 @@ const Transfer = () => {
     fromNetwork,
     toNetwork,
   } = useContext(TransferContext);
-
+  const { calculateTransferRoutes } = useContext(IBCParamsContext);
   const {
     isOpen: isOpenNetworkModal,
     onOpen: onOpenNetworkModal,
@@ -135,9 +136,17 @@ const Transfer = () => {
       destinationAddress,
       toNetwork?.networkId?.toString() || undefined,
     );
-    console.log(`isValidAddress:`, isValidAddress);
-
-    console.log(getDataTransfer());
+    if (!isValidAddress) return;
+    const { chains, foundRoute, routes } = calculateTransferRoutes(
+      fromNetwork.networkId!,
+      toNetwork.networkId!,
+      4,
+    );
+    if (!foundRoute) {
+      console.log('route not found');
+      return;
+    }
+    console.log(chains, routes);
     setIsSubmitted(true);
   };
 
