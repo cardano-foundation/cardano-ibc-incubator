@@ -16,6 +16,9 @@ const nextConfig = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname, './'),
     };
+    if (!options.isServer) {
+      config.output.environment = { ...config.output.environment, asyncFunction: true };
+    }
     return config;
   },
   images: {

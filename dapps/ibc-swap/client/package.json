@@ -9,6 +9,10 @@
     "lint": "eslint \"**/*.{ts,tsx}\"",
     "postinstall": "husky install"
   },
+  "resolutions": {
+    "@sidan-lab/sidan-csl-rs-nodejs": "0.6.13",
+    "@sidan-lab/sidan-csl-rs-browser": "0.6.13"
+  },
   "dependencies": {
     "@chain-registry/assets": "^1.21.0",
     "@chain-registry/osmosis": "^1.21.0",
