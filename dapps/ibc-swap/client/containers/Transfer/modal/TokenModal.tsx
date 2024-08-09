@@ -22,6 +22,7 @@ import TransferContext from '@/contexts/TransferContext';
 
 import { debounce } from '@/utils/helper';
 import { StyledTokenBox } from '../index.style';
+import { Loading } from '@/components/Loading/Loading';
 
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
@@ -38,6 +39,7 @@ const TokenBoxComponent = ({
   setCurrentToken,
   onSearch,
 }: TokenBoxComponentProps) => {
+  const { isLoading } = useContext(TransferContext);
   return (
     <StyledTokenBox>
       <Box
@@ -47,22 +49,26 @@ const TokenBoxComponent = ({
       >
         <SearchInput placeholder="Search Token" onChange={onSearch} />
       </Box>
-      <List maxH="416px" overflowY="scroll">
-        <ListItem mb={4}>
-          {tokenList?.map((token) => (
-            <TransferTokenItem
-              key={token.tokenName}
-              tokenId={token.tokenId}
-              tokenName={token.tokenName}
-              tokenLogo={token.tokenLogo}
-              tokenSymbol={token.tokenSymbol}
-              balance={token.balance}
-              onClick={() => setCurrentToken(token)}
-              isActive={currentToken?.tokenId === token.tokenId}
-            />
-          ))}
-        </ListItem>
-      </List>
+      {isLoading ? (
+        <Loading />
+      ) : (
+        <List maxH="416px" overflowY="scroll">
+          <ListItem mb={4}>
+            {tokenList?.map((token) => (
+              <TransferTokenItem
+                key={token.tokenName}
+                tokenId={token.tokenId}
+                tokenName={token.tokenName}
+                tokenLogo={token.tokenLogo}
+                tokenSymbol={token.tokenSymbol}
+                balance={token.balance}
+                onClick={() => setCurrentToken(token)}
+                isActive={currentToken?.tokenId === token.tokenId}
+              />
+            ))}
+          </ListItem>
+        </List>
+      )}
     </StyledTokenBox>
   );
 };

@@ -29,6 +29,8 @@ type TransferContextType = {
     destinationAddress: string;
   };
   handleReset: () => void;
+  isLoading: boolean;
+  setIsLoading: Dispatch<SetStateAction<boolean>>;
 };
 
 const TransferContext = createContext<TransferContextType>(
@@ -47,6 +49,7 @@ export const TransferProvider = ({
   );
   const [sendAmount, setSendAmount] = useState<string>('');
   const [destinationAddress, setDestinationAddress] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const switchNetwork = () => {
     if (!fromNetwork?.networkId && !toNetwork?.networkId) return;
@@ -72,6 +75,7 @@ export const TransferProvider = ({
     setSelectedToken({});
     setSendAmount('');
     setDestinationAddress('');
+    setIsLoading(false);
   };
 
   return (
@@ -91,9 +95,18 @@ export const TransferProvider = ({
           setDestinationAddress,
           getDataTransfer,
           handleReset,
+          isLoading,
+          setIsLoading,
         }),
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [fromNetwork, toNetwork, selectedToken, sendAmount, destinationAddress],
+        [
+          fromNetwork,
+          toNetwork,
+          selectedToken,
+          sendAmount,
+          destinationAddress,
+          isLoading,
+        ],
       )}
     >
       {children}

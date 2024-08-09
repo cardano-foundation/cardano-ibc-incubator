@@ -71,6 +71,7 @@ const Transfer = () => {
     fromNetwork,
     selectedToken,
     setSelectedToken,
+    setIsLoading,
   } = useContext(TransferContext);
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
 
@@ -255,7 +256,12 @@ const Transfer = () => {
       fromNetwork.networkName &&
       cosmosChainsSupported.includes(fromNetwork.networkName)
     ) {
-      allBalances = await cosmosChain?.getAllBalances();
+      try {
+        setIsLoading(true);
+        allBalances = await cosmosChain?.getAllBalances();
+      } catch (error) {
+        setIsLoading(false);
+      }
     }
     if (allBalances?.length) {
       const tokenListData: TransferTokenItemProps[] =
@@ -269,6 +275,7 @@ const Transfer = () => {
         })) || [];
       setTokenList(tokenListData);
     }
+    setIsLoading(false);
   };
 
   useEffect(() => {
