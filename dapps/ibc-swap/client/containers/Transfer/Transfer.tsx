@@ -1,3 +1,5 @@
+'use client';
+
 import {
   Box,
   Heading,
@@ -40,18 +42,33 @@ import {
   StyledWrapContainer,
 } from './index.style';
 
+type EstimateFeeType = {
+  canEst: boolean;
+  msgs: any[];
+  estTime: string;
+  estFee: string;
+};
+
+const initEstData = {
+  canEst: false,
+  msgs: [],
+  estFee: '--',
+  estTime: '--',
+};
+
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
   const [validationAddress, setValidationAddress] = useState<string>('');
+  const [estData, setEstData] = useState<EstimateFeeType>(initEstData);
+
   const {
     destinationAddress,
     sendAmount,
     setDestinationAddress,
     getDataTransfer,
     fromNetwork,
-    toNetwork,
     selectedToken,
   } = useContext(TransferContext);
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
@@ -72,9 +89,50 @@ const Transfer = () => {
   );
   const { getAccount, estimateFee } = cosmosChain;
 
+  const calculateEst = async (): Promise<EstimateFeeType> => {
+    const trySendAmount = BigInt(sendAmount);
+    // do verify address:
+    if (!validateAddress() || trySendAmount < 1) {
+      return initEstData;
+    }
+    const dataTransfer = getDataTransfer();
+    const { chains, foundRoute, routes } = calculateTransferRoutes(
+      dataTransfer.fromNetwork.networkId!,
+      dataTransfer.toNetwork.networkId!,
+      4,
+    );
+    if (!foundRoute) {
+      console.log('route not found');
+      return initEstData;
+    }
+    console.log(chains, routes);
+    // check token amount > 0, decimals
+    const senderAddress = await getAccount();
+    const msg = unsignedTxTransferFromCosmos(
+      chains,
+      routes,
+      senderAddress?.address,
+      destinationAddress,
+      HOUR_IN_NANOSEC,
+      { amount: sendAmount, denom: selectedToken.tokenName! },
+    );
+    try {
+      const est = await estimateFee(msg);
+      const estFee = est.amount[0];
+      return {
+        canEst: true,
+        msgs: msg,
+        estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
+        estTime: '~2 mins',
+      };
+    } catch (e) {
+      return initEstData;
+    }
+  };
+
   const showCalculatorBox = () => {
     return (
-      sendAmount && (
+      estData.canEst && (
         <StyledTransferCalculatorBox>
           <Box
             alignItems="center"
@@ -99,7 +157,7 @@ const Transfer = () => {
                 Time
               </Text>
             </Box>
-            <Text>~2 mins</Text>
+            <Text>{estData.estTime}</Text>
           </Box>
           <Box
             alignItems="center"
@@ -109,7 +167,7 @@ const Transfer = () => {
             <Box display="flex" alignItems="center" gap={2}>
               <Tooltip
                 hasArrow
-                label="The time spent on transaction"
+                label="Fee spent for transaction"
                 bg="#0E0E12"
                 color={COLOR.neutral_1}
               >
@@ -121,7 +179,7 @@ const Transfer = () => {
                 lineHeight="22px"
                 color={COLOR.neutral_3}
               >
-                Est. Fee Return
+                Est. Fee
               </Text>
             </Box>
             <Text
@@ -130,7 +188,7 @@ const Transfer = () => {
               lineHeight="20px"
               color={COLOR.success}
             >
-              0.24 ATOM
+              {estData.estFee}
             </Text>
           </Box>
         </StyledTransferCalculatorBox>
@@ -158,35 +216,10 @@ const Transfer = () => {
   };
 
   const handleTransfer = async () => {
-    // do verify address:
-    if (!validateAddress()) {
-      return;
+    if (!estData.canEst) {
+      return
     }
-    const { chains, foundRoute, routes } = calculateTransferRoutes(
-      getDataTransfer().fromNetwork.networkId!,
-      getDataTransfer().toNetwork.networkId!,
-      4,
-    );
-    if (!foundRoute) {
-      console.log('route not found');
-      return;
-    }
-    console.log(chains, routes);
-    // check token amount > 0, decimals
-    const senderAddress = await getAccount();
-    const msg = unsignedTxTransferFromCosmos(
-      chains,
-      routes,
-      senderAddress?.address,
-      destinationAddress,
-      HOUR_IN_NANOSEC,
-      { amount: sendAmount, denom: selectedToken.tokenName! },
-    );
-    console.log(msg);
-    // est
-    const est = await estimateFee(msg);
-    console.log(est);
-    console.log(chains, routes);
+    // send submit here
     // setIsSubmitted(true);
   };
 
@@ -232,6 +265,18 @@ const Transfer = () => {
     }
   }, [fromNetwork.networkId]);
 
+  useEffect(() => {
+    const trySendAmount = BigInt(sendAmount);
+    const checkEstData = async () => {
+      await calculateEst().then(setEstData);
+    };
+    if (trySendAmount >= 1) {
+      checkEstData();
+    } else {
+      setEstData(initEstData);
+    }
+  }, [JSON.stringify(getDataTransfer())]);
+
   return isSubmitted ? (
     <TransferResult setIsSubmitted={setIsSubmitted} />
   ) : (
@@ -250,12 +295,15 @@ const Transfer = () => {
             onChange={setDestinationAddress}
             errorMsg={validationAddress}
           />
-          <StyledTransferButton onClick={handleTransfer}>
+          <StyledTransferButton
+            disabled={!estData.canEst}
+            onClick={handleTransfer}
+          >
             <Text
               fontSize={18}
               fontWeight={700}
               lineHeight="24px"
-              color={COLOR.neutral_2}
+              // color={COLOR.neutral_2}
             >
               Transfer
             </Text>

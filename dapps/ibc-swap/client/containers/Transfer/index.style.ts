@@ -94,10 +94,11 @@ const StyledTransferButton = styled.button`
   gap: 8px;
   border-radius: 12px;
   opacity: 0px;
-  background: ${COLOR.neutral_4};
+  background: ${COLOR.primary};
 
   :disabled {
     background: ${COLOR.neutral_4};
+    cursor: not-allowed;
   }
 `;
 
