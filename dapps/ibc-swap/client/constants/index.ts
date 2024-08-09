@@ -1,3 +1,5 @@
+/* global BigInt */
+
 export const THEME_MODE = {
   LIGHT: 'light',
   DARK: 'dark',
@@ -23,7 +25,7 @@ export const routes = [
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000)
+export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000);
 
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;

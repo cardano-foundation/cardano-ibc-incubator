@@ -1,5 +1,7 @@
 'use client';
 
+/* global BigInt */
+
 import {
   Box,
   Heading,
@@ -9,6 +11,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import React, { useContext, useEffect, useState } from 'react';
+import { toast } from 'react-toastify';
 import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
 import { COLOR } from '@/styles/color';
 import CustomInput from '@/components/CustomInput';
@@ -62,6 +65,12 @@ const Transfer = () => {
   const [tokenList, setTokenList] = useState<TransferTokenItemProps[]>([]);
   const [validationAddress, setValidationAddress] = useState<string>('');
   const [estData, setEstData] = useState<EstimateFeeType>(initEstData);
+  const [lastTxHash, setLastTxHash] = useState<string>('');
+
+  const resetLastTxData = () => {
+    setEstData(initEstData);
+    setLastTxHash('');
+  };
 
   const {
     destinationAddress,
@@ -90,7 +99,23 @@ const Transfer = () => {
     fromNetwork.networkName || defaultChainName,
   );
   const { getAccount, estimateFee } = cosmosChain;
-
+  const validateAddress = () => {
+    setValidationAddress('');
+    if (!destinationAddress) {
+      setValidationAddress('Address is required');
+      return false;
+    }
+    const dataTransfer = getDataTransfer();
+    const isValidAddress = verifyAddress(
+      destinationAddress,
+      dataTransfer?.toNetwork?.networkId?.toString() || undefined,
+    );
+    if (!isValidAddress) {
+      setValidationAddress('Invalid address');
+      return false;
+    }
+    return true;
+  };
   const calculateEst = async (): Promise<EstimateFeeType> => {
     const trySendAmount = BigInt(sendAmount);
     // do verify address:
@@ -198,24 +223,6 @@ const Transfer = () => {
     );
   };
 
-  const validateAddress = () => {
-    setValidationAddress('');
-    if (!destinationAddress) {
-      setValidationAddress('Address is required');
-      return false;
-    }
-    const dataTransfer = getDataTransfer();
-    const isValidAddress = verifyAddress(
-      destinationAddress,
-      dataTransfer?.toNetwork?.networkId?.toString() || undefined,
-    );
-    if (!isValidAddress) {
-      setValidationAddress('Invalid address');
-      return false;
-    }
-    return true;
-  };
-
   const handleTransfer = async () => {
     if (!estData.canEst) {
       return;
@@ -230,15 +237,14 @@ const Transfer = () => {
       );
       console.log(tx);
       if (tx && tx.code === 0) {
+        setLastTxHash(tx.transactionHash);
         setIsSubmitted(true);
       }
-    } catch (e) {
-      // error
+    } catch (e: unknown) {
       console.log(e);
+      // @ts-ignore
+      toast.error(e?.message?.toString() || '', { theme: 'colored' });
     }
-
-    // send submit here
-    // setIsSubmitted(true);
   };
 
   const fetchNetworkList = async () => {
@@ -303,7 +309,13 @@ const Transfer = () => {
   }, [JSON.stringify(getDataTransfer())]);
 
   return isSubmitted ? (
-    <TransferResult setIsSubmitted={setIsSubmitted} />
+    <TransferResult
+      setIsSubmitted={setIsSubmitted}
+      estFee={estData.estFee}
+      estTime={estData.estTime}
+      lastTxHash={lastTxHash}
+      resetLastTxData={resetLastTxData}
+    />
   ) : (
     <>
       <StyledWrapContainer>

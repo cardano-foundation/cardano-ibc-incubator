@@ -1,6 +1,9 @@
 import '@interchain-ui/react/globalStyles';
 import '@interchain-ui/react/styles';
 
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
 import { GeneratedType, Registry } from '@cosmjs/proto-signing';
 import { AminoTypes } from '@cosmjs/stargate';
 import {
@@ -82,6 +85,7 @@ function MyApp({ Component, pageProps }: AppProps) {
               <main id="main" className={manrope.className}>
                 <CustomAppProvider>
                   <Component {...pageProps} />
+                  <ToastContainer />
                 </CustomAppProvider>
               </main>
             </Layout>

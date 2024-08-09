@@ -20,12 +20,25 @@ import {
 type TransferResultProps = {
   // eslint-disable-next-line no-unused-vars
   setIsSubmitted: (isSubmitted: boolean) => void;
+  resetLastTxData: () => void;
+  estTime: string;
+  estFee: string;
+  lastTxHash: string;
 };
 
-export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
-  const { handleReset } = useContext(TransferContext);
+export const TransferResult = ({
+  setIsSubmitted,
+  estTime,
+  estFee,
+  // eslint-disable-next-line no-unused-vars
+  lastTxHash,
+  resetLastTxData,
+}: TransferResultProps) => {
+  const { handleReset, fromNetwork, toNetwork, selectedToken, sendAmount } =
+    useContext(TransferContext);
 
   const handleBackToTransfer = () => {
+    resetLastTxData();
     handleReset();
     setIsSubmitted(false);
   };
@@ -73,7 +86,8 @@ export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
                 From
               </Text>
               <Text fontWeight={700} fontSize={16} lineHeight="22px">
-                100 USDT/Cosmos Hub
+                {sendAmount} {selectedToken.tokenSymbol?.toUpperCase()}/
+                {fromNetwork.networkName}
               </Text>
             </StyledTransferFromToBox>
             <StyledSwitchNetwork
@@ -91,10 +105,11 @@ export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
                 lineHeight="20px"
                 color={COLOR.neutral_3}
               >
-                From
+                To
               </Text>
               <Text fontWeight={700} fontSize={16} lineHeight="22px">
-                100 USDT/Cosmos Hub
+                {sendAmount} {selectedToken.tokenSymbol?.toUpperCase()}/
+                {toNetwork.networkName}
               </Text>
             </StyledTransferFromToBox>
           </Box>
@@ -112,7 +127,7 @@ export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
               >
                 Time
               </Text>
-              <Text>~2 mins</Text>
+              <Text>{estTime}</Text>
             </Box>
             <Box
               alignItems="center"
@@ -125,7 +140,7 @@ export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
                 lineHeight="22px"
                 color={COLOR.neutral_3}
               >
-                Est. Fee Return
+                Est. Fee
               </Text>
               <Text
                 fontSize={16}
@@ -133,7 +148,7 @@ export const TransferResult = ({ setIsSubmitted }: TransferResultProps) => {
                 lineHeight="20px"
                 color={COLOR.success}
               >
-                0.24 ATOM
+                {estFee}
               </Text>
             </Box>
           </StyledTransferCalculatorBox>
