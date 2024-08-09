@@ -18,7 +18,6 @@ import type { AppProps } from 'next/app';
 import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { getSigningCosmosClientOptions } from 'interchain';
 import { SignerOptions, wallets } from 'cosmos-kit';
 import { Chain } from '@chain-registry/types';
 import { MeshProvider } from '@meshsdk/react';
@@ -37,30 +36,35 @@ const queryClient = new QueryClient({
   },
 });
 
+const protoRegistry: ReadonlyArray<[string, GeneratedType]> = [
+  ...cosmosProtoRegistry,
+  ...cosmwasmProtoRegistry,
+  ...ibcProtoRegistry,
+  ...osmosisProtoRegistry,
+];
+
+const aminoConverters = {
+  ...cosmosAminoConverters,
+  ...cosmwasmAminoConverters,
+  ...ibcAminoConverters,
+  ...osmosisAminoConverters,
+};
+const registry = new Registry(protoRegistry);
+const aminoTypes = new AminoTypes(aminoConverters);
+
+const getGasPrice = (chainId: string): string => {
+  const chainFound = customChains.find((i) => i.chain_id === chainId);
+  const fee = chainFound?.fees?.fee_tokens?.[0] || {
+    denom: 'stake',
+    fixed_min_gas_price: 0.0025,
+  };
+  return `${fee?.fixed_min_gas_price}${fee?.denom}`;
+};
 function MyApp({ Component, pageProps }: AppProps) {
   const signerOptions: SignerOptions = {
     // @ts-ignore
     signingStargate: (_chain: Chain) => {
-      const protoRegistry: ReadonlyArray<[string, GeneratedType]> = [
-        ...cosmosProtoRegistry,
-        ...cosmwasmProtoRegistry,
-        ...ibcProtoRegistry,
-        ...osmosisProtoRegistry,
-      ];
-
-      const aminoConverters = {
-        ...cosmosAminoConverters,
-        ...cosmwasmAminoConverters,
-        ...ibcAminoConverters,
-        ...osmosisAminoConverters,
-      };
-      const registry = new Registry(protoRegistry);
-      const aminoTypes = new AminoTypes(aminoConverters);
-      const signing = getSigningCosmosClientOptions();
-      if (_chain.chain_id === 'sidechain') {
-        return { ...signing, registry, aminoTypes, gasPrice: '0.001stake' };
-      }
-      return { ...signing, registry, aminoTypes };
+      return { registry, aminoTypes, gasPrice: getGasPrice(_chain?.chain_id) };
     },
   };
 

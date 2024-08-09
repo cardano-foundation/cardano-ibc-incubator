@@ -20,7 +20,11 @@ import { allChains } from '@/configs/customChainInfo';
 import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
-import { cosmosChainsSupported, defaultChainName } from '@/constants';
+import {
+  cosmosChainsSupported,
+  defaultChainName,
+  HOUR_IN_NANOSEC,
+} from '@/constants';
 
 import { unsignedTxTransferFromCosmos } from '@/utils/buildTransferTx';
 import SelectNetwork from './SelectNetwork';
@@ -168,18 +172,18 @@ const Transfer = () => {
       return;
     }
     console.log(chains, routes);
-
+    // check token amount > 0, decimals
     const senderAddress = await getAccount();
     const msg = unsignedTxTransferFromCosmos(
       chains,
       routes,
       senderAddress?.address,
       destinationAddress,
-      BigInt(0),
+      HOUR_IN_NANOSEC,
       { amount: sendAmount, denom: selectedToken.tokenName! },
     );
     console.log(msg);
-    // const
+    // est
     const est = await estimateFee(msg);
     console.log(est);
     console.log(chains, routes);
