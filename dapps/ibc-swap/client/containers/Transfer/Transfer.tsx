@@ -106,7 +106,7 @@ const Transfer = () => {
       console.log('route not found');
       return initEstData;
     }
-    console.log(chains, routes);
+    // console.log(chains, routes);
     // check token amount > 0, decimals
     const senderAddress = await getAccount();
     const msg = unsignedTxTransferFromCosmos(
@@ -208,7 +208,6 @@ const Transfer = () => {
       destinationAddress,
       dataTransfer?.toNetwork?.networkId?.toString() || undefined,
     );
-    console.log(`isValidAddress:`, isValidAddress);
     if (!isValidAddress) {
       setValidationAddress('Invalid address');
       return false;
@@ -218,8 +217,25 @@ const Transfer = () => {
 
   const handleTransfer = async () => {
     if (!estData.canEst) {
-      return
+      return;
     }
+    try {
+      const client = await cosmosChain.getSigningStargateClient();
+      const tx = await client.signAndBroadcast(
+        cosmosChain.address!,
+        estData.msgs,
+        'auto',
+        '',
+      );
+      console.log(tx);
+      if (tx && tx.code === 0) {
+        setIsSubmitted(true);
+      }
+    } catch (e) {
+      // error
+      console.log(e);
+    }
+
     // send submit here
     // setIsSubmitted(true);
   };

@@ -1,7 +1,6 @@
 /* global BigInt */
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
-import { ibc } from 'interchain';
 
 const pfmReceiver = 'pfm';
 
@@ -51,6 +50,10 @@ export function unsignedTxTransferFromCosmos(
       token: coin,
       sourcePort: srcPort,
       sourceChannel: srcChannel,
+      timeoutHeight: {
+        revisionNumber: BigInt(0),
+        revisionHeight: BigInt(0),
+      },
       timeoutTimestamp: (
         currentTimeStamp + BigInt(timeoutTimeOffset)
       ).toString(),
@@ -67,6 +70,10 @@ export function unsignedTxTransferFromCosmos(
     token: coin,
     sourcePort: srcPort,
     sourceChannel: srcChannel,
+    timeoutHeight: {
+      revisionNumber: BigInt(0),
+      revisionHeight: BigInt(0),
+    },
     timeoutTimestamp: (currentTimeStamp + BigInt(timeoutTimeOffset)).toString(),
     memo: buildForwardMemo(restRoutes, receiver),
   });
