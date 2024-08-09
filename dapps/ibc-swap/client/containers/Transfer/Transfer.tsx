@@ -70,6 +70,7 @@ const Transfer = () => {
     getDataTransfer,
     fromNetwork,
     selectedToken,
+    setSelectedToken,
   } = useContext(TransferContext);
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
 
@@ -261,6 +262,7 @@ const Transfer = () => {
   useEffect(() => {
     if (fromNetwork.networkId) {
       setTokenList([]);
+      setSelectedToken({});
       fetchTokenList();
     }
   }, [fromNetwork.networkId]);
