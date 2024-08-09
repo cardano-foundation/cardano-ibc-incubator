@@ -20,6 +20,7 @@ import {
 import type { AppProps } from 'next/app';
 import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
+import { ApolloProvider } from '@apollo/client';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
 import { SignerOptions, wallets } from 'cosmos-kit';
 import { Chain } from '@chain-registry/types';
@@ -29,6 +30,7 @@ import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
 import { CustomAppProvider } from '@/contexts';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
+import apolloClient from '../apis/apollo/apolloClient';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,14 +83,16 @@ function MyApp({ Component, pageProps }: AppProps) {
       >
         <QueryClientProvider client={queryClient}>
           <MeshProvider>
-            <Layout>
-              <main id="main" className={manrope.className}>
-                <CustomAppProvider>
-                  <Component {...pageProps} />
-                  <ToastContainer />
-                </CustomAppProvider>
-              </main>
-            </Layout>
+            <ApolloProvider client={apolloClient}>
+              <Layout>
+                <main id="main" className={manrope.className}>
+                  <CustomAppProvider>
+                    <Component {...pageProps} />
+                    <ToastContainer />
+                  </CustomAppProvider>
+                </main>
+              </Layout>
+            </ApolloProvider>
           </MeshProvider>
         </QueryClientProvider>
       </ChainProvider>

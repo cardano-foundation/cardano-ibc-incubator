@@ -48,6 +48,7 @@ export const ConnectWalletDropdown = () => {
 
   const handleDisconnectCardanoWallet = async () => {
     setWalletCardano(undefined);
+    localStorage.removeItem('cardano-wallet');
     disconnectCardanoWallet();
   };
 
