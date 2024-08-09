@@ -3,7 +3,6 @@ import { Box, Button, Image, Input, Text } from '@chakra-ui/react';
 import { FaChevronDown } from 'react-icons/fa';
 import { TokenSelectedProps } from '@/containers/Swap/SelectNetworkModal/NetworkTokenBox';
 import { FROM_TO } from '@/constants';
-import { COLOR } from '@/styles/color';
 import StyledTokenBox from './index.style';
 
 type TokenBoxProps = {

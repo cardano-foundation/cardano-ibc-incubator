@@ -3,6 +3,7 @@ import { Box, Img, Input, Spacer, Text } from '@chakra-ui/react';
 import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
 import TransferContext from '@/contexts/TransferContext';
+import { formatNumberInput } from '@/utils/string';
 
 import { StyledSelectTokenBox, StyledTokenSection } from './index.style';
 
@@ -11,11 +12,16 @@ type SelectTokenProps = {
 };
 
 const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
-  const { selectedToken, fromNetwork, toNetwork, setSendAmount } =
+  const { selectedToken, fromNetwork, toNetwork, setSendAmount, sendAmount } =
     useContext(TransferContext);
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setSendAmount(event.target.value);
+    const inputString = event.target.value;
+    const displayString = formatNumberInput(
+      inputString,
+      selectedToken.tokenExponent!,
+    );
+    setSendAmount(displayString);
   };
 
   const handleOpenTokenModal = () => {
@@ -77,6 +83,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           variant="unstyled"
           placeholder="0"
           onChange={handleChange}
+          value={sendAmount}
           disabled={isDisabledAmountInput}
           _placeholder={{
             color: COLOR.neutral_3,

@@ -1,4 +1,4 @@
-import { ChangeEvent, useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
 import {
@@ -21,13 +21,13 @@ import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwitchIcon from '@/assets/icons/transfer.svg';
 import EarchIcon from '@/assets/icons/earth.svg';
 import TransferContext from '@/contexts/TransferContext';
+import { debounce } from '@/utils/helper';
 
 import {
   StyledNetworkBox,
   StyledNetworkBoxHeader,
   StyledSwitchNetwork,
 } from '../index.style';
-import { debounce } from '@/utils/helper';
 
 type NetworkBoxComponentProps = {
   title?: string;
@@ -35,6 +35,7 @@ type NetworkBoxComponentProps = {
   selectedNetwork: NetworkItemProps;
   // eslint-disable-next-line no-unused-vars
   onSelectNetwork: (token: NetworkItemProps) => void;
+  // eslint-disable-next-line no-unused-vars
   onSearch?: (event: any) => void;
 };
 

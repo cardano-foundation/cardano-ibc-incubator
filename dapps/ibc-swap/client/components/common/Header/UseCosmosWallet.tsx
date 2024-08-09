@@ -5,7 +5,7 @@ import { customChainassets, customChains } from '@/configs/customChainInfo';
 import { useEffect } from 'react';
 
 export const UseCosmosWallet = (providedChainName?: ChainName) => {
-  const chains = useChains(customChains.map(i => i.chain_id));
+  const chains = useChains(customChains.map((i) => i.chain_id));
 
   const {
     openView,

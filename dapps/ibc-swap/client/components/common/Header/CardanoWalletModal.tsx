@@ -23,6 +23,7 @@ export type WalletProps = {
 export type CardanoWalletModalProps = {
   isOpen: boolean;
   onClose: () => void;
+  // eslint-disable-next-line no-unused-vars
   onChooseWallet: (wal: WalletProps) => void;
 };
 

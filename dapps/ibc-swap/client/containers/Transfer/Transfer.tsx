@@ -16,12 +16,13 @@ import InfoIcon from '@/assets/icons/info.svg';
 import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import { allChains, customChainassets } from '@/configs/customChainInfo';
+import { allChains } from '@/configs/customChainInfo';
 import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import { cosmosChainsSupported, defaultChainName } from '@/constants';
 
+import { unsignedTxTransferFromCosmos } from '@/utils/buildTransferTx';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -34,9 +35,6 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
-import { useChain } from '@cosmos-kit/react';
-import { unsignedTxTransferFromCosmos } from '@/utils/buildTransferTx';
-import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 
 const Transfer = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -52,18 +50,13 @@ const Transfer = () => {
     toNetwork,
     selectedToken,
   } = useContext(TransferContext);
-
-  const { getAccount, estimateFee } = useChain(
-    fromNetwork?.networkId || defaultChainName,
-    true,
-  );
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
+
   const {
     isOpen: isOpenNetworkModal,
     onOpen: onOpenNetworkModal,
     onClose: onCloseNetworkModal,
   } = useDisclosure();
-
   const {
     isOpen: isOpenTokenModal,
     onOpen: onOpenTokenModal,
@@ -73,6 +66,7 @@ const Transfer = () => {
   const cosmosChain = useCosmosChain(
     fromNetwork.networkName || defaultChainName,
   );
+  const { getAccount, estimateFee } = cosmosChain;
 
   const showCalculatorBox = () => {
     return (
@@ -165,8 +159,8 @@ const Transfer = () => {
       return;
     }
     const { chains, foundRoute, routes } = calculateTransferRoutes(
-      fromNetwork.networkId!,
-      toNetwork.networkId!,
+      getDataTransfer().fromNetwork.networkId!,
+      getDataTransfer().toNetwork.networkId!,
       4,
     );
     if (!foundRoute) {
@@ -202,7 +196,6 @@ const Transfer = () => {
   };
 
   const fetchTokenList = async () => {
-    setTokenList([]);
     let allBalances: Coin[] | undefined = [];
     if (
       fromNetwork.networkName &&
@@ -210,7 +203,6 @@ const Transfer = () => {
     ) {
       allBalances = await cosmosChain?.getAllBalances();
     }
-
     if (allBalances?.length) {
       const tokenListData: TransferTokenItemProps[] =
         allBalances?.map((asset) => ({
@@ -230,7 +222,8 @@ const Transfer = () => {
   }, []);
 
   useEffect(() => {
-    if (!!fromNetwork.networkId) {
+    if (fromNetwork.networkId) {
+      setTokenList([]);
       fetchTokenList();
     }
   }, [fromNetwork.networkId]);

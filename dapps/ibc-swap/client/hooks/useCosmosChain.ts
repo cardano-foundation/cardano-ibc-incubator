@@ -4,18 +4,17 @@ import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { cosmos } from 'interchain';
 
 export const useCosmosChain = (chainName: string) => {
-  //handle chainName if not supported
-  let _chainName = chainName;
+  // handle chainName if not supported
+  let useChainName = chainName;
   if (!cosmosChainsSupported.includes(chainName)) {
-    _chainName = defaultChainName;
+    useChainName = defaultChainName;
   }
-  const { address, getRpcEndpoint } = useChain(_chainName);
+  const cosmosChain = useChain(useChainName, true);
+  const { address, getRpcEndpoint } = cosmosChain;
 
   const getAllBalances = async () => {
     const rpcEndpoint = (await getRpcEndpoint()) as string;
-    console.log(rpcEndpoint);
-    console.log(address);
-    console.log(_chainName);
+
     if (!rpcEndpoint || !address) {
       return;
     }
@@ -28,10 +27,12 @@ export const useCosmosChain = (chainName: string) => {
     const allBalances = await client.cosmos.bank.v1beta1.allBalances({
       address,
     });
+    // eslint-disable-next-line consistent-return
     return allBalances.balances as Coin[];
   };
 
   return {
+    ...cosmosChain,
     getAllBalances,
   };
 };

@@ -5,6 +5,7 @@ import { StyledSearchInput, StyledSearchInputGroup } from './index.style';
 
 type SearchInputProps = {
   placeholder: string;
+  // eslint-disable-next-line no-unused-vars
   onChange?: (event: any) => void;
 };
 

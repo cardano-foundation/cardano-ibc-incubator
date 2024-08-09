@@ -58,7 +58,7 @@ function MyApp({ Component, pageProps }: AppProps) {
       const aminoTypes = new AminoTypes(aminoConverters);
       const signing = getSigningCosmosClientOptions();
       if (_chain.chain_id === 'sidechain') {
-        return { ...signing, registry, aminoTypes, gasPrice: "0.001stake" };
+        return { ...signing, registry, aminoTypes, gasPrice: '0.001stake' };
       }
       return { ...signing, registry, aminoTypes };
     },

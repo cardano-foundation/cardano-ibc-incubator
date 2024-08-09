@@ -6,4 +6,12 @@ const capitalizeString = (str: string): string => {
     .join(' ');
 };
 
-export { capitalizeString };
+const formatNumberInput = (input: string, exponent: number): string => {
+  const num = parseFloat(input);
+  if (Number.isNaN(num)) {
+    return '0';
+  }
+  return num.toFixed(exponent);
+};
+
+export { capitalizeString, formatNumberInput };

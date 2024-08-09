@@ -19,18 +19,16 @@ import {
   TransferTokenItemProps,
 } from '@/components/TransferTokenItem/TransferTokenItem';
 import TransferContext from '@/contexts/TransferContext';
-import { useChain } from '@cosmos-kit/react';
-import { cosmos } from 'interchain';
-import { defaultChainName } from '@/constants';
 
-import { StyledTokenBox } from '../index.style';
 import { debounce } from '@/utils/helper';
+import { StyledTokenBox } from '../index.style';
 
 type TokenBoxComponentProps = {
   tokenList: Array<TransferTokenItemProps>;
   currentToken: TransferTokenItemProps;
   // eslint-disable-next-line no-unused-vars
   setCurrentToken: (token: TransferTokenItemProps) => void;
+  // eslint-disable-next-line no-unused-vars
   onSearch?: (event: any) => void;
 };
 
@@ -51,7 +49,7 @@ const TokenBoxComponent = ({
       </Box>
       <List maxH="416px" overflowY="scroll">
         <ListItem mb={4}>
-          {tokenList?.map((token, i) => (
+          {tokenList?.map((token) => (
             <TransferTokenItem
               key={token.tokenName}
               tokenId={token.tokenId}
@@ -98,14 +96,12 @@ export const TokenModal = ({
   };
 
   useEffect(() => {
-    if (tokenList.length) {
-      setDisplayTokenList(tokenList);
-    }
+    setDisplayTokenList(tokenList);
   }, [tokenList]);
 
   const handleSearch = debounce((setCurrentList: any, searchString: string) => {
     if (tokenList?.length) {
-      let newList = tokenList.filter((item) =>
+      const newList = tokenList.filter((item) =>
         item.tokenName?.toLowerCase()?.includes(searchString.toLowerCase()),
       );
       setCurrentList(newList);
