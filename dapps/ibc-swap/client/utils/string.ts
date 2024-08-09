@@ -1,3 +1,5 @@
+import BigNumber from 'bignumber.js';
+
 const capitalizeString = (str: string): string => {
   if (!str) return str;
   return str
@@ -6,10 +8,19 @@ const capitalizeString = (str: string): string => {
     .join(' ');
 };
 
-const formatNumberInput = (input: string, exponent: number): string => {
+const formatNumberInput = (
+  input: string,
+  exponent: number,
+  maxAmount?: string,
+): string => {
   const num = parseFloat(input);
   if (Number.isNaN(num)) {
     return '0';
+  }
+  if (maxAmount) {
+    if (BigNumber(input).isGreaterThanOrEqualTo(BigNumber(maxAmount))) {
+      return maxAmount;
+    }
   }
   return num.toFixed(exponent);
 };

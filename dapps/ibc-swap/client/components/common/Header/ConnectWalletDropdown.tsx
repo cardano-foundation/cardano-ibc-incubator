@@ -61,7 +61,7 @@ export const ConnectWalletDropdown = () => {
   }, []);
 
   return (
-    <Menu>
+    <Menu closeOnSelect={false} closeOnBlur={false}>
       <MenuButton
         h="42px"
         color={COLOR.neutral_1}

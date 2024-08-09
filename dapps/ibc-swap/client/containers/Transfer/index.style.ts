@@ -1,6 +1,6 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@/styles/color';
-import { Box, Button } from '@chakra-ui/react';
+import { Box, BoxProps, Button } from '@chakra-ui/react';
 
 const StyledWrapContainer = styled.div`
   display: flex;
@@ -102,23 +102,32 @@ const StyledTransferButton = styled.button`
   }
 `;
 
-const StyledNetworkBox = styled.div`
+interface StyledNetworkBoxProps extends BoxProps {
+  isActive?: boolean;
+}
+
+const StyledNetworkBox = styled.div<StyledNetworkBoxProps>`
   width: 320px;
   height: 100%;
   gap: 16px;
   border-radius: 12px;
   opacity: 0px;
   background: #0e0e124d;
+  border: ${(props) => props.isActive && `1px solid ${COLOR.success}`};
 `;
 
-const StyledNetworkBoxHeader = styled.div`
+interface StyledNetworkBoxHeaderProps extends BoxProps {
+  isActive?: boolean;
+}
+
+const StyledNetworkBoxHeader = styled.div<StyledNetworkBoxHeaderProps>`
   width: 100%;
   height: 56px;
   padding: 14px 12px 14px 12px;
   gap: 16px;
   border-radius: 12px 12px 0px 0px;
   opacity: 0px;
-  background: ${COLOR.neutral_5};
+  background: ${(props) => (props.isActive ? '#4DFED314' : COLOR.neutral_5)};
   display: flex;
   justify-content: center;
   align-items: center;

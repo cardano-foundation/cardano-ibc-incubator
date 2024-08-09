@@ -20,6 +20,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
     const displayString = formatNumberInput(
       inputString,
       selectedToken.tokenExponent!,
+      selectedToken.balance,
     );
     setSendAmount(displayString);
   };

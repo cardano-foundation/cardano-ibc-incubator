@@ -18,7 +18,8 @@ import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
 import IBCParamsContext from '@/contexts/IBCParamsContext';
 import InfoIcon from '@/assets/icons/info.svg';
-import DefaultNetworkIcon from '@/assets/icons/cosmos-icon.svg';
+import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
+import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { allChains } from '@/configs/customChainInfo';
@@ -26,12 +27,14 @@ import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import {
+  cardanoChainsSupported,
   cosmosChainsSupported,
   defaultChainName,
   HOUR_IN_NANOSEC,
 } from '@/constants';
 
 import { unsignedTxTransferFromCosmos } from '@/utils/buildTransferTx';
+import { useWallet } from '@meshsdk/react';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -80,7 +83,8 @@ const Transfer = () => {
     fromNetwork,
     selectedToken,
     setSelectedToken,
-    setIsLoading,
+    setSendAmount,
+    setIsLoading: setIsFetchDataLoading,
   } = useContext(TransferContext);
   const { calculateTransferRoutes } = useContext(IBCParamsContext);
 
@@ -98,6 +102,8 @@ const Transfer = () => {
   const cosmosChain = useCosmosChain(
     fromNetwork.networkName || defaultChainName,
   );
+
+  const { wallet } = useWallet();
   const { getAccount, estimateFee } = cosmosChain;
   const validateAddress = () => {
     setValidationAddress('');
@@ -250,38 +256,66 @@ const Transfer = () => {
   const fetchNetworkList = async () => {
     const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
       networkId: chain.chain_id,
-      networkLogo: chain?.logo_URIs?.svg || DefaultNetworkIcon.src,
+      networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
       networkName: chain.chain_name,
     }));
     setNetworkList(networkListData);
   };
 
   const fetchTokenList = async () => {
-    let allBalances: Coin[] | undefined = [];
+    let tokenListData: TransferTokenItemProps[] | undefined = [];
+
+    // Cosmos
     if (
       fromNetwork.networkName &&
       cosmosChainsSupported.includes(fromNetwork.networkName)
     ) {
       try {
-        setIsLoading(true);
-        allBalances = await cosmosChain?.getAllBalances();
+        setIsFetchDataLoading(true);
+        const allBalances = await cosmosChain?.getAllBalances();
+        if (allBalances?.length) {
+          tokenListData =
+            allBalances?.map((asset) => ({
+              tokenId: asset.denom,
+              tokenLogo: DefaultCosmosNetworkIcon.src,
+              tokenName: asset.denom,
+              tokenSymbol: asset.denom,
+              tokenExponent: 0,
+              balance: asset.amount,
+            })) || [];
+        }
       } catch (error) {
-        setIsLoading(false);
+        setIsFetchDataLoading(false);
       }
     }
-    if (allBalances?.length) {
-      const tokenListData: TransferTokenItemProps[] =
-        allBalances?.map((asset) => ({
-          tokenId: asset.denom,
-          tokenLogo: DefaultNetworkIcon.src,
-          tokenName: asset.denom,
-          tokenSymbol: asset.denom,
-          tokenExponent: 0,
-          balance: asset.amount,
-        })) || [];
-      setTokenList(tokenListData);
+
+    // Cardano
+    if (
+      fromNetwork.networkName &&
+      cardanoChainsSupported.includes(fromNetwork.networkName)
+    ) {
+      try {
+        setIsFetchDataLoading(true);
+        const allBalances = await wallet.getBalance();
+        console.log({ allBalances });
+        if (allBalances?.length) {
+          tokenListData =
+            allBalances?.map((asset) => ({
+              tokenId: asset.unit,
+              tokenLogo: DefaultCardanoNetworkIcon.src,
+              tokenName: asset.unit,
+              tokenSymbol: asset.unit,
+              tokenExponent: 0,
+              balance: asset.quantity,
+            })) || [];
+        }
+      } catch (error) {
+        setIsFetchDataLoading(false);
+      }
     }
-    setIsLoading(false);
+
+    setTokenList(tokenListData);
+    setIsFetchDataLoading(false);
   };
 
   useEffect(() => {
@@ -292,6 +326,7 @@ const Transfer = () => {
     if (fromNetwork.networkId) {
       setTokenList([]);
       setSelectedToken({});
+      setSendAmount('');
       fetchTokenList();
     }
   }, [fromNetwork.networkId]);

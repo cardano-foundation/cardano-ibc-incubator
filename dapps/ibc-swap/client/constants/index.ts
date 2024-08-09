@@ -32,3 +32,4 @@ export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 
 export const cosmosChainsSupported = ['localosmosis', 'sidechain'];
+export const cardanoChainsSupported = ['cardano'];

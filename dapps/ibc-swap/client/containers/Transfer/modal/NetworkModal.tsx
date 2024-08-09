@@ -47,8 +47,8 @@ const NetworkBoxComponent = ({
   onSearch,
 }: NetworkBoxComponentProps) => {
   return (
-    <StyledNetworkBox>
-      <StyledNetworkBoxHeader>
+    <StyledNetworkBox isActive={!!selectedNetwork?.networkId}>
+      <StyledNetworkBoxHeader isActive={!!selectedNetwork?.networkId}>
         <Text
           display="flex"
           alignItems="center"
