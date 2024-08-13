@@ -7,6 +7,8 @@ import { ConfigModule } from '@nestjs/config';
 import configuration from './config';
 import { LucidModule } from './shared/modules/lucid/lucid.module';
 import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protocals.module';
+import { ApiModule } from './api/api.module';
+import { APP_PIPE } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -26,6 +28,7 @@ import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protoc
     TxModule,
     LucidModule,
     MiniProtocalsModule,
+    ApiModule,
   ],
   providers: [Logger],
 })

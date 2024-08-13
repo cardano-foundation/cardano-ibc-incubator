@@ -1074,6 +1074,10 @@ export class LucidService {
             hash: constructedAddress,
             type: 'Key',
           });
+          console.log({
+            signer
+          });
+          
         }
         // const seed =
         //   'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';

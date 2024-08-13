@@ -13,5 +13,6 @@ import { MiniProtocalsModule } from '../shared/modules/mini-protocals/mini-proto
   imports: [LucidModule, HttpModule, MiniProtocalsModule],
   controllers: [QueryController],
   providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService],
+  exports: [QueryService, DbSyncService, ConnectionService, ChannelService, PacketService],
 })
 export class QueryModule {}
