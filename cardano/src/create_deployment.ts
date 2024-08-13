@@ -10,7 +10,7 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
-} from "npm:@dinhbx/lucid-custom";
+} from "npm:@cuonglv0297/lucid-custom";
 import {
   formatTimestamp,
   generateIdentifierTokenName,

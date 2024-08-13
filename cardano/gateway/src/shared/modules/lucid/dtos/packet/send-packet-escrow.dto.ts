@@ -1,4 +1,4 @@
-import { PolicyId, UTxO } from '@dinhbx/lucid-custom';
+import { PolicyId, UTxO } from '@cuonglv0297/lucid-custom';
 import { AuthToken } from '@shared/types/auth-token';
 
 export type UnsignedSendPacketEscrowDto = {

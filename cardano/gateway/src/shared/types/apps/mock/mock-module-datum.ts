@@ -1,10 +1,13 @@
-import { Data } from '@dinhbx/lucid-custom';
+import { Data } from '@cuonglv0297/lucid-custom';
 export type MockModuleDatum = {
   opened_channels: Map<string, boolean>;
   received_packets: string[];
 };
 
-export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: typeof import('@dinhbx/lucid-custom')) {
+export async function decodeMockModuleDatum(
+  mockModuleDatum: string,
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+) {
   const { Data } = Lucid;
 
   const MockModuleDatumSchema = Data.Object({
@@ -19,7 +22,7 @@ export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: type
 
 export async function encodeMockModuleDatum(
   mockModuleDatum: MockModuleDatum,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
 

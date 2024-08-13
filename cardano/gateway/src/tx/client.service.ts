@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
+import { type Tx, TxComplete, UTxO } from '@cuonglv0297/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -56,7 +56,7 @@ export class ClientService {
         constructedAddress,
       );
 
-      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 10n ** 6n);
+      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 3n * 10n ** 5n);
       const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {

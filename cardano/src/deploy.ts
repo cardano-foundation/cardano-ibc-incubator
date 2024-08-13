@@ -1,4 +1,8 @@
-import { Kupmios, Lucid, SLOT_CONFIG_NETWORK } from "npm:@dinhbx/lucid-custom";
+import {
+  Kupmios,
+  Lucid,
+  SLOT_CONFIG_NETWORK,
+} from "npm:@cuonglv0297/lucid-custom@latest";
 import { createDeployment } from "./create_deployment.ts";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { querySystemStart } from "./utils.ts";
@@ -19,6 +23,7 @@ if (!deployerSk || !kupoUrl || !ogmiosUrl) {
 const provider = new Kupmios(kupoUrl, ogmiosUrl);
 const chainZeroTime = await querySystemStart(ogmiosUrl);
 SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+console.log({ chainZeroTime });
 
 const lucid = await Lucid.new(provider, "Preview");
 lucid.selectWalletFromPrivateKey(deployerSk);

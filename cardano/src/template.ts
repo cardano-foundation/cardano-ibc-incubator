@@ -1,4 +1,4 @@
-import { UTxO } from "npm:@dinhbx/lucid-custom";
+import { UTxO } from "npm:@cuonglv0297/lucid-custom@latest";
 
 type Validator =
   | "spendHandler"
@@ -44,8 +44,5 @@ export type DeploymentTemplate = {
       address: string;
     }
   >;
-  tokens: Record<
-    Tokens,
-    string
-  >;
+  tokens: Record<Tokens, string>;
 };

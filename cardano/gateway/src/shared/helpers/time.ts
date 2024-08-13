@@ -7,20 +7,16 @@ const ogmiosWsp = async (ogmiosUrl: string, methodname: string, args: unknown) =
   });
   client.send(
     JSON.stringify({
-      type: 'jsonwsp/request',
-      version: '1.0',
-      servicename: 'ogmios',
-      methodname,
-      args,
+      jsonrpc: '2.0',
+      method: methodname,
+      params: args,
     }),
   );
   return client;
 };
 
 const querySystemStart = async (ogmiosUrl: string) => {
-  const client = await ogmiosWsp(ogmiosUrl, 'Query', {
-    query: 'systemStart',
-  });
+  const client = await ogmiosWsp(ogmiosUrl, 'queryNetwork/startTime', {});
   const systemStart = await new Promise<string>((res, rej) => {
     client.addEventListener(
       'message',
@@ -43,4 +39,6 @@ const querySystemStart = async (ogmiosUrl: string) => {
   return parsedSystemTime;
 };
 
-export { querySystemStart };
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+export { querySystemStart, sleep };

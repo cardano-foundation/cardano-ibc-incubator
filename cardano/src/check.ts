@@ -1,4 +1,9 @@
-import { Data, fromText, Kupmios, Lucid } from "npm:@dinhbx/lucid-custom";
+import {
+  Data,
+  fromText,
+  Kupmios,
+  Lucid,
+} from "npm:@cuonglv0297/lucid-custom@latest";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { DeploymentTemplate } from "./template.ts";
@@ -18,7 +23,7 @@ const env = await load({ allowEmptyValues: true });
 const kupoUrl = env["KUPO_URL"] ? env["KUPO_URL"] : "";
 const ogmiosUrl = env["OGMIOS_URL"] ? env["OGMIOS_URL"] : "";
 
-await (new Command()
+await new Command()
   .name("cardano-ibc")
   .version("0.1.0")
   .description("Query Cardano IBC info")
@@ -52,14 +57,14 @@ await (new Command()
     const clientTokenName = generateTokenName(
       handlerToken,
       fromText("ibc_client"),
-      clientSequence,
+      clientSequence
     );
 
     const lucid = await setupLucid(kupo, ogmios);
 
     try {
       const clientUtxo = await lucid.utxoByUnit(
-        clientTokenPolicyId + clientTokenName,
+        clientTokenPolicyId + clientTokenName
       );
 
       const clientDatum = Data.from(clientUtxo.datum!, ClientDatum);
@@ -86,15 +91,13 @@ await (new Command()
     const tokenName = generateTokenName(
       handlerToken,
       fromText("connection"),
-      sequence,
+      sequence
     );
 
     const lucid = await setupLucid(kupo, ogmios);
 
     try {
-      const utxo = await lucid.utxoByUnit(
-        tokenPolicyId + tokenName,
-      );
+      const utxo = await lucid.utxoByUnit(tokenPolicyId + tokenName);
 
       const datum = Data.from(utxo.datum!, ConnectionDatum);
       console.dir(datum, { depth: 100 });
@@ -120,15 +123,13 @@ await (new Command()
     const tokenName = generateTokenName(
       handlerToken,
       fromText("channel"),
-      sequence,
+      sequence
     );
 
     const lucid = await setupLucid(kupo, ogmios);
 
     try {
-      const utxo = await lucid.utxoByUnit(
-        tokenPolicyId + tokenName,
-      );
+      const utxo = await lucid.utxoByUnit(tokenPolicyId + tokenName);
 
       const datum = Data.from(utxo.datum!, ChannelDatum);
       console.dir(datum, { depth: 100 });
@@ -136,17 +137,14 @@ await (new Command()
       console.log("Failed to query channel");
     }
   })
-  .command(
-    "balance",
-    "Query balance of an address or public key hash",
-  )
+  .command("balance", "Query balance of an address or public key hash")
   .arguments("<address-or-pk-hash:string>")
   .action(async ({ handler, kupo, ogmios }, id) => {
     const isAddress = id.startsWith("addr");
 
     console.log(
       `Query balance of ${isAddress ? "address" : "public key hash"}:`,
-      id,
+      id
     );
     const lucid = await setupLucid(kupo, ogmios);
 
@@ -179,7 +177,7 @@ await (new Command()
       console.log("Failed to query channel");
     }
   })
-  .parse(Deno.args));
+  .parse(Deno.args);
 
 async function setupLucid(kupoUrl: string, ogmiosUrl: string) {
   if (!kupoUrl || !ogmiosUrl) {
@@ -195,7 +193,7 @@ async function setupLucid(kupoUrl: string, ogmiosUrl: string) {
 
 async function loadDeploymentInfo(handler: string) {
   const deploymentInfo: DeploymentTemplate = JSON.parse(
-    await Deno.readTextFile(handler),
+    await Deno.readTextFile(handler)
   );
   return deploymentInfo;
 }

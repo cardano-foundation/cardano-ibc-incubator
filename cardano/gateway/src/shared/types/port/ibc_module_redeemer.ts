@@ -1,4 +1,4 @@
-import { Data } from '@dinhbx/lucid-custom';
+import { Data } from '@cuonglv0297/lucid-custom';
 import { Acknowledgement } from '../channel/acknowledgement';
 import { TransferModuleRedeemer } from '../apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
 import { FungibleTokenPacketDatum } from '../apps/transfer/types/fungible-token-packet-data';
@@ -66,7 +66,7 @@ export type IBCModuleRedeemer =
     };
 export async function encodeIBCModuleRedeemer(
   ibcModuleRedeemer: IBCModuleRedeemer,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const AcknowledgementResponseSchema = Data.Enum([
@@ -173,7 +173,7 @@ export async function encodeIBCModuleRedeemer(
   return Data.to(ibcModuleRedeemer, TIBCModuleRedeemer);
 }
 
-export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('@dinhbx/lucid-custom')) {
+export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('@cuonglv0297/lucid-custom')) {
   const { Data } = Lucid;
   const AcknowledgementResponseSchema = Data.Enum([
     Data.Object({

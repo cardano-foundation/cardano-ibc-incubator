@@ -11,8 +11,8 @@ RUN apt-get update -y \
     && apt-get install -y libssl-dev libtinfo-dev libsystemd-dev \
     && apt-get install -y zlib1g-dev make g++ wget libncursesw5 libtool autoconf tmux \
     && apt-get clean
- 
-RUN bash -c "curl https://get.ignite.com/cli! | bash"
+
+RUN bash -c "curl https://get.ignite.com/cli@v28.3.0! | bash"
 
 RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
 RUN bash -c "source $HOME/.bashrc"

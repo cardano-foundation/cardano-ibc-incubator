@@ -1,4 +1,4 @@
-import { Data } from '@dinhbx/lucid-custom';
+import { Data } from '@cuonglv0297/lucid-custom';
 import { FungibleTokenPacketDatum } from '../types/fungible-token-packet-data';
 export type MintVoucherRedeemer =
   | {
@@ -24,7 +24,7 @@ export type MintVoucherRedeemer =
 
 export function encodeMintVoucherRedeemer(
   mintVoucherRedeemer: MintVoucherRedeemer,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
 

@@ -17,17 +17,9 @@ import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
 } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import {
-  InteractionContext,
-  WebSocketCloseHandler,
-  WebSocketErrorHandler,
-  createInteractionContext,
-} from '@cardano-ogmios/client';
-import { StateQueryClient, createStateQueryClient } from '@cardano-ogmios/client/dist/StateQuery';
 import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import { BlockDto } from '../dtos/block.dto';
-import { connectionConfig } from '@config/kupmios.config';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
@@ -77,7 +69,7 @@ import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
-import { UTxO } from '@dinhbx/lucid-custom';
+import { UTxO } from '@cuonglv0297/lucid-custom';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { HttpService } from '@nestjs/axios';
@@ -92,6 +84,11 @@ import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
+import {
+  blockHeight as queryBlockHeight,
+  genesisConfiguration,
+  systemStart as querySystemStart,
+} from '../../shared/helpers/ogmios';
 
 @Injectable()
 export class QueryService {
@@ -111,20 +108,22 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
 
-    const genesisConfig = await (await this.getStateQueryClient()).genesisConfig();
+    const ogmiosEndpoint = this.configService.get('ogmiosEndpoint');
+
+    const genesisConfig = await genesisConfiguration(ogmiosEndpoint);
     this.logger.log(genesisConfig, 'genesisConfig');
-    const blockHeight = await (await this.getStateQueryClient()).blockHeight();
+    const blockHeight = await queryBlockHeight(ogmiosEndpoint);
     this.logger.log(blockHeight, 'blockHeight');
-    const systemStart = await (await this.getStateQueryClient()).systemStart();
-    this.logger.log(systemStart, 'systemStart');
+    const systemStartMs = await querySystemStart(ogmiosEndpoint);
+    this.logger.log(systemStartMs, 'systemStart');
 
     const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
     const currentEpoch = blockDto.epoch;
     this.logger.log(currentEpoch, 'currentEpoch');
     const currentValidatorSet = await this.dbService.findActiveValidatorsByEpoch(BigInt(currentEpoch));
-    this.logger.log(currentValidatorSet, 'currentValidatorSet');
+    // this.logger.log(currentValidatorSet, 'currentValidatorSet');
     const nextValidatorSet = await this.dbService.findActiveValidatorsByEpoch(BigInt(currentEpoch + 1));
-    this.logger.log(nextValidatorSet, 'nextValidatorSet');
+    // this.logger.log(nextValidatorSet, 'nextValidatorSet');
     const clientState: ClientState = {
       chain_id: genesisConfig.networkMagic.toString(),
       latest_height: {
@@ -136,7 +135,7 @@ export class QueryService {
         revision_number: BigInt(0),
       },
       valid_after: BigInt(0),
-      genesis_time: BigInt(systemStart.getTime() / 1000), // need -> ok
+      genesis_time: BigInt(systemStartMs / 1000), // need -> ok
       current_epoch: BigInt(currentEpoch), // need -> ok
       epoch_length: BigInt(genesisConfig.epochLength), // need  -> ok
       slot_per_kes_period: BigInt(genesisConfig.slotsPerKesPeriod), // need -> ok
@@ -163,7 +162,7 @@ export class QueryService {
       value: ClientState.encode(clientState).finish(),
     };
 
-    const timestampInMilliseconds = systemStart.getTime() + blockDto.slot * 1000;
+    const timestampInMilliseconds = systemStartMs + blockDto.slot * 1000;
     const consensusState: ConsensusState = {
       timestamp: BigInt(timestampInMilliseconds / 1000), // need -> ok
       slot: BigInt(blockDto.slot), // need -> ok
@@ -194,21 +193,6 @@ export class QueryService {
     };
     // this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
-  }
-
-  async getStateQueryClient(): Promise<StateQueryClient> {
-    const errorHandler: WebSocketErrorHandler = (error: Error) => {
-      this.logger.error(error);
-    };
-
-    const closeHandler: WebSocketCloseHandler = (code, reason) => {};
-
-    const interactionContext: InteractionContext = await createInteractionContext(errorHandler, closeHandler, {
-      connection: connectionConfig,
-      interactionType: 'OneTime',
-    });
-
-    return await createStateQueryClient(interactionContext);
   }
 
   private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {

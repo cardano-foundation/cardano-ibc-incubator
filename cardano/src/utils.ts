@@ -19,7 +19,7 @@ import {
   toHex,
   Tx,
   UTxO,
-} from "npm:@dinhbx/lucid-custom";
+} from "npm:@cuonglv0297/lucid-custom";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
@@ -34,14 +34,14 @@ export const readValidator = <T extends unknown[] = Data[]>(
   title: string,
   lucid: Lucid,
   params?: Exact<[...T]>,
-  type?: T,
+  type?: T
 ): [Script, ScriptHash, Address] => {
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
   const encodedValidator = toHex(
-    cbor.encode(fromHex(rawValidator.compiledCode)),
+    cbor.encode(fromHex(rawValidator.compiledCode))
   );
 
   let validator: Script;
@@ -54,11 +54,7 @@ export const readValidator = <T extends unknown[] = Data[]>(
   } else {
     validator = {
       type: "PlutusV2",
-      script: applyParamsToScript(
-        encodedValidator,
-        params,
-        type,
-      ),
+      script: applyParamsToScript(encodedValidator, params, type),
     };
   }
 
@@ -73,7 +69,7 @@ export const submitTx = async (
   lucid?: Lucid,
   txName?: string,
   logSize = true,
-  nativeUplc?: boolean,
+  nativeUplc?: boolean
 ) => {
   if (txName !== undefined) {
     console.log("Submit tx:", txName);
@@ -122,7 +118,7 @@ export type Signer = {
 };
 
 export const setUp = async (
-  mode: string,
+  mode: string
 ): Promise<{ lucid: Lucid; signer: Signer; provider: Provider }> => {
   const signer = {
     sk: "ed25519_sk1rvgjxs8sddhl46uqtv862s53vu4jf6lnk63rcn7f0qwzyq85wnlqgrsx42",
@@ -131,10 +127,13 @@ export const setUp = async (
   let provider: Provider;
   if (mode == EMULATOR_ENV) {
     console.log("Deploy in Emulator env");
-    provider = new Emulator([
-      { address: signer.address, assets: { lovelace: 3000000000000n } },
-      { address: signer.address, assets: { lovelace: 3000000000000n } },
-    ], { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 900000 });
+    provider = new Emulator(
+      [
+        { address: signer.address, assets: { lovelace: 3000000000000n } },
+        { address: signer.address, assets: { lovelace: 3000000000000n } },
+      ],
+      { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 900000 }
+    );
   } else if (mode == KUPMIOS_ENV) {
     const kupo = "http://192.168.10.136:1442";
     const ogmios = "ws://192.168.10.136:1337";
@@ -153,7 +152,7 @@ export const setUp = async (
   } else if (mode == BLOCKFROST_ENV) {
     provider = new Blockfrost(
       "https://cardano-preview.blockfrost.io/api/v0",
-      "preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC",
+      "preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC"
     );
   } else {
     throw new Error("Invalid provider type");
@@ -172,7 +171,7 @@ export const setUp = async (
 export const generateTokenName = (
   baseToken: AuthToken,
   prefix: string,
-  sequence: bigint,
+  sequence: bigint
 ): string => {
   if (sequence < 0) throw new Error("sequence must be unsigned integer");
 
@@ -180,11 +179,9 @@ export const generateTokenName = (
 
   if (postfix.length > 16) throw new Error("postfix size > 8 bytes");
 
-  const baseTokenPart = hashSha3_256(baseToken.policy_id + baseToken.name)
-    .slice(
-      0,
-      40,
-    );
+  const baseTokenPart = hashSha3_256(
+    baseToken.policy_id + baseToken.name
+  ).slice(0, 40);
 
   const prefixPart = hashSha3_256(prefix).slice(0, 8);
 
@@ -195,16 +192,14 @@ export const generateTokenName = (
 
 export const hashSha3_256 = (data: string) => {
   const sha3Hasher = createHash("sha3-256");
-  const hash = sha3Hasher.update(
-    fromHex(data),
-  ).toString();
+  const hash = sha3Hasher.update(fromHex(data)).toString();
   return hash;
 };
 
 const ogmiosWsp = async (
   ogmiosUrl: string,
   methodname: string,
-  args: unknown,
+  args: unknown
 ) => {
   const client = new WebSocket(ogmiosUrl);
   await new Promise((res) => {
@@ -212,34 +207,34 @@ const ogmiosWsp = async (
       once: true,
     });
   });
-  client.send(JSON.stringify({
-    type: "jsonwsp/request",
-    version: "1.0",
-    servicename: "ogmios",
-    methodname,
-    args,
-  }));
+  client.send(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: methodname,
+      params: args,
+    })
+  );
   return client;
 };
 
 export const querySystemStart = async (ogmiosUrl: string) => {
-  const client = await ogmiosWsp(ogmiosUrl, "Query", {
-    query: "systemStart",
-  });
+  const client = await ogmiosWsp(ogmiosUrl, "queryNetwork/startTime", {});
   const systemStart = await new Promise<string>((res, rej) => {
-    client.addEventListener("message", (msg: MessageEvent<string>) => {
-      try {
-        const {
-          result,
-        } = JSON.parse(msg.data);
-        res(result);
-        client.close();
-      } catch (e) {
-        rej(e);
+    client.addEventListener(
+      "message",
+      (msg: MessageEvent<string>) => {
+        try {
+          const { result } = JSON.parse(msg.data);
+          res(result);
+          client.close();
+        } catch (e) {
+          rej(e);
+        }
+      },
+      {
+        once: true,
       }
-    }, {
-      once: true,
-    });
+    );
   });
   const parsedSystemTime = Date.parse(systemStart);
 
@@ -251,7 +246,7 @@ export const delay = (duration: number) => {
 
   const logElapsedTime = () => {
     Deno.stdout.writeSync(
-      new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`),
+      new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`)
     );
     elapsedSeconds++;
   };
@@ -264,11 +259,9 @@ export const delay = (duration: number) => {
     setTimeout(() => {
       clearInterval(intervalId);
       Deno.stdout.writeSync(
-        new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`),
+        new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`)
       );
-      Deno.stdout.writeSync(
-        new TextEncoder().encode(`\r`),
-      );
+      Deno.stdout.writeSync(new TextEncoder().encode(`\r`));
       resolve();
     }, duration * 1000);
   });
@@ -311,25 +304,30 @@ export const parseChannelSequence = (channelId: string): bigint => {
 
 export const createReferenceScriptUtxo = async (
   lucid: Lucid,
-  referredScript: Script,
+  referredScript: Script
 ) => {
   const [, , referenceAddress] = readValidator(
     "reference_validator.refer_only",
-    lucid,
+    lucid
   );
 
-  const tx = lucid.newTx().payToContract(referenceAddress, {
-    inline: Data.void(),
-    scriptRef: referredScript,
-  }, {});
+  const tx = lucid.newTx().payToContract(
+    referenceAddress,
+    {
+      inline: Data.void(),
+      scriptRef: referredScript,
+    },
+    {}
+  );
   const completedTx = await tx.complete();
   const signedTx = await completedTx.sign().complete();
   const txHash = await signedTx.submit();
 
   await lucid.awaitTx(txHash);
 
-  const referenceUtxo =
-    (await lucid.utxosByOutRef([{ txHash, outputIndex: 0 }]))[0];
+  const referenceUtxo = (
+    await lucid.utxosByOutRef([{ txHash, outputIndex: 0 }])
+  )[0];
 
   return referenceUtxo;
 };
@@ -343,7 +341,7 @@ export const insertSortMap = <K, V>(
   inputMap: Map<K, V>,
   newKey: K,
   newValue: V,
-  keyComparator?: (a: K, b: K) => number,
+  keyComparator?: (a: K, b: K) => number
 ): Map<K, V> => {
   // Convert the Map to an array of key-value pairs
   const entriesArray: [K, V][] = Array.from(inputMap.entries());
@@ -367,7 +365,7 @@ export const insertSortMap = <K, V>(
 export const deleteSortMap = <K, V>(
   sortedMap: Map<K, V>,
   keyToDelete: K,
-  keyComparator?: (a: K, b: K) => number,
+  keyComparator?: (a: K, b: K) => number
 ): Map<K, V> => {
   // Convert the sorted map to an array of key-value pairs
   const entriesArray: [K, V][] = Array.from(sortedMap.entries());
@@ -389,7 +387,7 @@ export const deleteSortMap = <K, V>(
 };
 
 export const getNonceOutRef = async (
-  lucid: Lucid,
+  lucid: Lucid
 ): Promise<[UTxO, OutputReference]> => {
   const signerUtxos = await lucid.wallet.getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
