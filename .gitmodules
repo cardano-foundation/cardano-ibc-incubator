@@ -1,7 +1,7 @@
 [submodule "chains/osmosis/osmosis"]
 	path = chains/osmosis/osmosis
-	url = git@github.com:osmosis-labs/osmosis.git
+	url = https://github.com/osmosis-labs/osmosis.git
 
 [submodule "chains/mithrils/mithril"]
 	path = chains/mithrils/mithril
-	url = git@github.com:input-output-hk/mithril.git
+	url = https://github.com/input-output-hk/mithril.git
