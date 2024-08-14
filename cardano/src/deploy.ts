@@ -10,23 +10,30 @@ import { KUPMIOS_ENV } from "./constants.ts";
 
 const env = await load();
 
-const deployerSk = env["DEPLOYER_SK"];
-const kupoUrl = env["KUPO_URL"];
-const ogmiosUrl = env["OGMIOS_URL"];
+(async () => {
+  const deployerSk = env["DEPLOYER_SK"];
+  const kupoUrl = env["KUPO_URL"];
+  const ogmiosUrl = env["OGMIOS_URL"];
 
-console.log(deployerSk, kupoUrl, ogmiosUrl);
+  console.log(deployerSk, kupoUrl, ogmiosUrl);
 
-if (!deployerSk || !kupoUrl || !ogmiosUrl) {
-  throw new Error("Unable to load environment variables");
-}
+  if (!deployerSk || !kupoUrl || !ogmiosUrl) {
+    throw new Error("Unable to load environment variables");
+  }
 
-const provider = new Kupmios(kupoUrl, ogmiosUrl);
-const chainZeroTime = await querySystemStart(ogmiosUrl);
-SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
-console.log({ chainZeroTime });
+  const provider = new Kupmios(kupoUrl, ogmiosUrl);
+  const chainZeroTime = await querySystemStart(ogmiosUrl);
+  SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+  console.log({ chainZeroTime });
 
-const lucid = await Lucid.new(provider, "Preview");
-lucid.selectWalletFromPrivateKey(deployerSk);
+  const lucid = await Lucid.new(provider, "Preview");
+  lucid.selectWalletFromPrivateKey(deployerSk);
 
-console.log("=".repeat(70));
-await createDeployment(lucid, provider, KUPMIOS_ENV);
+  console.log("=".repeat(70));
+  try {
+    await createDeployment(lucid, provider, KUPMIOS_ENV);
+  } catch (error) {
+    console.error("ERR: ", error);
+    throw error;
+  }
+})();
