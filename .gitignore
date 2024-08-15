@@ -16,7 +16,7 @@
 
 
 cardano/gateway/deployment
-chains/osmosis/osmosis
+chains/osmosis/osmosis/*
 chains/osmosis/configuration/cosmwasm/artifacts
 chains/osmosis/configuration/cosmwasm/target
 chains/osmosis/configuration/.osmosis-local/data
