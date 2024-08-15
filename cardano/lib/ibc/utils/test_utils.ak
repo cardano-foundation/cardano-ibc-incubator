@@ -1,5 +1,3 @@
-use aiken/dict
-use aiken/int
 use aiken/transaction.{
   InlineDatum, Input, Output, OutputReference, TransactionId,
 }
@@ -75,12 +73,10 @@ pub fn update_client(
           ..client_datum.state.client_state,
           latest_height: latest_height,
         },
-        consensus_states: dict.from_list(
-          client_datum.state.consensus_states,
-          height_mod.compare,
-        )
-          |> dict.insert(height, consensus_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(height, consensus_state),
+          ..client_datum.state.consensus_states
+        ],
       },
     }
 
@@ -103,12 +99,10 @@ pub fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum 
     state: ChannelDatumState {
       ..channel_datum.state,
       next_sequence_send: channel_datum.state.next_sequence_send + 1,
-      packet_commitment: dict.from_list(
-        channel_datum.state.packet_commitment,
-        int.compare,
-      )
-        |> dict.insert(packet.sequence, commitment, int.compare)
-        |> dict.to_list(),
+      packet_commitment: [
+        Pair(packet.sequence, commitment),
+        ..channel_datum.state.packet_commitment
+      ],
     },
   }
 }

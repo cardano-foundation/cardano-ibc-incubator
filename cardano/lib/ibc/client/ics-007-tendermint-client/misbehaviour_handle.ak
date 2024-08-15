@@ -1,11 +1,12 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
+use aiken/list
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/header_handle as header_handle_mod
-use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour} as misbehaviour_mod
 use ibc/client/ics_007_tendermint_client/msgs.{
   ClientMessage, HeaderCase, MisbehaviourCase,
@@ -18,7 +19,7 @@ use ibc/utils/tx_time.{TxTime} as tx_time_mod
 // in a submitted Header message and verifies the correctness of a submitted Misbehaviour ClientMessage
 pub fn check_for_misbehaviour(
   msg: ClientMessage,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
 ) -> Bool {
   when msg is {
     HeaderCase(h) ->
@@ -28,6 +29,12 @@ pub fn check_for_misbehaviour(
         Some(existing_cons_state) ->
           existing_cons_state != header_mod.consensus_state(h)
         None -> {
+          let consensus_states =
+            list.sort(
+              consensus_states,
+              fn(e1, e2) { height_mod.compare(e1.1st, e2.1st) },
+            )
+
           let invalid_prev =
             when
               store.get_prev_consensus_state(
@@ -60,7 +67,7 @@ pub fn check_for_misbehaviour(
 
     MisbehaviourCase(misbehaviour) ->
       if
-      height.compare(
+      height_mod.compare(
         header_mod.get_height(misbehaviour.header1),
         header_mod.get_height(misbehaviour.header2),
       ) == Equal{
@@ -92,13 +99,13 @@ pub fn check_for_misbehaviour(
 pub fn verify_misbehaviour(
   cs: ClientState,
   tx_time: TxTime,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   misbehaviour: Misbehaviour,
 ) -> Bool {
   expect Some(cons_state1) =
-    dict.get(consensus_states, misbehaviour.header1.trusted_height)
+    pairs.get_first(consensus_states, misbehaviour.header1.trusted_height)
   expect Some(cons_state2) =
-    dict.get(consensus_states, misbehaviour.header2.trusted_height)
+    pairs.get_first(consensus_states, misbehaviour.header2.trusted_height)
 
   expect
     check_misbehaviour_header(

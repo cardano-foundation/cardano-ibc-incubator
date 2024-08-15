@@ -1,5 +1,5 @@
-use aiken/dict
 use aiken/list
+use aiken/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -13,7 +13,7 @@ pub type ClientDatum {
 
 pub type ClientDatumState {
   client_state: ClientState,
-  consensus_states: List<(Height, ConsensusState)>,
+  consensus_states: Pairs<Height, ConsensusState>,
 }
 
 pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
@@ -27,7 +27,7 @@ pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
   let latest_height = client_state_mod.get_latest_height(client_state)
   expect list.length(consensus_states) == 1
   expect Some(_consensus_state) =
-    dict.from_list(consensus_states, height.compare) |> dict.get(latest_height)
+    pairs.get_first(consensus_states, latest_height)
   // TODO: add consensus_state.validate_basic()
   expect token == auth_token
 
@@ -42,10 +42,9 @@ pub fn update_state(
 ) -> Bool {
   let header_height = header_mod.get_height(header)
 
-  let input_datum_cons_state =
-    dict.from_list(input_datum.state.consensus_states, height.compare)
+  let input_datum_cons_state = input_datum.state.consensus_states
 
-  expect !dict.has_key(input_datum_cons_state, header_height)
+  expect !pairs.has_key(input_datum_cons_state, header_height)
 
   let latest_height = {
     let input_height =
@@ -63,31 +62,29 @@ pub fn update_state(
     }
 
   let expected_cons_state =
-    dict.filter(
+    list.filter(
       input_datum_cons_state,
-      fn(_key, val) {
+      fn(item) {
         !client_state_mod.is_expired(
           input_datum.state.client_state,
-          val.timestamp,
+          item.2nd.timestamp,
           tx_valid_from * 1_000_000,
         )
       },
     )
 
   let expected_cons_state =
-    dict.insert(
-      expected_cons_state,
-      header_height,
-      header_mod.consensus_state(header),
-      height.compare,
-    )
+    [
+      Pair(header_height, header_mod.consensus_state(header)),
+      ..expected_cons_state
+    ]
 
   let expected_updated_output =
     ClientDatum {
       ..input_datum,
       state: ClientDatumState {
         client_state: expected_client_state,
-        consensus_states: expected_cons_state |> dict.to_list(),
+        consensus_states: expected_cons_state,
       },
     }
 
