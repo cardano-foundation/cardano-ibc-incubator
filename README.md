@@ -19,11 +19,20 @@ This repository is subdivided into three main folders:
 ## :rocket: Getting Started
 
 ### Prerequisites
+
+Currently the project is tested on the following environment:
+
+- Ubuntu 20.04
+- AMD64 architecture
+
+The following software is required to run the project:
+
 - [Docker](https://docs.docker.com/get-docker/)
 - [Aiken](https://aiken-lang.org/installation-instructions)
 - [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
 - [jq](https://jqlang.github.io/jq/download/)
-- [git-lfs](https://git-lfs.com/)
+- [golang](https://golang.org/doc/install)
+- [build-essential](https://packages.ubuntu.com/focal/build-essential)
 
 ### Cardano developer ecosystem components used
 The current implementation leverages a number of frameworks maintained by the Cardano developer community. We list them here for appreciation and transparency. Without tools like those listed and others, projects like this would not be possible:
@@ -34,12 +43,7 @@ The current implementation leverages a number of frameworks maintained by the Ca
 - [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
 - [gOuroboros](https://github.com/blinklabs-io/gouroboros)
 
-### Build from source
-```sh
-git lfs pull && ./build.sh
-```
-
-### Running a test environment on a local machine
+### Run a test environment on a local machine
 
 ```sh
 ./start.sh
