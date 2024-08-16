@@ -32,13 +32,13 @@ import { Loading } from '@/components/Loading/Loading';
 import { useAddress, useWallet } from '@meshsdk/react';
 import { formatPrice } from '@/utils/string';
 import { useCustomCardanoBalance } from '@/hooks/useCustomCardanoBalance';
+import SwapContext from '@/contexts/SwapContext';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
 import { TokenModal } from './modal/TokenModal';
 import { TransferResult } from './TransferResult';
 import { CalculatorBox } from './CalculatorBox';
-import SwapContext from '@/contexts/SwapContext';
 
 import {
   StyledTransferButton,
