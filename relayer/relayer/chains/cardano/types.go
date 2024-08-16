@@ -137,6 +137,7 @@ func query(ctx context.Context, payload interface{}, v interface{}, endpoint str
 
 	if bytes.Contains(raw, fault) {
 		var e OgmiosError
+		fmt.Println(string(raw))
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return fmt.Errorf("failed to decode error: %w", err)
 		}

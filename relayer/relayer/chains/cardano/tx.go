@@ -1047,6 +1047,10 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 			txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
 			seq = sequence
 			if err != nil {
+				if strings.Contains(err.Error(), "Invalid proof height") || strings.Contains(err.Error(), "PacketReceivedException") || strings.Contains(err.Error(), "PacketAcknowledgedException") || strings.Contains(err.Error(), "Redeemer (Spend, 1)") {
+					fmt.Println("Error build message from gw: ", err.Error())
+					return nil
+				}
 				return err
 			}
 			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)
