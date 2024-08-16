@@ -1,0 +1,29 @@
+{
+  "name": "cardano-wallet",
+  "type": "module",
+  "version": "0.0.0",
+  "description": "A dev cardano wallet that works in all browsers",
+  "author": "MLabs <contact@mlabs.city>",
+  "license": "MIT",
+  "private": true,
+  "scripts": {},
+  "devDependencies": {
+    "@emurgo/cardano-message-signing-browser": "^1.0.1",
+    "@emurgo/cardano-serialization-lib-browser": "^11.5.0",
+    "@playwright/test": "^1.40.0",
+    "@preact/signals": "^1.2.2",
+    "@types/big.js": "^6.2.2",
+    "@types/chrome": "^0.0.254",
+    "big.js": "^6.2.1",
+    "bip39": "^3.1.0",
+    "crx": "^5.0.1",
+    "esbuild": "^0.19.5",
+    "esbuild-plugins-node-modules-polyfill": "^1.6.1",
+    "playwright": "^1.39.0",
+    "preact": "^10.19.3",
+    "sass": "^1.69.5",
+    "typescript": "^5.3.2",
+    "web-ext": "^7.8.0",
+    "webextension-polyfill": "^0.10.0"
+  }
+}
