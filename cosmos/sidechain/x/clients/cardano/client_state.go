@@ -202,7 +202,23 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 			&ConsensusState{}, consState)
 	}
 
-	setClientState(clientStore, cdc, &cs)
+	// reduce size for next proof
+	var newClientState = NewClientState(
+		cs.ChainId,
+		cs.LatestHeight,
+		cs.ValidAfter,
+		cs.GenesisTime,
+		cs.CurrentEpoch,
+		cs.EpochLength,
+		cs.SlotPerKesPeriod,
+		nil,
+		nil,
+		cs.TrustingPeriod,
+		cs.UpgradePath,
+		cs.TokenConfigs,
+	)
+
+	setClientState(clientStore, cdc, newClientState)
 	setConsensusState(clientStore, cdc, consensusState, cs.GetLatestHeight())
 	setConsensusMetadata(ctx, clientStore, cs.GetLatestHeight())
 	// create SPOs
