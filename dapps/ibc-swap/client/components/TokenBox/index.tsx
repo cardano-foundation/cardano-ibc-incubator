@@ -55,7 +55,9 @@ const TokenBox = ({
                     height={30}
                   />
                 )}
-                <Text>{token?.network?.networkPrettyName || 'Select Network'}</Text>
+                <Text>
+                  {token?.network?.networkPrettyName || 'Select Network'}
+                </Text>
               </Box>
             </Button>
             <Text fontSize="14px" color="#A8A8A9" pb="12px">

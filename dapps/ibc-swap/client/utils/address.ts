@@ -65,7 +65,12 @@ export function getPublicKeyHashFromAddress(
       return publicKeyHash?.to_hex(); // Convert to hexadecimal string
     }
 
-    return EnterpriseAddress.from_address(address)?.payment_cred()?.to_keyhash()?.to_hex() || undefined; // Address type not recognized
+    return (
+      EnterpriseAddress.from_address(address)
+        ?.payment_cred()
+        ?.to_keyhash()
+        ?.to_hex() || undefined
+    ); // Address type not recognized
   } catch (error) {
     return undefined;
   }

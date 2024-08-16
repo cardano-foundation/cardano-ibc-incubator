@@ -23,7 +23,11 @@ export const TokenItem = ({
   disabled,
 }: TokenItemProps) => {
   return (
-    <StyledCustomTokenItemWrapper disabled={disabled} onClick={onClick} isActive={isActive}>
+    <StyledCustomTokenItemWrapper
+      disabled={disabled}
+      onClick={onClick}
+      isActive={isActive}
+    >
       <Box borderRadius="100%" width={30}>
         <Image src={tokenLogo} alt={tokenName} width={30} height={30} />
       </Box>

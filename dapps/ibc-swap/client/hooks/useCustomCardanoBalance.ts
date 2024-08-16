@@ -11,15 +11,13 @@ import {
   toText,
 } from '@cuonglv0297/lucid-custom';
 
-import * as CSL from '@emurgo/cardano-serialization-lib-browser';
-
 const tryAssetName = (assetHex: string): string => {
-  const tokenName = assetHex.slice(56)
+  const tokenName = assetHex.slice(56);
   if (tokenName === '') {
-    return assetHex
+    return assetHex;
   }
-  return toText(tokenName)
-}
+  return toText(tokenName);
+};
 
 export const useCustomCardanoBalance = () => {
   const [assets, setAssets] = useState<Asset[]>();

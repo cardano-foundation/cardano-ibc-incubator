@@ -15,7 +15,6 @@ import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
 import InfoIcon from '@/assets/icons/info.svg';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
-import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
@@ -23,10 +22,10 @@ import { SwapTokenType } from '@/types/SwapDataType';
 import BigNumber from 'bignumber.js';
 import { formatNumberInput } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
+import TransferContext from '@/contexts/TransferContext';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
-import TransferContext from '@/contexts/TransferContext';
 import { SwapResult } from './SwapResult';
 
 import StyledSwap, {
