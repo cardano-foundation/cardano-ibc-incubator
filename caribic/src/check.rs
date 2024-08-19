@@ -1,11 +1,13 @@
+use crate::setup::install_osmosisd;
 use std::process::Command;
 
-pub fn check_prerequisites() {
+pub async fn check_prerequisites() {
     println!("Checking prerequisites...");
     check_docker();
     check_aiken();
     check_deno();
     check_golang();
+    check_osmosisd().await;
 }
 
 fn check_docker() {
@@ -78,6 +80,28 @@ fn check_golang() {
         }
         Err(e) => {
             println!("Failed to execute command: {}", e);
+        }
+    }
+}
+
+async fn check_osmosisd() {
+    let osmosisd_check = Command::new("osmosisd").arg("version").output();
+
+    match osmosisd_check {
+        Ok(output) => {
+            if output.status.success() {
+                let version = String::from_utf8_lossy(&output.stderr);
+                if let Some(osmosisd_version) = version.lines().next() {
+                    println!("✅ osmosisd {}", osmosisd_version);
+                }
+            } else {
+                println!("❌ osomsisd is not installed or not available in the PATH.");
+                install_osmosisd().await;
+            }
+        }
+        Err(_) => {
+            println!("❌ osomsisd is not installed or not available in the PATH.");
+            install_osmosisd().await;
         }
     }
 }

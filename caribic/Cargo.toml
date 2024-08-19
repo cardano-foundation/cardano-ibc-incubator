@@ -5,3 +5,9 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.16", features = ["derive"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+tokio = { version = "1", features = ["full"] }
+zip = "2.1.6"
+indicatif = "0.17.8"
+console = "0.15.8"
+futures-util = "0.3.30"

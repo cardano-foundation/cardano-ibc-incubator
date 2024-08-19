@@ -1,6 +1,7 @@
 use clap::Parser;
 use clap::Subcommand;
 mod check;
+mod setup;
 mod utils;
 
 #[derive(Parser)]
@@ -22,12 +23,13 @@ enum Commands {
     /// Performs a token swap between Cardano and Osmosis
     Demo,
 }
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     utils::print_header();
 
     match args.command {
-        Commands::Check => check::check_prerequisites(),
+        Commands::Check => check::check_prerequisites().await,
         Commands::Start => println!("Start"),
         Commands::Stop => println!("Stop"),
         Commands::Demo => println!("Demo"),
