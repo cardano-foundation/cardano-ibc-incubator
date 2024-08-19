@@ -79,6 +79,12 @@ genesis:
 validators:
   - name: alice
     bonded: 10000000stake
+    app:
+      api:
+        rpc-max-body-bytes: "2000000"
+    config:
+      rpc:
+        max_body_bytes: "2000000"
 
 build:
   main: cmd/sidechaind/
