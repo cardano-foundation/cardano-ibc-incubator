@@ -19,6 +19,8 @@ import cbor from 'cbor';
 
 import { BlockHeaderDto } from './dtos/block-header.dto';
 import { Socket, connect } from 'net';
+import { writeFileSync } from 'fs';
+import { toHex } from '../../helpers/hex';
 
 @Injectable()
 export class MiniProtocalsService {
@@ -44,7 +46,7 @@ export class MiniProtocalsService {
         const block = Block.from_cbor_bytes(blockBytes?.slice(2));
         const blockHeader: BlockHeaderDto = {
           headerCbor: block.header().to_cbor_hex(),
-          bodyCbor: this._getBlockBodiesCborFromBlockData(block),
+          bodyCbor: await this._getBlockBodiesCborFromBlockData(block),
           prevHash: block.header().header_body().prev_hash().to_hex(),
         };
 
@@ -55,7 +57,7 @@ export class MiniProtocalsService {
     return null;
   }
 
-  _getBlockBodiesCborFromBlockData(block: Block): string {
+  async _getBlockBodiesCborFromBlockData(block: Block): Promise<string> {
     const txBodies = block.transaction_bodies();
     const txWitnesses = block.transaction_witness_sets();
     const txAuxData = block.auxiliary_data_set();
@@ -70,7 +72,8 @@ export class MiniProtocalsService {
       txsCbor.push(txsCborItem);
     }
 
-    return Buffer.from(cbor.encode(txsCbor)).toString('hex');
+    const cborBuff = await cbor.encodeAsync(txsCbor);
+    return toHex(cborBuff);
   }
 
   async _initialBlockFetchClientAndRequestPoint(startPoint: RealPoint): Promise<BlockFetchBlock | BlockFetchNoBlocks> {
