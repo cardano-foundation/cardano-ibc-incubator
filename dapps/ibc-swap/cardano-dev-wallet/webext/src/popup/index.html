@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <title>Cardano Dev Wallet</title>
+  <link rel="stylesheet" href="static/normalize.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+
+<body id="app">
+  <script type="module" src="bundle.js"></script>
+  <!-- [build.js:if(debug)] -->
+  <script>
+    new EventSource("/esbuild").addEventListener("change", () =>
+      location.reload(),
+    );
+  </script>
+  <!-- [build.js:endif] -->
+</body>
+
+</html>
