@@ -1,7 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
 import {
   Box,
-  Button,
   Checkbox,
   Heading,
   Image,
@@ -65,9 +64,14 @@ const SwapContainer = () => {
   const handleChangeAmount = (
     token: SwapTokenType,
     amount: string,
+    balance?: string,
     isFromToken?: boolean,
   ) => {
-    const displayString = formatNumberInput(amount, token.tokenExponent || 0);
+    const displayString = formatNumberInput(
+      amount,
+      token.tokenExponent || 0,
+      balance,
+    );
     let toSwapAmount = '';
     let fromSwapAmount = '';
     if (displayString !== '0') {
@@ -155,6 +159,7 @@ const SwapContainer = () => {
     } else {
       setEnableSwap(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
   return isSubmitSwap ? (
@@ -180,8 +185,16 @@ const SwapContainer = () => {
         <TokenBox
           handleClick={openModalSelectNetwork}
           token={swapData.fromToken}
-          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
-            handleChangeAmount(swapData.fromToken, event.target.value, true)
+          handleChangeAmount={(
+            event: React.ChangeEvent<HTMLInputElement>,
+            balance: string,
+          ) =>
+            handleChangeAmount(
+              swapData.fromToken,
+              event.target.value,
+              balance,
+              true,
+            )
           }
         />
         <StyledSwitchNetwork
@@ -197,8 +210,17 @@ const SwapContainer = () => {
           fromOrTo="To"
           handleClick={openModalSelectNetwork}
           token={swapData.toToken}
-          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
-            handleChangeAmount(swapData.fromToken, event.target.value, false)
+          handleChangeAmount={(
+            event: React.ChangeEvent<HTMLInputElement>,
+            // eslint-disable-next-line no-unused-vars
+            balance: string,
+          ) =>
+            handleChangeAmount(
+              swapData.fromToken,
+              event.target.value,
+              '',
+              false,
+            )
           }
         />
         {onShowEstimateFee()}
