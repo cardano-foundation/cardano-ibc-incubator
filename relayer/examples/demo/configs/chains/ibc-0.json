@@ -11,6 +11,7 @@
     "gas-prices": "0.0ada",
     "timeout": "10s",
     "output-format": "json",
-    "sign-mode": "direct"
+    "sign-mode": "direct",
+    "mithril-endpoint": "http://localhost:8080/aggregator"
   }
 }

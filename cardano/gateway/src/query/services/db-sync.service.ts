@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectEntityManager } from '@nestjs/typeorm';
+import { InjectConnection, InjectEntityManager } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { EntityManager } from 'typeorm';
+import { Connection, EntityManager } from 'typeorm';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { toHexString } from '../../shared/helpers/hex';
 import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -23,6 +23,8 @@ export class DbSyncService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @InjectEntityManager() private entityManager: EntityManager,
+    @InjectEntityManager('cardano_transaction') private mithrilEntityManager: EntityManager,
+    @InjectConnection('cardano_transaction') private readonly secondConnection: Connection,
   ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
@@ -275,29 +277,6 @@ export class DbSyncService {
     return epochParam;
   }
 
-  async findActiveValidatorsByEpoch(epoch: bigint): Promise<[ValidatorDto]> {
-    epoch = epoch >= MinimumActiveEpoch ? epoch : MinimumActiveEpoch;
-    const query = `
-    SELECT DISTINCT ph.view as poolId, pu.vrf_key_hash as vrfKeyHash
-    FROM pool_update pu
-      LEFT JOIN pool_retire pr ON pu.hash_id = pr.hash_id
-      LEFT JOIN pool_hash ph ON pu.hash_id = ph.id
-    WHERE 
-      pu.active_epoch_no <= $1
-      AND (pr.retiring_epoch > $2 OR pr.retiring_epoch IS NULL)
-    `;
-
-    const results = await this.entityManager.query(query, [epoch.toString(), (epoch - 2n).toString()]);
-
-    return results.map((result) => {
-      const validatorDto: ValidatorDto = {
-        pool_id: result.poolid,
-        vrf_key_hash: result.vrfkeyhash.toString('hex'),
-      };
-      return validatorDto;
-    });
-  }
-
   async checkExistPoolUpdateByBlockNo(height: number): Promise<boolean> {
     const query = `
     SELECT 
@@ -384,5 +363,19 @@ export class DbSyncService {
       throw new GrpcNotFoundException(`Not found: No blocks found.`);
     }
     return results.length > 0 ? results[0].block_no : 0;
+  }
+
+  async queryListBlockByImmutableFileNo(immutableFileNo: number): Promise<number[]> {
+    const query = 'SELECT DISTINCT block_number as block_no FROM cardano_tx WHERE immutable_file_number=?;';
+    const blocks = await this.secondConnection.query(query, [immutableFileNo]);
+
+    return blocks.map((block) => block.block_no);
+  }
+
+  async queryListImmutableFileNoByBlockNos(blockNos: number[]): Promise<number[]> {
+    const query = `SELECT DISTINCT immutable_file_number FROM cardano_tx WHERE block_number IN (${blockNos.map(() => `?`).join(',')});`;
+    const files = await this.secondConnection.query(query, blockNos);
+
+    return files.map((file) => file.immutable_file_number);
   }
 }

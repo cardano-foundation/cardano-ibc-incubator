@@ -1,6 +1,6 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -131,10 +131,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"mint_channel: client status is active"
 
@@ -153,7 +150,7 @@ validator(
         trace @"mint_channel: output contains connection token"
 
         expect
-          channel_datum.is_chan_open_init_valid(
+          channel_datum.validate_chan_open_init(
             channel_output_datum,
             channel_token,
           )
@@ -226,10 +223,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"mint_channel: client status is active"
 
@@ -248,7 +242,7 @@ validator(
         trace @"mint_channel: output contains connection token"
 
         expect
-          channel_datum.is_chan_open_try_valid(
+          channel_datum.validate_chan_open_try(
             channel_output_datum,
             channel_token,
           )
@@ -296,7 +290,7 @@ fn validate_chan_open_try_proof(
   counterparty_version: ByteArray,
   proof: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let counterparty_hops =
@@ -331,8 +325,7 @@ fn validate_chan_open_try_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let channel_bz =
     channel_pb.marshal_for_channel(
@@ -340,7 +333,7 @@ fn validate_chan_open_try_proof(
     )
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   expect
@@ -567,9 +560,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -711,7 +702,7 @@ test succeed_chan_open_init() {
 
   //========================arrange redeemers=======================
   let handler_redeemer: Redeemer = HandlerChanOpenInit
-  let mint_channel_redeemer =
+  let mint_channel_redeemer: Redeemer =
     ChanOpenInit { handler_token: mock_data.handler_token }
 
   let channel_id =
@@ -719,23 +710,15 @@ test succeed_chan_open_init() {
       |> channel_keys.format_channel_identifier()
   let module_redeemer: Redeemer = Callback(OnChanOpenInit { channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.channel_minting_policy_id),
-          mint_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock_data.channel_minting_policy_id), mint_channel_redeemer),
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+    ]
+
+  let mint_channel_redeemer =
+    ChanOpenInit { handler_token: mock_data.handler_token }
 
   //==========================arrange context=========================
   let context =
@@ -927,7 +910,7 @@ test succeed_chan_open_try() {
     }
   let counterparty_version = "mock-version"
 
-  let mint_channel_redeemer =
+  let mint_channel_redeemer: Redeemer =
     ChanOpenTry {
       handler_token: mock_data.handler_token,
       counterparty_version,
@@ -972,8 +955,7 @@ test succeed_chan_open_try() {
     ChannelCounterparty { port_id: channel_datum.port_id, channel_id: "" }
 
   expect Some(cons_state) =
-    dict.from_list(client_datum.state.consensus_states, height_mod.compare)
-      |> dict.get(mock_data.proof_height)
+    pairs.get_first(client_datum.state.consensus_states, mock_data.proof_height)
 
   let expected_channel =
     Channel {
@@ -989,7 +971,7 @@ test succeed_chan_open_try() {
       Some(channel.convert_to_channel_proto(expected_channel)),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -1001,28 +983,21 @@ test succeed_chan_open_try() {
       value: channel_bz,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.channel_minting_policy_id),
-          mint_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock_data.channel_minting_policy_id), mint_channel_redeemer),
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+
+  let mint_channel_redeemer =
+    ChanOpenTry {
+      handler_token: mock_data.handler_token,
+      counterparty_version,
+      proof_init,
+      proof_height: mock_data.proof_height,
+    }
 
   //==========================arrange context=========================
   let context =

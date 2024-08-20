@@ -1,5 +1,5 @@
 use aiken/bytearray
-use aiken/dict.{Dict}
+use aiken/pairs
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header
@@ -15,10 +15,11 @@ use ibc/utils/tx_time.{TxTime} as tx_time_mod
 pub fn verify_header(
   cs: ClientState,
   tx_time: TxTime,
-  consensus_states: Dict<Height, ConsensusState>,
+  consensus_states: Pairs<Height, ConsensusState>,
   header: Header,
 ) {
-  expect Some(cons_state) = dict.get(consensus_states, header.trusted_height)
+  expect Some(cons_state) =
+    pairs.get_first(consensus_states, header.trusted_height)
 
   expect check_trusted_header(header, cons_state)
   expect
@@ -28,20 +29,22 @@ pub fn verify_header(
 
   expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
 
+  // Only height, time, and next_validators_hash are necessary for verification
+  let trusted_header =
+    SignedHeader {
+      header: tm_header.TmHeader {
+        ..tm_header.null_tm_header(),
+        chain_id: cs.chain_id,
+        height: header.trusted_height.revision_height,
+        time: cons_state.timestamp,
+        next_validators_hash: cons_state.next_validators_hash,
+      },
+      commit: commit.null_commit(),
+    }
+
   expect
     verifier.verify(
-      // Only height, time, and next_validators_hash are necessary for verification
-      SignedHeader {
-        header: tm_header.TmHeader {
-          chain_id: cs.chain_id,
-          height: header.trusted_height.revision_height,
-          time: cons_state.timestamp,
-          validators_hash: #[],
-          next_validators_hash: cons_state.next_validators_hash,
-          app_hash: #[],
-        },
-        commit: commit.null_commit(),
-      },
+      trusted_header,
       header.trusted_validators,
       header.signed_header,
       header.validator_set,

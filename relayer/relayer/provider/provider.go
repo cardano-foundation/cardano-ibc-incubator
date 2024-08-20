@@ -18,6 +18,7 @@ import (
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tendermint "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
@@ -416,9 +417,7 @@ type ChainProvider interface {
 	// [Begin] Client IBC message assembly functions
 	NewClientState(dstChainID string, dstIBCHeader IBCHeader, dstTrustingPeriod, dstUbdPeriod time.Duration, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour bool) (ibcexported.ClientState, error)
 
-	MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (RelayerMessage, string, error)
-
-	MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (RelayerMessage, error)
+	MsgCreateClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (RelayerMessage, error)
 
 	MsgUpgradeClient(srcClientId string, consRes *clienttypes.QueryConsensusStateResponse, clientRes *clienttypes.QueryClientStateResponse) (RelayerMessage, error)
 
@@ -607,6 +606,9 @@ type QueryProvider interface {
 	// QueryIBCHeader returns the IBC compatible block header at a specific height.
 	QueryIBCHeader(ctx context.Context, h int64) (IBCHeader, error)
 
+	// QueryIBCMithrilHeader return IBC compatible block header from mithril
+	QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (IBCHeader, error)
+
 	// QueryBlockData from cardano
 	QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error)
 	// Query block result from cardano
@@ -624,7 +626,7 @@ type QueryProvider interface {
 	QueryUnbondingPeriod(context.Context) (time.Duration, error)
 
 	// ics 02 - client
-	QueryCardanoState(ctx context.Context, height int64) (*pbclientstruct.ClientState, *pbclientstruct.ConsensusState, error)
+	QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error)
 	QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error)
 	QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error)
 	QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error)

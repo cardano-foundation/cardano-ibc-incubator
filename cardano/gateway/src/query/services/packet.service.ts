@@ -18,6 +18,8 @@ import {
   QueryUnreceivedAcksResponse,
   QueryProofUnreceivedPacketsRequest,
   QueryProofUnreceivedPacketsResponse,
+  QueryNextSequenceReceiveRequest,
+  QueryNextSequenceReceiveResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
@@ -35,11 +37,13 @@ import {
   validQueryUnreceivedPacketsParam,
   validQueryUnreceivedAcksParam,
   validQueryProofUnreceivedPacketsParam,
+  validQueryNextSequenceReceiveParam,
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
-import { convertHex2String, toHex } from '../../shared/helpers/hex';
+import { convertHex2String, fromHex, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 
 @Injectable()
 export class PacketService {
@@ -48,6 +52,7 @@ export class PacketService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
   async queryPacketAcknowledgement(
@@ -433,13 +438,60 @@ export class PacketService {
     //     `Invalid proof height, revision height ${revisionHeight} not match with proof height ${proof.blockNo}`,
     //   );
     // }
+    const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
+    const connectionProof = cardanoTxProof?.certified_transactions[0]?.proof;
+    const immutableFiles = await this.dbService.queryListImmutableFileNoByBlockNos([Number(proof.blockNo)]);
+
     const response: QueryPacketAcknowledgementResponse = {
-      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/receipts/${proof.txHash}/${proof.index}`)),
+      proof: fromHex(connectionProof),
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo,
+        revision_height: Number(immutableFiles[0]),
       },
     } as unknown as QueryPacketAcknowledgementResponse;
+    return response;
+  }
+  async queryNextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
+    const { channel_id: channelId, port_id: portId } = validQueryNextSequenceReceiveParam(request);
+    this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryNextSequenceReceiveRequest');
+
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+
+    console.dir({ channelDatum }, { depth: 10 });
+
+    const nextSequenceRecv = channelDatum.state.next_sequence_recv;
+
+    const response: QueryNextSequenceReceiveResponse = {
+      next_sequence_receive: nextSequenceRecv.toString(),
+      proof: bytesFromBase64(btoa(`0-0/nextsequencerecv//0`)),
+      proof_height: {
+        revision_number: 0,
+        revision_height: 0,
+      },
+    } as unknown as QueryNextSequenceReceiveResponse;
+    return response;
+  }
+  async QueryNextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
+    const { channel_id: channelId, port_id: portId } = validQueryNextSequenceReceiveParam(request);
+    this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryNextSequenceAckRequest');
+
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    const nextSequenceAck = channelDatum.state.next_sequence_ack;
+
+    const response: QueryNextSequenceReceiveResponse = {
+      next_sequence_receive: nextSequenceAck.toString(),
+      proof: bytesFromBase64(btoa(`0-0/nextsequenceack//0`)),
+      proof_height: {
+        revision_number: 0,
+        revision_height: 0,
+      },
+    } as unknown as QueryNextSequenceReceiveResponse;
     return response;
   }
 }

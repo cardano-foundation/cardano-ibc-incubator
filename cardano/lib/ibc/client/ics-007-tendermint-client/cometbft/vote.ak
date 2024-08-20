@@ -1,5 +1,6 @@
 use aiken/list
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/canonical
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{precommit_type}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{

@@ -25,7 +25,7 @@ import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { AuthToken } from 'src/shared/types/auth-token';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { State } from 'src/shared/types/connection/state';
-import { MintConnectionRedeemer, SpendConnectionRedeemer } from 'src/shared/types/connection/connection-redeemer';
+import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
 import { convertHex2String, convertString2Hex, fromHex, fromText, toHex, toHexString } from '@shared/helpers/hex';
@@ -45,6 +45,8 @@ import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build
 import { clientStatePath, getCardanoClientStateForVerifyProofRedeemer } from '~@/shared/helpers/client-state';
 import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
+import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -149,6 +151,8 @@ export class ConnectionService {
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
     } catch (error) {
+      console.error(error);
+
       this.logger.error(error, 'connectionOpenAck');
       this.logger.error(`connectionOpenAck: ${error.stack}`);
       if (!(error instanceof RpcException)) {
@@ -427,12 +431,12 @@ export class ConnectionService {
       delay_period: connectionDatum.state.delay_period,
     };
 
-    const cardanoClientState: CardanoClientState = getCardanoClientStateForVerifyProofRedeemer(
-      CardanoClientState.fromJSON(connectionOpenAckOperator.counterpartyClientState),
+    const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
+      connectionOpenAckOperator.counterpartyClientState,
     );
-    const cardanoClientStateAny: Any = {
-      type_url: '/ibc.clients.cardano.v1.ClientState',
-      value: CardanoClientState.encode(cardanoClientState).finish(),
+    const mithrilClientStateAny: Any = {
+      type_url: '/ibc.clients.mithril.v1.ClientState',
+      value: MithrilClientState.encode(mithrilClientState).finish(),
     };
     const verifyProofRedeemer: VerifyProofRedeemer = {
       BatchVerifyMembership: [
@@ -469,7 +473,7 @@ export class ConnectionService {
                 ),
               ],
             },
-            value: toHex(Any.encode(cardanoClientStateAny).finish()),
+            value: toHex(Any.encode(mithrilClientStateAny).finish()),
           },
         ],
       ],

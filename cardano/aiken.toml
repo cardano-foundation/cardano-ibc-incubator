@@ -29,5 +29,5 @@ project = "cardano-ibc"    # Repository or project on that platform
 # Avoid editing by hand, use `aiken packages` to manage them.
 [[dependencies]]
 name = "aiken-lang/stdlib"   # Project's name
-version = "1.8.0"             # Version, as a branch or git commit hash
+version = "1.9.0"             # Version, as a branch or git commit hash
 source = "github"            # Platform type, `github`, `gitlab` or `bitbucket`

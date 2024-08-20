@@ -1,8 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/int
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -27,8 +26,9 @@ use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, RecvPacket, RefreshUtxo,
-  SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
+  ChanOpenConfirm, RecvPacket, RefreshUtxo, SendPacket, SpendChannelRedeemer,
+  TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -53,6 +53,8 @@ use ibc/utils/validator_utils
 validator(
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
+  chan_close_init_policy_id: PolicyId,
+  chan_close_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
@@ -70,7 +72,7 @@ validator(
     when redeemer is {
       ChanOpenAck { .. } -> {
         expect Some(redeemer) =
-          dict.get(redeemers, Mint(chan_open_ack_policy_id))
+          pairs.get_first(redeemers, Mint(chan_open_ack_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
@@ -79,21 +81,39 @@ validator(
 
       ChanOpenConfirm { .. } -> {
         expect Some(redeemer) =
-          dict.get(redeemers, Mint(chan_open_confirm_policy_id))
+          pairs.get_first(redeemers, Mint(chan_open_confirm_policy_id))
+
+        expect redeemer: AuthToken = redeemer
+
+        redeemer == datum.token
+      }
+      ChanCloseInit -> {
+        expect Some(redeemer) =
+          pairs.get_first(redeemers, Mint(chan_close_init_policy_id))
+
+        expect redeemer: AuthToken = redeemer
+
+        redeemer == datum.token
+      }
+      ChanCloseConfirm { .. } -> {
+        expect Some(redeemer) =
+          pairs.get_first(redeemers, Mint(chan_close_confirm_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
         redeemer == datum.token
       }
       RecvPacket { .. } -> {
-        expect Some(redeemer) = dict.get(redeemers, Mint(recv_packet_policy_id))
+        expect Some(redeemer) =
+          pairs.get_first(redeemers, Mint(recv_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
         redeemer == datum.token
       }
       SendPacket { .. } -> {
-        expect Some(redeemer) = dict.get(redeemers, Mint(send_packet_policy_id))
+        expect Some(redeemer) =
+          pairs.get_first(redeemers, Mint(send_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
@@ -101,7 +121,7 @@ validator(
       }
       TimeoutPacket { .. } -> {
         expect Some(redeemer) =
-          dict.get(redeemers, Mint(timeout_packet_policy_id))
+          pairs.get_first(redeemers, Mint(timeout_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
@@ -109,7 +129,7 @@ validator(
       }
       AcknowledgePacket { .. } -> {
         expect Some(redeemer) =
-          dict.get(redeemers, Mint(acknowledge_packet_policy_id))
+          pairs.get_first(redeemers, Mint(acknowledge_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
 
@@ -146,6 +166,8 @@ type MockData {
   channel_minting_policy_id: PolicyId,
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
+  chan_close_init_policy_id: PolicyId,
+  chan_close_confirm_policy_id: PolicyId,
   recv_packet_policy_id: PolicyId,
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
@@ -330,9 +352,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -392,6 +412,8 @@ fn setup() -> MockData {
     channel_minting_policy_id,
     chan_open_ack_policy_id: "mock chan_open_ack_policy_id",
     chan_open_confirm_policy_id: "mock chan_open_confirm_policy_id",
+    chan_close_init_policy_id: "fake chan close init policy id",
+    chan_close_confirm_policy_id: "fake chan close confirm policy id",
     recv_packet_policy_id: "mock recv_packet_policy_id",
     send_packet_policy_id: "mock send_packet_policy_id",
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
@@ -467,12 +489,10 @@ fn update_client(
           ..client_datum.state.client_state,
           latest_height: latest_height,
         },
-        consensus_states: dict.from_list(
-          client_datum.state.consensus_states,
-          height_mod.compare,
-        )
-          |> dict.insert(height, consensus_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(height, consensus_state),
+          ..client_datum.state.consensus_states
+        ],
       },
     }
 
@@ -495,17 +515,15 @@ fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum {
     state: ChannelDatumState {
       ..channel_datum.state,
       next_sequence_send: channel_datum.state.next_sequence_send + 1,
-      packet_commitment: dict.from_list(
-        channel_datum.state.packet_commitment,
-        int.compare,
-      )
-        |> dict.insert(packet.sequence, commitment, int.compare)
-        |> dict.to_list(),
+      packet_commitment: [
+        Pair(packet.sequence, commitment),
+        ..channel_datum.state.packet_commitment
+      ],
     },
   }
 }
 
-test succeed_chan_open_ack() {
+test chan_open_ack_succeed() {
   let mock_data = setup()
 
   //========================arrange inputs=======================
@@ -686,30 +704,24 @@ test succeed_chan_open_ack() {
     }
   let counterparty_version = "mock-version"
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     ChanOpenAck { counterparty_version, proof_try, proof_height }
 
   let channel_id =
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer = Callback(OnChanOpenAck { channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.chan_open_ack_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let chan_open_ack_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.chan_open_ack_policy_id), chan_open_ack_redeemer),
+    ]
+
+  let spend_channel_redeemer =
+    ChanOpenAck { counterparty_version, proof_try, proof_height }
 
   //==========================arrange context=========================
   let context =
@@ -728,6 +740,8 @@ test succeed_chan_open_ack() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -738,7 +752,7 @@ test succeed_chan_open_ack() {
   )
 }
 
-test succeed_chan_open_confirm() {
+test chan_open_confirm_succeed() {
   let mock_data = setup()
 
   //========================arrange inputs=======================
@@ -906,29 +920,24 @@ test succeed_chan_open_confirm() {
       ],
     }
 
-  let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
+  let spend_channel_redeemer: Redeemer =
+    ChanOpenConfirm { proof_ack, proof_height }
 
   let channel_id =
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer = Callback(OnChanOpenConfirm { channel_id })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.chan_open_confirm_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let chan_open_confirm_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.chan_open_confirm_policy_id),
+      chan_open_confirm_redeemer),
+    ]
+
+  let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
 
   //==========================arrange context=========================
   let context =
@@ -947,6 +956,8 @@ test succeed_chan_open_confirm() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -957,7 +968,7 @@ test succeed_chan_open_confirm() {
   )
 }
 
-test succeed_recv_packet() {
+test recv_packet_succeed() {
   let mock_data = setup()
 
   //========================arrange inputs=======================
@@ -1034,18 +1045,14 @@ test succeed_recv_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_receipt: dict.from_list(
-          input_channel_datum.state.packet_receipt,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, "", int.compare)
-          |> dict.to_list(),
-        packet_acknowledgement: dict.from_list(
-          input_channel_datum.state.packet_acknowledgement,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, commit_ack, int.compare)
-          |> dict.to_list(),
+        packet_receipt: [
+          Pair(packet.sequence, ""),
+          ..input_channel_datum.state.packet_receipt
+        ],
+        packet_acknowledgement: [
+          Pair(packet.sequence, commit_ack),
+          ..input_channel_datum.state.packet_acknowledgement
+        ],
       },
     }
 
@@ -1154,7 +1161,7 @@ test succeed_recv_packet() {
       ],
     }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     RecvPacket { packet, proof_commitment, proof_height }
 
   let channel_id =
@@ -1164,23 +1171,17 @@ test succeed_recv_packet() {
       OnRecvPacket { channel_id, acknowledgement: ack, data: OtherModuleData },
     )
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.recv_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let recv_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.recv_packet_policy_id), recv_packet_redeemer),
+    ]
+
+  let spend_channel_redeemer =
+    RecvPacket { packet, proof_commitment, proof_height }
 
   //==========================arrange context=========================
   let context =
@@ -1199,6 +1200,8 @@ test succeed_recv_packet() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1209,7 +1212,7 @@ test succeed_recv_packet() {
   )
 }
 
-test succeed_send_packet() {
+test send_packet_succeed() {
   let mock_data = setup()
 
   let packet =
@@ -1271,12 +1274,10 @@ test succeed_send_packet() {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: dict.from_list(
-          input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, commitment, int.compare)
-          |> dict.to_list(),
+        packet_commitment: [
+          Pair(packet.sequence, commitment),
+          ..input_channel_datum.state.packet_commitment
+        ],
       },
     }
 
@@ -1290,27 +1291,20 @@ test succeed_send_packet() {
   let validity_range = mock_data.validity_range
 
   //========================arrange redeemers=======================
-  let spend_channel_redeemer = SendPacket { packet }
+  let spend_channel_redeemer: Redeemer = SendPacket { packet }
 
   let module_redeemer: Redeemer = Operator(OtherModuleOperator)
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.send_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let send_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer),
+    ]
+
+  let spend_channel_redeemer = SendPacket { packet }
 
   //==========================arrange context=========================
   let context =
@@ -1329,6 +1323,8 @@ test succeed_send_packet() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1339,7 +1335,7 @@ test succeed_send_packet() {
   )
 }
 
-test succeed_timeout_packet() {
+test timeout_packet_succeed() {
   let mock_data = setup()
 
   let pack_timeout_height = Height { revision_number: 1, revision_height: 18 }
@@ -1420,12 +1416,10 @@ test succeed_timeout_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -1549,7 +1543,7 @@ test succeed_timeout_packet() {
       ],
     }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     TimeoutPacket {
       packet,
       proof_unreceived,
@@ -1562,23 +1556,22 @@ test succeed_timeout_packet() {
   let module_redeemer: Redeemer =
     Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.timeout_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+    ]
+
+  let spend_channel_redeemer =
+    TimeoutPacket {
+      packet,
+      proof_unreceived,
+      proof_height,
+      next_sequence_recv: 0,
+    }
 
   //==========================arrange context=========================
   let context =
@@ -1597,6 +1590,8 @@ test succeed_timeout_packet() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
@@ -1607,7 +1602,7 @@ test succeed_timeout_packet() {
   )
 }
 
-test succeed_acknowledge_packet() {
+test acknowledge_packet_succeed() {
   let mock_data = setup()
 
   let packet =
@@ -1682,12 +1677,10 @@ test succeed_acknowledge_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -1796,7 +1789,7 @@ test succeed_acknowledge_packet() {
       ],
     }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     AcknowledgePacket {
       packet,
       proof_acked,
@@ -1815,23 +1808,23 @@ test succeed_acknowledge_packet() {
       },
     )
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.acknowledge_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
+  let acknowledge_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.acknowledge_packet_policy_id),
+      acknowledge_packet_redeemer),
+    ]
+
+  let spend_channel_redeemer =
+    AcknowledgePacket {
+      packet,
+      proof_acked,
+      proof_height,
+      acknowledgement: #"7b22726573756c74223a226257396a6179426859327475623364735a57526e5a57316c626e513d227d",
+    }
 
   //==========================arrange context=========================
   let context =
@@ -1850,10 +1843,161 @@ test succeed_acknowledge_packet() {
   spend_channel(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
+    mock_data.chan_close_init_policy_id,
+    mock_data.chan_close_confirm_policy_id,
     mock_data.recv_packet_policy_id,
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    input_channel_datum,
+    spend_channel_redeemer,
+    context,
+  )
+}
+
+test chan_close_init_succeed() {
+  let fake_data = setup()
+
+  //========================arrange inputs=======================
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-0",
+        channel_id: "channel-0",
+      },
+      connection_hops: [],
+      version: "fake-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: "port-0",
+      token: fake_data.channel_token,
+    }
+
+  let channel_input =
+    build_channel_input(input_channel_datum, fake_data.channel_token)
+
+  let inputs =
+    [channel_input]
+
+  //========================arrange redeemers=======================
+  let chan_close_init_redeemer: Redeemer = fake_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
+
+  //==========================arrange context=========================
+  let context =
+    ScriptContext {
+      purpose: Spend(channel_input.output_reference),
+      transaction: Transaction {
+        ..transaction.placeholder(),
+        inputs: inputs,
+        redeemers: redeemers,
+      },
+    }
+
+  let spend_channel_redeemer = ChanCloseInit
+
+  spend_channel(
+    fake_data.chan_open_ack_policy_id,
+    fake_data.chan_open_confirm_policy_id,
+    fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
+    fake_data.recv_packet_policy_id,
+    fake_data.send_packet_policy_id,
+    fake_data.timeout_packet_policy_id,
+    fake_data.acknowledge_packet_policy_id,
+    input_channel_datum,
+    spend_channel_redeemer,
+    context,
+  )
+}
+
+test chan_close_confirm_succeed() {
+  let fake_data = setup()
+
+  //========================arrange inputs=======================
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-0",
+        channel_id: "channel-0",
+      },
+      connection_hops: [],
+      version: "fake-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: "port-0",
+      token: fake_data.channel_token,
+    }
+
+  let channel_input =
+    build_channel_input(input_channel_datum, fake_data.channel_token)
+
+  let inputs =
+    [channel_input]
+
+  //========================arrange redeemers=======================
+  let chan_close_init_redeemer: Redeemer = fake_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Mint(fake_data.chan_close_confirm_policy_id),
+      chan_close_init_redeemer),
+    ]
+
+  //==========================arrange context=========================
+  let context =
+    ScriptContext {
+      purpose: Spend(channel_input.output_reference),
+      transaction: Transaction {
+        ..transaction.placeholder(),
+        inputs: inputs,
+        redeemers: redeemers,
+      },
+    }
+
+  let proof_init = MerkleProof { proofs: [] }
+
+  let proof_height = Height { revision_number: 1, revision_height: 13 }
+
+  let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
+
+  spend_channel(
+    fake_data.chan_open_ack_policy_id,
+    fake_data.chan_open_confirm_policy_id,
+    fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
+    fake_data.recv_packet_policy_id,
+    fake_data.send_packet_policy_id,
+    fake_data.timeout_packet_policy_id,
+    fake_data.acknowledge_packet_policy_id,
     input_channel_datum,
     spend_channel_redeemer,
     context,

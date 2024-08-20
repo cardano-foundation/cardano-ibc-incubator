@@ -1,8 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/int
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -18,7 +17,7 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  VerifyNonMembership, VerifyProofRedeemer,
+  VerifyMembership, VerifyNonMembership, VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
@@ -49,6 +48,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/utils/bits
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -140,14 +140,14 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"timeout_packet: client status is active"
 
     expect Some(proof_timestamp) =
       client_state_mod.get_timestamp_at_height(
         client_datum.state.client_state,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
         proof_height,
       )
     expect or {
@@ -160,8 +160,7 @@ validator(
     trace @"timeout_packet: packet is timeout"
 
     expect Some(commitment) =
-      dict.from_list(cur_packet_commitment, int.compare)
-        |> dict.get(packet.sequence)
+      pairs.get_first(cur_packet_commitment, packet.sequence)
     trace @"timeout_packet: packet commitment existed"
 
     let packet_commitment = packet_mod.commit_packet(packet)
@@ -174,7 +173,7 @@ validator(
           trace @"timeout_packet: channel ordering is  Unordered"
 
           expect
-            validate_timeout_packet_proof(
+            validate_timeout_unordered_packet_proof(
               connection_datum.state,
               client_datum.state,
               proof_height,
@@ -194,14 +193,15 @@ validator(
           trace @"timeout_packet: packet not received yet"
 
           expect
-            verify_mod.verify_next_sequence_recv(
-              client_datum.state,
+            validate_timeout_ordered_packet_proof(
               connection_datum.state,
+              client_datum.state,
               proof_height,
               proof_unreceived,
-              packet.destination_port,
-              packet.destination_channel,
+              packet,
               next_sequence_recv,
+              redeemers,
+              verify_proof_policy_id,
             )
           trace @"timeout_packet: packet proof is valid"
 
@@ -232,17 +232,17 @@ validator(
   }
 }
 
-fn validate_timeout_packet_proof(
+fn validate_timeout_unordered_packet_proof(
   connection: ConnectionEnd,
   client_datum_state: ClientDatumState,
   proof_height: Height,
   proof: MerkleProof,
   packet: Packet,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let time_delay = connection.delay_period
@@ -262,8 +262,7 @@ fn validate_timeout_packet_proof(
       ),
     )
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   expect
     verify_proof_redeemer == VerifyNonMembership {
@@ -274,6 +273,53 @@ fn validate_timeout_packet_proof(
       delay_block_period: block_delay,
       proof,
       path: merkle_path,
+    }
+
+  True
+}
+
+fn validate_timeout_ordered_packet_proof(
+  connection: ConnectionEnd,
+  client_datum_state: ClientDatumState,
+  proof_height: Height,
+  proof: MerkleProof,
+  packet: Packet,
+  next_sequence_recv: Int,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  verify_proof_policy_id: PolicyId,
+) -> Bool {
+  expect Some(verify_proof_redeemer) =
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
+  expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
+
+  let time_delay = connection.delay_period
+  let block_delay = verify_mod.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.next_sequence_recv_path(
+            packet.destination_port,
+            packet.destination_channel,
+          ),
+        ],
+      ),
+    )
+  expect Some(consensus_state) =
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
+  expect
+    verify_proof_redeemer == VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof,
+      path: merkle_path,
+      value: bits.put_uint64_big_endian(next_sequence_recv),
     }
 
   True
@@ -474,9 +520,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -553,7 +597,7 @@ fn setup() -> MockData {
   }
 }
 
-test succeed_timeout_packet() {
+test succeed_timeout_unordered_packet() {
   let mock_data = setup()
 
   let pack_timeout_height = Height { revision_number: 1, revision_height: 18 }
@@ -634,12 +678,10 @@ test succeed_timeout_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -766,7 +808,7 @@ test succeed_timeout_packet() {
       ],
     }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     TimeoutPacket {
       packet,
       proof_unreceived,
@@ -798,7 +840,7 @@ test succeed_timeout_packet() {
       ),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyNonMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -808,28 +850,197 @@ test succeed_timeout_packet() {
       proof: proof_unreceived,
       path: merkle_path,
     }
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.timeout_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+
+  //==========================arrange context=========================
+  let context =
+    ScriptContext {
+      purpose: Spend(channel_input.output_reference),
+      transaction: Transaction {
+        ..transaction.placeholder(),
+        inputs: inputs,
+        reference_inputs: reference_inputs,
+        outputs: outputs,
+        redeemers: redeemers,
+        validity_range: validity_range,
+      },
+    }
+
+  timeout_packet(
+    mock_data.client_minting_policy_id,
+    mock_data.connection_minting_policy_id,
+    mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
+    mock_data.channel_token,
+    context,
+  )
+}
+
+test succeed_timeout_ordered_packet() {
+  let mock_data = setup()
+
+  let next_sequence_recv = 1
+
+  let pack_timeout_height = Height { revision_number: 1, revision_height: 18 }
+
+  let packet =
+    Packet {
+      sequence: 1,
+      source_port: "port-1",
+      source_channel: "channel-0",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+      data: "mock packet data",
+      timeout_height: pack_timeout_height,
+      timeout_timestamp: 0,
+    }
+
+  //========================arrange inputs=======================
+  let input_channel =
+    Channel {
+      state: chan_state_mod.Open,
+      ordering: chan_order_mod.Ordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
+      connection_hops: [mock_data.connection_id],
+      version: "mock-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: mock_data.port_id,
+      token: mock_data.channel_token,
+    }
+
+  let input_channel_datum = test_utils.send_packet(packet, input_channel_datum)
+
+  let channel_input =
+    test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
+
+  let inputs =
+    [mock_data.module_input, channel_input]
+
+  //========================arrange reference_inputs=======================
+  let proof_height =
+    Height {
+      ..pack_timeout_height,
+      revision_height: pack_timeout_height.revision_height + 1,
+    }
+
+  let cons_state =
+    ConsensusState {
+      timestamp: 1577923365000000000,
+      next_validators_hash: #"020402703976bb4e91f05e69c25627e1b813bfeca54f4825afee49efe8acdbd7",
+      root: MerkleRoot {
+        hash: #"2a2a5880ec8d4d978eaace39e4d256a7d1dbd024f3c471aa8fa14a955d3eb102",
+      },
+    }
+
+  let client_input =
+    test_utils.update_client(proof_height, cons_state, mock_data.client_input)
+
+  let reference_inputs =
+    [mock_data.connection_input, client_input]
+
+  //========================arrange outputs=======================
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        channel: Channel {
+          ..input_channel_datum.state.channel,
+          state: chan_state_mod.Closed,
+        },
+        packet_commitment: pairs.remove_first(
+          input_channel_datum.state.packet_commitment,
+          packet.sequence,
+        ),
+      },
+    }
+
+  let channel_output =
+    test_utils.build_channel_output(
+      output_channel_datum,
+      mock_data.channel_token,
+    )
+
+  let outputs =
+    [channel_output]
+
+  //========================arrange validity_range=======================
+  let validity_range = mock_data.validity_range
+
+  //========================arrange redeemers=======================
+  let proof_unreceived = MerkleProof { proofs: [] }
+
+  let spend_channel_redeemer: Redeemer =
+    TimeoutPacket { packet, proof_unreceived, proof_height, next_sequence_recv }
+
+  let channel_id =
+    chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
+  let module_redeemer: Redeemer =
+    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
+
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  expect connection_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(mock_data.connection_input.output)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection_datum.state.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          packet_keys.next_sequence_recv_path(
+            packet.destination_port,
+            packet.destination_channel,
+          ),
+        ],
+      ),
+    )
+
+  let verify_proof_redeemer: Redeemer =
+    VerifyMembership {
+      cs: client_datum.state.client_state,
+      cons_state,
+      height: proof_height,
+      delay_time_period: 0,
+      delay_block_period: 0,
+      proof: proof_unreceived,
+      path: merkle_path,
+      value: bits.put_uint64_big_endian(next_sequence_recv),
+    }
+
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
   //==========================arrange context=========================
   let context =
     ScriptContext {

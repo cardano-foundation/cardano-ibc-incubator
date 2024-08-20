@@ -5,6 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +19,16 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+var (
+	RtyAttNum = uint(5)
+	RtyAtt    = retry.Attempts(RtyAttNum)
+	RtyDel    = retry.Delay(time.Millisecond * 400)
+	RtyErr    = retry.LastErrorOnly(true)
+
+	defaultCoinType uint32 = 118
+	defaultAlgo     string = string(hd.Secp256k1Type)
 )
 
 // messageProcessor is used for concurrent IBC message assembly and sending
@@ -105,12 +119,10 @@ func (mp *messageProcessor) processMessages(
 			return err
 		}
 	}
-
 	if src.ChainProvider.Type() == "cosmos" &&
 		len(messages.channelMessages)+len(messages.connectionMessages)+len(messages.packetMessages) > 0 {
 		updateClient(ctx, src, dst, src.latestHeader.(provider.TendermintIBCHeader))
 	}
-
 	mp.assembleMessages(ctx, messages, src, dst)
 
 	return mp.trackAndSendMessages(ctx, src, dst, needsClientUpdate)
@@ -151,9 +163,9 @@ func updateClient(ctx context.Context, src, dst *PathEndRuntime, latestHeader pr
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Minute*10)
+	newCtx, cancel := context.WithTimeout(ctx, time.Second*20)
 	defer cancel()
-	dst.ChainProvider.SendMessages(ctx, []provider.RelayerMessage{
+	dst.ChainProvider.SendMessages(newCtx, []provider.RelayerMessage{
 		msgUpdateClient,
 	}, "")
 	return nil
@@ -168,30 +180,67 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 
 	var consensusHeightTime time.Time
 
-	clientConsensusHeight := dst.ClientState.ConsensusHeight
-	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
-	if trustedConsensusHeight.EQ(clientConsensusHeight) {
-		return false, nil
+	dsth := dst.latestBlock.Height
+	var dstClientState ibcexported.ClientState
+	if err := retry.Do(func() error {
+		var err error
+		dstClientState, err = dst.ChainProvider.QueryClientState(ctx, int64(dsth), dst.Info.ClientID)
+		return err
+	}, retry.Context(ctx), RtyAtt, RtyDel, RtyErr, retry.OnRetry(func(n uint, err error) {
+		dst.log.Info(
+			"Failed to query client state when updating clients",
+			zap.String("client_id", dst.Info.ClientID),
+			zap.Uint("attempt", n+1),
+			zap.Uint("max_attempts", RtyAttNum),
+			zap.Error(err),
+		)
+	})); err != nil {
+		return false, err
 	}
-
+	if src.ChainProvider.Type() == "cardano" {
+		clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dsth), dst.Info.ClientID)
+		if err != nil {
+			return false, fmt.Errorf("failed to query the client state response: %w", err)
+		}
+		clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+		if err != nil {
+			return false, fmt.Errorf("failed to unpack client state: %w", err)
+		}
+		ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+		if err != nil {
+			return false, err
+		}
+		h, ok := ibcHeader.(*mithril.MithrilHeader)
+		if !ok {
+			return false, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+		}
+		// get cardano client consensus state
+		clientConsensusState, err := dst.ChainProvider.QueryClientConsensusState(ctx, int64(dsth), dst.Info.ClientID, dstClientState.GetLatestHeight())
+		if err != nil {
+			return false, err
+		}
+		consensusStateData, err := clienttypes.UnpackClientMessage(clientConsensusState.ConsensusState)
+		if err != nil {
+			return false, err
+		}
+		consensusState, ok := consensusStateData.(*mithril.ConsensusState)
+		if !ok {
+			return false, fmt.Errorf("failed to cast consensus state to MithrilHeader")
+		}
+		if strings.Compare(h.TransactionSnapshotCertificate.Hash, consensusState.LatestCertHashTxSnapshot) == 0 {
+			return false, nil
+		}
+		mp.logShouldUpdateClient(src, dst, time.Unix(0, int64(consensusState.Timestamp)))
+		return true, nil
+	}
 	if dst.ClientState.ConsensusTime.IsZero() {
 		var timestamp uint64
-		switch src.ChainProvider.Type() {
-		case "cardano":
-			srcBlockData, err := src.ChainProvider.QueryBlockData(context.Background(), int64(dst.ClientState.ConsensusHeight.RevisionHeight))
-			if err != nil {
-				return false, fmt.Errorf("failed to get header height: %w", err)
-			}
-			timestamp = srcBlockData.Timestamp
-			consensusHeightTime = time.Unix(int64(timestamp), 0)
-		case "cosmos":
-			h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
-			if err != nil {
-				return false, fmt.Errorf("failed to get header height: %w", err)
-			}
-			timestamp = h.ConsensusState().GetTimestamp()
-			consensusHeightTime = time.Unix(0, int64(timestamp))
+		h, err := src.ChainProvider.QueryIBCHeader(ctx, int64(dst.ClientState.ConsensusHeight.RevisionHeight))
+		if err != nil {
+			return false, fmt.Errorf("failed to get header height: %w", err)
 		}
+		timestamp = h.ConsensusState().GetTimestamp()
+		consensusHeightTime = time.Unix(0, int64(timestamp))
 	} else {
 		consensusHeightTime = dst.ClientState.ConsensusTime
 	}
@@ -220,17 +269,21 @@ func (mp *messageProcessor) shouldUpdateClientNow(ctx context.Context, src, dst 
 	}
 
 	if shouldUpdateClientNow {
-		mp.log.Info("Client update threshold condition met",
-			zap.String("path_name", src.Info.PathName),
-			zap.String("chain_id", dst.Info.ChainID),
-			zap.String("client_id", dst.Info.ClientID),
-			zap.Int64("trusting_period", dst.ClientState.TrustingPeriod.Milliseconds()),
-			zap.Int64("time_since_client_update", time.Since(consensusHeightTime).Milliseconds()),
-			zap.Int64("client_threshold_time", mp.clientUpdateThresholdTime.Milliseconds()),
-		)
+		mp.logShouldUpdateClient(src, dst, consensusHeightTime)
 	}
 
 	return shouldUpdateClientNow, nil
+}
+
+func (mp *messageProcessor) logShouldUpdateClient(src, dst *PathEndRuntime, consensusHeightTime time.Time) {
+	mp.log.Info("Client update threshold condition met",
+		zap.String("path_name", src.Info.PathName),
+		zap.String("chain_id", dst.Info.ChainID),
+		zap.String("client_id", dst.Info.ClientID),
+		zap.Int64("trusting_period", dst.ClientState.TrustingPeriod.Milliseconds()),
+		zap.Int64("time_since_client_update", time.Since(consensusHeightTime).Milliseconds()),
+		zap.Int64("client_threshold_time", mp.clientUpdateThresholdTime.Milliseconds()),
+	)
 }
 
 // assembleMessages will assemble all messages in parallel. This typically involves proof queries for each.
@@ -309,14 +362,38 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 	clientID := dst.Info.ClientID
 	clientConsensusHeight := dst.ClientState.ConsensusHeight
 	trustedConsensusHeight := dst.ClientTrustedState.ClientState.ConsensusHeight
+
+	if src.ChainProvider.Type() == "cardano" {
+		clientStateRes, err := dst.ChainProvider.QueryClientStateResponse(ctx, int64(dst.latestBlock.Height), clientID)
+		if err != nil {
+			return fmt.Errorf("failed to query the client state response: %w", err)
+		}
+		clientState, err := clienttypes.UnpackClientState(clientStateRes.ClientState)
+		if err != nil {
+			return fmt.Errorf("failed to unpack client state: %w", err)
+		}
+		ibcHeader, err := src.ChainProvider.QueryIBCMithrilHeader(ctx, int64(src.latestBlock.Height), &clientState)
+		if err != nil {
+			return err
+		}
+		msgUpdate, ok := ibcHeader.(*mithril.MithrilHeader)
+		if !ok {
+			return fmt.Errorf("failed to cast IBC header to MithrilHeader")
+		}
+
+		msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, msgUpdate)
+		if err != nil {
+			return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
+				int64(dst.latestBlock.Height), src.Info.ChainID, err)
+		}
+		mp.msgUpdateClient = msgUpdateClient
+		return nil
+	}
+
 	var trustedNextValidatorsHash []byte
-	//TODO: remove this comment and below
-	// check clientTrustedState.IBCHeader
 	if dst.ClientTrustedState.IBCHeader != nil {
 		trustedNextValidatorsHash = dst.ClientTrustedState.IBCHeader.NextValidatorsHash()
 	}
-
-	var counterpartyHeader ibcexported.ClientMessage
 
 	// If the client state height is not equal to the client trusted state height and the client state height is
 	// the latest block, we cannot send a MsgUpdateClient until another block is observed on the counterparty.
@@ -328,62 +405,10 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 				trustedConsensusHeight.RevisionHeight, clientConsensusHeight.RevisionHeight)
 		}
 
-		switch src.ChainProvider.Type() {
-		case "cardano":
-			blockData, err := src.ChainProvider.QueryBlockData(ctx, int64(clientConsensusHeight.RevisionHeight+1))
-			if err != nil {
-				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
-			}
-
-			//counterpartyHeader = blockData
-			//TODO: check this condition
-			//if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
-			//	!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
-			//	return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
-			//		"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
-			//		trustedConsensusHeight.RevisionHeight)
-			//}
-
-			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, blockData)
-			if err != nil {
-				return fmt.Errorf("error constructing MsgUpdateClient at height: %d for chain_id: %s, %w",
-					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
-			}
-			mp.msgUpdateClient = msgUpdateClient
-		case "cosmos":
-			header, err := src.ChainProvider.QueryIBCHeader(ctx, int64(clientConsensusHeight.RevisionHeight+1))
-			if err != nil {
-				return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
-					clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
-			}
-			dst.ClientTrustedState = provider.ClientTrustedState{
-				ClientState: dst.ClientState,
-				IBCHeader:   header,
-			}
-			trustedConsensusHeight = clientConsensusHeight
-			trustedNextValidatorsHash = header.NextValidatorsHash()
-			if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
-				!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
-				return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
-					"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
-					trustedConsensusHeight.RevisionHeight)
-			}
-			msgUpdateClientHeader, err := src.ChainProvider.MsgUpdateClientHeader(
-				src.latestHeader,
-				trustedConsensusHeight,
-				dst.ClientTrustedState.IBCHeader,
-			)
-			if err != nil {
-				return fmt.Errorf("error assembling new client header: %w", err)
-			}
-			counterpartyHeader = msgUpdateClientHeader
-			msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, counterpartyHeader)
-			if err != nil {
-				return fmt.Errorf("error assembling MsgUpdateClient: %w", err)
-			}
-
-			mp.msgUpdateClient = msgUpdateClient
+		header, err := src.ChainProvider.QueryIBCHeader(ctx, int64(clientConsensusHeight.RevisionHeight+1))
+		if err != nil {
+			return fmt.Errorf("error getting IBC header at height: %d for chain_id: %s, %w",
+				clientConsensusHeight.RevisionHeight+1, src.Info.ChainID, err)
 		}
 
 		mp.log.Debug("Had to query for client trusted IBC header",
@@ -394,7 +419,35 @@ func (mp *messageProcessor) assembleMsgUpdateClient(ctx context.Context, src, ds
 			zap.Uint64("height", clientConsensusHeight.RevisionHeight+1),
 			zap.Uint64("latest_height", src.latestBlock.Height),
 		)
+
+		dst.ClientTrustedState = provider.ClientTrustedState{
+			ClientState: dst.ClientState,
+			IBCHeader:   header,
+		}
+		trustedConsensusHeight = clientConsensusHeight
+		trustedNextValidatorsHash = header.NextValidatorsHash()
 	}
+
+	if src.latestHeader.Height() == trustedConsensusHeight.RevisionHeight &&
+		!bytes.Equal(src.latestHeader.NextValidatorsHash(), trustedNextValidatorsHash) {
+		return fmt.Errorf("latest header height is equal to the client trusted height: %d, "+
+			"need to wait for next block's header before we can assemble and send a new MsgUpdateClient",
+			trustedConsensusHeight.RevisionHeight)
+	}
+	msgUpdateClientHeader, err := src.ChainProvider.MsgUpdateClientHeader(
+		src.latestHeader,
+		trustedConsensusHeight,
+		dst.ClientTrustedState.IBCHeader,
+	)
+	if err != nil {
+		return fmt.Errorf("error assembling new client header: %w", err)
+	}
+	msgUpdateClient, err := dst.ChainProvider.MsgUpdateClient(clientID, msgUpdateClientHeader)
+	if err != nil {
+		return fmt.Errorf("error assembling MsgUpdateClient: %w", err)
+	}
+
+	mp.msgUpdateClient = msgUpdateClient
 
 	return nil
 }
@@ -408,8 +461,11 @@ func (mp *messageProcessor) trackAndSendMessages(
 	needsClientUpdate bool,
 ) error {
 	broadcastBatch := dst.ChainProvider.ProviderConfig().BroadcastMode() == provider.BroadcastModeBatch
+	if dst.ChainProvider.ChainId() == "cardano" {
+		//todo: remove when able to send batch tx in cardano
+		broadcastBatch = false
+	}
 	var batch []messageToTrack
-
 	for _, t := range mp.trackers() {
 
 		retries := dst.trackProcessingMessage(t)

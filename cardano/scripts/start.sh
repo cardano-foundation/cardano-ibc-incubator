@@ -79,6 +79,7 @@ if [ ! -d "$folder" ]; then
 fi
 
 cp deployments/handler.json gateway/src/deployment/handler.json
+cp deployments/handler.json ../relayer/examples/demo/configs/chains/chain_handler.json
 
 # prepare tokenName
 tokenName=$(cat ./deployments/handler.json | jq -r .tokens.mock)
@@ -88,8 +89,8 @@ replacement="amount2=1000-$tokenName"
 # Use sed to replace the line in the file
 sed_i_wrapper -i "s/^amount2=1000.*/$replacement/gm" "$file_path"
 
-cd ./gateway
-cp ./.env.example .env
-# ${DOCKER_COMPOSE_CMD} build
-${DOCKER_COMPOSE_CMD} stop
-${DOCKER_COMPOSE_CMD} up -d --build
+# cd ./gateway
+# cp ./.env.example .env
+# # ${DOCKER_COMPOSE_CMD} build
+# ${DOCKER_COMPOSE_CMD} stop
+# ${DOCKER_COMPOSE_CMD} up -d --build

@@ -15,14 +15,17 @@ import {
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
 import { ClientState as ClientStateMsg } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
+import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { CardanoClientState } from '@shared/types/cardano';
 import { initializeCardanoClientState } from '@shared/helpers/cardano-client';
 import { ConnectionOpenTryOperator } from '../dto/connection/connection-open-try-operator.dto';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ConnectionOpenAckOperator } from '../dto/connection/connection-open-ack-operator.dto';
-import { decodeClientStateOuroboros, decodeMerkleProof } from './helper';
+import { decodeClientStateMithril, decodeClientStateOuroboros, decodeMerkleProof } from './helper';
 import { ConnectionOpenConfirmOperator } from '../dto/connection/connection-open-confirm-operator.dto';
+import { MithrilClientState } from '../../shared/types/mithril';
+import { initializeMithrilClientState } from '../../shared/helpers/mithril-client';
 export function validateAndFormatConnectionOpenInitParams(data: MsgConnectionOpenInit): {
   constructedAddress: string;
   connectionOpenInitOperator: ConnectionOpenInitOperator;
@@ -70,8 +73,8 @@ export function validateAndFormatConnectionOpenTryParams(data: MsgConnectionOpen
   const clientSequence: string = data.client_id.replaceAll(`${CLIENT_ID_PREFIX}-`, '');
   const decodedProofInitMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_init);
   const decodedProofClientMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_client);
-  const decodedCardanoClientStateMsg: ClientStateMsg = ClientStateMsg.decode(data.client_state.value);
-  const clientState: CardanoClientState = initializeCardanoClientState(decodedCardanoClientStateMsg);
+  const decodedCardanoClientStateMsg: ClientStateMithrilMsg = ClientStateMithrilMsg.decode(data.client_state.value);
+  const clientState: MithrilClientState = initializeMithrilClientState(decodedCardanoClientStateMsg);
   // Prepare the connection open try operator object
   const connectionOpenTryOperator: ConnectionOpenTryOperator = {
     clientId: clientSequence,
@@ -114,8 +117,8 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const connectionSequence = data.connection_id.replaceAll(`${CONNECTION_ID_PREFIX}-`, '');
   const decodedProofTryMsg: MerkleProofMsg = decodeMerkleProof(data.proof_try);
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
-  const decodedCardanoClientStateMsg: ClientStateMsg = decodeClientStateOuroboros(data.client_state.value);
-  let clientState: CardanoClientState = initializeCardanoClientState(decodedCardanoClientStateMsg);
+  const decodedMithrilClientStateMsg: ClientStateMithrilMsg = decodeClientStateMithril(data.client_state.value);
+  let clientState: MithrilClientState = initializeMithrilClientState(decodedMithrilClientStateMsg);
 
   // Prepare the connection open ack operator object
   const connectionOpenAckOperator: ConnectionOpenAckOperator = {

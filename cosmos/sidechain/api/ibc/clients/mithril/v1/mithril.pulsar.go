@@ -8,20 +8,23 @@ import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoiface "google.golang.org/protobuf/runtime/protoiface"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 	io "io"
 	reflect "reflect"
 	sync "sync"
 )
 
 var (
-	md_Height                protoreflect.MessageDescriptor
-	fd_Height_mithril_height protoreflect.FieldDescriptor
+	md_Height                 protoreflect.MessageDescriptor
+	fd_Height_revision_number protoreflect.FieldDescriptor
+	fd_Height_revision_height protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_Height = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("Height")
-	fd_Height_mithril_height = md_Height.Fields().ByName("mithril_height")
+	fd_Height_revision_number = md_Height.Fields().ByName("revision_number")
+	fd_Height_revision_height = md_Height.Fields().ByName("revision_height")
 }
 
 var _ protoreflect.Message = (*fastReflection_Height)(nil)
@@ -89,9 +92,15 @@ func (x *fastReflection_Height) Interface() protoreflect.ProtoMessage {
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_Height) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.MithrilHeight != uint64(0) {
-		value := protoreflect.ValueOfUint64(x.MithrilHeight)
-		if !f(fd_Height_mithril_height, value) {
+	if x.RevisionNumber != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.RevisionNumber)
+		if !f(fd_Height_revision_number, value) {
+			return
+		}
+	}
+	if x.RevisionHeight != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.RevisionHeight)
+		if !f(fd_Height_revision_height, value) {
 			return
 		}
 	}
@@ -110,8 +119,10 @@ func (x *fastReflection_Height) Range(f func(protoreflect.FieldDescriptor, proto
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_Height) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
-		return x.MithrilHeight != uint64(0)
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		return x.RevisionNumber != uint64(0)
+	case "ibc.clients.mithril.v1.Height.revision_height":
+		return x.RevisionHeight != uint64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Height"))
@@ -128,8 +139,10 @@ func (x *fastReflection_Height) Has(fd protoreflect.FieldDescriptor) bool {
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Height) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
-		x.MithrilHeight = uint64(0)
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		x.RevisionNumber = uint64(0)
+	case "ibc.clients.mithril.v1.Height.revision_height":
+		x.RevisionHeight = uint64(0)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Height"))
@@ -146,8 +159,11 @@ func (x *fastReflection_Height) Clear(fd protoreflect.FieldDescriptor) {
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_Height) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
-		value := x.MithrilHeight
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		value := x.RevisionNumber
+		return protoreflect.ValueOfUint64(value)
+	case "ibc.clients.mithril.v1.Height.revision_height":
+		value := x.RevisionHeight
 		return protoreflect.ValueOfUint64(value)
 	default:
 		if descriptor.IsExtension() {
@@ -169,8 +185,10 @@ func (x *fastReflection_Height) Get(descriptor protoreflect.FieldDescriptor) pro
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Height) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
-		x.MithrilHeight = value.Uint()
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		x.RevisionNumber = value.Uint()
+	case "ibc.clients.mithril.v1.Height.revision_height":
+		x.RevisionHeight = value.Uint()
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Height"))
@@ -191,8 +209,10 @@ func (x *fastReflection_Height) Set(fd protoreflect.FieldDescriptor, value proto
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_Height) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
-		panic(fmt.Errorf("field mithril_height of message ibc.clients.mithril.v1.Height is not mutable"))
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		panic(fmt.Errorf("field revision_number of message ibc.clients.mithril.v1.Height is not mutable"))
+	case "ibc.clients.mithril.v1.Height.revision_height":
+		panic(fmt.Errorf("field revision_height of message ibc.clients.mithril.v1.Height is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Height"))
@@ -206,7 +226,9 @@ func (x *fastReflection_Height) Mutable(fd protoreflect.FieldDescriptor) protore
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_Height) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.Height.mithril_height":
+	case "ibc.clients.mithril.v1.Height.revision_number":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.Height.revision_height":
 		return protoreflect.ValueOfUint64(uint64(0))
 	default:
 		if fd.IsExtension() {
@@ -277,8 +299,11 @@ func (x *fastReflection_Height) ProtoMethods() *protoiface.Methods {
 		var n int
 		var l int
 		_ = l
-		if x.MithrilHeight != 0 {
-			n += 1 + runtime.Sov(uint64(x.MithrilHeight))
+		if x.RevisionNumber != 0 {
+			n += 1 + runtime.Sov(uint64(x.RevisionNumber))
+		}
+		if x.RevisionHeight != 0 {
+			n += 1 + runtime.Sov(uint64(x.RevisionHeight))
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -309,8 +334,13 @@ func (x *fastReflection_Height) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.MithrilHeight != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.MithrilHeight))
+		if x.RevisionHeight != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.RevisionHeight))
+			i--
+			dAtA[i] = 0x10
+		}
+		if x.RevisionNumber != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.RevisionNumber))
 			i--
 			dAtA[i] = 0x8
 		}
@@ -365,9 +395,9 @@ func (x *fastReflection_Height) ProtoMethods() *protoiface.Methods {
 			switch fieldNum {
 			case 1:
 				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilHeight", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RevisionNumber", wireType)
 				}
-				x.MithrilHeight = 0
+				x.RevisionNumber = 0
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -377,7 +407,26 @@ func (x *fastReflection_Height) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.MithrilHeight |= uint64(b&0x7F) << shift
+					x.RevisionNumber |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field RevisionHeight", wireType)
+				}
+				x.RevisionHeight = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.RevisionHeight |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
@@ -575,8 +624,8 @@ func (x *fastReflection_ClientState) Range(f func(protoreflect.FieldDescriptor, 
 			return
 		}
 	}
-	if x.TrustingPeriod != uint64(0) {
-		value := protoreflect.ValueOfUint64(x.TrustingPeriod)
+	if x.TrustingPeriod != nil {
+		value := protoreflect.ValueOfMessage(x.TrustingPeriod.ProtoReflect())
 		if !f(fd_ClientState_trusting_period, value) {
 			return
 		}
@@ -617,7 +666,7 @@ func (x *fastReflection_ClientState) Has(fd protoreflect.FieldDescriptor) bool {
 	case "ibc.clients.mithril.v1.ClientState.current_epoch":
 		return x.CurrentEpoch != uint64(0)
 	case "ibc.clients.mithril.v1.ClientState.trusting_period":
-		return x.TrustingPeriod != uint64(0)
+		return x.TrustingPeriod != nil
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		return x.ProtocolParameters != nil
 	case "ibc.clients.mithril.v1.ClientState.upgrade_path":
@@ -647,7 +696,7 @@ func (x *fastReflection_ClientState) Clear(fd protoreflect.FieldDescriptor) {
 	case "ibc.clients.mithril.v1.ClientState.current_epoch":
 		x.CurrentEpoch = uint64(0)
 	case "ibc.clients.mithril.v1.ClientState.trusting_period":
-		x.TrustingPeriod = uint64(0)
+		x.TrustingPeriod = nil
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		x.ProtocolParameters = nil
 	case "ibc.clients.mithril.v1.ClientState.upgrade_path":
@@ -682,7 +731,7 @@ func (x *fastReflection_ClientState) Get(descriptor protoreflect.FieldDescriptor
 		return protoreflect.ValueOfUint64(value)
 	case "ibc.clients.mithril.v1.ClientState.trusting_period":
 		value := x.TrustingPeriod
-		return protoreflect.ValueOfUint64(value)
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		value := x.ProtocolParameters
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
@@ -721,7 +770,7 @@ func (x *fastReflection_ClientState) Set(fd protoreflect.FieldDescriptor, value 
 	case "ibc.clients.mithril.v1.ClientState.current_epoch":
 		x.CurrentEpoch = value.Uint()
 	case "ibc.clients.mithril.v1.ClientState.trusting_period":
-		x.TrustingPeriod = value.Uint()
+		x.TrustingPeriod = value.Message().Interface().(*durationpb.Duration)
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		x.ProtocolParameters = value.Message().Interface().(*MithrilProtocolParameters)
 	case "ibc.clients.mithril.v1.ClientState.upgrade_path":
@@ -758,6 +807,11 @@ func (x *fastReflection_ClientState) Mutable(fd protoreflect.FieldDescriptor) pr
 			x.FrozenHeight = new(Height)
 		}
 		return protoreflect.ValueOfMessage(x.FrozenHeight.ProtoReflect())
+	case "ibc.clients.mithril.v1.ClientState.trusting_period":
+		if x.TrustingPeriod == nil {
+			x.TrustingPeriod = new(durationpb.Duration)
+		}
+		return protoreflect.ValueOfMessage(x.TrustingPeriod.ProtoReflect())
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		if x.ProtocolParameters == nil {
 			x.ProtocolParameters = new(MithrilProtocolParameters)
@@ -773,8 +827,6 @@ func (x *fastReflection_ClientState) Mutable(fd protoreflect.FieldDescriptor) pr
 		panic(fmt.Errorf("field chain_id of message ibc.clients.mithril.v1.ClientState is not mutable"))
 	case "ibc.clients.mithril.v1.ClientState.current_epoch":
 		panic(fmt.Errorf("field current_epoch of message ibc.clients.mithril.v1.ClientState is not mutable"))
-	case "ibc.clients.mithril.v1.ClientState.trusting_period":
-		panic(fmt.Errorf("field trusting_period of message ibc.clients.mithril.v1.ClientState is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ClientState"))
@@ -799,7 +851,8 @@ func (x *fastReflection_ClientState) NewField(fd protoreflect.FieldDescriptor) p
 	case "ibc.clients.mithril.v1.ClientState.current_epoch":
 		return protoreflect.ValueOfUint64(uint64(0))
 	case "ibc.clients.mithril.v1.ClientState.trusting_period":
-		return protoreflect.ValueOfUint64(uint64(0))
+		m := new(durationpb.Duration)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	case "ibc.clients.mithril.v1.ClientState.protocol_parameters":
 		m := new(MithrilProtocolParameters)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
@@ -890,8 +943,9 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 		if x.CurrentEpoch != 0 {
 			n += 1 + runtime.Sov(uint64(x.CurrentEpoch))
 		}
-		if x.TrustingPeriod != 0 {
-			n += 1 + runtime.Sov(uint64(x.TrustingPeriod))
+		if x.TrustingPeriod != nil {
+			l = options.Size(x.TrustingPeriod)
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.ProtocolParameters != nil {
 			l = options.Size(x.ProtocolParameters)
@@ -955,10 +1009,19 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 			i--
 			dAtA[i] = 0x32
 		}
-		if x.TrustingPeriod != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.TrustingPeriod))
+		if x.TrustingPeriod != nil {
+			encoded, err := options.Marshal(x.TrustingPeriod)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
-			dAtA[i] = 0x28
+			dAtA[i] = 0x2a
 		}
 		if x.CurrentEpoch != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.CurrentEpoch))
@@ -1173,10 +1236,10 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 					}
 				}
 			case 5:
-				if wireType != 0 {
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TrustingPeriod", wireType)
 				}
-				x.TrustingPeriod = 0
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1186,11 +1249,28 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.TrustingPeriod |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.TrustingPeriod == nil {
+					x.TrustingPeriod = &durationpb.Duration{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TrustingPeriod); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			case 6:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ProtocolParameters", wireType)
@@ -1295,18 +1375,18 @@ func (x *fastReflection_ClientState) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_ConsensusState                                        protoreflect.MessageDescriptor
-	fd_ConsensusState_timestamp                              protoreflect.FieldDescriptor
-	fd_ConsensusState_mithril_stake_distribution_certificate protoreflect.FieldDescriptor
-	fd_ConsensusState_transaction_snapshot_certificate       protoreflect.FieldDescriptor
+	md_ConsensusState                              protoreflect.MessageDescriptor
+	fd_ConsensusState_timestamp                    protoreflect.FieldDescriptor
+	fd_ConsensusState_first_cert_hash_latest_epoch protoreflect.FieldDescriptor
+	fd_ConsensusState_latest_cert_hash_tx_snapshot protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_ConsensusState = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("ConsensusState")
 	fd_ConsensusState_timestamp = md_ConsensusState.Fields().ByName("timestamp")
-	fd_ConsensusState_mithril_stake_distribution_certificate = md_ConsensusState.Fields().ByName("mithril_stake_distribution_certificate")
-	fd_ConsensusState_transaction_snapshot_certificate = md_ConsensusState.Fields().ByName("transaction_snapshot_certificate")
+	fd_ConsensusState_first_cert_hash_latest_epoch = md_ConsensusState.Fields().ByName("first_cert_hash_latest_epoch")
+	fd_ConsensusState_latest_cert_hash_tx_snapshot = md_ConsensusState.Fields().ByName("latest_cert_hash_tx_snapshot")
 }
 
 var _ protoreflect.Message = (*fastReflection_ConsensusState)(nil)
@@ -1380,15 +1460,15 @@ func (x *fastReflection_ConsensusState) Range(f func(protoreflect.FieldDescripto
 			return
 		}
 	}
-	if x.MithrilStakeDistributionCertificate != nil {
-		value := protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
-		if !f(fd_ConsensusState_mithril_stake_distribution_certificate, value) {
+	if x.FirstCertHashLatestEpoch != nil {
+		value := protoreflect.ValueOfMessage(x.FirstCertHashLatestEpoch.ProtoReflect())
+		if !f(fd_ConsensusState_first_cert_hash_latest_epoch, value) {
 			return
 		}
 	}
-	if x.TransactionSnapshotCertificate != nil {
-		value := protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
-		if !f(fd_ConsensusState_transaction_snapshot_certificate, value) {
+	if x.LatestCertHashTxSnapshot != "" {
+		value := protoreflect.ValueOfString(x.LatestCertHashTxSnapshot)
+		if !f(fd_ConsensusState_latest_cert_hash_tx_snapshot, value) {
 			return
 		}
 	}
@@ -1409,10 +1489,10 @@ func (x *fastReflection_ConsensusState) Has(fd protoreflect.FieldDescriptor) boo
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		return x.Timestamp != uint64(0)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		return x.MithrilStakeDistributionCertificate != nil
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		return x.TransactionSnapshotCertificate != nil
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
+		return x.FirstCertHashLatestEpoch != nil
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		return x.LatestCertHashTxSnapshot != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1431,10 +1511,10 @@ func (x *fastReflection_ConsensusState) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		x.Timestamp = uint64(0)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		x.MithrilStakeDistributionCertificate = nil
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		x.TransactionSnapshotCertificate = nil
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
+		x.FirstCertHashLatestEpoch = nil
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		x.LatestCertHashTxSnapshot = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1454,12 +1534,12 @@ func (x *fastReflection_ConsensusState) Get(descriptor protoreflect.FieldDescrip
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		value := x.Timestamp
 		return protoreflect.ValueOfUint64(value)
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		value := x.MithrilStakeDistributionCertificate
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
+		value := x.FirstCertHashLatestEpoch
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		value := x.TransactionSnapshotCertificate
-		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		value := x.LatestCertHashTxSnapshot
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1482,10 +1562,10 @@ func (x *fastReflection_ConsensusState) Set(fd protoreflect.FieldDescriptor, val
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		x.Timestamp = value.Uint()
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		x.MithrilStakeDistributionCertificate = value.Message().Interface().(*MithrilCertificate)
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		x.TransactionSnapshotCertificate = value.Message().Interface().(*MithrilCertificate)
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
+		x.FirstCertHashLatestEpoch = value.Message().Interface().(*MithrilCertificate)
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		x.LatestCertHashTxSnapshot = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1506,18 +1586,15 @@ func (x *fastReflection_ConsensusState) Set(fd protoreflect.FieldDescriptor, val
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ConsensusState) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
-		if x.MithrilStakeDistributionCertificate == nil {
-			x.MithrilStakeDistributionCertificate = new(MithrilCertificate)
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
+		if x.FirstCertHashLatestEpoch == nil {
+			x.FirstCertHashLatestEpoch = new(MithrilCertificate)
 		}
-		return protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		if x.TransactionSnapshotCertificate == nil {
-			x.TransactionSnapshotCertificate = new(MithrilCertificate)
-		}
-		return protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
+		return protoreflect.ValueOfMessage(x.FirstCertHashLatestEpoch.ProtoReflect())
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		panic(fmt.Errorf("field timestamp of message ibc.clients.mithril.v1.ConsensusState is not mutable"))
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		panic(fmt.Errorf("field latest_cert_hash_tx_snapshot of message ibc.clients.mithril.v1.ConsensusState is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1533,12 +1610,11 @@ func (x *fastReflection_ConsensusState) NewField(fd protoreflect.FieldDescriptor
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.ConsensusState.timestamp":
 		return protoreflect.ValueOfUint64(uint64(0))
-	case "ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate":
+	case "ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch":
 		m := new(MithrilCertificate)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate":
-		m := new(MithrilCertificate)
-		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "ibc.clients.mithril.v1.ConsensusState.latest_cert_hash_tx_snapshot":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ConsensusState"))
@@ -1611,12 +1687,12 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 		if x.Timestamp != 0 {
 			n += 1 + runtime.Sov(uint64(x.Timestamp))
 		}
-		if x.MithrilStakeDistributionCertificate != nil {
-			l = options.Size(x.MithrilStakeDistributionCertificate)
+		if x.FirstCertHashLatestEpoch != nil {
+			l = options.Size(x.FirstCertHashLatestEpoch)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.TransactionSnapshotCertificate != nil {
-			l = options.Size(x.TransactionSnapshotCertificate)
+		l = len(x.LatestCertHashTxSnapshot)
+		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -1648,22 +1724,15 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.TransactionSnapshotCertificate != nil {
-			encoded, err := options.Marshal(x.TransactionSnapshotCertificate)
-			if err != nil {
-				return protoiface.MarshalOutput{
-					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-					Buf:               input.Buf,
-				}, err
-			}
-			i -= len(encoded)
-			copy(dAtA[i:], encoded)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		if len(x.LatestCertHashTxSnapshot) > 0 {
+			i -= len(x.LatestCertHashTxSnapshot)
+			copy(dAtA[i:], x.LatestCertHashTxSnapshot)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.LatestCertHashTxSnapshot)))
 			i--
 			dAtA[i] = 0x1a
 		}
-		if x.MithrilStakeDistributionCertificate != nil {
-			encoded, err := options.Marshal(x.MithrilStakeDistributionCertificate)
+		if x.FirstCertHashLatestEpoch != nil {
+			encoded, err := options.Marshal(x.FirstCertHashLatestEpoch)
 			if err != nil {
 				return protoiface.MarshalOutput{
 					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
@@ -1751,7 +1820,7 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 				}
 			case 2:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificate", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field FirstCertHashLatestEpoch", wireType)
 				}
 				var msglen int
 				for shift := uint(0); ; shift += 7 {
@@ -1778,18 +1847,18 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.MithrilStakeDistributionCertificate == nil {
-					x.MithrilStakeDistributionCertificate = &MithrilCertificate{}
+				if x.FirstCertHashLatestEpoch == nil {
+					x.FirstCertHashLatestEpoch = &MithrilCertificate{}
 				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MithrilStakeDistributionCertificate); err != nil {
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.FirstCertHashLatestEpoch); err != nil {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificate", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field LatestCertHashTxSnapshot", wireType)
 				}
-				var msglen int
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -1799,27 +1868,23 @@ func (x *fastReflection_ConsensusState) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					msglen |= int(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				if msglen < 0 {
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + msglen
+				postIndex := iNdEx + intStringLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.TransactionSnapshotCertificate == nil {
-					x.TransactionSnapshotCertificate = &MithrilCertificate{}
-				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TransactionSnapshotCertificate); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
+				x.LatestCertHashTxSnapshot = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -2435,20 +2500,20 @@ func (x *fastReflection_Misbehaviour) ProtoMethods() *protoiface.Methods {
 }
 
 var (
-	md_MithrilHeader                                             protoreflect.MessageDescriptor
-	fd_MithrilHeader_mithril_stake_distribution                  protoreflect.FieldDescriptor
-	fd_MithrilHeader_mithril_stake_distribution_certificate_hash protoreflect.FieldDescriptor
-	fd_MithrilHeader_transaction_snapshot                        protoreflect.FieldDescriptor
-	fd_MithrilHeader_transaction_snapshot_certificate_hash       protoreflect.FieldDescriptor
+	md_MithrilHeader                                        protoreflect.MessageDescriptor
+	fd_MithrilHeader_mithril_stake_distribution             protoreflect.FieldDescriptor
+	fd_MithrilHeader_mithril_stake_distribution_certificate protoreflect.FieldDescriptor
+	fd_MithrilHeader_transaction_snapshot                   protoreflect.FieldDescriptor
+	fd_MithrilHeader_transaction_snapshot_certificate       protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_MithrilHeader = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("MithrilHeader")
 	fd_MithrilHeader_mithril_stake_distribution = md_MithrilHeader.Fields().ByName("mithril_stake_distribution")
-	fd_MithrilHeader_mithril_stake_distribution_certificate_hash = md_MithrilHeader.Fields().ByName("mithril_stake_distribution_certificate_hash")
+	fd_MithrilHeader_mithril_stake_distribution_certificate = md_MithrilHeader.Fields().ByName("mithril_stake_distribution_certificate")
 	fd_MithrilHeader_transaction_snapshot = md_MithrilHeader.Fields().ByName("transaction_snapshot")
-	fd_MithrilHeader_transaction_snapshot_certificate_hash = md_MithrilHeader.Fields().ByName("transaction_snapshot_certificate_hash")
+	fd_MithrilHeader_transaction_snapshot_certificate = md_MithrilHeader.Fields().ByName("transaction_snapshot_certificate")
 }
 
 var _ protoreflect.Message = (*fastReflection_MithrilHeader)(nil)
@@ -2522,9 +2587,9 @@ func (x *fastReflection_MithrilHeader) Range(f func(protoreflect.FieldDescriptor
 			return
 		}
 	}
-	if x.MithrilStakeDistributionCertificateHash != "" {
-		value := protoreflect.ValueOfString(x.MithrilStakeDistributionCertificateHash)
-		if !f(fd_MithrilHeader_mithril_stake_distribution_certificate_hash, value) {
+	if x.MithrilStakeDistributionCertificate != nil {
+		value := protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
+		if !f(fd_MithrilHeader_mithril_stake_distribution_certificate, value) {
 			return
 		}
 	}
@@ -2534,9 +2599,9 @@ func (x *fastReflection_MithrilHeader) Range(f func(protoreflect.FieldDescriptor
 			return
 		}
 	}
-	if x.TransactionSnapshotCertificateHash != "" {
-		value := protoreflect.ValueOfString(x.TransactionSnapshotCertificateHash)
-		if !f(fd_MithrilHeader_transaction_snapshot_certificate_hash, value) {
+	if x.TransactionSnapshotCertificate != nil {
+		value := protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
+		if !f(fd_MithrilHeader_transaction_snapshot_certificate, value) {
 			return
 		}
 	}
@@ -2557,12 +2622,12 @@ func (x *fastReflection_MithrilHeader) Has(fd protoreflect.FieldDescriptor) bool
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		return x.MithrilStakeDistribution != nil
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		return x.MithrilStakeDistributionCertificateHash != ""
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		return x.MithrilStakeDistributionCertificate != nil
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		return x.TransactionSnapshot != nil
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		return x.TransactionSnapshotCertificateHash != ""
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		return x.TransactionSnapshotCertificate != nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2581,12 +2646,12 @@ func (x *fastReflection_MithrilHeader) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		x.MithrilStakeDistribution = nil
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		x.MithrilStakeDistributionCertificateHash = ""
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		x.MithrilStakeDistributionCertificate = nil
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		x.TransactionSnapshot = nil
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		x.TransactionSnapshotCertificateHash = ""
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		x.TransactionSnapshotCertificate = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2606,15 +2671,15 @@ func (x *fastReflection_MithrilHeader) Get(descriptor protoreflect.FieldDescript
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		value := x.MithrilStakeDistribution
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		value := x.MithrilStakeDistributionCertificateHash
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		value := x.MithrilStakeDistributionCertificate
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		value := x.TransactionSnapshot
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		value := x.TransactionSnapshotCertificateHash
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		value := x.TransactionSnapshotCertificate
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2637,12 +2702,12 @@ func (x *fastReflection_MithrilHeader) Set(fd protoreflect.FieldDescriptor, valu
 	switch fd.FullName() {
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		x.MithrilStakeDistribution = value.Message().Interface().(*MithrilStakeDistribution)
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		x.MithrilStakeDistributionCertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		x.MithrilStakeDistributionCertificate = value.Message().Interface().(*MithrilCertificate)
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		x.TransactionSnapshot = value.Message().Interface().(*CardanoTransactionSnapshot)
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		x.TransactionSnapshotCertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		x.TransactionSnapshotCertificate = value.Message().Interface().(*MithrilCertificate)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2668,15 +2733,21 @@ func (x *fastReflection_MithrilHeader) Mutable(fd protoreflect.FieldDescriptor) 
 			x.MithrilStakeDistribution = new(MithrilStakeDistribution)
 		}
 		return protoreflect.ValueOfMessage(x.MithrilStakeDistribution.ProtoReflect())
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		if x.MithrilStakeDistributionCertificate == nil {
+			x.MithrilStakeDistributionCertificate = new(MithrilCertificate)
+		}
+		return protoreflect.ValueOfMessage(x.MithrilStakeDistributionCertificate.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		if x.TransactionSnapshot == nil {
 			x.TransactionSnapshot = new(CardanoTransactionSnapshot)
 		}
 		return protoreflect.ValueOfMessage(x.TransactionSnapshot.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		panic(fmt.Errorf("field mithril_stake_distribution_certificate_hash of message ibc.clients.mithril.v1.MithrilHeader is not mutable"))
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		panic(fmt.Errorf("field transaction_snapshot_certificate_hash of message ibc.clients.mithril.v1.MithrilHeader is not mutable"))
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		if x.TransactionSnapshotCertificate == nil {
+			x.TransactionSnapshotCertificate = new(MithrilCertificate)
+		}
+		return protoreflect.ValueOfMessage(x.TransactionSnapshotCertificate.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2693,13 +2764,15 @@ func (x *fastReflection_MithrilHeader) NewField(fd protoreflect.FieldDescriptor)
 	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution":
 		m := new(MithrilStakeDistribution)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate_hash":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate":
+		m := new(MithrilCertificate)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot":
 		m := new(CardanoTransactionSnapshot)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate_hash":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate":
+		m := new(MithrilCertificate)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilHeader"))
@@ -2773,16 +2846,16 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			l = options.Size(x.MithrilStakeDistribution)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.MithrilStakeDistributionCertificateHash)
-		if l > 0 {
+		if x.MithrilStakeDistributionCertificate != nil {
+			l = options.Size(x.MithrilStakeDistributionCertificate)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.TransactionSnapshot != nil {
 			l = options.Size(x.TransactionSnapshot)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.TransactionSnapshotCertificateHash)
-		if l > 0 {
+		if x.TransactionSnapshotCertificate != nil {
+			l = options.Size(x.TransactionSnapshotCertificate)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -2814,10 +2887,17 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.TransactionSnapshotCertificateHash) > 0 {
-			i -= len(x.TransactionSnapshotCertificateHash)
-			copy(dAtA[i:], x.TransactionSnapshotCertificateHash)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.TransactionSnapshotCertificateHash)))
+		if x.TransactionSnapshotCertificate != nil {
+			encoded, err := options.Marshal(x.TransactionSnapshotCertificate)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
 			dAtA[i] = 0x22
 		}
@@ -2835,10 +2915,17 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 			i--
 			dAtA[i] = 0x1a
 		}
-		if len(x.MithrilStakeDistributionCertificateHash) > 0 {
-			i -= len(x.MithrilStakeDistributionCertificateHash)
-			copy(dAtA[i:], x.MithrilStakeDistributionCertificateHash)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MithrilStakeDistributionCertificateHash)))
+		if x.MithrilStakeDistributionCertificate != nil {
+			encoded, err := options.Marshal(x.MithrilStakeDistributionCertificate)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
 			dAtA[i] = 0x12
 		}
@@ -2943,9 +3030,9 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 2:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificateHash", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistributionCertificate", wireType)
 				}
-				var stringLen uint64
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -2955,23 +3042,27 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if msglen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + msglen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.MithrilStakeDistributionCertificateHash = string(dAtA[iNdEx:postIndex])
+				if x.MithrilStakeDistributionCertificate == nil {
+					x.MithrilStakeDistributionCertificate = &MithrilCertificate{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MithrilStakeDistributionCertificate); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
 				iNdEx = postIndex
 			case 3:
 				if wireType != 2 {
@@ -3011,9 +3102,9 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 				iNdEx = postIndex
 			case 4:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificateHash", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field TransactionSnapshotCertificate", wireType)
 				}
-				var stringLen uint64
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -3023,23 +3114,27 @@ func (x *fastReflection_MithrilHeader) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
+				if msglen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + intStringLen
+				postIndex := iNdEx + msglen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				x.TransactionSnapshotCertificateHash = string(dAtA[iNdEx:postIndex])
+				if x.TransactionSnapshotCertificate == nil {
+					x.TransactionSnapshotCertificate = &MithrilCertificate{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.TransactionSnapshotCertificate); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -3875,21 +3970,23 @@ func (x *fastReflection_MithrilStakeDistribution) ProtoMethods() *protoiface.Met
 
 var (
 	md_CardanoTransactionSnapshot                  protoreflect.MessageDescriptor
-	fd_CardanoTransactionSnapshot_snapshot_hash    protoreflect.FieldDescriptor
 	fd_CardanoTransactionSnapshot_merkle_root      protoreflect.FieldDescriptor
-	fd_CardanoTransactionSnapshot_certificate_hash protoreflect.FieldDescriptor
 	fd_CardanoTransactionSnapshot_epoch            protoreflect.FieldDescriptor
-	fd_CardanoTransactionSnapshot_height           protoreflect.FieldDescriptor
+	fd_CardanoTransactionSnapshot_block_number     protoreflect.FieldDescriptor
+	fd_CardanoTransactionSnapshot_hash             protoreflect.FieldDescriptor
+	fd_CardanoTransactionSnapshot_certificate_hash protoreflect.FieldDescriptor
+	fd_CardanoTransactionSnapshot_created_at       protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_CardanoTransactionSnapshot = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CardanoTransactionSnapshot")
-	fd_CardanoTransactionSnapshot_snapshot_hash = md_CardanoTransactionSnapshot.Fields().ByName("snapshot_hash")
 	fd_CardanoTransactionSnapshot_merkle_root = md_CardanoTransactionSnapshot.Fields().ByName("merkle_root")
-	fd_CardanoTransactionSnapshot_certificate_hash = md_CardanoTransactionSnapshot.Fields().ByName("certificate_hash")
 	fd_CardanoTransactionSnapshot_epoch = md_CardanoTransactionSnapshot.Fields().ByName("epoch")
-	fd_CardanoTransactionSnapshot_height = md_CardanoTransactionSnapshot.Fields().ByName("height")
+	fd_CardanoTransactionSnapshot_block_number = md_CardanoTransactionSnapshot.Fields().ByName("block_number")
+	fd_CardanoTransactionSnapshot_hash = md_CardanoTransactionSnapshot.Fields().ByName("hash")
+	fd_CardanoTransactionSnapshot_certificate_hash = md_CardanoTransactionSnapshot.Fields().ByName("certificate_hash")
+	fd_CardanoTransactionSnapshot_created_at = md_CardanoTransactionSnapshot.Fields().ByName("created_at")
 }
 
 var _ protoreflect.Message = (*fastReflection_CardanoTransactionSnapshot)(nil)
@@ -3957,21 +4054,9 @@ func (x *fastReflection_CardanoTransactionSnapshot) Interface() protoreflect.Pro
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_CardanoTransactionSnapshot) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.SnapshotHash != "" {
-		value := protoreflect.ValueOfString(x.SnapshotHash)
-		if !f(fd_CardanoTransactionSnapshot_snapshot_hash, value) {
-			return
-		}
-	}
 	if x.MerkleRoot != "" {
 		value := protoreflect.ValueOfString(x.MerkleRoot)
 		if !f(fd_CardanoTransactionSnapshot_merkle_root, value) {
-			return
-		}
-	}
-	if x.CertificateHash != "" {
-		value := protoreflect.ValueOfString(x.CertificateHash)
-		if !f(fd_CardanoTransactionSnapshot_certificate_hash, value) {
 			return
 		}
 	}
@@ -3981,9 +4066,27 @@ func (x *fastReflection_CardanoTransactionSnapshot) Range(f func(protoreflect.Fi
 			return
 		}
 	}
-	if x.Height != nil {
-		value := protoreflect.ValueOfMessage(x.Height.ProtoReflect())
-		if !f(fd_CardanoTransactionSnapshot_height, value) {
+	if x.BlockNumber != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.BlockNumber)
+		if !f(fd_CardanoTransactionSnapshot_block_number, value) {
+			return
+		}
+	}
+	if x.Hash != "" {
+		value := protoreflect.ValueOfString(x.Hash)
+		if !f(fd_CardanoTransactionSnapshot_hash, value) {
+			return
+		}
+	}
+	if x.CertificateHash != "" {
+		value := protoreflect.ValueOfString(x.CertificateHash)
+		if !f(fd_CardanoTransactionSnapshot_certificate_hash, value) {
+			return
+		}
+	}
+	if x.CreatedAt != "" {
+		value := protoreflect.ValueOfString(x.CreatedAt)
+		if !f(fd_CardanoTransactionSnapshot_created_at, value) {
 			return
 		}
 	}
@@ -4002,16 +4105,18 @@ func (x *fastReflection_CardanoTransactionSnapshot) Range(f func(protoreflect.Fi
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_CardanoTransactionSnapshot) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		return x.SnapshotHash != ""
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
 		return x.MerkleRoot != ""
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
-		return x.CertificateHash != ""
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		return x.Epoch != uint64(0)
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		return x.Height != nil
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		return x.BlockNumber != uint64(0)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		return x.Hash != ""
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		return x.CertificateHash != ""
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		return x.CreatedAt != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4028,16 +4133,18 @@ func (x *fastReflection_CardanoTransactionSnapshot) Has(fd protoreflect.FieldDes
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_CardanoTransactionSnapshot) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		x.SnapshotHash = ""
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
 		x.MerkleRoot = ""
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
-		x.CertificateHash = ""
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		x.Epoch = uint64(0)
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		x.Height = nil
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		x.BlockNumber = uint64(0)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		x.Hash = ""
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		x.CertificateHash = ""
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		x.CreatedAt = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4054,21 +4161,24 @@ func (x *fastReflection_CardanoTransactionSnapshot) Clear(fd protoreflect.FieldD
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_CardanoTransactionSnapshot) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		value := x.SnapshotHash
-		return protoreflect.ValueOfString(value)
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
 		value := x.MerkleRoot
-		return protoreflect.ValueOfString(value)
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
-		value := x.CertificateHash
 		return protoreflect.ValueOfString(value)
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		value := x.Epoch
 		return protoreflect.ValueOfUint64(value)
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		value := x.Height
-		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		value := x.BlockNumber
+		return protoreflect.ValueOfUint64(value)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		value := x.Hash
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		value := x.CertificateHash
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		value := x.CreatedAt
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4089,16 +4199,18 @@ func (x *fastReflection_CardanoTransactionSnapshot) Get(descriptor protoreflect.
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_CardanoTransactionSnapshot) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		x.SnapshotHash = value.Interface().(string)
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
 		x.MerkleRoot = value.Interface().(string)
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
-		x.CertificateHash = value.Interface().(string)
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		x.Epoch = value.Uint()
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		x.Height = value.Message().Interface().(*Height)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		x.BlockNumber = value.Uint()
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		x.Hash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		x.CertificateHash = value.Interface().(string)
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		x.CreatedAt = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4119,19 +4231,18 @@ func (x *fastReflection_CardanoTransactionSnapshot) Set(fd protoreflect.FieldDes
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_CardanoTransactionSnapshot) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		if x.Height == nil {
-			x.Height = new(Height)
-		}
-		return protoreflect.ValueOfMessage(x.Height.ProtoReflect())
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		panic(fmt.Errorf("field snapshot_hash of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
 		panic(fmt.Errorf("field merkle_root of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
-		panic(fmt.Errorf("field certificate_hash of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		panic(fmt.Errorf("field epoch of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		panic(fmt.Errorf("field block_number of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		panic(fmt.Errorf("field hash of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		panic(fmt.Errorf("field certificate_hash of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		panic(fmt.Errorf("field created_at of message ibc.clients.mithril.v1.CardanoTransactionSnapshot is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4145,17 +4256,18 @@ func (x *fastReflection_CardanoTransactionSnapshot) Mutable(fd protoreflect.Fiel
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_CardanoTransactionSnapshot) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.snapshot_hash":
-		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.merkle_root":
-		return protoreflect.ValueOfString("")
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
 		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.epoch":
 		return protoreflect.ValueOfUint64(uint64(0))
-	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.height":
-		m := new(Height)
-		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.block_number":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.hash":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.certificate_hash":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.CardanoTransactionSnapshot.created_at":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactionSnapshot"))
@@ -4225,11 +4337,17 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 		var n int
 		var l int
 		_ = l
-		l = len(x.SnapshotHash)
+		l = len(x.MerkleRoot)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		l = len(x.MerkleRoot)
+		if x.Epoch != 0 {
+			n += 1 + runtime.Sov(uint64(x.Epoch))
+		}
+		if x.BlockNumber != 0 {
+			n += 1 + runtime.Sov(uint64(x.BlockNumber))
+		}
+		l = len(x.Hash)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
@@ -4237,11 +4355,8 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.Epoch != 0 {
-			n += 1 + runtime.Sov(uint64(x.Epoch))
-		}
-		if x.Height != nil {
-			l = options.Size(x.Height)
+		l = len(x.CreatedAt)
+		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
@@ -4273,43 +4388,41 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.Height != nil {
-			encoded, err := options.Marshal(x.Height)
-			if err != nil {
-				return protoiface.MarshalOutput{
-					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
-					Buf:               input.Buf,
-				}, err
-			}
-			i -= len(encoded)
-			copy(dAtA[i:], encoded)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+		if len(x.CreatedAt) > 0 {
+			i -= len(x.CreatedAt)
+			copy(dAtA[i:], x.CreatedAt)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.CreatedAt)))
 			i--
-			dAtA[i] = 0x2a
-		}
-		if x.Epoch != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
-			i--
-			dAtA[i] = 0x20
+			dAtA[i] = 0x32
 		}
 		if len(x.CertificateHash) > 0 {
 			i -= len(x.CertificateHash)
 			copy(dAtA[i:], x.CertificateHash)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.CertificateHash)))
 			i--
-			dAtA[i] = 0x1a
+			dAtA[i] = 0x2a
+		}
+		if len(x.Hash) > 0 {
+			i -= len(x.Hash)
+			copy(dAtA[i:], x.Hash)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Hash)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if x.BlockNumber != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.BlockNumber))
+			i--
+			dAtA[i] = 0x18
+		}
+		if x.Epoch != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
+			i--
+			dAtA[i] = 0x10
 		}
 		if len(x.MerkleRoot) > 0 {
 			i -= len(x.MerkleRoot)
 			copy(dAtA[i:], x.MerkleRoot)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MerkleRoot)))
-			i--
-			dAtA[i] = 0x12
-		}
-		if len(x.SnapshotHash) > 0 {
-			i -= len(x.SnapshotHash)
-			copy(dAtA[i:], x.SnapshotHash)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SnapshotHash)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -4364,38 +4477,6 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SnapshotHash", wireType)
-				}
-				var stringLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					stringLen |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				intStringLen := int(stringLen)
-				if intStringLen < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				postIndex := iNdEx + intStringLen
-				if postIndex < 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
-				}
-				if postIndex > l {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-				}
-				x.SnapshotHash = string(dAtA[iNdEx:postIndex])
-				iNdEx = postIndex
-			case 2:
-				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MerkleRoot", wireType)
 				}
 				var stringLen uint64
@@ -4426,7 +4507,77 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 				}
 				x.MerkleRoot = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+				}
+				x.Epoch = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Epoch |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
 			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BlockNumber", wireType)
+				}
+				x.BlockNumber = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.BlockNumber |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Hash", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Hash = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 5:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field CertificateHash", wireType)
 				}
@@ -4458,30 +4609,11 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 				}
 				x.CertificateHash = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 4:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
-				}
-				x.Epoch = 0
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
-					}
-					if iNdEx >= l {
-						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					x.Epoch |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-			case 5:
+			case 6:
 				if wireType != 2 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Height", wireType)
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field CreatedAt", wireType)
 				}
-				var msglen int
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -4491,27 +4623,23 @@ func (x *fastReflection_CardanoTransactionSnapshot) ProtoMethods() *protoiface.M
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					msglen |= int(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				if msglen < 0 {
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
-				postIndex := iNdEx + msglen
+				postIndex := iNdEx + intStringLen
 				if postIndex < 0 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
 				}
 				if postIndex > l {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
 				}
-				if x.Height == nil {
-					x.Height = &Height{}
-				}
-				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Height); err != nil {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
-				}
+				x.CreatedAt = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
@@ -4558,7 +4686,8 @@ var (
 	fd_MithrilCertificate_protocol_message           protoreflect.FieldDescriptor
 	fd_MithrilCertificate_signed_message             protoreflect.FieldDescriptor
 	fd_MithrilCertificate_aggregate_verification_key protoreflect.FieldDescriptor
-	fd_MithrilCertificate_signature                  protoreflect.FieldDescriptor
+	fd_MithrilCertificate_multi_signature            protoreflect.FieldDescriptor
+	fd_MithrilCertificate_genesis_signature          protoreflect.FieldDescriptor
 )
 
 func init() {
@@ -4572,7 +4701,8 @@ func init() {
 	fd_MithrilCertificate_protocol_message = md_MithrilCertificate.Fields().ByName("protocol_message")
 	fd_MithrilCertificate_signed_message = md_MithrilCertificate.Fields().ByName("signed_message")
 	fd_MithrilCertificate_aggregate_verification_key = md_MithrilCertificate.Fields().ByName("aggregate_verification_key")
-	fd_MithrilCertificate_signature = md_MithrilCertificate.Fields().ByName("signature")
+	fd_MithrilCertificate_multi_signature = md_MithrilCertificate.Fields().ByName("multi_signature")
+	fd_MithrilCertificate_genesis_signature = md_MithrilCertificate.Fields().ByName("genesis_signature")
 }
 
 var _ protoreflect.Message = (*fastReflection_MithrilCertificate)(nil)
@@ -4658,8 +4788,8 @@ func (x *fastReflection_MithrilCertificate) Range(f func(protoreflect.FieldDescr
 			return
 		}
 	}
-	if x.SignedEntityType != 0 {
-		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.SignedEntityType))
+	if x.SignedEntityType != nil {
+		value := protoreflect.ValueOfMessage(x.SignedEntityType.ProtoReflect())
 		if !f(fd_MithrilCertificate_signed_entity_type, value) {
 			return
 		}
@@ -4688,9 +4818,15 @@ func (x *fastReflection_MithrilCertificate) Range(f func(protoreflect.FieldDescr
 			return
 		}
 	}
-	if x.Signature != 0 {
-		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.Signature))
-		if !f(fd_MithrilCertificate_signature, value) {
+	if x.MultiSignature != "" {
+		value := protoreflect.ValueOfString(x.MultiSignature)
+		if !f(fd_MithrilCertificate_multi_signature, value) {
+			return
+		}
+	}
+	if x.GenesisSignature != "" {
+		value := protoreflect.ValueOfString(x.GenesisSignature)
+		if !f(fd_MithrilCertificate_genesis_signature, value) {
 			return
 		}
 	}
@@ -4716,7 +4852,7 @@ func (x *fastReflection_MithrilCertificate) Has(fd protoreflect.FieldDescriptor)
 	case "ibc.clients.mithril.v1.MithrilCertificate.epoch":
 		return x.Epoch != uint64(0)
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
-		return x.SignedEntityType != 0
+		return x.SignedEntityType != nil
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		return x.Metadata != nil
 	case "ibc.clients.mithril.v1.MithrilCertificate.protocol_message":
@@ -4725,8 +4861,10 @@ func (x *fastReflection_MithrilCertificate) Has(fd protoreflect.FieldDescriptor)
 		return x.SignedMessage != ""
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		return x.AggregateVerificationKey != ""
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		return x.Signature != 0
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		return x.MultiSignature != ""
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		return x.GenesisSignature != ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4750,7 +4888,7 @@ func (x *fastReflection_MithrilCertificate) Clear(fd protoreflect.FieldDescripto
 	case "ibc.clients.mithril.v1.MithrilCertificate.epoch":
 		x.Epoch = uint64(0)
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
-		x.SignedEntityType = 0
+		x.SignedEntityType = nil
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		x.Metadata = nil
 	case "ibc.clients.mithril.v1.MithrilCertificate.protocol_message":
@@ -4759,8 +4897,10 @@ func (x *fastReflection_MithrilCertificate) Clear(fd protoreflect.FieldDescripto
 		x.SignedMessage = ""
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		x.AggregateVerificationKey = ""
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		x.Signature = 0
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		x.MultiSignature = ""
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		x.GenesisSignature = ""
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4788,7 +4928,7 @@ func (x *fastReflection_MithrilCertificate) Get(descriptor protoreflect.FieldDes
 		return protoreflect.ValueOfUint64(value)
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
 		value := x.SignedEntityType
-		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		value := x.Metadata
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
@@ -4801,9 +4941,12 @@ func (x *fastReflection_MithrilCertificate) Get(descriptor protoreflect.FieldDes
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		value := x.AggregateVerificationKey
 		return protoreflect.ValueOfString(value)
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		value := x.Signature
-		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		value := x.MultiSignature
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		value := x.GenesisSignature
+		return protoreflect.ValueOfString(value)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4831,7 +4974,7 @@ func (x *fastReflection_MithrilCertificate) Set(fd protoreflect.FieldDescriptor,
 	case "ibc.clients.mithril.v1.MithrilCertificate.epoch":
 		x.Epoch = value.Uint()
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
-		x.SignedEntityType = (SignedEntityType)(value.Enum())
+		x.SignedEntityType = value.Message().Interface().(*SignedEntityType)
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		x.Metadata = value.Message().Interface().(*CertificateMetadata)
 	case "ibc.clients.mithril.v1.MithrilCertificate.protocol_message":
@@ -4840,8 +4983,10 @@ func (x *fastReflection_MithrilCertificate) Set(fd protoreflect.FieldDescriptor,
 		x.SignedMessage = value.Interface().(string)
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		x.AggregateVerificationKey = value.Interface().(string)
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		x.Signature = (CertificateSignature)(value.Enum())
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		x.MultiSignature = value.Interface().(string)
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		x.GenesisSignature = value.Interface().(string)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4862,6 +5007,11 @@ func (x *fastReflection_MithrilCertificate) Set(fd protoreflect.FieldDescriptor,
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MithrilCertificate) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
+		if x.SignedEntityType == nil {
+			x.SignedEntityType = new(SignedEntityType)
+		}
+		return protoreflect.ValueOfMessage(x.SignedEntityType.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		if x.Metadata == nil {
 			x.Metadata = new(CertificateMetadata)
@@ -4878,14 +5028,14 @@ func (x *fastReflection_MithrilCertificate) Mutable(fd protoreflect.FieldDescrip
 		panic(fmt.Errorf("field previous_hash of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
 	case "ibc.clients.mithril.v1.MithrilCertificate.epoch":
 		panic(fmt.Errorf("field epoch of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
-	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
-		panic(fmt.Errorf("field signed_entity_type of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_message":
 		panic(fmt.Errorf("field signed_message of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		panic(fmt.Errorf("field aggregate_verification_key of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		panic(fmt.Errorf("field signature of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		panic(fmt.Errorf("field multi_signature of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		panic(fmt.Errorf("field genesis_signature of message ibc.clients.mithril.v1.MithrilCertificate is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4906,7 +5056,8 @@ func (x *fastReflection_MithrilCertificate) NewField(fd protoreflect.FieldDescri
 	case "ibc.clients.mithril.v1.MithrilCertificate.epoch":
 		return protoreflect.ValueOfUint64(uint64(0))
 	case "ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type":
-		return protoreflect.ValueOfEnum(0)
+		m := new(SignedEntityType)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilCertificate.metadata":
 		m := new(CertificateMetadata)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
@@ -4917,8 +5068,10 @@ func (x *fastReflection_MithrilCertificate) NewField(fd protoreflect.FieldDescri
 		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.MithrilCertificate.aggregate_verification_key":
 		return protoreflect.ValueOfString("")
-	case "ibc.clients.mithril.v1.MithrilCertificate.signature":
-		return protoreflect.ValueOfEnum(0)
+	case "ibc.clients.mithril.v1.MithrilCertificate.multi_signature":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.MithrilCertificate.genesis_signature":
+		return protoreflect.ValueOfString("")
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilCertificate"))
@@ -4999,8 +5152,9 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 		if x.Epoch != 0 {
 			n += 1 + runtime.Sov(uint64(x.Epoch))
 		}
-		if x.SignedEntityType != 0 {
-			n += 1 + runtime.Sov(uint64(x.SignedEntityType))
+		if x.SignedEntityType != nil {
+			l = options.Size(x.SignedEntityType)
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.Metadata != nil {
 			l = options.Size(x.Metadata)
@@ -5018,8 +5172,13 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.Signature != 0 {
-			n += 1 + runtime.Sov(uint64(x.Signature))
+		l = len(x.MultiSignature)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		l = len(x.GenesisSignature)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -5050,10 +5209,19 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.Signature != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.Signature))
+		if len(x.GenesisSignature) > 0 {
+			i -= len(x.GenesisSignature)
+			copy(dAtA[i:], x.GenesisSignature)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.GenesisSignature)))
 			i--
-			dAtA[i] = 0x48
+			dAtA[i] = 0x52
+		}
+		if len(x.MultiSignature) > 0 {
+			i -= len(x.MultiSignature)
+			copy(dAtA[i:], x.MultiSignature)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.MultiSignature)))
+			i--
+			dAtA[i] = 0x4a
 		}
 		if len(x.AggregateVerificationKey) > 0 {
 			i -= len(x.AggregateVerificationKey)
@@ -5097,10 +5265,19 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 			i--
 			dAtA[i] = 0x2a
 		}
-		if x.SignedEntityType != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.SignedEntityType))
+		if x.SignedEntityType != nil {
+			encoded, err := options.Marshal(x.SignedEntityType)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
-			dAtA[i] = 0x20
+			dAtA[i] = 0x22
 		}
 		if x.Epoch != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
@@ -5254,10 +5431,10 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 					}
 				}
 			case 4:
-				if wireType != 0 {
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SignedEntityType", wireType)
 				}
-				x.SignedEntityType = 0
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -5267,11 +5444,28 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.SignedEntityType |= SignedEntityType(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.SignedEntityType == nil {
+					x.SignedEntityType = &SignedEntityType{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.SignedEntityType); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
 			case 5:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
@@ -5409,10 +5603,10 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 				x.AggregateVerificationKey = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
 			case 9:
-				if wireType != 0 {
-					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MultiSignature", wireType)
 				}
-				x.Signature = 0
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -5422,11 +5616,56 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.Signature |= CertificateSignature(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MultiSignature = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 10:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field GenesisSignature", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.GenesisSignature = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
 			default:
 				iNdEx = preIndex
 				skippy, err := runtime.Skip(dAtA[iNdEx:])
@@ -5462,73 +5701,75 @@ func (x *fastReflection_MithrilCertificate) ProtoMethods() *protoiface.Methods {
 	}
 }
 
-var _ protoreflect.List = (*_CertificateMetadata_5_list)(nil)
+var _ protoreflect.List = (*_CertificateMetadata_6_list)(nil)
 
-type _CertificateMetadata_5_list struct {
+type _CertificateMetadata_6_list struct {
 	list *[]*SignerWithStake
 }
 
-func (x *_CertificateMetadata_5_list) Len() int {
+func (x *_CertificateMetadata_6_list) Len() int {
 	if x.list == nil {
 		return 0
 	}
 	return len(*x.list)
 }
 
-func (x *_CertificateMetadata_5_list) Get(i int) protoreflect.Value {
+func (x *_CertificateMetadata_6_list) Get(i int) protoreflect.Value {
 	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
 }
 
-func (x *_CertificateMetadata_5_list) Set(i int, value protoreflect.Value) {
+func (x *_CertificateMetadata_6_list) Set(i int, value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*SignerWithStake)
 	(*x.list)[i] = concreteValue
 }
 
-func (x *_CertificateMetadata_5_list) Append(value protoreflect.Value) {
+func (x *_CertificateMetadata_6_list) Append(value protoreflect.Value) {
 	valueUnwrapped := value.Message()
 	concreteValue := valueUnwrapped.Interface().(*SignerWithStake)
 	*x.list = append(*x.list, concreteValue)
 }
 
-func (x *_CertificateMetadata_5_list) AppendMutable() protoreflect.Value {
+func (x *_CertificateMetadata_6_list) AppendMutable() protoreflect.Value {
 	v := new(SignerWithStake)
 	*x.list = append(*x.list, v)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_CertificateMetadata_5_list) Truncate(n int) {
+func (x *_CertificateMetadata_6_list) Truncate(n int) {
 	for i := n; i < len(*x.list); i++ {
 		(*x.list)[i] = nil
 	}
 	*x.list = (*x.list)[:n]
 }
 
-func (x *_CertificateMetadata_5_list) NewElement() protoreflect.Value {
+func (x *_CertificateMetadata_6_list) NewElement() protoreflect.Value {
 	v := new(SignerWithStake)
 	return protoreflect.ValueOfMessage(v.ProtoReflect())
 }
 
-func (x *_CertificateMetadata_5_list) IsValid() bool {
+func (x *_CertificateMetadata_6_list) IsValid() bool {
 	return x.list != nil
 }
 
 var (
 	md_CertificateMetadata                     protoreflect.MessageDescriptor
+	fd_CertificateMetadata_network             protoreflect.FieldDescriptor
 	fd_CertificateMetadata_protocol_version    protoreflect.FieldDescriptor
 	fd_CertificateMetadata_protocol_parameters protoreflect.FieldDescriptor
-	fd_CertificateMetadata_initiatedAt         protoreflect.FieldDescriptor
-	fd_CertificateMetadata_sealedAt            protoreflect.FieldDescriptor
+	fd_CertificateMetadata_initiated_at        protoreflect.FieldDescriptor
+	fd_CertificateMetadata_sealed_at           protoreflect.FieldDescriptor
 	fd_CertificateMetadata_signers             protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_CertificateMetadata = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CertificateMetadata")
+	fd_CertificateMetadata_network = md_CertificateMetadata.Fields().ByName("network")
 	fd_CertificateMetadata_protocol_version = md_CertificateMetadata.Fields().ByName("protocol_version")
 	fd_CertificateMetadata_protocol_parameters = md_CertificateMetadata.Fields().ByName("protocol_parameters")
-	fd_CertificateMetadata_initiatedAt = md_CertificateMetadata.Fields().ByName("initiatedAt")
-	fd_CertificateMetadata_sealedAt = md_CertificateMetadata.Fields().ByName("sealedAt")
+	fd_CertificateMetadata_initiated_at = md_CertificateMetadata.Fields().ByName("initiated_at")
+	fd_CertificateMetadata_sealed_at = md_CertificateMetadata.Fields().ByName("sealed_at")
 	fd_CertificateMetadata_signers = md_CertificateMetadata.Fields().ByName("signers")
 }
 
@@ -5597,6 +5838,12 @@ func (x *fastReflection_CertificateMetadata) Interface() protoreflect.ProtoMessa
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_CertificateMetadata) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Network != "" {
+		value := protoreflect.ValueOfString(x.Network)
+		if !f(fd_CertificateMetadata_network, value) {
+			return
+		}
+	}
 	if x.ProtocolVersion != "" {
 		value := protoreflect.ValueOfString(x.ProtocolVersion)
 		if !f(fd_CertificateMetadata_protocol_version, value) {
@@ -5609,20 +5856,20 @@ func (x *fastReflection_CertificateMetadata) Range(f func(protoreflect.FieldDesc
 			return
 		}
 	}
-	if x.InitiatedAt != uint64(0) {
-		value := protoreflect.ValueOfUint64(x.InitiatedAt)
-		if !f(fd_CertificateMetadata_initiatedAt, value) {
+	if x.InitiatedAt != "" {
+		value := protoreflect.ValueOfString(x.InitiatedAt)
+		if !f(fd_CertificateMetadata_initiated_at, value) {
 			return
 		}
 	}
-	if x.SealedAt != uint64(0) {
-		value := protoreflect.ValueOfUint64(x.SealedAt)
-		if !f(fd_CertificateMetadata_sealedAt, value) {
+	if x.SealedAt != "" {
+		value := protoreflect.ValueOfString(x.SealedAt)
+		if !f(fd_CertificateMetadata_sealed_at, value) {
 			return
 		}
 	}
 	if len(x.Signers) != 0 {
-		value := protoreflect.ValueOfList(&_CertificateMetadata_5_list{list: &x.Signers})
+		value := protoreflect.ValueOfList(&_CertificateMetadata_6_list{list: &x.Signers})
 		if !f(fd_CertificateMetadata_signers, value) {
 			return
 		}
@@ -5642,14 +5889,16 @@ func (x *fastReflection_CertificateMetadata) Range(f func(protoreflect.FieldDesc
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_CertificateMetadata) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		return x.Network != ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		return x.ProtocolVersion != ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters":
 		return x.ProtocolParameters != nil
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
-		return x.InitiatedAt != uint64(0)
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
-		return x.SealedAt != uint64(0)
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
+		return x.InitiatedAt != ""
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
+		return x.SealedAt != ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.signers":
 		return len(x.Signers) != 0
 	default:
@@ -5668,14 +5917,16 @@ func (x *fastReflection_CertificateMetadata) Has(fd protoreflect.FieldDescriptor
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_CertificateMetadata) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		x.Network = ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		x.ProtocolVersion = ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters":
 		x.ProtocolParameters = nil
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
-		x.InitiatedAt = uint64(0)
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
-		x.SealedAt = uint64(0)
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
+		x.InitiatedAt = ""
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
+		x.SealedAt = ""
 	case "ibc.clients.mithril.v1.CertificateMetadata.signers":
 		x.Signers = nil
 	default:
@@ -5694,23 +5945,26 @@ func (x *fastReflection_CertificateMetadata) Clear(fd protoreflect.FieldDescript
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_CertificateMetadata) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		value := x.Network
+		return protoreflect.ValueOfString(value)
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		value := x.ProtocolVersion
 		return protoreflect.ValueOfString(value)
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters":
 		value := x.ProtocolParameters
 		return protoreflect.ValueOfMessage(value.ProtoReflect())
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
 		value := x.InitiatedAt
-		return protoreflect.ValueOfUint64(value)
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
 		value := x.SealedAt
-		return protoreflect.ValueOfUint64(value)
+		return protoreflect.ValueOfString(value)
 	case "ibc.clients.mithril.v1.CertificateMetadata.signers":
 		if len(x.Signers) == 0 {
-			return protoreflect.ValueOfList(&_CertificateMetadata_5_list{})
+			return protoreflect.ValueOfList(&_CertificateMetadata_6_list{})
 		}
-		listValue := &_CertificateMetadata_5_list{list: &x.Signers}
+		listValue := &_CertificateMetadata_6_list{list: &x.Signers}
 		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
@@ -5732,17 +5986,19 @@ func (x *fastReflection_CertificateMetadata) Get(descriptor protoreflect.FieldDe
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_CertificateMetadata) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		x.Network = value.Interface().(string)
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		x.ProtocolVersion = value.Interface().(string)
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters":
 		x.ProtocolParameters = value.Message().Interface().(*MithrilProtocolParameters)
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
-		x.InitiatedAt = value.Uint()
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
-		x.SealedAt = value.Uint()
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
+		x.InitiatedAt = value.Interface().(string)
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
+		x.SealedAt = value.Interface().(string)
 	case "ibc.clients.mithril.v1.CertificateMetadata.signers":
 		lv := value.List()
-		clv := lv.(*_CertificateMetadata_5_list)
+		clv := lv.(*_CertificateMetadata_6_list)
 		x.Signers = *clv.list
 	default:
 		if fd.IsExtension() {
@@ -5773,14 +6029,16 @@ func (x *fastReflection_CertificateMetadata) Mutable(fd protoreflect.FieldDescri
 		if x.Signers == nil {
 			x.Signers = []*SignerWithStake{}
 		}
-		value := &_CertificateMetadata_5_list{list: &x.Signers}
+		value := &_CertificateMetadata_6_list{list: &x.Signers}
 		return protoreflect.ValueOfList(value)
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		panic(fmt.Errorf("field network of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		panic(fmt.Errorf("field protocol_version of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
-		panic(fmt.Errorf("field initiatedAt of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
-		panic(fmt.Errorf("field sealedAt of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
+		panic(fmt.Errorf("field initiated_at of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
+		panic(fmt.Errorf("field sealed_at of message ibc.clients.mithril.v1.CertificateMetadata is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CertificateMetadata"))
@@ -5794,18 +6052,20 @@ func (x *fastReflection_CertificateMetadata) Mutable(fd protoreflect.FieldDescri
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_CertificateMetadata) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CertificateMetadata.network":
+		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_version":
 		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters":
 		m := new(MithrilProtocolParameters)
 		return protoreflect.ValueOfMessage(m.ProtoReflect())
-	case "ibc.clients.mithril.v1.CertificateMetadata.initiatedAt":
-		return protoreflect.ValueOfUint64(uint64(0))
-	case "ibc.clients.mithril.v1.CertificateMetadata.sealedAt":
-		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.CertificateMetadata.initiated_at":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.CertificateMetadata.sealed_at":
+		return protoreflect.ValueOfString("")
 	case "ibc.clients.mithril.v1.CertificateMetadata.signers":
 		list := []*SignerWithStake{}
-		return protoreflect.ValueOfList(&_CertificateMetadata_5_list{list: &list})
+		return protoreflect.ValueOfList(&_CertificateMetadata_6_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CertificateMetadata"))
@@ -5875,6 +6135,10 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 		var n int
 		var l int
 		_ = l
+		l = len(x.Network)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
 		l = len(x.ProtocolVersion)
 		if l > 0 {
 			n += 1 + l + runtime.Sov(uint64(l))
@@ -5883,11 +6147,13 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 			l = options.Size(x.ProtocolParameters)
 			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.InitiatedAt != 0 {
-			n += 1 + runtime.Sov(uint64(x.InitiatedAt))
+		l = len(x.InitiatedAt)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
-		if x.SealedAt != 0 {
-			n += 1 + runtime.Sov(uint64(x.SealedAt))
+		l = len(x.SealedAt)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if len(x.Signers) > 0 {
 			for _, e := range x.Signers {
@@ -5937,18 +6203,22 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 				copy(dAtA[i:], encoded)
 				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 				i--
-				dAtA[i] = 0x2a
+				dAtA[i] = 0x32
 			}
 		}
-		if x.SealedAt != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.SealedAt))
+		if len(x.SealedAt) > 0 {
+			i -= len(x.SealedAt)
+			copy(dAtA[i:], x.SealedAt)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.SealedAt)))
 			i--
-			dAtA[i] = 0x20
+			dAtA[i] = 0x2a
 		}
-		if x.InitiatedAt != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.InitiatedAt))
+		if len(x.InitiatedAt) > 0 {
+			i -= len(x.InitiatedAt)
+			copy(dAtA[i:], x.InitiatedAt)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.InitiatedAt)))
 			i--
-			dAtA[i] = 0x18
+			dAtA[i] = 0x22
 		}
 		if x.ProtocolParameters != nil {
 			encoded, err := options.Marshal(x.ProtocolParameters)
@@ -5962,12 +6232,19 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 			copy(dAtA[i:], encoded)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
-			dAtA[i] = 0x12
+			dAtA[i] = 0x1a
 		}
 		if len(x.ProtocolVersion) > 0 {
 			i -= len(x.ProtocolVersion)
 			copy(dAtA[i:], x.ProtocolVersion)
 			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ProtocolVersion)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if len(x.Network) > 0 {
+			i -= len(x.Network)
+			copy(dAtA[i:], x.Network)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Network)))
 			i--
 			dAtA[i] = 0xa
 		}
@@ -6022,6 +6299,38 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 			switch fieldNum {
 			case 1:
 				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Network", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Network = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ProtocolVersion", wireType)
 				}
 				var stringLen uint64
@@ -6052,7 +6361,7 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 				}
 				x.ProtocolVersion = string(dAtA[iNdEx:postIndex])
 				iNdEx = postIndex
-			case 2:
+			case 3:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ProtocolParameters", wireType)
 				}
@@ -6088,11 +6397,11 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
 				}
 				iNdEx = postIndex
-			case 3:
-				if wireType != 0 {
+			case 4:
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field InitiatedAt", wireType)
 				}
-				x.InitiatedAt = 0
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -6102,16 +6411,29 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.InitiatedAt |= uint64(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-			case 4:
-				if wireType != 0 {
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.InitiatedAt = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 5:
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field SealedAt", wireType)
 				}
-				x.SealedAt = 0
+				var stringLen uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -6121,12 +6443,25 @@ func (x *fastReflection_CertificateMetadata) ProtoMethods() *protoiface.Methods 
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.SealedAt |= uint64(b&0x7F) << shift
+					stringLen |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-			case 5:
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.SealedAt = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 6:
 				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signers", wireType)
 				}
@@ -6663,17 +6998,66 @@ func (x *fastReflection_SignerWithStake) ProtoMethods() *protoiface.Methods {
 	}
 }
 
+var _ protoreflect.List = (*_ProtocolMessage_1_list)(nil)
+
+type _ProtocolMessage_1_list struct {
+	list *[]*MessagePart
+}
+
+func (x *_ProtocolMessage_1_list) Len() int {
+	if x.list == nil {
+		return 0
+	}
+	return len(*x.list)
+}
+
+func (x *_ProtocolMessage_1_list) Get(i int) protoreflect.Value {
+	return protoreflect.ValueOfMessage((*x.list)[i].ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) Set(i int, value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MessagePart)
+	(*x.list)[i] = concreteValue
+}
+
+func (x *_ProtocolMessage_1_list) Append(value protoreflect.Value) {
+	valueUnwrapped := value.Message()
+	concreteValue := valueUnwrapped.Interface().(*MessagePart)
+	*x.list = append(*x.list, concreteValue)
+}
+
+func (x *_ProtocolMessage_1_list) AppendMutable() protoreflect.Value {
+	v := new(MessagePart)
+	*x.list = append(*x.list, v)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) Truncate(n int) {
+	for i := n; i < len(*x.list); i++ {
+		(*x.list)[i] = nil
+	}
+	*x.list = (*x.list)[:n]
+}
+
+func (x *_ProtocolMessage_1_list) NewElement() protoreflect.Value {
+	v := new(MessagePart)
+	return protoreflect.ValueOfMessage(v.ProtoReflect())
+}
+
+func (x *_ProtocolMessage_1_list) IsValid() bool {
+	return x.list != nil
+}
+
 var (
-	md_ProtocolMessage                             protoreflect.MessageDescriptor
-	fd_ProtocolMessage_protocol_message_part_key   protoreflect.FieldDescriptor
-	fd_ProtocolMessage_protocol_message_part_value protoreflect.FieldDescriptor
+	md_ProtocolMessage               protoreflect.MessageDescriptor
+	fd_ProtocolMessage_message_parts protoreflect.FieldDescriptor
 )
 
 func init() {
 	file_ibc_clients_mithril_v1_mithril_proto_init()
 	md_ProtocolMessage = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("ProtocolMessage")
-	fd_ProtocolMessage_protocol_message_part_key = md_ProtocolMessage.Fields().ByName("protocol_message_part_key")
-	fd_ProtocolMessage_protocol_message_part_value = md_ProtocolMessage.Fields().ByName("protocol_message_part_value")
+	fd_ProtocolMessage_message_parts = md_ProtocolMessage.Fields().ByName("message_parts")
 }
 
 var _ protoreflect.Message = (*fastReflection_ProtocolMessage)(nil)
@@ -6741,15 +7125,9 @@ func (x *fastReflection_ProtocolMessage) Interface() protoreflect.ProtoMessage {
 // While iterating, mutating operations may only be performed
 // on the current field descriptor.
 func (x *fastReflection_ProtocolMessage) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
-	if x.ProtocolMessagePartKey != 0 {
-		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.ProtocolMessagePartKey))
-		if !f(fd_ProtocolMessage_protocol_message_part_key, value) {
-			return
-		}
-	}
-	if x.ProtocolMessagePartValue != "" {
-		value := protoreflect.ValueOfString(x.ProtocolMessagePartValue)
-		if !f(fd_ProtocolMessage_protocol_message_part_value, value) {
+	if len(x.MessageParts) != 0 {
+		value := protoreflect.ValueOfList(&_ProtocolMessage_1_list{list: &x.MessageParts})
+		if !f(fd_ProtocolMessage_message_parts, value) {
 			return
 		}
 	}
@@ -6768,10 +7146,8 @@ func (x *fastReflection_ProtocolMessage) Range(f func(protoreflect.FieldDescript
 // a repeated field is populated if it is non-empty.
 func (x *fastReflection_ProtocolMessage) Has(fd protoreflect.FieldDescriptor) bool {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		return x.ProtocolMessagePartKey != 0
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		return x.ProtocolMessagePartValue != ""
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		return len(x.MessageParts) != 0
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6788,10 +7164,8 @@ func (x *fastReflection_ProtocolMessage) Has(fd protoreflect.FieldDescriptor) bo
 // Clear is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Clear(fd protoreflect.FieldDescriptor) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		x.ProtocolMessagePartKey = 0
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		x.ProtocolMessagePartValue = ""
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		x.MessageParts = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6808,12 +7182,12 @@ func (x *fastReflection_ProtocolMessage) Clear(fd protoreflect.FieldDescriptor) 
 // of the value; to obtain a mutable reference, use Mutable.
 func (x *fastReflection_ProtocolMessage) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
 	switch descriptor.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		value := x.ProtocolMessagePartKey
-		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		value := x.ProtocolMessagePartValue
-		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		if len(x.MessageParts) == 0 {
+			return protoreflect.ValueOfList(&_ProtocolMessage_1_list{})
+		}
+		listValue := &_ProtocolMessage_1_list{list: &x.MessageParts}
+		return protoreflect.ValueOfList(listValue)
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6834,10 +7208,10 @@ func (x *fastReflection_ProtocolMessage) Get(descriptor protoreflect.FieldDescri
 // Set is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		x.ProtocolMessagePartKey = (ProtocolMessagePartKey)(value.Enum())
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		x.ProtocolMessagePartValue = value.Interface().(string)
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		lv := value.List()
+		clv := lv.(*_ProtocolMessage_1_list)
+		x.MessageParts = *clv.list
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6858,10 +7232,12 @@ func (x *fastReflection_ProtocolMessage) Set(fd protoreflect.FieldDescriptor, va
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_ProtocolMessage) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		panic(fmt.Errorf("field protocol_message_part_key of message ibc.clients.mithril.v1.ProtocolMessage is not mutable"))
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		panic(fmt.Errorf("field protocol_message_part_value of message ibc.clients.mithril.v1.ProtocolMessage is not mutable"))
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		if x.MessageParts == nil {
+			x.MessageParts = []*MessagePart{}
+		}
+		value := &_ProtocolMessage_1_list{list: &x.MessageParts}
+		return protoreflect.ValueOfList(value)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6875,10 +7251,9 @@ func (x *fastReflection_ProtocolMessage) Mutable(fd protoreflect.FieldDescriptor
 // For lists, maps, and messages, this returns a new, empty, mutable value.
 func (x *fastReflection_ProtocolMessage) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key":
-		return protoreflect.ValueOfEnum(0)
-	case "ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_value":
-		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.ProtocolMessage.message_parts":
+		list := []*MessagePart{}
+		return protoreflect.ValueOfList(&_ProtocolMessage_1_list{list: &list})
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolMessage"))
@@ -6948,12 +7323,11 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 		var n int
 		var l int
 		_ = l
-		if x.ProtocolMessagePartKey != 0 {
-			n += 1 + runtime.Sov(uint64(x.ProtocolMessagePartKey))
-		}
-		l = len(x.ProtocolMessagePartValue)
-		if l > 0 {
-			n += 1 + l + runtime.Sov(uint64(l))
+		if len(x.MessageParts) > 0 {
+			for _, e := range x.MessageParts {
+				l = options.Size(e)
+				n += 1 + l + runtime.Sov(uint64(l))
+			}
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -6984,17 +7358,21 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if len(x.ProtocolMessagePartValue) > 0 {
-			i -= len(x.ProtocolMessagePartValue)
-			copy(dAtA[i:], x.ProtocolMessagePartValue)
-			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ProtocolMessagePartValue)))
-			i--
-			dAtA[i] = 0x12
-		}
-		if x.ProtocolMessagePartKey != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.ProtocolMessagePartKey))
-			i--
-			dAtA[i] = 0x8
+		if len(x.MessageParts) > 0 {
+			for iNdEx := len(x.MessageParts) - 1; iNdEx >= 0; iNdEx-- {
+				encoded, err := options.Marshal(x.MessageParts[iNdEx])
+				if err != nil {
+					return protoiface.MarshalOutput{
+						NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+						Buf:               input.Buf,
+					}, err
+				}
+				i -= len(encoded)
+				copy(dAtA[i:], encoded)
+				i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+				i--
+				dAtA[i] = 0xa
+			}
 		}
 		if input.Buf != nil {
 			input.Buf = append(input.Buf, dAtA...)
@@ -7043,6 +7421,457 @@ func (x *fastReflection_ProtocolMessage) ProtoMethods() *protoiface.Methods {
 			}
 			if fieldNum <= 0 {
 				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ProtocolMessage: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MessageParts", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.MessageParts = append(x.MessageParts, &MessagePart{})
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.MessageParts[len(x.MessageParts)-1]); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_MessagePart                             protoreflect.MessageDescriptor
+	fd_MessagePart_protocol_message_part_key   protoreflect.FieldDescriptor
+	fd_MessagePart_protocol_message_part_value protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_MessagePart = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("MessagePart")
+	fd_MessagePart_protocol_message_part_key = md_MessagePart.Fields().ByName("protocol_message_part_key")
+	fd_MessagePart_protocol_message_part_value = md_MessagePart.Fields().ByName("protocol_message_part_value")
+}
+
+var _ protoreflect.Message = (*fastReflection_MessagePart)(nil)
+
+type fastReflection_MessagePart MessagePart
+
+func (x *MessagePart) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_MessagePart)(x)
+}
+
+func (x *MessagePart) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_MessagePart_messageType fastReflection_MessagePart_messageType
+var _ protoreflect.MessageType = fastReflection_MessagePart_messageType{}
+
+type fastReflection_MessagePart_messageType struct{}
+
+func (x fastReflection_MessagePart_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_MessagePart)(nil)
+}
+func (x fastReflection_MessagePart_messageType) New() protoreflect.Message {
+	return new(fastReflection_MessagePart)
+}
+func (x fastReflection_MessagePart_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_MessagePart
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_MessagePart) Descriptor() protoreflect.MessageDescriptor {
+	return md_MessagePart
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_MessagePart) Type() protoreflect.MessageType {
+	return _fastReflection_MessagePart_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_MessagePart) New() protoreflect.Message {
+	return new(fastReflection_MessagePart)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_MessagePart) Interface() protoreflect.ProtoMessage {
+	return (*MessagePart)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_MessagePart) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.ProtocolMessagePartKey != 0 {
+		value := protoreflect.ValueOfEnum((protoreflect.EnumNumber)(x.ProtocolMessagePartKey))
+		if !f(fd_MessagePart_protocol_message_part_key, value) {
+			return
+		}
+	}
+	if x.ProtocolMessagePartValue != "" {
+		value := protoreflect.ValueOfString(x.ProtocolMessagePartValue)
+		if !f(fd_MessagePart_protocol_message_part_value, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_MessagePart) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		return x.ProtocolMessagePartKey != 0
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		return x.ProtocolMessagePartValue != ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		x.ProtocolMessagePartKey = 0
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		x.ProtocolMessagePartValue = ""
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_MessagePart) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		value := x.ProtocolMessagePartKey
+		return protoreflect.ValueOfEnum((protoreflect.EnumNumber)(value))
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		value := x.ProtocolMessagePartValue
+		return protoreflect.ValueOfString(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		x.ProtocolMessagePartKey = (ProtocolMessagePartKey)(value.Enum())
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		x.ProtocolMessagePartValue = value.Interface().(string)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		panic(fmt.Errorf("field protocol_message_part_key of message ibc.clients.mithril.v1.MessagePart is not mutable"))
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		panic(fmt.Errorf("field protocol_message_part_value of message ibc.clients.mithril.v1.MessagePart is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_MessagePart) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_key":
+		return protoreflect.ValueOfEnum(0)
+	case "ibc.clients.mithril.v1.MessagePart.protocol_message_part_value":
+		return protoreflect.ValueOfString("")
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MessagePart"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.MessagePart does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_MessagePart) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.MessagePart", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_MessagePart) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_MessagePart) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_MessagePart) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_MessagePart) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.ProtocolMessagePartKey != 0 {
+			n += 1 + runtime.Sov(uint64(x.ProtocolMessagePartKey))
+		}
+		l = len(x.ProtocolMessagePartValue)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.ProtocolMessagePartValue) > 0 {
+			i -= len(x.ProtocolMessagePartValue)
+			copy(dAtA[i:], x.ProtocolMessagePartValue)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.ProtocolMessagePartValue)))
+			i--
+			dAtA[i] = 0x12
+		}
+		if x.ProtocolMessagePartKey != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ProtocolMessagePartKey))
+			i--
+			dAtA[i] = 0x8
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*MessagePart)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MessagePart: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: MessagePart: illegal tag %d (wire type %d)", fieldNum, wire)
 			}
 			switch fieldNum {
 			case 1:
@@ -7155,7 +7984,7 @@ func (x *MithrilProtocolParameters) ProtoReflect() protoreflect.Message {
 }
 
 func (x *MithrilProtocolParameters) slowProtoReflect() protoreflect.Message {
-	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7223,8 +8052,8 @@ func (x *fastReflection_MithrilProtocolParameters) Range(f func(protoreflect.Fie
 			return
 		}
 	}
-	if x.PhiF != uint64(0) {
-		value := protoreflect.ValueOfUint64(x.PhiF)
+	if x.PhiF != nil {
+		value := protoreflect.ValueOfMessage(x.PhiF.ProtoReflect())
 		if !f(fd_MithrilProtocolParameters_phi_f, value) {
 			return
 		}
@@ -7249,7 +8078,7 @@ func (x *fastReflection_MithrilProtocolParameters) Has(fd protoreflect.FieldDesc
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.m":
 		return x.M != uint64(0)
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
-		return x.PhiF != uint64(0)
+		return x.PhiF != nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7271,7 +8100,7 @@ func (x *fastReflection_MithrilProtocolParameters) Clear(fd protoreflect.FieldDe
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.m":
 		x.M = uint64(0)
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
-		x.PhiF = uint64(0)
+		x.PhiF = nil
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7296,7 +8125,7 @@ func (x *fastReflection_MithrilProtocolParameters) Get(descriptor protoreflect.F
 		return protoreflect.ValueOfUint64(value)
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
 		value := x.PhiF
-		return protoreflect.ValueOfUint64(value)
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
 	default:
 		if descriptor.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7322,7 +8151,7 @@ func (x *fastReflection_MithrilProtocolParameters) Set(fd protoreflect.FieldDesc
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.m":
 		x.M = value.Uint()
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
-		x.PhiF = value.Uint()
+		x.PhiF = value.Message().Interface().(*Fraction)
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7343,12 +8172,15 @@ func (x *fastReflection_MithrilProtocolParameters) Set(fd protoreflect.FieldDesc
 // Mutable is a mutating operation and unsafe for concurrent use.
 func (x *fastReflection_MithrilProtocolParameters) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
 	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
+		if x.PhiF == nil {
+			x.PhiF = new(Fraction)
+		}
+		return protoreflect.ValueOfMessage(x.PhiF.ProtoReflect())
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.k":
 		panic(fmt.Errorf("field k of message ibc.clients.mithril.v1.MithrilProtocolParameters is not mutable"))
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.m":
 		panic(fmt.Errorf("field m of message ibc.clients.mithril.v1.MithrilProtocolParameters is not mutable"))
-	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
-		panic(fmt.Errorf("field phi_f of message ibc.clients.mithril.v1.MithrilProtocolParameters is not mutable"))
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7367,7 +8199,8 @@ func (x *fastReflection_MithrilProtocolParameters) NewField(fd protoreflect.Fiel
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.m":
 		return protoreflect.ValueOfUint64(uint64(0))
 	case "ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f":
-		return protoreflect.ValueOfUint64(uint64(0))
+		m := new(Fraction)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
 	default:
 		if fd.IsExtension() {
 			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.MithrilProtocolParameters"))
@@ -7443,8 +8276,9 @@ func (x *fastReflection_MithrilProtocolParameters) ProtoMethods() *protoiface.Me
 		if x.M != 0 {
 			n += 1 + runtime.Sov(uint64(x.M))
 		}
-		if x.PhiF != 0 {
-			n += 1 + runtime.Sov(uint64(x.PhiF))
+		if x.PhiF != nil {
+			l = options.Size(x.PhiF)
+			n += 1 + l + runtime.Sov(uint64(l))
 		}
 		if x.unknownFields != nil {
 			n += len(x.unknownFields)
@@ -7475,10 +8309,19 @@ func (x *fastReflection_MithrilProtocolParameters) ProtoMethods() *protoiface.Me
 			i -= len(x.unknownFields)
 			copy(dAtA[i:], x.unknownFields)
 		}
-		if x.PhiF != 0 {
-			i = runtime.EncodeVarint(dAtA, i, uint64(x.PhiF))
+		if x.PhiF != nil {
+			encoded, err := options.Marshal(x.PhiF)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
 			i--
-			dAtA[i] = 0x18
+			dAtA[i] = 0x1a
 		}
 		if x.M != 0 {
 			i = runtime.EncodeVarint(dAtA, i, uint64(x.M))
@@ -7578,10 +8421,10 @@ func (x *fastReflection_MithrilProtocolParameters) ProtoMethods() *protoiface.Me
 					}
 				}
 			case 3:
-				if wireType != 0 {
+				if wireType != 2 {
 					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field PhiF", wireType)
 				}
-				x.PhiF = 0
+				var msglen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
@@ -7591,7 +8434,3491 @@ func (x *fastReflection_MithrilProtocolParameters) ProtoMethods() *protoiface.Me
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					x.PhiF |= uint64(b&0x7F) << shift
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.PhiF == nil {
+					x.PhiF = &Fraction{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.PhiF); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_ProtocolGenesisSignature           protoreflect.MessageDescriptor
+	fd_ProtocolGenesisSignature_signature protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_ProtocolGenesisSignature = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("ProtocolGenesisSignature")
+	fd_ProtocolGenesisSignature_signature = md_ProtocolGenesisSignature.Fields().ByName("signature")
+}
+
+var _ protoreflect.Message = (*fastReflection_ProtocolGenesisSignature)(nil)
+
+type fastReflection_ProtocolGenesisSignature ProtocolGenesisSignature
+
+func (x *ProtocolGenesisSignature) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_ProtocolGenesisSignature)(x)
+}
+
+func (x *ProtocolGenesisSignature) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[13]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_ProtocolGenesisSignature_messageType fastReflection_ProtocolGenesisSignature_messageType
+var _ protoreflect.MessageType = fastReflection_ProtocolGenesisSignature_messageType{}
+
+type fastReflection_ProtocolGenesisSignature_messageType struct{}
+
+func (x fastReflection_ProtocolGenesisSignature_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_ProtocolGenesisSignature)(nil)
+}
+func (x fastReflection_ProtocolGenesisSignature_messageType) New() protoreflect.Message {
+	return new(fastReflection_ProtocolGenesisSignature)
+}
+func (x fastReflection_ProtocolGenesisSignature_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_ProtocolGenesisSignature
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_ProtocolGenesisSignature) Descriptor() protoreflect.MessageDescriptor {
+	return md_ProtocolGenesisSignature
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_ProtocolGenesisSignature) Type() protoreflect.MessageType {
+	return _fastReflection_ProtocolGenesisSignature_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_ProtocolGenesisSignature) New() protoreflect.Message {
+	return new(fastReflection_ProtocolGenesisSignature)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_ProtocolGenesisSignature) Interface() protoreflect.ProtoMessage {
+	return (*ProtocolGenesisSignature)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_ProtocolGenesisSignature) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if len(x.Signature) != 0 {
+		value := protoreflect.ValueOfBytes(x.Signature)
+		if !f(fd_ProtocolGenesisSignature_signature, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_ProtocolGenesisSignature) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		return len(x.Signature) != 0
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ProtocolGenesisSignature) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		x.Signature = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_ProtocolGenesisSignature) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		value := x.Signature
+		return protoreflect.ValueOfBytes(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ProtocolGenesisSignature) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		x.Signature = value.Bytes()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ProtocolGenesisSignature) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		panic(fmt.Errorf("field signature of message ibc.clients.mithril.v1.ProtocolGenesisSignature is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_ProtocolGenesisSignature) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.ProtocolGenesisSignature.signature":
+		return protoreflect.ValueOfBytes(nil)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.ProtocolGenesisSignature"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.ProtocolGenesisSignature does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_ProtocolGenesisSignature) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.ProtocolGenesisSignature", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_ProtocolGenesisSignature) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_ProtocolGenesisSignature) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_ProtocolGenesisSignature) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_ProtocolGenesisSignature) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*ProtocolGenesisSignature)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Signature)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*ProtocolGenesisSignature)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if len(x.Signature) > 0 {
+			i -= len(x.Signature)
+			copy(dAtA[i:], x.Signature)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Signature)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*ProtocolGenesisSignature)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ProtocolGenesisSignature: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: ProtocolGenesisSignature: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Signature", wireType)
+				}
+				var byteLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					byteLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if byteLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + byteLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Signature = append(x.Signature[:0], dAtA[iNdEx:postIndex]...)
+				if x.Signature == nil {
+					x.Signature = []byte{}
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_SignedEntityType                              protoreflect.MessageDescriptor
+	fd_SignedEntityType_mithril_stake_distribution   protoreflect.FieldDescriptor
+	fd_SignedEntityType_cardano_stake_distribution   protoreflect.FieldDescriptor
+	fd_SignedEntityType_cardano_immutable_files_full protoreflect.FieldDescriptor
+	fd_SignedEntityType_cardano_transactions         protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_SignedEntityType = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("SignedEntityType")
+	fd_SignedEntityType_mithril_stake_distribution = md_SignedEntityType.Fields().ByName("mithril_stake_distribution")
+	fd_SignedEntityType_cardano_stake_distribution = md_SignedEntityType.Fields().ByName("cardano_stake_distribution")
+	fd_SignedEntityType_cardano_immutable_files_full = md_SignedEntityType.Fields().ByName("cardano_immutable_files_full")
+	fd_SignedEntityType_cardano_transactions = md_SignedEntityType.Fields().ByName("cardano_transactions")
+}
+
+var _ protoreflect.Message = (*fastReflection_SignedEntityType)(nil)
+
+type fastReflection_SignedEntityType SignedEntityType
+
+func (x *SignedEntityType) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_SignedEntityType)(x)
+}
+
+func (x *SignedEntityType) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[14]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_SignedEntityType_messageType fastReflection_SignedEntityType_messageType
+var _ protoreflect.MessageType = fastReflection_SignedEntityType_messageType{}
+
+type fastReflection_SignedEntityType_messageType struct{}
+
+func (x fastReflection_SignedEntityType_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_SignedEntityType)(nil)
+}
+func (x fastReflection_SignedEntityType_messageType) New() protoreflect.Message {
+	return new(fastReflection_SignedEntityType)
+}
+func (x fastReflection_SignedEntityType_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_SignedEntityType
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_SignedEntityType) Descriptor() protoreflect.MessageDescriptor {
+	return md_SignedEntityType
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_SignedEntityType) Type() protoreflect.MessageType {
+	return _fastReflection_SignedEntityType_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_SignedEntityType) New() protoreflect.Message {
+	return new(fastReflection_SignedEntityType)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_SignedEntityType) Interface() protoreflect.ProtoMessage {
+	return (*SignedEntityType)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_SignedEntityType) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Entity != nil {
+		switch o := x.Entity.(type) {
+		case *SignedEntityType_MithrilStakeDistribution:
+			v := o.MithrilStakeDistribution
+			value := protoreflect.ValueOfMessage(v.ProtoReflect())
+			if !f(fd_SignedEntityType_mithril_stake_distribution, value) {
+				return
+			}
+		case *SignedEntityType_CardanoStakeDistribution:
+			v := o.CardanoStakeDistribution
+			value := protoreflect.ValueOfMessage(v.ProtoReflect())
+			if !f(fd_SignedEntityType_cardano_stake_distribution, value) {
+				return
+			}
+		case *SignedEntityType_CardanoImmutableFilesFull:
+			v := o.CardanoImmutableFilesFull
+			value := protoreflect.ValueOfMessage(v.ProtoReflect())
+			if !f(fd_SignedEntityType_cardano_immutable_files_full, value) {
+				return
+			}
+		case *SignedEntityType_CardanoTransactions:
+			v := o.CardanoTransactions
+			value := protoreflect.ValueOfMessage(v.ProtoReflect())
+			if !f(fd_SignedEntityType_cardano_transactions, value) {
+				return
+			}
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_SignedEntityType) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		if x.Entity == nil {
+			return false
+		} else if _, ok := x.Entity.(*SignedEntityType_MithrilStakeDistribution); ok {
+			return true
+		} else {
+			return false
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		if x.Entity == nil {
+			return false
+		} else if _, ok := x.Entity.(*SignedEntityType_CardanoStakeDistribution); ok {
+			return true
+		} else {
+			return false
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		if x.Entity == nil {
+			return false
+		} else if _, ok := x.Entity.(*SignedEntityType_CardanoImmutableFilesFull); ok {
+			return true
+		} else {
+			return false
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		if x.Entity == nil {
+			return false
+		} else if _, ok := x.Entity.(*SignedEntityType_CardanoTransactions); ok {
+			return true
+		} else {
+			return false
+		}
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_SignedEntityType) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		x.Entity = nil
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		x.Entity = nil
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		x.Entity = nil
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		x.Entity = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_SignedEntityType) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		if x.Entity == nil {
+			return protoreflect.ValueOfMessage((*MithrilStakeDistribution)(nil).ProtoReflect())
+		} else if v, ok := x.Entity.(*SignedEntityType_MithrilStakeDistribution); ok {
+			return protoreflect.ValueOfMessage(v.MithrilStakeDistribution.ProtoReflect())
+		} else {
+			return protoreflect.ValueOfMessage((*MithrilStakeDistribution)(nil).ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		if x.Entity == nil {
+			return protoreflect.ValueOfMessage((*CardanoStakeDistribution)(nil).ProtoReflect())
+		} else if v, ok := x.Entity.(*SignedEntityType_CardanoStakeDistribution); ok {
+			return protoreflect.ValueOfMessage(v.CardanoStakeDistribution.ProtoReflect())
+		} else {
+			return protoreflect.ValueOfMessage((*CardanoStakeDistribution)(nil).ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		if x.Entity == nil {
+			return protoreflect.ValueOfMessage((*CardanoImmutableFilesFull)(nil).ProtoReflect())
+		} else if v, ok := x.Entity.(*SignedEntityType_CardanoImmutableFilesFull); ok {
+			return protoreflect.ValueOfMessage(v.CardanoImmutableFilesFull.ProtoReflect())
+		} else {
+			return protoreflect.ValueOfMessage((*CardanoImmutableFilesFull)(nil).ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		if x.Entity == nil {
+			return protoreflect.ValueOfMessage((*CardanoTransactions)(nil).ProtoReflect())
+		} else if v, ok := x.Entity.(*SignedEntityType_CardanoTransactions); ok {
+			return protoreflect.ValueOfMessage(v.CardanoTransactions.ProtoReflect())
+		} else {
+			return protoreflect.ValueOfMessage((*CardanoTransactions)(nil).ProtoReflect())
+		}
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_SignedEntityType) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		cv := value.Message().Interface().(*MithrilStakeDistribution)
+		x.Entity = &SignedEntityType_MithrilStakeDistribution{MithrilStakeDistribution: cv}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		cv := value.Message().Interface().(*CardanoStakeDistribution)
+		x.Entity = &SignedEntityType_CardanoStakeDistribution{CardanoStakeDistribution: cv}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		cv := value.Message().Interface().(*CardanoImmutableFilesFull)
+		x.Entity = &SignedEntityType_CardanoImmutableFilesFull{CardanoImmutableFilesFull: cv}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		cv := value.Message().Interface().(*CardanoTransactions)
+		x.Entity = &SignedEntityType_CardanoTransactions{CardanoTransactions: cv}
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_SignedEntityType) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		if x.Entity == nil {
+			value := &MithrilStakeDistribution{}
+			oneofValue := &SignedEntityType_MithrilStakeDistribution{MithrilStakeDistribution: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+		switch m := x.Entity.(type) {
+		case *SignedEntityType_MithrilStakeDistribution:
+			return protoreflect.ValueOfMessage(m.MithrilStakeDistribution.ProtoReflect())
+		default:
+			value := &MithrilStakeDistribution{}
+			oneofValue := &SignedEntityType_MithrilStakeDistribution{MithrilStakeDistribution: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		if x.Entity == nil {
+			value := &CardanoStakeDistribution{}
+			oneofValue := &SignedEntityType_CardanoStakeDistribution{CardanoStakeDistribution: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+		switch m := x.Entity.(type) {
+		case *SignedEntityType_CardanoStakeDistribution:
+			return protoreflect.ValueOfMessage(m.CardanoStakeDistribution.ProtoReflect())
+		default:
+			value := &CardanoStakeDistribution{}
+			oneofValue := &SignedEntityType_CardanoStakeDistribution{CardanoStakeDistribution: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		if x.Entity == nil {
+			value := &CardanoImmutableFilesFull{}
+			oneofValue := &SignedEntityType_CardanoImmutableFilesFull{CardanoImmutableFilesFull: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+		switch m := x.Entity.(type) {
+		case *SignedEntityType_CardanoImmutableFilesFull:
+			return protoreflect.ValueOfMessage(m.CardanoImmutableFilesFull.ProtoReflect())
+		default:
+			value := &CardanoImmutableFilesFull{}
+			oneofValue := &SignedEntityType_CardanoImmutableFilesFull{CardanoImmutableFilesFull: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		if x.Entity == nil {
+			value := &CardanoTransactions{}
+			oneofValue := &SignedEntityType_CardanoTransactions{CardanoTransactions: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+		switch m := x.Entity.(type) {
+		case *SignedEntityType_CardanoTransactions:
+			return protoreflect.ValueOfMessage(m.CardanoTransactions.ProtoReflect())
+		default:
+			value := &CardanoTransactions{}
+			oneofValue := &SignedEntityType_CardanoTransactions{CardanoTransactions: value}
+			x.Entity = oneofValue
+			return protoreflect.ValueOfMessage(value.ProtoReflect())
+		}
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_SignedEntityType) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution":
+		value := &MithrilStakeDistribution{}
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution":
+		value := &CardanoStakeDistribution{}
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full":
+		value := &CardanoImmutableFilesFull{}
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	case "ibc.clients.mithril.v1.SignedEntityType.cardano_transactions":
+		value := &CardanoTransactions{}
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.SignedEntityType"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.SignedEntityType does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_SignedEntityType) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	case "ibc.clients.mithril.v1.SignedEntityType.entity":
+		if x.Entity == nil {
+			return nil
+		}
+		switch x.Entity.(type) {
+		case *SignedEntityType_MithrilStakeDistribution:
+			return x.Descriptor().Fields().ByName("mithril_stake_distribution")
+		case *SignedEntityType_CardanoStakeDistribution:
+			return x.Descriptor().Fields().ByName("cardano_stake_distribution")
+		case *SignedEntityType_CardanoImmutableFilesFull:
+			return x.Descriptor().Fields().ByName("cardano_immutable_files_full")
+		case *SignedEntityType_CardanoTransactions:
+			return x.Descriptor().Fields().ByName("cardano_transactions")
+		}
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.SignedEntityType", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_SignedEntityType) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_SignedEntityType) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_SignedEntityType) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_SignedEntityType) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*SignedEntityType)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		switch x := x.Entity.(type) {
+		case *SignedEntityType_MithrilStakeDistribution:
+			if x == nil {
+				break
+			}
+			l = options.Size(x.MithrilStakeDistribution)
+			n += 1 + l + runtime.Sov(uint64(l))
+		case *SignedEntityType_CardanoStakeDistribution:
+			if x == nil {
+				break
+			}
+			l = options.Size(x.CardanoStakeDistribution)
+			n += 1 + l + runtime.Sov(uint64(l))
+		case *SignedEntityType_CardanoImmutableFilesFull:
+			if x == nil {
+				break
+			}
+			l = options.Size(x.CardanoImmutableFilesFull)
+			n += 1 + l + runtime.Sov(uint64(l))
+		case *SignedEntityType_CardanoTransactions:
+			if x == nil {
+				break
+			}
+			l = options.Size(x.CardanoTransactions)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*SignedEntityType)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		switch x := x.Entity.(type) {
+		case *SignedEntityType_MithrilStakeDistribution:
+			encoded, err := options.Marshal(x.MithrilStakeDistribution)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0xa
+		case *SignedEntityType_CardanoStakeDistribution:
+			encoded, err := options.Marshal(x.CardanoStakeDistribution)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x12
+		case *SignedEntityType_CardanoImmutableFilesFull:
+			encoded, err := options.Marshal(x.CardanoImmutableFilesFull)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x1a
+		case *SignedEntityType_CardanoTransactions:
+			encoded, err := options.Marshal(x.CardanoTransactions)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0x22
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*SignedEntityType)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SignedEntityType: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: SignedEntityType: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field MithrilStakeDistribution", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				v := &MithrilStakeDistribution{}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				x.Entity = &SignedEntityType_MithrilStakeDistribution{v}
+				iNdEx = postIndex
+			case 2:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field CardanoStakeDistribution", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				v := &CardanoStakeDistribution{}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				x.Entity = &SignedEntityType_CardanoStakeDistribution{v}
+				iNdEx = postIndex
+			case 3:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field CardanoImmutableFilesFull", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				v := &CardanoImmutableFilesFull{}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				x.Entity = &SignedEntityType_CardanoImmutableFilesFull{v}
+				iNdEx = postIndex
+			case 4:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field CardanoTransactions", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				v := &CardanoTransactions{}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], v); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				x.Entity = &SignedEntityType_CardanoTransactions{v}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_CardanoStakeDistribution       protoreflect.MessageDescriptor
+	fd_CardanoStakeDistribution_epoch protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_CardanoStakeDistribution = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CardanoStakeDistribution")
+	fd_CardanoStakeDistribution_epoch = md_CardanoStakeDistribution.Fields().ByName("epoch")
+}
+
+var _ protoreflect.Message = (*fastReflection_CardanoStakeDistribution)(nil)
+
+type fastReflection_CardanoStakeDistribution CardanoStakeDistribution
+
+func (x *CardanoStakeDistribution) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_CardanoStakeDistribution)(x)
+}
+
+func (x *CardanoStakeDistribution) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[15]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_CardanoStakeDistribution_messageType fastReflection_CardanoStakeDistribution_messageType
+var _ protoreflect.MessageType = fastReflection_CardanoStakeDistribution_messageType{}
+
+type fastReflection_CardanoStakeDistribution_messageType struct{}
+
+func (x fastReflection_CardanoStakeDistribution_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_CardanoStakeDistribution)(nil)
+}
+func (x fastReflection_CardanoStakeDistribution_messageType) New() protoreflect.Message {
+	return new(fastReflection_CardanoStakeDistribution)
+}
+func (x fastReflection_CardanoStakeDistribution_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoStakeDistribution
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_CardanoStakeDistribution) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoStakeDistribution
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_CardanoStakeDistribution) Type() protoreflect.MessageType {
+	return _fastReflection_CardanoStakeDistribution_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_CardanoStakeDistribution) New() protoreflect.Message {
+	return new(fastReflection_CardanoStakeDistribution)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_CardanoStakeDistribution) Interface() protoreflect.ProtoMessage {
+	return (*CardanoStakeDistribution)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_CardanoStakeDistribution) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Epoch != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Epoch)
+		if !f(fd_CardanoStakeDistribution_epoch, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_CardanoStakeDistribution) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		return x.Epoch != uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoStakeDistribution) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		x.Epoch = uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_CardanoStakeDistribution) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		value := x.Epoch
+		return protoreflect.ValueOfUint64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoStakeDistribution) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		x.Epoch = value.Uint()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoStakeDistribution) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		panic(fmt.Errorf("field epoch of message ibc.clients.mithril.v1.CardanoStakeDistribution is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_CardanoStakeDistribution) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoStakeDistribution.epoch":
+		return protoreflect.ValueOfUint64(uint64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoStakeDistribution"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoStakeDistribution does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_CardanoStakeDistribution) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.CardanoStakeDistribution", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_CardanoStakeDistribution) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoStakeDistribution) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_CardanoStakeDistribution) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_CardanoStakeDistribution) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*CardanoStakeDistribution)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.Epoch != 0 {
+			n += 1 + runtime.Sov(uint64(x.Epoch))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoStakeDistribution)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Epoch != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
+			i--
+			dAtA[i] = 0x8
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoStakeDistribution)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoStakeDistribution: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoStakeDistribution: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+				}
+				x.Epoch = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Epoch |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_CardanoImmutableFilesFull        protoreflect.MessageDescriptor
+	fd_CardanoImmutableFilesFull_beacon protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_CardanoImmutableFilesFull = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CardanoImmutableFilesFull")
+	fd_CardanoImmutableFilesFull_beacon = md_CardanoImmutableFilesFull.Fields().ByName("beacon")
+}
+
+var _ protoreflect.Message = (*fastReflection_CardanoImmutableFilesFull)(nil)
+
+type fastReflection_CardanoImmutableFilesFull CardanoImmutableFilesFull
+
+func (x *CardanoImmutableFilesFull) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_CardanoImmutableFilesFull)(x)
+}
+
+func (x *CardanoImmutableFilesFull) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[16]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_CardanoImmutableFilesFull_messageType fastReflection_CardanoImmutableFilesFull_messageType
+var _ protoreflect.MessageType = fastReflection_CardanoImmutableFilesFull_messageType{}
+
+type fastReflection_CardanoImmutableFilesFull_messageType struct{}
+
+func (x fastReflection_CardanoImmutableFilesFull_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_CardanoImmutableFilesFull)(nil)
+}
+func (x fastReflection_CardanoImmutableFilesFull_messageType) New() protoreflect.Message {
+	return new(fastReflection_CardanoImmutableFilesFull)
+}
+func (x fastReflection_CardanoImmutableFilesFull_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoImmutableFilesFull
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_CardanoImmutableFilesFull) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoImmutableFilesFull
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_CardanoImmutableFilesFull) Type() protoreflect.MessageType {
+	return _fastReflection_CardanoImmutableFilesFull_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_CardanoImmutableFilesFull) New() protoreflect.Message {
+	return new(fastReflection_CardanoImmutableFilesFull)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_CardanoImmutableFilesFull) Interface() protoreflect.ProtoMessage {
+	return (*CardanoImmutableFilesFull)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_CardanoImmutableFilesFull) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Beacon != nil {
+		value := protoreflect.ValueOfMessage(x.Beacon.ProtoReflect())
+		if !f(fd_CardanoImmutableFilesFull_beacon, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_CardanoImmutableFilesFull) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		return x.Beacon != nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoImmutableFilesFull) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		x.Beacon = nil
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_CardanoImmutableFilesFull) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		value := x.Beacon
+		return protoreflect.ValueOfMessage(value.ProtoReflect())
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoImmutableFilesFull) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		x.Beacon = value.Message().Interface().(*CardanoDbBeacon)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoImmutableFilesFull) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		if x.Beacon == nil {
+			x.Beacon = new(CardanoDbBeacon)
+		}
+		return protoreflect.ValueOfMessage(x.Beacon.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_CardanoImmutableFilesFull) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon":
+		m := new(CardanoDbBeacon)
+		return protoreflect.ValueOfMessage(m.ProtoReflect())
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoImmutableFilesFull"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoImmutableFilesFull does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_CardanoImmutableFilesFull) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.CardanoImmutableFilesFull", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_CardanoImmutableFilesFull) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoImmutableFilesFull) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_CardanoImmutableFilesFull) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_CardanoImmutableFilesFull) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*CardanoImmutableFilesFull)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.Beacon != nil {
+			l = options.Size(x.Beacon)
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoImmutableFilesFull)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Beacon != nil {
+			encoded, err := options.Marshal(x.Beacon)
+			if err != nil {
+				return protoiface.MarshalOutput{
+					NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+					Buf:               input.Buf,
+				}, err
+			}
+			i -= len(encoded)
+			copy(dAtA[i:], encoded)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(encoded)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoImmutableFilesFull)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoImmutableFilesFull: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoImmutableFilesFull: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Beacon", wireType)
+				}
+				var msglen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					msglen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if msglen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + msglen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if x.Beacon == nil {
+					x.Beacon = &CardanoDbBeacon{}
+				}
+				if err := options.Unmarshal(dAtA[iNdEx:postIndex], x.Beacon); err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				iNdEx = postIndex
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_CardanoTransactions              protoreflect.MessageDescriptor
+	fd_CardanoTransactions_epoch        protoreflect.FieldDescriptor
+	fd_CardanoTransactions_block_number protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_CardanoTransactions = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CardanoTransactions")
+	fd_CardanoTransactions_epoch = md_CardanoTransactions.Fields().ByName("epoch")
+	fd_CardanoTransactions_block_number = md_CardanoTransactions.Fields().ByName("block_number")
+}
+
+var _ protoreflect.Message = (*fastReflection_CardanoTransactions)(nil)
+
+type fastReflection_CardanoTransactions CardanoTransactions
+
+func (x *CardanoTransactions) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_CardanoTransactions)(x)
+}
+
+func (x *CardanoTransactions) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[17]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_CardanoTransactions_messageType fastReflection_CardanoTransactions_messageType
+var _ protoreflect.MessageType = fastReflection_CardanoTransactions_messageType{}
+
+type fastReflection_CardanoTransactions_messageType struct{}
+
+func (x fastReflection_CardanoTransactions_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_CardanoTransactions)(nil)
+}
+func (x fastReflection_CardanoTransactions_messageType) New() protoreflect.Message {
+	return new(fastReflection_CardanoTransactions)
+}
+func (x fastReflection_CardanoTransactions_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoTransactions
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_CardanoTransactions) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoTransactions
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_CardanoTransactions) Type() protoreflect.MessageType {
+	return _fastReflection_CardanoTransactions_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_CardanoTransactions) New() protoreflect.Message {
+	return new(fastReflection_CardanoTransactions)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_CardanoTransactions) Interface() protoreflect.ProtoMessage {
+	return (*CardanoTransactions)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_CardanoTransactions) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Epoch != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Epoch)
+		if !f(fd_CardanoTransactions_epoch, value) {
+			return
+		}
+	}
+	if x.BlockNumber != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.BlockNumber)
+		if !f(fd_CardanoTransactions_block_number, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_CardanoTransactions) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		return x.Epoch != uint64(0)
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		return x.BlockNumber != uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoTransactions) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		x.Epoch = uint64(0)
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		x.BlockNumber = uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_CardanoTransactions) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		value := x.Epoch
+		return protoreflect.ValueOfUint64(value)
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		value := x.BlockNumber
+		return protoreflect.ValueOfUint64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoTransactions) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		x.Epoch = value.Uint()
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		x.BlockNumber = value.Uint()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoTransactions) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		panic(fmt.Errorf("field epoch of message ibc.clients.mithril.v1.CardanoTransactions is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		panic(fmt.Errorf("field block_number of message ibc.clients.mithril.v1.CardanoTransactions is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_CardanoTransactions) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoTransactions.epoch":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.CardanoTransactions.block_number":
+		return protoreflect.ValueOfUint64(uint64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoTransactions"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoTransactions does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_CardanoTransactions) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.CardanoTransactions", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_CardanoTransactions) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoTransactions) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_CardanoTransactions) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_CardanoTransactions) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*CardanoTransactions)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.Epoch != 0 {
+			n += 1 + runtime.Sov(uint64(x.Epoch))
+		}
+		if x.BlockNumber != 0 {
+			n += 1 + runtime.Sov(uint64(x.BlockNumber))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoTransactions)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.BlockNumber != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.BlockNumber))
+			i--
+			dAtA[i] = 0x10
+		}
+		if x.Epoch != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
+			i--
+			dAtA[i] = 0x8
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoTransactions)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoTransactions: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoTransactions: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+				}
+				x.Epoch = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Epoch |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field BlockNumber", wireType)
+				}
+				x.BlockNumber = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.BlockNumber |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_CardanoDbBeacon                       protoreflect.MessageDescriptor
+	fd_CardanoDbBeacon_network               protoreflect.FieldDescriptor
+	fd_CardanoDbBeacon_epoch                 protoreflect.FieldDescriptor
+	fd_CardanoDbBeacon_immutable_file_number protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_CardanoDbBeacon = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("CardanoDbBeacon")
+	fd_CardanoDbBeacon_network = md_CardanoDbBeacon.Fields().ByName("network")
+	fd_CardanoDbBeacon_epoch = md_CardanoDbBeacon.Fields().ByName("epoch")
+	fd_CardanoDbBeacon_immutable_file_number = md_CardanoDbBeacon.Fields().ByName("immutable_file_number")
+}
+
+var _ protoreflect.Message = (*fastReflection_CardanoDbBeacon)(nil)
+
+type fastReflection_CardanoDbBeacon CardanoDbBeacon
+
+func (x *CardanoDbBeacon) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_CardanoDbBeacon)(x)
+}
+
+func (x *CardanoDbBeacon) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[18]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_CardanoDbBeacon_messageType fastReflection_CardanoDbBeacon_messageType
+var _ protoreflect.MessageType = fastReflection_CardanoDbBeacon_messageType{}
+
+type fastReflection_CardanoDbBeacon_messageType struct{}
+
+func (x fastReflection_CardanoDbBeacon_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_CardanoDbBeacon)(nil)
+}
+func (x fastReflection_CardanoDbBeacon_messageType) New() protoreflect.Message {
+	return new(fastReflection_CardanoDbBeacon)
+}
+func (x fastReflection_CardanoDbBeacon_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoDbBeacon
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_CardanoDbBeacon) Descriptor() protoreflect.MessageDescriptor {
+	return md_CardanoDbBeacon
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_CardanoDbBeacon) Type() protoreflect.MessageType {
+	return _fastReflection_CardanoDbBeacon_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_CardanoDbBeacon) New() protoreflect.Message {
+	return new(fastReflection_CardanoDbBeacon)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_CardanoDbBeacon) Interface() protoreflect.ProtoMessage {
+	return (*CardanoDbBeacon)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_CardanoDbBeacon) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Network != "" {
+		value := protoreflect.ValueOfString(x.Network)
+		if !f(fd_CardanoDbBeacon_network, value) {
+			return
+		}
+	}
+	if x.Epoch != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Epoch)
+		if !f(fd_CardanoDbBeacon_epoch, value) {
+			return
+		}
+	}
+	if x.ImmutableFileNumber != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.ImmutableFileNumber)
+		if !f(fd_CardanoDbBeacon_immutable_file_number, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_CardanoDbBeacon) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		return x.Network != ""
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		return x.Epoch != uint64(0)
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		return x.ImmutableFileNumber != uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoDbBeacon) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		x.Network = ""
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		x.Epoch = uint64(0)
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		x.ImmutableFileNumber = uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_CardanoDbBeacon) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		value := x.Network
+		return protoreflect.ValueOfString(value)
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		value := x.Epoch
+		return protoreflect.ValueOfUint64(value)
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		value := x.ImmutableFileNumber
+		return protoreflect.ValueOfUint64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoDbBeacon) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		x.Network = value.Interface().(string)
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		x.Epoch = value.Uint()
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		x.ImmutableFileNumber = value.Uint()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoDbBeacon) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		panic(fmt.Errorf("field network of message ibc.clients.mithril.v1.CardanoDbBeacon is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		panic(fmt.Errorf("field epoch of message ibc.clients.mithril.v1.CardanoDbBeacon is not mutable"))
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		panic(fmt.Errorf("field immutable_file_number of message ibc.clients.mithril.v1.CardanoDbBeacon is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_CardanoDbBeacon) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.network":
+		return protoreflect.ValueOfString("")
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.epoch":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.CardanoDbBeacon.immutable_file_number":
+		return protoreflect.ValueOfUint64(uint64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.CardanoDbBeacon"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.CardanoDbBeacon does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_CardanoDbBeacon) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.CardanoDbBeacon", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_CardanoDbBeacon) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_CardanoDbBeacon) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_CardanoDbBeacon) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_CardanoDbBeacon) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*CardanoDbBeacon)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		l = len(x.Network)
+		if l > 0 {
+			n += 1 + l + runtime.Sov(uint64(l))
+		}
+		if x.Epoch != 0 {
+			n += 1 + runtime.Sov(uint64(x.Epoch))
+		}
+		if x.ImmutableFileNumber != 0 {
+			n += 1 + runtime.Sov(uint64(x.ImmutableFileNumber))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoDbBeacon)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.ImmutableFileNumber != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.ImmutableFileNumber))
+			i--
+			dAtA[i] = 0x18
+		}
+		if x.Epoch != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Epoch))
+			i--
+			dAtA[i] = 0x10
+		}
+		if len(x.Network) > 0 {
+			i -= len(x.Network)
+			copy(dAtA[i:], x.Network)
+			i = runtime.EncodeVarint(dAtA, i, uint64(len(x.Network)))
+			i--
+			dAtA[i] = 0xa
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*CardanoDbBeacon)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoDbBeacon: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: CardanoDbBeacon: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 2 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Network", wireType)
+				}
+				var stringLen uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					stringLen |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				intStringLen := int(stringLen)
+				if intStringLen < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				postIndex := iNdEx + intStringLen
+				if postIndex < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if postIndex > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				x.Network = string(dAtA[iNdEx:postIndex])
+				iNdEx = postIndex
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Epoch", wireType)
+				}
+				x.Epoch = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Epoch |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 3:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field ImmutableFileNumber", wireType)
+				}
+				x.ImmutableFileNumber = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.ImmutableFileNumber |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			default:
+				iNdEx = preIndex
+				skippy, err := runtime.Skip(dAtA[iNdEx:])
+				if err != nil {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, err
+				}
+				if (skippy < 0) || (iNdEx+skippy) < 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrInvalidLength
+				}
+				if (iNdEx + skippy) > l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				if !options.DiscardUnknown {
+					x.unknownFields = append(x.unknownFields, dAtA[iNdEx:iNdEx+skippy]...)
+				}
+				iNdEx += skippy
+			}
+		}
+
+		if iNdEx > l {
+			return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+		}
+		return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, nil
+	}
+	return &protoiface.Methods{
+		NoUnkeyedLiterals: struct{}{},
+		Flags:             protoiface.SupportMarshalDeterministic | protoiface.SupportUnmarshalDiscardUnknown,
+		Size:              size,
+		Marshal:           marshal,
+		Unmarshal:         unmarshal,
+		Merge:             nil,
+		CheckInitialized:  nil,
+	}
+}
+
+var (
+	md_Fraction             protoreflect.MessageDescriptor
+	fd_Fraction_numerator   protoreflect.FieldDescriptor
+	fd_Fraction_denominator protoreflect.FieldDescriptor
+)
+
+func init() {
+	file_ibc_clients_mithril_v1_mithril_proto_init()
+	md_Fraction = File_ibc_clients_mithril_v1_mithril_proto.Messages().ByName("Fraction")
+	fd_Fraction_numerator = md_Fraction.Fields().ByName("numerator")
+	fd_Fraction_denominator = md_Fraction.Fields().ByName("denominator")
+}
+
+var _ protoreflect.Message = (*fastReflection_Fraction)(nil)
+
+type fastReflection_Fraction Fraction
+
+func (x *Fraction) ProtoReflect() protoreflect.Message {
+	return (*fastReflection_Fraction)(x)
+}
+
+func (x *Fraction) slowProtoReflect() protoreflect.Message {
+	mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[19]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+var _fastReflection_Fraction_messageType fastReflection_Fraction_messageType
+var _ protoreflect.MessageType = fastReflection_Fraction_messageType{}
+
+type fastReflection_Fraction_messageType struct{}
+
+func (x fastReflection_Fraction_messageType) Zero() protoreflect.Message {
+	return (*fastReflection_Fraction)(nil)
+}
+func (x fastReflection_Fraction_messageType) New() protoreflect.Message {
+	return new(fastReflection_Fraction)
+}
+func (x fastReflection_Fraction_messageType) Descriptor() protoreflect.MessageDescriptor {
+	return md_Fraction
+}
+
+// Descriptor returns message descriptor, which contains only the protobuf
+// type information for the message.
+func (x *fastReflection_Fraction) Descriptor() protoreflect.MessageDescriptor {
+	return md_Fraction
+}
+
+// Type returns the message type, which encapsulates both Go and protobuf
+// type information. If the Go type information is not needed,
+// it is recommended that the message descriptor be used instead.
+func (x *fastReflection_Fraction) Type() protoreflect.MessageType {
+	return _fastReflection_Fraction_messageType
+}
+
+// New returns a newly allocated and mutable empty message.
+func (x *fastReflection_Fraction) New() protoreflect.Message {
+	return new(fastReflection_Fraction)
+}
+
+// Interface unwraps the message reflection interface and
+// returns the underlying ProtoMessage interface.
+func (x *fastReflection_Fraction) Interface() protoreflect.ProtoMessage {
+	return (*Fraction)(x)
+}
+
+// Range iterates over every populated field in an undefined order,
+// calling f for each field descriptor and value encountered.
+// Range returns immediately if f returns false.
+// While iterating, mutating operations may only be performed
+// on the current field descriptor.
+func (x *fastReflection_Fraction) Range(f func(protoreflect.FieldDescriptor, protoreflect.Value) bool) {
+	if x.Numerator != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Numerator)
+		if !f(fd_Fraction_numerator, value) {
+			return
+		}
+	}
+	if x.Denominator != uint64(0) {
+		value := protoreflect.ValueOfUint64(x.Denominator)
+		if !f(fd_Fraction_denominator, value) {
+			return
+		}
+	}
+}
+
+// Has reports whether a field is populated.
+//
+// Some fields have the property of nullability where it is possible to
+// distinguish between the default value of a field and whether the field
+// was explicitly populated with the default value. Singular message fields,
+// member fields of a oneof, and proto2 scalar fields are nullable. Such
+// fields are populated only if explicitly set.
+//
+// In other cases (aside from the nullable cases above),
+// a proto3 scalar field is populated if it contains a non-zero value, and
+// a repeated field is populated if it is non-empty.
+func (x *fastReflection_Fraction) Has(fd protoreflect.FieldDescriptor) bool {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		return x.Numerator != uint64(0)
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		return x.Denominator != uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", fd.FullName()))
+	}
+}
+
+// Clear clears the field such that a subsequent Has call reports false.
+//
+// Clearing an extension field clears both the extension type and value
+// associated with the given field number.
+//
+// Clear is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_Fraction) Clear(fd protoreflect.FieldDescriptor) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		x.Numerator = uint64(0)
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		x.Denominator = uint64(0)
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", fd.FullName()))
+	}
+}
+
+// Get retrieves the value for a field.
+//
+// For unpopulated scalars, it returns the default value, where
+// the default value of a bytes scalar is guaranteed to be a copy.
+// For unpopulated composite types, it returns an empty, read-only view
+// of the value; to obtain a mutable reference, use Mutable.
+func (x *fastReflection_Fraction) Get(descriptor protoreflect.FieldDescriptor) protoreflect.Value {
+	switch descriptor.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		value := x.Numerator
+		return protoreflect.ValueOfUint64(value)
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		value := x.Denominator
+		return protoreflect.ValueOfUint64(value)
+	default:
+		if descriptor.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", descriptor.FullName()))
+	}
+}
+
+// Set stores the value for a field.
+//
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType.
+// When setting a composite type, it is unspecified whether the stored value
+// aliases the source's memory in any way. If the composite value is an
+// empty, read-only value, then it panics.
+//
+// Set is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_Fraction) Set(fd protoreflect.FieldDescriptor, value protoreflect.Value) {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		x.Numerator = value.Uint()
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		x.Denominator = value.Uint()
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", fd.FullName()))
+	}
+}
+
+// Mutable returns a mutable reference to a composite type.
+//
+// If the field is unpopulated, it may allocate a composite value.
+// For a field belonging to a oneof, it implicitly clears any other field
+// that may be currently set within the same oneof.
+// For extension fields, it implicitly stores the provided ExtensionType
+// if not already stored.
+// It panics if the field does not contain a composite type.
+//
+// Mutable is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_Fraction) Mutable(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		panic(fmt.Errorf("field numerator of message ibc.clients.mithril.v1.Fraction is not mutable"))
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		panic(fmt.Errorf("field denominator of message ibc.clients.mithril.v1.Fraction is not mutable"))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", fd.FullName()))
+	}
+}
+
+// NewField returns a new value that is assignable to the field
+// for the given descriptor. For scalars, this returns the default value.
+// For lists, maps, and messages, this returns a new, empty, mutable value.
+func (x *fastReflection_Fraction) NewField(fd protoreflect.FieldDescriptor) protoreflect.Value {
+	switch fd.FullName() {
+	case "ibc.clients.mithril.v1.Fraction.numerator":
+		return protoreflect.ValueOfUint64(uint64(0))
+	case "ibc.clients.mithril.v1.Fraction.denominator":
+		return protoreflect.ValueOfUint64(uint64(0))
+	default:
+		if fd.IsExtension() {
+			panic(fmt.Errorf("proto3 declared messages do not support extensions: ibc.clients.mithril.v1.Fraction"))
+		}
+		panic(fmt.Errorf("message ibc.clients.mithril.v1.Fraction does not contain field %s", fd.FullName()))
+	}
+}
+
+// WhichOneof reports which field within the oneof is populated,
+// returning nil if none are populated.
+// It panics if the oneof descriptor does not belong to this message.
+func (x *fastReflection_Fraction) WhichOneof(d protoreflect.OneofDescriptor) protoreflect.FieldDescriptor {
+	switch d.FullName() {
+	default:
+		panic(fmt.Errorf("%s is not a oneof field in ibc.clients.mithril.v1.Fraction", d.FullName()))
+	}
+	panic("unreachable")
+}
+
+// GetUnknown retrieves the entire list of unknown fields.
+// The caller may only mutate the contents of the RawFields
+// if the mutated bytes are stored back into the message with SetUnknown.
+func (x *fastReflection_Fraction) GetUnknown() protoreflect.RawFields {
+	return x.unknownFields
+}
+
+// SetUnknown stores an entire list of unknown fields.
+// The raw fields must be syntactically valid according to the wire format.
+// An implementation may panic if this is not the case.
+// Once stored, the caller must not mutate the content of the RawFields.
+// An empty RawFields may be passed to clear the fields.
+//
+// SetUnknown is a mutating operation and unsafe for concurrent use.
+func (x *fastReflection_Fraction) SetUnknown(fields protoreflect.RawFields) {
+	x.unknownFields = fields
+}
+
+// IsValid reports whether the message is valid.
+//
+// An invalid message is an empty, read-only value.
+//
+// An invalid message often corresponds to a nil pointer of the concrete
+// message type, but the details are implementation dependent.
+// Validity is not part of the protobuf data model, and may not
+// be preserved in marshaling or other operations.
+func (x *fastReflection_Fraction) IsValid() bool {
+	return x != nil
+}
+
+// ProtoMethods returns optional fastReflectionFeature-path implementations of various operations.
+// This method may return nil.
+//
+// The returned methods type is identical to
+// "google.golang.org/protobuf/runtime/protoiface".Methods.
+// Consult the protoiface package documentation for details.
+func (x *fastReflection_Fraction) ProtoMethods() *protoiface.Methods {
+	size := func(input protoiface.SizeInput) protoiface.SizeOutput {
+		x := input.Message.Interface().(*Fraction)
+		if x == nil {
+			return protoiface.SizeOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Size:              0,
+			}
+		}
+		options := runtime.SizeInputToOptions(input)
+		_ = options
+		var n int
+		var l int
+		_ = l
+		if x.Numerator != 0 {
+			n += 1 + runtime.Sov(uint64(x.Numerator))
+		}
+		if x.Denominator != 0 {
+			n += 1 + runtime.Sov(uint64(x.Denominator))
+		}
+		if x.unknownFields != nil {
+			n += len(x.unknownFields)
+		}
+		return protoiface.SizeOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Size:              n,
+		}
+	}
+
+	marshal := func(input protoiface.MarshalInput) (protoiface.MarshalOutput, error) {
+		x := input.Message.Interface().(*Fraction)
+		if x == nil {
+			return protoiface.MarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Buf:               input.Buf,
+			}, nil
+		}
+		options := runtime.MarshalInputToOptions(input)
+		_ = options
+		size := options.Size(x)
+		dAtA := make([]byte, size)
+		i := len(dAtA)
+		_ = i
+		var l int
+		_ = l
+		if x.unknownFields != nil {
+			i -= len(x.unknownFields)
+			copy(dAtA[i:], x.unknownFields)
+		}
+		if x.Denominator != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Denominator))
+			i--
+			dAtA[i] = 0x10
+		}
+		if x.Numerator != 0 {
+			i = runtime.EncodeVarint(dAtA, i, uint64(x.Numerator))
+			i--
+			dAtA[i] = 0x8
+		}
+		if input.Buf != nil {
+			input.Buf = append(input.Buf, dAtA...)
+		} else {
+			input.Buf = dAtA
+		}
+		return protoiface.MarshalOutput{
+			NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+			Buf:               input.Buf,
+		}, nil
+	}
+	unmarshal := func(input protoiface.UnmarshalInput) (protoiface.UnmarshalOutput, error) {
+		x := input.Message.Interface().(*Fraction)
+		if x == nil {
+			return protoiface.UnmarshalOutput{
+				NoUnkeyedLiterals: input.NoUnkeyedLiterals,
+				Flags:             input.Flags,
+			}, nil
+		}
+		options := runtime.UnmarshalInputToOptions(input)
+		_ = options
+		dAtA := input.Buf
+		l := len(dAtA)
+		iNdEx := 0
+		for iNdEx < l {
+			preIndex := iNdEx
+			var wire uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+				}
+				if iNdEx >= l {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				wire |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			fieldNum := int32(wire >> 3)
+			wireType := int(wire & 0x7)
+			if wireType == 4 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: Fraction: wiretype end group for non-group")
+			}
+			if fieldNum <= 0 {
+				return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: Fraction: illegal tag %d (wire type %d)", fieldNum, wire)
+			}
+			switch fieldNum {
+			case 1:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Numerator", wireType)
+				}
+				x.Numerator = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Numerator |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+			case 2:
+				if wireType != 0 {
+					return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, fmt.Errorf("proto: wrong wireType = %d for field Denominator", wireType)
+				}
+				x.Denominator = 0
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, runtime.ErrIntOverflow
+					}
+					if iNdEx >= l {
+						return protoiface.UnmarshalOutput{NoUnkeyedLiterals: input.NoUnkeyedLiterals, Flags: input.Flags}, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					x.Denominator |= uint64(b&0x7F) << shift
 					if b < 0x80 {
 						break
 					}
@@ -7644,28 +11971,41 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Protocol Message Part Key
 type ProtocolMessagePartKey int32
 
 const (
-	ProtocolMessagePartKey_SNAPSHOT_DIGEST                  ProtocolMessagePartKey = 0
-	ProtocolMessagePartKey_CARDANO_TRANSACTIONS_MERKLE_ROOT ProtocolMessagePartKey = 1
-	ProtocolMessagePartKey_NEXT_AGGREGATE_VERIFICATION_KEY  ProtocolMessagePartKey = 2
-	ProtocolMessagePartKey_LATEST_IMMUTABLE_FILE_NUMBER     ProtocolMessagePartKey = 3
+	// Invalid message part key
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED ProtocolMessagePartKey = 0
+	// key "snapshot_digest"
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST ProtocolMessagePartKey = 1
+	// key "cardano_transactions_merkle_root"
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT ProtocolMessagePartKey = 2
+	// key "next_aggregate_verification_key"
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY ProtocolMessagePartKey = 3
+	// key "latest_immutable_file_number"
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER ProtocolMessagePartKey = 4
+	// key "latest_block_number"
+	ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER ProtocolMessagePartKey = 5
 )
 
 // Enum value maps for ProtocolMessagePartKey.
 var (
 	ProtocolMessagePartKey_name = map[int32]string{
-		0: "SNAPSHOT_DIGEST",
-		1: "CARDANO_TRANSACTIONS_MERKLE_ROOT",
-		2: "NEXT_AGGREGATE_VERIFICATION_KEY",
-		3: "LATEST_IMMUTABLE_FILE_NUMBER",
+		0: "PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED",
+		1: "PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST",
+		2: "PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT",
+		3: "PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY",
+		4: "PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER",
+		5: "PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER",
 	}
 	ProtocolMessagePartKey_value = map[string]int32{
-		"SNAPSHOT_DIGEST":                  0,
-		"CARDANO_TRANSACTIONS_MERKLE_ROOT": 1,
-		"NEXT_AGGREGATE_VERIFICATION_KEY":  2,
-		"LATEST_IMMUTABLE_FILE_NUMBER":     3,
+		"PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED":                      0,
+		"PROTOCOL_MESSAGE_PART_KEY_SNAPSHOT_DIGEST":                  1,
+		"PROTOCOL_MESSAGE_PART_KEY_CARDANO_TRANSACTIONS_MERKLE_ROOT": 2,
+		"PROTOCOL_MESSAGE_PART_KEY_NEXT_AGGREGATE_VERIFICATION_KEY":  3,
+		"PROTOCOL_MESSAGE_PART_KEY_LATEST_IMMUTABLE_FILE_NUMBER":     4,
+		"PROTOCOL_MESSAGE_PART_KEY_LATEST_BLOCK_NUMBER":              5,
 	}
 )
 
@@ -7696,105 +12036,18 @@ func (ProtocolMessagePartKey) EnumDescriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{0}
 }
 
-type SignedEntityType int32
-
-const (
-	SignedEntityType_MITHRIL_STAKE_DISTRIBUTION SignedEntityType = 0
-	SignedEntityType_CARDANO_TRANSACTIONS       SignedEntityType = 1
-)
-
-// Enum value maps for SignedEntityType.
-var (
-	SignedEntityType_name = map[int32]string{
-		0: "MITHRIL_STAKE_DISTRIBUTION",
-		1: "CARDANO_TRANSACTIONS",
-	}
-	SignedEntityType_value = map[string]int32{
-		"MITHRIL_STAKE_DISTRIBUTION": 0,
-		"CARDANO_TRANSACTIONS":       1,
-	}
-)
-
-func (x SignedEntityType) Enum() *SignedEntityType {
-	p := new(SignedEntityType)
-	*p = x
-	return p
-}
-
-func (x SignedEntityType) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (SignedEntityType) Descriptor() protoreflect.EnumDescriptor {
-	return file_ibc_clients_mithril_v1_mithril_proto_enumTypes[1].Descriptor()
-}
-
-func (SignedEntityType) Type() protoreflect.EnumType {
-	return &file_ibc_clients_mithril_v1_mithril_proto_enumTypes[1]
-}
-
-func (x SignedEntityType) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use SignedEntityType.Descriptor instead.
-func (SignedEntityType) EnumDescriptor() ([]byte, []int) {
-	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{1}
-}
-
-type CertificateSignature int32
-
-const (
-	CertificateSignature_GENESIS_SIGNATURE CertificateSignature = 0
-	CertificateSignature_MULTI_SIGNATURE   CertificateSignature = 1
-)
-
-// Enum value maps for CertificateSignature.
-var (
-	CertificateSignature_name = map[int32]string{
-		0: "GENESIS_SIGNATURE",
-		1: "MULTI_SIGNATURE",
-	}
-	CertificateSignature_value = map[string]int32{
-		"GENESIS_SIGNATURE": 0,
-		"MULTI_SIGNATURE":   1,
-	}
-)
-
-func (x CertificateSignature) Enum() *CertificateSignature {
-	p := new(CertificateSignature)
-	*p = x
-	return p
-}
-
-func (x CertificateSignature) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (CertificateSignature) Descriptor() protoreflect.EnumDescriptor {
-	return file_ibc_clients_mithril_v1_mithril_proto_enumTypes[2].Descriptor()
-}
-
-func (CertificateSignature) Type() protoreflect.EnumType {
-	return &file_ibc_clients_mithril_v1_mithril_proto_enumTypes[2]
-}
-
-func (x CertificateSignature) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use CertificateSignature.Descriptor instead.
-func (CertificateSignature) EnumDescriptor() ([]byte, []int) {
-	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{2}
-}
-
+// Currently, the height of the certificate corresponds to the immutable file number in Cardano node
+// However, it is possible to have two certificates on the same immutable file.
+// This needs to be fixed in the future by using something unique like block height.
 type Height struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// the immutable file number
-	MithrilHeight uint64 `protobuf:"varint,1,opt,name=mithril_height,json=mithrilHeight,proto3" json:"mithril_height,omitempty"`
+	// the revision that the client is currently on
+	RevisionNumber uint64 `protobuf:"varint,1,opt,name=revision_number,json=revisionNumber,proto3" json:"revision_number,omitempty"`
+	// the height within the given revision
+	RevisionHeight uint64 `protobuf:"varint,2,opt,name=revision_height,json=revisionHeight,proto3" json:"revision_height,omitempty"`
 }
 
 func (x *Height) Reset() {
@@ -7817,13 +12070,24 @@ func (*Height) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *Height) GetMithrilHeight() uint64 {
+func (x *Height) GetRevisionNumber() uint64 {
 	if x != nil {
-		return x.MithrilHeight
+		return x.RevisionNumber
 	}
 	return 0
 }
 
+func (x *Height) GetRevisionHeight() uint64 {
+	if x != nil {
+		return x.RevisionHeight
+	}
+	return 0
+}
+
+// MithrilClientState represents the client state in the Mithril system.
+// Currently, this message includes protocol parameters.
+// However, these protocol parameters might be removed in the future,
+// as they can change across different epochs in Mithril.
 type ClientState struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -7837,7 +12101,7 @@ type ClientState struct {
 	FrozenHeight *Height `protobuf:"bytes,3,opt,name=frozen_height,json=frozenHeight,proto3" json:"frozen_height,omitempty"`
 	// Epoch number of current chain state
 	CurrentEpoch       uint64                     `protobuf:"varint,4,opt,name=current_epoch,json=currentEpoch,proto3" json:"current_epoch,omitempty"`
-	TrustingPeriod     uint64                     `protobuf:"varint,5,opt,name=trusting_period,json=trustingPeriod,proto3" json:"trusting_period,omitempty"`
+	TrustingPeriod     *durationpb.Duration       `protobuf:"bytes,5,opt,name=trusting_period,json=trustingPeriod,proto3" json:"trusting_period,omitempty"`
 	ProtocolParameters *MithrilProtocolParameters `protobuf:"bytes,6,opt,name=protocol_parameters,json=protocolParameters,proto3" json:"protocol_parameters,omitempty"`
 	// Path at which next upgraded client will be committed.
 	UpgradePath []string `protobuf:"bytes,7,rep,name=upgrade_path,json=upgradePath,proto3" json:"upgrade_path,omitempty"`
@@ -7891,11 +12155,11 @@ func (x *ClientState) GetCurrentEpoch() uint64 {
 	return 0
 }
 
-func (x *ClientState) GetTrustingPeriod() uint64 {
+func (x *ClientState) GetTrustingPeriod() *durationpb.Duration {
 	if x != nil {
 		return x.TrustingPeriod
 	}
-	return 0
+	return nil
 }
 
 func (x *ClientState) GetProtocolParameters() *MithrilProtocolParameters {
@@ -7912,14 +12176,17 @@ func (x *ClientState) GetUpgradePath() []string {
 	return nil
 }
 
+// MithrilConsensusState represents the consensus state in the Mithril system.
+// This message stores the latest transaction snapshot hash and the first certificate hash of the latest epoch.
+// These are used to verify the latest transaction snapshot.
 type ConsensusState struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Timestamp                           uint64              `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	MithrilStakeDistributionCertificate *MithrilCertificate `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate,json=mithrilStakeDistributionCertificate,proto3" json:"mithril_stake_distribution_certificate,omitempty"`
-	TransactionSnapshotCertificate      *MithrilCertificate `protobuf:"bytes,3,opt,name=transaction_snapshot_certificate,json=transactionSnapshotCertificate,proto3" json:"transaction_snapshot_certificate,omitempty"`
+	Timestamp                uint64              `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	FirstCertHashLatestEpoch *MithrilCertificate `protobuf:"bytes,2,opt,name=first_cert_hash_latest_epoch,json=firstCertHashLatestEpoch,proto3" json:"first_cert_hash_latest_epoch,omitempty"`
+	LatestCertHashTxSnapshot string              `protobuf:"bytes,3,opt,name=latest_cert_hash_tx_snapshot,json=latestCertHashTxSnapshot,proto3" json:"latest_cert_hash_tx_snapshot,omitempty"`
 }
 
 func (x *ConsensusState) Reset() {
@@ -7949,20 +12216,21 @@ func (x *ConsensusState) GetTimestamp() uint64 {
 	return 0
 }
 
-func (x *ConsensusState) GetMithrilStakeDistributionCertificate() *MithrilCertificate {
+func (x *ConsensusState) GetFirstCertHashLatestEpoch() *MithrilCertificate {
 	if x != nil {
-		return x.MithrilStakeDistributionCertificate
+		return x.FirstCertHashLatestEpoch
 	}
 	return nil
 }
 
-func (x *ConsensusState) GetTransactionSnapshotCertificate() *MithrilCertificate {
+func (x *ConsensusState) GetLatestCertHashTxSnapshot() string {
 	if x != nil {
-		return x.TransactionSnapshotCertificate
+		return x.LatestCertHashTxSnapshot
 	}
-	return nil
+	return ""
 }
 
+// Misbehavior represents a conflict between two headers.
 type Misbehaviour struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -8018,15 +12286,16 @@ func (x *Misbehaviour) GetMithrilHeader_2() *MithrilHeader {
 	return nil
 }
 
+// Mithril Header
 type MithrilHeader struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	MithrilStakeDistribution                *MithrilStakeDistribution   `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3" json:"mithril_stake_distribution,omitempty"`
-	MithrilStakeDistributionCertificateHash string                      `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate_hash,json=mithrilStakeDistributionCertificateHash,proto3" json:"mithril_stake_distribution_certificate_hash,omitempty"`
-	TransactionSnapshot                     *CardanoTransactionSnapshot `protobuf:"bytes,3,opt,name=transaction_snapshot,json=transactionSnapshot,proto3" json:"transaction_snapshot,omitempty"`
-	TransactionSnapshotCertificateHash      string                      `protobuf:"bytes,4,opt,name=transaction_snapshot_certificate_hash,json=transactionSnapshotCertificateHash,proto3" json:"transaction_snapshot_certificate_hash,omitempty"`
+	MithrilStakeDistribution            *MithrilStakeDistribution   `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3" json:"mithril_stake_distribution,omitempty"`
+	MithrilStakeDistributionCertificate *MithrilCertificate         `protobuf:"bytes,2,opt,name=mithril_stake_distribution_certificate,json=mithrilStakeDistributionCertificate,proto3" json:"mithril_stake_distribution_certificate,omitempty"`
+	TransactionSnapshot                 *CardanoTransactionSnapshot `protobuf:"bytes,3,opt,name=transaction_snapshot,json=transactionSnapshot,proto3" json:"transaction_snapshot,omitempty"`
+	TransactionSnapshotCertificate      *MithrilCertificate         `protobuf:"bytes,4,opt,name=transaction_snapshot_certificate,json=transactionSnapshotCertificate,proto3" json:"transaction_snapshot_certificate,omitempty"`
 }
 
 func (x *MithrilHeader) Reset() {
@@ -8056,11 +12325,11 @@ func (x *MithrilHeader) GetMithrilStakeDistribution() *MithrilStakeDistribution 
 	return nil
 }
 
-func (x *MithrilHeader) GetMithrilStakeDistributionCertificateHash() string {
+func (x *MithrilHeader) GetMithrilStakeDistributionCertificate() *MithrilCertificate {
 	if x != nil {
-		return x.MithrilStakeDistributionCertificateHash
+		return x.MithrilStakeDistributionCertificate
 	}
-	return ""
+	return nil
 }
 
 func (x *MithrilHeader) GetTransactionSnapshot() *CardanoTransactionSnapshot {
@@ -8070,13 +12339,14 @@ func (x *MithrilHeader) GetTransactionSnapshot() *CardanoTransactionSnapshot {
 	return nil
 }
 
-func (x *MithrilHeader) GetTransactionSnapshotCertificateHash() string {
+func (x *MithrilHeader) GetTransactionSnapshotCertificate() *MithrilCertificate {
 	if x != nil {
-		return x.TransactionSnapshotCertificateHash
+		return x.TransactionSnapshotCertificate
 	}
-	return ""
+	return nil
 }
 
+// Mithril Stake Distribution
 type MithrilStakeDistribution struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -8152,16 +12422,18 @@ func (x *MithrilStakeDistribution) GetProtocolParameter() *MithrilProtocolParame
 	return nil
 }
 
+// Cardano Transaction Snapshot
 type CardanoTransactionSnapshot struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	SnapshotHash    string  `protobuf:"bytes,1,opt,name=snapshot_hash,json=snapshotHash,proto3" json:"snapshot_hash,omitempty"`
-	MerkleRoot      string  `protobuf:"bytes,2,opt,name=merkle_root,json=merkleRoot,proto3" json:"merkle_root,omitempty"`
-	CertificateHash string  `protobuf:"bytes,3,opt,name=certificate_hash,json=certificateHash,proto3" json:"certificate_hash,omitempty"`
-	Epoch           uint64  `protobuf:"varint,4,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	Height          *Height `protobuf:"bytes,5,opt,name=height,proto3" json:"height,omitempty"`
+	MerkleRoot      string `protobuf:"bytes,1,opt,name=merkle_root,json=merkleRoot,proto3" json:"merkle_root,omitempty"`
+	Epoch           uint64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	BlockNumber     uint64 `protobuf:"varint,3,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+	Hash            string `protobuf:"bytes,4,opt,name=hash,proto3" json:"hash,omitempty"`
+	CertificateHash string `protobuf:"bytes,5,opt,name=certificate_hash,json=certificateHash,proto3" json:"certificate_hash,omitempty"`
+	CreatedAt       string `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 }
 
 func (x *CardanoTransactionSnapshot) Reset() {
@@ -8184,23 +12456,9 @@ func (*CardanoTransactionSnapshot) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *CardanoTransactionSnapshot) GetSnapshotHash() string {
-	if x != nil {
-		return x.SnapshotHash
-	}
-	return ""
-}
-
 func (x *CardanoTransactionSnapshot) GetMerkleRoot() string {
 	if x != nil {
 		return x.MerkleRoot
-	}
-	return ""
-}
-
-func (x *CardanoTransactionSnapshot) GetCertificateHash() string {
-	if x != nil {
-		return x.CertificateHash
 	}
 	return ""
 }
@@ -8212,13 +12470,35 @@ func (x *CardanoTransactionSnapshot) GetEpoch() uint64 {
 	return 0
 }
 
-func (x *CardanoTransactionSnapshot) GetHeight() *Height {
+func (x *CardanoTransactionSnapshot) GetBlockNumber() uint64 {
 	if x != nil {
-		return x.Height
+		return x.BlockNumber
 	}
-	return nil
+	return 0
 }
 
+func (x *CardanoTransactionSnapshot) GetHash() string {
+	if x != nil {
+		return x.Hash
+	}
+	return ""
+}
+
+func (x *CardanoTransactionSnapshot) GetCertificateHash() string {
+	if x != nil {
+		return x.CertificateHash
+	}
+	return ""
+}
+
+func (x *CardanoTransactionSnapshot) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+// Mithril Certificate
 type MithrilCertificate struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -8227,12 +12507,13 @@ type MithrilCertificate struct {
 	Hash                     string               `protobuf:"bytes,1,opt,name=hash,proto3" json:"hash,omitempty"`
 	PreviousHash             string               `protobuf:"bytes,2,opt,name=previous_hash,json=previousHash,proto3" json:"previous_hash,omitempty"`
 	Epoch                    uint64               `protobuf:"varint,3,opt,name=epoch,proto3" json:"epoch,omitempty"`
-	SignedEntityType         SignedEntityType     `protobuf:"varint,4,opt,name=signed_entity_type,json=signedEntityType,proto3,enum=ibc.clients.mithril.v1.SignedEntityType" json:"signed_entity_type,omitempty"`
+	SignedEntityType         *SignedEntityType    `protobuf:"bytes,4,opt,name=signed_entity_type,json=signedEntityType,proto3" json:"signed_entity_type,omitempty"`
 	Metadata                 *CertificateMetadata `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	ProtocolMessage          *ProtocolMessage     `protobuf:"bytes,6,opt,name=protocol_message,json=protocolMessage,proto3" json:"protocol_message,omitempty"`
 	SignedMessage            string               `protobuf:"bytes,7,opt,name=signed_message,json=signedMessage,proto3" json:"signed_message,omitempty"`
 	AggregateVerificationKey string               `protobuf:"bytes,8,opt,name=aggregate_verification_key,json=aggregateVerificationKey,proto3" json:"aggregate_verification_key,omitempty"`
-	Signature                CertificateSignature `protobuf:"varint,9,opt,name=signature,proto3,enum=ibc.clients.mithril.v1.CertificateSignature" json:"signature,omitempty"`
+	MultiSignature           string               `protobuf:"bytes,9,opt,name=multi_signature,json=multiSignature,proto3" json:"multi_signature,omitempty"`
+	GenesisSignature         string               `protobuf:"bytes,10,opt,name=genesis_signature,json=genesisSignature,proto3" json:"genesis_signature,omitempty"`
 }
 
 func (x *MithrilCertificate) Reset() {
@@ -8276,11 +12557,11 @@ func (x *MithrilCertificate) GetEpoch() uint64 {
 	return 0
 }
 
-func (x *MithrilCertificate) GetSignedEntityType() SignedEntityType {
+func (x *MithrilCertificate) GetSignedEntityType() *SignedEntityType {
 	if x != nil {
 		return x.SignedEntityType
 	}
-	return SignedEntityType_MITHRIL_STAKE_DISTRIBUTION
+	return nil
 }
 
 func (x *MithrilCertificate) GetMetadata() *CertificateMetadata {
@@ -8311,23 +12592,32 @@ func (x *MithrilCertificate) GetAggregateVerificationKey() string {
 	return ""
 }
 
-func (x *MithrilCertificate) GetSignature() CertificateSignature {
+func (x *MithrilCertificate) GetMultiSignature() string {
 	if x != nil {
-		return x.Signature
+		return x.MultiSignature
 	}
-	return CertificateSignature_GENESIS_SIGNATURE
+	return ""
 }
 
+func (x *MithrilCertificate) GetGenesisSignature() string {
+	if x != nil {
+		return x.GenesisSignature
+	}
+	return ""
+}
+
+// Certificate Metadata
 type CertificateMetadata struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ProtocolVersion    string                     `protobuf:"bytes,1,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	ProtocolParameters *MithrilProtocolParameters `protobuf:"bytes,2,opt,name=protocol_parameters,json=protocolParameters,proto3" json:"protocol_parameters,omitempty"`
-	InitiatedAt        uint64                     `protobuf:"varint,3,opt,name=initiatedAt,proto3" json:"initiatedAt,omitempty"`
-	SealedAt           uint64                     `protobuf:"varint,4,opt,name=sealedAt,proto3" json:"sealedAt,omitempty"`
-	Signers            []*SignerWithStake         `protobuf:"bytes,5,rep,name=signers,proto3" json:"signers,omitempty"`
+	Network            string                     `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	ProtocolVersion    string                     `protobuf:"bytes,2,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
+	ProtocolParameters *MithrilProtocolParameters `protobuf:"bytes,3,opt,name=protocol_parameters,json=protocolParameters,proto3" json:"protocol_parameters,omitempty"`
+	InitiatedAt        string                     `protobuf:"bytes,4,opt,name=initiated_at,json=initiatedAt,proto3" json:"initiated_at,omitempty"`
+	SealedAt           string                     `protobuf:"bytes,5,opt,name=sealed_at,json=sealedAt,proto3" json:"sealed_at,omitempty"`
+	Signers            []*SignerWithStake         `protobuf:"bytes,6,rep,name=signers,proto3" json:"signers,omitempty"`
 }
 
 func (x *CertificateMetadata) Reset() {
@@ -8350,6 +12640,13 @@ func (*CertificateMetadata) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{8}
 }
 
+func (x *CertificateMetadata) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
 func (x *CertificateMetadata) GetProtocolVersion() string {
 	if x != nil {
 		return x.ProtocolVersion
@@ -8364,18 +12661,18 @@ func (x *CertificateMetadata) GetProtocolParameters() *MithrilProtocolParameters
 	return nil
 }
 
-func (x *CertificateMetadata) GetInitiatedAt() uint64 {
+func (x *CertificateMetadata) GetInitiatedAt() string {
 	if x != nil {
 		return x.InitiatedAt
 	}
-	return 0
+	return ""
 }
 
-func (x *CertificateMetadata) GetSealedAt() uint64 {
+func (x *CertificateMetadata) GetSealedAt() string {
 	if x != nil {
 		return x.SealedAt
 	}
-	return 0
+	return ""
 }
 
 func (x *CertificateMetadata) GetSigners() []*SignerWithStake {
@@ -8385,6 +12682,7 @@ func (x *CertificateMetadata) GetSigners() []*SignerWithStake {
 	return nil
 }
 
+// Signer With Stake
 type SignerWithStake struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -8428,13 +12726,13 @@ func (x *SignerWithStake) GetStake() uint64 {
 	return 0
 }
 
+// Protocol Message
 type ProtocolMessage struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
-	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+	MessageParts []*MessagePart `protobuf:"bytes,1,rep,name=message_parts,json=messageParts,proto3" json:"message_parts,omitempty"`
 }
 
 func (x *ProtocolMessage) Reset() {
@@ -8457,20 +12755,58 @@ func (*ProtocolMessage) Descriptor() ([]byte, []int) {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartKey() ProtocolMessagePartKey {
+func (x *ProtocolMessage) GetMessageParts() []*MessagePart {
+	if x != nil {
+		return x.MessageParts
+	}
+	return nil
+}
+
+// Message Part
+type MessagePart struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	ProtocolMessagePartKey   ProtocolMessagePartKey `protobuf:"varint,1,opt,name=protocol_message_part_key,json=protocolMessagePartKey,proto3,enum=ibc.clients.mithril.v1.ProtocolMessagePartKey" json:"protocol_message_part_key,omitempty"`
+	ProtocolMessagePartValue string                 `protobuf:"bytes,2,opt,name=protocol_message_part_value,json=protocolMessagePartValue,proto3" json:"protocol_message_part_value,omitempty"`
+}
+
+func (x *MessagePart) Reset() {
+	*x = MessagePart{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *MessagePart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MessagePart) ProtoMessage() {}
+
+// Deprecated: Use MessagePart.ProtoReflect.Descriptor instead.
+func (*MessagePart) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MessagePart) GetProtocolMessagePartKey() ProtocolMessagePartKey {
 	if x != nil {
 		return x.ProtocolMessagePartKey
 	}
-	return ProtocolMessagePartKey_SNAPSHOT_DIGEST
+	return ProtocolMessagePartKey_PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED
 }
 
-func (x *ProtocolMessage) GetProtocolMessagePartValue() string {
+func (x *MessagePart) GetProtocolMessagePartValue() string {
 	if x != nil {
 		return x.ProtocolMessagePartValue
 	}
 	return ""
 }
 
+// Mithril Protocol Parameters
 type MithrilProtocolParameters struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -8481,13 +12817,13 @@ type MithrilProtocolParameters struct {
 	// Security parameter (number of lotteries)
 	M uint64 `protobuf:"varint,2,opt,name=m,proto3" json:"m,omitempty"`
 	// f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
-	PhiF uint64 `protobuf:"varint,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f,omitempty"`
+	PhiF *Fraction `protobuf:"bytes,3,opt,name=phi_f,json=phiF,proto3" json:"phi_f,omitempty"`
 }
 
 func (x *MithrilProtocolParameters) Reset() {
 	*x = MithrilProtocolParameters{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11]
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -8501,7 +12837,7 @@ func (*MithrilProtocolParameters) ProtoMessage() {}
 
 // Deprecated: Use MithrilProtocolParameters.ProtoReflect.Descriptor instead.
 func (*MithrilProtocolParameters) Descriptor() ([]byte, []int) {
-	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{11}
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MithrilProtocolParameters) GetK() uint64 {
@@ -8518,9 +12854,358 @@ func (x *MithrilProtocolParameters) GetM() uint64 {
 	return 0
 }
 
-func (x *MithrilProtocolParameters) GetPhiF() uint64 {
+func (x *MithrilProtocolParameters) GetPhiF() *Fraction {
 	if x != nil {
 		return x.PhiF
+	}
+	return nil
+}
+
+// ProtocolGenesisSignature wraps a cryptographic signature.
+type ProtocolGenesisSignature struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Signature []byte `protobuf:"bytes,1,opt,name=signature,proto3" json:"signature,omitempty"`
+}
+
+func (x *ProtocolGenesisSignature) Reset() {
+	*x = ProtocolGenesisSignature{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[13]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ProtocolGenesisSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtocolGenesisSignature) ProtoMessage() {}
+
+// Deprecated: Use ProtocolGenesisSignature.ProtoReflect.Descriptor instead.
+func (*ProtocolGenesisSignature) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ProtocolGenesisSignature) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+// An entity type associated with the signature.
+type SignedEntityType struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// MithrilStakeDistribution(epoch), CardanoStakeDistribution(epoch), CardanoImmutableFilesFull(CardanoDbBeacon), CardanoTransactions(CardanoDbBeacon)
+	//
+	// Types that are assignable to Entity:
+	//
+	//	*SignedEntityType_MithrilStakeDistribution
+	//	*SignedEntityType_CardanoStakeDistribution
+	//	*SignedEntityType_CardanoImmutableFilesFull
+	//	*SignedEntityType_CardanoTransactions
+	Entity isSignedEntityType_Entity `protobuf_oneof:"entity"`
+}
+
+func (x *SignedEntityType) Reset() {
+	*x = SignedEntityType{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[14]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *SignedEntityType) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SignedEntityType) ProtoMessage() {}
+
+// Deprecated: Use SignedEntityType.ProtoReflect.Descriptor instead.
+func (*SignedEntityType) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *SignedEntityType) GetEntity() isSignedEntityType_Entity {
+	if x != nil {
+		return x.Entity
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetMithrilStakeDistribution() *MithrilStakeDistribution {
+	if x, ok := x.GetEntity().(*SignedEntityType_MithrilStakeDistribution); ok {
+		return x.MithrilStakeDistribution
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoStakeDistribution() *CardanoStakeDistribution {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoStakeDistribution); ok {
+		return x.CardanoStakeDistribution
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoImmutableFilesFull() *CardanoImmutableFilesFull {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoImmutableFilesFull); ok {
+		return x.CardanoImmutableFilesFull
+	}
+	return nil
+}
+
+func (x *SignedEntityType) GetCardanoTransactions() *CardanoTransactions {
+	if x, ok := x.GetEntity().(*SignedEntityType_CardanoTransactions); ok {
+		return x.CardanoTransactions
+	}
+	return nil
+}
+
+type isSignedEntityType_Entity interface {
+	isSignedEntityType_Entity()
+}
+
+type SignedEntityType_MithrilStakeDistribution struct {
+	MithrilStakeDistribution *MithrilStakeDistribution `protobuf:"bytes,1,opt,name=mithril_stake_distribution,json=mithrilStakeDistribution,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoStakeDistribution struct {
+	CardanoStakeDistribution *CardanoStakeDistribution `protobuf:"bytes,2,opt,name=cardano_stake_distribution,json=cardanoStakeDistribution,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoImmutableFilesFull struct {
+	CardanoImmutableFilesFull *CardanoImmutableFilesFull `protobuf:"bytes,3,opt,name=cardano_immutable_files_full,json=cardanoImmutableFilesFull,proto3,oneof"`
+}
+
+type SignedEntityType_CardanoTransactions struct {
+	CardanoTransactions *CardanoTransactions `protobuf:"bytes,4,opt,name=cardano_transactions,json=cardanoTransactions,proto3,oneof"`
+}
+
+func (*SignedEntityType_MithrilStakeDistribution) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoStakeDistribution) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoImmutableFilesFull) isSignedEntityType_Entity() {}
+
+func (*SignedEntityType_CardanoTransactions) isSignedEntityType_Entity() {}
+
+// Cardano stake distribution
+type CardanoStakeDistribution struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Epoch uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+}
+
+func (x *CardanoStakeDistribution) Reset() {
+	*x = CardanoStakeDistribution{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[15]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoStakeDistribution) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoStakeDistribution) ProtoMessage() {}
+
+// Deprecated: Use CardanoStakeDistribution.ProtoReflect.Descriptor instead.
+func (*CardanoStakeDistribution) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CardanoStakeDistribution) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+// Cardano immutable files full
+type CardanoImmutableFilesFull struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Beacon *CardanoDbBeacon `protobuf:"bytes,1,opt,name=beacon,proto3" json:"beacon,omitempty"`
+}
+
+func (x *CardanoImmutableFilesFull) Reset() {
+	*x = CardanoImmutableFilesFull{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[16]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoImmutableFilesFull) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoImmutableFilesFull) ProtoMessage() {}
+
+// Deprecated: Use CardanoImmutableFilesFull.ProtoReflect.Descriptor instead.
+func (*CardanoImmutableFilesFull) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *CardanoImmutableFilesFull) GetBeacon() *CardanoDbBeacon {
+	if x != nil {
+		return x.Beacon
+	}
+	return nil
+}
+
+// Cardano transactions
+type CardanoTransactions struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Epoch       uint64 `protobuf:"varint,1,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	BlockNumber uint64 `protobuf:"varint,2,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+}
+
+func (x *CardanoTransactions) Reset() {
+	*x = CardanoTransactions{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[17]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoTransactions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoTransactions) ProtoMessage() {}
+
+// Deprecated: Use CardanoTransactions.ProtoReflect.Descriptor instead.
+func (*CardanoTransactions) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *CardanoTransactions) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *CardanoTransactions) GetBlockNumber() uint64 {
+	if x != nil {
+		return x.BlockNumber
+	}
+	return 0
+}
+
+// Cardano db beacon
+type CardanoDbBeacon struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Network             string `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	Epoch               uint64 `protobuf:"varint,2,opt,name=epoch,proto3" json:"epoch,omitempty"`
+	ImmutableFileNumber uint64 `protobuf:"varint,3,opt,name=immutable_file_number,json=immutableFileNumber,proto3" json:"immutable_file_number,omitempty"`
+}
+
+func (x *CardanoDbBeacon) Reset() {
+	*x = CardanoDbBeacon{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[18]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *CardanoDbBeacon) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CardanoDbBeacon) ProtoMessage() {}
+
+// Deprecated: Use CardanoDbBeacon.ProtoReflect.Descriptor instead.
+func (*CardanoDbBeacon) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *CardanoDbBeacon) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
+func (x *CardanoDbBeacon) GetEpoch() uint64 {
+	if x != nil {
+		return x.Epoch
+	}
+	return 0
+}
+
+func (x *CardanoDbBeacon) GetImmutableFileNumber() uint64 {
+	if x != nil {
+		return x.ImmutableFileNumber
+	}
+	return 0
+}
+
+// Fraction defines the protobuf message type for tmmath.Fraction that only
+// supports positive values.
+type Fraction struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Numerator   uint64 `protobuf:"varint,1,opt,name=numerator,proto3" json:"numerator,omitempty"`
+	Denominator uint64 `protobuf:"varint,2,opt,name=denominator,proto3" json:"denominator,omitempty"`
+}
+
+func (x *Fraction) Reset() {
+	*x = Fraction{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_ibc_clients_mithril_v1_mithril_proto_msgTypes[19]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *Fraction) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fraction) ProtoMessage() {}
+
+// Deprecated: Use Fraction.ProtoReflect.Descriptor instead.
+func (*Fraction) Descriptor() ([]byte, []int) {
+	return file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *Fraction) GetNumerator() uint64 {
+	if x != nil {
+		return x.Numerator
+	}
+	return 0
+}
+
+func (x *Fraction) GetDenominator() uint64 {
+	if x != nil {
+		return x.Denominator
 	}
 	return 0
 }
@@ -8533,26 +13218,33 @@ var file_ibc_clients_mithril_v1_mithril_proto_rawDesc = []byte{
 	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x16, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
 	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x1a, 0x14,
 	0x67, 0x6f, 0x67, 0x6f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2f, 0x67, 0x6f, 0x67, 0x6f, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x22, 0x39, 0x0a, 0x06, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x25,
-	0x0a, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0d, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48,
-	0x65, 0x69, 0x67, 0x68, 0x74, 0x3a, 0x08, 0x88, 0xa0, 0x1f, 0x00, 0x98, 0xa0, 0x1f, 0x00, 0x22,
-	0x8d, 0x03, 0x0a, 0x0b, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12,
-	0x19, 0x0a, 0x08, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x07, 0x63, 0x68, 0x61, 0x69, 0x6e, 0x49, 0x64, 0x12, 0x43, 0x0a, 0x0d, 0x6c, 0x61,
-	0x74, 0x65, 0x73, 0x74, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x72, 0x6f, 0x74, 0x6f, 0x1a, 0x1e, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f,
+	0x74, 0x6f, 0x62, 0x75, 0x66, 0x2f, 0x64, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2e, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x22, 0x64, 0x0a, 0x06, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x27,
+	0x0a, 0x0f, 0x72, 0x65, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65,
+	0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0e, 0x72, 0x65, 0x76, 0x69, 0x73, 0x69, 0x6f,
+	0x6e, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x12, 0x27, 0x0a, 0x0f, 0x72, 0x65, 0x76, 0x69, 0x73,
+	0x69, 0x6f, 0x6e, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x0e, 0x72, 0x65, 0x76, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74,
+	0x3a, 0x08, 0x88, 0xa0, 0x1f, 0x00, 0x98, 0xa0, 0x1f, 0x00, 0x22, 0xb2, 0x03, 0x0a, 0x0b, 0x43,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x19, 0x0a, 0x08, 0x63, 0x68,
+	0x61, 0x69, 0x6e, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x63, 0x68,
+	0x61, 0x69, 0x6e, 0x49, 0x64, 0x12, 0x43, 0x0a, 0x0d, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f,
+	0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x69,
+	0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72,
+	0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x52, 0x0c, 0x6c, 0x61,
+	0x74, 0x65, 0x73, 0x74, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12, 0x43, 0x0a, 0x0d, 0x66, 0x72,
+	0x6f, 0x7a, 0x65, 0x6e, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28,
 	0x0b, 0x32, 0x1e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e,
 	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x48, 0x65, 0x69, 0x67, 0x68,
-	0x74, 0x52, 0x0c, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12,
-	0x43, 0x0a, 0x0d, 0x66, 0x72, 0x6f, 0x7a, 0x65, 0x6e, 0x5f, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74,
-	0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
-	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
-	0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x52, 0x0c, 0x66, 0x72, 0x6f, 0x7a, 0x65, 0x6e, 0x48, 0x65,
-	0x69, 0x67, 0x68, 0x74, 0x12, 0x23, 0x0a, 0x0d, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x5f,
-	0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x63, 0x75, 0x72,
-	0x72, 0x65, 0x6e, 0x74, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x27, 0x0a, 0x0f, 0x74, 0x72, 0x75,
-	0x73, 0x74, 0x69, 0x6e, 0x67, 0x5f, 0x70, 0x65, 0x72, 0x69, 0x6f, 0x64, 0x18, 0x05, 0x20, 0x01,
-	0x28, 0x04, 0x52, 0x0e, 0x74, 0x72, 0x75, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x50, 0x65, 0x72, 0x69,
+	0x74, 0x52, 0x0c, 0x66, 0x72, 0x6f, 0x7a, 0x65, 0x6e, 0x48, 0x65, 0x69, 0x67, 0x68, 0x74, 0x12,
+	0x23, 0x0a, 0x0d, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x5f, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0c, 0x63, 0x75, 0x72, 0x72, 0x65, 0x6e, 0x74, 0x45,
+	0x70, 0x6f, 0x63, 0x68, 0x12, 0x4c, 0x0a, 0x0f, 0x74, 0x72, 0x75, 0x73, 0x74, 0x69, 0x6e, 0x67,
+	0x5f, 0x70, 0x65, 0x72, 0x69, 0x6f, 0x64, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x19, 0x2e,
+	0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x2e,
+	0x44, 0x75, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x42, 0x08, 0xc8, 0xde, 0x1f, 0x00, 0x98, 0xdf,
+	0x1f, 0x01, 0x52, 0x0e, 0x74, 0x72, 0x75, 0x73, 0x74, 0x69, 0x6e, 0x67, 0x50, 0x65, 0x72, 0x69,
 	0x6f, 0x64, 0x12, 0x62, 0x0a, 0x13, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x70,
 	0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32,
 	0x31, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69,
@@ -8562,211 +13254,283 @@ var file_ibc_clients_mithril_v1_mithril_proto_rawDesc = []byte{
 	0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x21, 0x0a, 0x0c, 0x75, 0x70, 0x67, 0x72, 0x61, 0x64,
 	0x65, 0x5f, 0x70, 0x61, 0x74, 0x68, 0x18, 0x07, 0x20, 0x03, 0x28, 0x09, 0x52, 0x0b, 0x75, 0x70,
 	0x67, 0x72, 0x61, 0x64, 0x65, 0x50, 0x61, 0x74, 0x68, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0xab, 0x02, 0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x73, 0x65, 0x6e, 0x73, 0x75, 0x73, 0x53, 0x74, 0x61,
+	0xe0, 0x01, 0x0a, 0x0e, 0x43, 0x6f, 0x6e, 0x73, 0x65, 0x6e, 0x73, 0x75, 0x73, 0x53, 0x74, 0x61,
 	0x74, 0x65, 0x12, 0x1c, 0x0a, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x74, 0x69, 0x6d, 0x65, 0x73, 0x74, 0x61, 0x6d, 0x70,
-	0x12, 0x7f, 0x0a, 0x26, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b,
-	0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x63,
-	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x2a, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69,
-	0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x23, 0x6d, 0x69,
-	0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69,
-	0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74,
-	0x65, 0x12, 0x74, 0x0a, 0x20, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
-	0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62,
-	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
-	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74,
-	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x52, 0x1e, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63,
-	0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65, 0x72, 0x74,
-	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xff, 0x01,
-	0x0a, 0x0c, 0x4d, 0x69, 0x73, 0x62, 0x65, 0x68, 0x61, 0x76, 0x69, 0x6f, 0x75, 0x72, 0x12, 0x1f,
-	0x0a, 0x09, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x09, 0x42, 0x02, 0x18, 0x01, 0x52, 0x08, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x49, 0x64, 0x12,
-	0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x5f, 0x31, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x62, 0x63, 0x2e,
-	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
-	0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72,
-	0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x31, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61,
-	0x64, 0x65, 0x72, 0x31, 0x12, 0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f,
-	0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x5f, 0x32, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25,
+	0x12, 0x6a, 0x0a, 0x1c, 0x66, 0x69, 0x72, 0x73, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x5f, 0x68,
+	0x61, 0x73, 0x68, 0x5f, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61,
+	0x74, 0x65, 0x52, 0x18, 0x66, 0x69, 0x72, 0x73, 0x74, 0x43, 0x65, 0x72, 0x74, 0x48, 0x61, 0x73,
+	0x68, 0x4c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x45, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x3e, 0x0a, 0x1c,
+	0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x5f, 0x68, 0x61, 0x73, 0x68,
+	0x5f, 0x74, 0x78, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x18, 0x6c, 0x61, 0x74, 0x65, 0x73, 0x74, 0x43, 0x65, 0x72, 0x74, 0x48, 0x61,
+	0x73, 0x68, 0x54, 0x78, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x3a, 0x04, 0x88, 0xa0,
+	0x1f, 0x00, 0x22, 0xff, 0x01, 0x0a, 0x0c, 0x4d, 0x69, 0x73, 0x62, 0x65, 0x68, 0x61, 0x76, 0x69,
+	0x6f, 0x75, 0x72, 0x12, 0x1f, 0x0a, 0x09, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x5f, 0x69, 0x64,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x42, 0x02, 0x18, 0x01, 0x52, 0x08, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x49, 0x64, 0x12, 0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f,
+	0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x5f, 0x31, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x25,
 	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
 	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48,
 	0x65, 0x61, 0x64, 0x65, 0x72, 0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e, 0x4d, 0x69, 0x74, 0x68, 0x72,
-	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72,
-	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0x9d, 0x03, 0x0a, 0x0d, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65,
-	0x72, 0x12, 0x6e, 0x0a, 0x1a, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61,
-	0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d,
+	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x31, 0x52, 0x0e, 0x6d, 0x69, 0x74, 0x68, 0x72,
+	0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x31, 0x12, 0x63, 0x0a, 0x10, 0x6d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x5f, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x5f, 0x32, 0x18, 0x03, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x25, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74,
+	0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x42, 0x12, 0xe2, 0xde, 0x1f, 0x0e,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x52, 0x0e,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x32, 0x3a, 0x04,
+	0x88, 0xa0, 0x1f, 0x00, 0x22, 0xe3, 0x03, 0x0a, 0x0d, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x48, 0x65, 0x61, 0x64, 0x65, 0x72, 0x12, 0x6e, 0x0a, 0x1a, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75,
+	0x74, 0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63,
+	0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65,
+	0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x18, 0x6d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69,
+	0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x7f, 0x0a, 0x26, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75,
+	0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65,
+	0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61,
+	0x74, 0x65, 0x52, 0x23, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65,
+	0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x43, 0x65, 0x72, 0x74,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x65, 0x0a, 0x14, 0x74, 0x72, 0x61, 0x6e, 0x73,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x18,
+	0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x32, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x52, 0x13, 0x74, 0x72, 0x61, 0x6e, 0x73,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x12, 0x74,
+	0x0a, 0x20, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e,
+	0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61,
+	0x74, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2a, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76,
+	0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x52, 0x1e, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
+	0x63, 0x61, 0x74, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xcd, 0x02, 0x0a, 0x18, 0x4d,
 	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72,
-	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x52, 0x18, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
-	0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f,
-	0x6e, 0x12, 0x5c, 0x0a, 0x2b, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5f, 0x73, 0x74, 0x61,
-	0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
-	0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68,
-	0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x27, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53,
-	0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e,
-	0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x12,
-	0x65, 0x0a, 0x14, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73,
-	0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x32, 0x2e,
+	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x55, 0x0a,
+	0x12, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x5f, 0x77, 0x69, 0x74, 0x68, 0x5f, 0x73, 0x74,
+	0x61, 0x6b, 0x65, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69, 0x74, 0x68, 0x53, 0x74, 0x61,
+	0x6b, 0x65, 0x52, 0x10, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x57, 0x69, 0x74, 0x68, 0x53,
+	0x74, 0x61, 0x6b, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61, 0x73, 0x68, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x29, 0x0a, 0x10, 0x63, 0x65, 0x72, 0x74,
+	0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x04, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x0f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48,
+	0x61, 0x73, 0x68, 0x12, 0x1d, 0x0a, 0x0a, 0x63, 0x72, 0x65, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x61,
+	0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x63, 0x72, 0x65, 0x61, 0x74, 0x65, 0x64,
+	0x41, 0x74, 0x12, 0x60, 0x0a, 0x12, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x70,
+	0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x31,
+	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
+	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72,
+	0x73, 0x52, 0x11, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d,
+	0x65, 0x74, 0x65, 0x72, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xda, 0x01, 0x0a, 0x1a, 0x43,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x12, 0x1f, 0x0a, 0x0b, 0x6d, 0x65, 0x72,
+	0x6b, 0x6c, 0x65, 0x5f, 0x72, 0x6f, 0x6f, 0x74, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a,
+	0x6d, 0x65, 0x72, 0x6b, 0x6c, 0x65, 0x52, 0x6f, 0x6f, 0x74, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70,
+	0x6f, 0x63, 0x68, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0b, 0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x4e, 0x75, 0x6d,
+	0x62, 0x65, 0x72, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61, 0x73, 0x68, 0x18, 0x04, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x29, 0x0a, 0x10, 0x63, 0x65, 0x72, 0x74, 0x69,
+	0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x05, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x0f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61,
+	0x73, 0x68, 0x12, 0x1d, 0x0a, 0x0a, 0x63, 0x72, 0x65, 0x61, 0x74, 0x65, 0x64, 0x5f, 0x61, 0x74,
+	0x18, 0x06, 0x20, 0x01, 0x28, 0x09, 0x52, 0x09, 0x63, 0x72, 0x65, 0x61, 0x74, 0x65, 0x64, 0x41,
+	0x74, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x99, 0x04, 0x0a, 0x12, 0x4d, 0x69, 0x74, 0x68,
+	0x72, 0x69, 0x6c, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x12,
+	0x0a, 0x04, 0x68, 0x61, 0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x68, 0x61,
+	0x73, 0x68, 0x12, 0x23, 0x0a, 0x0d, 0x70, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x5f, 0x68,
+	0x61, 0x73, 0x68, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x70, 0x72, 0x65, 0x76, 0x69,
+	0x6f, 0x75, 0x73, 0x48, 0x61, 0x73, 0x68, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x56, 0x0a,
+	0x12, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x5f, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x74,
+	0x79, 0x70, 0x65, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54,
+	0x79, 0x70, 0x65, 0x52, 0x10, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74,
+	0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x47, 0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74,
+	0x61, 0x18, 0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2b, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c,
+	0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31,
+	0x2e, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61,
+	0x64, 0x61, 0x74, 0x61, 0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x52,
+	0x0a, 0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x18, 0x06, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76,
+	0x31, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67,
+	0x65, 0x52, 0x0f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x12, 0x25, 0x0a, 0x0e, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x5f, 0x6d, 0x65, 0x73,
+	0x73, 0x61, 0x67, 0x65, 0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x73, 0x69, 0x67, 0x6e,
+	0x65, 0x64, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x3c, 0x0a, 0x1a, 0x61, 0x67, 0x67,
+	0x72, 0x65, 0x67, 0x61, 0x74, 0x65, 0x5f, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x61,
+	0x67, 0x67, 0x72, 0x65, 0x67, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x69, 0x63, 0x61,
+	0x74, 0x69, 0x6f, 0x6e, 0x4b, 0x65, 0x79, 0x12, 0x27, 0x0a, 0x0f, 0x6d, 0x75, 0x6c, 0x74, 0x69,
+	0x5f, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x09, 0x20, 0x01, 0x28, 0x09,
+	0x52, 0x0e, 0x6d, 0x75, 0x6c, 0x74, 0x69, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65,
+	0x12, 0x2b, 0x0a, 0x11, 0x67, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x5f, 0x73, 0x69, 0x67, 0x6e,
+	0x61, 0x74, 0x75, 0x72, 0x65, 0x18, 0x0a, 0x20, 0x01, 0x28, 0x09, 0x52, 0x10, 0x67, 0x65, 0x6e,
+	0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x3a, 0x04, 0x88,
+	0xa0, 0x1f, 0x00, 0x22, 0xc7, 0x02, 0x0a, 0x13, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63,
+	0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x18, 0x0a, 0x07, 0x6e,
+	0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x6e, 0x65,
+	0x74, 0x77, 0x6f, 0x72, 0x6b, 0x12, 0x29, 0x0a, 0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f,
+	0x6c, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e,
+	0x12, 0x62, 0x0a, 0x13, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x70, 0x61, 0x72,
+	0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x31, 0x2e,
+	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
+	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72,
+	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73,
+	0x52, 0x12, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65,
+	0x74, 0x65, 0x72, 0x73, 0x12, 0x21, 0x0a, 0x0c, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x74, 0x65,
+	0x64, 0x5f, 0x61, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0b, 0x69, 0x6e, 0x69, 0x74,
+	0x69, 0x61, 0x74, 0x65, 0x64, 0x41, 0x74, 0x12, 0x1b, 0x0a, 0x09, 0x73, 0x65, 0x61, 0x6c, 0x65,
+	0x64, 0x5f, 0x61, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x09, 0x52, 0x08, 0x73, 0x65, 0x61, 0x6c,
+	0x65, 0x64, 0x41, 0x74, 0x12, 0x41, 0x0a, 0x07, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x18,
+	0x06, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
+	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x53,
+	0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69, 0x74, 0x68, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x52, 0x07,
+	0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x48, 0x0a,
+	0x0f, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69, 0x74, 0x68, 0x53, 0x74, 0x61, 0x6b, 0x65,
+	0x12, 0x19, 0x0a, 0x08, 0x70, 0x61, 0x72, 0x74, 0x79, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x09, 0x52, 0x07, 0x70, 0x61, 0x72, 0x74, 0x79, 0x49, 0x64, 0x12, 0x14, 0x0a, 0x05, 0x73,
+	0x74, 0x61, 0x6b, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x73, 0x74, 0x61, 0x6b,
+	0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x61, 0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f,
+	0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x48, 0x0a, 0x0d, 0x6d, 0x65,
+	0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x73, 0x18, 0x01, 0x20, 0x03, 0x28,
+	0x0b, 0x32, 0x23, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x52, 0x0c, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50,
+	0x61, 0x72, 0x74, 0x73, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xbd, 0x01, 0x0a, 0x0b, 0x4d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70,
+	0x61, 0x72, 0x74, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e,
+	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
+	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d,
+	0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61,
+	0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x3d, 0x0a, 0x1b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f,
+	0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76,
+	0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56,
+	0x61, 0x6c, 0x75, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x7a, 0x0a, 0x19, 0x4d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72,
+	0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x0c, 0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x04, 0x52, 0x01, 0x6b, 0x12, 0x0c, 0x0a, 0x01, 0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04,
+	0x52, 0x01, 0x6d, 0x12, 0x3b, 0x0a, 0x05, 0x70, 0x68, 0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01,
+	0x28, 0x0b, 0x32, 0x20, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73,
+	0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x46, 0x72, 0x61, 0x63,
+	0x74, 0x69, 0x6f, 0x6e, 0x42, 0x04, 0xc8, 0xde, 0x1f, 0x00, 0x52, 0x04, 0x70, 0x68, 0x69, 0x46,
+	0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0x38, 0x0a, 0x18, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63,
+	0x6f, 0x6c, 0x47, 0x65, 0x6e, 0x65, 0x73, 0x69, 0x73, 0x53, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75,
+	0x72, 0x65, 0x12, 0x1c, 0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65,
+	0x22, 0xd8, 0x03, 0x0a, 0x10, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74,
+	0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x70, 0x0a, 0x1a, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74,
+	0x69, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62, 0x63, 0x2e,
+	0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e,
+	0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44,
+	0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x48, 0x00, 0x52, 0x18, 0x6d,
+	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72,
+	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x70, 0x0a, 0x1a, 0x63, 0x61, 0x72, 0x64, 0x61,
+	0x6e, 0x6f, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x5f, 0x64, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62,
+	0x75, 0x74, 0x69, 0x6f, 0x6e, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x30, 0x2e, 0x69, 0x62,
+	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
+	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b,
+	0x65, 0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x48, 0x00, 0x52,
+	0x18, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73,
+	0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x74, 0x0a, 0x1c, 0x63, 0x61, 0x72,
+	0x64, 0x61, 0x6e, 0x6f, 0x5f, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x66,
+	0x69, 0x6c, 0x65, 0x73, 0x5f, 0x66, 0x75, 0x6c, 0x6c, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32,
+	0x31, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f,
+	0x49, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x46, 0x75,
+	0x6c, 0x6c, 0x48, 0x00, 0x52, 0x19, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x49, 0x6d, 0x6d,
+	0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x46, 0x75, 0x6c, 0x6c, 0x12,
+	0x60, 0x0a, 0x14, 0x63, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x5f, 0x74, 0x72, 0x61, 0x6e, 0x73,
+	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x2b, 0x2e,
 	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
 	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72,
-	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f,
-	0x74, 0x52, 0x13, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e,
-	0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x12, 0x51, 0x0a, 0x25, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61,
-	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x63,
-	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x22, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69,
-	0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0xcd, 0x02, 0x0a, 0x18, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x53, 0x74, 0x61, 0x6b, 0x65,
-	0x44, 0x69, 0x73, 0x74, 0x72, 0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05,
-	0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f,
-	0x63, 0x68, 0x12, 0x55, 0x0a, 0x12, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x5f, 0x77, 0x69,
-	0x74, 0x68, 0x5f, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x27,
-	0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74,
-	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69,
-	0x74, 0x68, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x52, 0x10, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73,
-	0x57, 0x69, 0x74, 0x68, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61, 0x73,
-	0x68, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x29, 0x0a,
-	0x10, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73,
-	0x68, 0x18, 0x04, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69,
-	0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x12, 0x1d, 0x0a, 0x0a, 0x63, 0x72, 0x65, 0x61,
-	0x74, 0x65, 0x64, 0x5f, 0x61, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x04, 0x52, 0x09, 0x63, 0x72,
-	0x65, 0x61, 0x74, 0x65, 0x64, 0x41, 0x74, 0x12, 0x60, 0x0a, 0x12, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x63, 0x6f, 0x6c, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x18, 0x06, 0x20,
-	0x01, 0x28, 0x0b, 0x32, 0x31, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74,
-	0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d, 0x69, 0x74,
-	0x68, 0x72, 0x69, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61,
-	0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x52, 0x11, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c,
-	0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22,
-	0xe1, 0x01, 0x0a, 0x1a, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73,
-	0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x53, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x12, 0x23,
-	0x0a, 0x0d, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18,
-	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x73, 0x6e, 0x61, 0x70, 0x73, 0x68, 0x6f, 0x74, 0x48,
-	0x61, 0x73, 0x68, 0x12, 0x1f, 0x0a, 0x0b, 0x6d, 0x65, 0x72, 0x6b, 0x6c, 0x65, 0x5f, 0x72, 0x6f,
-	0x6f, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0a, 0x6d, 0x65, 0x72, 0x6b, 0x6c, 0x65,
-	0x52, 0x6f, 0x6f, 0x74, 0x12, 0x29, 0x0a, 0x10, 0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63,
-	0x61, 0x74, 0x65, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18, 0x03, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f,
-	0x63, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x48, 0x61, 0x73, 0x68, 0x12,
-	0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05,
-	0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x36, 0x0a, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x18,
-	0x05, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x48,
-	0x65, 0x69, 0x67, 0x68, 0x74, 0x52, 0x06, 0x68, 0x65, 0x69, 0x67, 0x68, 0x74, 0x3a, 0x04, 0x88,
-	0xa0, 0x1f, 0x00, 0x22, 0x8f, 0x04, 0x0a, 0x12, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x43,
-	0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x12, 0x12, 0x0a, 0x04, 0x68, 0x61,
-	0x73, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x04, 0x68, 0x61, 0x73, 0x68, 0x12, 0x23,
-	0x0a, 0x0d, 0x70, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x5f, 0x68, 0x61, 0x73, 0x68, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0c, 0x70, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x48,
-	0x61, 0x73, 0x68, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x03, 0x20, 0x01,
-	0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x56, 0x0a, 0x12, 0x73, 0x69, 0x67,
-	0x6e, 0x65, 0x64, 0x5f, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x5f, 0x74, 0x79, 0x70, 0x65, 0x18,
-	0x04, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x28, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x53,
-	0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x52,
-	0x10, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70,
-	0x65, 0x12, 0x47, 0x0a, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x18, 0x05, 0x20,
-	0x01, 0x28, 0x0b, 0x32, 0x2b, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74,
-	0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x65, 0x72,
-	0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61,
-	0x52, 0x08, 0x6d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x52, 0x0a, 0x10, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x06,
-	0x20, 0x01, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e,
-	0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x52, 0x0f, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x25,
-	0x0a, 0x0e, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
-	0x18, 0x07, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0d, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x64, 0x4d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x12, 0x3c, 0x0a, 0x1a, 0x61, 0x67, 0x67, 0x72, 0x65, 0x67, 0x61,
-	0x74, 0x65, 0x5f, 0x76, 0x65, 0x72, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x5f,
-	0x6b, 0x65, 0x79, 0x18, 0x08, 0x20, 0x01, 0x28, 0x09, 0x52, 0x18, 0x61, 0x67, 0x67, 0x72, 0x65,
-	0x67, 0x61, 0x74, 0x65, 0x56, 0x65, 0x72, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e,
-	0x4b, 0x65, 0x79, 0x12, 0x4a, 0x0a, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65,
-	0x18, 0x09, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x2c, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69,
-	0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e,
-	0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53, 0x69, 0x67, 0x6e, 0x61,
-	0x74, 0x75, 0x72, 0x65, 0x52, 0x09, 0x73, 0x69, 0x67, 0x6e, 0x61, 0x74, 0x75, 0x72, 0x65, 0x3a,
-	0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xab, 0x02, 0x0a, 0x13, 0x43, 0x65, 0x72, 0x74, 0x69, 0x66,
-	0x69, 0x63, 0x61, 0x74, 0x65, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0x12, 0x29, 0x0a,
-	0x10, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f,
-	0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x0f, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f,
-	0x6c, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x12, 0x62, 0x0a, 0x13, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x18,
-	0x02, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x31, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x4d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61,
-	0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x52, 0x12, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63,
-	0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x20, 0x0a, 0x0b,
-	0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x74, 0x65, 0x64, 0x41, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28,
-	0x04, 0x52, 0x0b, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x74, 0x65, 0x64, 0x41, 0x74, 0x12, 0x1a,
-	0x0a, 0x08, 0x73, 0x65, 0x61, 0x6c, 0x65, 0x64, 0x41, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x04,
-	0x52, 0x08, 0x73, 0x65, 0x61, 0x6c, 0x65, 0x64, 0x41, 0x74, 0x12, 0x41, 0x0a, 0x07, 0x73, 0x69,
-	0x67, 0x6e, 0x65, 0x72, 0x73, 0x18, 0x05, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62,
-	0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69,
-	0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69, 0x74, 0x68, 0x53,
-	0x74, 0x61, 0x6b, 0x65, 0x52, 0x07, 0x73, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x73, 0x3a, 0x04, 0x88,
-	0xa0, 0x1f, 0x00, 0x22, 0x48, 0x0a, 0x0f, 0x53, 0x69, 0x67, 0x6e, 0x65, 0x72, 0x57, 0x69, 0x74,
-	0x68, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x12, 0x19, 0x0a, 0x08, 0x70, 0x61, 0x72, 0x74, 0x79, 0x5f,
-	0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x07, 0x70, 0x61, 0x72, 0x74, 0x79, 0x49,
-	0x64, 0x12, 0x14, 0x0a, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04,
-	0x52, 0x05, 0x73, 0x74, 0x61, 0x6b, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f, 0x00, 0x22, 0xc1, 0x01,
-	0x0a, 0x0f, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67,
-	0x65, 0x12, 0x69, 0x0a, 0x19, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x6b, 0x65, 0x79, 0x18, 0x01,
-	0x20, 0x01, 0x28, 0x0e, 0x32, 0x2e, 0x2e, 0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e,
-	0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72,
-	0x74, 0x4b, 0x65, 0x79, 0x52, 0x16, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65,
-	0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x3d, 0x0a, 0x1b,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65,
-	0x5f, 0x70, 0x61, 0x72, 0x74, 0x5f, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x18, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61,
-	0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x3a, 0x04, 0x88, 0xa0, 0x1f,
-	0x00, 0x22, 0x52, 0x0a, 0x19, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72, 0x6f, 0x74,
-	0x6f, 0x63, 0x6f, 0x6c, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x65, 0x74, 0x65, 0x72, 0x73, 0x12, 0x0c,
-	0x0a, 0x01, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6b, 0x12, 0x0c, 0x0a, 0x01,
-	0x6d, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x01, 0x6d, 0x12, 0x13, 0x0a, 0x05, 0x70, 0x68,
-	0x69, 0x5f, 0x66, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x04, 0x70, 0x68, 0x69, 0x46, 0x3a,
-	0x04, 0x88, 0xa0, 0x1f, 0x00, 0x2a, 0xa0, 0x01, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63,
-	0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79,
-	0x12, 0x13, 0x0a, 0x0f, 0x53, 0x4e, 0x41, 0x50, 0x53, 0x48, 0x4f, 0x54, 0x5f, 0x44, 0x49, 0x47,
-	0x45, 0x53, 0x54, 0x10, 0x00, 0x12, 0x24, 0x0a, 0x20, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f,
-	0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43, 0x54, 0x49, 0x4f, 0x4e, 0x53, 0x5f, 0x4d, 0x45,
-	0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f, 0x54, 0x10, 0x01, 0x12, 0x23, 0x0a, 0x1f, 0x4e,
-	0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52, 0x45, 0x47, 0x41, 0x54, 0x45, 0x5f, 0x56, 0x45,
-	0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4b, 0x45, 0x59, 0x10, 0x02,
-	0x12, 0x20, 0x0a, 0x1c, 0x4c, 0x41, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x49, 0x4d, 0x4d, 0x55, 0x54,
-	0x41, 0x42, 0x4c, 0x45, 0x5f, 0x46, 0x49, 0x4c, 0x45, 0x5f, 0x4e, 0x55, 0x4d, 0x42, 0x45, 0x52,
-	0x10, 0x03, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x52, 0x0a, 0x10, 0x53, 0x69, 0x67, 0x6e,
-	0x65, 0x64, 0x45, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x54, 0x79, 0x70, 0x65, 0x12, 0x1e, 0x0a, 0x1a,
-	0x4d, 0x49, 0x54, 0x48, 0x52, 0x49, 0x4c, 0x5f, 0x53, 0x54, 0x41, 0x4b, 0x45, 0x5f, 0x44, 0x49,
-	0x53, 0x54, 0x52, 0x49, 0x42, 0x55, 0x54, 0x49, 0x4f, 0x4e, 0x10, 0x00, 0x12, 0x18, 0x0a, 0x14,
-	0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43, 0x54,
-	0x49, 0x4f, 0x4e, 0x53, 0x10, 0x01, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x2a, 0x48, 0x0a, 0x14,
-	0x43, 0x65, 0x72, 0x74, 0x69, 0x66, 0x69, 0x63, 0x61, 0x74, 0x65, 0x53, 0x69, 0x67, 0x6e, 0x61,
-	0x74, 0x75, 0x72, 0x65, 0x12, 0x15, 0x0a, 0x11, 0x47, 0x45, 0x4e, 0x45, 0x53, 0x49, 0x53, 0x5f,
-	0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10, 0x00, 0x12, 0x13, 0x0a, 0x0f, 0x4d,
-	0x55, 0x4c, 0x54, 0x49, 0x5f, 0x53, 0x49, 0x47, 0x4e, 0x41, 0x54, 0x55, 0x52, 0x45, 0x10, 0x01,
-	0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x42, 0xd8, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d, 0x2e, 0x69,
-	0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72,
-	0x69, 0x6c, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50, 0x72,
-	0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x31, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64, 0x6b,
-	0x2e, 0x69, 0x6f, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x69, 0x62, 0x63, 0x2f, 0x63, 0x6c, 0x69, 0x65,
-	0x6e, 0x74, 0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2f, 0x76, 0x31, 0x3b, 0x6d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x49, 0x43, 0x4d, 0xaa, 0x02,
-	0x16, 0x49, 0x62, 0x63, 0x2e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x4d, 0x69, 0x74,
-	0x68, 0x72, 0x69, 0x6c, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x16, 0x49, 0x62, 0x63, 0x5c, 0x43, 0x6c,
-	0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56, 0x31,
-	0xe2, 0x02, 0x22, 0x49, 0x62, 0x63, 0x5c, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c, 0x4d,
-	0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65, 0x74,
-	0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x19, 0x49, 0x62, 0x63, 0x3a, 0x3a, 0x43, 0x6c, 0x69,
-	0x65, 0x6e, 0x74, 0x73, 0x3a, 0x3a, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x3a, 0x3a, 0x56,
-	0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x73, 0x48, 0x00, 0x52, 0x13, 0x63, 0x61,
+	0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e,
+	0x73, 0x42, 0x08, 0x0a, 0x06, 0x65, 0x6e, 0x74, 0x69, 0x74, 0x79, 0x22, 0x30, 0x0a, 0x18, 0x43,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x53, 0x74, 0x61, 0x6b, 0x65, 0x44, 0x69, 0x73, 0x74, 0x72,
+	0x69, 0x62, 0x75, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68,
+	0x18, 0x01, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x22, 0x5c, 0x0a,
+	0x19, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x49, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c,
+	0x65, 0x46, 0x69, 0x6c, 0x65, 0x73, 0x46, 0x75, 0x6c, 0x6c, 0x12, 0x3f, 0x0a, 0x06, 0x62, 0x65,
+	0x61, 0x63, 0x6f, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x27, 0x2e, 0x69, 0x62, 0x63,
+	0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c,
+	0x2e, 0x76, 0x31, 0x2e, 0x43, 0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x44, 0x62, 0x42, 0x65, 0x61,
+	0x63, 0x6f, 0x6e, 0x52, 0x06, 0x62, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x22, 0x4e, 0x0a, 0x13, 0x43,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x54, 0x72, 0x61, 0x6e, 0x73, 0x61, 0x63, 0x74, 0x69, 0x6f,
+	0x6e, 0x73, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x21, 0x0a, 0x0c, 0x62, 0x6c, 0x6f, 0x63,
+	0x6b, 0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x0b,
+	0x62, 0x6c, 0x6f, 0x63, 0x6b, 0x4e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x22, 0x75, 0x0a, 0x0f, 0x43,
+	0x61, 0x72, 0x64, 0x61, 0x6e, 0x6f, 0x44, 0x62, 0x42, 0x65, 0x61, 0x63, 0x6f, 0x6e, 0x12, 0x18,
+	0x0a, 0x07, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x07, 0x6e, 0x65, 0x74, 0x77, 0x6f, 0x72, 0x6b, 0x12, 0x14, 0x0a, 0x05, 0x65, 0x70, 0x6f, 0x63,
+	0x68, 0x18, 0x02, 0x20, 0x01, 0x28, 0x04, 0x52, 0x05, 0x65, 0x70, 0x6f, 0x63, 0x68, 0x12, 0x32,
+	0x0a, 0x15, 0x69, 0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x5f, 0x66, 0x69, 0x6c, 0x65,
+	0x5f, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x04, 0x52, 0x13, 0x69,
+	0x6d, 0x6d, 0x75, 0x74, 0x61, 0x62, 0x6c, 0x65, 0x46, 0x69, 0x6c, 0x65, 0x4e, 0x75, 0x6d, 0x62,
+	0x65, 0x72, 0x22, 0x4a, 0x0a, 0x08, 0x46, 0x72, 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x12, 0x1c,
+	0x0a, 0x09, 0x6e, 0x75, 0x6d, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x09, 0x6e, 0x75, 0x6d, 0x65, 0x72, 0x61, 0x74, 0x6f, 0x72, 0x12, 0x20, 0x0a, 0x0b,
+	0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x69, 0x6e, 0x61, 0x74, 0x6f, 0x72, 0x18, 0x02, 0x20, 0x01, 0x28,
+	0x04, 0x52, 0x0b, 0x64, 0x65, 0x6e, 0x6f, 0x6d, 0x69, 0x6e, 0x61, 0x74, 0x6f, 0x72, 0x2a, 0xe6,
+	0x02, 0x0a, 0x16, 0x50, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c, 0x4d, 0x65, 0x73, 0x73, 0x61,
+	0x67, 0x65, 0x50, 0x61, 0x72, 0x74, 0x4b, 0x65, 0x79, 0x12, 0x29, 0x0a, 0x25, 0x50, 0x52, 0x4f,
+	0x54, 0x4f, 0x43, 0x4f, 0x4c, 0x5f, 0x4d, 0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x5f, 0x50, 0x41,
+	0x52, 0x54, 0x5f, 0x4b, 0x45, 0x59, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49,
+	0x45, 0x44, 0x10, 0x00, 0x12, 0x2d, 0x0a, 0x29, 0x50, 0x52, 0x4f, 0x54, 0x4f, 0x43, 0x4f, 0x4c,
+	0x5f, 0x4d, 0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x5f, 0x50, 0x41, 0x52, 0x54, 0x5f, 0x4b, 0x45,
+	0x59, 0x5f, 0x53, 0x4e, 0x41, 0x50, 0x53, 0x48, 0x4f, 0x54, 0x5f, 0x44, 0x49, 0x47, 0x45, 0x53,
+	0x54, 0x10, 0x01, 0x12, 0x3e, 0x0a, 0x3a, 0x50, 0x52, 0x4f, 0x54, 0x4f, 0x43, 0x4f, 0x4c, 0x5f,
+	0x4d, 0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x5f, 0x50, 0x41, 0x52, 0x54, 0x5f, 0x4b, 0x45, 0x59,
+	0x5f, 0x43, 0x41, 0x52, 0x44, 0x41, 0x4e, 0x4f, 0x5f, 0x54, 0x52, 0x41, 0x4e, 0x53, 0x41, 0x43,
+	0x54, 0x49, 0x4f, 0x4e, 0x53, 0x5f, 0x4d, 0x45, 0x52, 0x4b, 0x4c, 0x45, 0x5f, 0x52, 0x4f, 0x4f,
+	0x54, 0x10, 0x02, 0x12, 0x3d, 0x0a, 0x39, 0x50, 0x52, 0x4f, 0x54, 0x4f, 0x43, 0x4f, 0x4c, 0x5f,
+	0x4d, 0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x5f, 0x50, 0x41, 0x52, 0x54, 0x5f, 0x4b, 0x45, 0x59,
+	0x5f, 0x4e, 0x45, 0x58, 0x54, 0x5f, 0x41, 0x47, 0x47, 0x52, 0x45, 0x47, 0x41, 0x54, 0x45, 0x5f,
+	0x56, 0x45, 0x52, 0x49, 0x46, 0x49, 0x43, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x4b, 0x45, 0x59,
+	0x10, 0x03, 0x12, 0x3a, 0x0a, 0x36, 0x50, 0x52, 0x4f, 0x54, 0x4f, 0x43, 0x4f, 0x4c, 0x5f, 0x4d,
+	0x45, 0x53, 0x53, 0x41, 0x47, 0x45, 0x5f, 0x50, 0x41, 0x52, 0x54, 0x5f, 0x4b, 0x45, 0x59, 0x5f,
+	0x4c, 0x41, 0x54, 0x45, 0x53, 0x54, 0x5f, 0x49, 0x4d, 0x4d, 0x55, 0x54, 0x41, 0x42, 0x4c, 0x45,
+	0x5f, 0x46, 0x49, 0x4c, 0x45, 0x5f, 0x4e, 0x55, 0x4d, 0x42, 0x45, 0x52, 0x10, 0x04, 0x12, 0x31,
+	0x0a, 0x2d, 0x50, 0x52, 0x4f, 0x54, 0x4f, 0x43, 0x4f, 0x4c, 0x5f, 0x4d, 0x45, 0x53, 0x53, 0x41,
+	0x47, 0x45, 0x5f, 0x50, 0x41, 0x52, 0x54, 0x5f, 0x4b, 0x45, 0x59, 0x5f, 0x4c, 0x41, 0x54, 0x45,
+	0x53, 0x54, 0x5f, 0x42, 0x4c, 0x4f, 0x43, 0x4b, 0x5f, 0x4e, 0x55, 0x4d, 0x42, 0x45, 0x52, 0x10,
+	0x05, 0x1a, 0x04, 0x88, 0xa3, 0x1e, 0x00, 0x42, 0xd8, 0x01, 0x0a, 0x1a, 0x63, 0x6f, 0x6d, 0x2e,
+	0x69, 0x62, 0x63, 0x2e, 0x63, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x6d, 0x69, 0x74, 0x68,
+	0x72, 0x69, 0x6c, 0x2e, 0x76, 0x31, 0x42, 0x0c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x50,
+	0x72, 0x6f, 0x74, 0x6f, 0x50, 0x01, 0x5a, 0x31, 0x63, 0x6f, 0x73, 0x6d, 0x6f, 0x73, 0x73, 0x64,
+	0x6b, 0x2e, 0x69, 0x6f, 0x2f, 0x61, 0x70, 0x69, 0x2f, 0x69, 0x62, 0x63, 0x2f, 0x63, 0x6c, 0x69,
+	0x65, 0x6e, 0x74, 0x73, 0x2f, 0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x2f, 0x76, 0x31, 0x3b,
+	0x6d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x76, 0x31, 0xa2, 0x02, 0x03, 0x49, 0x43, 0x4d, 0xaa,
+	0x02, 0x16, 0x49, 0x62, 0x63, 0x2e, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x2e, 0x4d, 0x69,
+	0x74, 0x68, 0x72, 0x69, 0x6c, 0x2e, 0x56, 0x31, 0xca, 0x02, 0x16, 0x49, 0x62, 0x63, 0x5c, 0x43,
+	0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56,
+	0x31, 0xe2, 0x02, 0x22, 0x49, 0x62, 0x63, 0x5c, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x73, 0x5c,
+	0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x5c, 0x56, 0x31, 0x5c, 0x47, 0x50, 0x42, 0x4d, 0x65,
+	0x74, 0x61, 0x64, 0x61, 0x74, 0x61, 0xea, 0x02, 0x19, 0x49, 0x62, 0x63, 0x3a, 0x3a, 0x43, 0x6c,
+	0x69, 0x65, 0x6e, 0x74, 0x73, 0x3a, 0x3a, 0x4d, 0x69, 0x74, 0x68, 0x72, 0x69, 0x6c, 0x3a, 0x3a,
+	0x56, 0x31, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -8781,50 +13545,64 @@ func file_ibc_clients_mithril_v1_mithril_proto_rawDescGZIP() []byte {
 	return file_ibc_clients_mithril_v1_mithril_proto_rawDescData
 }
 
-var file_ibc_clients_mithril_v1_mithril_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_ibc_clients_mithril_v1_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_ibc_clients_mithril_v1_mithril_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_ibc_clients_mithril_v1_mithril_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_ibc_clients_mithril_v1_mithril_proto_goTypes = []interface{}{
 	(ProtocolMessagePartKey)(0),        // 0: ibc.clients.mithril.v1.ProtocolMessagePartKey
-	(SignedEntityType)(0),              // 1: ibc.clients.mithril.v1.SignedEntityType
-	(CertificateSignature)(0),          // 2: ibc.clients.mithril.v1.CertificateSignature
-	(*Height)(nil),                     // 3: ibc.clients.mithril.v1.Height
-	(*ClientState)(nil),                // 4: ibc.clients.mithril.v1.ClientState
-	(*ConsensusState)(nil),             // 5: ibc.clients.mithril.v1.ConsensusState
-	(*Misbehaviour)(nil),               // 6: ibc.clients.mithril.v1.Misbehaviour
-	(*MithrilHeader)(nil),              // 7: ibc.clients.mithril.v1.MithrilHeader
-	(*MithrilStakeDistribution)(nil),   // 8: ibc.clients.mithril.v1.MithrilStakeDistribution
-	(*CardanoTransactionSnapshot)(nil), // 9: ibc.clients.mithril.v1.CardanoTransactionSnapshot
-	(*MithrilCertificate)(nil),         // 10: ibc.clients.mithril.v1.MithrilCertificate
-	(*CertificateMetadata)(nil),        // 11: ibc.clients.mithril.v1.CertificateMetadata
-	(*SignerWithStake)(nil),            // 12: ibc.clients.mithril.v1.SignerWithStake
-	(*ProtocolMessage)(nil),            // 13: ibc.clients.mithril.v1.ProtocolMessage
-	(*MithrilProtocolParameters)(nil),  // 14: ibc.clients.mithril.v1.MithrilProtocolParameters
+	(*Height)(nil),                     // 1: ibc.clients.mithril.v1.Height
+	(*ClientState)(nil),                // 2: ibc.clients.mithril.v1.ClientState
+	(*ConsensusState)(nil),             // 3: ibc.clients.mithril.v1.ConsensusState
+	(*Misbehaviour)(nil),               // 4: ibc.clients.mithril.v1.Misbehaviour
+	(*MithrilHeader)(nil),              // 5: ibc.clients.mithril.v1.MithrilHeader
+	(*MithrilStakeDistribution)(nil),   // 6: ibc.clients.mithril.v1.MithrilStakeDistribution
+	(*CardanoTransactionSnapshot)(nil), // 7: ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	(*MithrilCertificate)(nil),         // 8: ibc.clients.mithril.v1.MithrilCertificate
+	(*CertificateMetadata)(nil),        // 9: ibc.clients.mithril.v1.CertificateMetadata
+	(*SignerWithStake)(nil),            // 10: ibc.clients.mithril.v1.SignerWithStake
+	(*ProtocolMessage)(nil),            // 11: ibc.clients.mithril.v1.ProtocolMessage
+	(*MessagePart)(nil),                // 12: ibc.clients.mithril.v1.MessagePart
+	(*MithrilProtocolParameters)(nil),  // 13: ibc.clients.mithril.v1.MithrilProtocolParameters
+	(*ProtocolGenesisSignature)(nil),   // 14: ibc.clients.mithril.v1.ProtocolGenesisSignature
+	(*SignedEntityType)(nil),           // 15: ibc.clients.mithril.v1.SignedEntityType
+	(*CardanoStakeDistribution)(nil),   // 16: ibc.clients.mithril.v1.CardanoStakeDistribution
+	(*CardanoImmutableFilesFull)(nil),  // 17: ibc.clients.mithril.v1.CardanoImmutableFilesFull
+	(*CardanoTransactions)(nil),        // 18: ibc.clients.mithril.v1.CardanoTransactions
+	(*CardanoDbBeacon)(nil),            // 19: ibc.clients.mithril.v1.CardanoDbBeacon
+	(*Fraction)(nil),                   // 20: ibc.clients.mithril.v1.Fraction
+	(*durationpb.Duration)(nil),        // 21: google.protobuf.Duration
 }
 var file_ibc_clients_mithril_v1_mithril_proto_depIdxs = []int32{
-	3,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
-	3,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
-	14, // 2: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	10, // 3: ibc.clients.mithril.v1.ConsensusState.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	10, // 4: ibc.clients.mithril.v1.ConsensusState.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
-	7,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	7,  // 6: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
-	8,  // 7: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
-	9,  // 8: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
-	12, // 9: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	14, // 10: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	3,  // 11: ibc.clients.mithril.v1.CardanoTransactionSnapshot.height:type_name -> ibc.clients.mithril.v1.Height
-	1,  // 12: ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
-	11, // 13: ibc.clients.mithril.v1.MithrilCertificate.metadata:type_name -> ibc.clients.mithril.v1.CertificateMetadata
-	13, // 14: ibc.clients.mithril.v1.MithrilCertificate.protocol_message:type_name -> ibc.clients.mithril.v1.ProtocolMessage
-	2,  // 15: ibc.clients.mithril.v1.MithrilCertificate.signature:type_name -> ibc.clients.mithril.v1.CertificateSignature
-	14, // 16: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
-	12, // 17: ibc.clients.mithril.v1.CertificateMetadata.signers:type_name -> ibc.clients.mithril.v1.SignerWithStake
-	0,  // 18: ibc.clients.mithril.v1.ProtocolMessage.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
-	19, // [19:19] is the sub-list for method output_type
-	19, // [19:19] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	1,  // 0: ibc.clients.mithril.v1.ClientState.latest_height:type_name -> ibc.clients.mithril.v1.Height
+	1,  // 1: ibc.clients.mithril.v1.ClientState.frozen_height:type_name -> ibc.clients.mithril.v1.Height
+	21, // 2: ibc.clients.mithril.v1.ClientState.trusting_period:type_name -> google.protobuf.Duration
+	13, // 3: ibc.clients.mithril.v1.ClientState.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	8,  // 4: ibc.clients.mithril.v1.ConsensusState.first_cert_hash_latest_epoch:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	5,  // 5: ibc.clients.mithril.v1.Misbehaviour.mithril_header_1:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	5,  // 6: ibc.clients.mithril.v1.Misbehaviour.mithril_header_2:type_name -> ibc.clients.mithril.v1.MithrilHeader
+	6,  // 7: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
+	8,  // 8: ibc.clients.mithril.v1.MithrilHeader.mithril_stake_distribution_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	7,  // 9: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot:type_name -> ibc.clients.mithril.v1.CardanoTransactionSnapshot
+	8,  // 10: ibc.clients.mithril.v1.MithrilHeader.transaction_snapshot_certificate:type_name -> ibc.clients.mithril.v1.MithrilCertificate
+	10, // 11: ibc.clients.mithril.v1.MithrilStakeDistribution.signers_with_stake:type_name -> ibc.clients.mithril.v1.SignerWithStake
+	13, // 12: ibc.clients.mithril.v1.MithrilStakeDistribution.protocol_parameter:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	15, // 13: ibc.clients.mithril.v1.MithrilCertificate.signed_entity_type:type_name -> ibc.clients.mithril.v1.SignedEntityType
+	9,  // 14: ibc.clients.mithril.v1.MithrilCertificate.metadata:type_name -> ibc.clients.mithril.v1.CertificateMetadata
+	11, // 15: ibc.clients.mithril.v1.MithrilCertificate.protocol_message:type_name -> ibc.clients.mithril.v1.ProtocolMessage
+	13, // 16: ibc.clients.mithril.v1.CertificateMetadata.protocol_parameters:type_name -> ibc.clients.mithril.v1.MithrilProtocolParameters
+	10, // 17: ibc.clients.mithril.v1.CertificateMetadata.signers:type_name -> ibc.clients.mithril.v1.SignerWithStake
+	12, // 18: ibc.clients.mithril.v1.ProtocolMessage.message_parts:type_name -> ibc.clients.mithril.v1.MessagePart
+	0,  // 19: ibc.clients.mithril.v1.MessagePart.protocol_message_part_key:type_name -> ibc.clients.mithril.v1.ProtocolMessagePartKey
+	20, // 20: ibc.clients.mithril.v1.MithrilProtocolParameters.phi_f:type_name -> ibc.clients.mithril.v1.Fraction
+	6,  // 21: ibc.clients.mithril.v1.SignedEntityType.mithril_stake_distribution:type_name -> ibc.clients.mithril.v1.MithrilStakeDistribution
+	16, // 22: ibc.clients.mithril.v1.SignedEntityType.cardano_stake_distribution:type_name -> ibc.clients.mithril.v1.CardanoStakeDistribution
+	17, // 23: ibc.clients.mithril.v1.SignedEntityType.cardano_immutable_files_full:type_name -> ibc.clients.mithril.v1.CardanoImmutableFilesFull
+	18, // 24: ibc.clients.mithril.v1.SignedEntityType.cardano_transactions:type_name -> ibc.clients.mithril.v1.CardanoTransactions
+	19, // 25: ibc.clients.mithril.v1.CardanoImmutableFilesFull.beacon:type_name -> ibc.clients.mithril.v1.CardanoDbBeacon
+	26, // [26:26] is the sub-list for method output_type
+	26, // [26:26] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_ibc_clients_mithril_v1_mithril_proto_init() }
@@ -8966,6 +13744,18 @@ func file_ibc_clients_mithril_v1_mithril_proto_init() {
 			}
 		}
 		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*MessagePart); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*MithrilProtocolParameters); i {
 			case 0:
 				return &v.state
@@ -8977,14 +13767,104 @@ func file_ibc_clients_mithril_v1_mithril_proto_init() {
 				return nil
 			}
 		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[13].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ProtocolGenesisSignature); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[14].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*SignedEntityType); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[15].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoStakeDistribution); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[16].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoImmutableFilesFull); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[17].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoTransactions); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[18].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CardanoDbBeacon); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_ibc_clients_mithril_v1_mithril_proto_msgTypes[19].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*Fraction); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+	}
+	file_ibc_clients_mithril_v1_mithril_proto_msgTypes[14].OneofWrappers = []interface{}{
+		(*SignedEntityType_MithrilStakeDistribution)(nil),
+		(*SignedEntityType_CardanoStakeDistribution)(nil),
+		(*SignedEntityType_CardanoImmutableFilesFull)(nil),
+		(*SignedEntityType_CardanoTransactions)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_ibc_clients_mithril_v1_mithril_proto_rawDesc,
-			NumEnums:      3,
-			NumMessages:   12,
+			NumEnums:      1,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

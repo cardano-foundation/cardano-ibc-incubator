@@ -28,14 +28,31 @@ export function initializeHeader(headerMsg: HeaderMsg): Header {
   const header: Header = {
     signedHeader: {
       header: {
+        version: {
+          block: BigInt(headerMsg.signed_header.header.version.block),
+          app: BigInt(headerMsg.signed_header.header.version.app),
+        },
         chainId: toBytes(Buffer.from(headerMsg.signed_header.header.chain_id)),
         height: headerMsg.signed_header.header.height,
         time:
           BigInt(headerMsg.signed_header.header.time.seconds) * 10n ** 9n +
           BigInt(headerMsg.signed_header.header.time.nanos),
+        lastBlockId: {
+          hash: toBytes(headerMsg.signed_header.header.last_block_id.hash),
+          partSetHeader: {
+            total: BigInt(headerMsg.signed_header.header.last_block_id.part_set_header.total),
+            hash: toBytes(headerMsg.signed_header.header.last_block_id.part_set_header.hash),
+          },
+        },
+        lastCommitHash: toBytes(headerMsg.signed_header.header.last_commit_hash),
+        dataHash: toBytes(headerMsg.signed_header.header.data_hash),
         validatorsHash: toBytes(headerMsg.signed_header.header.validators_hash),
         nextValidatorsHash: toBytes(headerMsg.signed_header.header.next_validators_hash),
+        consensusHash: toBytes(headerMsg.signed_header.header.consensus_hash),
         appHash: toBytes(headerMsg.signed_header.header.app_hash),
+        lastResultsHash: toBytes(headerMsg.signed_header.header.last_results_hash),
+        evidenceHash: toBytes(headerMsg.signed_header.header.evidence_hash),
+        proposerAddress: toBytes(headerMsg.signed_header.header.proposer_address),
       },
       commit: {
         height: headerMsg.signed_header.commit.height,

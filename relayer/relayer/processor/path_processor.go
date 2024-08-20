@@ -19,7 +19,7 @@ const (
 	// Amount of time to wait when sending transactions before giving up
 	// and continuing on. Messages will be retried later if they are still
 	// relevant.
-	messageSendTimeout = 60 * time.Second
+	messageSendTimeout = 120 * time.Second
 
 	// Amount of time to wait for a proof to be queried before giving up.
 	// The proof query will be retried later if the message still needs

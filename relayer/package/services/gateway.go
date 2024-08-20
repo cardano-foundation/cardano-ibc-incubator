@@ -2,7 +2,14 @@ package services
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"strings"
+
+	"github.com/cardano/relayer/v1/constant"
+	"github.com/cardano/relayer/v1/package/dbservice"
+	"github.com/cardano/relayer/v1/package/mithril"
+	"github.com/joho/godotenv"
 
 	pbclient "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	pbconnection "github.com/cardano/proto-types/go/github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
@@ -26,10 +33,16 @@ type Gateway struct {
 	ChannelQueryService    pbchannel.QueryClient
 	ChannelMsgService      pbchannel.MsgClient
 
-	TypeProvider ibcclient.QueryClient
+	TypeProvider   ibcclient.QueryClient
+	MithrilService *mithril.MithrilService
+	DBService      *dbservice.DBService
 }
 
-func (gw *Gateway) NewGateWayService(address string) error {
+func (gw *Gateway) NewGateWayService(address string, mithrilEndpoint string) error {
+	err := godotenv.Load()
+	if err != nil {
+		return err
+	}
 	conn, err := grpc.Dial(strings.TrimPrefix(address, "http://"), grpc.WithInsecure())
 	if err != nil {
 		return err
@@ -45,29 +58,44 @@ func (gw *Gateway) NewGateWayService(address string) error {
 	gw.ChannelMsgService = pbchannel.NewMsgClient(conn)
 
 	gw.TypeProvider = ibcclient.NewQueryClient(conn)
-
+	gw.MithrilService = mithril.NewMithrilService(mithrilEndpoint)
+	if err := dbservice.ConnectToDb(&dbservice.DatabaseInfo{
+		Name:     os.Getenv(constant.DbName),
+		Driver:   os.Getenv(constant.DbDriver),
+		Username: os.Getenv(constant.DbUsername),
+		Password: os.Getenv(constant.DbPassword),
+		SSLMode:  os.Getenv(constant.DbSslMode),
+		Host:     os.Getenv(constant.DbHost),
+		Port:     os.Getenv(constant.DbPort),
+	}); err != nil {
+		return fmt.Errorf("err connection db %w", err)
+	}
+	gw.DBService = dbservice.NewDBService()
 	return nil
 }
 
 func (gw *Gateway) GetLastHeight() (uint64, error) {
-	res, err := gw.ClientQueryService.LatestHeight(context.Background(), &pbclient.QueryLatestHeightRequest{})
+	res, err := gw.MithrilService.GetCardanoTransactionsSetSnapshot()
 	if err != nil {
 		return 0, err
 	}
-	return res.Height, nil
+	if len(res) == 0 {
+		return 0, fmt.Errorf("cardano transaction set snapshot return nil")
+	}
+	return res[0].BlockNumber, nil
 }
 
-func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
-	req := &pbclient.QueryClientStateRequest{
-		ClientId: clientId,
-		Height:   height,
-	}
-	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
+//func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
+//	req := &pbclient.QueryClientStateRequest{
+//		ClientId: clientId,
+//		Height:   height,
+//	}
+//	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return res, nil
+//}
 
 func (gw *Gateway) QueryConsensusState(clientId string, height uint64) (*pbclient.QueryConsensusStateResponse, error) {
 	req := &pbclient.QueryConsensusStateRequest{
@@ -218,14 +246,14 @@ func (gw *Gateway) ChannelOpenAck(ctx context.Context, req *pbchannel.MsgChannel
 	return res, nil
 }
 
-func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
-	req := ibcclient.QueryBlockResultsRequest{Height: height}
-	res, err := gw.TypeProvider.BlockResults(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
+//func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
+//	req := ibcclient.QueryBlockResultsRequest{Height: height}
+//	res, err := gw.TypeProvider.BlockResults(ctx, &req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return res, nil
+//}
 
 func (gw *Gateway) Connections(ctx context.Context, req *pbconnection.QueryConnectionsRequest) (*pbconnection.QueryConnectionsResponse, error) {
 	res, err := gw.ConnectionQueryService.Connections(ctx, req)
@@ -391,6 +419,38 @@ func (gw *Gateway) ProofUnreceivedPackets(ctx context.Context, req *pbchannel.Qu
 
 func (gw *Gateway) QueryUnreceivedAcknowledgements(ctx context.Context, req *pbchannel.QueryUnreceivedAcksRequest) (*pbchannel.QueryUnreceivedAcksResponse, error) {
 	res, err := gw.ChannelQueryService.UnreceivedAcks(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryNextSequenceReceive(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceReceive(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) QueryNextSequenceAck(ctx context.Context, req *pbchannel.QueryNextSequenceReceiveRequest) (*pbchannel.QueryNextSequenceReceiveResponse, error) {
+	res, err := gw.ChannelQueryService.NextSequenceAck(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ChannelCloseInit(ctx context.Context, req *pbchannel.MsgChannelCloseInit) (*pbchannel.MsgChannelCloseInitResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseInit(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (gw *Gateway) ChannelCloseConfirm(ctx context.Context, req *pbchannel.MsgChannelCloseConfirm) (*pbchannel.MsgChannelCloseConfirmResponse, error) {
+	res, err := gw.ChannelMsgService.ChannelCloseConfirm(ctx, req)
 	if err != nil {
 		return nil, err
 	}

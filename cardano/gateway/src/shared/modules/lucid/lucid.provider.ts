@@ -1,8 +1,8 @@
-import { ConfigService } from "@nestjs/config";
-import { querySystemStart } from "../../helpers/time";
+import { ConfigService } from '@nestjs/config';
+import { querySystemStart } from '../../helpers/time';
 
-export const LUCID_CLIENT = "LUCID_CLIENT";
-export const LUCID_IMPORTER = "LUCID_IMPORTER";
+export const LUCID_CLIENT = 'LUCID_CLIENT';
+export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
 export const LucidClient = {
   provide: LUCID_CLIENT,

@@ -12,6 +12,8 @@ pub type IBCModuleCallback {
   OnChanOpenTry { channel_id: ByteArray }
   OnChanOpenAck { channel_id: ByteArray }
   OnChanOpenConfirm { channel_id: ByteArray }
+  OnChanCloseInit { channel_id: ByteArray }
+  OnChanCloseConfirm { channel_id: ByteArray }
   OnRecvPacket {
     channel_id: ByteArray,
     acknowledgement: Acknowledgement,

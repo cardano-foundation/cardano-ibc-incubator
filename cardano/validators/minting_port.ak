@@ -1,6 +1,6 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId,
@@ -16,7 +16,6 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerBindPort, HandlerOperator,
 }
 use ibc/utils/string as string_utils
-use ibc/utils/validator_utils
 
 validator {
   fn mint_port(redeemer: MintPortRedeemer, context: ScriptContext) -> Bool {
@@ -38,7 +37,7 @@ validator {
       )
     // spent handler redeemer is HandlerBindPort operator
     expect Some(spent_handler_redeemer) =
-      redeemers |> dict.get(Spend(handler_input.output_reference))
+      pairs.get_first(redeemers, Spend(handler_input.output_reference))
     expect handler_operator: HandlerOperator = spent_handler_redeemer
     expect handler_operator == HandlerBindPort
     trace @"mint_port: handler redeemer is valid"
@@ -129,7 +128,7 @@ test mint_port_succeed() {
   let mock = setup()
 
   //==============================arrange redeemer============================
-  let redeemer =
+  let redeemer: Redeemer =
     MintPortRedeemer {
       handler_token: mock.handler_token,
       spend_module_script_hash: mock.spend_module_script_hash,
@@ -162,18 +161,18 @@ test mint_port_succeed() {
   //==============================arrange redeemers==============================
   let handler_redeemer: Redeemer = HandlerBindPort
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock.handler_input.output_reference),
-          handler_redeemer,
-          validator_utils.compare_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.port_minting_policy_id),
-          redeemer,
-          validator_utils.compare_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock.port_minting_policy_id), redeemer),
+    ]
+
+  let redeemer =
+    MintPortRedeemer {
+      handler_token: mock.handler_token,
+      spend_module_script_hash: mock.spend_module_script_hash,
+      port_number: mock.port_number,
+    }
 
   //==========================arrange context=========================
   let context =

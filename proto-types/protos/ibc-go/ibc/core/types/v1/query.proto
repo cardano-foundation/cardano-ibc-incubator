@@ -21,6 +21,10 @@ service Query {
   rpc TransactionByHash(QueryTransactionByHashRequest) returns (QueryTransactionByHashResponse) {
     option (google.api.http).get = "/ibc/core/types/v1/transaction_by_hash";
   }
+
+  rpc IBCHeader(QueryIBCHeaderRequest) returns (QueryIBCHeaderResponse) {
+    option (google.api.http).get = "/ibc/core/types/v1/ibc_header"; 
+  }
 }
 
 // QueryBlockResultsRequest is the request type for the Query/BlockResults RPC method.
@@ -60,4 +64,13 @@ message QueryTransactionByHashResponse {
   uint64 height = 2;
   uint64 gas_fee = 3;
   uint64 tx_size = 4;
+  repeated Event events = 5;
+}
+
+message QueryIBCHeaderRequest {
+  uint64 height = 2;
+}
+
+message QueryIBCHeaderResponse {
+  google.protobuf.Any header = 1;
 }

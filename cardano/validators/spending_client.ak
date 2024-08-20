@@ -1,4 +1,3 @@
-use aiken/dict
 use aiken/interval
 use aiken/list
 use aiken/transaction.{
@@ -15,14 +14,19 @@ use ibc/client/ics_007_tendermint_client/client_redeemer.{
   Other, SpendClientRedeemer, UpdateClient,
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
-  BlockID, Commit, PartSetHeader,
-}
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
+  BlockID, PartSetHeader,
+} as block_id_mod
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit_sig.{CommitSig}
 use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader} as tm_header_mod
+use ibc/client/ics_007_tendermint_client/cometbft/protos/types_pb.{Consensus}
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
+use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
+  block_protocol,
+}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -74,7 +78,7 @@ validator {
           client_state_mod.status(
             datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
           ) == client_status_mod.Active
         trace @"spend_client: client status is Active"
 
@@ -87,7 +91,7 @@ validator {
           update_mod.verify_client_message(
             datum.state.client_state,
             tx_time,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
             msg,
           )
         trace @"spend_client: verify client msg succeeded"
@@ -95,7 +99,7 @@ validator {
         let found_misbehaviour =
           misbehaviour_handle_mod.check_for_misbehaviour(
             msg,
-            dict.from_list(datum.state.consensus_states, height.compare),
+            datum.state.consensus_states,
           )
 
         if found_misbehaviour {
@@ -182,18 +186,32 @@ test update_client_misbehaviour_conflict_header() {
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        version: Consensus { block: block_protocol, app: 2 },
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
-        validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        app_hash: #"35c73ae54e3eb940a037effeba522aa34ed8d39c7b0f8af990bda1f252a343a7",
+        last_block_id: BlockID {
+          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          part_set_header: PartSetHeader {
+            total: 10000,
+            hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          },
+        },
+        last_commit_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        data_hash: #"6d6e28b8b98b5327042ea50a57dd46e6cc851c72e528bdeaa6efdeeefe66a0b8",
+        validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        consensus_hash: #"e5e566c41ed57e3ff8cc10f184178788b8faa602b07cf1f425217bd8179f1f24",
+        app_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        last_results_hash: #"092e058630247ed6009863a12eee117d26cd9d08b5adcaab37f2ab35db475a37",
+        evidence_hash: #"73865db08f49d58428905d389ab4ca4b96e45a3206c7a69d43a5dc7372e60714",
+        proposer_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
       },
       commit: Commit {
         height: 3,
         round: 1,
         block_id: BlockID {
-          hash: #"537506e584088292181bf9fab1dc97f7e7abfd6b968193f7a42386b3efb5f8e3",
+          hash: #"f46bdd9c80b52720c2744f1fb6feb5f48535729fab703c09ada2bafd643fe953",
           part_set_header: PartSetHeader {
             total: 3,
             hash: #"87080a39cfe336a663ea5c0d9bdeef493abdc18b7c3e3e0c8e661354c1831432",
@@ -202,27 +220,27 @@ test update_client_misbehaviour_conflict_header() {
         signatures: [
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
+            validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
             timestamp: 1577836805000000000,
-            signature: #"283d17263b1cd843a19ebd1adbc497d2a4c239432aa55064f456863d3071d92d5e4aa8b0e8d21acc421d8858c780d579339e550056e7130c6fce818b985daa06",
+            signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
+            validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
             timestamp: 1577836805000000000,
-            signature: #"4b82575e2d80e9e372508f5b3ee94e8c05d6fd47b51ab7a918f86e58a06bba4170df4440388dabb31a93bba5df05d4a94685a47e586d0eb383e50713c31fbb06",
+            signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
+            validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
             timestamp: 1577836805000000000,
-            signature: #"4bca634ed3caa80bc8b4e43291b955a68823054a5b0c5bf6fec6a6232f3a4a4d10c296d368964e7a132a401651018fd6891a8a18a8dc48eb636531efecfd7205",
+            signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
+            validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
             timestamp: 1577836805000000000,
-            signature: #"45810b79e6f8df1519a3d6a7519ef9af6938ed72d774d9b2610b8e3e39ed8946160b5613130b4400fce9f2108c83ff4b113c035259b8396495c201a6f10e000e",
+            signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
           },
         ],
       },
@@ -232,33 +250,33 @@ test update_client_misbehaviour_conflict_header() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -269,33 +287,33 @@ test update_client_misbehaviour_conflict_header() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -330,30 +348,28 @@ test update_client_misbehaviour_conflict_header() {
   let consensus_state =
     ConsensusState {
       timestamp: 157783680000000000,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
       root: merkle.new_merkle_root(#""),
     }
 
   let conflicted_consensus_state =
     ConsensusState {
       timestamp: 157783680000000000,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-      root: merkle.new_merkle_root(#"636f6e666c696374696e672061707068617368"),
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+      root: merkle.new_merkle_root("conflicting apphash"),
     }
 
   let conflicted_height = header_mod.get_height(header)
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
-      |> dict.insert(conflicted_height, conflicted_consensus_state, height.compare)
+    [
+      Pair(trusted_height, consensus_state),
+      Pair(conflicted_height, conflicted_consensus_state),
+    ]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -411,21 +427,37 @@ test update_client_misbehaviour_conflict_header() {
 test update_client_misbehaviour_monotonic_time_violation() {
   let mock = setup()
 
+  let trusted_height = Height { revision_number: 1, revision_height: 1 }
+
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        version: Consensus { block: block_protocol, app: 2 },
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
-        validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        app_hash: #"35c73ae54e3eb940a037effeba522aa34ed8d39c7b0f8af990bda1f252a343a7",
+        last_block_id: BlockID {
+          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          part_set_header: PartSetHeader {
+            total: 10000,
+            hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          },
+        },
+        last_commit_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        data_hash: #"6d6e28b8b98b5327042ea50a57dd46e6cc851c72e528bdeaa6efdeeefe66a0b8",
+        validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        consensus_hash: #"e5e566c41ed57e3ff8cc10f184178788b8faa602b07cf1f425217bd8179f1f24",
+        app_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        last_results_hash: #"092e058630247ed6009863a12eee117d26cd9d08b5adcaab37f2ab35db475a37",
+        evidence_hash: #"73865db08f49d58428905d389ab4ca4b96e45a3206c7a69d43a5dc7372e60714",
+        proposer_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
       },
       commit: Commit {
         height: 3,
         round: 1,
         block_id: BlockID {
-          hash: #"537506e584088292181bf9fab1dc97f7e7abfd6b968193f7a42386b3efb5f8e3",
+          hash: #"f46bdd9c80b52720c2744f1fb6feb5f48535729fab703c09ada2bafd643fe953",
           part_set_header: PartSetHeader {
             total: 3,
             hash: #"87080a39cfe336a663ea5c0d9bdeef493abdc18b7c3e3e0c8e661354c1831432",
@@ -434,27 +466,27 @@ test update_client_misbehaviour_monotonic_time_violation() {
         signatures: [
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
+            validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
             timestamp: 1577836805000000000,
-            signature: #"283d17263b1cd843a19ebd1adbc497d2a4c239432aa55064f456863d3071d92d5e4aa8b0e8d21acc421d8858c780d579339e550056e7130c6fce818b985daa06",
+            signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
+            validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
             timestamp: 1577836805000000000,
-            signature: #"4b82575e2d80e9e372508f5b3ee94e8c05d6fd47b51ab7a918f86e58a06bba4170df4440388dabb31a93bba5df05d4a94685a47e586d0eb383e50713c31fbb06",
+            signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
+            validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
             timestamp: 1577836805000000000,
-            signature: #"4bca634ed3caa80bc8b4e43291b955a68823054a5b0c5bf6fec6a6232f3a4a4d10c296d368964e7a132a401651018fd6891a8a18a8dc48eb636531efecfd7205",
+            signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
+            validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
             timestamp: 1577836805000000000,
-            signature: #"45810b79e6f8df1519a3d6a7519ef9af6938ed72d774d9b2610b8e3e39ed8946160b5613130b4400fce9f2108c83ff4b113c035259b8396495c201a6f10e000e",
+            signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
           },
         ],
       },
@@ -464,33 +496,33 @@ test update_client_misbehaviour_monotonic_time_violation() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -501,33 +533,33 @@ test update_client_misbehaviour_monotonic_time_violation() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -535,17 +567,12 @@ test update_client_misbehaviour_monotonic_time_violation() {
     }
 
   let header =
-    Header {
-      signed_header,
-      validator_set,
-      trusted_height: Height { revision_number: 1, revision_height: 1 },
-      trusted_validators,
-    }
+    Header { signed_header, validator_set, trusted_height, trusted_validators }
 
   //======================Arrange datum============================
   let trust_level = unchecked_rational.new(1, 3)
 
-  let trusted_height = Height { revision_number: 1, revision_height: 1 }
+  let prev_height = Height { revision_number: 1, revision_height: 2 }
 
   let client_state =
     ClientState {
@@ -555,41 +582,35 @@ test update_client_misbehaviour_monotonic_time_violation() {
       unbonding_period: 1814400000000000,
       max_clock_drift: 10000000000,
       frozen_height: Height { revision_number: 0, revision_height: 0 },
-      latest_height: trusted_height,
+      latest_height: prev_height,
       proof_specs: [],
     }
 
   let consensus_state =
     ConsensusState {
       timestamp: 157783680000000000,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
       root: merkle.new_merkle_root(#""),
     }
 
+  let after_header_timestamp = signed_header.header.time + 1
+
   let prev_consensus_state =
     ConsensusState {
-      timestamp: signed_header.header.time + 100,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-      root: merkle.new_merkle_root(#"636f6e666c696374696e672061707068617368"),
-    }
-
-  let prev_height =
-    Height {
-      ..header_mod.get_height(header),
-      revision_height: header_mod.get_height(header).revision_height,
+      timestamp: after_header_timestamp,
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+      root: merkle.new_merkle_root("fake apphash"),
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
-      |> dict.insert(prev_height, prev_consensus_state, height.compare)
+    [
+      Pair(trusted_height, consensus_state),
+      Pair(prev_height, prev_consensus_state),
+    ]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -649,21 +670,36 @@ test update_client_verify_adjacent_succeed() {
 
   let trusted_height = Height { revision_number: 1, revision_height: 2 }
 
+  // adjacent height
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        version: Consensus { block: block_protocol, app: 2 },
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
-        validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        app_hash: #"35c73ae54e3eb940a037effeba522aa34ed8d39c7b0f8af990bda1f252a343a7",
+        last_block_id: BlockID {
+          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          part_set_header: PartSetHeader {
+            total: 10000,
+            hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          },
+        },
+        last_commit_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        data_hash: #"6d6e28b8b98b5327042ea50a57dd46e6cc851c72e528bdeaa6efdeeefe66a0b8",
+        validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        consensus_hash: #"e5e566c41ed57e3ff8cc10f184178788b8faa602b07cf1f425217bd8179f1f24",
+        app_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        last_results_hash: #"092e058630247ed6009863a12eee117d26cd9d08b5adcaab37f2ab35db475a37",
+        evidence_hash: #"73865db08f49d58428905d389ab4ca4b96e45a3206c7a69d43a5dc7372e60714",
+        proposer_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
       },
       commit: Commit {
         height: 3,
         round: 1,
         block_id: BlockID {
-          hash: #"537506e584088292181bf9fab1dc97f7e7abfd6b968193f7a42386b3efb5f8e3",
+          hash: #"f46bdd9c80b52720c2744f1fb6feb5f48535729fab703c09ada2bafd643fe953",
           part_set_header: PartSetHeader {
             total: 3,
             hash: #"87080a39cfe336a663ea5c0d9bdeef493abdc18b7c3e3e0c8e661354c1831432",
@@ -672,27 +708,27 @@ test update_client_verify_adjacent_succeed() {
         signatures: [
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
+            validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
             timestamp: 1577836805000000000,
-            signature: #"283d17263b1cd843a19ebd1adbc497d2a4c239432aa55064f456863d3071d92d5e4aa8b0e8d21acc421d8858c780d579339e550056e7130c6fce818b985daa06",
+            signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
+            validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
             timestamp: 1577836805000000000,
-            signature: #"4b82575e2d80e9e372508f5b3ee94e8c05d6fd47b51ab7a918f86e58a06bba4170df4440388dabb31a93bba5df05d4a94685a47e586d0eb383e50713c31fbb06",
+            signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
+            validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
             timestamp: 1577836805000000000,
-            signature: #"4bca634ed3caa80bc8b4e43291b955a68823054a5b0c5bf6fec6a6232f3a4a4d10c296d368964e7a132a401651018fd6891a8a18a8dc48eb636531efecfd7205",
+            signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
+            validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
             timestamp: 1577836805000000000,
-            signature: #"45810b79e6f8df1519a3d6a7519ef9af6938ed72d774d9b2610b8e3e39ed8946160b5613130b4400fce9f2108c83ff4b113c035259b8396495c201a6f10e000e",
+            signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
           },
         ],
       },
@@ -702,33 +738,33 @@ test update_client_verify_adjacent_succeed() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -739,33 +775,33 @@ test update_client_verify_adjacent_succeed() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -793,20 +829,16 @@ test update_client_verify_adjacent_succeed() {
   let consensus_state =
     ConsensusState {
       timestamp: 157783680000000000,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
       root: merkle.new_merkle_root(#""),
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
+    [Pair(trusted_height, consensus_state)]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -828,13 +860,10 @@ test update_client_verify_adjacent_succeed() {
           ..client_datum.state.client_state,
           latest_height: header_mod.get_height(header),
         },
-        consensus_states: dict.new()
-          |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             )
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(header_mod.get_height(header),
+          header_mod.consensus_state(header)),
+        ],
       },
     }
 
@@ -872,21 +901,36 @@ test update_client_verify_non_adjacent_succeed() {
 
   let trusted_height = Height { revision_number: 1, revision_height: 1 }
 
+  // non-adjacent height
   let signed_header =
     SignedHeader {
       header: TmHeader {
+        version: Consensus { block: block_protocol, app: 2 },
         chain_id: "testchain2-1",
         height: 3,
         time: 1577836805000000000,
-        validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
-        app_hash: #"35c73ae54e3eb940a037effeba522aa34ed8d39c7b0f8af990bda1f252a343a7",
+        last_block_id: BlockID {
+          hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          part_set_header: PartSetHeader {
+            total: 10000,
+            hash: #"0000000000000000000000000000000000000000000000000000000000000000",
+          },
+        },
+        last_commit_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        data_hash: #"6d6e28b8b98b5327042ea50a57dd46e6cc851c72e528bdeaa6efdeeefe66a0b8",
+        validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
+        consensus_hash: #"e5e566c41ed57e3ff8cc10f184178788b8faa602b07cf1f425217bd8179f1f24",
+        app_hash: #"e7c79785b51cf0f555138683cb9efce0cf624fb0d95d82153dff98d3ac06c057",
+        last_results_hash: #"092e058630247ed6009863a12eee117d26cd9d08b5adcaab37f2ab35db475a37",
+        evidence_hash: #"73865db08f49d58428905d389ab4ca4b96e45a3206c7a69d43a5dc7372e60714",
+        proposer_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
       },
       commit: Commit {
         height: 3,
         round: 1,
         block_id: BlockID {
-          hash: #"537506e584088292181bf9fab1dc97f7e7abfd6b968193f7a42386b3efb5f8e3",
+          hash: #"f46bdd9c80b52720c2744f1fb6feb5f48535729fab703c09ada2bafd643fe953",
           part_set_header: PartSetHeader {
             total: 3,
             hash: #"87080a39cfe336a663ea5c0d9bdeef493abdc18b7c3e3e0c8e661354c1831432",
@@ -895,27 +939,27 @@ test update_client_verify_non_adjacent_succeed() {
         signatures: [
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
+            validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
             timestamp: 1577836805000000000,
-            signature: #"283d17263b1cd843a19ebd1adbc497d2a4c239432aa55064f456863d3071d92d5e4aa8b0e8d21acc421d8858c780d579339e550056e7130c6fce818b985daa06",
+            signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
+            validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
             timestamp: 1577836805000000000,
-            signature: #"4b82575e2d80e9e372508f5b3ee94e8c05d6fd47b51ab7a918f86e58a06bba4170df4440388dabb31a93bba5df05d4a94685a47e586d0eb383e50713c31fbb06",
+            signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
+            validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
             timestamp: 1577836805000000000,
-            signature: #"4bca634ed3caa80bc8b4e43291b955a68823054a5b0c5bf6fec6a6232f3a4a4d10c296d368964e7a132a401651018fd6891a8a18a8dc48eb636531efecfd7205",
+            signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
           },
           CommitSig {
             block_id_flag: 2,
-            validator_address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
+            validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
             timestamp: 1577836805000000000,
-            signature: #"45810b79e6f8df1519a3d6a7519ef9af6938ed72d774d9b2610b8e3e39ed8946160b5613130b4400fce9f2108c83ff4b113c035259b8396495c201a6f10e000e",
+            signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
           },
         ],
       },
@@ -925,33 +969,33 @@ test update_client_verify_non_adjacent_succeed() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -962,33 +1006,33 @@ test update_client_verify_non_adjacent_succeed() {
     ValidatorSet {
       validators: [
         Validator {
-          address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-          pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+          address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+          pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
           voting_power: 1,
           proposer_priority: -3,
         },
         Validator {
-          address: #"8f70433db177ea58e57836b756cf487ca8f5b450",
-          pubkey: #"46837d4e0ce4557002a92d08b12d8b966a9d89c4d89516eab1cd49670b75b0fe",
+          address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+          pubkey: #"94b9a46627c7219d3deeef6eb8a17f2fd0162c9b88f8641a57def3b99620e06a",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"da10e4f46b5662742d796cc48df761d085e0fc99",
-          pubkey: #"bd58264bb9f9919f30504070161ba96b5770813f5a2143649f180ff87dea8c9a",
+          address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+          pubkey: #"792d8a6af66d9a1d1a5d9217d216d6f4fccff8d99398713d47663f2728634997",
           voting_power: 1,
           proposer_priority: 1,
         },
         Validator {
-          address: #"dab3e318faa75ada1b92d4cad62c8bc550d957a9",
-          pubkey: #"9c94cf6a695bace86630fa5fa98bac0ae826cdb5990a2aa16691e8d913c9ca83",
+          address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+          pubkey: #"2d2eff7b966f5841b27d419653ac13c023de2c0fd9a1cb026e8e9156c3514765",
           voting_power: 1,
           proposer_priority: 1,
         },
       ],
       proposer: Validator {
-        address: #"73c669bfb70e231a2e49dbfd93728559fb0311dd",
-        pubkey: #"16a8f53845c5a5fdca7b125e6d5fa61346af949bb5e7b509ec35c4d5cbfc10d9",
+        address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+        pubkey: #"ceae0c5654d526f53a15df10dce9c8829640fd3001ef2e1d99ea41ce5fc46856",
         voting_power: 1,
         proposer_priority: -3,
       },
@@ -1016,20 +1060,16 @@ test update_client_verify_non_adjacent_succeed() {
   let consensus_state =
     ConsensusState {
       timestamp: 157783680000000000,
-      next_validators_hash: #"9abde32dc3618ae1973138cec0a0efb6c2408840bcbfc1089f676e45096e4c70",
+      next_validators_hash: #"77ce91cd8346be86a659a8afe1399931af8765bac622128c73fa9df7012007b1",
       root: merkle.new_merkle_root(#""),
     }
 
   let consensus_states =
-    dict.new()
-      |> dict.insert(trusted_height, consensus_state, height.compare)
+    [Pair(trusted_height, consensus_state)]
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState {
-        client_state,
-        consensus_states: consensus_states |> dict.to_list(),
-      },
+      state: ClientDatumState { client_state, consensus_states },
       token: mock.client_token,
     }
 
@@ -1051,13 +1091,10 @@ test update_client_verify_non_adjacent_succeed() {
           ..client_datum.state.client_state,
           latest_height: header_mod.get_height(header),
         },
-        consensus_states: dict.new()
-          |> dict.insert(
-               header_mod.get_height(header),
-               header_mod.consensus_state(header),
-               height.compare,
-             )
-          |> dict.to_list(),
+        consensus_states: [
+          Pair(header_mod.get_height(header),
+          header_mod.consensus_state(header)),
+        ],
       },
     }
 

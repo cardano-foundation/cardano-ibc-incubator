@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"math"
 	"math/big"
 	"math/rand"
@@ -13,10 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
-
 	"github.com/avast/retry-go/v4"
-	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
 	strideicqtypes "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
 	"github.com/cardano/relayer/v1/relayer/ethermint"
 	"github.com/cardano/relayer/v1/relayer/provider"
@@ -725,7 +723,6 @@ func (cc *CosmosProvider) MsgUpdateClient(srcClientID string, dstHeader ibcexpor
 	}
 
 	clientMsg, err := clienttypes.PackClientMessage(dstHeader)
-	clientMsg.TypeUrl = "/ibc.clients.cardano.v1.BlockData"
 	if err != nil {
 		return nil, err
 	}
@@ -1415,13 +1412,32 @@ func (cc *CosmosProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	// Update Client To Cosmos
-	srcBlockData, err := src.QueryBlockData(ctx, int64(pp.ProofHeight.RevisionHeight))
+	srcLatestHeight, err := cc.QueryLatestHeight(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, srcBlockData)
+	clientStateUpdateRes, err := cc.QueryClientStateResponse(ctx, srcLatestHeight, dstClientId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientStateUpdate, err := clienttypes.UnpackClientState(clientStateUpdateRes.ClientState)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcHeaderUpdate, err := src.QueryIBCMithrilHeader(ctx, int64(pp.ProofHeight.RevisionHeight), &clientStateUpdate)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ibcMithrilHeader, ok := ibcHeaderUpdate.(*mithril.MithrilHeader)
+	if !ok {
+		return nil, nil, fmt.Errorf("failed to cast IBC header to MithrilHeader")
+	}
+
+	msgUpdateClient, err := cc.MsgUpdateClient(dstClientId, ibcMithrilHeader)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1542,7 +1558,7 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 		return &tmclient.ClientState{}, err
 	}
 
-	clientState, ok := clientStateExported.(*module.ClientState)
+	clientState, ok := clientStateExported.(*mithril.ClientState)
 	if !ok {
 		return &tmclient.ClientState{},
 			fmt.Errorf("error when casting exported clientstate to tendermint type, got(%T)", clientStateExported)
@@ -1550,7 +1566,7 @@ func (cc *CosmosProvider) queryTMClientState(ctx context.Context, srch int64, sr
 	//TODO: find out better solution
 	// current use only for trustingPeriod and LatestHeight
 	res := &tmclient.ClientState{
-		TrustingPeriod: time.Duration(clientState.TrustingPeriod) * time.Second,
+		TrustingPeriod: clientState.TrustingPeriod,
 		// side chain return time in second format
 		LatestHeight: clienttypes.Height{
 			RevisionNumber: clientState.LatestHeight.RevisionNumber,
@@ -1922,33 +1938,6 @@ func BuildSimTx(info *keyring.Record, txf tx.Factory, msgs ...sdk.Msg) ([]byte, 
 // workaround to get access to the wrapper TxBuilder's method GetProtoTx().
 type protoTxProvider interface {
 	GetProtoTx() *txtypes.Tx
-}
-
-func (cc *CosmosProvider) MsgCreateCardanoClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
-	signer, err := cc.Address()
-	if err != nil {
-		return nil, err
-	}
-	anyClientState, err := PackClientState(clientState)
-	if err != nil {
-		return nil, err
-	}
-	anyClientState.TypeUrl = string("/ibc.clients.cardano.v1.ClientState")
-	anyConsensusState, err := PackConsensusState(consensusState)
-	if err != nil {
-		return nil, err
-	}
-	anyConsensusState.TypeUrl = string("/ibc.clients.cardano.v1.ConsensusState")
-
-	msg := &clienttypes.MsgCreateClient{
-		ClientState:    anyClientState,
-		ConsensusState: anyConsensusState,
-		Signer:         signer,
-	}
-
-	return NewCosmosMessage(msg, func(signer string) {
-		msg.Signer = signer
-	}), nil
 }
 
 func (cc *CosmosProvider) MsgTimeoutRefresh(channelId string) (provider.RelayerMessage, error) {

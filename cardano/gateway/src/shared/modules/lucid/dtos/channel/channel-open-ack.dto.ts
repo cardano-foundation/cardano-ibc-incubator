@@ -21,3 +21,24 @@ export type UnsignedChannelOpenAckDto = {
   verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
 };
+
+export type UnsignedOrderedChannelOpenAckDto = {
+  channelUtxo: UTxO;
+  connectionUtxo: UTxO;
+  clientUtxo: UTxO;
+  spendChannelRefUtxo: UTxO;
+  spendMockModuleRefUtxo: UTxO;
+  mockModuleUtxo: UTxO;
+  encodedSpendChannelRedeemer: string;
+  encodedSpendMockModuleRedeemer: string;
+  channelTokenUnit: string;
+  encodedUpdatedChannelDatum: string;
+  constructedAddress: string;
+  chanOpenAckPolicyId: PolicyId;
+  chanOpenAckRefUtxo: UTxO;
+  channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
+};

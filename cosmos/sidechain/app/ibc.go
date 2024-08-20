@@ -2,6 +2,7 @@ package app
 
 import (
 	ibccardano "sidechain/x/clients/cardano"
+	ibcmithril "sidechain/x/clients/mithril"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
@@ -223,6 +224,7 @@ func (app *App) registerIBCModules() {
 		capability.NewAppModule(app.appCodec, *app.CapabilityKeeper, false),
 		ibctm.AppModule{},
 		ibccardano.AppModule{},
+		ibcmithril.AppModule{},
 		solomachine.AppModule{},
 	); err != nil {
 		panic(err)
@@ -242,6 +244,7 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		capabilitytypes.ModuleName:  capability.AppModule{},
 		ibctm.ModuleName:            ibctm.AppModule{},
 		ibccardano.ModuleName:       ibccardano.AppModule{},
+		ibcmithril.ModuleName:       ibcmithril.AppModule{},
 		solomachine.ModuleName:      solomachine.AppModule{},
 	}
 

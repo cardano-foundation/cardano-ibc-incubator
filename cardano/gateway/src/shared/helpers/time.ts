@@ -41,4 +41,10 @@ const querySystemStart = async (ogmiosUrl: string) => {
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-export { querySystemStart, sleep };
+const getNanoseconds = (d) => {
+  let nanoSeconds = d.split('.')[1].split('Z')[0];
+  nanoSeconds = Number(nanoSeconds).toString();
+  return parseInt(nanoSeconds);
+};
+
+export { querySystemStart, sleep, getNanoseconds };

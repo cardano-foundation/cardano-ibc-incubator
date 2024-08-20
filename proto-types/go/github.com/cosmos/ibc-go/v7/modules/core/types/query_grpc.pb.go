@@ -22,6 +22,7 @@ const (
 	Query_BlockResults_FullMethodName      = "/ibc.core.types.v1.Query/BlockResults"
 	Query_BlockSearch_FullMethodName       = "/ibc.core.types.v1.Query/BlockSearch"
 	Query_TransactionByHash_FullMethodName = "/ibc.core.types.v1.Query/TransactionByHash"
+	Query_IBCHeader_FullMethodName         = "/ibc.core.types.v1.Query/IBCHeader"
 )
 
 // QueryClient is the client API for Query service.
@@ -31,6 +32,7 @@ type QueryClient interface {
 	BlockResults(ctx context.Context, in *QueryBlockResultsRequest, opts ...grpc.CallOption) (*QueryBlockResultsResponse, error)
 	BlockSearch(ctx context.Context, in *QueryBlockSearchRequest, opts ...grpc.CallOption) (*QueryBlockSearchResponse, error)
 	TransactionByHash(ctx context.Context, in *QueryTransactionByHashRequest, opts ...grpc.CallOption) (*QueryTransactionByHashResponse, error)
+	IBCHeader(ctx context.Context, in *QueryIBCHeaderRequest, opts ...grpc.CallOption) (*QueryIBCHeaderResponse, error)
 }
 
 type queryClient struct {
@@ -68,6 +70,15 @@ func (c *queryClient) TransactionByHash(ctx context.Context, in *QueryTransactio
 	return out, nil
 }
 
+func (c *queryClient) IBCHeader(ctx context.Context, in *QueryIBCHeaderRequest, opts ...grpc.CallOption) (*QueryIBCHeaderResponse, error) {
+	out := new(QueryIBCHeaderResponse)
+	err := c.cc.Invoke(ctx, Query_IBCHeader_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 // All implementations must embed UnimplementedQueryServer
 // for forward compatibility
@@ -75,6 +86,7 @@ type QueryServer interface {
 	BlockResults(context.Context, *QueryBlockResultsRequest) (*QueryBlockResultsResponse, error)
 	BlockSearch(context.Context, *QueryBlockSearchRequest) (*QueryBlockSearchResponse, error)
 	TransactionByHash(context.Context, *QueryTransactionByHashRequest) (*QueryTransactionByHashResponse, error)
+	IBCHeader(context.Context, *QueryIBCHeaderRequest) (*QueryIBCHeaderResponse, error)
 	mustEmbedUnimplementedQueryServer()
 }
 
@@ -90,6 +102,9 @@ func (UnimplementedQueryServer) BlockSearch(context.Context, *QueryBlockSearchRe
 }
 func (UnimplementedQueryServer) TransactionByHash(context.Context, *QueryTransactionByHashRequest) (*QueryTransactionByHashResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TransactionByHash not implemented")
+}
+func (UnimplementedQueryServer) IBCHeader(context.Context, *QueryIBCHeaderRequest) (*QueryIBCHeaderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IBCHeader not implemented")
 }
 func (UnimplementedQueryServer) mustEmbedUnimplementedQueryServer() {}
 
@@ -158,6 +173,24 @@ func _Query_TransactionByHash_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_IBCHeader_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryIBCHeaderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).IBCHeader(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Query_IBCHeader_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).IBCHeader(ctx, req.(*QueryIBCHeaderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Query_ServiceDesc is the grpc.ServiceDesc for Query service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -176,6 +209,10 @@ var Query_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TransactionByHash",
 			Handler:    _Query_TransactionByHash_Handler,
+		},
+		{
+			MethodName: "IBCHeader",
+			Handler:    _Query_IBCHeader_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

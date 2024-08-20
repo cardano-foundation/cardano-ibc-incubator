@@ -1,7 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -124,11 +124,11 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"chan_open_ack: client status is active"
 
-    expect channel_datum_mod.is_channel_open_ack_valid(datum, updated_datum)
+    expect channel_datum_mod.validate_chan_open_ack(datum, updated_datum)
     trace @"chan_open_ack: output datum is updated valid"
 
     expect
@@ -169,7 +169,7 @@ fn validate_chan_open_ack_proof(
   counterparty_version: ByteArray,
   proof: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let counterparty_hops =
@@ -188,7 +188,7 @@ fn validate_chan_open_ack_proof(
     }
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let time_delay = connection.delay_period
@@ -208,8 +208,7 @@ fn validate_chan_open_ack_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let channel_bz =
     channel_pb.marshal_for_channel(
@@ -421,9 +420,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -679,7 +676,7 @@ test succeed_chan_open_ack() {
     }
   let counterparty_version = "mock-version"
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     ChanOpenAck { counterparty_version, proof_try, proof_height }
 
   let channel_id =
@@ -729,7 +726,7 @@ test succeed_chan_open_ack() {
       Some(channel.convert_to_channel_proto(expected_channel)),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -741,28 +738,15 @@ test succeed_chan_open_ack() {
       value: channel_bz,
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.chan_open_ack_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let chan_open_ack_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.chan_open_ack_policy_id), chan_open_ack_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
 
   //==========================arrange context=========================
   let context =

@@ -11,10 +11,11 @@ type Validator =
   | "mintPort"
   | "mintIdentifier"
   | "spendTransferModule"
+  | "spendMockModule"
   | "mintVoucher"
   | "verifyProof";
 
-type Module = "handler" | "transfer";
+type Module = "handler" | "transfer" | "mock";
 
 type Tokens = "mock";
 

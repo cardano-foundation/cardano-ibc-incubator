@@ -14,15 +14,18 @@ import (
 )
 
 const (
-	CardanoRPCAddr      = "http://192.168.10.199:5001"
-	CardanoChainName    = "cardano"
-	CardanoChainID      = "cardano"
-	CardanoPortTransfer = "port-100"
+	CardanoRPCAddr        = "http://192.168.10.136:5001"
+	CardanoChainName      = "cardano"
+	CardanoChainID        = "cardano"
+	CardanoPortTransfer   = "port-100"
+	CardanoPortMockModule = "port-99"
+	MithrilEndpoint       = "http://192.168.10.136:8080/aggregator"
 
-	CosmosRPCAddr      = "http://192.168.10.199:26657"
-	CosmosChainName    = "cosmos"
-	CosmosChainID      = "sidechain" // -> need to change later
-	CosmosPortTransfer = "transfer"
+	CosmosRPCAddr        = "http://192.168.10.136:26657"
+	CosmosChainName      = "cosmos"
+	CosmosChainID        = "sidechain" // -> need to change later
+	CosmosPortTransfer   = "transfer"
+	CosmosPortMockModule = "orderedtransfer"
 
 	TimeForTestTransfer = "1h"
 	TimeForTestTimeOut  = "1s"
@@ -83,10 +86,11 @@ func addCardanoChain(t *testing.T, sys *relayertest.System) {
 	sys.MustAddChain(t, CardanoChainName, cmd.ProviderConfigWrapper{
 		Type: CardanoChainName,
 		Value: cardano.CardanoProviderConfig{
-			ChainID:        CardanoChainID,
-			RPCAddr:        CardanoRPCAddr,
-			KeyringBackend: KeyringBackend,
-			Timeout:        Timeout,
+			ChainID:         CardanoChainID,
+			RPCAddr:         CardanoRPCAddr,
+			KeyringBackend:  KeyringBackend,
+			Timeout:         Timeout,
+			MithrilEndpoint: MithrilEndpoint,
 		},
 	})
 	if !checkKeyExist(t, sys, CardanoChainName, KeyNameTest, CardanoAddressTest) {

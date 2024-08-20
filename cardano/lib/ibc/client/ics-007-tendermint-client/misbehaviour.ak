@@ -1,4 +1,5 @@
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{BlockID, Commit}
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/header.{Header}
@@ -67,7 +68,7 @@ pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
   True
 }
 
-/// valid_commit() checks if the given commit is a valid commit from the passed-in validatorset
+/// valid_commit() checks if the given commit is a valid commit from the passed-in validator_set
 pub fn valid_commit(
   chain_id: ByteArray,
   block_id: BlockID,
@@ -80,5 +81,6 @@ pub fn valid_commit(
     block_id,
     commit.height,
     commit,
+    None
   )
 }

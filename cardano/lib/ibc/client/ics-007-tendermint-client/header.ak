@@ -1,7 +1,5 @@
-use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{
-  BlockID, Commit, PartSetHeader,
-}
-use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader}
+use ibc/client/ics_007_tendermint_client/cometbft/block/commit as commit_mod
+use ibc/client/ics_007_tendermint_client/cometbft/block/header.{TmHeader} as tm_header_mod
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/tm_validator.{Validator}
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
@@ -48,23 +46,8 @@ pub fn get_time(h: Header) -> Int {
 pub fn null_header() -> Header {
   Header {
     signed_header: SignedHeader {
-      header: TmHeader {
-        chain_id: "",
-        height: 0,
-        time: 0,
-        validators_hash: "",
-        next_validators_hash: "",
-        app_hash: "",
-      },
-      commit: Commit {
-        height: 0,
-        round: 0,
-        block_id: BlockID {
-          hash: "",
-          part_set_header: PartSetHeader { total: 0, hash: "" },
-        },
-        signatures: [],
-      },
+      header: tm_header_mod.null_tm_header(),
+      commit: commit_mod.null_commit(),
     },
     validator_set: ValidatorSet {
       validators: [],

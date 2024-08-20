@@ -65,7 +65,7 @@ $rly transact transfer "$CARDANO_CHAIN_NAME" "$SIDECHAIN_CHAIN_NAME" "$SENT_AMOU
   --memo "$memo" ||
   exit 1
 echo "Waiting for transfer tx complete..."
-sleep 30
+sleep 600
 
 QUERY_FLAGS="--node http://localhost:26658 --output json"
 

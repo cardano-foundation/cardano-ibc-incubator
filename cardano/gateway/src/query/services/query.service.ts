@@ -17,9 +17,20 @@ import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
 } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { InjectEntityManager } from '@nestjs/typeorm';
-import { EntityManager } from 'typeorm';
+import {
+  ClientState as ClientStateMithril,
+  ConsensusState as ConsensusStateMithril,
+  MithrilHeader,
+} from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import {
+  InteractionContext,
+  WebSocketCloseHandler,
+  WebSocketErrorHandler,
+  createInteractionContext,
+} from '@cardano-ogmios/client';
+import { StateQueryClient, createStateQueryClient } from '@cardano-ogmios/client/dist/StateQuery';
 import { BlockDto } from '../dtos/block.dto';
+import { connectionConfig } from '@config/kupmios.config';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
@@ -37,6 +48,8 @@ import {
   QueryBlockSearchResponse,
   QueryTransactionByHashRequest,
   QueryTransactionByHashResponse,
+  QueryIBCHeaderRequest,
+  QueryIBCHeaderResponse,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
@@ -72,18 +85,26 @@ import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@cuonglv0297/lucid-custom';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
-import { HttpService } from '@nestjs/axios';
-import { lastValueFrom } from 'rxjs';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
+  MintConnectionRedeemer,
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
+  encodeMintConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
 import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
+import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { getNanoseconds } from '../../shared/helpers/time';
+import { doubleToFraction } from '../../shared/helpers/number';
+import {
+  normalizeMithrilStakeDistribution,
+  normalizeMithrilStakeDistributionCertificate,
+} from '../../shared/helpers/mithril-header';
+import { convertString2Hex } from '../../shared/helpers/hex';
 import {
   blockHeight as queryBlockHeight,
   genesisConfiguration,
@@ -95,84 +116,91 @@ export class QueryService {
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
-    private readonly httpService: HttpService,
-    @InjectEntityManager() private entityManager: EntityManager,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
+    @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
-  async newClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
+  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
     const { height } = request;
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
+    const currentEpochSettings = await this.mithrilService.getCurrentEpochSettings();
 
-    const ogmiosEndpoint = this.configService.get('ogmiosEndpoint');
+    let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
+    let mithrilDistribution = mithrilStakeDistributionsList[0];
+    let fcCertificateMsd = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      mithrilDistribution.certificate_hash,
+    );
 
-    const genesisConfig = await genesisConfiguration(ogmiosEndpoint);
-    this.logger.log(genesisConfig, 'genesisConfig');
-    const blockHeight = await queryBlockHeight(ogmiosEndpoint);
-    this.logger.log(blockHeight, 'blockHeight');
-    const systemStartMs = await querySystemStart(ogmiosEndpoint);
-    this.logger.log(systemStartMs, 'systemStart');
+    let certificateList = await this.mithrilService.mithrilClient.list_mithril_certificates();
+    const latestCertificateMsd = certificateList.find(
+      (certificate) => BigInt(certificate.epoch) === BigInt(mithrilDistribution.epoch),
+    );
 
-    const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
-    const currentEpoch = blockDto.epoch;
-    this.logger.log(currentEpoch, 'currentEpoch');
-    const currentValidatorSet = await this.dbService.findActiveValidatorsByEpoch(BigInt(currentEpoch));
-    // this.logger.log(currentValidatorSet, 'currentValidatorSet');
-    const nextValidatorSet = await this.dbService.findActiveValidatorsByEpoch(BigInt(currentEpoch + 1));
-    // this.logger.log(nextValidatorSet, 'nextValidatorSet');
-    const clientState: ClientState = {
-      chain_id: genesisConfig.networkMagic.toString(),
+    const listSnapshots = await this.mithrilService.mithrilClient.list_snapshots();
+    let latestSnapshot = listSnapshots[0];
+    const latestSnapshotCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      latestSnapshot.certificate_hash,
+    );
+
+    const phifFraction = doubleToFraction(currentEpochSettings.protocol.phi_f);
+    const clientStateMithril: ClientStateMithril = {
+      /** Chain id */
+      chain_id: this.configService.get('cardanoChainNetworkMagic').toString(),
+      /** Latest height the client was updated to */
       latest_height: {
-        revision_height: BigInt(height),
-        revision_number: BigInt(0),
-      }, // need -> ok
+        /** the immutable file number */
+        mithril_height: BigInt(latestSnapshotCertificate.beacon.immutable_file_number),
+      },
+      /** Block height when the client was frozen due to a misbehaviour */
       frozen_height: {
-        revision_height: BigInt(0),
-        revision_number: BigInt(0),
+        mithril_height: 0n,
       },
-      valid_after: BigInt(0),
-      genesis_time: BigInt(systemStartMs / 1000), // need -> ok
-      current_epoch: BigInt(currentEpoch), // need -> ok
-      epoch_length: BigInt(genesisConfig.epochLength), // need  -> ok
-      slot_per_kes_period: BigInt(genesisConfig.slotsPerKesPeriod), // need -> ok
-      current_validator_set: currentValidatorSet, // need -> ok
-      next_validator_set: nextValidatorSet, // need -> ok
-      trusting_period: BigInt(0),
+      /** Epoch number of current chain state */
+      current_epoch: BigInt(currentEpochSettings.epoch),
+      trusting_period: {
+        seconds: 0n,
+        nanos: 0,
+      },
+      protocol_parameters: {
+        /** Quorum parameter */
+        k: BigInt(currentEpochSettings.protocol.k),
+        /** Security parameter (number of lotteries) */
+        m: BigInt(currentEpochSettings.protocol.m),
+        /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
+        phi_f: {
+          numerator: phifFraction.numerator,
+          denominator: phifFraction.denominator,
+        },
+      },
+      /** Path at which next upgraded client will be committed. */
       upgrade_path: [],
-      token_configs: {
-        /** IBC handler token uint (policyID + name), in hex format */
-        handler_token_unit: this.lucidService.getHandlerTokenUnit(),
-        /** IBC client token policyID, in hex format */
-        client_policy_id: this.lucidService.getClientPolicyId(),
-        /** IBC connection token policyID, in hex format */
-        connection_policy_id: this.lucidService.getConnectionPolicyId(),
-        /** IBC channel token policyID, in hex format */
-        channel_policy_id: this.lucidService.getChannelPolicyId(),
-      },
-    };
+    } as unknown as ClientStateMithril;
 
-    // this.logger.log(clientState);
+    const timestamp = new Date(fcCertificateMsd.metadata.sealed_at).valueOf();
+    const consensusStateMithril: ConsensusStateMithril = {
+      timestamp: BigInt(timestamp) * 10n ** 9n + BigInt(getNanoseconds(fcCertificateMsd.metadata.sealed_at)),
+      /** First certificate hash of latest epoch of mithril stake distribution */
+      fc_hash_latest_epoch_msd: mithrilDistribution.certificate_hash,
+      /** Latest certificate hash of mithril stake distribution */
+      latest_cert_hash_msd: latestCertificateMsd.hash,
+      /** First certificate hash of latest epoch of transaction snapshot */
+      fc_hash_latest_epoch_ts: mithrilDistribution.certificate_hash,
+      /** Latest certificate hash of transaction snapshot */
+      latest_cert_hash_ts: latestSnapshot.certificate_hash,
+    } as unknown as ConsensusStateMithril;
 
     const clientStateAny: Any = {
-      type_url: '/ibc.clients.cardano.v1.ClientState',
-      value: ClientState.encode(clientState).finish(),
+      type_url: '/ibc.clients.mithril.v1.ClientState',
+      value: ClientStateMithril.encode(clientStateMithril).finish(),
     };
-
-    const timestampInMilliseconds = systemStartMs + blockDto.slot * 1000;
-    const consensusState: ConsensusState = {
-      timestamp: BigInt(timestampInMilliseconds / 1000), // need -> ok
-      slot: BigInt(blockDto.slot), // need -> ok
-    };
-
-    // this.logger.log(consensusState);
 
     const consensusStateAny: Any = {
-      type_url: '/ibc.clients.cardano.v1.ConsensusState',
-      value: ConsensusState.encode(consensusState).finish(),
+      type_url: '/ibc.clients.mithril.v1.ConsensusState',
+      value: ConsensusStateMithril.encode(consensusStateMithril).finish(),
     };
 
     const response: QueryNewClientResponse = {
@@ -180,18 +208,18 @@ export class QueryService {
       consensus_state: consensusStateAny,
     };
 
-    // this.logger.log(response);
-
     return response;
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     // const blockHeight = await (await this.getStateQueryClient()).blockHeight();
-    const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    // const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+
     const latestHeightResponse = {
-      height: latestBlockNo,
+      height: listSnapshots[0].block_number,
     };
-    // this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
+    this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
@@ -309,44 +337,60 @@ export class QueryService {
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
-    const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
-    if (!blockDto) {
-      throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
-    }
+    // const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
+
+    // const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
+    // if (!listBlockNo.length) {
+    //   // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
+    //   return {
+    //     block_results: {
+    //       height: {
+    //         revision_height: request.height,
+    //         revision_number: BigInt(0),
+    //       },
+    //       txs_results: [],
+    //     },
+    //   } as unknown as QueryBlockResultsResponse;
+    // }
 
     try {
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
       const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
       const mintChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
 
-      // connection +channel
-      const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(request.height.toString()));
-      const txsResults = await Promise.all(
-        utxosInBlock
-          .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
-          .map(async (utxo) => {
-            switch (utxo.assetsPolicy) {
-              case mintConnScriptHash:
-                return await this._parseEventConnection(utxo, handlerAuthToken);
-              case mintChannelScriptHash:
-                return await this._parseEventChannel(utxo, handlerAuthToken);
-            }
-          }),
-      );
+      const totalEventResults: ResponseDeliverTx[] = [];
+      for (const blockNo of [height]) {
+        // connection +channel
+        const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
+        const txsResults = await Promise.all(
+          utxosInBlock
+            .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
+            .map(async (utxo) => {
+              switch (utxo.assetsPolicy) {
+                case mintConnScriptHash:
+                  return await this._parseEventConnection(utxo, handlerAuthToken);
+                case mintChannelScriptHash:
+                  return await this._parseEventChannel(utxo, handlerAuthToken);
+              }
+            }),
+        );
 
-      // client state + consensus state
-      const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(request.height.toString()));
-      const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
+        // client state + consensus state
+        const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
+        const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
 
-      // register/unregister event spo
-      const spoEvents = await this._querySpoEvents(request.height);
+        // register/unregister event spo
+        const spoEvents = await this._querySpoEvents(BigInt(blockNo));
+        const eventInBlock = [...txsAuthOrClientsResults, ...txsResults, ...spoEvents];
+        totalEventResults.push(...eventInBlock);
+      }
 
       const blockResults: ResultBlockResults = {
         height: {
           revision_height: request.height,
           revision_number: BigInt(0),
         },
-        txs_results: [...txsAuthOrClientsResults, ...txsResults, ...spoEvents],
+        txs_results: totalEventResults,
       } as unknown as ResultBlockResults;
 
       const responseBlockResults: QueryBlockResultsResponse = {
@@ -450,7 +494,7 @@ export class QueryService {
       spendAddress,
     );
 
-    redeemers = redeemers.filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10);
+    redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
         case REDEEMER_TYPE.MINT:
@@ -468,6 +512,7 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('RecvPacket') || spendRedeemer.hasOwnProperty('SendPacket')) {
             // find redeemer module recv packet -> get packet ack
             const spendTransferModuleAddress = this.configService.get('deployment').modules.transfer.address;
+            const spendMockModuleAddress = this.configService.get('deployment').modules.mock.address;
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
@@ -489,6 +534,24 @@ export class QueryService {
               );
               txsResult.events.push(...writeAckTxsResult.events);
             }
+
+            const mockModuleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
+              utxo.txId.toString(),
+              '',
+              spendMockModuleAddress,
+            );
+            if (mockModuleRedeemer.length > 0) {
+              const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
+                mockModuleRedeemer[0].data,
+                this.lucidService.LucidImporter,
+              );
+              const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                mockModuleRedeemerDecoded,
+                spendRedeemer,
+                channelDatumDecoded,
+              );
+              txsResult.events.push(...writeAckTxsResult.events);
+            }
           }
           if (spendRedeemer.hasOwnProperty('AcknowledgePacket')) {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
@@ -497,6 +560,12 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('TimeoutPacket')) {
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
+          }
+          if (spendRedeemer === 'ChanCloseInit') {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_INIT;
+          }
+          if (spendRedeemer.hasOwnProperty('ChanCloseConfirm')) {
+            txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
         default:
@@ -561,7 +630,10 @@ export class QueryService {
   }
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
-    this.logger.log('', 'QueryBlockSearch');
+    this.logger.log(
+      `packet_src_channel = ${request.packet_src_channel}, packet_sequence=${request.packet_sequence}`,
+      'QueryBlockSearch',
+    );
     try {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
       const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
@@ -629,7 +701,7 @@ export class QueryService {
 
       const responseBlockSearch: QueryBlockSearchResponse = {
         blocks: blockResultsResp,
-        total_count: blockResults.length,
+        total_count: blockResultsResp.length,
       } as unknown as QueryBlockSearchResponse;
 
       return responseBlockSearch;
@@ -650,12 +722,77 @@ export class QueryService {
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
+
+    // get create_client events from tx
+    const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(tx.height);
+    let createClientEvent = null;
+    if (authOrClientUTxos.length) {
+      const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
+      createClientEvent = txsAuthOrClientsResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
+    }
+
     const response: QueryTransactionByHashResponse = {
       hash: tx.hash,
       height: tx.height,
       gas_fee: tx.gas_fee,
       tx_size: tx.tx_size,
+      events: createClientEvent ? createClientEvent.events : [],
     } as unknown as QueryTransactionByHashResponse;
+    return response;
+  }
+
+  async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
+    this.logger.log(`height = ${request.height}`, 'queryIBCHeader');
+    const { height } = request;
+    if (!height) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+    }
+    let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
+    let mithrilStakeDistribution = mithrilStakeDistributionsList[0];
+
+    let distributionCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
+      mithrilStakeDistribution.certificate_hash,
+    );
+
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const snapshot = listSnapshots.find((e) => BigInt(e.block_number) === BigInt(height));
+    if (!snapshot) throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
+    const snapshotCertificate = await await this.mithrilService.mithrilClient.get_mithril_certificate(
+      snapshot.certificate_hash,
+    );
+
+    const mithrilHeader: MithrilHeader = {
+      mithril_stake_distribution: normalizeMithrilStakeDistribution(mithrilStakeDistribution, distributionCertificate),
+      mithril_stake_distribution_certificate: normalizeMithrilStakeDistributionCertificate(
+        mithrilStakeDistribution,
+        distributionCertificate,
+      ),
+      transaction_snapshot: {
+        merkle_root: snapshot.merkle_root,
+        hash: snapshot.hash,
+        certificate_hash: snapshot.certificate_hash,
+        epoch: BigInt(snapshotCertificate.epoch),
+        block_number: BigInt(snapshot.block_number),
+        created_at: snapshot.created_at,
+      },
+      transaction_snapshot_certificate: normalizeMithrilStakeDistributionCertificate(
+        {
+          epoch: snapshot.epoch,
+          hash: snapshot.hash,
+          certificate_hash: snapshot.certificate_hash,
+          created_at: snapshot.created_at,
+        },
+        snapshotCertificate,
+      ),
+    };
+
+    const mithrilHeaderAny: Any = {
+      type_url: '/ibc.clients.mithril.v1.MithrilHeader',
+      value: MithrilHeader.encode(mithrilHeader).finish(),
+    };
+    const response: QueryIBCHeaderResponse = {
+      header: mithrilHeaderAny,
+    };
     return response;
   }
 }

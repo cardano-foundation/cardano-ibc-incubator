@@ -36,6 +36,7 @@ WORKDIR /root/
 COPY --from=builder /app/bin/rly ./bin/
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/examples ./examples
+COPY --from=builder /app/.env .env
 
 # Use Dockerize to wait for the Node.js service to be ready before starting the application
 # CMD dockerize -wait tcp://0.0.0.0:26657 -wait tcp://0.0.0.0:4884 -timeout 120s ./scripts/relayer-start.sh

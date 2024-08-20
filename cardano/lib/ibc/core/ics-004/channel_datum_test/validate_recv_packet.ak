@@ -1,5 +1,3 @@
-use aiken/dict
-use aiken/int
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -60,18 +58,14 @@ fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) 
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_receipt: dict.from_list(
-          input_channel_datum.state.packet_receipt,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, "", int.compare)
-          |> dict.to_list(),
-        packet_acknowledgement: dict.from_list(
-          input_channel_datum.state.packet_acknowledgement,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, ack, int.compare)
-          |> dict.to_list(),
+        packet_receipt: [
+          Pair(packet.sequence, ""),
+          ..input_channel_datum.state.packet_receipt
+        ],
+        packet_acknowledgement: [
+          Pair(packet.sequence, ack),
+          ..input_channel_datum.state.packet_acknowledgement
+        ],
       },
     }
 
@@ -129,12 +123,10 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_recv: input_channel_datum.state.next_sequence_recv + 1,
-        packet_acknowledgement: dict.from_list(
-          input_channel_datum.state.packet_acknowledgement,
-          int.compare,
-        )
-          |> dict.insert(packet.sequence, ack, int.compare)
-          |> dict.to_list(),
+        packet_acknowledgement: [
+          Pair(packet.sequence, ack),
+          ..input_channel_datum.state.packet_acknowledgement
+        ],
       },
     }
 
