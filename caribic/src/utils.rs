@@ -118,7 +118,6 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
     }
 
     if let Some(root_folder) = root_folder {
-        println!("Cleaning up root folder {}", root_folder.to_string_lossy());
         if root_folder != *destination {
             for entry in fs::read_dir(&root_folder)? {
                 let entry = entry?;
