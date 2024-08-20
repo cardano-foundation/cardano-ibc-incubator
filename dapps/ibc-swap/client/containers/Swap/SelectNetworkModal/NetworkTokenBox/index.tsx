@@ -1,5 +1,5 @@
 /* eslint-disable no-unused-vars */
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
 import { Box, Image, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
@@ -10,11 +10,14 @@ import { TokenItemProps, TokenList } from '@/components/TokenList/TokenList';
 import EarchIcon from '@/assets/icons/earth.svg';
 import { cosmosChainsSupported, FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
+import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
+
 import { formatTokenSymbol } from '@/utils/string';
 import { debounce } from '@/utils/helper';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { Loading } from '@/components/Loading/Loading';
+import { useCustomCardanoBalance } from '@/hooks/useCustomCardanoBalance';
 
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
@@ -35,7 +38,6 @@ const NetworkTokenBox = ({
 }: NetworkTokenBoxProps) => {
   const [tokenSelected, setTokenSelected] = useState<TokenItemProps>();
   const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
-  const [tokenList, setTokenList] = useState<TokenItemProps[]>([]);
   const [displayNetworkList, setDisplayNetworkList] =
     useState<NetworkItemProps[]>(networkList);
   const [displayTokenList, setDisplayTokenList] = useState<TokenItemProps[]>(
@@ -44,6 +46,8 @@ const NetworkTokenBox = ({
   const [isFetchingData, setIsFetchingData] = useState<boolean>(false);
 
   const cosmos = useCosmosChain(networkSelected?.networkName!);
+
+  const cardanoAssets = useCustomCardanoBalance();
 
   const handleClickTokenItem = (token: TokenItemProps) => {
     if (!networkSelected) return;
@@ -104,9 +108,22 @@ const NetworkTokenBox = ({
           tokenLogo: DefaultCosmosNetworkIcon.src,
         }));
       }
-      // TODO: fetch Cardano token list
 
-      setTokenList(formatTokenList);
+      if (
+        networkSelected?.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+      ) {
+        if (cardanoAssets && cardanoAssets?.length) {
+          formatTokenList = cardanoAssets?.map((asset) => {
+            const assetWithName = asset as typeof asset & { assetName: string };
+            return {
+              tokenId: assetWithName.unit,
+              tokenName: assetWithName.assetName,
+              tokenLogo: DefaultCardanoNetworkIcon.src,
+            };
+          });
+        }
+      }
+
       setDisplayTokenList(formatTokenList);
       setIsFetchingData(false);
     };
@@ -116,12 +133,11 @@ const NetworkTokenBox = ({
     ) {
       cosmos?.connect();
     } else if (networkSelected?.networkId) {
-      setTokenList([]);
       setDisplayTokenList([]);
       fetchTokenList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [networkSelected, cosmos?.isWalletConnected]);
+  }, [networkSelected, cosmos?.isWalletConnected, cardanoAssets]);
 
   useEffect(() => {
     setDisplayNetworkList(networkList);
@@ -205,7 +221,7 @@ const NetworkTokenBox = ({
                 handleSearch(
                   setDisplayTokenList,
                   searchString,
-                  tokenList,
+                  displayTokenList,
                   'tokenName',
                 );
               }}
