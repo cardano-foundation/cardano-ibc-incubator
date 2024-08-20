@@ -63,7 +63,6 @@ import {
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 import { Order } from '~@/shared/types/channel/order';
-import { UnsignedChannelCloseInitDto } from '../shared/modules/lucid/dtos/channel/channle-close-init.dto';
 
 @Injectable()
 export class ChannelService {
