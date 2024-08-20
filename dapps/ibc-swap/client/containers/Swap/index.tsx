@@ -17,7 +17,6 @@ import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import { SwapTokenType } from '@/types/SwapDataType';
 import BigNumber from 'bignumber.js';
 import { formatNumberInput } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
@@ -61,30 +60,33 @@ const SwapContainer = () => {
     });
   };
 
-  const handleChangeAmount = (
-    token: SwapTokenType,
-    amount: string,
-    balance?: string,
-    isFromToken?: boolean,
-  ) => {
-    const displayString = formatNumberInput(
-      amount,
-      token.tokenExponent || 0,
-      balance,
-    );
+  const handleChangeAmount = (amount: string, isFromToken?: boolean) => {
+    const { fromToken, toToken } = swapData;
+
+    const maxAmount = isFromToken
+      ? fromToken.balance
+      : BigNumber(fromToken.balance!)
+          .dividedBy(rate)
+          .toFixed(toToken.tokenExponent || 0)
+          .toString();
+
+    const exponent = isFromToken
+      ? fromToken.tokenExponent
+      : toToken.tokenExponent;
+    const displayString = formatNumberInput(amount, exponent || 0, maxAmount);
     let toSwapAmount = '';
     let fromSwapAmount = '';
     if (displayString !== '0') {
       if (isFromToken) {
         fromSwapAmount = displayString;
         toSwapAmount = BigNumber(displayString)
-          .dividedBy(BigNumber(rate))
+          .dividedBy(rate)
           .toFixed(swapData.toToken?.tokenExponent || 0)
           .toString();
       } else {
         toSwapAmount = displayString;
         fromSwapAmount = BigNumber(displayString)
-          .multipliedBy(BigNumber(rate))
+          .multipliedBy(rate)
           .toFixed(swapData.fromToken?.tokenExponent || 0)
           .toString();
       }
@@ -185,16 +187,8 @@ const SwapContainer = () => {
         <TokenBox
           handleClick={openModalSelectNetwork}
           token={swapData.fromToken}
-          handleChangeAmount={(
-            event: React.ChangeEvent<HTMLInputElement>,
-            balance: string,
-          ) =>
-            handleChangeAmount(
-              swapData.fromToken,
-              event.target.value,
-              balance,
-              true,
-            )
+          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
+            handleChangeAmount(event.target.value, true)
           }
         />
         <StyledSwitchNetwork
@@ -210,17 +204,8 @@ const SwapContainer = () => {
           fromOrTo="To"
           handleClick={openModalSelectNetwork}
           token={swapData.toToken}
-          handleChangeAmount={(
-            event: React.ChangeEvent<HTMLInputElement>,
-            // eslint-disable-next-line no-unused-vars
-            balance: string,
-          ) =>
-            handleChangeAmount(
-              swapData.fromToken,
-              event.target.value,
-              '',
-              false,
-            )
+          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
+            handleChangeAmount(event.target.value, false)
           }
         />
         {onShowEstimateFee()}

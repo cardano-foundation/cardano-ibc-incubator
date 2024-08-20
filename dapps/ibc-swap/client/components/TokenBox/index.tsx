@@ -3,8 +3,9 @@ import { FaChevronDown } from 'react-icons/fa';
 import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
 import { formatTokenSymbol } from '@/utils/string';
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
+import SwapContext from '@/contexts/SwapContext';
 
 import StyledTokenBox from './index.style';
 
@@ -15,7 +16,6 @@ type TokenBoxProps = {
   handleChangeAmount: (
     // eslint-disable-next-line no-unused-vars
     event: React.ChangeEvent<HTMLInputElement>,
-    balance: string,
   ) => void;
 };
 
@@ -25,6 +25,8 @@ const TokenBox = ({
   handleClick,
   handleChangeAmount,
 }: TokenBoxProps) => {
+  const { setSwapData } = useContext(SwapContext);
+
   const [balance, setBalance] = useState<string>('0');
   const cosmosChain = useCosmosChain(token?.network?.networkName!);
 
@@ -36,6 +38,23 @@ const TokenBox = ({
         });
         if (balanceData?.amount) {
           setBalance(balanceData.amount);
+          if (fromOrTo === FROM_TO.FROM) {
+            setSwapData((prev) => ({
+              ...prev,
+              fromToken: {
+                ...prev.fromToken,
+                balance: balanceData.amount,
+              },
+            }));
+          } else {
+            setSwapData((prev) => ({
+              ...prev,
+              toToken: {
+                ...prev.toToken,
+                balance: balanceData.amount,
+              },
+            }));
+          }
         }
       }
     };
@@ -92,7 +111,7 @@ const TokenBox = ({
             textAlign="right"
             placeholder="0"
             disabled={!token?.tokenId}
-            onChange={(event) => handleChangeAmount(event, balance)}
+            onChange={(event) => handleChangeAmount(event)}
             value={token?.swapAmount}
           />
         </Box>
