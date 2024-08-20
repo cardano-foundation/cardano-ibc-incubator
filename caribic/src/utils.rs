@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::{self, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
@@ -67,10 +67,6 @@ pub fn delete_file(file_path: &Path) -> io::Result<()> {
     fs::remove_file(file_path)
 }
 
-pub fn delete_dir(dir_path: &Path) -> io::Result<()> {
-    fs::remove_dir_all(dir_path)
-}
-
 pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Open the ZIP file
     let file = File::open(file_path)?;
@@ -79,10 +75,18 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
     let file_count = archive.len();
     let progress_bar = ProgressBar::new(file_count as u64);
 
+    let mut root_folder: Option<PathBuf> = None;
+
     // Extract each file in the ZIP archive
     for i in 0..file_count {
         let mut file = archive.by_index(i)?;
         let outpath = destination.join(file.name());
+
+        if i == 1 {
+            if let Some(parent) = outpath.parent() {
+                root_folder = Some(parent.to_path_buf());
+            }
+        }
 
         // Check if it's a directory or file
         if file.name().ends_with('/') {
@@ -113,5 +117,27 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
         progress_bar.inc(1);
     }
 
+    if let Some(root_folder) = root_folder {
+        println!("Cleaning up root folder {}", root_folder.to_string_lossy());
+        if root_folder != *destination {
+            for entry in fs::read_dir(&root_folder)? {
+                let entry = entry?;
+                let path = entry.path();
+                let file_name = path.file_name().unwrap(); // safe unwrap
+                let new_path = destination.join(file_name);
+                fs::rename(path, new_path)?;
+            }
+            fs::remove_dir_all(root_folder)?;
+        }
+    }
+
     Ok(())
+}
+
+pub fn get_osmosis_dir(project_root: &Path) -> PathBuf {
+    project_root
+        .join("chains")
+        .join("osmosis")
+        .join("osmosis")
+        .to_path_buf()
 }

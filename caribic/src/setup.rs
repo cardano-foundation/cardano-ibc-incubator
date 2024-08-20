@@ -1,9 +1,38 @@
-use crate::utils::{delete_dir, delete_file, download_file, unzip_file, IndicatorMessage};
+use crate::utils::{delete_file, download_file, unzip_file, IndicatorMessage};
 use console::style;
 use std::io::{self, Write};
 use std::{path::Path, process::Command};
 
-pub async fn install_osmosisd() {
+pub async fn download_osmosis(osmosis_path: &Path) {
+    let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
+
+    let base_path = osmosis_path
+        .parent()
+        .expect("osmosis_path should have a parent directory");
+    let zip_path = base_path.join("osmosis.zip").to_owned();
+
+    download_file(
+        url,
+        zip_path.as_path(),
+        Some(IndicatorMessage {
+            message: "Downloading osmosis source code".to_string(),
+            step: "Step 1/2".to_string(),
+            emoji: "📥 ".to_string(),
+        }),
+    )
+    .await
+    .expect("Failed to download osmosis source code");
+
+    println!(
+        "{} 📦 Extracting osmosis source code...",
+        style("Step 2/2").bold().dim()
+    );
+
+    unzip_file(zip_path.as_path(), osmosis_path).expect("Failed to unzip osmosis source code");
+    delete_file(zip_path.as_path()).expect("Failed to cleanup osmosis.zip");
+}
+
+pub async fn install_osmosisd(osmosis_path: &Path) {
     let question = "Do you want to install osmosisd? (yes/no): ";
 
     print!("{}", question);
@@ -17,40 +46,17 @@ pub async fn install_osmosisd() {
     let input = input.trim().to_lowercase();
 
     if input == "yes" || input == "y" {
-        let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
-        let dest = Path::new("osmosis.zip");
-        download_file(
-            url,
-            dest,
-            Some(IndicatorMessage {
-                message: "Downloading osmosis source code".to_string(),
-                step: "Step 1/3".to_string(),
-                emoji: "📥 ".to_string(),
-            }),
-        )
-        .await
-        .expect("Failed to download osmosis source code");
-
-        println!(
-            "{} 📦 Extracting osmosis source code...",
-            style("Step 2/3").bold().dim()
-        );
-
-        unzip_file(dest, Path::new("osmosis")).expect("Failed to unzip osmosis source code");
-        delete_file(dest).expect("Failed to cleanup osmosis.zip");
-
         println!(
             "{} 🛠️ Installing osmosisd...",
-            style("Step 3/3").bold().dim()
+            style("Step 1/1").bold().dim()
         );
 
         Command::new("make")
-            .current_dir("osmosis")
+            .current_dir(osmosis_path)
             .arg("install")
             .output()
             .expect("Failed to install osmosisd");
 
         println!("✅ osmosisd installed successfully");
-        delete_dir(Path::new("osmosis")).expect("Failed to cleanup osmosis source folder");
     }
 }

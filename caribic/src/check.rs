@@ -1,5 +1,5 @@
-use crate::setup::install_osmosisd;
-use std::process::Command;
+use crate::setup::{download_osmosis, install_osmosisd};
+use std::{io::Error, path::Path, process::Command};
 
 pub async fn check_prerequisites() {
     println!("Checking prerequisites...");
@@ -7,7 +7,6 @@ pub async fn check_prerequisites() {
     check_aiken();
     check_deno();
     check_golang();
-    check_osmosisd().await;
 }
 
 fn check_docker() {
@@ -84,8 +83,31 @@ fn check_golang() {
     }
 }
 
-async fn check_osmosisd() {
+pub fn check_project_root(project_root: &Path) -> Result<(), Error> {
+    if project_root
+        .join("chains")
+        .join("osmosis")
+        .join("scripts")
+        .join("start.sh")
+        .exists()
+    {
+        Ok(())
+    } else {
+        Err(Error::new(
+            std::io::ErrorKind::NotFound,
+            "Project root not found",
+        ))
+    }
+}
+
+pub async fn check_osmosisd(osmosis_dir: &Path) {
     let osmosisd_check = Command::new("osmosisd").arg("version").output();
+
+    if osmosis_dir.exists() {
+        println!("👀 Osmosis directory already exists");
+    } else {
+        download_osmosis(osmosis_dir).await;
+    }
 
     match osmosisd_check {
         Ok(output) => {
@@ -96,12 +118,12 @@ async fn check_osmosisd() {
                 }
             } else {
                 println!("❌ osomsisd is not installed or not available in the PATH.");
-                install_osmosisd().await;
+                install_osmosisd(osmosis_dir).await;
             }
         }
         Err(_) => {
             println!("❌ osomsisd is not installed or not available in the PATH.");
-            install_osmosisd().await;
+            install_osmosisd(osmosis_dir).await;
         }
     }
 }
