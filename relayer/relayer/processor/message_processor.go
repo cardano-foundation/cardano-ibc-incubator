@@ -151,7 +151,7 @@ func updateClient(ctx context.Context, src, dst *PathEndRuntime, latestHeader pr
 		return err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, time.Second*10)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*10)
 	defer cancel()
 	dst.ChainProvider.SendMessages(ctx, []provider.RelayerMessage{
 		msgUpdateClient,

@@ -2,8 +2,7 @@ package cardano
 
 import (
 	"fmt"
-
-	"google.golang.org/protobuf/types/known/anypb"
+	"github.com/gogo/protobuf/proto"
 
 	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -13,17 +12,15 @@ import (
 
 type CardanoMessage struct {
 	Msg              sdk.Msg
-	UnsignedTx       *anypb.Any
 	SetSigner        func(string) //callback to update the Msg Signer field
 	FeegrantDisabled bool         //marks whether this message type should ALWAYS disable feegranting (use the default signer)
 }
 
 // After call getting unsigned msg from gateway pls set UnsignedTx
-func NewCardanoMessage(msg sdk.Msg, unsignedTx *anypb.Any, optionalSetSigner func(string)) provider.RelayerMessage {
+func NewCardanoMessage(msg sdk.Msg, optionalSetSigner func(string)) provider.RelayerMessage {
 	return CardanoMessage{
-		Msg:        msg,
-		UnsignedTx: unsignedTx,
-		SetSigner:  optionalSetSigner,
+		Msg:       msg,
+		SetSigner: optionalSetSigner,
 	}
 }
 
@@ -54,10 +51,7 @@ func (cm CardanoMessage) Type() string {
 }
 
 func (cm CardanoMessage) MsgBytes() ([]byte, error) {
-	if cm.UnsignedTx == nil {
-		return nil, fmt.Errorf("UnsignedTx is nil")
-	}
-	return cm.UnsignedTx.Value, nil
+	return proto.Marshal(cm.Msg)
 }
 
 // MarshalLogObject is used to encode cm to a zap logger with the zap.Object field type.

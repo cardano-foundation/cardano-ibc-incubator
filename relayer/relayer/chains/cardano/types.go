@@ -10,7 +10,6 @@ import (
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
 	"github.com/gorilla/websocket"
-	"github.com/savaki/ogmigo"
 )
 
 type BabbageTransaction struct {
@@ -94,7 +93,7 @@ type BabbageTransactionOutputTmp struct {
 
 type Map map[string]interface{}
 
-var fault = []byte(`jsonwsp/fault`)
+var fault = []byte(`error`)
 
 func query(ctx context.Context, payload interface{}, v interface{}, endpoint string) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -137,7 +136,8 @@ func query(ctx context.Context, payload interface{}, v interface{}, endpoint str
 	}
 
 	if bytes.Contains(raw, fault) {
-		var e ogmigo.Error
+		var e OgmiosError
+		fmt.Println(string(raw))
 		if err := json.Unmarshal(raw, &e); err != nil {
 			return fmt.Errorf("failed to decode error: %w", err)
 		}
@@ -155,11 +155,11 @@ func query(ctx context.Context, payload interface{}, v interface{}, endpoint str
 
 func makePayload(methodName string, args Map) Map {
 	return Map{
-		"type":        "jsonwsp/request",
-		"version":     "1.0",
-		"servicename": "ogmios",
-		"methodname":  methodName,
-		"args":        args,
+		"jsonrpc": "2.0",
+		"method":  methodName,
+		"params": Map{
+			"transaction": args,
+		},
 	}
 }
 
@@ -171,14 +171,28 @@ type VKeyWitness struct {
 }
 
 type Response struct {
-	Type        string
-	Version     string
-	ServiceName string `json:"servicename"`
-	MethodName  string `json:"methodname"`
-	Reflection  interface{}
-	Result      struct {
-		SubmitSuccess struct {
-			TxId string `json:"txId"`
-		} `json:"SubmitSuccess"`
+	Jsonrpc string `json:"jsonrpc"`
+	Method  string `json:"method"`
+	Result  struct {
+		Transaction struct {
+			ID string `json:"id"`
+		} `json:"transaction"`
 	} `json:"result"`
+	ID interface{} `json:"id"`
+}
+
+type OgmiosError struct {
+	Jsonrpc   string `json:"jsonrpc"`
+	Method    string `json:"method"`
+	ErrorData struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    interface {
+		} `json:"data"`
+	} `json:"error"`
+	ID interface{} `json:"id"`
+}
+
+func (e OgmiosError) Error() string {
+	return fmt.Sprintf("%v: %v", e.ErrorData.Code, e.ErrorData.Message)
 }

@@ -1,4 +1,4 @@
-// import { type Data } from '@dinhbx/lucid-custom';
+// import { type Data } from '@cuonglv0297/lucid-custom';
 import { CardanoClientState } from './cardano';
 import { Height } from './height';
 import { ProofSpec } from './proof-specs';
@@ -14,4 +14,4 @@ export type ClientState = {
   frozenHeight: Height;
   latestHeight: Height;
   proofSpecs: ProofSpec[];
-}
+};

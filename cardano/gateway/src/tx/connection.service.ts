@@ -1,5 +1,5 @@
 import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
+import { type Tx, TxComplete, UTxO } from '@cuonglv0297/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';

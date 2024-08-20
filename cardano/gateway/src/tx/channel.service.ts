@@ -1,4 +1,4 @@
-import { type Tx, TxComplete, UTxO } from '@dinhbx/lucid-custom';
+import { type Tx, TxComplete, UTxO } from '@cuonglv0297/lucid-custom';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -51,6 +51,7 @@ import {
   orderFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
+import { sleep } from '../shared/helpers/time';
 
 @Injectable()
 export class ChannelService {
@@ -71,9 +72,10 @@ export class ChannelService {
         constructedAddress,
       );
       const unsignedChannelOpenInitTxValidTo: Tx = unsignedChannelOpenInitTx.validTo(Date.now() + 600 * 1e3);
-
       const unsignedChannelOpenInitTxCompleted: TxComplete = await unsignedChannelOpenInitTxValidTo.complete();
-
+      // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
+      // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
+      await sleep(7000);
       this.logger.log(unsignedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
@@ -137,7 +139,7 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: Tx = unsignedChannelOpenAckTx.validTo(Date.now() + 600 * 1e3);
 
       const unsignedChannelOpenAckTxCompleted: TxComplete = await unsignedChannelOpenAckTxValidTo.complete();
-
+      await sleep(7000);
       this.logger.log(unsignedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {

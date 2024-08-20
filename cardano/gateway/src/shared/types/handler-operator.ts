@@ -1,4 +1,4 @@
-import { type Data } from '@dinhbx/lucid-custom';
+import { type Data } from '@cuonglv0297/lucid-custom';
 import { Height } from './height';
 
 export type HandlerOperator =
@@ -11,7 +11,7 @@ export type HandlerOperator =
 
 export async function encodeHandlerOperator(
   handlerDatum: HandlerOperator,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const HandlerOperatorSchema = Data.Enum([
