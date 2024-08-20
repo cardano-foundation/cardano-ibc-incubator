@@ -6,9 +6,11 @@ import { DenomTrace } from 'cosmjs-types/ibc/applications/transfer/v1/transfer';
 import { State, stateFromJSON } from 'cosmjs-types/ibc/core/channel/v1/channel';
 
 import {
+  DEFAULT_PFM_FEE,
   queryAllChannelsUrl,
   queryAllDenomTracesUrl,
   queryChannelsPrefixUrl,
+  queryPacketForwardParamsUrl,
 } from '@/constants';
 import {
   IBCDenomTrace,
@@ -16,6 +18,7 @@ import {
   QueryClientStateResponse,
   RawChannelMapping,
 } from '@/types/IBCParams';
+import BigNumber from 'bignumber.js';
 
 export async function fetchAllDenomTraces(
   restUrl: string,
@@ -148,4 +151,18 @@ export async function fetchAllChannels(
     const { index } = maxSrcChannelId[item];
     return tmpData[index];
   });
+}
+
+export async function fetchPacketForwardFee(
+  restUrl: string,
+): Promise<BigNumber> {
+  const fetchUrl = `${restUrl}${queryPacketForwardParamsUrl}`;
+  const data = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => ({
+      params: {
+        fee_percentage: DEFAULT_PFM_FEE,
+      },
+    }));
+  return BigNumber(data.params.fee_percentage);
 }

@@ -7,7 +7,13 @@ import {
   TransferRoutes,
 } from '@/types/IBCParams';
 import { fetchOsmosisDenomTraces } from '@/services/Osmosis';
-import { fetchAllChannels } from '@/services/CommonCosmosServices';
+import {
+  fetchAllChannels,
+  fetchPacketForwardFee,
+} from '@/services/CommonCosmosServices';
+import BigNumber from 'bignumber.js';
+import { DEFAULT_PFM_FEE } from '@/constants';
+import { chainsRestEndpoints } from '@/configs/customChainInfo';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -19,6 +25,7 @@ type IBCParamsContextType = {
     destChainId: string,
     depth: number,
   ) => TransferRoutes;
+  getPfmFee: (chainId: string) => BigNumber;
 };
 
 type tmpResolveRoutes = {
@@ -56,6 +63,12 @@ export const IBCParamsProvider = ({
   const [osmosisIBCTokenTraces, setOsmosisIBCTokenTraces] =
     useState<IBCDenomTrace>({});
 
+  const [pfmFees, setPfmFees] = useState<{ [key: string]: BigNumber }>({});
+
+  const getPfmFee = (chainId: string): BigNumber => {
+    return pfmFees[chainId] ?? BigNumber(DEFAULT_PFM_FEE);
+  };
+
   const updateOsmosisDenomTrace = async () => {
     fetchOsmosisDenomTraces().then((res: IBCDenomTrace) => {
       setOsmosisIBCTokenTraces(res);
@@ -67,6 +80,7 @@ export const IBCParamsProvider = ({
       'sidechain',
       process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!,
     ).then((res: RawChannelMapping[]) => {
+      console.log(res);
       setRawChannelMappings(res);
     });
   };
@@ -206,6 +220,29 @@ export const IBCParamsProvider = ({
     };
   };
 
+  const fetchPFMs = async () => {
+    const chains = Object.keys(chainsRestEndpoints);
+    await Promise.all(
+      chains.map((chainId) => {
+        return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(
+          (res) => ({ chainId, fee: res }),
+        );
+      }),
+    ).then((fees: { chainId: string; fee: BigNumber }[]) => {
+      const dataFees = fees.reduce((acc: { [key: string]: BigNumber }, cur) => {
+        const { chainId, fee } = cur;
+        acc[chainId] = fee;
+        return acc;
+      }, {});
+      setPfmFees(dataFees);
+    });
+  };
+
+  useEffect(() => {
+    // fetch and update channel mappings
+    fetchPFMs();
+  }, []);
+
   useEffect(() => {
     // fetch and update channel mappings
     fetchRawChannelsMapping();
@@ -230,6 +267,7 @@ export const IBCParamsProvider = ({
           updateOsmosisDenomTrace,
           chainToChainMappings,
           calculateTransferRoutes,
+          getPfmFee,
         }),
         [rawChannelMappings, osmosisIBCTokenTraces],
       )}

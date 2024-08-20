@@ -45,11 +45,13 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
+import BigNumber from 'bignumber.js';
 
 type EstimateFeeType = {
   display: boolean;
   canEst: boolean;
   msgs: any[];
+  estReceiveAmount: string;
   estTime: string;
   estFee: string;
 };
@@ -66,6 +68,7 @@ const initEstData = {
   display: false,
   canEst: false,
   msgs: [],
+  estReceiveAmount: '',
   estFee: '----',
   estTime: '----',
 };
@@ -97,7 +100,7 @@ const Transfer = () => {
     setIsProcessingTransfer,
     isProcessingTransfer,
   } = useContext(TransferContext);
-  const { calculateTransferRoutes } = useContext(IBCParamsContext);
+  const { calculateTransferRoutes, getPfmFee } = useContext(IBCParamsContext);
   const { handleResetData: handleResetSwapData } = useContext(SwapContext);
 
   const {
@@ -164,11 +167,25 @@ const Transfer = () => {
       toast.error('route not found', { theme: 'colored' });
       return initEstData;
     }
-    // check token amount > 0, decimals
-    setEstData({
-      ...initEstData,
-      display: true,
-    });
+
+    // // check token amount > 0, decimals
+    // setEstData({
+    //   ...initEstData,
+    //   display: true,
+    // });
+
+    // estimate amount after PFM
+    let estReceiveAmount = BigNumber(sendAmount);
+    if (chains.length > 2) {
+      const feeChains = chains.slice(1, chains.length - 1);
+      feeChains.forEach((chainId) => {
+        const fee = getPfmFee(chainId);
+        estReceiveAmount = estReceiveAmount.minus(
+          estReceiveAmount.multipliedBy(fee).dp(0, BigNumber.ROUND_HALF_CEIL),
+        );
+      });
+    }
+
     if (fromNetwork.networkId !== process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
       const senderAddress = await getAccount();
       const msg = unsignedTxTransferFromCosmos(
@@ -186,6 +203,7 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: msg,
+          estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
           estTime: '~2 mins',
         };
@@ -211,6 +229,7 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: [unsignedTx],
+          estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${formatPrice(estFee)} lovelace`,
           estTime: '~2 mins',
         };
@@ -379,6 +398,7 @@ const Transfer = () => {
   return isSubmitted ? (
     <TransferResult
       setIsSubmitted={setIsSubmitted}
+      estReceiveAmount={estData.estReceiveAmount}
       estFee={estData.estFee}
       estTime={estData.estTime}
       lastTxHash={lastTxHash}

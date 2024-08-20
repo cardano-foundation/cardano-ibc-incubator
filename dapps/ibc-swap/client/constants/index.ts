@@ -24,11 +24,13 @@ export const routes = [
 ];
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
+export const DEFAULT_PFM_FEE = "0.100000000000000000"
 
 export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000);
 
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
+export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 
 export const cosmosChainsSupported = ['localosmosis', 'sidechain'];
