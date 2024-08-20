@@ -5,6 +5,8 @@ CARDANO_SCRIPT_DIR="cardano/scripts"
 COSMOS_SCRIPT_DIR="cosmos/scripts"
 RELAYER_SCRIPT_DIR="relayer/scripts"
 OSMOSIS_SCRIPT_DIR="chains/osmosis/osmosis/scripts"
+SQS_SCRIPT_DIR="chains/sqs/scripts"
+
 
 SCRIPT_DIR=$(dirname $(realpath $0))
 
@@ -20,6 +22,7 @@ set_permission() {
   chmod +x ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/stop.sh || return 1
   chmod +x ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/stop.sh || return 1
   chmod +x ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/stop.sh || return 1
+  chmod +x ${SCRIPT_DIR}/${SQS_SCRIPT_DIR}/stop.sh || return 1
   return 0
 }
 
@@ -27,6 +30,7 @@ run() {
     bash ${SCRIPT_DIR}/${CARDANO_SCRIPT_DIR}/stop.sh && \
     bash ${SCRIPT_DIR}/${COSMOS_SCRIPT_DIR}/stop.sh &&
     bash ${SCRIPT_DIR}/${OSMOSIS_SCRIPT_DIR}/stop.sh &&
+    bash ${SCRIPT_DIR}/${SQS_SCRIPT_DIR}/stop.sh &&
     bash ${SCRIPT_DIR}/${RELAYER_SCRIPT_DIR}/stop.sh || return 1
   return 0
 }
