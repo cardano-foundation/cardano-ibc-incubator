@@ -7,10 +7,10 @@ import (
 )
 
 type CardanoTransactionsProofsMessage struct {
-	CertificateHash           string
-	CertifiedTransactions     []*CardanoTransactionsSetProofMessagePart
-	NonCertifiedTransactions  []entities.TransactionHash
-	LatestImmutableFileNumber uint64
+	CertificateHash          string
+	CertifiedTransactions    []*CardanoTransactionsSetProofMessagePart
+	NonCertifiedTransactions []entities.TransactionHash
+	LatestBlockNumber        entities.BlockNumber
 }
 
 type CardanoTransactionsSetProofMessagePart struct {
@@ -30,10 +30,10 @@ func (part *CardanoTransactionsSetProofMessagePart) ToCardanoTransactionsSetProo
 }
 
 type VerifiedCardanoTransactions struct {
-	CertificateHash           string
-	MerkleRoot                string
-	CertifiedTransactions     []entities.TransactionHash
-	LatestImmutableFileNumber uint64
+	CertificateHash       string
+	MerkleRoot            string
+	CertifiedTransactions []entities.TransactionHash
+	LatestBlockNumber     entities.BlockNumber
 }
 
 func (pm *CardanoTransactionsProofsMessage) Verify() (*VerifiedCardanoTransactions, error) {
@@ -70,9 +70,9 @@ func (pm *CardanoTransactionsProofsMessage) Verify() (*VerifiedCardanoTransactio
 	}
 
 	return &VerifiedCardanoTransactions{
-		CertificateHash:           pm.CertificateHash,
-		MerkleRoot:                merkleRoot,
-		CertifiedTransactions:     certifiedTransactionHashes,
-		LatestImmutableFileNumber: pm.LatestImmutableFileNumber,
+		CertificateHash:       pm.CertificateHash,
+		MerkleRoot:            merkleRoot,
+		CertifiedTransactions: certifiedTransactionHashes,
+		LatestBlockNumber:     pm.LatestBlockNumber,
 	}, nil
 }

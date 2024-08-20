@@ -668,18 +668,18 @@ func (cc *CardanoProvider) PacketCommitment(
 	msgTransfer provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
-	commitment, proof, proofHeight, err := cc.QueryPacketCommitmentGW(ctx, msgTransfer)
+	res, err := cc.QueryPacketCommitment(ctx, int64(msgTransfer.Height), msgTransfer.SourceChannel, msgTransfer.SourcePort, msgTransfer.Sequence)
 	if err != nil {
 		return provider.PacketProof{}, fmt.Errorf("error querying comet proof for packet commitment: %w", err)
 	}
 	// check if packet commitment exists
-	if len(commitment) == 0 {
+	if len(res.Commitment) == 0 {
 		return provider.PacketProof{}, chantypes.ErrPacketCommitmentNotFound
 	}
 
 	return provider.PacketProof{
-		Proof:       proof,
-		ProofHeight: proofHeight,
+		Proof:       res.Proof,
+		ProofHeight: res.ProofHeight,
 	}, nil
 }
 
@@ -933,26 +933,30 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 		return nil, nil, err
 	}
 
-	var dsthLastestHeight int64
-	dsthLastestHeight = int64(dsth)
-	retry.Do(func() error {
-		dsthLastestHeight, err = cc.QueryLatestHeight(ctx)
+	dstLatestHeight := int64(dsth)
+
+	err = retry.Do(func() error {
+		dstLatestHeight, err = cc.QueryLatestHeight(ctx)
 		if err != nil {
 			return err
 		}
-		if dsthLastestHeight <= int64(dsth) {
+		if dstLatestHeight <= int64(dsth) {
 			return fmt.Errorf("not yet update transaction snapshot certificate")
 		}
+
 		return err
 	}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, dsthLastestHeight, &clientState)
+	ibcHeader, err := cc.QueryIBCMithrilHeader(ctx, dstLatestHeight, &clientState)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	if err := cc.ValidatePacket(msgTransfer, provider.LatestBlock{
-		Height: dsth,
+		Height: uint64(dstLatestHeight),
 		Time:   time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp())),
 	}); err != nil {
 		switch err.(type) {
@@ -960,7 +964,7 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 			var pp provider.PacketProof
 			switch order {
 			case chantypes.UNORDERED:
-				retry.Do(func() error {
+				err = retry.Do(func() error {
 					var err error
 					pp, err = cc.QueryProofUnreceivedPackets(ctx, msgTransfer.DestChannel, msgTransfer.DestPort, msgTransfer.Sequence, dsth)
 					if pp.Proof == nil {
@@ -971,12 +975,15 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 					}
 					return err
 				}, retry.Context(ctx), rtyAtt, rtyDelMax, rtyErr)
-
-				srcLastestHeight, err := src.QueryLatestHeight(ctx)
 				if err != nil {
 					return nil, nil, err
 				}
-				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLastestHeight, srcClientId)
+
+				srcLatestHeight, err := src.QueryLatestHeight(ctx)
+				if err != nil {
+					return nil, nil, err
+				}
+				clientStateUpdateRes, err := src.QueryClientStateResponse(ctx, srcLatestHeight, srcClientId)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -1018,6 +1025,7 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 				}
 				return nil, timeout, nil
 			} else {
+				time.Sleep(time.Minute)
 				timeout, err := src.MsgTimeout(msgTransfer, pp)
 				if err != nil {
 					return nil, nil, err
@@ -1048,10 +1056,6 @@ func (cc *CardanoProvider) RelayPacketFromSequence(
 	if err != nil {
 		return nil, nil, err
 	}
-	//dstHeader, err := src.QueryIBCHeader(ctx, int64(srch))
-	//if err != nil {
-	//	return nil, nil, err
-	//}
 
 	srcTrustedHeader, err := src.QueryIBCHeader(ctx, int64(srcClientState.GetLatestHeight().GetRevisionHeight())+1)
 	if err != nil {
@@ -1164,6 +1168,11 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 			txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
 			seq = sequence
 			if err != nil {
+				if strings.Contains(err.Error(), "Invalid proof height") || strings.Contains(err.Error(), "PacketReceivedException") || strings.Contains(err.Error(), "PacketAcknowledgedException") {
+					fmt.Println("Error build message from gw: ", err.Error())
+					return nil
+				}
+				//fmt.Println(base64.StdEncoding.EncodeToString(txBytes))
 				return err
 			}
 			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)
@@ -1185,6 +1194,7 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 		}
 
 		// we had a successful tx broadcast with this sequence, so update it to the next
+		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 	}
 

@@ -82,20 +82,20 @@ func (gw *Gateway) GetLastHeight() (uint64, error) {
 	if len(res) == 0 {
 		return 0, fmt.Errorf("cardano transaction set snapshot return nil")
 	}
-	return res[0].Beacon.ImmutableFileNumber, nil
+	return res[0].BlockNumber, nil
 }
 
-func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
-	req := &pbclient.QueryClientStateRequest{
-		ClientId: clientId,
-		Height:   height,
-	}
-	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
+//func (gw *Gateway) QueryClientState(clientId string, height uint64) (*pbclient.QueryClientStateResponse, error) {
+//	req := &pbclient.QueryClientStateRequest{
+//		ClientId: clientId,
+//		Height:   height,
+//	}
+//	res, err := gw.ClientQueryService.ClientState(context.Background(), req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return res, nil
+//}
 
 func (gw *Gateway) QueryConsensusState(clientId string, height uint64) (*pbclient.QueryConsensusStateResponse, error) {
 	req := &pbclient.QueryConsensusStateRequest{
@@ -246,14 +246,14 @@ func (gw *Gateway) ChannelOpenAck(ctx context.Context, req *pbchannel.MsgChannel
 	return res, nil
 }
 
-func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
-	req := ibcclient.QueryBlockResultsRequest{Height: height}
-	res, err := gw.TypeProvider.BlockResults(ctx, &req)
-	if err != nil {
-		return nil, err
-	}
-	return res, nil
-}
+//func (gw *Gateway) QueryBlockResults(ctx context.Context, height uint64) (*ibcclient.QueryBlockResultsResponse, error) {
+//	req := ibcclient.QueryBlockResultsRequest{Height: height}
+//	res, err := gw.TypeProvider.BlockResults(ctx, &req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	return res, nil
+//}
 
 func (gw *Gateway) Connections(ctx context.Context, req *pbconnection.QueryConnectionsRequest) (*pbconnection.QueryConnectionsResponse, error) {
 	res, err := gw.ConnectionQueryService.Connections(ctx, req)

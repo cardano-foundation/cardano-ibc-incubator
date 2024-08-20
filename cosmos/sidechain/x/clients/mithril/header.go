@@ -27,7 +27,7 @@ func (MithrilHeader) ClientType() string {
 // GetHeight returns the current height. It returns 0 if the Mithril
 // header is nil.
 func (h MithrilHeader) GetHeight() exported.Height {
-	return NewHeight(h.TransactionSnapshot.Height.GetRevisionHeight())
+	return NewHeight(0, h.TransactionSnapshot.BlockNumber)
 }
 
 // GetTimestamp returns the current block timestamp. It returns a zero time if

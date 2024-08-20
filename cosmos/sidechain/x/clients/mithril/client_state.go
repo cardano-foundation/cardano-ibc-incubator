@@ -119,7 +119,7 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
 	}
 
-	if cs.LatestHeight.MithrilHeight == 0 {
+	if cs.LatestHeight.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height revision height cannot be zero")
 	}
 
@@ -187,8 +187,9 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)
 	setConsensusMetadata(ctx, clientStore, cs.LatestHeight)
-	setFcInEpoch(clientStore, MithrilCertificate{Hash: consensusState.FirstCertHashLatestEpoch}, cs.CurrentEpoch)
+	setFcInEpoch(clientStore, *consensusState.FirstCertHashLatestEpoch, cs.CurrentEpoch)
 	setLcTsInEpoch(clientStore, MithrilCertificate{Hash: consensusState.LatestCertHashTxSnapshot}, cs.CurrentEpoch)
+	setMSDCertificateWithHash(clientStore, *consensusState.FirstCertHashLatestEpoch)
 
 	return nil
 }

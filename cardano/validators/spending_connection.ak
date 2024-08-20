@@ -23,8 +23,8 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/client/mithril_client/client_state as mithril_client_state
 use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, Fraction, MithrilClientState, MithrilHeight,
-  MithrilProtocolParameters,
+  AnyMithrilClientState, MithrilClientState,
+  MithrilProtocolParameters, Fraction, CardanoHeight
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
@@ -596,8 +596,8 @@ test conn_open_ack_succeed() {
   let counterparty_client_state =
     MithrilClientState {
       chain_id: "42",
-      latest_height: Some(MithrilHeight { mithril_height: 1 }),
-      frozen_height: Some(MithrilHeight { mithril_height: 0 }),
+      latest_height: Some(CardanoHeight { revision_number: 0, revision_height: 1 }),
+      frozen_height: Some(CardanoHeight { revision_number: 0, revision_height: 0 }),
       current_epoch: 1,
       trusting_period: 1,
       protocol_parameters: Some(

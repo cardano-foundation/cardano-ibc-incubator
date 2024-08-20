@@ -9,6 +9,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Fraction struct to hold the numerator and denominator
@@ -122,4 +123,20 @@ func DecodePaginationKey(key []byte) (uint64, error) {
 		return 0, err
 	}
 	return res.Offset, nil
+}
+
+func GetEntityIdFromTokenName(tokenName string, baseToken AuthToken, prefix string) string {
+	baseTokenPart := HashSha3_256(baseToken.PolicyId + baseToken.Name)[:40]
+	prefixPart := HashSha3_256(prefix)[:8]
+	fullName := baseTokenPart + prefixPart
+	if !strings.Contains(tokenName, fullName) {
+		return ""
+	}
+
+	idHex := strings.ReplaceAll(tokenName, fullName, "")
+	id, err := hex.DecodeString(idHex)
+	if err != nil {
+		return ""
+	}
+	return string(id)
 }

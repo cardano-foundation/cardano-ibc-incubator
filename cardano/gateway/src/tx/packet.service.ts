@@ -405,6 +405,12 @@ export class PacketService {
     if (!isValidProofHeight(heightsArray, recvPacketOperator.proofHeight.revisionHeight)) {
       throw new GrpcInternalException(`Invalid proof height: ${recvPacketOperator.proofHeight.revisionHeight}`);
     }
+    // check packet receipt has sequence packet
+    if (channelDatum.state.packet_receipt.has(recvPacketOperator.packetSequence)) {
+      throw new GrpcInternalException(
+        `PacketReceivedException: Packet with sequence ${recvPacketOperator.packetSequence} has recieved`,
+      );
+    }
     const transferModuleIdentifier = this.getTransferModuleIdentifier();
     // Get mock module utxo
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
@@ -1247,6 +1253,11 @@ export class PacketService {
 
     if (!isValidProofHeight(heightsArray, ackPacketOperator.proofHeight.revisionHeight)) {
       throw new GrpcInternalException(`Invalid proof height: ${ackPacketOperator.proofHeight.revisionHeight}`);
+    }
+    if (!channelDatum.state.packet_commitment.has(ackPacketOperator.packetSequence)) {
+      throw new GrpcInternalException(
+        `PacketAcknowledgedException: Packet with sequence ${ackPacketOperator.packetSequence} not exists in the packet commitment map`,
+      );
     }
 
     const transferModuleIdentifier = this.getTransferModuleIdentifier();
