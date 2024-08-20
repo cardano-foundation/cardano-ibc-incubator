@@ -26,7 +26,8 @@ edit_app_toml () {
   dasel put -f $APP '.api.address' -v 'tcp://0.0.0.0:1317'
   dasel put -f $APP '.grpc.address' -v '0.0.0.0:9090'
   dasel put -f $APP '.grpc-web.address' -v '0.0.0.0:9091'
-  dasel put -f $APP '.osmosis-sqs.address' -v '0.0.0.0:50051'
+  dasel put -f $APP '.osmosis-sqs.address' -v '172.17.0.1:50051'
+  dasel put -f $APP '.osmosis-sqs.grpc-ingest-address' -v '172.17.0.1:50051'
 
 }
 

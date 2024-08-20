@@ -26,7 +26,7 @@ services:
       - 9094:9090
       - 9091:9091
       - 6060:6060
-      - 9092:9092
+      # - 9092:9092
     links:
       - redis
    # Enable Redis for sidecar query server
