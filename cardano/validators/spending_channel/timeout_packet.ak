@@ -1,8 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
-use aiken/int
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -141,14 +140,14 @@ validator(
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
       ) == client_status_mod.Active
     trace @"timeout_packet: client status is active"
 
     expect Some(proof_timestamp) =
       client_state_mod.get_timestamp_at_height(
         client_datum.state.client_state,
-        dict.from_list(client_datum.state.consensus_states, height_mod.compare),
+        client_datum.state.consensus_states,
         proof_height,
       )
     expect or {
@@ -161,8 +160,7 @@ validator(
     trace @"timeout_packet: packet is timeout"
 
     expect Some(commitment) =
-      dict.from_list(cur_packet_commitment, int.compare)
-        |> dict.get(packet.sequence)
+      pairs.get_first(cur_packet_commitment, packet.sequence)
     trace @"timeout_packet: packet commitment existed"
 
     let packet_commitment = packet_mod.commit_packet(packet)
@@ -240,11 +238,11 @@ fn validate_timeout_unordered_packet_proof(
   proof_height: Height,
   proof: MerkleProof,
   packet: Packet,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let time_delay = connection.delay_period
@@ -264,8 +262,7 @@ fn validate_timeout_unordered_packet_proof(
       ),
     )
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   expect
     verify_proof_redeemer == VerifyNonMembership {
@@ -288,11 +285,11 @@ fn validate_timeout_ordered_packet_proof(
   proof: MerkleProof,
   packet: Packet,
   next_sequence_recv: Int,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let time_delay = connection.delay_period
@@ -311,8 +308,7 @@ fn validate_timeout_ordered_packet_proof(
       ),
     )
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   expect
     verify_proof_redeemer == VerifyMembership {
@@ -524,9 +520,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -684,12 +678,10 @@ test succeed_timeout_unordered_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -816,7 +808,7 @@ test succeed_timeout_unordered_packet() {
       ],
     }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     TimeoutPacket {
       packet,
       proof_unreceived,
@@ -848,7 +840,7 @@ test succeed_timeout_unordered_packet() {
       ),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyNonMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -858,28 +850,17 @@ test succeed_timeout_unordered_packet() {
       proof: proof_unreceived,
       path: merkle_path,
     }
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.timeout_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+
   //==========================arrange context=========================
   let context =
     ScriptContext {
@@ -991,12 +972,10 @@ test succeed_timeout_ordered_packet() {
           ..input_channel_datum.state.channel,
           state: chan_state_mod.Closed,
         },
-        packet_commitment: dict.from_list(
+        packet_commitment: pairs.remove_first(
           input_channel_datum.state.packet_commitment,
-          int.compare,
-        )
-          |> dict.delete(packet.sequence)
-          |> dict.to_list(),
+          packet.sequence,
+        ),
       },
     }
 
@@ -1013,12 +992,9 @@ test succeed_timeout_ordered_packet() {
   let validity_range = mock_data.validity_range
 
   //========================arrange redeemers=======================
-  let proof_unreceived =
-    MerkleProof {
-      proofs: [],
-    }
+  let proof_unreceived = MerkleProof { proofs: [] }
 
-  let spend_channel_redeemer =
+  let spend_channel_redeemer: Redeemer =
     TimeoutPacket { packet, proof_unreceived, proof_height, next_sequence_recv }
 
   let channel_id =
@@ -1044,7 +1020,7 @@ test succeed_timeout_ordered_packet() {
       ),
     )
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     VerifyMembership {
       cs: client_datum.state.client_state,
       cons_state,
@@ -1056,28 +1032,15 @@ test succeed_timeout_ordered_packet() {
       value: bits.put_uint64_big_endian(next_sequence_recv),
     }
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(mock_data.module_input.output_reference),
-          module_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Spend(channel_input.output_reference),
-          spend_channel_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.timeout_packet_policy_id),
-          mock_data.channel_token,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock_data.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let timeout_packet_redeemer: Redeemer = mock_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
   //==========================arrange context=========================
   let context =
     ScriptContext {

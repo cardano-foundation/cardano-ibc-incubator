@@ -17,10 +17,7 @@ pub fn mint_auth_token(mint: MintedValue, token: AuthToken) -> Bool {
   let minted_tokens =
     mint |> value.from_minted_value() |> value.tokens(token.policy_id)
 
-  expect
-    minted_tokens == (
-      dict.new() |> dict.insert(token.name, 1, bytearray.compare)
-    )
+  expect minted_tokens == ( dict.new() |> dict.insert(token.name, 1) )
 
   True
 }

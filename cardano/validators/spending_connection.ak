@@ -1,7 +1,7 @@
-use aiken/dict.{Dict}
 use aiken/hash.{Blake2b_224, Hash}
 use aiken/interval
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
   ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
@@ -108,10 +108,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"spend_connection: client status is active"
 
@@ -151,10 +148,7 @@ validator(
           client_state.status(
             client_datum.state.client_state,
             tx_valid_to * 1_000_000,
-            dict.from_list(
-              client_datum.state.consensus_states,
-              height_mod.compare,
-            ),
+            client_datum.state.consensus_states,
           ) == Active
         trace @"spend_connection: client status is active"
 
@@ -191,7 +185,7 @@ fn validate_conn_open_ack_proof(
   proof_try: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   expect mithril_client_state.validate_self_client(counterparty_client_state)
@@ -232,8 +226,7 @@ fn validate_conn_open_ack_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
@@ -251,7 +244,7 @@ fn validate_conn_open_ack_proof(
     )
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   expect
@@ -289,7 +282,7 @@ fn validate_conn_open_confirm_proof(
   connection: ConnectionEnd,
   proof_ack: MerkleProof,
   proof_height: Height,
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let expected_counterparty =
@@ -325,11 +318,10 @@ fn validate_conn_open_confirm_proof(
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   expect Some(verify_proof_redeemer) =
-    dict.get(redeemers, Mint(verify_proof_policy_id))
+    pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   expect
@@ -455,9 +447,7 @@ fn setup() -> MockData {
     ClientDatum {
       state: ClientDatumState {
         client_state,
-        consensus_states: dict.new()
-          |> dict.insert(proof_height, cons_state, height_mod.compare)
-          |> dict.to_list(),
+        consensus_states: [Pair(proof_height, cons_state)],
       },
       token: client_token,
     }
@@ -611,7 +601,11 @@ test conn_open_ack_succeed() {
       current_epoch: 1,
       trusting_period: 1,
       protocol_parameters: Some(
-        MithrilProtocolParameters { k: 0, m: 0, phi_f: Some(Fraction {numerator: 0, denominator: 1}),},
+        MithrilProtocolParameters {
+          k: 0,
+          m: 0,
+          phi_f: Some(Fraction { numerator: 0, denominator: 1 }),
+        },
       ),
       upgrade_path: [],
     }
@@ -685,10 +679,9 @@ test conn_open_ack_succeed() {
     )
 
   expect Some(consensus_state) =
-    dict.from_list(client_datum_state.consensus_states, height_mod.compare)
-      |> dict.get(proof_height)
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
 
-  let verify_proof_redeemer =
+  let verify_proof_redeemer: Redeemer =
     BatchVerifyMembership(
       [
         VerifyMembershipParams {
@@ -714,18 +707,11 @@ test conn_open_ack_succeed() {
       ],
     )
 
-  let redeemers: Dict<ScriptPurpose, Redeemer> =
-    dict.new()
-      |> dict.insert(
-          Spend(conn_input.output_reference),
-          connection_redeemer,
-          validator_utils.compare_script_purpose,
-        )
-      |> dict.insert(
-          Mint(mock.verify_proof_policy_id),
-          verify_proof_redeemer,
-          validator_utils.compare_script_purpose,
-        )
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(conn_input.output_reference), connection_redeemer),
+      Pair(Mint(mock.verify_proof_policy_id), verify_proof_redeemer),
+    ]
 
   expect connection_redeemer: SpendConnectionRedeemer = connection_redeemer
 

@@ -1,5 +1,5 @@
-use aiken/dict.{Dict}
 use aiken/list
+use aiken/pairs
 use aiken/transaction.{Mint,
   Redeemer, ScriptContext, ScriptPurpose, Transaction}
 use aiken/transaction/value.{PolicyId}
@@ -115,26 +115,26 @@ validator(
 }
 
 fn validate_create_client(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_auth_token: AuthToken,
   client_minting_policy_id: PolicyId,
 ) -> Bool {
   // mint client redeemer is MintNewClient operator
   expect Some(mint_client_redeemer) =
-    redeemers |> dict.get(Mint(client_minting_policy_id))
+    pairs.get_first(redeemers, Mint(client_minting_policy_id))
   expect mint_client_redeemer: MintClientRedeemer = mint_client_redeemer
   expect mint_client_redeemer == MintClientRedeemer { handler_auth_token }
   True
 }
 
 fn validate_conn_open_init(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_auth_token: AuthToken,
   connection_minting_policy_id: PolicyId,
 ) -> Bool {
   // valid mint connection redeemer for connection open init
   expect Some(mint_connection_redeemer) =
-    redeemers |> dict.get(Mint(connection_minting_policy_id))
+    pairs.get_first(redeemers, Mint(connection_minting_policy_id))
   expect mint_connection_redeemer: MintConnectionRedeemer =
     mint_connection_redeemer
   expect mint_connection_redeemer == ConnOpenInit { handler_auth_token }
@@ -142,13 +142,13 @@ fn validate_conn_open_init(
 }
 
 fn validate_conn_open_try(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   connection_minting_policy_id: PolicyId,
 ) -> Bool {
   // valid mint connection redeemer for connection open init
   expect Some(mint_connection_redeemer) =
-    redeemers |> dict.get(Mint(connection_minting_policy_id))
+    pairs.get_first(redeemers, Mint(connection_minting_policy_id))
   expect mint_connection_redeemer: MintConnectionRedeemer =
     mint_connection_redeemer
   expect ConnOpenTry { handler_auth_token: conn_handler_token, .. } =
@@ -160,13 +160,13 @@ fn validate_conn_open_try(
 }
 
 fn validate_chan_open_init(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   channel_minting_policy_id: PolicyId,
 ) -> Bool {
   // valid mint channel redeemer for channel open init
   expect Some(mint_channel_redeemer) =
-    redeemers |> dict.get(Mint(channel_minting_policy_id))
+    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
 
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
 
@@ -176,13 +176,13 @@ fn validate_chan_open_init(
 }
 
 fn validate_chan_open_try(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   channel_minting_policy_id: PolicyId,
 ) -> Bool {
   // valid mint channel redeemer for channel open try
   expect Some(mint_channel_redeemer) =
-    redeemers |> dict.get(Mint(channel_minting_policy_id))
+    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
 
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
 
@@ -194,13 +194,13 @@ fn validate_chan_open_try(
 }
 
 fn validate_bind_port(
-  redeemers: Dict<ScriptPurpose, Redeemer>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   port_minting_policy_id: PolicyId,
 ) -> Option<Int> {
   // valid mint port redeemer for bind port
   expect Some(mint_port_redeemer) =
-    redeemers |> dict.get(Mint(port_minting_policy_id))
+    pairs.get_first(redeemers, Mint(port_minting_policy_id))
 
   expect mint_port_redeemer: MintPortRedeemer = mint_port_redeemer
 
