@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"fmt"
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"math/big"
 	"sort"
 	"strings"
@@ -43,7 +44,7 @@ func (cs *ClientState) verifyBlockData(
 	ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	blockData *BlockData,
 ) error {
-	verifyError, isValid, vrfHex, blockNo, slotNo := VerifyBlock(BlockHexCbor{
+	verifyError, isValid, vrfHex, blockNo, slotNo := ledger.VerifyBlock(ledger.BlockHexCbor{
 		HeaderCbor:    blockData.HeaderCbor,
 		Eta0:          blockData.EpochNonce,
 		Spk:           int(cs.SlotPerKesPeriod),
@@ -209,7 +210,7 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	setConsensusMetadata(ctx, clientStore, blockData.GetHeight())
 	SetConsensusStateBlockHash(clientStore, blockData.GetHeight(), blockData.Hash)
 
-	uTXOOutput, regisCerts, deRegisCerts, extractBlockError := ExtractBlockData(blockData.BodyCbor)
+	uTXOOutput, regisCerts, deRegisCerts, extractBlockError := ledger.ExtractBlockData(blockData.BodyCbor)
 	if extractBlockError != nil {
 		panic(fmt.Errorf("extractBlockError: %v", extractBlockError.Error()))
 	}
@@ -224,8 +225,8 @@ func (cs ClientState) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, client
 	// emit event update validators set
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent("validators-set-updated",
-			sdk.NewAttribute("register-cert", strings.Join(GetListRegisCertPoolId(regisCerts), ",")),
-			sdk.NewAttribute("unregister-cert", strings.Join(GetListUnregisCertPoolId(deRegisCerts), ",")),
+			sdk.NewAttribute("register-cert", strings.Join(ledger.GetListRegisCertPoolId(regisCerts), ",")),
+			sdk.NewAttribute("unregister-cert", strings.Join(ledger.GetListUnregisCertPoolId(deRegisCerts), ",")),
 		),
 	)
 	return []exported.Height{height}

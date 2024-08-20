@@ -3,6 +3,7 @@ package cardano
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/blinklabs-io/gouroboros/ledger"
 )
 
 // MustMarshalClientSPOs encode client SPOs data before store
@@ -61,7 +62,7 @@ func UnmarshalInterface(v []byte, result interface{}) error {
 }
 
 // MustMarshalUTXO encode client UTXO data
-func MustMarshalUTXO(UTXO UTXOOutput) []byte {
+func MustMarshalUTXO(UTXO ledger.UTXOOutput) []byte {
 	bz, err := MarshalInterface(UTXO)
 	if err != nil {
 		panic(fmt.Errorf("failed to encode client UTXO: %w", err))
@@ -71,8 +72,8 @@ func MustMarshalUTXO(UTXO UTXOOutput) []byte {
 }
 
 // MustUnmarshalUTXO decode client UTXOs data
-func MustUnmarshalUTXO(bytesVal []byte) UTXOOutput {
-	result := UTXOOutput{}
+func MustUnmarshalUTXO(bytesVal []byte) ledger.UTXOOutput {
+	result := ledger.UTXOOutput{}
 	err := UnmarshalInterface(bytesVal, &result)
 	if err != nil {
 		panic(fmt.Errorf("failed to decode client UTXOs: %w", err))
