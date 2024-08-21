@@ -19,13 +19,18 @@ import {
   RawChannelMapping,
 } from '@/types/IBCParams';
 import BigNumber from 'bignumber.js';
+import { toast } from 'react-toastify';
 
 export async function fetchAllDenomTraces(
   restUrl: string,
 ): Promise<IBCDenomTrace> {
   const fetchUrl = `${restUrl}/${queryAllDenomTracesUrl}?pagination.limit=10000`;
   const tmpTrace: IBCDenomTrace = {};
-  const firstFetch = await fetch(fetchUrl).then((res) => res.json());
+  const firstFetch = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch denom trace.', { theme: 'colored' });
+    });
   const denomTraces = (firstFetch?.denom_traces || []) as DenomTrace[];
   denomTraces.forEach((tracing) => {
     const { path, baseDenom } = tracing;
@@ -59,7 +64,11 @@ export async function fetchClientStateFromChannel(
   portId: string,
 ): Promise<QueryClientStateResponse> {
   const queryUrl = `${restUrl}${queryChannelsPrefixUrl}/${channelId}/ports/${portId}/client_state`;
-  const data = await fetch(queryUrl).then((res) => res.json());
+  const data = await fetch(queryUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch ports.', { theme: 'colored' });
+    });
   return (data?.identified_client_state || {}) as QueryClientStateResponse;
 }
 
@@ -83,7 +92,11 @@ export async function fetchAllChannels(
   const tmpData: RawChannelMapping[] = [];
   const maxSrcChannelId: maxSrcChannelIdType = {};
   const fetchUrl = `${restUrl}${queryAllChannelsUrl}`;
-  const firstFetch = await fetch(fetchUrl).then((res) => res.json());
+  const firstFetch = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch channels.', { theme: 'colored' });
+    });
   (firstFetch?.channels || []).forEach((channel: QueryChannelResponse) => {
     const { channel_id, port_id, state, counterparty } = channel;
     if (stateFromJSON(state) === State.STATE_OPEN) {
@@ -100,7 +113,11 @@ export async function fetchAllChannels(
   let nextKey = firstFetch?.pagination?.next_key;
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${restUrl}${queryAllChannelsUrl}&pagination.key=${nextKey}`;
-    const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
+    const nextFetch = await fetch(nextFetchUrl)
+      .then((res) => res.json())
+      .catch(() => {
+        toast.error('Failed to fetch channels.', { theme: 'colored' });
+      });
     (nextFetch?.channels || []).forEach((channel: QueryChannelResponse) => {
       const { channel_id, port_id, state, counterparty } = channel;
       if (stateFromJSON(state) === State.STATE_OPEN) {
