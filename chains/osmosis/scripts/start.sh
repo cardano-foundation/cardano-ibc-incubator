@@ -1,5 +1,5 @@
 #!/bin/bash
-# osmosis version v24.0.0
+# osmosis version v25.0.2
 
 OSMOSISD_CONTAINER_NAME="localosmosis-osmosisd-1"
 

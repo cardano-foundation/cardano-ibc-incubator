@@ -1,0 +1,103 @@
+{
+    "debug": true,
+    "server-address": ":9092",
+    "logger-filename": "sqs.log",
+    "logger-is-production": true,
+    "logger-level": "info",
+    "grpc-tendermint-rpc-endpoint": "http://172.17.0.1:26658",
+    "grpc-gateway-endpoint": "172.17.0.1:9094",
+    "chain-id": "localosmosis",
+    "chain-registry-assets-url": "https://raw.githubusercontent.com/osmosis-labs/assetlists/main/osmosis-1/generated/frontend/assetlist.json",
+    "update-assets-height-interval": 200,
+    "router": {
+      "preferred-pool-ids": [],
+      "max-pools-per-route": 4,
+      "max-routes": 20,
+      "max-split-routes": 3,
+      "min-pool-liquidity-cap": 0,
+      "route-cache-enabled": true,
+      "candidate-route-cache-expiry-seconds": 1200,
+      "ranked-route-cache-expiry-seconds": 45,
+      "dynamic-min-liquidity-cap-filters-desc": [
+        {
+          "min-tokens-capitalization": 1000000,
+          "filter-value": 75000
+        },
+        {
+          "min-tokens-capitalization": 250000,
+          "filter-value": 15000
+        },
+        {
+          "min-tokens-capitalization": 10000,
+          "filter-value": 1000
+        },
+        {
+          "min-tokens-capitalization": 1000,
+          "filter-value": 10
+        },
+        {
+          "min-tokens-capitalization": 1,
+          "filter-value": 1
+        }
+      ]
+    },
+    "flight-record": {
+      "enabled": false,
+      "trace-threshold-ms": 1000,
+      "trace-file-name": "/tmp/sqs-flight-record.trace"
+    },
+    "pools": {
+      "transmuter-code-ids": [
+        148,
+        254
+      ],
+      "alloyed-transmuter-code-ids": [814, 867],
+      "orderbook-code-ids": [885],
+      "general-cosmwasm-code-ids": [
+        503,
+        572,
+        773,
+        641,
+        842
+      ]
+    },
+    "pricing":{
+      "cache-expiry-ms": 2000,
+      "default-source": 1,
+      "default-quote-human-denom": "usdc",
+      "max-pools-per-route": 4,
+      "max-routes": 3,
+      "min-pool-liquidity-cap": 1000,
+      "coingecko-url": "https://prices.osmosis.zone/api/v3/simple/price",
+      "coingecko-quote-currency": "usd",
+      "worker-min-pool-liquidity-cap": 1
+    },
+    "passthrough":{
+      "numia-url": "https://public-osmosis-api.numia.xyz",
+      "timeseries-url": "https://stage-proxy-data-api.osmosis-labs.workers.dev",
+      "apr-fetch-interval-minutes": 5,
+      "pool-fees-fetch-interval-minutes": 5
+    },
+    "grpc-ingester":{
+      "enabled": true,
+      "max-receive-msg-size-bytes": 16777216,
+      "server-address": ":50051",
+      "server-connection-timeout-seconds": 10,
+      "plugins": [
+        {
+          "name": "orderbook",
+          "enabled": false
+        }
+      ]
+    },
+    "otel": {
+      "enabled": true,
+      "environment": "sqs-dev"
+    },
+    "cors": {
+      "allowed-origin": "*",
+      "allowed-methods": "HEAD, GET, POST, HEAD, GET, POST, DELETE, OPTIONS, PATCH, PUT",
+      "allowed-headers": "Origin, Accept, Content-Type, X-Requested-With, X-Server-Time, Origin, Accept, Content-Type, X-Requested-With, X-Server-Time, Accept-Encoding, sentry-trace, baggage"
+    }
+  }
+  
