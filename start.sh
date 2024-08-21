@@ -22,7 +22,7 @@ set_up_osmosis() {
 }
 
 set_up_sqs() {
-  bash ${SCRIPT_DIR}/chains/sqs/script/setup_submodule_sqs.sh || return 1
+  bash ${SCRIPT_DIR}/chains/sqs/scripts/setup_submodule_sqs.sh || return 1
   return 0
 }
 
