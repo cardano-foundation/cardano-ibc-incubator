@@ -175,17 +175,15 @@ export const createDeployment = async (
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
-  const {
-    identifierTokenUnit: mockModuleIdentifier,
-    spendMockModule,
-  } = await deployMockModule(
-    lucid,
-    handlerToken,
-    spendHandlerValidator,
-    mintPortValidator,
-    mintIdentifierValidator,
-    MOCK_MODULE_PORT,
-  );
+  const { identifierTokenUnit: mockModuleIdentifier, spendMockModule } =
+    await deployMockModule(
+      lucid,
+      handlerToken,
+      spendHandlerValidator,
+      mintPortValidator,
+      mintIdentifierValidator,
+      MOCK_MODULE_PORT
+    );
   referredValidators.push(spendMockModule.validator);
 
   const refUtxosInfo = await createReferenceUtxos(
@@ -391,9 +389,6 @@ async function createReferenceUtxos(
       const newLucid = await Lucid.new(provider, "Preview");
       const sk = newLucid.utils.generateSeedPhrase();
       newLucid.selectWalletFromSeed(sk);
-      console.log({
-        sk,
-      });
 
       deployLucids.push(newLucid);
     }
@@ -785,7 +780,7 @@ const deployMockModule = async (
   spendHandlerValidator: SpendingValidator,
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
-  mockModulePort: bigint,
+  mockModulePort: bigint
 ) => {
   console.log("Create Mock Module");
 
@@ -793,14 +788,11 @@ const deployMockModule = async (
     spendMockModuleValidator,
     spendMockModuleScriptHash,
     spendMockModuleAddress,
-  ] = readValidator(
-    "spending_mock_module.spend_mock_module",
-    lucid,
-  );
+  ] = readValidator("spending_mock_module.spend_mock_module", lucid);
 
   const mintPortPolicyId = lucid.utils.mintingPolicyToId(mintPortValidator);
   const spendHandlerAddress = lucid.utils.validatorToAddress(
-    spendHandlerValidator,
+    spendHandlerValidator
   );
 
   const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
@@ -809,8 +801,7 @@ const deployMockModule = async (
   const updatedHandlerPorts = [
     ...currentHandlerDatum.state.bound_port,
     mockModulePort,
-  ]
-    .sort((a, b) => Number(a - b));
+  ].sort((a, b) => Number(a - b));
   const updatedHandlerDatum: HandlerDatum = {
     ...currentHandlerDatum,
     state: {
@@ -823,7 +814,7 @@ const deployMockModule = async (
   const portTokenName = generateTokenName(
     handlerToken,
     PORT_PREFIX,
-    mockModulePort,
+    mockModulePort
   );
   const portTokenUnit = mintPortPolicyId + portTokenName;
   const mintPortRedeemer: MintPortRedeemer = {
@@ -845,7 +836,7 @@ const deployMockModule = async (
   };
 
   const mintIdentifierPolicyId = lucid.utils.validatorToScriptHash(
-    mintIdentifierValidator,
+    mintIdentifierValidator
   );
   const identifierTokenName = generateIdentifierTokenName(outputReference);
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
@@ -864,14 +855,14 @@ const deployMockModule = async (
       {
         [portTokenUnit]: 1n,
       },
-      Data.to(mintPortRedeemer, MintPortRedeemer),
+      Data.to(mintPortRedeemer, MintPortRedeemer)
     )
     .attachMintingPolicy(mintIdentifierValidator)
     .mintAssets(
       {
         [identifierTokenUnit]: 1n,
       },
-      Data.to(outputReference, OutputReference),
+      Data.to(outputReference, OutputReference)
     )
     .payToContract(
       spendHandlerAddress,
@@ -880,7 +871,7 @@ const deployMockModule = async (
       },
       {
         [handlerTokenUnit]: 1n,
-      },
+      }
     )
     .payToContract(
       spendMockModuleAddress,
@@ -890,7 +881,7 @@ const deployMockModule = async (
       {
         [identifierTokenUnit]: 1n,
         [portTokenUnit]: 1n,
-      },
+      }
     );
 
   await submitTx(mintModuleTx, lucid, "Mint Mock Module");

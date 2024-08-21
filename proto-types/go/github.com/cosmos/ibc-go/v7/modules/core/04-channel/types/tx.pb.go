@@ -1176,15 +1176,6 @@ func (x *MsgTimeoutOnClose) String() string {
 
 func (*MsgTimeoutOnClose) ProtoMessage() {}
 
-func (x *MsgTimeoutRefresh) ValidateBasic() error {
-  //TODO implement me
-  panic("implement me")
-}
-
-func (x *MsgTimeoutRefresh) GetSigners() []sdk.AccAddress {
-  //TODO implement me
-  panic("implement me")
-}
 func (x *MsgTimeoutOnClose) ProtoReflect() protoreflect.Message {
 	mi := &file_ibc_core_channel_v1_tx_proto_msgTypes[16]
 	if protoimpl.UnsafeEnabled && x != nil {
