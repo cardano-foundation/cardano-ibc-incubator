@@ -28,7 +28,7 @@ const TokenBox = ({
   const { setSwapData } = useContext(SwapContext);
 
   const [balance, setBalance] = useState<string>('0');
-  const cosmosChain = useCosmosChain(token?.network?.networkName!);
+  const cosmosChain = useCosmosChain(token?.network?.networkId!);
 
   useEffect(() => {
     const fetchBalance = async () => {
@@ -66,7 +66,9 @@ const TokenBox = ({
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
         <Text className="label">{`${fromOrTo} token`}</Text>
-        <Text className="balance">{`Balance: ${balance}`}</Text>
+        {fromOrTo === FROM_TO.FROM && (
+          <Text className="balance">{`Balance: ${balance}`}</Text>
+        )}
       </Box>
       <Box display="flex" justifyContent="space-between" marginTop="5px">
         <Box display="flex" alignItems="center">
@@ -110,7 +112,7 @@ const TokenBox = ({
             variant="unstyled"
             textAlign="right"
             placeholder="0"
-            disabled={!token?.tokenId}
+            disabled={!token?.tokenId || fromOrTo === FROM_TO.TO}
             onChange={(event) => handleChangeAmount(event)}
             value={token?.swapAmount}
           />

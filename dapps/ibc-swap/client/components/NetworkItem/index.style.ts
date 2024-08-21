@@ -4,6 +4,7 @@ import styled from '@emotion/styled';
 
 interface StyledNetworkItemWrapperProps extends BoxProps {
   isActive?: boolean;
+  isDisabled?: boolean;
 }
 
 const StyledNetworkItemWrapper = styled(Box)<StyledNetworkItemWrapperProps>`
@@ -11,16 +12,16 @@ const StyledNetworkItemWrapper = styled(Box)<StyledNetworkItemWrapperProps>`
   gap: 16px;
   align-content: center;
   padding: 16px;
-  cursor: pointer;
+  cursor: ${(props) => (props.isDisabled ? 'not-allowed' : 'pointer')};
   min-height: 48px;
   align-items: center;
   padding: 9px 12px 9px 12px;
   border-radius: 10px;
-  opacity: 0px;
+  opacity: ${(props) => (props.isDisabled ? 0.5 : 1)};
   margin: 8px 0px;
   background-color: ${(props) => props.isActive && COLOR.neutral_5};
   :hover {
-    background-color: ${COLOR.neutral_5};
+    background-color: ${(props) => !props.isDisabled && COLOR.neutral_5};
   }
 `;
 

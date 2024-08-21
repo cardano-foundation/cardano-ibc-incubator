@@ -164,6 +164,9 @@ const SwapContainer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
+  const enableSwitch =
+    swapData?.fromToken?.tokenId && swapData?.toToken?.tokenId;
+
   return isSubmitSwap ? (
     <SwapResult
       setIsSubmitted={setIsSubmitSwap}
@@ -193,10 +196,10 @@ const SwapContainer = () => {
         />
         <StyledSwitchNetwork
           _hover={{
-            bgColor: swapData?.fromToken?.tokenId && COLOR.neutral_4,
-            cursor: swapData?.fromToken?.tokenId ? 'pointer' : 'default',
+            bgColor: enableSwitch && COLOR.neutral_4,
+            cursor: enableSwitch ? 'pointer' : 'default',
           }}
-          onClick={handleChangePositionToken}
+          onClick={enableSwitch ? handleChangePositionToken : () => {}}
         >
           <Image src={SwitchIcon.src} alt="" />
         </StyledSwitchNetwork>

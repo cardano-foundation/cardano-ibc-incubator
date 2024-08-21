@@ -115,7 +115,7 @@ const Transfer = () => {
   } = useDisclosure();
 
   const cosmosChain = useCosmosChain(
-    fromNetwork.networkName || defaultChainName,
+    fromNetwork.networkId || defaultChainName,
   );
   const { getAccount, estimateFee } = cosmosChain;
 
@@ -263,7 +263,7 @@ const Transfer = () => {
     }
     try {
       // Cosmos
-      if (cosmosChainsSupported.includes(fromNetwork.networkName!)) {
+      if (cosmosChainsSupported.includes(fromNetwork.networkId!)) {
         setIsProcessingTransfer(true);
         const client = await cosmosChain.getSigningStargateClient();
         const tx = await client.signAndBroadcast(
@@ -310,8 +310,8 @@ const Transfer = () => {
 
     // Cosmos
     if (
-      fromNetwork.networkName &&
-      cosmosChainsSupported.includes(fromNetwork.networkName)
+      fromNetwork.networkId &&
+      cosmosChainsSupported.includes(fromNetwork.networkId)
     ) {
       try {
         setIsFetchDataLoading(true);
@@ -334,8 +334,8 @@ const Transfer = () => {
 
     // Cardano
     if (
-      fromNetwork.networkName &&
-      cardanoChainsSupported.includes(fromNetwork.networkName)
+      fromNetwork.networkId &&
+      cardanoChainsSupported.includes(fromNetwork.networkId)
     ) {
       try {
         setIsFetchDataLoading(true);
@@ -368,7 +368,7 @@ const Transfer = () => {
     const onChangeFromNetwork = async () => {
       if (
         !cosmosChain?.isWalletConnected &&
-        cosmosChainsSupported.includes(fromNetwork.networkName!)
+        cosmosChainsSupported.includes(fromNetwork.networkId!)
       ) {
         await cosmosChain?.connect();
       } else if (fromNetwork.networkId) {

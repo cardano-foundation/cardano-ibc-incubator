@@ -24,7 +24,7 @@ export const routes = [
 ];
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
-export const DEFAULT_PFM_FEE = "0.100000000000000000"
+export const DEFAULT_PFM_FEE = '0.100000000000000000';
 
 export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000);
 
@@ -34,4 +34,5 @@ export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 
 export const cosmosChainsSupported = ['localosmosis', 'sidechain'];
-export const cardanoChainsSupported = ['cardano'];
+export const cardanoChainsSupported = ['42'];
+export const OSMOSIS_CHAIN_ID = 'localosmosis';

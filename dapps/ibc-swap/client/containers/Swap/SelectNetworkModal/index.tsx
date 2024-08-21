@@ -20,6 +20,7 @@ import SwapContext from '@/contexts/SwapContext';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
+import { FROM_TO } from '@/constants';
 
 type SelectNetworkModalProps = {
   isOpen: boolean;
@@ -40,6 +41,10 @@ const SelectNetworkModal = ({
   const [tokenToSelected, setTokenToSelected] = useState<SwapTokenType>(
     swapData.toToken,
   );
+  const [disabledNetwork, setDisabledNetwork] = useState<{
+    fromNetworkDisabled: NetworkItemProps | undefined;
+    toNetworkDisabled: NetworkItemProps | undefined;
+  }>({ fromNetworkDisabled: undefined, toNetworkDisabled: undefined });
 
   const handleSaveModal = () => {
     setSwapData({
@@ -55,12 +60,30 @@ const SelectNetworkModal = ({
     const tokenTo = tokenToSelected;
     setTokenFromSelected(tokenTo);
     setTokenToSelected(tokenFrom);
+    setDisabledNetwork({
+      fromNetworkDisabled: tokenFrom?.network,
+      toNetworkDisabled: tokenTo?.network,
+    });
   };
 
   const handleCancel = () => {
     setTokenFromSelected(swapData?.fromToken);
     setTokenToSelected(swapData?.toToken);
     onClose();
+  };
+
+  const handleChangeNetwork = (network: NetworkItemProps, fromOrTo: string) => {
+    if (fromOrTo === FROM_TO.FROM) {
+      setDisabledNetwork((prev) => ({
+        ...prev,
+        toNetworkDisabled: network,
+      }));
+    } else {
+      setDisabledNetwork((prev) => ({
+        ...prev,
+        fromNetworkDisabled: network,
+      }));
+    }
   };
 
   useEffect(() => {
@@ -70,8 +93,16 @@ const SelectNetworkModal = ({
     if (swapData?.toToken?.tokenId) {
       setTokenToSelected(swapData.toToken);
     }
+    if (swapData?.fromToken?.network && swapData?.toToken?.network) {
+      setDisabledNetwork({
+        fromNetworkDisabled: swapData.toToken.network,
+        toNetworkDisabled: swapData.fromToken.network,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [swapData?.fromToken?.tokenId, swapData?.toToken?.tokenId]);
+
+  const enableSwitch = tokenToSelected?.tokenId && tokenFromSelected?.tokenId;
 
   return (
     <Modal isCentered onClose={onClose} isOpen={isOpen}>
@@ -98,13 +129,17 @@ const SelectNetworkModal = ({
               networkList={networkList}
               selectedToken={tokenFromSelected}
               disabledToken={tokenToSelected}
+              disabledNetwork={disabledNetwork}
+              setDisabledNetwork={(network: NetworkItemProps) =>
+                handleChangeNetwork(network, 'From')
+              }
             />
             <StyledSwitchNetwork
               _hover={{
-                bgColor: tokenToSelected?.tokenId && COLOR.neutral_4,
-                cursor: tokenToSelected?.tokenId ? 'pointer' : 'default',
+                bgColor: enableSwitch && COLOR.neutral_4,
+                cursor: enableSwitch ? 'pointer' : 'default',
               }}
-              onClick={handleChangePositionToken}
+              onClick={enableSwitch ? handleChangePositionToken : () => {}}
             >
               <Image src={SwitchIcon.src} alt="" />
             </StyledSwitchNetwork>
@@ -114,6 +149,10 @@ const SelectNetworkModal = ({
               networkList={networkList}
               selectedToken={tokenToSelected}
               disabledToken={tokenFromSelected}
+              disabledNetwork={disabledNetwork}
+              setDisabledNetwork={(network: NetworkItemProps) =>
+                handleChangeNetwork(network, 'To')
+              }
             />
           </Box>
         </ModalBody>

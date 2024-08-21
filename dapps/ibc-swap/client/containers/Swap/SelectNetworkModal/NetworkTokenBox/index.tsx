@@ -13,7 +13,7 @@ import { SwapTokenType } from '@/types/SwapDataType';
 import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 
 import { formatTokenSymbol } from '@/utils/string';
-import { debounce } from '@/utils/helper';
+import { customSortTotalSupllyHasBalance, debounce } from '@/utils/helper';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { Loading } from '@/components/Loading/Loading';
@@ -27,6 +27,11 @@ type NetworkTokenBoxProps = {
   networkList: NetworkItemProps[];
   selectedToken?: SwapTokenType;
   disabledToken?: SwapTokenType;
+  disabledNetwork?: {
+    fromNetworkDisabled: NetworkItemProps | undefined;
+    toNetworkDisabled: NetworkItemProps | undefined;
+  };
+  setDisabledNetwork?: (network: NetworkItemProps) => void;
 };
 
 const NetworkTokenBox = ({
@@ -35,6 +40,8 @@ const NetworkTokenBox = ({
   networkList,
   selectedToken,
   disabledToken,
+  disabledNetwork,
+  setDisabledNetwork,
 }: NetworkTokenBoxProps) => {
   const [tokenSelected, setTokenSelected] = useState<TokenItemProps>();
   const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
@@ -45,7 +52,7 @@ const NetworkTokenBox = ({
   );
   const [isFetchingData, setIsFetchingData] = useState<boolean>(false);
 
-  const cosmos = useCosmosChain(networkSelected?.networkName!);
+  const cosmos = useCosmosChain(networkSelected?.networkId!);
 
   const cardano = useCardanoChain();
 
@@ -62,6 +69,7 @@ const NetworkTokenBox = ({
 
   const handleClickNetworkItem = (network: NetworkItemProps) => {
     setNetworkSelected(network);
+    setDisabledNetwork?.(network);
     setTokenSelected({} as TokenItemProps);
     onChooseToken?.({} as SwapTokenType);
   };
@@ -100,9 +108,16 @@ const NetworkTokenBox = ({
     const fetchTokenList = async () => {
       let formatTokenList = [] as TokenItemProps[];
       setIsFetchingData(true);
-      if (cosmosChainsSupported.includes(networkSelected?.networkName!)) {
-        const totalSupplyonCosmos = (await cosmos.getTotalSupply()) as Coin[];
-        formatTokenList = totalSupplyonCosmos?.map((token) => ({
+      if (cosmosChainsSupported.includes(networkSelected?.networkId!)) {
+        let totalSupplyOnCosmos = (await cosmos.getTotalSupply()) as Coin[];
+        if (fromOrTo === FROM_TO.FROM) {
+          const balances = (await cosmos.getAllBalances()) as Coin[];
+          totalSupplyOnCosmos = customSortTotalSupllyHasBalance(
+            totalSupplyOnCosmos,
+            balances,
+          );
+        }
+        formatTokenList = totalSupplyOnCosmos?.map((token) => ({
           tokenId: token.denom,
           tokenName: token.denom,
           tokenLogo: DefaultCosmosNetworkIcon.src,
@@ -128,7 +143,7 @@ const NetworkTokenBox = ({
     };
     if (
       !cosmos?.isWalletConnected &&
-      cosmosChainsSupported.includes(networkSelected?.networkName!)
+      cosmosChainsSupported.includes(networkSelected?.networkId!)
     ) {
       cosmos?.connect();
     } else if (networkSelected?.networkId) {
@@ -136,7 +151,11 @@ const NetworkTokenBox = ({
       fetchTokenList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [networkSelected, cosmos?.isWalletConnected, cardano.getTotalSupply()]);
+  }, [
+    networkSelected,
+    cosmos?.isWalletConnected,
+    cardano.getTotalSupply().length,
+  ]);
 
   useEffect(() => {
     setDisplayNetworkList(networkList);
@@ -162,7 +181,7 @@ const NetworkTokenBox = ({
               </Text>
               <Text fontSize="12px">
                 {networkSelected?.networkId ? (
-                  networkSelected?.networkName
+                  networkSelected?.networkPrettyName
                 ) : (
                   <Text fontSize="18px">Select Network</Text>
                 )}
@@ -203,6 +222,11 @@ const NetworkTokenBox = ({
               networkList={displayNetworkList}
               networkSelected={networkSelected}
               onClickNetwork={handleClickNetworkItem}
+              disabledNetwork={
+                fromOrTo === FROM_TO.FROM
+                  ? disabledNetwork?.fromNetworkDisabled
+                  : disabledNetwork?.toNetworkDisabled
+              }
             />
           </Box>
         </Box>
