@@ -37,5 +37,4 @@ export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 
 export const cosmosChainsSupported = ['localosmosis', 'sidechain'];
-export const cardanoChainsSupported = ['42'];
 export const OSMOSIS_CHAIN_ID = 'localosmosis';

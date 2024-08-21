@@ -18,7 +18,6 @@ import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import {
-  cardanoChainsSupported,
   cosmosChainsSupported,
   defaultChainName,
   HOUR_IN_NANOSEC,
@@ -114,9 +113,7 @@ const Transfer = () => {
     onClose: onCloseTokenModal,
   } = useDisclosure();
 
-  const cosmosChain = useCosmosChain(
-    fromNetwork.networkId || defaultChainName,
-  );
+  const cosmosChain = useCosmosChain(fromNetwork.networkId || defaultChainName);
   const { getAccount, estimateFee } = cosmosChain;
 
   // handle get cardano assets
@@ -335,7 +332,7 @@ const Transfer = () => {
     // Cardano
     if (
       fromNetwork.networkId &&
-      cardanoChainsSupported.includes(fromNetwork.networkId)
+      fromNetwork.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
     ) {
       try {
         setIsFetchDataLoading(true);
