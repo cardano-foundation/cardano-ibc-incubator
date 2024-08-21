@@ -17,7 +17,7 @@ import { debounce } from '@/utils/helper';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { Loading } from '@/components/Loading/Loading';
-import { useCustomCardanoBalance } from '@/hooks/useCustomCardanoBalance';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
 
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
@@ -47,7 +47,7 @@ const NetworkTokenBox = ({
 
   const cosmos = useCosmosChain(networkSelected?.networkName!);
 
-  const cardanoAssets = useCustomCardanoBalance();
+  const cardano = useCardanoChain();
 
   const handleClickTokenItem = (token: TokenItemProps) => {
     if (!networkSelected) return;
@@ -101,8 +101,8 @@ const NetworkTokenBox = ({
       let formatTokenList = [] as TokenItemProps[];
       setIsFetchingData(true);
       if (cosmosChainsSupported.includes(networkSelected?.networkName!)) {
-        const totalSupply = (await cosmos.getTotalSupply()) as Coin[];
-        formatTokenList = totalSupply?.map((token) => ({
+        const totalSupplyonCosmos = (await cosmos.getTotalSupply()) as Coin[];
+        formatTokenList = totalSupplyonCosmos?.map((token) => ({
           tokenId: token.denom,
           tokenName: token.denom,
           tokenLogo: DefaultCosmosNetworkIcon.src,
@@ -112,16 +112,15 @@ const NetworkTokenBox = ({
       if (
         networkSelected?.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
       ) {
-        if (cardanoAssets && cardanoAssets?.length) {
-          formatTokenList = cardanoAssets?.map((asset) => {
-            const assetWithName = asset as typeof asset & { assetName: string };
-            return {
-              tokenId: assetWithName.unit,
-              tokenName: assetWithName.assetName,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-            };
-          });
-        }
+        const totalSupplyOnCardano = cardano.getTotalSupply();
+        formatTokenList = totalSupplyOnCardano?.map((asset) => {
+          const assetWithName = asset as typeof asset & { assetName: string };
+          return {
+            tokenId: assetWithName.unit,
+            tokenName: assetWithName.assetName,
+            tokenLogo: DefaultCardanoNetworkIcon.src,
+          };
+        });
       }
 
       setDisplayTokenList(formatTokenList);
@@ -137,7 +136,7 @@ const NetworkTokenBox = ({
       fetchTokenList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [networkSelected, cosmos?.isWalletConnected, cardanoAssets]);
+  }, [networkSelected, cosmos?.isWalletConnected, cardano.getTotalSupply()]);
 
   useEffect(() => {
     setDisplayNetworkList(networkList);

@@ -31,7 +31,7 @@ import {
 import { Loading } from '@/components/Loading/Loading';
 import { useAddress, useWallet } from '@meshsdk/react';
 import { formatPrice } from '@/utils/string';
-import { useCustomCardanoBalance } from '@/hooks/useCustomCardanoBalance';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
@@ -120,10 +120,10 @@ const Transfer = () => {
   const { getAccount, estimateFee } = cosmosChain;
 
   // handle get cardano assets
-  const assets = useCustomCardanoBalance();
+  const cardano = useCardanoChain();
   const cardanoAddress = useAddress();
   const cardanoAssets: CardanoAsset[] = [];
-  assets?.forEach((asset) => {
+  cardano.getTotalSupply()?.forEach((asset) => {
     const assetWithName = asset as typeof asset & { assetName: string };
     cardanoAssets.push({
       quantity: assetWithName.quantity,
