@@ -16,7 +16,7 @@ import {
 } from "@plus/proto-types/build/ibc/core/channel/v1/tx";
 import { GrpcInternalException, GrpcInvalidArgumentException } from "nestjs-grpc-exceptions";
 import { RecvPacketOperator } from "./dto/packet/recv-packet-operator.dto";
-import { Tx, TxComplete, UTxO } from "@dinhbx/lucid-custom";
+import { Tx, TxComplete, UTxO } from "@cuonglv0297/lucid-custom";
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from "src/shared/helpers/sequence";
 import { ChannelDatum } from "src/shared/types/channel/channel-datum";
 import { ConnectionDatum } from "src/shared/types/connection/connection-datum";
@@ -86,28 +86,6 @@ export class PacketService {
    * - no => recv_mint
    */
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
-    console.dir({
-      packet: {
-        sequence: data.packet.sequence,
-        source_port: data.packet.source_port,
-        source_channel: data.packet.source_channel,
-        destination_port: data.packet.destination_port,
-        destination_channel: data.packet.destination_channel,
-        data: Buffer.from(data.packet.data).toString("base64"),
-        timeout_height: {
-          revision_number: data.packet.timeout_height.revision_number,
-          revision_height: data.packet.timeout_height.revision_height,
-        },
-        timeout_timestamp: data.packet.timeout_timestamp.toString(),
-      },
-      proof_commitment: Buffer.from(data.proof_commitment).toString("base64"),
-      proof_height: {
-        revisionHeight: data.proof_height.revision_height,
-        revisionNumber: data.proof_height.revision_number,
-      },
-      signer: data.signer,
-    });
-
     try {
       this.logger.log("RecvPacket is processing");
 

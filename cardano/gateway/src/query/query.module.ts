@@ -14,5 +14,6 @@ import { MithrilModule } from '../shared/modules/mithril/mithril.module';
   imports: [LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [QueryController],
   providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService],
+  exports: [QueryService, DbSyncService, ConnectionService, ChannelService, PacketService],
 })
 export class QueryModule {}

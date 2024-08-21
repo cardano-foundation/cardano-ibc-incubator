@@ -1,4 +1,4 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { UTxO } from '@cuonglv0297/lucid-custom';
 import { ClientDatum } from '../../../shared/types/client-datum';
 import { Misbehaviour } from '../../../shared/types/misbehaviour/misbehaviour';
 import { Header } from '../../../shared/types/header';

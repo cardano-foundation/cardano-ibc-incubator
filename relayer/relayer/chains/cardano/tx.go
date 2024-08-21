@@ -709,14 +709,16 @@ func (cc *CardanoProvider) broadcastTx(
 	endpoint := os.Getenv(constant.OgmiosEndpoint)
 	submit := hex.EncodeToString(tx)
 	var (
-		payload = makePayload("SubmitTx", Map{"submit": submit})
-		res     Response
+		payload = makePayload("submitTransaction", Map{
+			"cbor": submit,
+		})
+		res Response
 	)
 	if err := query(ctx, payload, &res, endpoint); err != nil {
 		return err
 	}
 
-	go cc.waitForTx(asyncCtx, res.Result.SubmitSuccess.TxId, msgs, asyncTimeout, asyncCallbacks)
+	go cc.waitForTx(asyncCtx, res.Result.Transaction.ID, msgs, asyncTimeout, asyncCallbacks)
 
 	return nil
 }
@@ -1194,7 +1196,6 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 		}
 
 		// we had a successful tx broadcast with this sequence, so update it to the next
-		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 		cc.updateNextAccountSequence(sequenceGuard, seq+1)
 	}
 

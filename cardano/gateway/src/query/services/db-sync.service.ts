@@ -1,20 +1,20 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectConnection, InjectEntityManager } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
-import { Connection, EntityManager } from 'typeorm';
-import { UtxoDto } from '../dtos/utxo.dto';
-import { toHexString } from '../../shared/helpers/hex';
-import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connection/connection-datum';
-import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
-import { CLIENT_PREFIX } from '../../constant';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
-import { BlockDto } from '../dtos/block.dto';
-import { EpochParamDto } from '../dtos/epoch-param.dto';
-import { MinimumActiveEpoch } from '../../config/constant.config';
-import { ValidatorDto } from '../dtos/validator.dto';
-import { RedeemerDto } from '../dtos/redeemer';
-import { TxDto } from '../dtos/tx.dto';
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { InjectConnection, InjectEntityManager } from "@nestjs/typeorm";
+import { ConfigService } from "@nestjs/config";
+import { Connection, EntityManager } from "typeorm";
+import { UtxoDto } from "../dtos/utxo.dto";
+import { toHexString } from "../../shared/helpers/hex";
+import { ConnectionDatum, decodeConnectionDatum } from "src/shared/types/connection/connection-datum";
+import { LucidService } from "src/shared/modules/lucid/lucid.service";
+import { ChannelDatum, decodeChannelDatum } from "../../shared/types/channel/channel-datum";
+import { CLIENT_PREFIX } from "../../constant";
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from "nestjs-grpc-exceptions";
+import { BlockDto } from "../dtos/block.dto";
+import { EpochParamDto } from "../dtos/epoch-param.dto";
+import { MinimumActiveEpoch } from "../../config/constant.config";
+import { ValidatorDto } from "../dtos/validator.dto";
+import { RedeemerDto } from "../dtos/redeemer";
+import { TxDto } from "../dtos/tx.dto";
 
 @Injectable()
 export class DbSyncService {
@@ -23,8 +23,7 @@ export class DbSyncService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @InjectEntityManager() private entityManager: EntityManager,
-    @InjectEntityManager('cardano_transaction') private mithrilEntityManager: EntityManager,
-    @InjectConnection('cardano_transaction') private readonly secondConnection: Connection,
+    // @InjectConnection("cardano_transaction") private readonly secondConnection: Connection,
   ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
@@ -104,8 +103,8 @@ export class DbSyncService {
   }
 
   async findUtxoByPolicyAndTokenNameAndState(policyId: string, tokenName: string, state: string): Promise<UtxoDto> {
-    const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+    const mintConnScriptHash = this.configService.get("deployment").validators.mintConnection.scriptHash;
+    const minChannelScriptHash = this.configService.get("deployment").validators.mintChannel.scriptHash;
 
     const query = `
     SELECT 
@@ -182,8 +181,8 @@ export class DbSyncService {
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const handlerAuthToken = this.configService.get("deployment").handlerAuthToken;
+    const mintClientScriptHash = this.configService.get("deployment").validators.mintClient.scriptHash;
     const clientTokenName = this.lucidService
       .generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(0))
       .slice(0, 40);
@@ -243,7 +242,7 @@ export class DbSyncService {
 
   async findBlockByHeight(height: bigint): Promise<BlockDto> {
     const query =
-      'SELECT block_no as height, slot_no as slot, epoch_no as epoch, id, hash, time FROM block WHERE block_no = $1';
+      "SELECT block_no as height, slot_no as slot, epoch_no as epoch, id, hash, time FROM block WHERE block_no = $1";
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
@@ -259,7 +258,7 @@ export class DbSyncService {
     blockDto.epoch = Number(results[0].epoch);
     blockDto.block_id = Number(results[0].id);
     blockDto.hash = toHexString(results[0].hash);
-    blockDto.timestamp = new Date(results[0].time + 'Z').valueOf() / 1000; // seconds
+    blockDto.timestamp = new Date(results[0].time + "Z").valueOf() / 1000; // seconds
 
     return blockDto;
   }
@@ -365,17 +364,17 @@ export class DbSyncService {
     return results.length > 0 ? results[0].block_no : 0;
   }
 
-  async queryListBlockByImmutableFileNo(immutableFileNo: number): Promise<number[]> {
-    const query = 'SELECT DISTINCT block_number as block_no FROM cardano_tx WHERE immutable_file_number=?;';
-    const blocks = await this.secondConnection.query(query, [immutableFileNo]);
+  // async queryListBlockByImmutableFileNo(immutableFileNo: number): Promise<number[]> {
+  //   const query = "SELECT DISTINCT block_number as block_no FROM cardano_tx WHERE immutable_file_number=?;";
+  //   const blocks = await this.secondConnection.query(query, [immutableFileNo]);
 
-    return blocks.map((block) => block.block_no);
-  }
+  //   return blocks.map((block) => block.block_no);
+  // }
 
-  async queryListImmutableFileNoByBlockNos(blockNos: number[]): Promise<number[]> {
-    const query = `SELECT DISTINCT immutable_file_number FROM cardano_tx WHERE block_number IN (${blockNos.map(() => `?`).join(',')});`;
-    const files = await this.secondConnection.query(query, blockNos);
+  // async queryListImmutableFileNoByBlockNos(blockNos: number[]): Promise<number[]> {
+  //   const query = `SELECT DISTINCT immutable_file_number FROM cardano_tx WHERE block_number IN (${blockNos.map(() => `?`).join(",")});`;
+  //   const files = await this.secondConnection.query(query, blockNos);
 
-    return files.map((file) => file.immutable_file_number);
-  }
+  //   return files.map((file) => file.immutable_file_number);
+  // }
 }

@@ -1,5 +1,5 @@
 import { AuthToken } from '../auth-token';
-import { Data } from '@dinhbx/lucid-custom';
+import { Data } from '@cuonglv0297/lucid-custom';
 import { Height } from '../height';
 import { MerkleProof } from '../isc-23/merkle';
 import { CardanoClientState } from '../cardano';
@@ -37,7 +37,7 @@ export type SpendConnectionRedeemer =
     };
 export async function encodeMintConnectionRedeemer(
   mintConnectionRedeemer: MintConnectionRedeemer,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({
@@ -138,7 +138,7 @@ export async function encodeMintConnectionRedeemer(
 }
 export async function encodeSpendConnectionRedeemer(
   spendConnectionRedeemer: SpendConnectionRedeemer,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ) {
   const { Data } = Lucid;
   const HeightSchema = Data.Object({
@@ -235,7 +235,7 @@ export async function encodeSpendConnectionRedeemer(
 
 export function decodeMintConnectionRedeemer(
   mintConnectionRedeemer: string,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ): MintConnectionRedeemer {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({
@@ -337,7 +337,7 @@ export function decodeMintConnectionRedeemer(
 }
 export function decodeSpendConnectionRedeemer(
   spendConnectionRedeemer: string,
-  Lucid: typeof import('@dinhbx/lucid-custom'),
+  Lucid: typeof import('@cuonglv0297/lucid-custom'),
 ): SpendConnectionRedeemer {
   const { Data } = Lucid;
   const HeightSchema = Data.Object({

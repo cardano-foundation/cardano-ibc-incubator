@@ -1,17 +1,17 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { type Lucid, type UTxO, Tx, type SpendingValidator, type MintingPolicy } from "@dinhbx/lucid-custom";
-import { LUCID_CLIENT, LUCID_IMPORTER } from "./lucid.provider";
-import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from "../../../constant";
-import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from "../../types/handler-datum";
-import { GrpcInternalException, GrpcNotFoundException } from "nestjs-grpc-exceptions";
-import { MintClientOperator, encodeMintClientOperator } from "../../types/mint-client-operator";
-import { HandlerOperator, encodeHandlerOperator } from "../../types/handler-operator";
-import { ClientDatum, encodeClientDatum } from "../../types/client-datum";
-import { decodeClientDatum } from "../../types/client-datum";
-import { SpendClientRedeemer, encodeSpendClientRedeemer } from "../../types/client-redeemer";
-import { AuthToken, encodeAuthToken } from "../../types/auth-token";
-import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from "../../types/connection/connection-datum";
+import { Injectable, Inject } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { type Lucid, type UTxO, Tx, type SpendingValidator, type MintingPolicy } from '@cuonglv0297/lucid-custom';
+import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
+import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
+import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
+import { GrpcInternalException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
+import { MintClientOperator, encodeMintClientOperator } from '../../types/mint-client-operator';
+import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-operator';
+import { ClientDatum, encodeClientDatum } from '../../types/client-datum';
+import { decodeClientDatum } from '../../types/client-datum';
+import { SpendClientRedeemer, encodeSpendClientRedeemer } from '../../types/client-redeemer';
+import { AuthToken, encodeAuthToken } from '../../types/auth-token';
+import { ConnectionDatum, decodeConnectionDatum, encodeConnectionDatum } from '../../types/connection/connection-datum';
 import {
   MintConnectionRedeemer,
   SpendConnectionRedeemer,
@@ -78,7 +78,7 @@ type CodecType =
 @Injectable()
 export class LucidService {
   constructor(
-    @Inject(LUCID_IMPORTER) public LucidImporter: typeof import("@dinhbx/lucid-custom"),
+    @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@cuonglv0297/lucid-custom'),
     @Inject(LUCID_CLIENT) public lucid: Lucid,
     private configService: ConfigService,
   ) {}

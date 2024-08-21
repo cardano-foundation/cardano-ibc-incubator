@@ -1,11 +1,11 @@
-import { type Data } from '@dinhbx/lucid-custom';
+import { type Data } from '@cuonglv0297/lucid-custom';
 
 export type Height = {
   revisionNumber: bigint;
   revisionHeight: bigint;
 };
 
-export async function encodeHeight(height: Height, Lucid: typeof import('@dinhbx/lucid-custom')) {
+export async function encodeHeight(height: Height, Lucid: typeof import('@cuonglv0297/lucid-custom')) {
   const { Data } = Lucid;
 
   const HeightSchema = Data.Object({

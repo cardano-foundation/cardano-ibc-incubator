@@ -64,7 +64,8 @@ sed_i_wrapper -i "s/xConwayGenesisHash/${ConwayGenesisHash}/g" "$TARGETDIR/carda
 
 echo "Collecting epoch 0 nonce and pools"
 
-Epoch0Nonce=$(ccli query protocol-state --testnet-magic ${NETWORK_ID} | jq '.epochNonce.contents')
+#Epoch0Nonce=$(ccli query protocol-state --testnet-magic ${NETWORK_ID} | jq '.epochNonce.contents')
+Epoch0Nonce=$(ccli query protocol-state --testnet-magic ${NETWORK_ID} | jq '.epochNonce')
 PoolParams=$(ccli query ledger-state --testnet-magic ${NETWORK_ID} | jq '.stateBefore.esSnapshots.pstakeMark.poolParams')
 
 BASEINFODIR="baseinfo"

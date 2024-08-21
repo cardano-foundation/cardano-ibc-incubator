@@ -41,4 +41,5 @@ COPY --from=builder /app/.env .env
 # Use Dockerize to wait for the Node.js service to be ready before starting the application
 # CMD dockerize -wait tcp://0.0.0.0:26657 -wait tcp://0.0.0.0:4884 -timeout 120s ./scripts/relayer-start.sh
 
-CMD ["sleep", "infinity"]
+# CMD ["sleep", "infinity"]
+ENTRYPOINT ["./scripts/relayer-start.sh"]

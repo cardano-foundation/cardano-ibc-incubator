@@ -1,36 +1,37 @@
 import {
-  MsgCreateClient,
   MsgCreateClientResponse,
+  MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from "@plus/proto-types/build/ibc/core/client/v1/tx";
-import { type Tx, TxComplete, UTxO } from "@dinhbx/lucid-custom";
+} from '@plus/proto-types/build/ibc/core/client/v1/tx';
+import { type Tx, TxComplete, UTxO } from '@cuonglv0297/lucid-custom';
 
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ConsensusState } from "../shared/types/consensus-state";
-import { ClientState } from "../shared/types/client-state-types";
-import { LucidService } from "src/shared/modules/lucid/lucid.service";
-import { GrpcInternalException } from "nestjs-grpc-exceptions";
-import { decodeHeader, initializeHeader } from "../shared/types/header";
-import { RpcException } from "@nestjs/microservices";
-import { HandlerDatum } from "src/shared/types/handler-datum";
-import { ConfigService } from "@nestjs/config";
-import { ClientDatumState } from "src/shared/types/client-datum-state";
-import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME } from "src/constant";
-import { ClientDatum } from "src/shared/types/client-datum";
-import { MintClientOperator } from "src/shared/types/mint-client-operator";
-import { HandlerOperator } from "src/shared/types/handler-operator";
-import { SpendClientRedeemer } from "src/shared/types/client-redeemer";
-import { Height } from "src/shared/types/height";
-import { isExpired } from "@shared/helpers/client-state";
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConsensusState } from '../shared/types/consensus-state';
+import { ClientState } from '../shared/types/client-state-types';
+import { LucidService } from 'src/shared/modules/lucid/lucid.service';
+import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { decodeHeader, initializeHeader } from '../shared/types/header';
+import { RpcException } from '@nestjs/microservices';
+import { HandlerDatum } from 'src/shared/types/handler-datum';
+import { ConfigService } from '@nestjs/config';
+import { ClientDatumState } from 'src/shared/types/client-datum-state';
+import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME } from 'src/constant';
+import { ClientDatum } from 'src/shared/types/client-datum';
+import { MintClientOperator } from 'src/shared/types/mint-client-operator';
+import { HandlerOperator } from 'src/shared/types/handler-operator';
+import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
+import { Height } from 'src/shared/types/height';
+import { isExpired } from '@shared/helpers/client-state';
 import {
   ClientMessage,
   getClientMessageFromTendermint,
   verifyClientMessage,
-} from "../shared/types/msgs/client-message";
-import { checkForMisbehaviour } from "@shared/types/misbehaviour/misbehaviour";
-import { UpdateClientOperatorDto, UpdateOnMisbehaviourOperatorDto } from "./dto/client/update-client-operator.dto";
-import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from "./helper/client.validate";
+} from '../shared/types/msgs/client-message';
+import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
+import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto/client/update-client-operator.dto';
+import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import { toHex } from '@shared/helpers/hex';
 
 @Injectable()
 export class ClientService {
@@ -46,7 +47,7 @@ export class ClientService {
    */
   async createClient(data: MsgCreateClient): Promise<MsgCreateClientResponse> {
     try {
-      this.logger.log("Create client is processing", "createClient");
+      this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
       // Build unsigned create client transaction
       const { unsignedTx: unsignedCreateClientTx, clientId } = await this.buildUnsignedCreateClientTx(
@@ -263,7 +264,7 @@ export class ClientService {
       },
     };
     const currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
-      ([, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
+      ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
     const foundHeaderHeight = currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight);
 

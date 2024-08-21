@@ -1,4 +1,4 @@
-import { UTxO } from '@dinhbx/lucid-custom';
+import { UTxO } from '@cuonglv0297/lucid-custom';
 import { PolicyId } from 'lucid-cardano';
 import { AuthToken } from '../../../../types/auth-token';
 

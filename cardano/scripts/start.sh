@@ -59,7 +59,7 @@ while [ $retry_count -lt $max_retries ]; do
         break
     else
         echo "File '$file_to_find' not found. Retrying..."
-        ${DENO} run -A src/deploy.ts
+        ${DENO} run -A --unstable src/deploy.ts
         retry_count=$((retry_count + 1))
         sleep 5  # You can adjust the sleep duration as needed
     fi

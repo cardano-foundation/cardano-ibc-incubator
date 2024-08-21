@@ -82,7 +82,7 @@ import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
-import { UTxO } from '@dinhbx/lucid-custom';
+import { UTxO } from '@cuonglv0297/lucid-custom';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
@@ -105,6 +105,11 @@ import {
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
 import { convertString2Hex } from '../../shared/helpers/hex';
+import {
+  blockHeight as queryBlockHeight,
+  genesisConfiguration,
+  systemStart as querySystemStart,
+} from '../../shared/helpers/ogmios';
 
 @Injectable()
 export class QueryService {
@@ -218,21 +223,6 @@ export class QueryService {
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
-  async getStateQueryClient(): Promise<StateQueryClient> {
-    const errorHandler: WebSocketErrorHandler = (error: Error) => {
-      this.logger.error(error);
-    };
-
-    const closeHandler: WebSocketCloseHandler = (code, reason) => {};
-
-    const interactionContext: InteractionContext = await createInteractionContext(errorHandler, closeHandler, {
-      connection: connectionConfig,
-      interactionType: 'OneTime',
-    });
-
-    return await createStateQueryClient(interactionContext);
-  }
-
   private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
     // Get handlerUTXO
     const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
@@ -343,7 +333,7 @@ export class QueryService {
 
   async queryBlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const { height } = request;
-    this.logger.log(`immutable_file_number: ${height}`, 'queryBlockResults');
+    this.logger.log(height, 'queryBlockResults');
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
