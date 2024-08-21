@@ -23,6 +23,9 @@ export const routes = [
   },
 ];
 
+export const OSMOSIS_MAINNET_RPC_ENDPOINT = 'https://rpc.osmosis.zone'
+export const OSMOSIS_MAINNET_REST_ENDPOINT = 'https://lcd.osmosis.zone'
+
 export const CARDANO_MAINNET_MAGIC = '764824073';
 export const DEFAULT_PFM_FEE = '0.100000000000000000';
 

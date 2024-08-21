@@ -183,3 +183,27 @@ export async function fetchPacketForwardFee(
     }));
   return BigNumber(data.params.fee_percentage);
 }
+
+export async function getTokenDenomTraceCosmos(
+  restUrl: string,
+  token: string,
+): Promise<{
+  denom_trace: {
+    path: string;
+    base_denom: string;
+  };
+}> {
+  let queryTokenHash = token.replaceAll('ibc/', '');
+  let tokenTraceReturn = {
+    denom_trace: {
+      path: '',
+      base_denom: queryTokenHash,
+    },
+  };
+
+  const fetchUrl = `${restUrl}${queryAllDenomTracesUrl}/${queryTokenHash}`;
+  const data = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => tokenTraceReturn);
+  return data;
+}
