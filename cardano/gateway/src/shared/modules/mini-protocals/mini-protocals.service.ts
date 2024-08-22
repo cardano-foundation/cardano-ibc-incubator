@@ -85,44 +85,49 @@ export class MiniProtocalsService {
       timeout: 1000,
     });
 
-    const mplexer: Multiplexer = new Multiplexer({
-      protocolType: 'node-to-node',
-      connect: () => {
-        // this.logger.log(`Multiplexer connect: destroyed = ${socket.destroyed}`);
-        if (socket.destroyed) {
-          socket.destroy();
-          mplexer.close({
-            closeSocket: true,
-          });
-        }
-        return socket;
-      },
-    });
-    socket.on('close', () => {
-      mplexer.close({
-        closeSocket: true,
+    try {
+      const mplexer: Multiplexer = new Multiplexer({
+        protocolType: 'node-to-node',
+        connect: () => {
+          // this.logger.log(`Multiplexer connect: destroyed = ${socket.destroyed}`);
+          if (socket.destroyed) {
+            socket.destroy();
+            mplexer.close({
+              closeSocket: true,
+            });
+          }
+          return socket;
+        },
       });
-    });
-    socket.on('error', () => {
+      socket.on('close', () => {
+        mplexer.close({
+          closeSocket: true,
+        });
+      });
+      socket.on('error', () => {
+        socket.destroy();
+        mplexer.close({
+          closeSocket: true,
+        });
+      });
+
+      await this._performHandshake(mplexer, this.configService.get('cardanoChainNetworkMagic'));
+      const client: BlockFetchClient = new BlockFetchClient(mplexer);
+      client.on('error', (err) => {
+        this.logger.error('BlockFetchClient error', err);
+        throw err;
+      });
+      const res = await client.request(startPoint);
+
+      client.removeAllListeners(); // This is not in the original code, but it is necessary to avoid memory leaks
+      client.mplexer.close({ closeSocket: true });
+
+      return res;
+    } catch (error) {
+      this.logger.error('Fetch Block Err: ', error);
+    } finally {
       socket.destroy();
-      mplexer.close({
-        closeSocket: true,
-      });
-    });
-
-    await this._performHandshake(mplexer, this.configService.get('cardanoChainNetworkMagic'));
-    const client: BlockFetchClient = new BlockFetchClient(mplexer);
-    client.on('error', (err) => {
-      this.logger.error('BlockFetchClient error', err);
-      throw err;
-    });
-    const res = await client.request(startPoint);
-
-    client.removeAllListeners(); // This is not in the original code, but it is necessary to avoid memory leaks
-    client.mplexer.close({ closeSocket: true });
-    socket.destroy();
-
-    return res;
+    }
   }
 
   async _performHandshake(mplexer: Multiplexer, networkMagic: number) {
