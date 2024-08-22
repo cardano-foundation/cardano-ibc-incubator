@@ -31,26 +31,26 @@ export async function fetchAllDenomTraces(
     .catch(() => {
       toast.error('Failed to fetch denom trace.', { theme: 'colored' });
     });
-  const denomTraces = (firstFetch?.denom_traces || []) as DenomTrace[];
+  const denomTraces = (firstFetch?.denom_traces || []) as any[];
   denomTraces.forEach((tracing) => {
-    const { path, baseDenom } = tracing;
-    const ibcHash = `ibc/${sha256(`${path}/${baseDenom}`).toUpperCase()}`;
+    const { path, base_denom } = tracing;
+    const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
     tmpTrace[`${ibcHash}`] = {
       path,
-      baseDenom,
+      baseDenom: base_denom,
     };
   });
   let nextKey = firstFetch?.pagination?.next_key;
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${fetchUrl}&pagination.key=${nextKey}`;
     const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
-    const denomTracesNext = (nextFetch?.denom_traces || []) as DenomTrace[];
+    const denomTracesNext = (nextFetch?.denom_traces || []) as any[];
     denomTracesNext.forEach((tracing) => {
-      const { path, baseDenom } = tracing;
-      const ibcHash = `ibc/${sha256(`${path}/${baseDenom}`).toUpperCase()}`;
+      const { path, base_denom } = tracing;
+      const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
       tmpTrace[`${ibcHash}`] = {
         path,
-        baseDenom,
+        baseDenom: base_denom,
       };
     });
     nextKey = nextFetch?.pagination?.next_key;
@@ -88,7 +88,10 @@ type maxSrcChannelIdType = {
 export async function fetchAllChannels(
   chainId: string,
   restUrl: string,
-): Promise<RawChannelMapping[]> {
+): Promise<{
+  bestChannel: RawChannelMapping[];
+  channelsMap: any;
+}> {
   const tmpData: RawChannelMapping[] = [];
   const maxSrcChannelId: maxSrcChannelIdType = {};
   const fetchUrl = `${restUrl}${queryAllChannelsUrl}`;
@@ -164,10 +167,29 @@ export async function fetchAllChannels(
       );
     }),
   );
-  return Object.keys(maxSrcChannelId).map((item) => {
+
+  const bestChannel = Object.keys(maxSrcChannelId).map((item) => {
     const { index } = maxSrcChannelId[item];
     return tmpData[index];
   });
+  let channelsMap: {
+    [key: string]: { destChain: string; destChannel: string; destPort: string };
+  } = {};
+  tmpData.forEach((channelPair) => {
+    const { srcChain, srcChannel, srcPort, destChannel, destPort, destChain } =
+      channelPair;
+    channelsMap[`${srcChain}_${srcPort}_${srcChannel}`] = {
+      destChain: destChain || '',
+      destChannel,
+      destPort,
+    };
+    channelsMap[`${destChain}_${destPort}_${destChannel}`] = {
+      destChain: srcChain,
+      destChannel: srcChannel,
+      destPort: srcPort,
+    };
+  });
+  return { bestChannel, channelsMap };
 }
 
 export async function fetchPacketForwardFee(

@@ -6,7 +6,11 @@ import {
   ChainToChainChannels,
   TransferRoutes,
 } from '@/types/IBCParams';
-import { fetchOsmosisDenomTraces } from '@/services/Osmosis';
+import {
+  fetchOsmosisDenomTraces,
+  getEstimateSwapWithPoolId,
+  getOsmosisPools,
+} from '@/services/Osmosis';
 import {
   fetchAllChannels,
   fetchPacketForwardFee,
@@ -14,6 +18,8 @@ import {
 import BigNumber from 'bignumber.js';
 import { DEFAULT_PFM_FEE } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
+import { checkSwap, getTokenDenomTrace } from '@/services/Common';
+import { getPathTrace } from '@/utils/string';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -38,18 +44,6 @@ const IBCParamsContext = createContext<IBCParamsContextType>(
   {} as IBCParamsContextType,
 );
 
-const getPathTrace = (path: string) => {
-  const steps = path.split('/');
-  if (steps.length % 2 !== 0) {
-    return [];
-  }
-  const tmp = [];
-  for (let index = 0; index < steps.length; index += 2) {
-    tmp.push(`${steps[index]}/${steps[index + 1]}`);
-  }
-  return tmp;
-};
-
 export const IBCParamsProvider = ({
   children,
 }: {
@@ -58,6 +52,7 @@ export const IBCParamsProvider = ({
   const [rawChannelMappings, setRawChannelMappings] = useState<
     RawChannelMapping[]
   >([]);
+  const [allChannelMappings, setAllChannelMappings] = useState<any>({});
   const [chainToChainMappings, setChainToChainMappings] =
     useState<ChainToChainChannels>({});
   const [osmosisIBCTokenTraces, setOsmosisIBCTokenTraces] =
@@ -79,9 +74,9 @@ export const IBCParamsProvider = ({
     fetchAllChannels(
       'sidechain',
       process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!,
-    ).then((res: RawChannelMapping[]) => {
-      console.log(res);
-      setRawChannelMappings(res);
+    ).then((res: any) => {
+      setRawChannelMappings(res.bestChannel);
+      setAllChannelMappings(res.channelsMap);
     });
   };
 
@@ -222,6 +217,13 @@ export const IBCParamsProvider = ({
 
   const fetchPFMs = async () => {
     const chains = Object.keys(chainsRestEndpoints);
+    // await getTokenDenomTrace('localosmosis', 'ibc/1CF1A8C0379496090EF4157A25C51A9FEB7A8878EE8984778AE740D19295CB1C').then(console.log);
+    // await getEstimateSwapWithPoolId(
+    //   process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT!,
+    //   { amount: '10', denom: 'ibc/7B9F4A53934CF0F06242E9C8B6D7076A10BFF47A9AA3A540B3FA525013DFF003' },
+    //   'uion',
+    //   '1',
+    // );
     await Promise.all(
       chains.map((chainId) => {
         return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(

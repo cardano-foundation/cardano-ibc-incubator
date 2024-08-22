@@ -1,10 +1,12 @@
-// import { osmosis } from 'osmojs';
-
+// import type { Pool } from 'osmojs';
+import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { IBCDenomTrace } from '@/types/IBCParams';
 import { fetchAllDenomTraces } from './CommonCosmosServices';
 import {
   OSMOSIS_MAINNET_REST_ENDPOINT,
-  // OSMOSIS_MAINNET_RPC_ENDPOINT,
+  OSMOSIS_MAINNET_SQS_ENDPOINT,
+  osmosisEstimateSwapWithPoolId,
+  sqsQueryPoolsUrl,
 } from '@/constants';
 
 export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
@@ -14,43 +16,123 @@ export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
   return fetchAllDenomTraces(restUrl);
 }
 
-// export async function getOsmosisPools() {
-//   const rpcUrl =
-//     // process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT ||
-//     OSMOSIS_MAINNET_RPC_ENDPOINT;
-//   const { createRPCQueryClient } = osmosis.ClientFactory;
-//   const client = await createRPCQueryClient({ rpcEndpoint: rpcUrl });
+function isValidTokenInPool(tokenString: string) {
+  if (tokenString.startsWith('ibc/')) return true;
+  return !tokenString.includes('/');
+}
 
-//   const gamm = await client.osmosis.gamm.v1beta1.pools({
-//     pagination: {
-//       limit: BigInt(100000),
-//       offset: BigInt(0),
-//       countTotal: false,
-//       reverse: false,
-//       key: Uint8Array.from([]),
-//     },
-//   });
-//   console.log(`gamm:`, gamm.pools);
+export async function getOsmosisPools() {
+  const restUrl =
+    process.env.NEXT_PUBLIC_SQS_REST_ENDPOINT || OSMOSIS_MAINNET_SQS_ENDPOINT;
+  const fetchUrl = `${restUrl}${sqsQueryPoolsUrl}`;
+  const rawPoolsData = await fetch(fetchUrl).then((res) => res.json());
+  const loppedPools = rawPoolsData.reduce((acc: any, pool: any) => {
+    const { chain_model, balances, liquidity_cap } = pool;
+    if (liquidity_cap === '0') return acc;
+    let tmpPool: any = {};
+    const { pool_assets, pool_liquidity, id, pool_id } = chain_model;
+    const { address, contract_address } = chain_model;
 
-//   const concentratedliquidity = await client.osmosis.concentratedliquidity.v1beta1.pools({
-//     pagination: {
-//       limit: BigInt(100000),
-//       offset: BigInt(0),
-//       countTotal: false,
-//       reverse: false,
-//       key: Uint8Array.from([]),
-//     },
-//   });
-//   console.log(`concentratedliquidity:`, concentratedliquidity.pools);
+    if (typeof pool_assets !== 'undefined') {
+      const [token0, token1] = pool_assets;
+      if (
+        token0?.token?.amount &&
+        token0?.token?.amount !== '0' &&
+        token1?.token?.amount &&
+        token1?.token?.amount !== '0'
+      ) {
+        tmpPool = {
+          token0: token0?.token?.denom,
+          token1: token1?.token?.denom,
+          address,
+          id,
+        };
+      }
+    } else if (typeof pool_liquidity !== 'undefined') {
+      const [token0, token1] = pool_liquidity;
+      if (
+        token0?.amount &&
+        token0?.amount !== '0' &&
+        token1?.amount &&
+        token1?.amount !== '0'
+      ) {
+        tmpPool = {
+          token0: token0?.denom,
+          token1: token1?.denom,
+          address,
+          id: id || pool_id,
+        };
+      }
+    } else {
+      const [token0, token1] = balances;
+      if (
+        token0?.amount &&
+        token0?.amount !== '0' &&
+        token1?.amount &&
+        token1?.amount !== '0'
+      ) {
+        const { token0: chainModelToken0, token1: chainModelToken1 } =
+          chain_model;
+        const token0Denom = token0?.denom || chainModelToken0;
+        const token1Denom = token1?.denom || chainModelToken1;
+        if (
+          typeof token0Denom !== 'undefined' &&
+          typeof token1Denom !== 'undefined'
+        ) {
+          tmpPool = {
+            token0: token0Denom,
+            token1: token1Denom,
+            address: address || contract_address,
+            id: id || pool_id,
+          };
+        }
+      }
+    }
+    if (tmpPool?.token0 === undefined || tmpPool?.token1 === undefined) {
+      return acc;
+    }
+    if (
+      isValidTokenInPool(tmpPool?.token0) &&
+      isValidTokenInPool(tmpPool?.token1)
+    ) {
+      acc.push(tmpPool);
+    }
+    return acc;
+  }, []);
 
-//   const cosmwasmpool = await client.osmosis.cosmwasmpool.v1beta1.pools({
-//     pagination: {
-//       limit: BigInt(100000),
-//       offset: BigInt(0),
-//       countTotal: false,
-//       reverse: false,
-//       key: Uint8Array.from([]),
-//     },
-//   });
-//   console.log(`cosmwasmpool:`, cosmwasmpool.pools);
-// }
+  return loppedPools;
+}
+
+export async function getEstimateSwapWithPoolId(
+  restUrl: string,
+  tokenIn: Coin,
+  tokenOut: string,
+  poolId: string,
+  useSqs: boolean = false,
+) {
+  // call poolManager
+  // https://lcd.osmosis.zone/osmosis/poolmanager/v1beta1/1/estimate/swap_exact_amount_in_with_primitive_types
+  // ?token_in=588453650ibc/442A08C33AE9875DF90792FFA73B5728E1CAECE87AB4F26AE9B422F1E682ED23
+  // &routes_token_out_denom=uosmo
+  // &routes_pool_id=1380
+  const fetchUrl = `${restUrl}${osmosisEstimateSwapWithPoolId}?token_in=${
+    tokenIn.amount
+  }${encodeURIComponent(
+    tokenIn.denom,
+  )}&routes_token_out_denom=${tokenOut}&routes_pool_id=${poolId}`;
+  let tokenData = {};
+  try {
+    const tokenDataFetch = await fetch(fetchUrl).then((res) => res.json());
+    tokenData = {
+      message: tokenDataFetch?.message || '',
+      tokenOutAmount: tokenDataFetch?.token_out_amount || '0',
+    };
+  } catch (e: any) {
+    tokenData = {
+      message: e?.message || '',
+      tokenOutAmount: '0',
+    };
+  }
+
+  console.log(tokenData);
+}
