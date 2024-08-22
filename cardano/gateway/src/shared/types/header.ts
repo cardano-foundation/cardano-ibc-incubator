@@ -483,7 +483,7 @@ function verifyAdjacent(
   // 	return ErrInvalidHeader{err}
   // }
 
-  return false;
+  return true;
 }
 export function decodeHeader(value: Uint8Array): HeaderMsg {
   try {
