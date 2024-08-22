@@ -14,13 +14,14 @@ import {
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import SwitchIcon from '@/assets/icons/transfer.svg';
+import { FaArrowRight } from 'react-icons/fa';
 import { SwapTokenType } from '@/types/SwapDataType';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwapContext from '@/contexts/SwapContext';
+import { FROM_TO } from '@/constants';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
-import { FROM_TO } from '@/constants';
 
 type SelectNetworkModalProps = {
   isOpen: boolean;
@@ -126,7 +127,11 @@ const SelectNetworkModal = ({
           >
             <NetworkTokenBox
               onChooseToken={setTokenFromSelected}
-              networkList={networkList}
+              networkList={networkList.filter(
+                (network) =>
+                  network.networkId ===
+                  process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID,
+              )}
               selectedToken={tokenFromSelected}
               disabledToken={tokenToSelected}
               disabledNetwork={disabledNetwork}
@@ -135,13 +140,14 @@ const SelectNetworkModal = ({
               }
             />
             <StyledSwitchNetwork
-              _hover={{
-                bgColor: enableSwitch && COLOR.neutral_4,
-                cursor: enableSwitch ? 'pointer' : 'default',
-              }}
-              onClick={enableSwitch ? handleChangePositionToken : () => {}}
+            // _hover={{
+            //   bgColor: enableSwitch && COLOR.neutral_4,
+            //   cursor: enableSwitch ? 'pointer' : 'default',
+            // }}
+            // onClick={enableSwitch ? handleChangePositionToken : () => {}}
             >
-              <Image src={SwitchIcon.src} alt="" />
+              {/* <Image src={SwitchIcon.src} alt="" /> */}
+              <FaArrowRight color={COLOR.neutral_1} />
             </StyledSwitchNetwork>
             <NetworkTokenBox
               fromOrTo="To"
@@ -184,6 +190,7 @@ const SelectNetworkModal = ({
             bg={COLOR.primary}
             shadow="2px 2px 3px 0px #FCFCFC66 inset"
             color={COLOR.neutral_1}
+            isDisabled={!enableSwitch}
             fontSize={16}
             fontWeight={700}
             lineHeight="22px"

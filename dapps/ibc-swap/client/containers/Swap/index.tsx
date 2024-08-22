@@ -10,6 +10,7 @@ import {
 } from '@chakra-ui/react';
 
 import SwitchIcon from '@/assets/icons/transfer.svg';
+import { FaArrowDown } from 'react-icons/fa6';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
 import InfoIcon from '@/assets/icons/info.svg';
@@ -195,13 +196,14 @@ const SwapContainer = () => {
           }
         />
         <StyledSwitchNetwork
-          _hover={{
-            bgColor: enableSwitch && COLOR.neutral_4,
-            cursor: enableSwitch ? 'pointer' : 'default',
-          }}
-          onClick={enableSwitch ? handleChangePositionToken : () => {}}
+        // _hover={{
+        //   bgColor: enableSwitch && COLOR.neutral_4,
+        //   cursor: enableSwitch ? 'pointer' : 'default',
+        // }}
+        // onClick={enableSwitch ? handleChangePositionToken : () => {}}
         >
-          <Image src={SwitchIcon.src} alt="" />
+          {/* <Image src={SwitchIcon.src} alt="" /> */}
+          <FaArrowDown color={COLOR.neutral_1} />
         </StyledSwitchNetwork>
         <TokenBox
           fromOrTo="To"

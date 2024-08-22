@@ -32,6 +32,7 @@ import { useAddress, useWallet } from '@meshsdk/react';
 import { formatPrice } from '@/utils/string';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
+import BigNumber from 'bignumber.js';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -44,7 +45,6 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
-import BigNumber from 'bignumber.js';
 
 type EstimateFeeType = {
   display: boolean;
