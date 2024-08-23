@@ -22,6 +22,7 @@ import BigNumber from 'bignumber.js';
 import { formatNumberInput } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
+import { verifyAddress } from '@/utils/address';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
@@ -40,6 +41,7 @@ const SwapContainer = () => {
   const [rate, setRate] = useState<string>('0');
   const [enableSwap, setEnableSwap] = useState<boolean>(false);
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
+  const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -55,6 +57,21 @@ const SwapContainer = () => {
   };
 
   const handleChangeReceiveAdrress = (value: string) => {
+    if (isCheckedAnotherWallet) {
+      const isValidAddress = verifyAddress(
+        value,
+        process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID,
+      );
+      if (!value) {
+        setErrorAddressMsg('Address is required');
+      } else if (!isValidAddress) {
+        setErrorAddressMsg('Invalid address');
+      } else {
+        setErrorAddressMsg('');
+      }
+    } else {
+      setErrorAddressMsg('');
+    }
     setSwapData({
       ...swapData,
       receiveAdrress: value,
@@ -115,6 +132,7 @@ const SwapContainer = () => {
   const handleSwap = async () => {
     console.log(swapData);
     setIsSubmitSwap(true);
+    setIsCheckAnotherWallet(false);
   };
 
   useEffect(() => {
@@ -153,7 +171,7 @@ const SwapContainer = () => {
     ) {
       if (!isCheckedAnotherWallet) {
         setEnableSwap(true);
-      } else if (swapData?.receiveAdrress) {
+      } else if (swapData?.receiveAdrress && !errorAddressMsg) {
         // if isValidAddress
         setEnableSwap(true);
       } else {
@@ -217,7 +235,11 @@ const SwapContainer = () => {
         <Box display="flex" alignItems="center" mt={4} gap={2}>
           <Checkbox
             isChecked={isCheckedAnotherWallet}
-            onChange={(e) => setIsCheckAnotherWallet(e.target.checked)}
+            onChange={(e) => {
+              setIsCheckAnotherWallet(e.target.checked);
+              const errMsg = e.target.checked ? 'Address is requred' : '';
+              setErrorAddressMsg(errMsg);
+            }}
             size="md"
           >
             Receive to another wallet
@@ -236,6 +258,7 @@ const SwapContainer = () => {
             title="Destination address"
             placeholder="Enter destination address here..."
             onChange={handleChangeReceiveAdrress}
+            errorMsg={errorAddressMsg}
           />
         )}
 
