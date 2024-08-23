@@ -1,7 +1,11 @@
 import { CARDANO_LOVELACE_HEX_STRING, OSMOSIS_CHAIN_ID } from '@/constants';
 import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
-import { fetchOsmosisDenomTraces, getOsmosisPools } from './Osmosis';
+import {
+  fetchCrossChainSwapRouterState,
+  fetchOsmosisDenomTraces,
+  getOsmosisPools,
+} from './Osmosis';
 import { getPathTrace } from '@/utils/string';
 
 export async function getTokenDenomTrace(chainId: string, tokenString: string) {
@@ -43,7 +47,7 @@ export async function getTokenDenomTrace(chainId: string, tokenString: string) {
   return trace;
 }
 
-const swapChain = OSMOSIS_CHAIN_ID;
+export const swapChain = OSMOSIS_CHAIN_ID;
 
 function traceBackRoutesFrom(
   chainId: string,
@@ -361,4 +365,85 @@ export async function checkSwap(allChannelMappings: any) {
     [],
   );
   return advancedFilter;
+}
+
+export async function findRouteAndPools(allChannelMappings: any) {
+  const curRan = Math.random()
+  console.time(curRan.toString())
+  const token0ChainId = '42';
+  const token0String = 'lovelace';
+  const token1ChainId = 'localosmosis';
+  const token1String = 'uion';
+  const [routeMap, osmosisDenomTraces, token0Trace, token1Trace] =
+    await Promise.all([
+      fetchCrossChainSwapRouterState(),
+      fetchOsmosisDenomTraces(),
+      getTokenDenomTrace(token0ChainId, token0String),
+      getTokenDenomTrace(token1ChainId, token1String),
+    ]);
+
+  // quick filter, just mapping with base_denom
+  const preFilterPools = routeMap.reduce((acc: any, pool: any) => {
+    const { inToken: token0, outToken: token1 } = pool;
+    const token0PoolTrace = token0.startsWith('ibc/')
+      ? {
+          path: osmosisDenomTraces[token0].path,
+          base_denom: osmosisDenomTraces[token0].baseDenom,
+        }
+      : {
+          path: '',
+          base_denom: token0 as string,
+        };
+    const token1PoolTrace = token1.startsWith('ibc/')
+      ? {
+          path: osmosisDenomTraces[token1].path,
+          base_denom: osmosisDenomTraces[token1].baseDenom,
+        }
+      : {
+          path: '',
+          base_denom: token1 as string,
+        };
+    if (!token0PoolTrace?.base_denom || !token1PoolTrace?.base_denom)
+      return acc;
+    if (
+      token0PoolTrace?.base_denom === token0Trace?.base_denom &&
+      token1PoolTrace?.base_denom === token1Trace?.base_denom
+    ) {
+      acc.push({ ...pool, token0PoolTrace, token1PoolTrace });
+      return acc;
+    } else return acc;
+  }, []);
+  const advancedFilter = (preFilterPools || []).reduce(
+    (acc: any, pool: any) => {
+      const { token0PoolTrace, token1PoolTrace } = pool;
+      const token0PoolTraceWToken0 = tryMatchToken(
+        token0ChainId,
+        token0Trace,
+        token0PoolTrace,
+        allChannelMappings,
+      );
+
+      const token1PoolTraceWToken1 = tryMatchToken(
+        token1ChainId,
+        token1Trace,
+        token1PoolTrace,
+        allChannelMappings,
+      );
+      if (token0PoolTraceWToken0.match && token1PoolTraceWToken1.match) {
+        // ok
+        acc.push({
+          ...pool,
+          in: token0PoolTraceWToken0,
+          out: token1PoolTraceWToken1,
+        });
+      }
+      return acc;
+    },
+    [],
+  );
+  // filter can reach
+  // query amount out
+  // sort 
+  console.log(advancedFilter)
+  console.timeEnd(curRan.toString())
 }

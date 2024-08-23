@@ -24,7 +24,7 @@ import { toast } from 'react-toastify';
 export async function fetchAllDenomTraces(
   restUrl: string,
 ): Promise<IBCDenomTrace> {
-  const fetchUrl = `${restUrl}/${queryAllDenomTracesUrl}?pagination.limit=10000`;
+  const fetchUrl = `${restUrl}${queryAllDenomTracesUrl}?pagination.limit=10000`;
   const tmpTrace: IBCDenomTrace = {};
   const firstFetch = await fetch(fetchUrl)
     .then((res) => res.json())

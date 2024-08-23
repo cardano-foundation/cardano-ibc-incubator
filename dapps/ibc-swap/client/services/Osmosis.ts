@@ -6,14 +6,54 @@ import {
   OSMOSIS_MAINNET_REST_ENDPOINT,
   OSMOSIS_MAINNET_SQS_ENDPOINT,
   osmosisEstimateSwapWithPoolId,
+  querySwapRouterState,
   sqsQueryPoolsUrl,
 } from '@/constants';
+
+const routeTableStrPrefix = '\x00\rrouting_table\x00D';
 
 export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
   const restUrl =
     process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
     OSMOSIS_MAINNET_REST_ENDPOINT;
   return fetchAllDenomTraces(restUrl);
+}
+
+function hex2a(hexx: string): string {
+  var hex = hexx.toString(); //force conversion
+  var str = '';
+  for (var i = 0; i < hex.length; i += 2)
+    str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+  return str;
+}
+
+export async function fetchCrossChainSwapRouterState() {
+  const restUrl =
+    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
+    OSMOSIS_MAINNET_REST_ENDPOINT;
+  const fetchUrl = `${restUrl}${querySwapRouterState.replace(
+    'SWAP_ROUTER_ADDRESS',
+    process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS!,
+  )}`;
+  const data = await fetch(fetchUrl).then((res) => res.json());
+  const rawRoutes = data.models;
+  const routes = rawRoutes.reduce((acc: any, cur: any) => {
+    const { key, value } = cur;
+    let keyStr = hex2a(key);
+    if (keyStr.startsWith(routeTableStrPrefix)) {
+      keyStr = keyStr.replace(routeTableStrPrefix, '');
+      const valueData = JSON.parse(
+        Buffer.from(value, 'base64').toString('ascii'),
+      );
+      const lastPool = valueData[valueData.length - 1];
+      const outToken = lastPool.token_out_denom;
+      const inToken = keyStr.replace(outToken, '');
+      if (isValidTokenInPool(inToken) && isValidTokenInPool(outToken))
+        acc.push({ route: valueData, inToken, outToken });
+    }
+    return acc;
+  }, []);
+  return routes;
 }
 
 function isValidTokenInPool(tokenString: string) {

@@ -18,8 +18,9 @@ import {
 import BigNumber from 'bignumber.js';
 import { DEFAULT_PFM_FEE } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
-import { checkSwap, getTokenDenomTrace } from '@/services/Common';
+import { checkSwap, findRouteAndPools, getTokenDenomTrace, swapChain } from '@/services/Common';
 import { getPathTrace } from '@/utils/string';
+import { sha256 } from 'js-sha256';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -77,6 +78,32 @@ export const IBCParamsProvider = ({
     ).then((res: any) => {
       setRawChannelMappings(res.bestChannel);
       setAllChannelMappings(res.channelsMap);
+      findRouteAndPools(res.channelsMap)
+      // checkSwap(res.channelsMap).then((res) => {
+      //   const amountSwap = '10000';
+      //   res.map(async (route: any) => {
+      //     const { in: inToken, out: outToken, id } = route;
+      //     const tokenInDenom =
+      //       inToken.toToken.path === ''
+      //         ? inToken.toToken.base_denom
+      //         : `ibc/${sha256(
+      //             `${inToken.toToken.path}/${inToken.toToken.base_denom}`,
+      //           ).toUpperCase()}`;
+      //     const tokenOutDenom =
+      //       outToken.toToken.path === ''
+      //         ? outToken.toToken.base_denom
+      //         : `ibc/${sha256(
+      //             `${outToken.toToken.path}/${outToken.toToken.base_denom}`,
+      //           ).toUpperCase()}`;
+      //     await getEstimateSwapWithPoolId(
+      //       chainsRestEndpoints[swapChain],
+      //       { amount: amountSwap, denom: tokenInDenom },
+      //       tokenOutDenom,
+      //       id,
+      //     );
+      //   });
+      //   // console.log(res);
+      // });
     });
   };
 

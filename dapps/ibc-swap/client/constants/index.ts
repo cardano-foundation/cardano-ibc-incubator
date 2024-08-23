@@ -40,6 +40,7 @@ export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
+export const querySwapRouterState = '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000'
 
 // osmosis query
 export const sqsQueryPoolsUrl = '/pools';
