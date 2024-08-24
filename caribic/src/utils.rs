@@ -1,10 +1,18 @@
+use crate::logger::{
+    self,
+    Verbosity::{Info, Verbose},
+};
 use console::style;
-use indicatif::ProgressBar;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
+use std::io::BufRead;
 use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
@@ -65,6 +73,75 @@ pub async fn download_file(
 
 pub fn delete_file(file_path: &Path) -> io::Result<()> {
     fs::remove_file(file_path)
+}
+
+pub fn execute_script_with_progress(
+    script_dir: &Path,
+    script_name: &str,
+    script_args: Vec<&str>,
+    start_message: &str,
+    success_message: &str,
+    error_message: &str,
+) {
+    let progress_bar = ProgressBar::new_spinner();
+    progress_bar.enable_steady_tick(Duration::from_millis(100));
+    progress_bar.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["-", "\\", "|", "/"])
+            .template(
+                format!("{} {}\n{}", "{spinner:.green}", start_message, "{wide_msg}").as_str(),
+            )
+            .unwrap(),
+    );
+
+    let mut command = Command::new(script_name)
+        .current_dir(script_dir)
+        .args(script_args)
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to initialize localnet");
+
+    match logger::get_verbosity() {
+        Verbose => {
+            let stdout = command.stdout.as_mut().expect("Failed to open stdout");
+            let reader = BufReader::new(stdout);
+
+            for line in reader.lines() {
+                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                progress_bar.set_message(format!("{}", line));
+            }
+        }
+        Info => {
+            let mut last_lines = VecDeque::with_capacity(5);
+
+            if let Some(stdout) = command.stdout.take() {
+                let reader = BufReader::new(stdout);
+
+                for line in reader.lines() {
+                    let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                    if last_lines.len() == 5 {
+                        last_lines.pop_front();
+                    }
+                    last_lines.push_back(line);
+                    let output = last_lines
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .join("\n");
+
+                    progress_bar.set_message(format!("{}", output));
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let status = command.wait().expect("Command wasn't running");
+    if status.success() {
+        progress_bar.finish_with_message(success_message.to_owned());
+    } else {
+        progress_bar.finish_with_message(error_message.to_owned());
+    }
 }
 
 pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {

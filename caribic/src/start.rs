@@ -1,13 +1,46 @@
 use crate::check::check_osmosisd;
+use crate::utils::execute_script_with_progress;
 use dirs::home_dir;
 use fs_extra::{copy_items, remove_items};
-use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::VecDeque;
 use std::fs::copy;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::process::Command;
+
+pub fn start_local_cardano_network(project_root_path: &Path) {
+    /*execute_script_with_progress(
+        cardano_dir.join("scripts/").as_path(),
+        "sh",
+        Vec::from(["start.sh"]),
+        "Initialize local Cardano network",
+        "✅ Local Cardano network initialized",
+        "❌ Failed to initialize localnet",
+    );*/
+    start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
+}
+
+pub fn start_local_cardano_services(cardano_dir: &Path) {
+    Command::new("docker")
+        .current_dir(cardano_dir)
+        .arg("compose")
+        .arg("stop")
+        .arg("cardano-node")
+        .arg("postgres")
+        .arg("kupo")
+        .arg("cardano-node-ogmios")
+        .status()
+        .expect("Failed to stop local Cardano services");
+    Command::new("docker")
+        .current_dir(cardano_dir)
+        .arg("compose")
+        .arg("up")
+        .arg("-d")
+        .arg("cardano-node")
+        .arg("postgres")
+        .arg("kupo")
+        .arg("cardano-node-ogmios")
+        .status()
+        .expect("Failed to start local Cardano services");
+}
 
 pub async fn start_osmosis(osmosis_dir: &Path) {
     check_osmosisd(osmosis_dir).await;
@@ -41,50 +74,14 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
 }
 
 fn init_local_network(osmosis_dir: &Path) {
-    let progress_bar = ProgressBar::new_spinner();
-    progress_bar.enable_steady_tick(Duration::from_millis(100));
-    progress_bar.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["-", "\\", "|", "/"])
-            .template("{spinner:.green} Initialize local Osmosis network\n{wide_msg}")
-            .unwrap(),
+    execute_script_with_progress(
+        osmosis_dir,
+        "make",
+        Vec::from(["localnet-init"]),
+        "Initialize local Osmosis network",
+        "✅ Local Osmosis network initialized",
+        "❌ Failed to initialize localnet",
     );
-
-    let mut command = Command::new("make")
-        .current_dir(osmosis_dir)
-        .arg("localnet-init")
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to initialize localnet");
-
-    let mut last_lines = VecDeque::with_capacity(5);
-
-    if let Some(stdout) = command.stdout.take() {
-        let reader = BufReader::new(stdout);
-
-        for line in reader.lines() {
-            let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-            if last_lines.len() == 5 {
-                last_lines.pop_front();
-            }
-            last_lines.push_back(line);
-            let output = last_lines
-                .iter()
-                .cloned()
-                .collect::<Vec<String>>()
-                .join("\n");
-
-            progress_bar.set_message(format!("{}", output));
-        }
-    }
-
-    let status = command.wait().expect("Command wasn't running");
-    progress_bar.finish_with_message("✅ Local Osmosis network initialized");
-
-    if !status.success() {
-        eprintln!("❌ Failed to initialize localnet");
-        std::process::exit(1);
-    }
 }
 
 fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {
