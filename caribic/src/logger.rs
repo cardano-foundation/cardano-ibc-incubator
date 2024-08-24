@@ -59,7 +59,9 @@ fn parse_verbosity(verbosity: usize) -> Verbosity {
     match verbosity {
         0 => Verbosity::Quite,
         1 => Verbosity::Standard,
-        2 => Verbosity::Info,
+        2 => Verbosity::Warning,
+        3 => Verbosity::Error,
+        4 => Verbosity::Info,
         _ => Verbosity::Verbose,
     }
 }

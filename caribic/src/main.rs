@@ -5,6 +5,7 @@ use clap::Parser;
 use clap::Subcommand;
 use start::{start_local_cardano_network, start_osmosis};
 mod check;
+mod config;
 mod logger;
 mod setup;
 mod start;
@@ -14,11 +15,14 @@ mod utils;
 #[command(author, version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Args {
+    /// Subcommand to execute
     #[command(subcommand)]
     command: Commands,
+    /// Verbosity level (0 = quite, 1 = standard, 2 = warning, 3 = error, 4 = info, 5 = verbose)
     #[arg(long, default_value_t = 1)]
     verbose: usize,
-    #[arg(short, long, default_value = "caribic-config.json")]
+    /// Configuration file name. It should be in the root directory of the project
+    #[arg(short, long, default_value = "caribic.config.json")]
     config: String,
 }
 
@@ -28,10 +32,6 @@ enum Commands {
     Check,
     /// Creates a local development environment including all necessary components for a IBC connection between Cardano and Osmosis
     Start {
-        /// Indicates if Osmosis should run locally
-        #[arg(long)]
-        local_osmosis: bool,
-
         /// Directory of the cardano-ibc-incubator project
         #[arg(long)]
         project_root: Option<String>,
@@ -50,10 +50,7 @@ async fn main() {
 
     match args.command {
         Commands::Check => check::check_prerequisites().await,
-        Commands::Start {
-            local_osmosis,
-            project_root,
-        } => {
+        Commands::Start { project_root } => {
             let mut project_root_dir = match project_root {
                 Some(dir) => dir,
                 None => ".".to_string(),
@@ -71,8 +68,19 @@ async fn main() {
                     .to_string();
             }
 
-            if local_osmosis {
-                let project_root_path = Path::new(project_root_dir.as_str());
+            let project_root_path = Path::new(project_root_dir.as_str());
+            config::init(
+                project_root_path
+                    .join(args.config)
+                    .to_str()
+                    .unwrap_or_else(|| {
+                        logger::error("Failed to get configuration file path");
+                        panic!("Failed to get configuration file path");
+                    }),
+            );
+            let configuration = config::get_config();
+
+            if configuration.local_osmosis {
                 match check_project_root(project_root_path) {
                     Ok(_) => {
                         let osmosis_dir = utils::get_osmosis_dir(project_root_path);
