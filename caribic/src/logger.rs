@@ -99,3 +99,7 @@ pub fn verbose(message: &str) {
 pub fn get_verbosity() -> Verbosity {
     LOGGER.lock().unwrap().verbosity.clone()
 }
+
+pub fn is_quite() -> bool {
+    get_verbosity() == Verbosity::Quite
+}

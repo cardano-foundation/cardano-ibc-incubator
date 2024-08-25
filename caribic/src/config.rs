@@ -17,6 +17,8 @@ pub struct Services {
     pub db_sync: bool,
     pub kupo: bool,
     pub ogmios: bool,
+    pub cardano_node: bool,
+    pub postgres: bool,
 }
 
 impl Config {
@@ -25,6 +27,8 @@ impl Config {
             use_mithril: false,
             local_osmosis: true,
             services: Services {
+                cardano_node: true,
+                postgres: true,
                 db_sync: true,
                 kupo: true,
                 ogmios: true,
@@ -60,6 +64,6 @@ pub fn init(config_path: &str) {
     *config = Config::load_from_file(config_path);
 }
 
-pub fn get_config() -> std::sync::MutexGuard<'static, Config> {
-    CONFIG.lock().unwrap()
+pub fn get_config() -> Config {
+    CONFIG.lock().unwrap().clone()
 }

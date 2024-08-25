@@ -1,5 +1,11 @@
 use crate::check::check_osmosisd;
-use crate::utils::execute_script_with_progress;
+use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file};
+use crate::utils::{execute_script, execute_script_with_progress};
+use crate::{
+    config,
+    logger::{self, error, log},
+};
+use console::style;
 use dirs::home_dir;
 use fs_extra::{copy_items, remove_items};
 use std::fs::copy;
@@ -15,38 +21,72 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
         "✅ Local Cardano network initialized",
         "❌ Failed to initialize localnet",
     );*/
+    log(&format!(
+        "{} 🛠️ Configuring local Cardano devnet",
+        style("Step 1/5").bold().dim(),
+    ));
+    configure_local_cardano_devnet(project_root_path.join("chains/cardano").as_path());
+    log(&format!(
+        "{} 📝 Copying Cardano environment file",
+        style("Step 2/5").bold().dim(),
+    ));
+    copy_cardano_env_file(project_root_path.join("cardano").as_path());
+    log(&format!(
+        "{} 🛠️ Building Aiken validators",
+        style("Step 3/5").bold().dim()
+    ));
+    let _ = execute_script(
+        project_root_path.join("cardano").as_path(),
+        "aiken",
+        Vec::from(["build", "--trace-level", "verbose"]),
+    );
+    log(&format!(
+        "{} 🤖 Generating validator off-chain types",
+        style("Step 4/5").bold().dim(),
+    ));
+    let _ = execute_script(
+        project_root_path.join("cardano").as_path(),
+        "deno",
+        Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
+    );
+    log(&format!(
+        "{} 🚀 Starting Cardano services",
+        style("Step 5/5").bold().dim(),
+    ));
     start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
 }
 
 pub fn start_local_cardano_services(cardano_dir: &Path) {
-    Command::new("docker")
-        .current_dir(cardano_dir)
-        .arg("compose")
-        .arg("stop")
-        .arg("cardano-node")
-        .arg("postgres")
-        .arg("kupo")
-        .arg("cardano-node-ogmios")
-        .status()
-        .expect("Failed to stop local Cardano services");
-    Command::new("docker")
-        .current_dir(cardano_dir)
-        .arg("compose")
-        .arg("up")
-        .arg("-d")
-        .arg("cardano-node")
-        .arg("postgres")
-        .arg("kupo")
-        .arg("cardano-node-ogmios")
-        .status()
-        .expect("Failed to start local Cardano services");
+    let configuration = config::get_config();
+
+    let mut services = vec![];
+    if configuration.services.cardano_node {
+        services.push("cardano-node");
+    }
+    if configuration.services.postgres {
+        services.push("postgres");
+    }
+    if configuration.services.kupo {
+        services.push("kupo");
+    }
+    if configuration.services.ogmios {
+        services.push("cardano-node-ogmios");
+    }
+
+    let mut script_stop_args = vec!["compose", "stop"];
+    script_stop_args.append(&mut services.clone());
+    let _ = execute_script(cardano_dir, "docker", script_stop_args);
+
+    let mut script_start_args = vec!["compose", "up", "-d"];
+    script_start_args.append(&mut services);
+    let _ = execute_script(cardano_dir, "docker", script_start_args);
 }
 
 pub async fn start_osmosis(osmosis_dir: &Path) {
     check_osmosisd(osmosis_dir).await;
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
-            println!("✅ Osmosis configuration files copied successfully");
+            log("✅ Osmosis configuration files copied successfully");
             remove_previous_chain_data()
                 .expect("Failed to remove previous chain data from ~/.osmosisd-local");
             init_local_network(osmosis_dir);
@@ -57,31 +97,38 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
             match status {
                 Ok(status) => {
                     if status.success() {
-                        println!("✅ Osmosis started successfully");
+                        log("✅ Osmosis started successfully");
                     } else {
-                        println!("❌ Failed to start Osmosis");
+                        error(&format!("❌ Failed to start Osmosis"));
                     }
                 }
                 Err(e) => {
-                    println!("❌ Failed to start Osmosis: {}", e);
+                    error(&format!("❌ Failed to start Osmosis: {}", e));
                 }
             }
         }
         Err(e) => {
-            println!("❌ Failed to copy Osmosis configuration files: {}", e);
+            error(&format!(
+                "❌ Failed to copy Osmosis configuration files: {}",
+                e
+            ));
         }
     }
 }
 
 fn init_local_network(osmosis_dir: &Path) {
-    execute_script_with_progress(
-        osmosis_dir,
-        "make",
-        Vec::from(["localnet-init"]),
-        "Initialize local Osmosis network",
-        "✅ Local Osmosis network initialized",
-        "❌ Failed to initialize localnet",
-    );
+    if logger::is_quite() {
+        let _ = execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]));
+    } else {
+        execute_script_with_progress(
+            osmosis_dir,
+            "make",
+            Vec::from(["localnet-init"]),
+            "Initialize local Osmosis network",
+            "✅ Local Osmosis network initialized",
+            "❌ Failed to initialize localnet",
+        );
+    }
 }
 
 fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {

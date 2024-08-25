@@ -75,6 +75,45 @@ pub fn delete_file(file_path: &Path) -> io::Result<()> {
     fs::remove_file(file_path)
 }
 
+pub fn execute_script(
+    script_dir: &Path,
+    script_name: &str,
+    script_args: Vec<&str>,
+) -> io::Result<()> {
+    logger::verbose(&format!(
+        "{} {} {}",
+        script_dir.display(),
+        script_name,
+        script_args.join(" ")
+    ));
+    let mut cmd = Command::new(script_name)
+        .current_dir(script_dir)
+        .args(script_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    let stdout = cmd.stdout.take().expect("Failed to capture stdout");
+    let stderr = cmd.stderr.take().expect("Failed to capture stderr");
+
+    let stdout_reader = io::BufReader::new(stdout);
+    let stderr_reader = io::BufReader::new(stderr);
+
+    for line in stdout_reader.lines() {
+        let line = line?;
+        logger::info(&line);
+    }
+
+    for line in stderr_reader.lines() {
+        let line = line?;
+        logger::info(&line);
+    }
+
+    let status = cmd.wait()?;
+    logger::info(&format!("Script exited with status: {}", status));
+    Ok(())
+}
+
 pub fn execute_script_with_progress(
     script_dir: &Path,
     script_name: &str,

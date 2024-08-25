@@ -78,9 +78,8 @@ async fn main() {
                         panic!("Failed to get configuration file path");
                     }),
             );
-            let configuration = config::get_config();
 
-            if configuration.local_osmosis {
+            if config::get_config().local_osmosis {
                 match check_project_root(project_root_path) {
                     Ok(_) => {
                         let osmosis_dir = utils::get_osmosis_dir(project_root_path);
