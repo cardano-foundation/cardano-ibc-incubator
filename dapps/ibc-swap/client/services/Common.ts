@@ -1,9 +1,12 @@
+import { osmosis } from 'osmojs';
+
 import { CARDANO_LOVELACE_HEX_STRING, OSMOSIS_CHAIN_ID } from '@/constants';
 import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import {
   fetchCrossChainSwapRouterState,
   fetchOsmosisDenomTraces,
+  getEstimateSwapRPC,
   getOsmosisPools,
 } from './Osmosis';
 import { getPathTrace } from '@/utils/string';
@@ -206,7 +209,7 @@ function tryMatchToken(
     chainsInPool.length > 0 &&
     chainsInput.length > 0 &&
     chainsInPool[chainsInPool.length - 1] ===
-      chainsInput[chainsInput.length - 1]
+    chainsInput[chainsInput.length - 1]
   ) {
     const reverseRoutesInPool = routesInPool.reverse();
     const reverseRoutesInput = routesInput.reverse();
@@ -288,22 +291,22 @@ export async function checkSwap(allChannelMappings: any) {
     const { token0, token1 } = pool;
     const token0PoolTrace = token0.startsWith('ibc/')
       ? {
-          path: osmosisDenomTraces[token0].path,
-          base_denom: osmosisDenomTraces[token0].baseDenom,
-        }
+        path: osmosisDenomTraces[token0].path,
+        base_denom: osmosisDenomTraces[token0].baseDenom,
+      }
       : {
-          path: '',
-          base_denom: token0 as string,
-        };
+        path: '',
+        base_denom: token0 as string,
+      };
     const token1PoolTrace = token1.startsWith('ibc/')
       ? {
-          path: osmosisDenomTraces[token1].path,
-          base_denom: osmosisDenomTraces[token1].baseDenom,
-        }
+        path: osmosisDenomTraces[token1].path,
+        base_denom: osmosisDenomTraces[token1].baseDenom,
+      }
       : {
-          path: '',
-          base_denom: token1 as string,
-        };
+        path: '',
+        base_denom: token1 as string,
+      };
     if (!token0PoolTrace?.base_denom || !token1PoolTrace?.base_denom)
       return acc;
     if (
@@ -367,13 +370,47 @@ export async function checkSwap(allChannelMappings: any) {
   return advancedFilter;
 }
 
-export async function findRouteAndPools(allChannelMappings: any) {
-  const curRan = Math.random()
-  console.time(curRan.toString())
+function checkTransferRoute(chains: string[], arrayDestChannelPort: string[], availableChannelsMap: any): {
+  canTransfer: boolean,
+  transferRoutes: string[]
+} {
+  const defaultResult = {
+    canTransfer: false,
+    transferRoutes: []
+  }
+  if (chains.length <= 1) {
+    return { ...defaultResult, canTransfer: chains.length === 1 }
+  }
+
+  if (chains.length !== arrayDestChannelPort.length + 1) {
+    return defaultResult
+  }
+  let canTransfer = true;
+  let transferRoutes: string[] = []
+
+  arrayDestChannelPort.forEach((pair, index) => {
+    const [destPort, destChannel] = pair.split('/')
+    const srcChain = chains[index]
+    const destChain = chains[index + 1]
+    const mapp = availableChannelsMap[`${destChain}_${destPort}_${destChannel}`]
+    if (typeof mapp === 'undefined' || mapp.destChain !== srcChain) {
+      canTransfer = false
+    } else {
+      transferRoutes.push(`${mapp.destPort}/${mapp.destChannel}`)
+    }
+  })
+  return {
+    canTransfer,
+    transferRoutes
+  }
+}
+
+export async function findRouteAndPools(allChannelMappings: any, availableChannelsMap: any) {
   const token0ChainId = '42';
   const token0String = 'lovelace';
   const token1ChainId = 'localosmosis';
   const token1String = 'uion';
+  const swapAmount = '123'
   const [routeMap, osmosisDenomTraces, token0Trace, token1Trace] =
     await Promise.all([
       fetchCrossChainSwapRouterState(),
@@ -387,22 +424,22 @@ export async function findRouteAndPools(allChannelMappings: any) {
     const { inToken: token0, outToken: token1 } = pool;
     const token0PoolTrace = token0.startsWith('ibc/')
       ? {
-          path: osmosisDenomTraces[token0].path,
-          base_denom: osmosisDenomTraces[token0].baseDenom,
-        }
+        path: osmosisDenomTraces[token0].path,
+        base_denom: osmosisDenomTraces[token0].baseDenom,
+      }
       : {
-          path: '',
-          base_denom: token0 as string,
-        };
+        path: '',
+        base_denom: token0 as string,
+      };
     const token1PoolTrace = token1.startsWith('ibc/')
       ? {
-          path: osmosisDenomTraces[token1].path,
-          base_denom: osmosisDenomTraces[token1].baseDenom,
-        }
+        path: osmosisDenomTraces[token1].path,
+        base_denom: osmosisDenomTraces[token1].baseDenom,
+      }
       : {
-          path: '',
-          base_denom: token1 as string,
-        };
+        path: '',
+        base_denom: token1 as string,
+      };
     if (!token0PoolTrace?.base_denom || !token1PoolTrace?.base_denom)
       return acc;
     if (
@@ -442,8 +479,36 @@ export async function findRouteAndPools(allChannelMappings: any) {
     [],
   );
   // filter can reach
+  const ableToTransferFilter = (advancedFilter || []).reduce((acc: any, pool: any) => {
+    const { in: inTokenPool } = pool
+    const { chains, routes: arrayDestChannelPort } = inTokenPool
+    const { canTransfer,
+      transferRoutes } = checkTransferRoute(chains, arrayDestChannelPort, availableChannelsMap)
+    if (!canTransfer) return acc
+    acc.push({ ...pool, transferRoutes })
+    return acc
+  }, [])
+  const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT!
+  const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({ rpcEndpoint })
   // query amount out
+  // TODO: handle error
+  let poolsWithAmount = await Promise.all(
+    ableToTransferFilter.map((pool: any) => {
+      const { route, inToken } = pool
+      return getEstimateSwapRPC(rpcClient, `${swapAmount}${inToken}`, route)
+    })
+  ).then(res => {
+    return res.map((data, index) => {
+      const { message, tokenOutAmount } = data
+      return { ...ableToTransferFilter[index], tokenOutAmount, message }
+    })
+  })
   // sort 
-  console.log(advancedFilter)
-  console.timeEnd(curRan.toString())
+  poolsWithAmount = poolsWithAmount.sort((a: { tokenOutAmount: bigint }, b: { tokenOutAmount: bigint }) => {
+    if (b.tokenOutAmount === a.tokenOutAmount) return 0
+    if (b.tokenOutAmount > a.tokenOutAmount) return 1
+    return -1
+  })
+
+  console.log(poolsWithAmount)
 }

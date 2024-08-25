@@ -9,6 +9,7 @@ import {
   querySwapRouterState,
   sqsQueryPoolsUrl,
 } from '@/constants';
+import { EstimateSwapExactAmountInResponse } from 'osmojs/osmosis/poolmanager/v1beta1/query';
 
 const routeTableStrPrefix = '\x00\rrouting_table\x00D';
 
@@ -155,11 +156,10 @@ export async function getEstimateSwapWithPoolId(
   // ?token_in=588453650ibc/442A08C33AE9875DF90792FFA73B5728E1CAECE87AB4F26AE9B422F1E682ED23
   // &routes_token_out_denom=uosmo
   // &routes_pool_id=1380
-  const fetchUrl = `${restUrl}${osmosisEstimateSwapWithPoolId}?token_in=${
-    tokenIn.amount
-  }${encodeURIComponent(
-    tokenIn.denom,
-  )}&routes_token_out_denom=${tokenOut}&routes_pool_id=${poolId}`;
+  const fetchUrl = `${restUrl}${osmosisEstimateSwapWithPoolId}?token_in=${tokenIn.amount
+    }${encodeURIComponent(
+      tokenIn.denom,
+    )}&routes_token_out_denom=${tokenOut}&routes_pool_id=${poolId}`;
   let tokenData = {};
   try {
     const tokenDataFetch = await fetch(fetchUrl).then((res) => res.json());
@@ -175,4 +175,22 @@ export async function getEstimateSwapWithPoolId(
   }
 
   console.log(tokenData);
+}
+
+
+export async function getEstimateSwapRPC(osmosisRpcClient: any, tokenIn: string, routes: { pool_id: string, token_out_denom: string }[]): Promise<{ message: string, tokenOutAmount: bigint }> {
+  let msg = ''
+  let output = BigInt(0)
+  const [firstRoute] = routes
+  await osmosisRpcClient.osmosis.poolmanager.v1beta1.estimateSwapExactAmountIn({
+    poolId: BigInt(firstRoute.pool_id),
+    tokenIn,
+    routes: (routes || []).map(route => ({ poolId: route.pool_id, tokenOutDenom: route.token_out_denom })),
+  }).then((res: EstimateSwapExactAmountInResponse) => { output = BigInt(res.tokenOutAmount) }).catch((e: any) => {
+    msg = e.message
+  })
+  return {
+    message: msg,
+    tokenOutAmount: output
+  }
 }

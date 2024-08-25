@@ -91,6 +91,7 @@ export async function fetchAllChannels(
 ): Promise<{
   bestChannel: RawChannelMapping[];
   channelsMap: any;
+  availableChannelsMap: any;
 }> {
   const tmpData: RawChannelMapping[] = [];
   const maxSrcChannelId: maxSrcChannelIdType = {};
@@ -189,7 +190,24 @@ export async function fetchAllChannels(
       destPort: srcPort,
     };
   });
-  return { bestChannel, channelsMap };
+  let availableChannelsMap: {
+    [key: string]: { destChain: string; destChannel: string; destPort: string };
+  } = {};
+  bestChannel.forEach((channelPair) => {
+    const { srcChain, srcChannel, srcPort, destChannel, destPort, destChain } =
+      channelPair;
+    availableChannelsMap[`${srcChain}_${srcPort}_${srcChannel}`] = {
+      destChain: destChain || '',
+      destChannel,
+      destPort,
+    };
+    availableChannelsMap[`${destChain}_${destPort}_${destChannel}`] = {
+      destChain: srcChain,
+      destChannel: srcChannel,
+      destPort: srcPort,
+    };
+  });
+  return { bestChannel, channelsMap, availableChannelsMap };
 }
 
 export async function fetchPacketForwardFee(
