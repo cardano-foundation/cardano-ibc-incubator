@@ -10,6 +10,7 @@ import {
   getOsmosisPools,
 } from './Osmosis';
 import { getPathTrace } from '@/utils/string';
+import BigNumber from 'bignumber.js';
 
 export async function getTokenDenomTrace(chainId: string, tokenString: string) {
   if (!tokenString.startsWith('ibc/')) {
@@ -405,12 +406,14 @@ function checkTransferRoute(chains: string[], arrayDestChannelPort: string[], av
   }
 }
 
-export async function findRouteAndPools(allChannelMappings: any, availableChannelsMap: any) {
+export async function findRouteAndPools(allChannelMappings: any, availableChannelsMap: any, getPfmFee: any) {
+  const ran = Math.random();
+  console.time(ran.toString())
   const token0ChainId = '42';
   const token0String = 'lovelace';
   const token1ChainId = 'localosmosis';
   const token1String = 'uion';
-  const swapAmount = '123'
+  const swapAmount = '2'
   const [routeMap, osmosisDenomTraces, token0Trace, token1Trace] =
     await Promise.all([
       fetchCrossChainSwapRouterState(),
@@ -485,30 +488,94 @@ export async function findRouteAndPools(allChannelMappings: any, availableChanne
     const { canTransfer,
       transferRoutes } = checkTransferRoute(chains, arrayDestChannelPort, availableChannelsMap)
     if (!canTransfer) return acc
-    acc.push({ ...pool, transferRoutes })
+    acc.push({ ...pool, transferRoutes, transferChains: chains })
     return acc
   }, [])
   const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT!
   const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({ rpcEndpoint })
-  // query amount out
-  // TODO: handle error
-  let poolsWithAmount = await Promise.all(
-    ableToTransferFilter.map((pool: any) => {
-      const { route, inToken } = pool
-      return getEstimateSwapRPC(rpcClient, `${swapAmount}${inToken}`, route)
+  const listPoolsNeeded = ableToTransferFilter.reduce((acc: any, pool: any) => {
+    const { route } = pool;
+    route.forEach((r: any) => {
+      acc[r.pool_id] = 1
     })
-  ).then(res => {
-    return res.map((data, index) => {
-      const { message, tokenOutAmount } = data
-      return { ...ableToTransferFilter[index], tokenOutAmount, message }
-    })
-  })
-  // sort 
-  poolsWithAmount = poolsWithAmount.sort((a: { tokenOutAmount: bigint }, b: { tokenOutAmount: bigint }) => {
-    if (b.tokenOutAmount === a.tokenOutAmount) return 0
-    if (b.tokenOutAmount > a.tokenOutAmount) return 1
-    return -1
-  })
+    return acc
+  }, {})
+  const listPoolIdsNeeded = Object.keys(listPoolsNeeded)
 
-  console.log(poolsWithAmount)
+  if (listPoolIdsNeeded.length === 0) {
+    // no pool
+    console.log('no route')
+  } else {
+    // query all needed  pools
+    const pools = await getOsmosisPools(listPoolIdsNeeded).then(res => {
+      return res.reduce((acc: any, pool: any) => {
+        const { id, token0, token1 } = pool
+        acc[`${id}`] = { id, token0, token1 }
+        return acc;
+      }, {})
+    })
+    console.log(pools)
+    // query amount out
+    // TODO: handle error
+    let poolsWithAmount = await Promise.all(
+      ableToTransferFilter.map((pool: any) => {
+        const { route, inToken, transferChains } = pool
+        let estSwapAmount = BigNumber(swapAmount);
+        if (transferChains.length > 2) {
+          const feeChains = transferChains.slice(1, transferChains.length - 1);
+          feeChains.forEach((chainId: string) => {
+            const fee = getPfmFee(chainId);
+            let rmAmount = estSwapAmount.multipliedBy(fee).dp(6, BigNumber.ROUND_HALF_CEIL)
+            if (!rmAmount.isInteger()) {
+              rmAmount = rmAmount.integerValue().plus(1)
+            }
+            estSwapAmount = estSwapAmount.minus(
+              rmAmount,
+            );
+          });
+        }
+        console.log(`estSwapAmount:`, estSwapAmount.toString())
+        if (estSwapAmount.lt(1)) {
+          return {
+            message: 'Input amount too small, not enough to swap, please increase!', tokenOutAmount: BigInt(0)
+          }
+        }
+        // check case not enough input token to swap 
+        return getEstimateSwapRPC(rpcClient, `${estSwapAmount.toString()}${inToken}`, route)
+      })
+    ).then(res => {
+      return res.map((data, index) => {
+        const { message, tokenOutAmount } = data
+        const poolData = ableToTransferFilter[index]
+        const { transferChains } = poolData
+        let estTransferBackAmount = BigNumber(tokenOutAmount.toString());
+        if (transferChains.length > 2) {
+          const feeChains = transferChains.slice(1, transferChains.length - 1);
+          feeChains.forEach((chainId: string) => {
+            const fee = getPfmFee(chainId);
+            let rmAmount = estTransferBackAmount.multipliedBy(fee).dp(6, BigNumber.ROUND_HALF_CEIL)
+            if (!rmAmount.isInteger()) {
+              rmAmount = rmAmount.integerValue().plus(1)
+            }
+            estTransferBackAmount = estTransferBackAmount.minus(
+              rmAmount,
+            );
+          });
+        }
+        if (estTransferBackAmount.lt(1)) {
+          return { ...poolData, tokenOutAmount: BigInt(0), message: "Input amount too small, cannot transfer back, please increase!" }
+        }
+        return { ...poolData, tokenOutAmount, message }
+      })
+    })
+    // sort 
+    poolsWithAmount = poolsWithAmount.sort((a: { tokenOutAmount: bigint }, b: { tokenOutAmount: bigint }) => {
+      if (b.tokenOutAmount === a.tokenOutAmount) return 0
+      if (b.tokenOutAmount > a.tokenOutAmount) return 1
+      return -1
+    })
+
+    console.log(poolsWithAmount)
+  }
+  console.timeEnd(ran.toString())
 }

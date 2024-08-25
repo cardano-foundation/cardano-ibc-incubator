@@ -62,10 +62,10 @@ function isValidTokenInPool(tokenString: string) {
   return !tokenString.includes('/');
 }
 
-export async function getOsmosisPools() {
+export async function getOsmosisPools(IDs: string[] = []) {
   const restUrl =
     process.env.NEXT_PUBLIC_SQS_REST_ENDPOINT || OSMOSIS_MAINNET_SQS_ENDPOINT;
-  const fetchUrl = `${restUrl}${sqsQueryPoolsUrl}`;
+  const fetchUrl = `${restUrl}${sqsQueryPoolsUrl}${IDs.length === 0 ? '' : `?IDs=${IDs.join(',')}` }`;
   const rawPoolsData = await fetch(fetchUrl).then((res) => res.json());
   const loppedPools = rawPoolsData.reduce((acc: any, pool: any) => {
     const { chain_model, balances, liquidity_cap } = pool;

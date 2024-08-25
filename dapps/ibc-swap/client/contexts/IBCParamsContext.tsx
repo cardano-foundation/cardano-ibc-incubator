@@ -17,6 +17,7 @@ import BigNumber from 'bignumber.js';
 import { DEFAULT_PFM_FEE } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import { getPathTrace } from '@/utils/string';
+import { findRouteAndPools } from '@/services/Common';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -252,6 +253,9 @@ export const IBCParamsProvider = ({
   useEffect(() => {
     // update chain to chain mappings
     updateChainToChainChannels();
+    if (Object.keys(allChannelMappings).length > 0 && Object.keys(availableChannelsMappings).length > 0 && Object.keys(pfmFees).length > 0) {
+      findRouteAndPools(allChannelMappings, availableChannelsMappings, getPfmFee)
+    }
   }, [JSON.stringify(rawChannelMappings)]);
 
   useEffect(() => {
