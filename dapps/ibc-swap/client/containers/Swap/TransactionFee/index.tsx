@@ -5,7 +5,7 @@ import InfoIcon from '@/assets/icons/info.svg';
 
 import StyledTransactionFee from './index.style';
 
-const TransactionFee = () => {
+const TransactionFee = ({ minimumReceived }: { minimumReceived: string }) => {
   // TODO: Estimate transaction fee
   return (
     <StyledTransactionFee>
@@ -14,7 +14,7 @@ const TransactionFee = () => {
           <Image src={InfoIcon.src} alt="" />
           <Text className="label">Minimum receive</Text>
         </Box>
-        <Text>4.4829482 ADA</Text>
+        <Text>{minimumReceived}</Text>
       </Box>
       <Box display="flex" gap="5px" mt="5px" justifyContent="space-between">
         <Box display="flex" gap="5px">

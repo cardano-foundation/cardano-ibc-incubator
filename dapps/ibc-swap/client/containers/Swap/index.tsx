@@ -44,10 +44,14 @@ const SwapContainer = () => {
     useState<boolean>(false);
   const cardanoAddress = useAddress();
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
-  const [rate, setRate] = useState<string>('0');
   const [enableSwap, setEnableSwap] = useState<boolean>(false);
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
   const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
+
+  // swap est state
+  const [minimumReceived, setMinimumReceived] = useState<string>('~~');
+
+  // swap est state
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
@@ -109,7 +113,7 @@ const SwapContainer = () => {
 
   const onShowEstimateFee = (): React.JSX.Element | null => {
     if (swapData?.fromToken?.swapAmount && swapData?.toToken?.swapAmount) {
-      return <TransactionFee />;
+      return <TransactionFee minimumReceived={minimumReceived} />;
     }
     return null;
   };
@@ -123,7 +127,7 @@ const SwapContainer = () => {
       toChain: swapData.toToken.network.networkId!,
       tokenOutDenom: swapData.toToken.tokenId,
     });
-    // setIsSubmitSwap(true);
+    setIsSubmitSwap(true);
     // setIsCheckAnotherWallet(false);
   };
 
@@ -164,14 +168,6 @@ const SwapContainer = () => {
   // }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
   const calculateAndSetSwapEst = (swapData: any) => {
-    console.log(swapData);
-    setSwapData({
-      ...swapData,
-      toToken: {
-        ...swapData.toToken,
-        swapAmount: '0',
-      },
-    });
     calculateSwapEst({
       fromChain: swapData.fromToken.network.networkId!,
       tokenInDenom: swapData.fromToken.tokenId,
@@ -179,17 +175,21 @@ const SwapContainer = () => {
       toChain: swapData.toToken.network.networkId!,
       tokenOutDenom: swapData.toToken.tokenId,
     }).then((res: any) => {
-      const { message, tokenOutTransferBackAmount } = res;
+      const { message, tokenOutAmount, tokenOutTransferBackAmount } = res;
       if (message) {
         toast.error(message, { theme: 'colored' });
+        setMinimumReceived(`~~`);
       } else {
         setSwapData({
           ...swapData,
           toToken: {
             ...swapData.toToken,
-            swapAmount: tokenOutTransferBackAmount.toString(),
+            swapAmount: tokenOutAmount.toString(),
           },
         });
+        setMinimumReceived(
+          `${tokenOutTransferBackAmount.toString()} ${swapData.toToken.tokenId.toUpperCase()}`,
+        );
       }
     });
   };
@@ -222,7 +222,7 @@ const SwapContainer = () => {
   return isSubmitSwap ? (
     <SwapResult
       setIsSubmitted={setIsSubmitSwap}
-      minimumReceived={swapData.toToken.swapAmount || ''}
+      minimumReceived={minimumReceived || ''}
       estFee="0.123"
       resetLastTxData={() => {}}
       lastTxHash=""
