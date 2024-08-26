@@ -41,17 +41,17 @@ export const useCosmosChain = (chainName: string) => {
     denom,
   }: {
     denom: string;
-  }): Promise<Coin | undefined> => {
+  }): Promise<string> => {
     const rpcEndpoint = (await getRpcEndpoint()) as string;
 
     if (!rpcEndpoint || !address) {
-      return;
+      return '0';
     }
     const client = await cosmos.ClientFactory.createRPCQueryClient({
       rpcEndpoint,
     });
     if (!client) {
-      return;
+      return '0';
     }
     try {
       const balance = await client.cosmos.bank.v1beta1.balance({
@@ -59,9 +59,10 @@ export const useCosmosChain = (chainName: string) => {
         denom,
       });
       // eslint-disable-next-line consistent-return
-      return balance.balance as Coin;
+      return balance.balance?.amount || '0';
     } catch (error) {
       console.log({ error });
+      return '0';
     }
   };
 

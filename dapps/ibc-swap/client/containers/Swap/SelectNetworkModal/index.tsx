@@ -48,12 +48,14 @@ const SelectNetworkModal = ({
   }>({ fromNetworkDisabled: undefined, toNetworkDisabled: undefined });
 
   const handleSaveModal = () => {
-    setSwapData({
-      ...swapData,
-      fromToken: tokenFromSelected!,
-      toToken: tokenToSelected!,
-    });
-    onClose();
+    if (tokenFromSelected?.tokenId && tokenToSelected?.tokenId) {
+      setSwapData({
+        ...swapData,
+        fromToken: { ...tokenFromSelected, swapAmount: '' },
+        toToken: { ...tokenToSelected, swapAmount: '' },
+      });
+      onClose();
+    }
   };
 
   const handleChangePositionToken = () => {

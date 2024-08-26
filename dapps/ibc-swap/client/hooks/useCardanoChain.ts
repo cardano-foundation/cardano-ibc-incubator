@@ -88,5 +88,13 @@ export const useCardanoChain = () => {
     return sortAssetsByQuantity(assets ?? []);
   };
 
-  return { getTotalSupply };
+  const getBalanceByDenom = (denom: string): string => {
+    const assetData = assets?.find((asset) => asset?.unit === denom);
+    if (!assetData) {
+      return '0';
+    }
+    return assetData?.quantity.toString();
+  };
+
+  return { getTotalSupply, getBalanceByDenom };
 };

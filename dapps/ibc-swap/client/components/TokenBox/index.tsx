@@ -5,6 +5,7 @@ import { SwapTokenType } from '@/types/SwapDataType';
 import { formatTokenSymbol } from '@/utils/string';
 import { useContext, useEffect, useState } from 'react';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
 
 import StyledTokenBox from './index.style';
@@ -29,29 +30,31 @@ const TokenBox = ({
 
   const [balance, setBalance] = useState<string>('0');
   const cosmosChain = useCosmosChain(token?.network?.networkId!);
+  const cardano = useCardanoChain();
 
   useEffect(() => {
     const fetchBalance = async () => {
       if (token?.tokenId) {
-        const balanceData = await cosmosChain.getBalanceByDenom({
-          denom: token.tokenId,
-        });
-        if (balanceData?.amount) {
-          setBalance(balanceData.amount);
+        let balanceData = '0';
+        if (
+          token?.network?.networkId &&
+          token.network.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+        ) {
+          balanceData = cardano.getBalanceByDenom(token.tokenId);
+        } else {
+          balanceData = await cosmosChain.getBalanceByDenom({
+            denom: token.tokenId,
+          });
+        }
+
+        if (balanceData) {
+          setBalance(balanceData);
           if (fromOrTo === FROM_TO.FROM) {
             setSwapData((prev) => ({
               ...prev,
               fromToken: {
                 ...prev.fromToken,
-                balance: balanceData.amount,
-              },
-            }));
-          } else {
-            setSwapData((prev) => ({
-              ...prev,
-              toToken: {
-                ...prev.toToken,
-                balance: balanceData.amount,
+                balance: balanceData,
               },
             }));
           }
@@ -60,7 +63,7 @@ const TokenBox = ({
     };
 
     fetchBalance();
-  }, [token]);
+  }, [token?.tokenId]);
 
   return (
     <StyledTokenBox>

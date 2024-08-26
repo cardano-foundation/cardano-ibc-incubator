@@ -23,6 +23,7 @@ import { formatNumberInput } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import { verifyAddress } from '@/utils/address';
+import IBCParamsContext from '@/contexts/IBCParamsContext';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
@@ -33,7 +34,6 @@ import StyledSwap, {
   StyledSwitchNetwork,
   StyledWrapContainer,
 } from './index.style';
-import IBCParamsContext from '@/contexts/IBCParamsContext';
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
