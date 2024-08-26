@@ -1,32 +1,42 @@
-import { osmosis } from 'osmojs';
-
 import { CARDANO_LOVELACE_HEX_STRING, OSMOSIS_CHAIN_ID } from '@/constants';
-import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
+import { getPathTrace } from '@/utils/string';
+import BigNumber from 'bignumber.js';
+import apolloClient from '@/apis/apollo/apolloClient';
+import { GET_CARDANO_IBC_ASSETS } from '@/apis/apollo/query';
+import { toast } from 'react-toastify';
 import {
   fetchOsmosisDenomTraces,
   getEstimateSwapRPC,
   getOsmosisPools,
 } from './Osmosis';
-import { getPathTrace } from '@/utils/string';
-import BigNumber from 'bignumber.js';
+import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 
 export async function getTokenDenomTrace(chainId: string, tokenString: string) {
   if (!tokenString.startsWith('ibc/')) {
     if (chainId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
-      return {
-        path: '',
-        base_denom:
-          tokenString.toLowerCase() === 'lovelace'
-            ? CARDANO_LOVELACE_HEX_STRING
-            : tokenString,
-      };
-    } else {
-      return {
-        path: '',
-        base_denom: tokenString,
-      };
+      try {
+        const response = await apolloClient.query({
+          query: GET_CARDANO_IBC_ASSETS,
+        });
+        const listDenom = response.data?.cardanoIbcAssets?.nodes;
+        const denom = listDenom.find((dn: any) => dn.id === tokenString);
+
+        return {
+          path: denom?.path || '',
+          base_denom:
+            tokenString.toLowerCase() === 'lovelace'
+              ? CARDANO_LOVELACE_HEX_STRING
+              : denom?.denom || tokenString,
+        };
+      } catch (error) {
+        toast.error('Failed to fetch data from GraphQL.', { theme: 'colored' });
+      }
     }
+    return {
+      path: '',
+      base_denom: tokenString,
+    };
   }
   let trace: any = {};
   if (chainId !== process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
@@ -59,11 +69,11 @@ function traceBackRoutesFrom(
 ) {
   const paths = getPathTrace(tokenInPoolTrace?.path);
   let tmpChainId = chainId;
-  let chains = [chainId];
-  let routes: string[] = [];
-  let counterRoutes: string[] = [];
+  const chains = [chainId];
+  const routes: string[] = [];
+  const counterRoutes: string[] = [];
   paths.forEach((path) => {
-    let pairPortChannel = path.split('/');
+    const pairPortChannel = path.split('/');
     const [port, channel] = pairPortChannel;
     const counterChannelPair = channelsMap[`${tmpChainId}_${port}_${channel}`];
     if (counterChannelPair) {
@@ -118,7 +128,7 @@ function tryMatchToken(
   // tokenTrace is native (not IBC) => tokenInPoolTrace IBC
   if (tokenTrace?.path === '' && tokenInPoolTrace?.path !== '') {
     // try resolve tokenInPoolTrace, if it could reach tokenChainId, then resolve
-    let traceBack = traceBackRoutesFrom(
+    const traceBack = traceBackRoutesFrom(
       swapChain,
       tokenInPoolTrace,
       allChannelMappings,
@@ -141,7 +151,7 @@ function tryMatchToken(
   // tokenTrace is IBC => tokenInPoolTrace is native
   if (tokenTrace?.path !== '' && tokenInPoolTrace?.path === '') {
     // try resolve tokenInPoolTrace, if it could reach tokenChainId, then resolve
-    let traceBack = traceBackRoutesFrom(
+    const traceBack = traceBackRoutesFrom(
       tokenChainId,
       tokenTrace,
       allChannelMappings,
@@ -153,7 +163,7 @@ function tryMatchToken(
     ) {
       return {
         match: true,
-        chains: chains,
+        chains,
         routes: counterRoutes,
         fromToken: tokenTrace,
         toToken: tokenInPoolTrace,
@@ -166,7 +176,7 @@ function tryMatchToken(
   // chains: [A <= B <= C <= D]
   // routes: [A <=(PA/CA)= B <=(PB/CB)= C <=(PC/CC)= D]
   // counterRoutes: [A =counter(PA/CA)=> B =counter(PB/CB)=> C =counter(PC/CC)=> D]
-  let traceBackInPool = traceBackRoutesFrom(
+  const traceBackInPool = traceBackRoutesFrom(
     swapChain,
     tokenInPoolTrace,
     allChannelMappings,
@@ -185,7 +195,7 @@ function tryMatchToken(
       toToken: [],
     };
   }
-  let traceBackInput = traceBackRoutesFrom(
+  const traceBackInput = traceBackRoutesFrom(
     tokenChainId,
     tokenTrace,
     allChannelMappings,
@@ -258,8 +268,8 @@ function tryMatchToken(
 
     return {
       match: true,
-      chains: chains,
-      routes: routes,
+      chains,
+      routes,
       fromToken: tokenTrace,
       toToken: tokenInPoolTrace,
     };
@@ -317,7 +327,8 @@ export async function checkSwap(allChannelMappings: any) {
     ) {
       acc.push({ ...pool, token0PoolTrace, token1PoolTrace });
       return acc;
-    } else return acc;
+    }
+    return acc;
   }, []);
   // more advanced filter
   const advancedFilter = (preFilterPools || []).reduce(
@@ -390,7 +401,7 @@ function checkTransferRoute(
     return defaultResult;
   }
   let canTransfer = true;
-  let transferRoutes: string[] = [];
+  const transferRoutes: string[] = [];
 
   arrayDestChannelPort.forEach((pair, index) => {
     const [destPort, destChannel] = pair.split('/');
@@ -459,7 +470,8 @@ export async function findRouteAndPools(
     ) {
       acc.push({ ...pool, token0PoolTrace, token1PoolTrace });
       return acc;
-    } else return acc;
+    }
+    return acc;
   }, []);
   const advancedFilter = (preFilterPools || []).reduce(
     (acc: any, pool: any) => {

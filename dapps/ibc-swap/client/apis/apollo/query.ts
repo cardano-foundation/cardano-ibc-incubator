@@ -9,10 +9,11 @@ export const GET_CARDANO_IBC_ASSETS = gql`
         denom
         voucherTokenName
         connectionId
-        port
-        channelId
+        srcPort
+        dstChannel
+        dstPort
+        dstChannel
         path
-        id
       }
     }
   }
