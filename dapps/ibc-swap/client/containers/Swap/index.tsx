@@ -9,7 +9,6 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 
-import SwitchIcon from '@/assets/icons/transfer.svg';
 import { FaArrowDown } from 'react-icons/fa6';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
@@ -94,17 +93,11 @@ const SwapContainer = () => {
       ? fromToken.tokenExponent
       : toToken.tokenExponent;
     const displayString = formatNumberInput(amount, exponent || 0, maxAmount);
-    let toSwapAmount = '';
     let fromSwapAmount = '';
     if (displayString !== '0') {
       if (isFromToken) {
         fromSwapAmount = displayString;
-        toSwapAmount = BigNumber(displayString)
-          .dividedBy(rate)
-          .toFixed(swapData.toToken?.tokenExponent || 0)
-          .toString();
       } else {
-        toSwapAmount = displayString;
         fromSwapAmount = BigNumber(displayString)
           .multipliedBy(rate)
           .toFixed(swapData.fromToken?.tokenExponent || 0)
@@ -119,7 +112,6 @@ const SwapContainer = () => {
       },
       toToken: {
         ...swapData.toToken,
-        swapAmount: toSwapAmount,
       },
     });
   };
@@ -192,6 +184,32 @@ const SwapContainer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
+  const debounceEstAmount = () => {
+    calculateSwapEst({
+      fromChain: swapData.fromToken.network.networkId!,
+      tokenInDenom: swapData.fromToken.tokenId,
+      tokenInAmount: swapData.fromToken.swapAmount! || '123',
+      toChain: swapData.toToken.network.networkId!,
+      tokenOutDenom: swapData.toToken.tokenId,
+    });
+  };
+
+  useEffect(() => {
+    // check amount out
+    console.log('hi', swapData);
+    if (
+      // swapData.fromToken.swapAmount &&
+      swapData?.fromToken?.network?.networkId &&
+      swapData?.fromToken?.tokenId &&
+      swapData?.toToken?.network?.networkId &&
+      swapData?.toToken?.tokenId
+    ) {
+      console.log('hit');
+      debounceEstAmount();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
+
   const enableSwitch =
     swapData?.fromToken?.tokenId && swapData?.toToken?.tokenId;
 
@@ -236,9 +254,7 @@ const SwapContainer = () => {
           fromOrTo="To"
           handleClick={openModalSelectNetwork}
           token={swapData.toToken}
-          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
-            handleChangeAmount(event.target.value, false)
-          }
+          handleChangeAmount={() => {}}
         />
         {onShowEstimateFee()}
         <Box display="flex" alignItems="center" mt={4} gap={2}>
