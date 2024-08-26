@@ -1,3 +1,4 @@
+'use client';
 import { SwapDataType } from '@/types/SwapDataType';
 import {
   createContext,

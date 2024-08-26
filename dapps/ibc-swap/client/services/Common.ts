@@ -571,11 +571,18 @@ export async function findRouteAndPools(
         return {
           ...poolData,
           tokenOutAmount: BigInt(0),
+          tokenOutTransferBackAmount: BigInt(0),
           message:
             'Input amount too small, cannot transfer back, please increase!',
         };
       }
-      return { ...poolData, tokenOutAmount, message, tokenSwapAmount };
+      return {
+        ...poolData,
+        tokenOutAmount,
+        message,
+        tokenSwapAmount,
+        tokenOutTransferBackAmount: BigInt(estTransferBackAmount.toString()),
+      };
     });
   });
   // sort
@@ -589,5 +596,12 @@ export async function findRouteAndPools(
 
   console.log(poolsWithAmount);
   console.timeEnd(ran.toString());
-  return poolsWithAmount?.[0] || {};
+  if (!poolsWithAmount?.[0]) {
+    return {
+      message: 'Cannot find match pool, please select another pair',
+      tokenOutAmount: BigInt(0),
+      tokenOutTransferBackAmount: BigInt(0),
+    };
+  }
+  return poolsWithAmount?.[0];
 }

@@ -9,7 +9,8 @@ import {
   Tooltip,
   useDisclosure,
 } from '@chakra-ui/react';
-
+import { toast } from 'react-toastify';
+import { useAddress } from '@meshsdk/react';
 import { FaArrowDown } from 'react-icons/fa6';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
@@ -41,6 +42,7 @@ import StyledSwap, {
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
     useState<boolean>(false);
+  const cardanoAddress = useAddress();
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
   const [rate, setRate] = useState<string>('0');
   const [enableSwap, setEnableSwap] = useState<boolean>(false);
@@ -79,40 +81,25 @@ const SwapContainer = () => {
     }
     setSwapData({
       ...swapData,
-      receiveAdrress: value,
+      receiveAdrress: isCheckedAnotherWallet ? value : cardanoAddress,
     });
   };
 
   const handleChangeAmount = (amount: string, isFromToken?: boolean) => {
     const { fromToken, toToken } = swapData;
 
-    const maxAmount = isFromToken
-      ? fromToken.balance
-      : BigNumber(fromToken.balance!)
-          .dividedBy(rate)
-          .toFixed(toToken.tokenExponent || 0)
-          .toString();
+    const maxAmount = fromToken.balance;
 
     const exponent = isFromToken
       ? fromToken.tokenExponent
       : toToken.tokenExponent;
     const displayString = formatNumberInput(amount, exponent || 0, maxAmount);
-    let fromSwapAmount = '';
-    if (displayString !== '0') {
-      if (isFromToken) {
-        fromSwapAmount = displayString;
-      } else {
-        fromSwapAmount = BigNumber(displayString)
-          .multipliedBy(rate)
-          .toFixed(swapData.fromToken?.tokenExponent || 0)
-          .toString();
-      }
-    }
+
     setSwapData({
       ...swapData,
       fromToken: {
         ...swapData.fromToken,
-        swapAmount: fromSwapAmount,
+        swapAmount: displayString,
       },
       toToken: {
         ...swapData.toToken,
@@ -155,48 +142,56 @@ const SwapContainer = () => {
     fetchNetworkList();
   }, []);
 
-  useEffect(() => {
-    const calculateRate = async () => {
-      if (!!swapData?.fromToken?.tokenId && !!swapData?.toToken?.tokenId) {
-        // TODO: calculate rate
-        // fake rate tokenFrom/tokenTo
-        setRate('2.0');
-      }
-    };
-
-    calculateRate();
-  }, [swapData?.fromToken?.tokenId, swapData?.toToken?.tokenId]);
-
-  useEffect(() => {
-    if (
-      BigNumber(swapData?.fromToken?.swapAmount || '').isGreaterThan(
-        BigNumber(0),
-      ) &&
-      BigNumber(swapData?.toToken?.swapAmount || '').isGreaterThan(BigNumber(0))
-    ) {
-      if (!isCheckedAnotherWallet) {
-        setEnableSwap(true);
-      } else if (swapData?.receiveAdrress && !errorAddressMsg) {
-        // if isValidAddress
-        setEnableSwap(true);
-      } else {
-        setEnableSwap(false);
-      }
-    } else {
-      setEnableSwap(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
+  // useEffect(() => {
+  //   if (
+  //     BigNumber(swapData?.fromToken?.swapAmount || '').isGreaterThan(
+  //       BigNumber(0),
+  //     ) &&
+  //     BigNumber(swapData?.toToken?.swapAmount || '').isGreaterThan(BigNumber(0))
+  //   ) {
+  //     if (!isCheckedAnotherWallet) {
+  //       setEnableSwap(true);
+  //     } else if (swapData?.receiveAdrress && !errorAddressMsg) {
+  //       // if isValidAddress
+  //       setEnableSwap(true);
+  //     } else {
+  //       setEnableSwap(false);
+  //     }
+  //   } else {
+  //     setEnableSwap(false);
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
   const calculateAndSetSwapEst = (swapData: any) => {
     console.log(swapData);
+    setSwapData({
+      ...swapData,
+      toToken: {
+        ...swapData.toToken,
+        swapAmount: '0',
+      },
+    });
     calculateSwapEst({
       fromChain: swapData.fromToken.network.networkId!,
       tokenInDenom: swapData.fromToken.tokenId,
-      tokenInAmount: swapData.fromToken.swapAmount! || '123',
+      tokenInAmount: swapData.fromToken.swapAmount!,
       toChain: swapData.toToken.network.networkId!,
       tokenOutDenom: swapData.toToken.tokenId,
-    }).then(console.log);
+    }).then((res: any) => {
+      const { message, tokenOutTransferBackAmount } = res;
+      if (message) {
+        toast.error(message, { theme: 'colored' });
+      } else {
+        setSwapData({
+          ...swapData,
+          toToken: {
+            ...swapData.toToken,
+            swapAmount: tokenOutTransferBackAmount.toString(),
+          },
+        });
+      }
+    });
   };
 
   const debounceEstAmount = () =>
@@ -214,7 +209,12 @@ const SwapContainer = () => {
       debounceEstAmount();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
+  }, [
+    JSON.stringify(swapData?.fromToken),
+    JSON.stringify(swapData?.toToken?.network),
+    swapData?.toToken?.tokenId,
+    isCheckedAnotherWallet,
+  ]);
 
   const enableSwitch =
     swapData?.fromToken?.tokenId && swapData?.toToken?.tokenId;

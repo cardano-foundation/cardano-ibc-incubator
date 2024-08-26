@@ -302,8 +302,19 @@ export const IBCParamsProvider = ({
           osmosisRPCQueryClient,
         );
       }
+      return {
+        message: 'Loading services, pls wait!',
+        tokenOutAmount: BigInt(0),
+      };
     },
-    [osmosisRPCQueryClient],
+    [
+      JSON.stringify(allChannelMappings),
+      JSON.stringify(availableChannelsMappings),
+      JSON.stringify(pfmFees),
+      JSON.stringify(osmosisIBCTokenTraces),
+      osmosisRPCQueryClient,
+      JSON.stringify(crossChainSwapRouterState),
+    ],
   );
 
   useEffect(() => {
