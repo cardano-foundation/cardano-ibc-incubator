@@ -436,11 +436,12 @@ export async function findRouteAndPools(
 ) {
   const ran = Math.random();
   console.time(ran.toString());
-  const [token0Trace, token1Trace] = await Promise.all([
+  let [token0Trace, token1Trace] = await Promise.all([
     getTokenDenomTrace(token0ChainId, token0String),
     getTokenDenomTrace(token1ChainId, token1String),
   ]);
-
+  token0Trace.origin_demon = token0String;
+  token1Trace.origin_demon = token1String;
   // quick filter, just mapping with base_denom
   const preFilterPools = routeMap.reduce((acc: any, pool: any) => {
     const { inToken: token0, outToken: token1 } = pool;
