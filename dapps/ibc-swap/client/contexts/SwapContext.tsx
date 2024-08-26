@@ -18,7 +18,10 @@ type SwapContextType = {
 const SwapContext = createContext<SwapContextType>({} as SwapContextType);
 
 export const SwapProvider = ({ children }: { children?: React.ReactNode }) => {
-  const [swapData, setSwapData] = useState<SwapDataType>({} as SwapDataType);
+  const [swapData, setSwapData] = useState<SwapDataType>({
+    receiveAdrress: '',
+    slippageTolerance: '1.0',
+  } as SwapDataType);
 
   const getSwapData = () => {
     return swapData;

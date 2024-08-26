@@ -268,6 +268,7 @@ const SwapContainer = () => {
             isChecked={isCheckedAnotherWallet}
             onChange={(e) => {
               setIsCheckAnotherWallet(e.target.checked);
+              handleChangeReceiveAdrress('');
               const errMsg = e.target.checked ? 'Address is requred' : '';
               setErrorAddressMsg(errMsg);
             }}
