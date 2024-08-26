@@ -589,4 +589,5 @@ export async function findRouteAndPools(
 
   console.log(poolsWithAmount);
   console.timeEnd(ran.toString());
+  return poolsWithAmount?.[0] || {};
 }

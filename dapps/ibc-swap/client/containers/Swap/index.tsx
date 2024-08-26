@@ -1,4 +1,5 @@
-import React, { useContext, useEffect, useState } from 'react';
+'use client';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import {
   Box,
   Checkbox,
@@ -27,6 +28,9 @@ import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
 import { SwapResult } from './SwapResult';
+
+// import debounce from 'lodash/debounce';
+import { debounce } from '@/utils/helper';
 
 import StyledSwap, {
   StyledSwapButton,
@@ -184,27 +188,29 @@ const SwapContainer = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
-  const debounceEstAmount = () => {
+  const calculateAndSetSwapEst = (swapData: any) => {
+    console.log(swapData);
     calculateSwapEst({
       fromChain: swapData.fromToken.network.networkId!,
       tokenInDenom: swapData.fromToken.tokenId,
       tokenInAmount: swapData.fromToken.swapAmount! || '123',
       toChain: swapData.toToken.network.networkId!,
       tokenOutDenom: swapData.toToken.tokenId,
-    });
+    }).then(console.log);
   };
+
+  const debounceEstAmount = () =>
+    debounce(calculateAndSetSwapEst, 1000)(swapData);
 
   useEffect(() => {
     // check amount out
-    console.log('hi', swapData);
     if (
-      // swapData.fromToken.swapAmount &&
+      swapData?.fromToken?.swapAmount &&
       swapData?.fromToken?.network?.networkId &&
       swapData?.fromToken?.tokenId &&
       swapData?.toToken?.network?.networkId &&
       swapData?.toToken?.tokenId
     ) {
-      console.log('hit');
       debounceEstAmount();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

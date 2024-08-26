@@ -1,4 +1,10 @@
-import { createContext, useMemo, useState, useEffect } from 'react';
+import {
+  createContext,
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
 import { osmosis } from 'osmojs';
 import {
   RawChannelMapping,
@@ -37,7 +43,7 @@ type IBCParamsContextType = {
     tokenInAmount: string;
     toChain: string;
     tokenOutDenom: string;
-  }) => void;
+  }) => Promise<any>;
 };
 
 type tmpResolveRoutes = {
@@ -82,6 +88,7 @@ export const IBCParamsProvider = ({
     const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({
       rpcEndpoint,
     });
+    console.log(`initRPCClient`);
     setOsmosisRPCQueryClient(rpcClient);
   };
 
@@ -259,41 +266,45 @@ export const IBCParamsProvider = ({
       setPfmFees(dataFees);
     });
   };
-  const calculateSwapEst = async ({
-    fromChain,
-    tokenInDenom,
-    tokenInAmount,
-    toChain,
-    tokenOutDenom,
-  }: {
-    fromChain: string;
-    tokenInDenom: string;
-    tokenInAmount: string;
-    toChain: string;
-    tokenOutDenom: string;
-  }) => {
-    if (
-      Object.keys(allChannelMappings).length > 0 &&
-      Object.keys(availableChannelsMappings).length > 0 &&
-      Object.keys(pfmFees).length > 0 &&
-      Object.keys(osmosisIBCTokenTraces).length > 0 &&
-      crossChainSwapRouterState.length > 0
-    ) {
-      findRouteAndPools(
-        fromChain,
-        tokenInDenom,
-        tokenInAmount,
-        toChain,
-        tokenOutDenom,
-        allChannelMappings,
-        availableChannelsMappings,
-        getPfmFee,
-        osmosisIBCTokenTraces,
-        crossChainSwapRouterState,
-        osmosisRPCQueryClient,
-      );
-    }
-  };
+  const calculateSwapEst = useCallback(
+    async ({
+      fromChain,
+      tokenInDenom,
+      tokenInAmount,
+      toChain,
+      tokenOutDenom,
+    }: {
+      fromChain: string;
+      tokenInDenom: string;
+      tokenInAmount: string;
+      toChain: string;
+      tokenOutDenom: string;
+    }): Promise<any> => {
+      if (
+        Object.keys(allChannelMappings).length > 0 &&
+        Object.keys(availableChannelsMappings).length > 0 &&
+        Object.keys(pfmFees).length > 0 &&
+        Object.keys(osmosisIBCTokenTraces).length > 0 &&
+        osmosisRPCQueryClient?.osmosis &&
+        crossChainSwapRouterState.length > 0
+      ) {
+        return findRouteAndPools(
+          fromChain,
+          tokenInDenom,
+          tokenInAmount,
+          toChain,
+          tokenOutDenom,
+          allChannelMappings,
+          availableChannelsMappings,
+          getPfmFee,
+          osmosisIBCTokenTraces,
+          crossChainSwapRouterState,
+          osmosisRPCQueryClient,
+        );
+      }
+    },
+    [osmosisRPCQueryClient],
+  );
 
   useEffect(() => {
     // fetch pfm fee
@@ -318,6 +329,10 @@ export const IBCParamsProvider = ({
   useEffect(() => {
     // fetchOsmosisDenomTraces
     updateOsmosisDenomTrace();
+  }, []);
+
+  useEffect(() => {
+    // initRPCClient
     initRPCClient();
   }, []);
 
@@ -333,7 +348,12 @@ export const IBCParamsProvider = ({
           getPfmFee,
           calculateSwapEst,
         }),
-        [rawChannelMappings, osmosisIBCTokenTraces],
+        [
+          rawChannelMappings,
+          osmosisIBCTokenTraces,
+          allChannelMappings,
+          osmosisRPCQueryClient,
+        ],
       )}
     >
       {children}
