@@ -1,9 +1,11 @@
 'use client';
 import { SwapDataType } from '@/types/SwapDataType';
+import { useAddress } from '@meshsdk/react';
 import {
   createContext,
   Dispatch,
   SetStateAction,
+  useEffect,
   useMemo,
   useState,
 } from 'react';
@@ -19,6 +21,7 @@ type SwapContextType = {
 const SwapContext = createContext<SwapContextType>({} as SwapContextType);
 
 export const SwapProvider = ({ children }: { children?: React.ReactNode }) => {
+  const cardanoAddress = useAddress();
   const [swapData, setSwapData] = useState<SwapDataType>({
     receiveAdrress: '',
     slippageTolerance: '1.0',
@@ -39,6 +42,12 @@ export const SwapProvider = ({ children }: { children?: React.ReactNode }) => {
       toToken: swapData.fromToken,
     });
   };
+
+  useEffect(() => {
+    if (cardanoAddress) {
+      setSwapData((prev) => ({ ...swapData, receiveAdrress: cardanoAddress }));
+    }
+  }, [cardanoAddress]);
 
   return (
     <SwapContext.Provider

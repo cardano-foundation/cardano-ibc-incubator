@@ -105,10 +105,14 @@ const NetworkTokenBox = ({
   }, [selectedToken]);
 
   useEffect(() => {
-    const fetchTokenList = async () => {
-      let formatTokenList = [] as TokenItemProps[];
-      setIsFetchingData(true);
-      if (cosmosChainsSupported.includes(networkSelected?.networkId!)) {
+    const fetchTokenListOfCosmos = async () => {
+      if (
+        networkSelected?.networkId &&
+        cosmosChainsSupported.includes(networkSelected.networkId)
+      ) {
+        let formatTokenList = [] as TokenItemProps[];
+        setIsFetchingData(true);
+
         let totalSupplyOnCosmos = (await cosmos.getTotalSupply()) as Coin[];
         if (fromOrTo === FROM_TO.FROM) {
           const balances = (await cosmos.getAllBalances()) as Coin[];
@@ -122,11 +126,29 @@ const NetworkTokenBox = ({
           tokenName: token.denom,
           tokenLogo: DefaultCosmosNetworkIcon.src,
         }));
+        setDisplayTokenList(formatTokenList);
+        setIsFetchingData(false);
       }
+    };
+    if (
+      !cosmos?.isWalletConnected &&
+      cosmosChainsSupported.includes(networkSelected?.networkId!)
+    ) {
+      cosmos?.connect();
+    } else {
+      fetchTokenListOfCosmos();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [networkSelected, cosmos?.isWalletConnected]);
 
+  useEffect(() => {
+    const fetchTokenListOfCardano = async () => {
       if (
-        networkSelected?.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+        networkSelected?.networkId &&
+        networkSelected.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
       ) {
+        let formatTokenList = [] as TokenItemProps[];
+        setIsFetchingData(true);
         const totalSupplyOnCardano = cardano.getTotalSupply();
         formatTokenList = totalSupplyOnCardano?.map((asset) => {
           const assetWithName = asset as typeof asset & { assetName: string };
@@ -136,26 +158,13 @@ const NetworkTokenBox = ({
             tokenLogo: DefaultCardanoNetworkIcon.src,
           };
         });
+        setDisplayTokenList(formatTokenList);
+        setIsFetchingData(false);
       }
-
-      setDisplayTokenList(formatTokenList);
-      setIsFetchingData(false);
     };
-    if (
-      !cosmos?.isWalletConnected &&
-      cosmosChainsSupported.includes(networkSelected?.networkId!)
-    ) {
-      cosmos?.connect();
-    } else if (networkSelected?.networkId) {
-      setDisplayTokenList([]);
-      fetchTokenList();
-    }
+    fetchTokenListOfCardano();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    networkSelected,
-    cosmos?.isWalletConnected,
-    cardano.getTotalSupply().length,
-  ]);
+  }, [networkSelected, cardano.getTotalSupply().length]);
 
   useEffect(() => {
     setDisplayNetworkList(networkList);

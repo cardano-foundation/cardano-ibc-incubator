@@ -2,7 +2,7 @@ import { Box, Button, Image, Input, Text } from '@chakra-ui/react';
 import { FaChevronDown } from 'react-icons/fa';
 import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
-import { formatTokenSymbol } from '@/utils/string';
+import { formatPrice, formatTokenSymbol } from '@/utils/string';
 import { useContext, useEffect, useState } from 'react';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
@@ -70,7 +70,7 @@ const TokenBox = ({
       <Box display="flex" justifyContent="space-between">
         <Text className="label">{`${fromOrTo} token`}</Text>
         {fromOrTo === FROM_TO.FROM && (
-          <Text className="balance">{`Balance: ${balance}`}</Text>
+          <Text className="balance">{`Balance: ${formatPrice(balance)}`}</Text>
         )}
       </Box>
       <Box display="flex" justifyContent="space-between" marginTop="5px">
