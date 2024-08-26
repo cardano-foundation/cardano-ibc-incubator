@@ -177,9 +177,13 @@ const Transfer = () => {
       const feeChains = chains.slice(1, chains.length - 1);
       feeChains.forEach((chainId) => {
         const fee = getPfmFee(chainId);
-        estReceiveAmount = estReceiveAmount.minus(
-          estReceiveAmount.multipliedBy(fee).dp(0, BigNumber.ROUND_HALF_CEIL),
-        );
+        let rmAmount = estReceiveAmount
+          .multipliedBy(fee)
+          .dp(6, BigNumber.ROUND_HALF_CEIL);
+        if (!rmAmount.isInteger()) {
+          rmAmount = rmAmount.integerValue().plus(1);
+        }
+        estReceiveAmount = estReceiveAmount.minus(rmAmount);
       });
     }
 

@@ -33,6 +33,7 @@ import StyledSwap, {
   StyledSwitchNetwork,
   StyledWrapContainer,
 } from './index.style';
+import IBCParamsContext from '@/contexts/IBCParamsContext';
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
@@ -45,16 +46,17 @@ const SwapContainer = () => {
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const { swapData, setSwapData, handleSwitchToken } = useContext(SwapContext);
+  const { swapData, setSwapData } = useContext(SwapContext);
+  const { calculateSwapEst } = useContext(IBCParamsContext);
   const { handleReset: handleResetTransferData } = useContext(TransferContext);
 
   const openModalSelectNetwork = () => {
     onOpen();
   };
 
-  const handleChangePositionToken = () => {
-    handleSwitchToken();
-  };
+  // const handleChangePositionToken = () => {
+  //   handleSwitchToken();
+  // };
 
   const handleChangeReceiveAdrress = (value: string) => {
     if (isCheckedAnotherWallet) {
@@ -131,8 +133,15 @@ const SwapContainer = () => {
 
   const handleSwap = async () => {
     console.log(swapData);
-    setIsSubmitSwap(true);
-    setIsCheckAnotherWallet(false);
+    calculateSwapEst({
+      fromChain: swapData.fromToken.network.networkId!,
+      tokenInDenom: swapData.fromToken.tokenId,
+      tokenInAmount: swapData.fromToken.swapAmount! || '123',
+      toChain: swapData.toToken.network.networkId!,
+      tokenOutDenom: swapData.toToken.tokenId,
+    });
+    // setIsSubmitSwap(true);
+    // setIsCheckAnotherWallet(false);
   };
 
   useEffect(() => {
@@ -262,7 +271,8 @@ const SwapContainer = () => {
           />
         )}
 
-        <StyledSwapButton disabled={!enableSwap} onClick={() => handleSwap()}>
+        {/* <StyledSwapButton disabled={!enableSwap} onClick={() => handleSwap()}> */}
+        <StyledSwapButton onClick={() => handleSwap()}>
           <Text fontSize={18} fontWeight={700} lineHeight="24px">
             Swap
           </Text>

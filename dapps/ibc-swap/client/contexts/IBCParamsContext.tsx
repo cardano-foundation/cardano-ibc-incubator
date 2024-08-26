@@ -6,9 +6,7 @@ import {
   ChainToChainChannels,
   TransferRoutes,
 } from '@/types/IBCParams';
-import {
-  fetchOsmosisDenomTraces,
-} from '@/services/Osmosis';
+import { fetchOsmosisDenomTraces } from '@/services/Osmosis';
 import {
   fetchAllChannels,
   fetchPacketForwardFee,
@@ -30,6 +28,13 @@ type IBCParamsContextType = {
     depth: number,
   ) => TransferRoutes;
   getPfmFee: (chainId: string) => BigNumber;
+  calculateSwapEst: (data: {
+    fromChain: string;
+    tokenInDenom: string;
+    tokenInAmount: string;
+    toChain: string;
+    tokenOutDenom: string;
+  }) => void;
 };
 
 type tmpResolveRoutes = {
@@ -51,7 +56,8 @@ export const IBCParamsProvider = ({
     RawChannelMapping[]
   >([]);
   const [allChannelMappings, setAllChannelMappings] = useState<any>({});
-  const [availableChannelsMappings, setAvailableChannelsMappings] = useState<any>({});
+  const [availableChannelsMappings, setAvailableChannelsMappings] =
+    useState<any>({});
   const [chainToChainMappings, setChainToChainMappings] =
     useState<ChainToChainChannels>({});
   const [osmosisIBCTokenTraces, setOsmosisIBCTokenTraces] =
@@ -191,7 +197,7 @@ export const IBCParamsProvider = ({
         (accData, itemKey) => {
           if (
             tmp[thisCurrentDepth][itemKey][
-            tmp[thisCurrentDepth][itemKey].length - 1
+              tmp[thisCurrentDepth][itemKey].length - 1
             ] === destChainId
           ) {
             accData[itemKey] = tmp[thisCurrentDepth][itemKey];
@@ -217,13 +223,6 @@ export const IBCParamsProvider = ({
 
   const fetchPFMs = async () => {
     const chains = Object.keys(chainsRestEndpoints);
-    // await getTokenDenomTrace('localosmosis', 'ibc/1CF1A8C0379496090EF4157A25C51A9FEB7A8878EE8984778AE740D19295CB1C').then(console.log);
-    // await getEstimateSwapWithPoolId(
-    //   process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT!,
-    //   { amount: '10', denom: 'ibc/7B9F4A53934CF0F06242E9C8B6D7076A10BFF47A9AA3A540B3FA525013DFF003' },
-    //   'uion',
-    //   '1',
-    // );
     await Promise.all(
       chains.map((chainId) => {
         return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(
@@ -239,6 +238,38 @@ export const IBCParamsProvider = ({
       setPfmFees(dataFees);
     });
   };
+  const calculateSwapEst = async ({
+    fromChain,
+    tokenInDenom,
+    tokenInAmount,
+    toChain,
+    tokenOutDenom,
+  }: {
+    fromChain: string;
+    tokenInDenom: string;
+    tokenInAmount: string;
+    toChain: string;
+    tokenOutDenom: string;
+  }) => {
+    if (
+      Object.keys(allChannelMappings).length > 0 &&
+      Object.keys(availableChannelsMappings).length > 0 &&
+      Object.keys(pfmFees).length > 0 && 
+      Object.keys(osmosisIBCTokenTraces).length > 0
+    ) {
+      findRouteAndPools(
+        fromChain,
+        tokenInDenom,
+        tokenInAmount,
+        toChain,
+        tokenOutDenom,
+        allChannelMappings,
+        availableChannelsMappings,
+        getPfmFee,
+        osmosisIBCTokenTraces,
+      );
+    }
+  };
 
   useEffect(() => {
     // fetch and update channel mappings
@@ -253,9 +284,6 @@ export const IBCParamsProvider = ({
   useEffect(() => {
     // update chain to chain mappings
     updateChainToChainChannels();
-    if (Object.keys(allChannelMappings).length > 0 && Object.keys(availableChannelsMappings).length > 0 && Object.keys(pfmFees).length > 0) {
-      findRouteAndPools(allChannelMappings, availableChannelsMappings, getPfmFee)
-    }
   }, [JSON.stringify(rawChannelMappings)]);
 
   useEffect(() => {
@@ -273,6 +301,7 @@ export const IBCParamsProvider = ({
           chainToChainMappings,
           calculateTransferRoutes,
           getPfmFee,
+          calculateSwapEst,
         }),
         [rawChannelMappings, osmosisIBCTokenTraces],
       )}

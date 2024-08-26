@@ -18,7 +18,7 @@ import { FaArrowRight } from 'react-icons/fa';
 import { SwapTokenType } from '@/types/SwapDataType';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwapContext from '@/contexts/SwapContext';
-import { FROM_TO } from '@/constants';
+import { FROM_TO, OSMOSIS_CHAIN_ID } from '@/constants';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
@@ -152,7 +152,9 @@ const SelectNetworkModal = ({
             <NetworkTokenBox
               fromOrTo="To"
               onChooseToken={setTokenToSelected}
-              networkList={networkList}
+              networkList={networkList.filter(
+                (n) => n.networkId === OSMOSIS_CHAIN_ID,
+              )}
               selectedToken={tokenToSelected}
               disabledToken={tokenFromSelected}
               disabledNetwork={disabledNetwork}
