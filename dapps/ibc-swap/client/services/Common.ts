@@ -4,7 +4,6 @@ import { CARDANO_LOVELACE_HEX_STRING, OSMOSIS_CHAIN_ID } from '@/constants';
 import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import {
-  fetchCrossChainSwapRouterState,
   fetchOsmosisDenomTraces,
   getEstimateSwapRPC,
   getOsmosisPools,
@@ -421,11 +420,12 @@ export async function findRouteAndPools(
   availableChannelsMap: any,
   getPfmFee: any,
   osmosisDenomTraces: any,
+  routeMap: any,
+  rpcClient: any,
 ) {
   const ran = Math.random();
   console.time(ran.toString());
-  const [routeMap, token0Trace, token1Trace] = await Promise.all([
-    fetchCrossChainSwapRouterState(),
+  const [token0Trace, token1Trace] = await Promise.all([
     getTokenDenomTrace(token0ChainId, token0String),
     getTokenDenomTrace(token1ChainId, token1String),
   ]);
@@ -511,10 +511,6 @@ export async function findRouteAndPools(
     },
     [],
   );
-  const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT!;
-  const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({
-    rpcEndpoint,
-  });
 
   // query amount out
   // TODO: handle error
