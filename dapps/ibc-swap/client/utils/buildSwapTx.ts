@@ -8,7 +8,7 @@ const CROSSCHAIN_SWAPS_ADDRESS =
 const buildNextMemo = (
   transferBackRoutes: string[],
   receiver: string,
-): string => {
+): any => {
   let result = {};
   const transBackRoutes = transferBackRoutes.reverse().slice(1);
   transBackRoutes.forEach((route, index) => {
@@ -27,12 +27,12 @@ const buildNextMemo = (
           receiver: pfmReceiver,
           port: srcPort,
           channel: srcChannel,
-          next: JSON.stringify(result),
+          next: result,
         },
       };
     }
   });
-  return JSON.stringify(result);
+  return result;
 };
 
 const buildOsmosisSwapMemo = ({
@@ -42,8 +42,8 @@ const buildOsmosisSwapMemo = ({
 }: {
   tokenOutDenom: string;
   slippagePercentage: string;
-  nextMemo: string;
-}): string => {
+  nextMemo: any;
+}): any => {
   const result = {
     wasm: {
       contract: CROSSCHAIN_SWAPS_ADDRESS,
@@ -63,7 +63,7 @@ const buildOsmosisSwapMemo = ({
       },
     },
   };
-  return JSON.stringify(result);
+  return result;
 };
 
 const buildForwardMemo = ({
@@ -71,7 +71,7 @@ const buildForwardMemo = ({
   osmosisSwapMemo,
 }: {
   transferRoutes: string[];
-  osmosisSwapMemo: string;
+  osmosisSwapMemo: any;
 }) => {
   let result = {};
   transferRoutes.reverse().forEach((route, index) => {
@@ -91,7 +91,7 @@ const buildForwardMemo = ({
           receiver: pfmReceiver,
           port: srcPort,
           channel: srcChannel,
-          next: JSON.stringify(result),
+          next: result,
         },
       };
     }
