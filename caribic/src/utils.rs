@@ -1,10 +1,10 @@
 use crate::logger::{
-    self,
+    self, error, verbose,
     Verbosity::{Info, Verbose},
 };
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::collections::VecDeque;
+use reqwest::Client;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
@@ -13,6 +13,7 @@ use std::io::{self, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use std::{collections::VecDeque, thread};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
@@ -75,11 +76,53 @@ pub fn delete_file(file_path: &Path) -> io::Result<()> {
     fs::remove_file(file_path)
 }
 
+pub async fn wait_for_health_check(url: &str, retries: u32, interval: u64) -> Result<(), String> {
+    let client = Client::new();
+
+    for retry in 0..retries {
+        let response = client.get(url).send().await;
+
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                verbose(&format!(
+                    "Health on {} check passed on retry {}",
+                    url,
+                    retry + 1
+                ));
+                return Ok(());
+            }
+            Ok(resp) => {
+                verbose(&format!(
+                    "Health check {} failed with status: {} on retry {}",
+                    url,
+                    resp.status(),
+                    retry + 1
+                ));
+            }
+            Err(e) => {
+                error(&format!(
+                    "Failed to send request to {} on retry {}: {}",
+                    url,
+                    retry + 1,
+                    e
+                ));
+            }
+        }
+
+        thread::sleep(Duration::from_millis(interval));
+    }
+
+    return Err(format!(
+        "Health check on {} failed after {} attempts",
+        url, retries
+    ));
+}
+
 pub fn execute_script(
     script_dir: &Path,
     script_name: &str,
     script_args: Vec<&str>,
-) -> io::Result<()> {
+) -> io::Result<String> {
     logger::verbose(&format!(
         "{} {} {}",
         script_dir.display(),
@@ -99,8 +142,10 @@ pub fn execute_script(
     let stdout_reader = io::BufReader::new(stdout);
     let stderr_reader = io::BufReader::new(stderr);
 
+    let mut output = String::new();
     for line in stdout_reader.lines() {
         let line = line?;
+        output.push_str(&line);
         logger::info(&line);
     }
 
@@ -111,7 +156,7 @@ pub fn execute_script(
 
     let status = cmd.wait()?;
     logger::info(&format!("Script exited with status: {}", status));
-    Ok(())
+    Ok(output)
 }
 
 pub fn execute_script_with_progress(

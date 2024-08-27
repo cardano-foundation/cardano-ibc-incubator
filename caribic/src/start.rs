@@ -1,16 +1,17 @@
 use crate::check::check_osmosisd;
+use crate::logger::verbose;
 use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file};
-use crate::utils::{execute_script, execute_script_with_progress};
+use crate::utils::{execute_script, execute_script_with_progress, wait_for_health_check};
 use crate::{
     config,
     logger::{self, error, log},
 };
 use console::style;
 use dirs::home_dir;
+use fs_extra::file::copy;
 use fs_extra::{copy_items, remove_items};
-use std::fs::copy;
+use serde_json::Value;
 use std::path::Path;
-use std::process::Command;
 
 pub fn start_local_cardano_network(project_root_path: &Path) {
     /*execute_script_with_progress(
@@ -56,6 +57,23 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
     start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
 }
 
+pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
+    let _ = execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]));
+    let _ = execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", "--build"]),
+    );
+    log("Waiting for the Cosmos sidechain to start...");
+    // TODO: make the url configurable
+    let is_healthy = wait_for_health_check("http://127.0.0.1:26657/", 10, 1000).await;
+    if is_healthy.is_ok() {
+        log("✅ Cosmos sidechain started successfully");
+    } else {
+        error("❌ Failed to start Cosmos sidechain");
+    }
+}
+
 pub fn start_local_cardano_services(cardano_dir: &Path) {
     let configuration = config::get_config();
 
@@ -90,21 +108,28 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
             remove_previous_chain_data()
                 .expect("Failed to remove previous chain data from ~/.osmosisd-local");
             init_local_network(osmosis_dir);
-            let scripts_dir = osmosis_dir.join("scripts");
-            let status = Command::new("bash")
-                .arg(scripts_dir.join("start.sh"))
-                .status();
-            match status {
-                Ok(status) => {
-                    if status.success() {
-                        log("✅ Osmosis started successfully");
-                    } else {
-                        error(&format!("❌ Failed to start Osmosis"));
-                    }
+            let status = execute_script(
+                osmosis_dir,
+                "docker",
+                Vec::from([
+                    "compose",
+                    "-f",
+                    "tests/localosmosis/docker-compose.yml",
+                    "up",
+                    "-d",
+                ]),
+            );
+
+            if status.is_ok() {
+                // TODD: make the url and port configurable
+                let is_healthy = wait_for_health_check("http://127.0.0.1:26658/", 10, 1000).await;
+                if is_healthy.is_ok() {
+                    log("✅ Local Osmosis network started successfully");
+                } else {
+                    error("❌ Failed to start local Osmosis network");
                 }
-                Err(e) => {
-                    error(&format!("❌ Failed to start Osmosis: {}", e));
-                }
+            } else {
+                error("❌ Failed to start local Osmosis network");
             }
         }
         Err(e) => {
@@ -113,6 +138,107 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
                 e
             ));
         }
+    }
+}
+
+pub fn configure_hermes(osmosis_dir: &Path) {
+    let script_dir = osmosis_dir.join("scripts");
+    if let Some(home_path) = home_dir() {
+        let hermes_dir = home_path.join(".hermes");
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        verbose(&format!(
+            "Copying Hermes configuration files from {} to {}",
+            script_dir.display(),
+            hermes_dir.display()
+        ));
+        copy(
+            script_dir.join("hermes/config.toml"),
+            hermes_dir.join("config.toml"),
+            &options,
+        )
+        .expect("Failed to copy Hermes configuration file");
+    }
+
+    /*
+    hermes keys add --chain sidechain --mnemonic-file ${script_dir}/hermes/cosmos
+    hermes keys add --chain localosmosis --mnemonic-file ${script_dir}/hermes/osmosis
+
+    # Create osmosis client
+    hermes create client --host-chain localosmosis --reference-chain sidechain
+    localosmosis_client_id=$(hermes --json query clients --host-chain localosmosis | jq -r 'select(.result) | .result[-1].client_id')
+
+    # Create sidechain client
+    hermes create client --host-chain sidechain --reference-chain localosmosis --trusting-period 86000s
+    sidechain_client_id=$(hermes --json query clients --host-chain sidechain | jq -r 'select(.result) | .result[-1].client_id')
+
+    # Create connection
+    hermes create connection --a-chain sidechain --a-client $sidechain_client_id --b-client $localosmosis_client_id
+    connectionId=$(hermes --json query connections --chain sidechain | jq -r 'select(.result) | .result[-2]')
+
+    # Create channel
+    hermes create channel --a-chain sidechain --a-connection $connectionId --a-port transfer --b-port transfer
+    channel_id=$(hermes --json query channels --chain localosmosis | jq -r 'select(.result) | .result[-1].channel_id')
+    */
+
+    let _ = execute_script(
+        script_dir.as_path(),
+        "hermes",
+        Vec::from([
+            "keys",
+            "add",
+            "--chain",
+            "sidechain",
+            "--mnemonic-file",
+            osmosis_dir.join("scripts/hermes/cosmos").to_str().unwrap(),
+        ]),
+    );
+
+    let _ = execute_script(
+        script_dir.as_path(),
+        "hermes",
+        Vec::from([
+            "keys",
+            "add",
+            "--chain",
+            "localosmosis",
+            "--mnemonic-file",
+            osmosis_dir.join("scripts/hermes/osmosis").to_str().unwrap(),
+        ]),
+    );
+
+    let _ = execute_script(
+        script_dir.as_path(),
+        "hermes",
+        Vec::from([
+            "create",
+            "client",
+            "--host-chain",
+            "localosmosis",
+            "--reference-chain",
+            "sidechain",
+        ]),
+    );
+
+    let query_clients_output = execute_script(
+        script_dir.as_path(),
+        "hermes",
+        Vec::from(["--json", "query", "clients", "--host-chain", "localosmosis"]),
+    )
+    .unwrap();
+
+    verbose(&format!("query_clients_output: {}", query_clients_output));
+
+    let query_clients_json: Value =
+        serde_json::from_str(query_clients_output.as_str()).expect("Failed to parse query clients");
+
+    if let Some(client_id) = query_clients_json["result"]
+        .as_array()
+        .and_then(|result| result.last())
+        .and_then(|last_result| last_result["client_id"].as_str())
+    {
+        println!("localosmosis_client_id: {}", client_id);
+    } else {
+        println!("Could not find the client_id");
     }
 }
 
@@ -158,34 +284,42 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
 
+    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+
     copy(
         osmosis_dir.join("../scripts/start.sh"),
         osmosis_dir.join("scripts/start.sh"),
+        &options,
     )?;
 
     copy(
         osmosis_dir.join("../scripts/stop.sh"),
         osmosis_dir.join("scripts/stop.sh"),
+        &options,
     )?;
 
     copy(
         osmosis_dir.join("../scripts/setup_crosschain_swaps.sh"),
         osmosis_dir.join("scripts/setup_crosschain_swaps.sh"),
+        &options,
     )?;
 
     copy(
         osmosis_dir.join("../scripts/setup_osmosis_local.sh"),
         osmosis_dir.join("tests/localosmosis/scripts/setup.sh"),
+        &options,
     )?;
 
     copy(
         osmosis_dir.join("../configuration/docker-compose.yml"),
         osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
+        &options,
     )?;
 
     copy(
         osmosis_dir.join("../configuration/Dockerfile"),
         osmosis_dir.join("Dockerfile"),
+        &options,
     )?;
 
     Ok(())

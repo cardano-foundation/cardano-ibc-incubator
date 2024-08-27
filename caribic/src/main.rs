@@ -3,7 +3,7 @@ use std::path::Path;
 use check::check_project_root;
 use clap::Parser;
 use clap::Subcommand;
-use start::{start_local_cardano_network, start_osmosis};
+use start::{configure_hermes, start_cosmos_sidechain, start_local_cardano_network, start_osmosis};
 mod check;
 mod config;
 mod logger;
@@ -83,7 +83,9 @@ async fn main() {
                 match check_project_root(project_root_path) {
                     Ok(_) => {
                         let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+                        start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await;
                         start_osmosis(osmosis_dir.as_path()).await;
+                        configure_hermes(osmosis_dir.as_path());
                         start_local_cardano_network(project_root_path);
                     }
                     Err(_e) => {
