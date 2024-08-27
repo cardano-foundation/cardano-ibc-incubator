@@ -13,15 +13,27 @@ use fs_extra::{copy_items, remove_items};
 use serde_json::Value;
 use std::path::Path;
 
+pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    copy(
+        relayer_path.join(".env.example"),
+        relayer_path.join(".env"),
+        &options,
+    )?;
+    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]))?;
+
+    execute_script_with_progress(
+        relayer_path,
+        "docker",
+        Vec::from(["compose", "up", "-d", "--build"]),
+        "⚡ Starting relayer...",
+        "✅ Relayer started successfully",
+        "❌ Failed to start relayer",
+    );
+    Ok(())
+}
+
 pub fn start_local_cardano_network(project_root_path: &Path) {
-    /*execute_script_with_progress(
-        cardano_dir.join("scripts/").as_path(),
-        "sh",
-        Vec::from(["start.sh"]),
-        "Initialize local Cardano network",
-        "✅ Local Cardano network initialized",
-        "❌ Failed to initialize localnet",
-    );*/
     log(&format!(
         "{} 🛠️ Configuring local Cardano devnet",
         style("Step 1/5").bold().dim(),

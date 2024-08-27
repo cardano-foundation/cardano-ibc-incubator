@@ -1,6 +1,6 @@
 use crate::logger::{
     self, error, verbose,
-    Verbosity::{Info, Verbose},
+    Verbosity::{Info, Standard, Verbose},
 };
 use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -214,6 +214,16 @@ pub fn execute_script_with_progress(
                         .join("\n");
 
                     progress_bar.set_message(format!("{}", output));
+                }
+            }
+        }
+        Standard => {
+            if let Some(stdout) = command.stdout.take() {
+                let reader = BufReader::new(stdout);
+
+                for line in reader.lines() {
+                    let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                    progress_bar.set_message(format!("{}", last_line));
                 }
             }
         }

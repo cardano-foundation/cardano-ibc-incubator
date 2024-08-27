@@ -3,7 +3,10 @@ use std::path::Path;
 use check::check_project_root;
 use clap::Parser;
 use clap::Subcommand;
-use start::{configure_hermes, start_cosmos_sidechain, start_local_cardano_network, start_osmosis};
+use start::{
+    configure_hermes, start_cosmos_sidechain, start_local_cardano_network, start_osmosis,
+    start_relayer,
+};
 mod check;
 mod config;
 mod logger;
@@ -79,6 +82,8 @@ async fn main() {
                     }),
             );
 
+            start_relayer(project_root_path.join("relayer").as_path())
+                .expect("⚠️ Unable to prepare relayer environment");
             if config::get_config().local_osmosis {
                 match check_project_root(project_root_path) {
                     Ok(_) => {
