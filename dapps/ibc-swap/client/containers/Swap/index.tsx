@@ -10,7 +10,7 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { toast } from 'react-toastify';
-import { useAddress } from '@meshsdk/react';
+import { useAddress, useWallet } from '@meshsdk/react';
 import { FaArrowDown } from 'react-icons/fa6';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
@@ -19,8 +19,8 @@ import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import BigNumber from 'bignumber.js';
-import { formatNumberInput } from '@/utils/string';
+import * as CSL from '@emurgo/cardano-serialization-lib-browser';
+import { formatNumberInput, formatPrice } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import { verifyAddress } from '@/utils/address';
@@ -30,6 +30,8 @@ import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
 import { SwapResult } from './SwapResult';
 
+import { HOUR_IN_NANOSEC } from '@/constants';
+
 // import debounce from 'lodash/debounce';
 import { debounce } from '@/utils/helper';
 
@@ -38,26 +40,55 @@ import StyledSwap, {
   StyledSwitchNetwork,
   StyledWrapContainer,
 } from './index.style';
+import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
+
+type EstimateFeeType = {
+  display: boolean;
+  canEst: boolean;
+  msgs: any[];
+  estReceiveAmount: string;
+  estMinimumReceived: string;
+  estTime: string;
+  estFee: string;
+};
+
+const initEstData = {
+  display: false,
+  canEst: false,
+  msgs: [],
+  estReceiveAmount: '',
+  estMinimumReceived: '',
+  estFee: '----',
+  estTime: '----',
+};
 
 const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
     useState<boolean>(false);
+
   const cardanoAddress = useAddress();
+  const { wallet: cardanoWallet } = useWallet();
+
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);
-  const [enableSwap, setEnableSwap] = useState<boolean>(false);
+  const [lastTxHash, setLastTxHash] = useState<string>('');
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
   const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
 
   // swap est state
-  const [minimumReceived, setMinimumReceived] = useState<string>('~~');
-
+  const [estData, setEstimateData] = useState<EstimateFeeType>(initEstData);
   // swap est state
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
-  const { swapData, setSwapData } = useContext(SwapContext);
+  const { swapData, setSwapData, handleResetData } = useContext(SwapContext);
   const { calculateSwapEst } = useContext(IBCParamsContext);
   const { handleReset: handleResetTransferData } = useContext(TransferContext);
+
+  const resetLastTxData = () => {
+    setEstimateData(initEstData);
+    setLastTxHash('');
+    handleResetData();
+  };
 
   const openModalSelectNetwork = () => {
     onOpen();
@@ -112,22 +143,34 @@ const SwapContainer = () => {
   };
 
   const onShowEstimateFee = (): React.JSX.Element | null => {
-    if (swapData?.fromToken?.swapAmount && swapData?.toToken?.swapAmount) {
-      return <TransactionFee minimumReceived={minimumReceived} />;
+    if (estData.canEst) {
+      return (
+        <TransactionFee
+          minimumReceived={estData.estMinimumReceived}
+          estFee={estData.estFee}
+        />
+      );
     }
     return null;
   };
 
   const handleSwap = async () => {
-    console.log(swapData);
-    calculateSwapEst({
-      fromChain: swapData.fromToken.network.networkId!,
-      tokenInDenom: swapData.fromToken.tokenId,
-      tokenInAmount: swapData.fromToken.swapAmount! || '123',
-      toChain: swapData.toToken.network.networkId!,
-      tokenOutDenom: swapData.toToken.tokenId,
-    });
-    setIsSubmitSwap(true);
+    if (!estData.canEst || !cardanoWallet?.signTx) {
+      return;
+    }
+
+    try {
+      const signedTx = await cardanoWallet.signTx(estData.msgs[0], true);
+      const txHash = await cardanoWallet.submitTx(signedTx);
+      if (txHash) {
+        setLastTxHash(txHash);
+        setIsSubmitSwap(true);
+      }
+    } catch (e: unknown) {
+      console.log(e);
+      // @ts-ignore
+      toast.error(e?.message?.toString() || '', { theme: 'colored' });
+    }
     // setIsCheckAnotherWallet(false);
   };
 
@@ -174,11 +217,18 @@ const SwapContainer = () => {
       tokenInAmount: swapData.fromToken.swapAmount!,
       toChain: swapData.toToken.network.networkId!,
       tokenOutDenom: swapData.toToken.tokenId,
-    }).then((res: any) => {
-      const { message, tokenOutAmount, tokenOutTransferBackAmount } = res;
+    }).then(async (res: any) => {
+      const {
+        message,
+        tokenOutAmount,
+        tokenOutTransferBackAmount,
+        token1,
+        transferRoutes,
+        transferBackRoutes,
+      } = res;
       if (message) {
         toast.error(message, { theme: 'colored' });
-        setMinimumReceived(`~~`);
+        setEstimateData(initEstData);
       } else {
         setSwapData({
           ...swapData,
@@ -187,9 +237,47 @@ const SwapContainer = () => {
             swapAmount: tokenOutAmount.toString(),
           },
         });
-        setMinimumReceived(
-          `${tokenOutTransferBackAmount.toString()} ${swapData.toToken.tokenId.toUpperCase()}`,
-        );
+        const msg = await unsignedTxSwapFromCardano({
+          sender: cardanoAddress!,
+          tokenIn: {
+            amount: swapData.fromToken.swapAmount!,
+            denom: swapData.fromToken.tokenId,
+          },
+          tokenOutDenom: token1,
+          receiver: swapData.receiveAdrress || cardanoAddress,
+          transferRoutes,
+          transferBackRoutes,
+          slippagePercentage: swapData.slippageTolerance,
+          timeoutTimeOffset: HOUR_IN_NANOSEC,
+        });
+        let estDataResult: any;
+        try {
+          const unsignedTx = Buffer.from(msg[0].value, 'base64').toString(
+            'hex',
+          );
+          const tx = CSL.Transaction.from_hex(unsignedTx);
+          const estFee = tx.body().fee().to_str();
+          estDataResult = {
+            display: true,
+            canEst: true,
+            msgs: [unsignedTx],
+            estFee: `${formatPrice(estFee)} lovelace`,
+            estTime: '~2 mins',
+          };
+        } catch (e) {
+          console.log(e);
+          estDataResult = {
+            display: false,
+            canEst: false,
+            msgs: [],
+          };
+        }
+        setEstimateData({
+          ...initEstData,
+          ...estDataResult,
+          estReceiveAmount: tokenOutAmount.toString(),
+          estMinimumReceived: `${tokenOutTransferBackAmount.toString()} ${swapData.toToken.tokenId.toUpperCase()}`,
+        });
       }
     });
   };
@@ -201,6 +289,7 @@ const SwapContainer = () => {
     // check amount out
     if (
       swapData?.fromToken?.swapAmount &&
+      cardanoAddress &&
       swapData?.fromToken?.network?.networkId &&
       swapData?.fromToken?.tokenId &&
       swapData?.toToken?.network?.networkId &&
@@ -214,18 +303,16 @@ const SwapContainer = () => {
     JSON.stringify(swapData?.toToken?.network),
     swapData?.toToken?.tokenId,
     isCheckedAnotherWallet,
+    cardanoAddress,
   ]);
-
-  const enableSwitch =
-    swapData?.fromToken?.tokenId && swapData?.toToken?.tokenId;
 
   return isSubmitSwap ? (
     <SwapResult
       setIsSubmitted={setIsSubmitSwap}
-      minimumReceived={minimumReceived || ''}
-      estFee="0.123"
-      resetLastTxData={() => {}}
-      lastTxHash=""
+      minimumReceived={estData.estMinimumReceived || ''}
+      estFee={estData.estFee}
+      resetLastTxData={resetLastTxData}
+      lastTxHash={lastTxHash}
     />
   ) : (
     <StyledWrapContainer>
@@ -295,7 +382,10 @@ const SwapContainer = () => {
         )}
 
         {/* <StyledSwapButton disabled={!enableSwap} onClick={() => handleSwap()}> */}
-        <StyledSwapButton onClick={() => handleSwap()}>
+        <StyledSwapButton
+          disabled={!estData.canEst}
+          onClick={() => handleSwap()}
+        >
           <Text fontSize={18} fontWeight={700} lineHeight="24px">
             Swap
           </Text>

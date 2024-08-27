@@ -37,7 +37,7 @@ export const SwapResult = ({
 }: TransferResultProps) => {
   const { swapData, handleResetData } = useContext(SwapContext);
 
-  const handleBackToTransfer = () => {
+  const handleBackToSwap = () => {
     resetLastTxData();
     handleResetData();
     setIsSubmitted(false);
@@ -139,7 +139,7 @@ export const SwapResult = ({
               </Text>
               <Text>
                 {minimumReceived}{' '}
-                {formatTokenSymbol(swapData?.toToken?.tokenName || '')}
+                {/* {formatTokenSymbol(swapData?.toToken?.tokenName || '')} */}
               </Text>
             </Box>
             <Box
@@ -162,7 +162,7 @@ export const SwapResult = ({
                 color={COLOR.success}
               >
                 {estFee}{' '}
-                {formatTokenSymbol(swapData?.fromToken?.tokenName || '')}
+                {/* {formatTokenSymbol(swapData?.fromToken?.tokenName || '')} */}
               </Text>
             </Box>
           </StyledTransferCalculatorBox>
@@ -180,7 +180,7 @@ export const SwapResult = ({
             <StyledTransferDetailButton
               bg={COLOR.neutral_6}
               border="1px solid #FFFFFF0D"
-              onClick={handleBackToTransfer}
+              onClick={handleBackToSwap}
               color={COLOR.neutral_1}
               _hover={{
                 bg: COLOR.neutral_6,
