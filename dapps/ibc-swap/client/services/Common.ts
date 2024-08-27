@@ -3,7 +3,7 @@ import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import { getPathTrace } from '@/utils/string';
 import BigNumber from 'bignumber.js';
 import apolloClient from '@/apis/apollo/apolloClient';
-import { GET_CARDANO_IBC_ASSETS } from '@/apis/apollo/query';
+import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
 import { toast } from 'react-toastify';
 import {
   fetchOsmosisDenomTraces,
@@ -17,10 +17,10 @@ export async function getTokenDenomTrace(chainId: string, tokenString: string) {
     if (chainId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
       try {
         const response = await apolloClient.query({
-          query: GET_CARDANO_IBC_ASSETS,
+          query: GET_CARDANO_DENOM_BY_ID,
+          variables: { id: tokenString },
         });
-        const listDenom = response.data?.cardanoIbcAssets?.nodes;
-        const denom = listDenom.find((dn: any) => dn.id === tokenString);
+        const denom = response.data?.cardanoIbcAsset;
 
         return {
           path: denom?.path || '',
@@ -235,7 +235,7 @@ function tryMatchToken(
         reverseRoutesInput[bestMatchIntersectIndex + 1]
       ) {
         break;
-      } else bestMatchIntersectIndex++;
+      } else bestMatchIntersectIndex += 1;
     }
     // example: noble => cosmoshub (from transfer/channel-4 => transfer/channel-536 to unwrap)
     const chainStep1: string[] = chainsInput.slice(
@@ -436,7 +436,7 @@ export async function findRouteAndPools(
 ) {
   const ran = Math.random();
   console.time(ran.toString());
-  let [token0Trace, token1Trace] = await Promise.all([
+  const [token0Trace, token1Trace] = await Promise.all([
     getTokenDenomTrace(token0ChainId, token0String),
     getTokenDenomTrace(token1ChainId, token1String),
   ]);

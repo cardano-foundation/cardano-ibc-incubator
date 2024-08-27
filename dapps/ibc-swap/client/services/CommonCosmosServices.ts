@@ -2,7 +2,6 @@
 /* eslint-disable camelcase */
 
 import { sha256 } from 'js-sha256';
-import { DenomTrace } from 'cosmjs-types/ibc/applications/transfer/v1/transfer';
 import { State, stateFromJSON } from 'cosmjs-types/ibc/core/channel/v1/channel';
 
 import {
@@ -173,7 +172,7 @@ export async function fetchAllChannels(
     const { index } = maxSrcChannelId[item];
     return tmpData[index];
   });
-  let channelsMap: {
+  const channelsMap: {
     [key: string]: { destChain: string; destChannel: string; destPort: string };
   } = {};
   tmpData.forEach((channelPair) => {
@@ -190,7 +189,7 @@ export async function fetchAllChannels(
       destPort: srcPort,
     };
   });
-  let availableChannelsMap: {
+  const availableChannelsMap: {
     [key: string]: { destChain: string; destChannel: string; destPort: string };
   } = {};
   bestChannel.forEach((channelPair) => {
@@ -233,8 +232,8 @@ export async function getTokenDenomTraceCosmos(
     base_denom: string;
   };
 }> {
-  let queryTokenHash = token.replaceAll('ibc/', '');
-  let tokenTraceReturn = {
+  const queryTokenHash = token.replaceAll('ibc/', '');
+  const tokenTraceReturn = {
     denom_trace: {
       path: '',
       base_denom: queryTokenHash,
