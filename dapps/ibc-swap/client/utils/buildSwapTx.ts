@@ -5,10 +5,7 @@ const pfmReceiver = 'pfm';
 const CROSSCHAIN_SWAPS_ADDRESS =
   process.env.NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS!;
 
-const buildNextMemo = (
-  transferBackRoutes: string[],
-  receiver: string,
-): any => {
+const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
   let result = {};
   const transBackRoutes = transferBackRoutes.reverse().slice(1);
   transBackRoutes.forEach((route, index) => {
@@ -56,7 +53,7 @@ const buildOsmosisSwapMemo = ({
               window_seconds: 10,
             },
           },
-          receiver: pfmReceiver,
+          receiver: 'cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6',
           on_failed_delivery: 'do_nothing',
           next_memo: nextMemo,
         },
@@ -127,7 +124,10 @@ export async function unsignedTxSwapFromCardano({
   // pfm
   const [route, ...restRoutes] = transferRoutes;
   const [srcPort, srcChannel] = route.split('/');
-  const nextMemo = buildNextMemo(transferBackRoutes, getPublicKeyHashFromAddress(receiver)!);
+  const nextMemo = buildNextMemo(
+    transferBackRoutes,
+    getPublicKeyHashFromAddress(receiver)!,
+  );
   const osmosisSwapMemo = buildOsmosisSwapMemo({
     nextMemo,
     tokenOutDenom,

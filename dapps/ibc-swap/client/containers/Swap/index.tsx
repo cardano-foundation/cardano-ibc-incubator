@@ -222,7 +222,7 @@ const SwapContainer = () => {
         message,
         tokenOutAmount,
         tokenOutTransferBackAmount,
-        token1,
+        outToken,
         transferRoutes,
         transferBackRoutes,
       } = res;
@@ -243,7 +243,7 @@ const SwapContainer = () => {
             amount: swapData.fromToken.swapAmount!,
             denom: swapData.fromToken.tokenId,
           },
-          tokenOutDenom: token1,
+          tokenOutDenom: outToken,
           receiver: swapData.receiveAdrress || cardanoAddress,
           transferRoutes,
           transferBackRoutes,

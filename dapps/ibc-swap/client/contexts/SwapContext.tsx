@@ -20,7 +20,7 @@ type SwapContextType = {
 
 const SwapContext = createContext<SwapContextType>({} as SwapContextType);
 
-const initSwapData = { receiveAdrress: '', slippageTolerance: '1.0' };
+const initSwapData = { receiveAdrress: '', slippageTolerance: '20.0' };
 
 export const SwapProvider = ({ children }: { children?: React.ReactNode }) => {
   const cardanoAddress = useAddress();
