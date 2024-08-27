@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use check::check_project_root;
 use clap::Parser;
 use clap::Subcommand;
@@ -7,6 +5,7 @@ use start::{
     configure_hermes, start_cosmos_sidechain, start_local_cardano_network, start_osmosis,
     start_relayer,
 };
+use utils::get_project_root_path;
 mod check;
 mod config;
 mod logger;
@@ -54,24 +53,9 @@ async fn main() {
     match args.command {
         Commands::Check => check::check_prerequisites().await,
         Commands::Start { project_root } => {
-            let mut project_root_dir = match project_root {
-                Some(dir) => dir,
-                None => ".".to_string(),
-            };
-
-            if project_root_dir.starts_with(".") {
-                project_root_dir = std::env::current_dir()
-                    .unwrap_or_else(|err| {
-                        logger::log(&format!("Failed to get current directory: {}", err));
-                        panic!("Failed to get current directory: {}", err);
-                    })
-                    .join(project_root_dir)
-                    .to_str()
-                    .unwrap()
-                    .to_string();
-            }
-
-            let project_root_path = Path::new(project_root_dir.as_str());
+            // Get the project root path and build or read the config file
+            let project_root_path_buf = get_project_root_path(project_root);
+            let project_root_path = project_root_path_buf.as_path();
             config::init(
                 project_root_path
                     .join(args.config)
@@ -82,27 +66,32 @@ async fn main() {
                     }),
             );
 
-            start_relayer(project_root_path.join("relayer").as_path())
-                .expect("⚠️ Unable to prepare relayer environment");
-            if config::get_config().local_osmosis {
-                match check_project_root(project_root_path) {
-                    Ok(_) => {
-                        let osmosis_dir = utils::get_osmosis_dir(project_root_path);
-                        start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await;
-                        start_osmosis(osmosis_dir.as_path()).await;
-                        configure_hermes(osmosis_dir.as_path());
-                        start_local_cardano_network(project_root_path);
-                    }
-                    Err(_e) => {
-                        logger::error(&format!(
-                            "Error: Could not find the project root for 'cardano-ibc-incubator' in the directory:\n{}\n\nPlease specify the correct path using the --project-root option: \n\n\t caribic start --local-osmosis --project-root <path>\n",
-                            project_root_dir
-                        ));
-                        return;
-                    }
+            // Check if the provided project root really points to the cardano-ibc-incubator folder
+            // TODO: This check could be removed in the future if we would wrap the first call to cariabic is a
+            //       configuration step building a .caribic file/folder in the home directory
+            match check_project_root(project_root_path) {
+                Ok(_) => {
+                    // Start the relayer
+                    start_relayer(project_root_path.join("relayer").as_path())
+                        .expect("⚠️ Unable to prepare relayer environment");
+
+                    // Start the Cosmos sidechain
+                    start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await;
+                    // Start the local Osmosis appchain
+                    let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+                    start_osmosis(osmosis_dir.as_path()).await;
+                    // Start the local Cardano network and its services
+                    start_local_cardano_network(project_root_path);
+                    // Configure Hermes and build channels between Osmosis with Cosmos
+                    configure_hermes(osmosis_dir.as_path());
                 }
-            } else {
-                logger::warn("An Osmosis remote setup is not yet supported. Use the option: \n\n\t caribic start --local-osmosis\n\n");
+                Err(_e) => {
+                    logger::error(&format!(
+                        "Error: Could not find the project root for 'cardano-ibc-incubator' in the directory:\n{}\n\nPlease specify the correct path using the --project-root option: \n\n\t caribic start --local-osmosis --project-root <path>\n",
+                        project_root_path.display()
+                    ));
+                    return;
+                }
             }
         }
         Commands::Stop => logger::log("Stop"),

@@ -37,6 +37,27 @@ pub struct IndicatorMessage {
     pub emoji: String,
 }
 
+pub fn get_project_root_path(project_root: Option<String>) -> PathBuf {
+    let mut project_root_dir = match project_root {
+        Some(dir) => dir,
+        None => ".".to_string(),
+    };
+
+    if project_root_dir.starts_with(".") {
+        project_root_dir = std::env::current_dir()
+            .unwrap_or_else(|err| {
+                logger::log(&format!("Failed to get current directory: {}", err));
+                panic!("Failed to get current directory: {}", err);
+            })
+            .join(project_root_dir)
+            .to_str()
+            .unwrap()
+            .to_string();
+    }
+
+    return Path::new(project_root_dir.as_str()).to_path_buf();
+}
+
 pub async fn download_file(
     url: &str,
     path: &Path,
