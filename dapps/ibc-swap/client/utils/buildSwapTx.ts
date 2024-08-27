@@ -127,7 +127,7 @@ export async function unsignedTxSwapFromCardano({
   // pfm
   const [route, ...restRoutes] = transferRoutes;
   const [srcPort, srcChannel] = route.split('/');
-  const nextMemo = buildNextMemo(transferBackRoutes, receiver);
+  const nextMemo = buildNextMemo(transferBackRoutes, getPublicKeyHashFromAddress(receiver)!);
   const osmosisSwapMemo = buildOsmosisSwapMemo({
     nextMemo,
     tokenOutDenom,
