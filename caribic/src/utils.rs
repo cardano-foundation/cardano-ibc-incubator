@@ -162,6 +162,7 @@ pub fn execute_script(
     script_dir: &Path,
     script_name: &str,
     script_args: Vec<&str>,
+    script_env: Option<Vec<(&str, &str)>>,
 ) -> io::Result<String> {
     logger::verbose(&format!(
         "{} {} {}",
@@ -169,9 +170,12 @@ pub fn execute_script(
         script_name,
         script_args.join(" ")
     ));
+    let envs = script_env.unwrap_or_default();
+
     let mut cmd = Command::new(script_name)
         .current_dir(script_dir)
         .args(script_args)
+        .envs(envs)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
