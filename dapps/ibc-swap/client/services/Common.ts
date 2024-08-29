@@ -30,12 +30,15 @@ export async function getTokenDenomTrace(chainId: string, tokenString: string) {
               : denom?.denom || tokenString,
         };
       } catch (error) {
-        toast.error('Failed to fetch data from GraphQL.', { theme: 'colored' });
+        // toast.error('Failed to fetch data from GraphQL.', { theme: 'colored' });
       }
     }
     return {
       path: '',
-      base_denom: tokenString,
+      base_denom:
+        tokenString.toLowerCase() === 'lovelace'
+          ? CARDANO_LOVELACE_HEX_STRING
+          : tokenString,
     };
   }
   let trace: any = {};

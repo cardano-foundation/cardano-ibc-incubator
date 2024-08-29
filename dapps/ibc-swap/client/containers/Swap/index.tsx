@@ -211,6 +211,7 @@ const SwapContainer = () => {
   // }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
 
   const calculateAndSetSwapEst = (swapData: any) => {
+    setEstimateData({...initEstData});
     calculateSwapEst({
       fromChain: swapData.fromToken.network.networkId!,
       tokenInDenom: swapData.fromToken.tokenId,
@@ -228,7 +229,7 @@ const SwapContainer = () => {
       } = res;
       if (message) {
         toast.error(message, { theme: 'colored' });
-        setEstimateData(initEstData);
+        setEstimateData({...initEstData});
       } else {
         setSwapData({
           ...swapData,
