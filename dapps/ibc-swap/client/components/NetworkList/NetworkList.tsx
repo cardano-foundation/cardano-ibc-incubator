@@ -1,6 +1,6 @@
 import { List, ListItem } from '@chakra-ui/react';
-import { NetworkItem, NetworkItemProps } from '../NetworkItem/NetworkItem';
 import { OSMOSIS_CHAIN_ID } from '@/constants';
+import { NetworkItem, NetworkItemProps } from '../NetworkItem/NetworkItem';
 
 type NetworkListProps = {
   networkList: Array<NetworkItemProps>;

@@ -1,7 +1,6 @@
 // import type { Pool } from 'osmojs';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { IBCDenomTrace } from '@/types/IBCParams';
-import { fetchAllDenomTraces } from './CommonCosmosServices';
 import {
   OSMOSIS_MAINNET_REST_ENDPOINT,
   OSMOSIS_MAINNET_SQS_ENDPOINT,
@@ -10,6 +9,7 @@ import {
   sqsQueryPoolsUrl,
 } from '@/constants';
 import { EstimateSwapExactAmountInResponse } from 'osmojs/osmosis/poolmanager/v1beta1/query';
+import { fetchAllDenomTraces } from './CommonCosmosServices';
 
 const routeTableStrPrefix = '\x00\rrouting_table\x00D';
 
@@ -21,11 +21,16 @@ export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
 }
 
 function hex2a(hexx: string): string {
-  var hex = hexx.toString(); //force conversion
-  var str = '';
-  for (var i = 0; i < hex.length; i += 2)
+  const hex = hexx.toString(); // force conversion
+  let str = '';
+  for (let i = 0; i < hex.length; i += 2)
     str += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
   return str;
+}
+
+function isValidTokenInPool(tokenString: string) {
+  if (tokenString.startsWith('ibc/')) return true;
+  return !tokenString.includes('/');
 }
 
 export async function fetchCrossChainSwapRouterState() {
@@ -55,11 +60,6 @@ export async function fetchCrossChainSwapRouterState() {
     return acc;
   }, []);
   return routes;
-}
-
-function isValidTokenInPool(tokenString: string) {
-  if (tokenString.startsWith('ibc/')) return true;
-  return !tokenString.includes('/');
 }
 
 export async function getOsmosisPools(IDs: string[] = []) {
@@ -206,7 +206,7 @@ export async function getEstimateSwapRPC(
       output = BigInt(res.tokenOutAmount);
     })
     .catch((e: any) => {
-      let msgError = e?.message!;
+      const msgError = e?.message!;
       if (
         msgError.includes('expected tokensB to be of length one') ||
         msgError.includes('token amount must be positive')

@@ -1,5 +1,6 @@
 'use client';
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+
+import React, { useContext, useEffect, useState } from 'react';
 import {
   Box,
   Checkbox,
@@ -25,22 +26,19 @@ import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import { verifyAddress } from '@/utils/address';
 import IBCParamsContext from '@/contexts/IBCParamsContext';
+import { HOUR_IN_NANOSEC } from '@/constants';
+import { debounce } from '@/utils/helper';
+import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
 import { SwapResult } from './SwapResult';
-
-import { HOUR_IN_NANOSEC } from '@/constants';
-
-// import debounce from 'lodash/debounce';
-import { debounce } from '@/utils/helper';
 
 import StyledSwap, {
   StyledSwapButton,
   StyledSwitchNetwork,
   StyledWrapContainer,
 } from './index.style';
-import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 
 type EstimateFeeType = {
   display: boolean;
@@ -189,29 +187,8 @@ const SwapContainer = () => {
     fetchNetworkList();
   }, []);
 
-  // useEffect(() => {
-  //   if (
-  //     BigNumber(swapData?.fromToken?.swapAmount || '').isGreaterThan(
-  //       BigNumber(0),
-  //     ) &&
-  //     BigNumber(swapData?.toToken?.swapAmount || '').isGreaterThan(BigNumber(0))
-  //   ) {
-  //     if (!isCheckedAnotherWallet) {
-  //       setEnableSwap(true);
-  //     } else if (swapData?.receiveAdrress && !errorAddressMsg) {
-  //       // if isValidAddress
-  //       setEnableSwap(true);
-  //     } else {
-  //       setEnableSwap(false);
-  //     }
-  //   } else {
-  //     setEnableSwap(false);
-  //   }
-  //   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // }, [JSON.stringify(swapData), isCheckedAnotherWallet]);
-
-  const calculateAndSetSwapEst = (swapData: any) => {
-    setEstimateData({...initEstData});
+  const calculateAndSetSwapEst = () => {
+    setEstimateData({ ...initEstData });
     calculateSwapEst({
       fromChain: swapData.fromToken.network.networkId!,
       tokenInDenom: swapData.fromToken.tokenId,
@@ -229,7 +206,7 @@ const SwapContainer = () => {
       } = res;
       if (message) {
         toast.error(message, { theme: 'colored' });
-        setEstimateData({...initEstData});
+        setEstimateData({ ...initEstData });
       } else {
         setSwapData({
           ...swapData,
@@ -245,10 +222,10 @@ const SwapContainer = () => {
             denom: swapData.fromToken.tokenId,
           },
           tokenOutDenom: outToken,
-          receiver: swapData.receiveAdrress || cardanoAddress,
+          receiver: swapData.receiveAdrress || cardanoAddress!,
           transferRoutes,
           transferBackRoutes,
-          slippagePercentage: swapData.slippageTolerance,
+          slippagePercentage: swapData.slippageTolerance!,
           timeoutTimeOffset: HOUR_IN_NANOSEC,
         });
         let estDataResult: any;
@@ -283,8 +260,7 @@ const SwapContainer = () => {
     });
   };
 
-  const debounceEstAmount = () =>
-    debounce(calculateAndSetSwapEst, 1000)(swapData);
+  const debounceEstAmount = () => debounce(calculateAndSetSwapEst, 1000)();
 
   useEffect(() => {
     // check amount out

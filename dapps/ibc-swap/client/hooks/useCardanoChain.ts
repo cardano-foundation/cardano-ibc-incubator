@@ -76,11 +76,11 @@ export const useCardanoChain = () => {
 
       if (quantityA === BigInt(0) && quantityB !== BigInt(0)) {
         return 1;
-      } else if (quantityA !== BigInt(0) && quantityB === BigInt(0)) {
-        return -1;
-      } else {
-        return 0;
       }
+      if (quantityA !== BigInt(0) && quantityB === BigInt(0)) {
+        return -1;
+      }
+      return 0;
     });
   };
 

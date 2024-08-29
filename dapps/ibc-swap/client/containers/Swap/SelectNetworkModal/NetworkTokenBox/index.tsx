@@ -171,8 +171,8 @@ const NetworkTokenBox = ({
   }, [networkList]);
 
   return (
-    <StyledNetworkBox isChoseToken={!!tokenSelected?.tokenId}>
-      <StyledNetworkBoxHeader isChoseToken={!!tokenSelected?.tokenId}>
+    <StyledNetworkBox ischosetoken={!!tokenSelected?.tokenId}>
+      <StyledNetworkBoxHeader ischosetoken={!!tokenSelected?.tokenId}>
         <Text display="flex" alignItems="center">
           {fromOrTo}
         </Text>

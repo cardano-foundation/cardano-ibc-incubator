@@ -3,7 +3,7 @@ import { COLOR } from '@/styles/color';
 import { Box, BoxProps } from '@chakra-ui/react';
 
 interface StyledNetworkBoxProps extends BoxProps {
-  isChoseToken?: boolean;
+  ischosetoken?: boolean;
 }
 
 const StyledNetworkBox = styled(Box)<StyledNetworkBoxProps>`
@@ -13,7 +13,7 @@ const StyledNetworkBox = styled(Box)<StyledNetworkBoxProps>`
   border-radius: 12px;
   opacity: 0px;
   background: #0e0e124d;
-  border: ${(props) => !props.isChoseToken && `1px solid #fd4c80`};
+  border: ${(props) => !props.ischosetoken && `1px solid #fd4c80`};
 `;
 
 const StyledNetworkBoxHeader = styled(Box)<StyledNetworkBoxProps>`
@@ -26,7 +26,7 @@ const StyledNetworkBoxHeader = styled(Box)<StyledNetworkBoxProps>`
   background: ${COLOR.neutral_5};
   display: flex;
   justify-content: center;
-  background: ${(props) => !props.isChoseToken && `#fd4c8014`};
+  background: ${(props) => !props.ischosetoken && `#fd4c8014`};
 `;
 
 const StyledTokenBox = styled.div`

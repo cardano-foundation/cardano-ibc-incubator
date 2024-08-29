@@ -183,15 +183,13 @@ const cardanoChain: Chain = {
   },
 };
 
-export const chainsRestEndpoints: { [key: string]: string } = customChains.reduce(
-  (acc: { [key: string]: string }, chain) => {
+export const chainsRestEndpoints: { [key: string]: string } =
+  customChains.reduce((acc: { [key: string]: string }, chain) => {
     const { apis, chain_id: chainId } = chain;
     const [restEndpoint] = apis?.rest!;
     acc[chainId] = restEndpoint.address!;
     return acc;
-  },
-  {},
-);
+  }, {});
 
 export const allChains: any[] = [...customChains, cardanoChain];
 export const customChainassets: AssetList[] = [
