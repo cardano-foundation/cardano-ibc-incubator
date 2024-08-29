@@ -196,8 +196,8 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         verbose(&format!(
             "Copying Hermes configuration files from {} to {}",
-            script_dir.display(),
-            hermes_dir.display()
+            script_dir.join("hermes/config.toml").display(),
+            hermes_dir.join("config.toml").display()
         ));
         copy(
             script_dir.join("hermes/config.toml"),
