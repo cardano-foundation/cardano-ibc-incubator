@@ -37,6 +37,25 @@ pub struct IndicatorMessage {
     pub emoji: String,
 }
 
+pub fn wait_until_file_exists(
+    file_path: &Path,
+    retries: u32,
+    interval: u64,
+    retry_command: impl Fn() -> (),
+) -> Result<(), String> {
+    let mut file_exists = file_path.exists();
+    for _ in 0..retries {
+        if file_exists {
+            return Ok(());
+        }
+        retry_command();
+
+        thread::sleep(Duration::from_millis(interval));
+        file_exists = file_path.exists();
+    }
+    Err(format!("File {} does not exist", file_path.display()))
+}
+
 pub fn get_project_root_path(project_root: Option<String>) -> PathBuf {
     let mut project_root_dir = match project_root {
         Some(dir) => dir,
