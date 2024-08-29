@@ -168,7 +168,7 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
 
     if status.is_ok() {
         // TODD: make the url and port configurable
-        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/", 30, 3000).await;
+        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/health?", 30, 3000).await;
         if is_healthy.is_ok() {
             log("✅ Local Osmosis network started successfully");
         } else {
@@ -221,6 +221,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         Vec::from([
             "keys",
             "add",
+            "--overwrite",
             "--chain",
             "sidechain",
             "--mnemonic-file",
@@ -235,6 +236,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         Vec::from([
             "keys",
             "add",
+            "--overwrite",
             "--chain",
             "localosmosis",
             "--mnemonic-file",
