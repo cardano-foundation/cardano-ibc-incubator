@@ -115,7 +115,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
     );
     log("Waiting for the Cosmos sidechain to start...");
     // TODO: make the url configurable
-    let is_healthy = wait_for_health_check("http://127.0.0.1:26657/", 10, 1000).await;
+    let is_healthy = wait_for_health_check("http://127.0.0.1:4500/", 60, 5000).await;
     if is_healthy.is_ok() {
         log("✅ Cosmos sidechain started successfully");
     } else {
@@ -168,7 +168,7 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
 
     if status.is_ok() {
         // TODD: make the url and port configurable
-        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/", 10, 1000).await;
+        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/", 30, 3000).await;
         if is_healthy.is_ok() {
             log("✅ Local Osmosis network started successfully");
         } else {
