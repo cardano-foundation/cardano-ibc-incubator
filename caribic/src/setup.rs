@@ -1,8 +1,11 @@
 use crate::logger::verbose;
-use crate::utils::{delete_file, download_file, unzip_file, IndicatorMessage};
+use crate::utils::{delete_file, download_file, execute_script, unzip_file, IndicatorMessage};
+use chrono::{SecondsFormat, Utc};
 use console::style;
 use fs_extra::{copy_items, file::copy};
+use std::fs::{self, create_dir, File};
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::{path::Path, process::Command};
 
 pub async fn download_osmosis(osmosis_path: &Path) {
@@ -83,13 +86,33 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
         cardano_config_dir.join("credentials"),
     ];
 
-    let copy_dir_options = fs_extra::dir::CopyOptions::new().overwrite(true);
+    // try to remove old devnet folder
+    if devnet_dir.exists() {
+        match fs::remove_dir_all(&devnet_dir) {
+            Ok(_) => {
+                println!("✅ Clear old data successfully.");
+                create_dir(&devnet_dir).unwrap();
+            }
+            Err(e) => eprintln!(
+                "❌ Failed to remove folder: {}, folder: {} .Pls remove it manually",
+                e,
+                devnet_dir.to_string_lossy()
+            ),
+        }
+    }
+
+    let copy_dir_options = fs_extra::dir::CopyOptions::new()
+        .overwrite(true)
+        .copy_inside(true)
+        .depth(0);
+
+    // copy devnet folder
     copy_items(
         &vec![cardano_config_dir.join("devnet")],
         &cardano_dir,
         &copy_dir_options,
     )
-    .expect("Failed to copy Cardano configuration files");
+    .expect("Failed to copy Cardano configuration files, devnet");
 
     for source in cardano_config_files {
         verbose(&format!(
@@ -107,4 +130,47 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
             copy(source, destination, &options).expect("Failed to copy Cardano configuration file");
         }
     }
+
+    //  + create file /devnet/topology.json: {"Producers": []}
+    let _ = fs_extra::file::write_all(devnet_dir.join("topology.json"), r#"{"Producers": []}"#);
+
+    // Update start time
+    let now = Utc::now();
+    let timestamp = now.timestamp();
+    let formatted_time = now.to_rfc3339_opts(SecondsFormat::Secs, true);
+
+    let _ = replace_in_file(
+        &devnet_dir.join("genesis-byron.json").to_string_lossy(),
+        r#""startTime": 1657186415"#,
+        &format!(r#""startTime": {}"#, timestamp),
+    );
+    let _ = replace_in_file(
+        &devnet_dir.join("genesis-shelley.json").to_string_lossy(),
+        r#""systemStart": "2022-07-07T09:33:35Z""#,
+        &format!(r#""systemStart": "{}""#, formatted_time),
+    );
+
+    //  + mkdir "/devnet/ipc"
+    let _ = fs::create_dir(devnet_dir.join("ipc"));
+    //  + create file /devnet/node.socket
+    let _ = fs::File::create(devnet_dir.join("node.socket"));
+    //  + chmod /devnet => 400
+    let _ = fs::set_permissions(
+        devnet_dir.join("vrf.skey"),
+        fs::Permissions::from_mode(0o400),
+    );
+}
+
+fn replace_in_file(file_path: &str, old_string: &str, new_string: &str) -> io::Result<()> {
+    // Read the file content
+    let content = fs::read_to_string(file_path)?;
+
+    // Replace the old string with the new string
+    let new_content = content.replace(old_string, new_string);
+
+    // Write the modified content back to the file
+    let mut file = File::create(file_path)?;
+    file.write_all(new_content.as_bytes())?;
+
+    Ok(())
 }

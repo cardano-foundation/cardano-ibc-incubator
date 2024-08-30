@@ -41,65 +41,73 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
         style("Step 1/5").bold().dim(),
     ));
     configure_local_cardano_devnet(project_root_path.join("chains/cardano").as_path());
+
     log(&format!(
-        "{} 📝 Copying Cardano environment file",
+        "{} 🚀 Starting Cardano services: cardano-node postgres kupo cardano-node-ogmios",
         style("Step 2/5").bold().dim(),
     ));
-    copy_cardano_env_file(project_root_path.join("cardano").as_path());
-    log(&format!(
-        "{} 🛠️ Building Aiken validators",
-        style("Step 3/5").bold().dim()
-    ));
-    let _ = execute_script(
-        project_root_path.join("cardano").as_path(),
-        "aiken",
-        Vec::from(["build", "--trace-level", "verbose"]),
+    start_local_cardano_services(
+        project_root_path.join("chains/cardano").as_path(),
+        vec!["cardano-node", "postgres", "kupo", "cardano-node-ogmios"],
     );
-    log(&format!(
-        "{} 🤖 Generating validator off-chain types",
-        style("Step 4/5").bold().dim(),
-    ));
-    let _ = execute_script(
-        project_root_path.join("cardano").as_path(),
-        "deno",
-        Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
-    );
-    log(&format!(
-        "{} 🚀 Starting Cardano services",
-        style("Step 5/5").bold().dim(),
-    ));
-    start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
-    log("🕦 Waiting for the Cardano services to start ...");
-    let handler_json_exists = wait_until_file_exists(
-        project_root_path
-            .join("cardano/deployments/handler.json")
-            .as_path(),
-        20,
-        2000,
-        || {
-            let _ = execute_script(
-                project_root_path.join("cardano").as_path(),
-                "deno",
-                Vec::from(["run", "-A", "--unstable", "src/deploy.ts"]),
-            );
-        },
-    );
-    if handler_json_exists.is_ok() {
-        log("✅ Cardano services started successfully");
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        let _ = copy(
-            project_root_path.join("cardano/deployments/handler.json"),
-            project_root_path.join("cardano/gateway/src/deployment/handler.json"),
-            &options,
-        );
-        let _ = copy(
-            project_root_path.join("cardano/deployments/handler.json"),
-            project_root_path.join("relayer/examples/demo/configs/chains/chain_handler.json"),
-            &options,
-        );
-    } else {
-        error("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.");
-    }
+
+    // prepare db sync
+
+    // log(&format!(
+    //     "{} 📝 Copying Cardano environment file",
+    //     style("Step 2/5").bold().dim(),
+    // ));
+    // copy_cardano_env_file(project_root_path.join("cardano").as_path());
+    // log(&format!(
+    //     "{} 🛠️ Building Aiken validators",
+    //     style("Step 3/5").bold().dim()
+    // ));
+    // let _ = execute_script(
+    //     project_root_path.join("cardano").as_path(),
+    //     "aiken",
+    //     Vec::from(["build", "--trace-level", "verbose"]),
+    // );
+    // log(&format!(
+    //     "{} 🤖 Generating validator off-chain types",
+    //     style("Step 4/5").bold().dim(),
+    // ));
+    // let _ = execute_script(
+    //     project_root_path.join("cardano").as_path(),
+    //     "deno",
+    //     Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
+    // );
+
+    // log("🕦 Waiting for the Cardano services to start ...");
+    // let handler_json_exists = wait_until_file_exists(
+    //     project_root_path
+    //         .join("cardano/deployments/handler.json")
+    //         .as_path(),
+    //     20,
+    //     2000,
+    //     || {
+    //         let _ = execute_script(
+    //             project_root_path.join("cardano").as_path(),
+    //             "deno",
+    //             Vec::from(["run", "-A", "--unstable", "src/deploy.ts"]),
+    //         );
+    //     },
+    // );
+    // if handler_json_exists.is_ok() {
+    //     log("✅ Cardano services started successfully");
+    //     let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    //     let _ = copy(
+    //         project_root_path.join("cardano/deployments/handler.json"),
+    //         project_root_path.join("cardano/gateway/src/deployment/handler.json"),
+    //         &options,
+    //     );
+    //     let _ = copy(
+    //         project_root_path.join("cardano/deployments/handler.json"),
+    //         project_root_path.join("relayer/examples/demo/configs/chains/chain_handler.json"),
+    //         &options,
+    //     );
+    // } else {
+    //     error("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.");
+    // }
 }
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
@@ -119,29 +127,33 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
     }
 }
 
-pub fn start_local_cardano_services(cardano_dir: &Path) {
+pub fn start_local_cardano_services(cardano_dir: &Path, services: Vec<&str>) {
     let configuration = config::get_config();
 
-    let mut services = vec![];
-    if configuration.services.cardano_node {
-        services.push("cardano-node");
-    }
-    if configuration.services.postgres {
-        services.push("postgres");
-    }
-    if configuration.services.kupo {
-        services.push("kupo");
-    }
-    if configuration.services.ogmios {
-        services.push("cardano-node-ogmios");
+    let mut this_services = vec![];
+    if services.len() == 0 {
+        if configuration.services.cardano_node {
+            this_services.push("cardano-node");
+        }
+        if configuration.services.postgres {
+            this_services.push("postgres");
+        }
+        if configuration.services.kupo {
+            this_services.push("kupo");
+        }
+        if configuration.services.ogmios {
+            this_services.push("cardano-node-ogmios");
+        }
+    } else {
+        this_services = services.clone()
     }
 
-    let mut script_stop_args = vec!["compose", "stop"];
-    script_stop_args.append(&mut services.clone());
+    let mut script_stop_args = vec!["compose", "down"];
+    script_stop_args.append(&mut this_services.clone());
     let _ = execute_script(cardano_dir, "docker", script_stop_args);
 
     let mut script_start_args = vec!["compose", "up", "-d"];
-    script_start_args.append(&mut services);
+    script_start_args.append(&mut this_services);
     let _ = execute_script(cardano_dir, "docker", script_start_args);
 }
 
