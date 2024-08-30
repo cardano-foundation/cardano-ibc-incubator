@@ -2,7 +2,7 @@ use crate::{
     logger,
     setup::{download_osmosis, install_osmosisd},
 };
-use std::{io::Error, path::Path, process::Command};
+use std::{path::Path, process::Command};
 
 pub async fn check_prerequisites() {
     logger::info(&format!("Checking prerequisites..."));
@@ -60,23 +60,6 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
             ));
             logger::log(&format!("{}", install_instructions));
         }
-    }
-}
-
-pub fn check_project_root(project_root: &Path) -> Result<(), Error> {
-    if project_root
-        .join("chains")
-        .join("osmosis")
-        .join("scripts")
-        .join("start.sh")
-        .exists()
-    {
-        Ok(())
-    } else {
-        Err(Error::new(
-            std::io::ErrorKind::NotFound,
-            "Project root not found",
-        ))
     }
 }
 
