@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   cardano-node:
     image: ghcr.io/intersectmbo/cardano-node:9.1.0

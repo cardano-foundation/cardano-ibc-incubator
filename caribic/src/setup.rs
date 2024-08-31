@@ -3,9 +3,11 @@ use crate::utils::{delete_file, download_file, execute_script, unzip_file, Indic
 use chrono::{SecondsFormat, Utc};
 use console::style;
 use fs_extra::{copy_items, file::copy};
+use serde_json;
 use std::fs::{self, create_dir, File};
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
+use regex::Regex;
 use std::{path::Path, process::Command};
 
 pub async fn download_osmosis(osmosis_path: &Path) {
@@ -75,6 +77,139 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) {
         .arg(destination)
         .status()
         .expect("Failed to copy Cardano environment file");
+}
+
+pub fn replace_hash_for_dbsync(cardano_dir: &Path, args: Vec<&str>, old_string: &str) {
+    let hash = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(vec!["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(args)
+        .output()
+        .unwrap()
+        .stdout;
+    let mut hash_str = String::from_utf8(hash).unwrap();
+    hash_str.pop();
+    let _ = replace_in_file(
+        &cardano_dir
+            .join("devnet/cardano-node-db.json")
+            .to_string_lossy(),
+        old_string,
+        &hash_str,
+    );
+}
+
+pub fn prepare_db_sync(cardano_dir: &Path) {
+    // ByronGenesisHash
+    replace_hash_for_dbsync(
+        cardano_dir,
+        vec![
+            "byron",
+            "genesis",
+            "print-genesis-hash",
+            "--genesis-json",
+            "/devnet/genesis-byron.json",
+        ],
+        "xByronGenesisHash",
+    );
+    // ShelleyGenesisHash
+    replace_hash_for_dbsync(
+        cardano_dir,
+        vec![
+            "genesis",
+            "hash",
+            "--genesis",
+            "/devnet/genesis-shelley.json",
+        ],
+        "xShelleyGenesisHash",
+    );
+    // AlonzoGenesisHash
+    replace_hash_for_dbsync(
+        cardano_dir,
+        vec![
+            "genesis",
+            "hash",
+            "--genesis",
+            "/devnet/genesis-alonzo.json",
+        ],
+        "xAlonzoGenesisHash",
+    );
+    // ConwayGenesisHash
+    replace_hash_for_dbsync(
+        cardano_dir,
+        vec![
+            "genesis",
+            "hash",
+            "--genesis",
+            "/devnet/genesis-conway.json",
+        ],
+        "xConwayGenesisHash",
+    );
+
+    let network_magic = 42;
+    let protocol_state = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(vec!["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(vec![
+            "query",
+            "protocol-state",
+            "--testnet-magic",
+            &network_magic.to_string(),
+        ])
+        // .args(vec![" | ", "jq", "'.epochNonce.contents? // .epochNonce'"])
+        .output()
+        .unwrap()
+        .stdout;
+    let protocol_state_str = String::from_utf8(protocol_state).unwrap();
+
+    let protocol_state_json: serde_json::Value = serde_json::from_str(&protocol_state_str).unwrap();
+    let epoch0_nonce_str = &protocol_state_json["epochNonce"];
+
+    let ledger_state = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(vec!["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(vec![
+            "query",
+            "ledger-state",
+            "--testnet-magic",
+            &network_magic.to_string(),
+        ])
+        // .args(vec![
+        //     " | jq '.stateBefore.esSnapshots.pstakeMark.poolParams'",
+        // ])
+        .output()
+        .unwrap()
+        .stdout;
+
+    let ledger_state_str = String::from_utf8(ledger_state).unwrap();
+    let pool_params_json: serde_json::Value = serde_json::from_str(&ledger_state_str).unwrap();
+
+    let pool_params_str = &pool_params_json["stateBefore"]["esSnapshots"]["pstakeMark"]["poolParams"];
+
+
+    let baseinfo_dir = cardano_dir.join("baseinfo");
+    if !baseinfo_dir.exists() {
+        create_dir(&baseinfo_dir).unwrap();
+    }
+    let baseinfo_content = &format!(
+        r#"{{"Epoch0Nonce": {}, "poolParams": {}}}"#,
+        epoch0_nonce_str, pool_params_str
+    );
+    let _ = fs_extra::file::write_all(baseinfo_dir.join("info.json"), baseinfo_content);
+    update_gateway_epoch_nonce(cardano_dir, epoch0_nonce_str)
+}
+
+pub fn update_gateway_epoch_nonce(cardano_dir: &Path, epoch0_nonce_str: &serde_json::Value) {
+    let env_path = cardano_dir.join("../../cardano/gateway/.env.example");
+    let content = fs::read_to_string(&env_path).unwrap();
+
+    let re = Regex::new(r"CARDANO_EPOCH_NONCE_GENESIS=.*").unwrap();
+    let replace_str = format!(
+        r#"CARDANO_EPOCH_NONCE_GENESIS={}"#,
+        epoch0_nonce_str
+    );
+    let result = re.replace_all(&content, replace_str).into_owned();
+
+    let _ = fs_extra::file::write_all(&env_path, &result);
 }
 
 pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
