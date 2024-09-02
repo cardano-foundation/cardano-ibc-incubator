@@ -3,6 +3,7 @@ use crate::logger::{
     Verbosity::{Info, Standard, Verbose},
 };
 use console::style;
+use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use reqwest::Client;
 use std::error::Error;
@@ -37,6 +38,13 @@ pub struct IndicatorMessage {
     pub emoji: String,
 }
 
+pub fn default_config_path() -> PathBuf {
+    let mut config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    config_path.push(".caribic");
+    config_path.push("config.json");
+    config_path
+}
+
 pub fn wait_until_file_exists(
     file_path: &Path,
     retries: u32,
@@ -54,27 +62,6 @@ pub fn wait_until_file_exists(
         file_exists = file_path.exists();
     }
     Err(format!("File {} does not exist", file_path.display()))
-}
-
-pub fn get_project_root_path(project_root: Option<String>) -> PathBuf {
-    let mut project_root_dir = match project_root {
-        Some(dir) => dir,
-        None => ".".to_string(),
-    };
-
-    if project_root_dir.starts_with(".") {
-        project_root_dir = std::env::current_dir()
-            .unwrap_or_else(|err| {
-                logger::log(&format!("Failed to get current directory: {}", err));
-                panic!("Failed to get current directory: {}", err);
-            })
-            .join(project_root_dir)
-            .to_str()
-            .unwrap()
-            .to_string();
-    }
-
-    return Path::new(project_root_dir.as_str()).to_path_buf();
 }
 
 pub async fn download_file(
@@ -162,6 +149,7 @@ pub fn execute_script(
     script_dir: &Path,
     script_name: &str,
     script_args: Vec<&str>,
+    script_env: Option<Vec<(&str, &str)>>,
 ) -> io::Result<String> {
     logger::verbose(&format!(
         "{} {} {}",
@@ -169,9 +157,12 @@ pub fn execute_script(
         script_name,
         script_args.join(" ")
     ));
+    let envs = script_env.unwrap_or_default();
+
     let mut cmd = Command::new(script_name)
         .current_dir(script_dir)
         .args(script_args)
+        .envs(envs)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;

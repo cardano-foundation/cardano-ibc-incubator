@@ -22,7 +22,7 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
         relayer_path.join(".env"),
         &options,
     )?;
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]))?;
+    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
     execute_script_with_progress(
         relayer_path,
@@ -54,6 +54,7 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
         project_root_path.join("cardano").as_path(),
         "aiken",
         Vec::from(["build", "--trace-level", "verbose"]),
+        None,
     );
     log(&format!(
         "{} 🤖 Generating validator off-chain types",
@@ -63,6 +64,7 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
         project_root_path.join("cardano").as_path(),
         "deno",
         Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
+        None,
     );
     log(&format!(
         "{} 🚀 Starting Cardano services",
@@ -81,6 +83,7 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
                 project_root_path.join("cardano").as_path(),
                 "deno",
                 Vec::from(["run", "-A", "--unstable", "src/deploy.ts"]),
+                None,
             );
         },
     );
@@ -103,15 +106,16 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
 }
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
-    let _ = execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]));
+    let _ = execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None);
     let _ = execute_script(
         cosmos_dir,
         "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
+        None,
     );
     log("Waiting for the Cosmos sidechain to start...");
     // TODO: make the url configurable
-    let is_healthy = wait_for_health_check("http://127.0.0.1:26657/", 10, 1000).await;
+    let is_healthy = wait_for_health_check("http://127.0.0.1:4500/", 60, 5000).await;
     if is_healthy.is_ok() {
         log("✅ Cosmos sidechain started successfully");
     } else {
@@ -138,11 +142,11 @@ pub fn start_local_cardano_services(cardano_dir: &Path) {
 
     let mut script_stop_args = vec!["compose", "stop"];
     script_stop_args.append(&mut services.clone());
-    let _ = execute_script(cardano_dir, "docker", script_stop_args);
+    let _ = execute_script(cardano_dir, "docker", script_stop_args, None);
 
     let mut script_start_args = vec!["compose", "up", "-d"];
     script_start_args.append(&mut services);
-    let _ = execute_script(cardano_dir, "docker", script_start_args);
+    let _ = execute_script(cardano_dir, "docker", script_start_args, None);
 }
 
 pub async fn start_osmosis(osmosis_dir: &Path) {
@@ -156,11 +160,15 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
             "up",
             "-d",
         ]),
+        Some(Vec::from([(
+            "OSMOSISD_CONTAINER_NAME",
+            "localosmosis-osmosisd-1",
+        )])),
     );
 
     if status.is_ok() {
         // TODD: make the url and port configurable
-        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/", 10, 1000).await;
+        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/health?", 30, 3000).await;
         if is_healthy.is_ok() {
             log("✅ Local Osmosis network started successfully");
         } else {
@@ -213,11 +221,13 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         Vec::from([
             "keys",
             "add",
+            "--overwrite",
             "--chain",
             "sidechain",
             "--mnemonic-file",
             osmosis_dir.join("scripts/hermes/cosmos").to_str().unwrap(),
         ]),
+        None,
     )?;
 
     execute_script(
@@ -226,11 +236,13 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         Vec::from([
             "keys",
             "add",
+            "--overwrite",
             "--chain",
             "localosmosis",
             "--mnemonic-file",
             osmosis_dir.join("scripts/hermes/osmosis").to_str().unwrap(),
         ]),
+        None,
     )?;
 
     // Create osmosis client
@@ -245,12 +257,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             "--reference-chain",
             "sidechain",
         ]),
+        None,
     )?;
 
     let query_clients_output = execute_script(
         script_dir.as_path(),
         "hermes",
         Vec::from(["--json", "query", "clients", "--host-chain", "localosmosis"]),
+        None,
     )?;
 
     verbose(&format!("query_clients_output: {}", query_clients_output));
@@ -278,12 +292,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                 "--trusting-period",
                 "86000s",
             ]),
+            None,
         )?;
 
         let query_clients_output = execute_script(
             script_dir.as_path(),
             "hermes",
             Vec::from(["--json", "query", "clients", "--host-chain", "sidechain"]),
+            None,
         );
 
         let query_clients_json: Value =
@@ -310,12 +326,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                     "--b-client",
                     client_id,
                 ]),
+                None,
             )?;
 
             let query_connections_output = execute_script(
                 script_dir.as_path(),
                 "hermes",
                 Vec::from(["--json", "query", "connections", "--chain", "sidechain"]),
+                None,
             );
 
             let query_connections_json: Value =
@@ -349,12 +367,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                         "--b-port",
                         "transfer",
                     ]),
+                    None,
                 )?;
 
                 let query_channels_output = execute_script(
                     script_dir.as_path(),
                     "hermes",
                     Vec::from(["--json", "query", "channels", "--chain", "localosmosis"]),
+                    None,
                 );
 
                 let query_channels_json: Value =
@@ -383,7 +403,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
 fn init_local_network(osmosis_dir: &Path) {
     if logger::is_quite() {
-        let _ = execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]));
+        let _ = execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None);
     } else {
         execute_script_with_progress(
             osmosis_dir,
