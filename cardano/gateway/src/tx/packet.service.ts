@@ -925,11 +925,14 @@ export class PacketService {
         'mintVoucherRedeemer',
       );
 
-      const voucherTokenName = hashSha3_256(sendPacketOperator.token.denom);
+      const voucherTokenName = hashSha3_256(convertString2Hex(sendPacketOperator.token.denom));
       const voucherTokenUnit = deploymentConfig.validators.mintVoucher.scriptHash + voucherTokenName;
       const senderAddress = sendPacketOperator.sender;
 
-      const senderVoucherTokenUtxo = await this.lucidService.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
+      const senderVoucherTokenUtxo = await this.lucidService.findUtxoAtWithUnit(
+        this.lucidService.getAddressFromPublicKeyHash(senderAddress),
+        voucherTokenUnit,
+      );
       // send burn
       const unsignedSendPacketParams: UnsignedSendPacketBurnDto = {
         channelUTxO: channelUtxo,

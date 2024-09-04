@@ -105,6 +105,15 @@ export class LucidService {
   public async getPublicKeyHash(address: string): Promise<string> {
     return this.lucid.utils.getAddressDetails(address).paymentCredential?.hash;
   }
+
+  public getAddressFromPublicKeyHash(hash: string): string {
+    const addr = this.lucid.utils.credentialToAddress({
+      type: 'Key',
+      hash,
+    });
+
+    return addr;
+  }
   // ========================== helper ==========================
   public getHandlerTokenUnit(): string {
     return (
@@ -1075,9 +1084,8 @@ export class LucidService {
             type: 'Key',
           });
           console.log({
-            signer
+            signer,
           });
-          
         }
         // const seed =
         //   'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';

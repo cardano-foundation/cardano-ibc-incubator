@@ -359,15 +359,11 @@ async function createReferenceUtxos(
   referredValidators: Script[]
 ) {
   try {
-    console.log("create Reference Utxos starting...");
     const deployLucids: Lucid[] = [];
     for (const _ of referredValidators) {
       const newLucid = await Lucid.new(provider, "Preview");
       const sk = newLucid.utils.generateSeedPhrase();
       newLucid.selectWalletFromSeed(sk);
-      console.log({
-        sk,
-      });
 
       deployLucids.push(newLucid);
     }
@@ -383,7 +379,6 @@ async function createReferenceUtxos(
     //     return newLucid;
     //   })
     // );
-    console.log("Create Deploy Lucids Successful!");
 
     const fundDeployAccTx = lucid.newTx();
     await Promise.all(
