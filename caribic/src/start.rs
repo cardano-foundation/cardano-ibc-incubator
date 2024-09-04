@@ -1,6 +1,6 @@
 use crate::check::check_osmosisd;
 use crate::logger::{verbose, warn};
-use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file};
+use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file, seed_cardano_devnet};
 use crate::utils::{
     execute_script, execute_script_with_progress, wait_for_health_check, wait_until_file_exists,
 };
@@ -35,7 +35,7 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
-pub fn start_local_cardano_network(project_root_path: &Path) {
+pub async fn start_local_cardano_network(project_root_path: &Path) {
     log(&format!(
         "{} 🛠️ Configuring local Cardano devnet",
         style("Step 1/5").bold().dim(),
@@ -72,6 +72,17 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
     ));
     start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
     log("🕦 Waiting for the Cardano services to start ...");
+
+    // TODO: make the url configurable
+    let ogmios_url = "http://localhost:1337";
+    let ogmios_connected =
+        wait_for_health_check(ogmios_url, 20, 5000, None::<fn(&String) -> bool>).await;
+    if ogmios_connected.is_ok() {
+        log("✅ Cardano services started successfully");
+    } else {
+        error("❌ Failed to start Cardano services");
+    }
+    seed_cardano_devnet(project_root_path.join("chains/cardano").as_path());
     let handler_json_exists = wait_until_file_exists(
         project_root_path
             .join("cardano/deployments/handler.json")
@@ -82,7 +93,14 @@ pub fn start_local_cardano_network(project_root_path: &Path) {
             let _ = execute_script(
                 project_root_path.join("cardano").as_path(),
                 "deno",
-                Vec::from(["run", "-A", "--unstable", "src/deploy.ts"]),
+                Vec::from([
+                    "run",
+                    "--allow-net",
+                    "--allow-env",
+                    "--allow-read",
+                    "--allow-write",
+                    "src/deploy.ts",
+                ]),
                 None,
             );
         },
@@ -115,7 +133,13 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
     );
     log("Waiting for the Cosmos sidechain to start...");
     // TODO: make the url configurable
-    let is_healthy = wait_for_health_check("http://127.0.0.1:4500/", 60, 5000).await;
+    let is_healthy = wait_for_health_check(
+        "http://127.0.0.1:4500/",
+        60,
+        5000,
+        None::<fn(&String) -> bool>,
+    )
+    .await;
     if is_healthy.is_ok() {
         log("✅ Cosmos sidechain started successfully");
     } else {
@@ -124,7 +148,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
 }
 
 pub fn start_local_cardano_services(cardano_dir: &Path) {
-    let configuration = config::get_config();
+    let configuration = config::get_config().cardano;
 
     let mut services = vec![];
     if configuration.services.cardano_node {
@@ -168,7 +192,30 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
 
     if status.is_ok() {
         // TODD: make the url and port configurable
-        let is_healthy = wait_for_health_check("http://127.0.0.1:26658/health?", 30, 3000).await;
+        let is_healthy = wait_for_health_check(
+            "http://127.0.0.1:26658/status?",
+            30,
+            3000,
+            Some(|response_body: &String| {
+                let json: Value = serde_json::from_str(&response_body).unwrap_or_default();
+
+                if let Some(height) = json["result"]["sync_info"]["latest_block_height"]
+                    .as_str()
+                    .and_then(|h| h.parse::<u64>().ok())
+                {
+                    verbose(&format!("Current block height: {}", height));
+                    return height > 0;
+                }
+
+                verbose(&format!(
+                    "Failed to get the current block height from the response {}",
+                    response_body,
+                ));
+
+                false
+            }),
+        )
+        .await;
         if is_healthy.is_ok() {
             log("✅ Local Osmosis network started successfully");
         } else {

@@ -45,3 +45,5 @@ cardano-node
 .vscode/
 
 caribic.config.json
+
+relayer/examples/demo/configs/chains/chain_handler.json

@@ -1,9 +1,18 @@
-use crate::logger::verbose;
-use crate::utils::{delete_file, download_file, unzip_file, IndicatorMessage};
+use crate::config;
+use crate::logger::{log, verbose};
+use crate::utils::{
+    change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
+    IndicatorMessage,
+};
+use chrono::{SecondsFormat, Utc};
 use console::style;
 use fs_extra::{copy_items, file::copy};
+use serde_json::Value;
 use std::io::{self, Write};
-use std::{path::Path, process::Command};
+use std::process::Output;
+use std::thread;
+use std::time::Duration;
+use std::{fs, path::Path, process::Command};
 
 pub async fn download_osmosis(osmosis_path: &Path) {
     let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
@@ -25,10 +34,10 @@ pub async fn download_osmosis(osmosis_path: &Path) {
     .await
     .expect("Failed to download osmosis source code");
 
-    println!(
+    log(&format!(
         "{} 📦 Extracting osmosis source code...",
         style("Step 2/2").bold().dim()
-    );
+    ));
 
     unzip_file(zip_path.as_path(), osmosis_path).expect("Failed to unzip osmosis source code");
     delete_file(zip_path.as_path()).expect("Failed to cleanup osmosis.zip");
@@ -78,6 +87,10 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
     let cardano_config_dir = cardano_dir.join("config");
     let devnet_dir = cardano_dir.join("devnet");
 
+    if devnet_dir.exists() && devnet_dir.is_dir() {
+        fs::remove_dir_all(&devnet_dir).expect("Failed to remove devnet directory");
+    }
+
     let cardano_config_files = vec![
         cardano_config_dir.join("protocol-parameters.json"),
         cardano_config_dir.join("credentials"),
@@ -107,4 +120,239 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
             copy(source, destination, &options).expect("Failed to copy Cardano configuration file");
         }
     }
+
+    let genesis_byron_path = devnet_dir.join("genesis-byron.json");
+    let genesis_shelley_path = devnet_dir.join("genesis-shelley.json");
+
+    let _ = replace_text_in_file(
+        &genesis_byron_path,
+        r#""startTime": \d*"#,
+        &format!(r#""startTime": {}"#, Utc::now().timestamp()),
+    );
+
+    let _ = replace_text_in_file(
+        &genesis_shelley_path,
+        r#""systemStart": ".*""#,
+        &format!(
+            r#""systemStart": "{}""#,
+            Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+        ),
+    );
+
+    let apply_permissions = change_dir_permissions_read_only(&devnet_dir);
+    if apply_permissions.is_err() {
+        log("Failed to apply read-only permissions to Cardano configuration files. This will cause issues with the Cardano node.");
+    }
+
+    let ipc_dir = devnet_dir.join("ipc");
+    std::fs::create_dir_all(ipc_dir).expect("Failed to create devnet/ipc directory");
+
+    let content = r#"{"Producers": []}"#;
+    fs::write(devnet_dir.join("topology.json"), content).expect("Failed to write topology.json");
 }
+
+pub fn seed_cardano_devnet(cardano_dir: &Path) {
+    log("💸 Seeding Cardano Devnet");
+    let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
+
+    for bootstrap_address in bootstrap_addresses {
+        log(&format!(
+            "🚀 Sending {} ADA to {}",
+            style(bootstrap_address.amount).bold().dim(),
+            style(&bootstrap_address.address).bold().dim()
+        ));
+        let cardano_cli_args = vec!["compose", "exec", "cardano-node", "cardano-cli"];
+        let build_address_args = vec![
+            "address",
+            "build",
+            "--payment-verification-key-file",
+            "/devnet/credentials/faucet.vk",
+            "--testnet-magic",
+            "42",
+        ];
+        let address = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&cardano_cli_args)
+            .args(build_address_args)
+            .output()
+            .expect("Failed to build address")
+            .stdout;
+
+        let faucet_address = String::from_utf8(address).expect("Failed to get faucet address");
+        let faucet_txin_args = vec![
+            "query",
+            "utxo",
+            "--address",
+            &faucet_address,
+            "--output-json",
+            "--testnet-magic",
+            "42",
+        ];
+
+        let mut faucet_txin_output: Option<Output> = None;
+        for i in 1..5 {
+            faucet_txin_output = Some(
+                Command::new("docker")
+                    .current_dir(cardano_dir)
+                    .args(&cardano_cli_args)
+                    .args(&faucet_txin_args)
+                    .output()
+                    .expect("Failed to get faucet txin"),
+            );
+
+            if faucet_txin_output.as_ref().unwrap().status.success() {
+                break;
+            } else {
+                if i < 5 {
+                    verbose(
+                        "The cardano-node isn't ready yet. Retrying to get faucet txin in 5 sec...",
+                    );
+                    thread::sleep(Duration::from_secs(5));
+                }
+                faucet_txin_output = None;
+            }
+        }
+
+        match faucet_txin_output {
+            Some(output) => {
+                if output.status.success() {
+                    let output_str = String::from_utf8_lossy(&output.stdout);
+                    let parsed_json: Value =
+                        serde_json::from_str(&output_str).expect("Failed to parse JSON");
+                    let faucet_txin = parsed_json
+                        .as_object()
+                        .and_then(|obj| obj.keys().next())
+                        .expect("Failed to extract key");
+
+                    let wallet_address = &bootstrap_address.address;
+                    let tx_out = &format!("{}+{}", wallet_address, bootstrap_address.amount);
+                    let draft_tx_file = &format!("/devnet/seed-{}.draft", wallet_address.as_str());
+                    let signed_tx_file =
+                        &format!("/devnet/seed-{}.signed", wallet_address.as_str());
+
+                    let build_tx_args = vec![
+                        "transaction",
+                        "build",
+                        "--babbage-era",
+                        "--cardano-mode",
+                        "--change-address",
+                        &faucet_address,
+                        "--tx-in",
+                        &faucet_txin,
+                        "--tx-out",
+                        tx_out,
+                        "--out-file",
+                        draft_tx_file,
+                        "--testnet-magic",
+                        "42",
+                    ];
+
+                    let _ = Command::new("docker")
+                        .current_dir(cardano_dir)
+                        .args(&cardano_cli_args)
+                        .args(build_tx_args)
+                        .output()
+                        .expect("Failed to build transaction");
+
+                    let sign_tx_args = vec![
+                        "transaction",
+                        "sign",
+                        "--tx-body-file",
+                        draft_tx_file,
+                        "--signing-key-file",
+                        "/devnet/credentials/faucet.sk",
+                        "--out-file",
+                        signed_tx_file,
+                        "--testnet-magic",
+                        "42",
+                    ];
+
+                    let _ = Command::new("docker")
+                        .current_dir(cardano_dir)
+                        .args(&cardano_cli_args)
+                        .args(sign_tx_args)
+                        .output()
+                        .expect("Failed to sign transaction");
+
+                    let tx_id = Command::new("docker")
+                        .current_dir(cardano_dir)
+                        .args(&cardano_cli_args)
+                        .args(&["transaction", "txid", "--tx-file", signed_tx_file])
+                        .output()
+                        .expect("Failed to get txid")
+                        .stdout;
+
+                    let raw_tx_id = String::from_utf8(tx_id).expect("Failed to get txid");
+                    let tx_id: String = raw_tx_id.chars().filter(|c| !c.is_whitespace()).collect();
+
+                    let tx_in = &format!("{}#0", tx_id);
+                    let submit_tx_args = vec![
+                        "transaction",
+                        "submit",
+                        "--tx-file",
+                        signed_tx_file,
+                        "--testnet-magic",
+                        "42",
+                    ];
+                    let _ = Command::new("docker")
+                        .current_dir(cardano_dir)
+                        .args(&cardano_cli_args)
+                        .args(submit_tx_args)
+                        .output()
+                        .expect("Failed to submit transaction");
+
+                    let query_utxo_args = vec![
+                        "query",
+                        "utxo",
+                        "--tx-in",
+                        tx_in,
+                        "--output-json",
+                        "--testnet-magic",
+                        "42",
+                    ];
+                    log(&format!(
+                        "Waiting for utxo {} to settle",
+                        style(tx_in).bold().dim()
+                    ));
+
+                    let mut is_not_on_chain = true;
+                    while is_not_on_chain {
+                        let utxo_output = Command::new("docker")
+                            .current_dir(cardano_dir)
+                            .args(&cardano_cli_args)
+                            .args(&query_utxo_args)
+                            .output()
+                            .expect("Failed to query utxo");
+
+                        if utxo_output.status.success() {
+                            let utxo_str =
+                                String::from_utf8(utxo_output.stdout).expect("Failed to get utxo");
+                            let parsed_utxo: Value =
+                                serde_json::from_str(&utxo_str).expect("Failed to parse utxo");
+                            verbose(&format!(
+                                "Successfully see transaction on-chain:\n{}",
+                                utxo_str
+                            ));
+
+                            if parsed_utxo.get(tx_in).is_some_and(|value| value != "null") {
+                                is_not_on_chain = false;
+                            } else {
+                                verbose("... still waiting for confirmation ...");
+                                thread::sleep(Duration::from_secs(5));
+                            }
+                        } else {
+                            verbose("... still waiting for confirmation ...");
+                            thread::sleep(Duration::from_secs(5));
+                        }
+                    }
+                }
+            }
+            None => {
+                log("It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue.");
+                return;
+            }
+        }
+    }
+}
+
+// pub fn prepare_db_sync() {}

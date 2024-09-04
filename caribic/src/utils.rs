@@ -5,12 +5,16 @@ use crate::logger::{
 use console::style;
 use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
+use regex::Regex;
 use reqwest::Client;
 use std::error::Error;
 use std::fs;
 use std::fs::File;
+use std::fs::Permissions;
 use std::io::BufRead;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -43,6 +47,49 @@ pub fn default_config_path() -> PathBuf {
     config_path.push(".caribic");
     config_path.push("config.json");
     config_path
+}
+
+pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {
+    let content = fs::read_to_string(path)?;
+    let re = Regex::new(pattern).unwrap();
+    let new_content = re.replace(&content, replacement).to_string();
+    let mut file = fs::File::create(path)?;
+    file.write_all(new_content.as_bytes())?;
+
+    Ok(())
+}
+
+pub fn change_dir_permissions_read_only(dir: &Path) -> std::io::Result<()> {
+    if dir.is_dir() {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_dir() {
+                change_dir_permissions_read_only(&path)?;
+            } else if path.is_file() {
+                verbose(&format!(
+                    "Set permissions to read-only for file: {}",
+                    path.display()
+                ));
+                set_read_only(&path)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_read_only(path: &Path) -> std::io::Result<()> {
+    let permissions = Permissions::from_mode(0o400);
+    fs::set_permissions(path, permissions)
+}
+
+#[cfg(windows)]
+fn set_read_only(path: &Path) -> std::io::Result<()> {
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(path, permissions)
 }
 
 pub fn wait_until_file_exists(
@@ -103,21 +150,39 @@ pub fn delete_file(file_path: &Path) -> io::Result<()> {
     fs::remove_file(file_path)
 }
 
-pub async fn wait_for_health_check(url: &str, retries: u32, interval: u64) -> Result<(), String> {
+pub async fn wait_for_health_check(
+    url: &str,
+    retries: u32,
+    interval: u64,
+    custom_condition: Option<impl Fn(&String) -> bool>,
+) -> Result<(), String> {
     let client = Client::new();
 
     for retry in 0..retries {
         let response = client.get(url).send().await;
 
         match response {
-            Ok(resp) if resp.status().is_success() => {
-                verbose(&format!(
-                    "Health on {} check passed on retry {}",
-                    url,
-                    retry + 1
-                ));
-                return Ok(());
-            }
+            Ok(resp) if resp.status().is_success() => match custom_condition {
+                Some(ref condition) => {
+                    let body = resp.text().await.unwrap_or_default();
+                    if condition(&body) {
+                        verbose(&format!(
+                            "Health on {} check passed on retry {}",
+                            url,
+                            retry + 1
+                        ));
+                        return Ok(());
+                    }
+                }
+                None => {
+                    verbose(&format!(
+                        "Health on {} check passed on retry {}",
+                        url,
+                        retry + 1
+                    ));
+                    return Ok(());
+                }
+            },
             Ok(resp) => {
                 verbose(&format!(
                     "Health check {} failed with status: {} on retry {}",
@@ -279,7 +344,6 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
 
     let mut root_folder: Option<PathBuf> = None;
 
-    // Extract each file in the ZIP archive
     for i in 0..file_count {
         let mut file = archive.by_index(i)?;
         let outpath = destination.join(file.name());
@@ -290,23 +354,18 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
             }
         }
 
-        // Check if it's a directory or file
         if file.name().ends_with('/') {
             fs::create_dir_all(&outpath)?;
         } else {
-            // Create the file's parent directories if necessary
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
                     fs::create_dir_all(&p)?;
                 }
             }
-
-            // Write the file's content
             let mut outfile = File::create(&outpath)?;
             io::copy(&mut file, &mut outfile)?;
         }
 
-        // Set the file's permissions to be the same as in the ZIP archive
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

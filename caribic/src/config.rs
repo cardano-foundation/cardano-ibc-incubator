@@ -16,7 +16,19 @@ pub struct Config {
     pub project_root: String,
     pub use_mithril: bool,
     pub local_osmosis: bool,
+    pub cardano: Cardano,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Cardano {
     pub services: Services,
+    pub bootstrap_addresses: Vec<BootstrapAddress>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BootstrapAddress {
+    pub address: String,
+    pub amount: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,7 +41,7 @@ pub struct Services {
 }
 
 pub async fn create_config_file(config_path: &str) -> Config {
-    let default_config = Config::default();
+    let mut default_config = Config::default();
 
     if get_verbosity() == Verbosity::Verbose
         || get_verbosity() == Verbosity::Info
@@ -45,7 +57,10 @@ pub async fn create_config_file(config_path: &str) -> Config {
         stdin().read_line(&mut input).unwrap();
 
         if let Some(home_path) = home_dir() {
-            if input.trim().eq_ignore_ascii_case("yes") || input.trim().eq_ignore_ascii_case("y") {
+            if input.trim().eq_ignore_ascii_case("yes")
+                || input.trim().eq_ignore_ascii_case("y")
+                || input.trim().is_empty()
+            {
                 let default_project_root = format!(
                     "{}/.caribic/cardano-ibc-incubator",
                     home_path.as_path().display()
@@ -102,8 +117,11 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         .expect("Failed to cleanup cardano-ibc-incubator-main.zip");
                 }
 
-                let mut default_config = Config::default();
                 default_config.project_root = project_root;
+                verbose(&format!(
+                    "Project root path set to: {}",
+                    default_config.project_root
+                ));
             } else {
                 error("Config file not found. Exiting.");
                 process::exit(0);
@@ -117,6 +135,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
         process::exit(0);
     }
 
+    verbose(&format!("caribic config file: {:#?}", default_config));
+
     default_config
 }
 
@@ -126,12 +146,28 @@ impl Config {
             project_root: "~/.caribic".to_string(),
             use_mithril: false,
             local_osmosis: true,
-            services: Services {
-                cardano_node: true,
-                postgres: true,
-                db_sync: true,
-                kupo: true,
-                ogmios: true,
+            cardano: Cardano {
+                services: Services {
+                    db_sync: true,
+                    kupo: true,
+                    ogmios: true,
+                    cardano_node: true,
+                    postgres: true,
+                },
+                bootstrap_addresses: vec![                    
+                    BootstrapAddress {
+                        address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
+                        amount: 30000000000,
+                    },
+                    BootstrapAddress {
+                        address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
+                        amount: 30000000000,
+                    },
+                    BootstrapAddress {
+                        address: "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql".to_string(),
+                        amount: 30000000000,
+                    }
+                ],
             },
         }
     }

@@ -64,9 +64,10 @@ async fn main() {
 
             // Prepare the local Osmosis appchain
             let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+            logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
             prepare_osmosis(osmosis_dir.as_path()).await;
             // Start the local Cardano network and its services
-            start_local_cardano_network(project_root_path);
+            start_local_cardano_network(project_root_path).await;
             // Start the Cosmos sidechain
             start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await;
             // Start the relayer
