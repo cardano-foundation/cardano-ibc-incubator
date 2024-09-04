@@ -219,6 +219,17 @@ const ogmiosWsp = async (
 
 export const querySystemStart = async (ogmiosUrl: string) => {
   const client = await ogmiosWsp(ogmiosUrl, "queryNetwork/startTime", {});
+
+  client.addEventListener('open', () => console.log('WebSocket connection opened.'));
+  client.addEventListener('close', (event) => {
+    console.log('WebSocket connection closed.', {
+      code: event.code,
+      reason: event.reason,
+      wasClean: event.wasClean,
+    });
+  });
+  client.addEventListener('error', (err) => console.log('WebSocket error:', err));
+
   const systemStart = await new Promise<string>((res, rej) => {
     client.addEventListener(
       "message",
