@@ -142,34 +142,42 @@ pub async fn create_config_file(config_path: &str) -> Config {
 
 impl Config {
     fn default() -> Self {
-        Config {
-            project_root: "~/.caribic".to_string(),
+        let mut default_config = Config {
+            project_root: "/root/.caribic/cardano-ibc-incubator".to_string(),
             use_mithril: false,
             local_osmosis: true,
             cardano: Cardano {
-                services: Services {
-                    db_sync: true,
-                    kupo: true,
-                    ogmios: true,
-                    cardano_node: true,
-                    postgres: true,
-                },
-                bootstrap_addresses: vec![                    
-                    BootstrapAddress {
-                        address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
-                        amount: 30000000000,
-                    },
-                    BootstrapAddress {
-                        address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
-                        amount: 30000000000,
-                    },
-                    BootstrapAddress {
-                        address: "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql".to_string(),
-                        amount: 30000000000,
-                    }
-                ],
+            services: Services {
+                db_sync: true,
+                kupo: true,
+                ogmios: true,
+                cardano_node: true,
+                postgres: true,
             },
+            bootstrap_addresses: vec![                    
+                BootstrapAddress {
+                    address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
+                    amount: 30000000000,
+                },
+                BootstrapAddress {
+                    address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
+                    amount: 30000000000,
+                },
+                BootstrapAddress {
+                    address: "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql".to_string(),
+                    amount: 30000000000,
+                }
+            ]},
+        };
+
+        if let Some(home_path) = home_dir() {
+            let default_project_root = format!(
+                "{}/.caribic/cardano-ibc-incubator",
+                home_path.as_path().display()
+            );
+            default_config.project_root = default_project_root;
         }
+        default_config
     }
 
     async fn load_from_file(config_path: &str) -> Self {
@@ -181,7 +189,6 @@ impl Config {
                 Config::default()
             })
         } else {
-            verbose("Config file not found, creating default config.");
             let default_config = create_config_file(config_path).await;
             let parent_dir = Path::new(config_path).parent().unwrap();
             create_all(parent_dir, false).expect("Failed to create config dir.");
