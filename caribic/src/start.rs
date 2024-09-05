@@ -2,7 +2,8 @@ use crate::check::check_osmosisd;
 use crate::logger::{verbose, warn};
 use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file, seed_cardano_devnet};
 use crate::utils::{
-    execute_script, execute_script_with_progress, wait_for_health_check, wait_until_file_exists,
+    execute_script, execute_script_with_progress, extract_tendermint_client_id,
+    extract_tendermint_connection_id, wait_for_health_check, wait_until_file_exists,
 };
 use crate::{
     config,
@@ -10,10 +11,12 @@ use crate::{
 };
 use console::style;
 use dirs::home_dir;
+use fs_extra::copy_items;
 use fs_extra::file::copy;
-use fs_extra::{copy_items, remove_items};
 use serde_json::Value;
+use std::fs::remove_dir_all;
 use std::path::Path;
+use std::process::Command;
 
 pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
@@ -292,44 +295,49 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         None,
     )?;
 
-    // Create osmosis client
-    execute_script(
-        script_dir.as_path(),
-        "hermes",
-        Vec::from([
-            "create",
-            "client",
-            "--host-chain",
-            "localosmosis",
-            "--reference-chain",
-            "sidechain",
-        ]),
-        None,
-    )?;
+    let mut local_osmosis_client_id = None;
+    for _ in 0..10 {
+        // Try to create osmosis client
+        let hermes_create_client_output = Command::new("hermes")
+            .current_dir(&script_dir)
+            .args(&[
+                "create",
+                "client",
+                "--host-chain",
+                "localosmosis",
+                "--reference-chain",
+                "sidechain",
+            ])
+            .output()
+            .expect("Failed to create osmosis client");
 
-    let query_clients_output = execute_script(
-        script_dir.as_path(),
-        "hermes",
-        Vec::from(["--json", "query", "clients", "--host-chain", "localosmosis"]),
-        None,
-    )?;
+        verbose(&format!(
+            "status: {}, stdout: {}, stderr: {}",
+            hermes_create_client_output.status,
+            String::from_utf8_lossy(&hermes_create_client_output.stdout),
+            String::from_utf8_lossy(&hermes_create_client_output.stderr)
+        ));
 
-    verbose(&format!("query_clients_output: {}", query_clients_output));
+        local_osmosis_client_id = extract_tendermint_client_id(hermes_create_client_output);
 
-    let query_clients_json: Value = serde_json::from_str(query_clients_output.as_str())?;
+        if local_osmosis_client_id.is_none() {
+            verbose("Failed to create client. Retrying in 5 seconds...");
+            std::thread::sleep(std::time::Duration::from_secs(5));
+        } else {
+            break;
+        }
+    }
 
-    if let Some(client_id) = query_clients_json["result"]
-        .as_array()
-        .and_then(|result| result.last())
-        .and_then(|last_result| last_result["client_id"].as_str())
-    {
-        verbose(&format!("localosmosis_client_id: {}", client_id));
+    if let Some(local_osmosis_client_id) = local_osmosis_client_id {
+        verbose(&format!(
+            "localosmosis_client_id: {}",
+            local_osmosis_client_id
+        ));
 
         // Create sidechain client
-        execute_script(
-            script_dir.as_path(),
-            "hermes",
-            Vec::from([
+        let create_sidechain_client_output = Command::new("hermes")
+            .current_dir(&script_dir)
+            .args(&[
                 "create",
                 "client",
                 "--host-chain",
@@ -338,101 +346,66 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                 "localosmosis",
                 "--trusting-period",
                 "86000s",
-            ]),
-            None,
-        )?;
+            ])
+            .output()
+            .expect("Failed to query clients");
 
-        let query_clients_output = execute_script(
-            script_dir.as_path(),
-            "hermes",
-            Vec::from(["--json", "query", "clients", "--host-chain", "sidechain"]),
-            None,
-        );
+        let sidechain_client_id = extract_tendermint_client_id(create_sidechain_client_output);
 
-        let query_clients_json: Value =
-            serde_json::from_str(query_clients_output.unwrap().as_str())?;
-
-        if let Some(sidechain_client_id) = query_clients_json["result"]
-            .as_array()
-            .and_then(|result| result.last())
-            .and_then(|last_result| last_result["client_id"].as_str())
-        {
+        if let Some(sidechain_client_id) = sidechain_client_id {
             verbose(&format!("sidechain_client_id: {}", sidechain_client_id));
 
             // Create connection
-            execute_script(
-                script_dir.as_path(),
-                "hermes",
-                Vec::from([
+            let create_connection_output = Command::new("hermes")
+                .current_dir(&script_dir)
+                .args(&[
                     "create",
                     "connection",
                     "--a-chain",
                     "sidechain",
                     "--a-client",
-                    sidechain_client_id,
+                    sidechain_client_id.as_str(),
                     "--b-client",
-                    client_id,
-                ]),
-                None,
-            )?;
+                    &local_osmosis_client_id,
+                ])
+                .output()
+                .expect("Failed to create connection");
 
-            let query_connections_output = execute_script(
-                script_dir.as_path(),
-                "hermes",
-                Vec::from(["--json", "query", "connections", "--chain", "sidechain"]),
-                None,
-            );
+            verbose(&format!(
+                "status: {}, stdout: {}, stderr: {}",
+                &create_connection_output.status,
+                String::from_utf8_lossy(&create_connection_output.stdout),
+                String::from_utf8_lossy(&create_connection_output.stderr)
+            ));
 
-            let query_connections_json: Value =
-                serde_json::from_str(query_connections_output.unwrap().as_str())?;
+            let connection_id = extract_tendermint_connection_id(create_connection_output);
 
-            if let Some(connection_id) =
-                query_connections_json["result"]
-                    .as_array()
-                    .and_then(|result| {
-                        result
-                            .iter()
-                            .filter_map(|result| result["connection_id"].as_str())
-                            .last()
-                    })
-            {
+            if let Some(connection_id) = connection_id {
                 verbose(&format!("connection_id: {}", connection_id));
 
                 // Create channel
-                execute_script(
-                    script_dir.as_path(),
-                    "hermes",
-                    Vec::from([
+                let create_channel_output = Command::new("hermes")
+                    .current_dir(&script_dir)
+                    .args(&[
                         "create",
                         "channel",
                         "--a-chain",
                         "sidechain",
                         "--a-connection",
-                        connection_id,
+                        &connection_id,
                         "--a-port",
                         "transfer",
                         "--b-port",
                         "transfer",
-                    ]),
-                    None,
-                )?;
+                    ])
+                    .output()
+                    .expect("Failed to query channels");
 
-                let query_channels_output = execute_script(
-                    script_dir.as_path(),
-                    "hermes",
-                    Vec::from(["--json", "query", "channels", "--chain", "localosmosis"]),
-                    None,
-                );
-
-                let query_channels_json: Value =
-                    serde_json::from_str(query_channels_output.unwrap().as_str())?;
-
-                if let Some(channel_id) = query_channels_json["result"]
-                    .as_array()
-                    .and_then(|result| result.last())
-                    .and_then(|last_result| last_result["channel_id"].as_str())
-                {
-                    verbose(&format!("channel_id: {}", channel_id));
+                if create_channel_output.status.success() {
+                    verbose(&format!(
+                        "{}",
+                        String::from_utf8_lossy(&create_channel_output.stdout)
+                    ));
                 } else {
                     warn("Failed to get channel_id");
                 }
@@ -467,7 +440,7 @@ fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {
     if let Some(home_path) = home_dir() {
         let osmosis_data_dir = home_path.join(".osmosisd-local");
         if osmosis_data_dir.exists() {
-            remove_items(&vec![osmosis_data_dir])?;
+            remove_dir_all(osmosis_data_dir)?;
             Ok(())
         } else {
             Ok(())

@@ -7,7 +7,6 @@ use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::Client;
-use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::fs::Permissions;
@@ -19,6 +18,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 use std::{collections::VecDeque, thread};
+use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
@@ -400,4 +400,28 @@ pub fn get_osmosis_dir(project_root: &Path) -> PathBuf {
         .join("osmosis")
         .join("osmosis")
         .to_path_buf()
+}
+
+pub fn extract_tendermint_client_id(output: Output) -> Option<String> {
+    if output.status.success() {
+        let regex = Regex::new(r#"client_id:\s*ClientId\(\s*"([^"]+)""#).unwrap();
+        if let Some(results) = regex.captures(String::from_utf8_lossy(&output.stdout).as_ref()) {
+            if let Some(result) = results.get(1) {
+                return Some(result.as_str().to_string());
+            }
+        }
+    }
+    None
+}
+
+pub fn extract_tendermint_connection_id(output: Output) -> Option<String> {
+    if output.status.success() {
+        let regex = Regex::new(r#"\s*(connection-\d+)"#).unwrap();
+        if let Some(results) = regex.captures(String::from_utf8_lossy(&output.stdout).as_ref()) {
+            if let Some(result) = results.get(1) {
+                return Some(result.as_str().to_string());
+            }
+        }
+    }
+    None
 }
