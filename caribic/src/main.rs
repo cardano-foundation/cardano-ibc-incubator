@@ -44,6 +44,26 @@ enum Commands {
     Demo,
 }
 
+fn stop_bridge_gracefully() {
+    let project_config = config::get_config();
+    let project_root_path = Path::new(&project_config.project_root);
+    // Stop local cardano network
+    stop_cardano_network(project_root_path);
+    // Stop Cosmos
+    stop_cosmos(project_root_path.join("cosmos").as_path());
+    // Stop Relayer
+    stop_relayer(project_root_path.join("relayer").as_path());
+    // Stop Osmosis
+    stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
+}
+
+fn exit_with_error(message: &str) {
+    logger::error(message);
+    logger::log("❌ Stopping services...");
+    stop_bridge_gracefully();
+    std::process::exit(1);
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -54,39 +74,57 @@ async fn main() {
         panic!("Failed to get configuration file path");
     }))
     .await;
-    let project_config = config::get_config();
-    let project_root_path = Path::new(&project_config.project_root);
 
     match args.command {
         Commands::Check => check::check_prerequisites().await,
         Commands::Start => {
+            let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
-
             // Prepare the local Osmosis appchain
             let osmosis_dir = utils::get_osmosis_dir(project_root_path);
             logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
-            prepare_osmosis(osmosis_dir.as_path()).await;
+            match prepare_osmosis(osmosis_dir.as_path()).await {
+                Ok(_) => logger::log("✅ Osmosis appchain prepared"),
+                Err(error) => {
+                    exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
+                }
+            }
             // Start the local Cardano network and its services
-            start_local_cardano_network(project_root_path).await;
+            match start_local_cardano_network(project_root_path).await {
+                Ok(_) => logger::log("✅ Local Cardano network started"),
+                Err(error) => exit_with_error(&format!(
+                    "❌ Failed to start local Cardano network: {}",
+                    error
+                )),
+            }
             // Start the Cosmos sidechain
-            start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await;
+            match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                Err(error) => {
+                    exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
+                }
+            }
             // Start the relayer
-            start_relayer(project_root_path.join("relayer").as_path())
-                .expect("⚠️ Unable to prepare relayer environment");
+            match start_relayer(project_root_path.join("relayer").as_path()) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
+            }
+
             // Start Osmosis
-            start_osmosis(osmosis_dir.as_path()).await;
+            match start_osmosis(osmosis_dir.as_path()).await {
+                Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
+            };
             // Configure Hermes and build channels between Osmosis with Cosmos
-            let _ = configure_hermes(osmosis_dir.as_path());
+            match configure_hermes(osmosis_dir.as_path()) {
+                Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
+                Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
+            }
+            logger::log("✅ Bridge started successfully");
         }
         Commands::Stop => {
-            // Stop local cardano network
-            stop_cardano_network(project_root_path);
-            // Stop Cosmos
-            stop_cosmos(project_root_path.join("cosmos").as_path());
-            // Stop Relayer
-            stop_relayer(project_root_path.join("relayer").as_path());
-            // Stop Osmosis
-            stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
+            stop_bridge_gracefully();
+            logger::log("✅ Bridge stopped successfully");
         }
         Commands::Demo => logger::log("Demo"),
     }

@@ -24,7 +24,8 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
         relayer_path.join(".env.example"),
         relayer_path.join(".env"),
         &options,
-    )?;
+    )
+    .map_err(|error| format!("Error copying template .env file {}", error.to_string()))?;
     execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
     execute_script_with_progress(
@@ -34,46 +35,48 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
         "⚡ Starting relayer...",
         "✅ Relayer started successfully",
         "❌ Failed to start relayer",
-    );
+    )?;
     Ok(())
 }
 
-pub async fn start_local_cardano_network(project_root_path: &Path) {
+pub async fn start_local_cardano_network(
+    project_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     log(&format!(
         "{} 🛠️ Configuring local Cardano devnet",
         style("Step 1/5").bold().dim(),
     ));
-    configure_local_cardano_devnet(project_root_path.join("chains/cardano").as_path());
+    configure_local_cardano_devnet(project_root_path.join("chains/cardano").as_path())?;
     log(&format!(
         "{} 📝 Copying Cardano environment file",
         style("Step 2/5").bold().dim(),
     ));
-    copy_cardano_env_file(project_root_path.join("cardano").as_path());
+    copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
     log(&format!(
         "{} 🛠️ Building Aiken validators",
         style("Step 3/5").bold().dim()
     ));
-    let _ = execute_script(
+    execute_script(
         project_root_path.join("cardano").as_path(),
         "aiken",
         Vec::from(["build", "--trace-level", "verbose"]),
         None,
-    );
+    )?;
     log(&format!(
         "{} 🤖 Generating validator off-chain types",
         style("Step 4/5").bold().dim(),
     ));
-    let _ = execute_script(
+    execute_script(
         project_root_path.join("cardano").as_path(),
         "deno",
         Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
         None,
-    );
+    )?;
     log(&format!(
         "{} 🚀 Starting Cardano services",
         style("Step 5/5").bold().dim(),
     ));
-    start_local_cardano_services(project_root_path.join("chains/cardano").as_path());
+    start_local_cardano_services(project_root_path.join("chains/cardano").as_path())?;
     log("🕦 Waiting for the Cardano services to start ...");
 
     // TODO: make the url configurable
@@ -83,7 +86,7 @@ pub async fn start_local_cardano_network(project_root_path: &Path) {
     if ogmios_connected.is_ok() {
         log("✅ Cardano services started successfully");
     } else {
-        error("❌ Failed to start Cardano services");
+        return Err("❌ Failed to start Cardano services".into());
     }
     seed_cardano_devnet(project_root_path.join("chains/cardano").as_path());
     let handler_json_exists = wait_until_file_exists(
@@ -109,48 +112,46 @@ pub async fn start_local_cardano_network(project_root_path: &Path) {
         },
     );
     if handler_json_exists.is_ok() {
-        log("✅ Cardano services started successfully");
+        log("✅ Successully deployed the contracts");
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        let _ = copy(
+        std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
+        copy(
             project_root_path.join("cardano/deployments/handler.json"),
             project_root_path.join("cardano/gateway/src/deployment/handler.json"),
             &options,
-        );
-        let _ = copy(
+        )?;
+        copy(
             project_root_path.join("cardano/deployments/handler.json"),
             project_root_path.join("relayer/examples/demo/configs/chains/chain_handler.json"),
             &options,
-        );
+        )?;
+        Ok(())
     } else {
-        error("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.");
+        Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
     }
 }
 
-pub async fn start_cosmos_sidechain(cosmos_dir: &Path) {
-    let _ = execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None);
-    let _ = execute_script(
+pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    execute_script(
         cosmos_dir,
         "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
         None,
-    );
+    )?;
     log("Waiting for the Cosmos sidechain to start...");
     // TODO: make the url configurable
-    let is_healthy = wait_for_health_check(
+    wait_for_health_check(
         "http://127.0.0.1:4500/",
         60,
         5000,
         None::<fn(&String) -> bool>,
     )
-    .await;
-    if is_healthy.is_ok() {
-        log("✅ Cosmos sidechain started successfully");
-    } else {
-        error("❌ Failed to start Cosmos sidechain");
-    }
+    .await?;
+    Ok(())
 }
 
-pub fn start_local_cardano_services(cardano_dir: &Path) {
+pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = config::get_config().cardano;
 
     let mut services = vec![];
@@ -169,14 +170,15 @@ pub fn start_local_cardano_services(cardano_dir: &Path) {
 
     let mut script_stop_args = vec!["compose", "stop"];
     script_stop_args.append(&mut services.clone());
-    let _ = execute_script(cardano_dir, "docker", script_stop_args, None);
+    execute_script(cardano_dir, "docker", script_stop_args, None)?;
 
     let mut script_start_args = vec!["compose", "up", "-d"];
     script_start_args.append(&mut services);
-    let _ = execute_script(cardano_dir, "docker", script_start_args, None);
+    execute_script(cardano_dir, "docker", script_start_args, None)?;
+    Ok(())
 }
 
-pub async fn start_osmosis(osmosis_dir: &Path) {
+pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let status = execute_script(
         osmosis_dir,
         "docker",
@@ -220,29 +222,30 @@ pub async fn start_osmosis(osmosis_dir: &Path) {
         )
         .await;
         if is_healthy.is_ok() {
-            log("✅ Local Osmosis network started successfully");
+            Ok(())
         } else {
-            error("❌ Failed to start local Osmosis network");
+            Err("Run into timeout while checking http://127.0.0.1:26658/status?".into())
         }
     } else {
-        error("❌ Failed to start local Osmosis network");
+        Err(status.unwrap_err().into())
     }
 }
 
-pub async fn prepare_osmosis(osmosis_dir: &Path) {
+pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_osmosisd(osmosis_dir).await;
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             log("✅ Osmosis configuration files copied successfully");
-            remove_previous_chain_data()
-                .expect("Failed to remove previous chain data from ~/.osmosisd-local");
-            init_local_network(osmosis_dir);
+            remove_previous_chain_data()?;
+            init_local_network(osmosis_dir)?;
+            Ok(())
         }
         Err(e) => {
             error(&format!(
                 "❌ Failed to copy Osmosis configuration files: {}",
                 e
             ));
+            Err(e.into())
         }
     }
 }
@@ -421,9 +424,10 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     Ok(())
 }
 
-fn init_local_network(osmosis_dir: &Path) {
+fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     if logger::is_quite() {
-        let _ = execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None);
+        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None)?;
+        Ok(())
     } else {
         execute_script_with_progress(
             osmosis_dir,
@@ -432,7 +436,8 @@ fn init_local_network(osmosis_dir: &Path) {
             "Initialize local Osmosis network",
             "✅ Local Osmosis network initialized",
             "❌ Failed to initialize localnet",
-        );
+        )?;
+        Ok(())
     }
 }
 
