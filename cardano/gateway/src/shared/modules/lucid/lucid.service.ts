@@ -1,6 +1,13 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { type Lucid, type UTxO, Tx, type SpendingValidator, type MintingPolicy } from '@cuonglv0297/lucid-custom';
+import {
+  type Lucid,
+  type UTxO,
+  Tx,
+  type SpendingValidator,
+  type MintingPolicy,
+  Credential,
+} from '@cuonglv0297/lucid-custom';
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
@@ -74,7 +81,7 @@ export class LucidService {
   ) {}
   // ========================== Public functions ==========================
   // ========================== UTXO-related methods ==========================
-  public async findUtxoAtWithUnit(addressOrCredential: string, unit: string): Promise<UTxO> {
+  public async findUtxoAtWithUnit(addressOrCredential: string | Credential, unit: string): Promise<UTxO> {
     const utxos = await this.lucid.utxosAtWithUnit(addressOrCredential, unit);
 
     if (utxos.length === 0) throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
