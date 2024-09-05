@@ -262,7 +262,7 @@ pub fn execute_script_with_progress(
     start_message: &str,
     success_message: &str,
     error_message: &str,
-) {
+) -> Result<(), Box<dyn std::error::Error>> {
     let progress_bar = ProgressBar::new_spinner();
     progress_bar.enable_steady_tick(Duration::from_millis(100));
     progress_bar.set_style(
@@ -279,7 +279,7 @@ pub fn execute_script_with_progress(
         .args(script_args)
         .stdout(Stdio::piped())
         .spawn()
-        .expect("Failed to initialize localnet");
+        .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
 
     match logger::get_verbosity() {
         Verbose => {
@@ -326,11 +326,25 @@ pub fn execute_script_with_progress(
         _ => {}
     }
 
-    let status = command.wait().expect("Command wasn't running");
+    let status = command
+        .wait()
+        .map_err(|error| format!("Command wasn't running: {}", error))?;
     if status.success() {
         progress_bar.finish_with_message(success_message.to_owned());
+        Ok(())
     } else {
         progress_bar.finish_with_message(error_message.to_owned());
+        let mut error_output = String::new();
+        if let Some(stderr) = command.stderr.take() {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                error_output.push_str(&line);
+            }
+            Err(error_output.into())
+        } else {
+            Err("Failed to execute script".into())
+        }
     }
 }
 

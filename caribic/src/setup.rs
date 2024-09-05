@@ -72,7 +72,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
     }
 }
 
-pub fn copy_cardano_env_file(cardano_dir: &Path) {
+pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let source = cardano_dir.join(".env.example");
     let destination = cardano_dir.join(".env");
 
@@ -80,15 +80,28 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) {
         .arg(source)
         .arg(destination)
         .status()
-        .expect("Failed to copy Cardano environment file");
+        .map_err(|error| {
+            format!(
+                "Failed to copy template Cardano .env file: {}",
+                error.to_string()
+            )
+        })?;
+    Ok(())
 }
 
-pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
+pub fn configure_local_cardano_devnet(
+    cardano_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
     let devnet_dir = cardano_dir.join("devnet");
 
     if devnet_dir.exists() && devnet_dir.is_dir() {
-        fs::remove_dir_all(&devnet_dir).expect("Failed to remove devnet directory");
+        fs::remove_dir_all(&devnet_dir).map_err(|error| {
+            format!(
+                "Failed to remove existing devnet directory: {}",
+                error.to_string()
+            )
+        })?;
     }
 
     let cardano_config_files = vec![
@@ -102,7 +115,12 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
         &cardano_dir,
         &copy_dir_options,
     )
-    .expect("Failed to copy Cardano configuration files");
+    .map_err(|error| {
+        format!(
+            "Failed to copy Cardano configuration files: {}",
+            error.to_string()
+        )
+    })?;
 
     for source in cardano_config_files {
         verbose(&format!(
@@ -112,43 +130,61 @@ pub fn configure_local_cardano_devnet(cardano_dir: &Path) {
         ));
 
         if source.is_dir() {
-            copy_items(&vec![source], &devnet_dir, &copy_dir_options)
-                .expect("Failed to copy Cardano configuration files");
+            copy_items(&vec![source], &devnet_dir, &copy_dir_options).map_err(|error| {
+                format!(
+                    "Failed to copy Cardano configuration files: {}",
+                    error.to_string()
+                )
+            })?;
         } else {
             let options = fs_extra::file::CopyOptions::new().overwrite(true);
             let destination = devnet_dir.join(source.file_name().unwrap());
-            copy(source, destination, &options).expect("Failed to copy Cardano configuration file");
+            copy(source, destination, &options).map_err(|error| {
+                format!(
+                    "Failed to copy Cardano configuration file: {}",
+                    error.to_string()
+                )
+            })?;
         }
     }
 
     let genesis_byron_path = devnet_dir.join("genesis-byron.json");
     let genesis_shelley_path = devnet_dir.join("genesis-shelley.json");
 
-    let _ = replace_text_in_file(
+    replace_text_in_file(
         &genesis_byron_path,
         r#""startTime": \d*"#,
         &format!(r#""startTime": {}"#, Utc::now().timestamp()),
-    );
+    )?;
 
-    let _ = replace_text_in_file(
+    replace_text_in_file(
         &genesis_shelley_path,
         r#""systemStart": ".*""#,
         &format!(
             r#""systemStart": "{}""#,
             Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
         ),
-    );
+    )?;
 
-    let apply_permissions = change_dir_permissions_read_only(&devnet_dir);
-    if apply_permissions.is_err() {
-        log("Failed to apply read-only permissions to Cardano configuration files. This will cause issues with the Cardano node.");
-    }
+    change_dir_permissions_read_only(&devnet_dir).map_err(|error| {
+        format!(
+            "Failed to apply read-only permissions to Cardano configuration files. This will cause issues with the Cardano node: {}",
+            error.to_string()
+        )
+    })?;
 
     let ipc_dir = devnet_dir.join("ipc");
-    std::fs::create_dir_all(ipc_dir).expect("Failed to create devnet/ipc directory");
+    std::fs::create_dir_all(ipc_dir).map_err(|errpr| {
+        format!(
+            "Failed to create devnet/ipc directory: {}",
+            errpr.to_string()
+        )
+    })?;
 
     let content = r#"{"Producers": []}"#;
-    fs::write(devnet_dir.join("topology.json"), content).expect("Failed to write topology.json");
+    fs::write(devnet_dir.join("topology.json"), content)
+        .map_err(|error| format!("Failed to write topology.json file: {}", error.to_string()))?;
+    Ok(())
 }
 
 pub fn seed_cardano_devnet(cardano_dir: &Path) {
