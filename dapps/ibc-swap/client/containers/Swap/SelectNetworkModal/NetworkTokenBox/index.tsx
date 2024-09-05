@@ -171,8 +171,8 @@ const NetworkTokenBox = ({
   }, [networkList]);
 
   return (
-    <StyledNetworkBox ischosetoken={!!tokenSelected?.tokenId}>
-      <StyledNetworkBoxHeader ischosetoken={!!tokenSelected?.tokenId}>
+    <StyledNetworkBox isChoseToken={!!tokenSelected?.tokenId}>
+      <StyledNetworkBoxHeader isChoseToken={!!tokenSelected?.tokenId}>
         <Text display="flex" alignItems="center">
           {fromOrTo}
         </Text>
@@ -188,13 +188,13 @@ const NetworkTokenBox = ({
               <Text fontWeight="700" fontSize="18px">
                 {formatTokenSymbol(tokenSelected?.tokenName || '')}
               </Text>
-              <Text fontSize="12px">
-                {networkSelected?.networkId ? (
-                  networkSelected?.networkPrettyName
-                ) : (
-                  <Text fontSize="18px">Select Network</Text>
-                )}
-              </Text>
+              {networkSelected?.networkId ? (
+                <Text fontSize="12px">
+                  {networkSelected?.networkPrettyName}
+                </Text>
+              ) : (
+                <Text fontSize="18px">Select Network</Text>
+              )}
             </Box>
           </Box>
         </Box>

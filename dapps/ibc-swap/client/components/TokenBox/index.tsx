@@ -64,7 +64,10 @@ const TokenBox = ({
 
     fetchBalance();
   }, [token?.tokenId]);
-
+  const boxValue =
+    fromOrTo === FROM_TO.FROM
+      ? { value: token?.swapAmount || "0"}
+      : { defaultValue: token?.swapAmount  || "0"};
   return (
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
@@ -117,7 +120,7 @@ const TokenBox = ({
             placeholder="0"
             disabled={!token?.tokenId || fromOrTo === FROM_TO.TO}
             onChange={(event) => handleChangeAmount(event)}
-            value={token?.swapAmount}
+            {...boxValue}
           />
         </Box>
       </Box>

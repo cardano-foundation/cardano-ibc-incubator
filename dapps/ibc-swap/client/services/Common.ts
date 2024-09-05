@@ -19,6 +19,7 @@ export async function getTokenDenomTrace(chainId: string, tokenString: string) {
         const response = await apolloClient.query({
           query: GET_CARDANO_DENOM_BY_ID,
           variables: { id: tokenString },
+          fetchPolicy: 'network-only',
         });
         const denom = response.data?.cardanoIbcAsset;
 

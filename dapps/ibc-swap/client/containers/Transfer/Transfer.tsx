@@ -45,6 +45,7 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
+import { debounce } from '@/utils/helper';
 
 type EstimateFeeType = {
   display: boolean;
@@ -389,7 +390,7 @@ const Transfer = () => {
       await calculateEst().then(setEstData);
     };
     if (trySendAmount >= 1) {
-      checkEstData();
+      debounce(checkEstData, 500)();
     } else {
       setEstData(initEstData);
     }

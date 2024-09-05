@@ -1,5 +1,7 @@
 import { transfer } from '@/apis/restapi/cardano';
+import apolloClient from '@/apis/apollo/apolloClient';
 import { getPublicKeyHashFromAddress } from './address';
+import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
 
 const pfmReceiver = 'pfm';
 const CROSSCHAIN_SWAPS_ADDRESS =
@@ -137,11 +139,21 @@ export async function unsignedTxSwapFromCardano({
     transferRoutes: restRoutes,
     osmosisSwapMemo,
   });
+  const cardanoTokenTrace = await apolloClient
+    .query({
+      query: GET_CARDANO_DENOM_BY_ID,
+      variables: { id: tokenIn.denom.replaceAll('.', '') },
+      fetchPolicy: 'network-only',
+    })
+    .then((res) => res.data?.cardanoIbcAsset);
+  const sendTokenDenom = cardanoTokenTrace?.denom
+    ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
+    : tokenIn.denom;
   const data = await transfer({
     sourcePort: srcPort,
     sourceChannel: srcChannel,
     token: {
-      denom: tokenIn.denom,
+      denom: sendTokenDenom,
       amount: tokenIn.amount,
     },
     sender: getPublicKeyHashFromAddress(sender),

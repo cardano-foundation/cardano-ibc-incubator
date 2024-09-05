@@ -88,7 +88,6 @@ export const IBCParamsProvider = ({
     const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({
       rpcEndpoint,
     });
-    console.log(`initRPCClient`);
     setOsmosisRPCQueryClient(rpcClient);
   };
 
@@ -212,7 +211,6 @@ export const IBCParamsProvider = ({
             });
         }
       });
-      console.timeEnd(`currentDepth:${currentDepth}`);
     }
     const routesResult = Object.keys(tmp).reduce((acc, thisDepth) => {
       const thisCurrentDepth = parseInt(thisDepth, 10);
