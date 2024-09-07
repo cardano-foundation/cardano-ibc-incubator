@@ -59,15 +59,20 @@ pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io
     Ok(())
 }
 
-pub fn change_dir_permissions_read_only(dir: &Path) -> std::io::Result<()> {
+pub fn change_dir_permissions_read_only(
+    dir: &Path,
+    exclude_files: &Vec<&str>,
+) -> std::io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
 
             if path.is_dir() {
-                change_dir_permissions_read_only(&path)?;
-            } else if path.is_file() {
+                change_dir_permissions_read_only(&path, &exclude_files)?;
+            } else if path.is_file()
+                && !exclude_files.contains(&path.file_name().unwrap().to_str().unwrap())
+            {
                 verbose(&format!(
                     "Set permissions to read-only for file: {}",
                     path.display()

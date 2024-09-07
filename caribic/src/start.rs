@@ -1,6 +1,8 @@
 use crate::check::check_osmosisd;
 use crate::logger::{verbose, warn};
-use crate::setup::{configure_local_cardano_devnet, copy_cardano_env_file, seed_cardano_devnet};
+use crate::setup::{
+    configure_local_cardano_devnet, copy_cardano_env_file, prepare_db_sync, seed_cardano_devnet,
+};
 use crate::utils::{
     execute_script, execute_script_with_progress, extract_tendermint_client_id,
     extract_tendermint_connection_id, wait_for_health_check, wait_until_file_exists,
@@ -42,11 +44,12 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
 pub async fn start_local_cardano_network(
     project_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let cardano_dir = project_root_path.join("chains/cardano");
     log(&format!(
         "{} 🛠️ Configuring local Cardano devnet",
         style("Step 1/5").bold().dim(),
     ));
-    configure_local_cardano_devnet(project_root_path.join("chains/cardano").as_path())?;
+    configure_local_cardano_devnet(cardano_dir.as_path())?;
     log(&format!(
         "{} 📝 Copying Cardano environment file",
         style("Step 2/5").bold().dim(),
@@ -76,7 +79,7 @@ pub async fn start_local_cardano_network(
         "{} 🚀 Starting Cardano services",
         style("Step 5/5").bold().dim(),
     ));
-    start_local_cardano_services(project_root_path.join("chains/cardano").as_path())?;
+    start_local_cardano_services(cardano_dir.as_path())?;
     log("🕦 Waiting for the Cardano services to start ...");
 
     // TODO: make the url configurable
@@ -88,7 +91,10 @@ pub async fn start_local_cardano_network(
     } else {
         return Err("❌ Failed to start Cardano services".into());
     }
-    seed_cardano_devnet(project_root_path.join("chains/cardano").as_path());
+    if config::get_config().cardano.services.db_sync {
+        prepare_db_sync(cardano_dir.as_path())?;
+    }
+    seed_cardano_devnet(cardano_dir.as_path());
     let handler_json_exists = wait_until_file_exists(
         project_root_path
             .join("cardano/deployments/handler.json")
@@ -166,6 +172,9 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
     }
     if configuration.services.ogmios {
         services.push("cardano-node-ogmios");
+    }
+    if configuration.services.db_sync {
+        services.push("cardano-db-sync");
     }
 
     let mut script_stop_args = vec!["compose", "stop"];

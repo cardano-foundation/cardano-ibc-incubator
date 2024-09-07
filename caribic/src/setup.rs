@@ -151,10 +151,12 @@ pub fn configure_local_cardano_devnet(
     let genesis_byron_path = devnet_dir.join("genesis-byron.json");
     let genesis_shelley_path = devnet_dir.join("genesis-shelley.json");
 
+    let start_time = Utc::now();
+
     replace_text_in_file(
         &genesis_byron_path,
         r#""startTime": \d*"#,
-        &format!(r#""startTime": {}"#, Utc::now().timestamp()),
+        &format!(r#""startTime": {}"#, start_time.timestamp()),
     )?;
 
     replace_text_in_file(
@@ -162,11 +164,11 @@ pub fn configure_local_cardano_devnet(
         r#""systemStart": ".*""#,
         &format!(
             r#""systemStart": "{}""#,
-            Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true)
+            start_time.to_rfc3339_opts(SecondsFormat::Secs, true)
         ),
     )?;
 
-    change_dir_permissions_read_only(&devnet_dir).map_err(|error| {
+    change_dir_permissions_read_only(&devnet_dir, &vec!["cardano-node-db.json"]).map_err(|error| {
         format!(
             "Failed to apply read-only permissions to Cardano configuration files. This will cause issues with the Cardano node: {}",
             error.to_string()
@@ -391,4 +393,124 @@ pub fn seed_cardano_devnet(cardano_dir: &Path) {
     }
 }
 
-// pub fn prepare_db_sync() {}
+fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let cli_args;
+    let genesis_file = format!("/devnet/genesis-{}.json", era);
+    if era == "byron" {
+        cli_args = vec![
+            &era,
+            "genesis",
+            "print-genesis-hash",
+            "--genesis-json",
+            genesis_file.as_str(),
+        ];
+    } else {
+        cli_args = vec!["genesis", "hash", "--genesis", genesis_file.as_str()];
+    }
+
+    let genesis_hash = Command::new("docker")
+        .current_dir(script_dir)
+        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(cli_args)
+        .output()
+        .map_err(|error| format!("Failed to get genesis hash: {}", error.to_string()))?
+        .stdout;
+
+    let hash = String::from_utf8(genesis_hash)
+        .map_err(|error| format!("Failed to get {} genesis hash: {}", &era, error.to_string()))?;
+    Ok(hash)
+}
+
+pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let devnet_dir = cardano_dir.join("devnet");
+    let cardano_node_db = devnet_dir.join("cardano-node-db.json");
+
+    let byron_genesis_hash = get_genesis_hash("byron".to_string(), &devnet_dir)?;
+    let shelley_genesis_hash = get_genesis_hash("shelley".to_string(), &devnet_dir)?;
+    let alonzo_genesis_hash = get_genesis_hash("alonzo".to_string(), &devnet_dir)?;
+    let conway_genesis_hash = get_genesis_hash("conway".to_string(), &devnet_dir)?;
+
+    replace_text_in_file(
+        &cardano_node_db,
+        r#"xByronGenesisHash"#,
+        &byron_genesis_hash.trim(),
+    )?;
+
+    replace_text_in_file(
+        &cardano_node_db,
+        r#"xShelleyGenesisHash"#,
+        &shelley_genesis_hash.trim(),
+    )?;
+
+    replace_text_in_file(
+        &cardano_node_db,
+        r#"xAlonzoGenesisHash"#,
+        &alonzo_genesis_hash.trim(),
+    )?;
+
+    replace_text_in_file(
+        &cardano_node_db,
+        r#"xConwayGenesisHash"#,
+        &conway_genesis_hash.trim(),
+    )?;
+
+    let epoch_nonce = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(&["query", "protocol-state", "--testnet-magic", "42"])
+        .output()
+        .map_err(|error| format!("Failed to get epoch nonce: {}", error.to_string()))?
+        .stdout;
+
+    let epoch_nonce = String::from_utf8(epoch_nonce)
+        .map_err(|error| format!("Failed to get epoch nonce: {}", error.to_string()))?;
+    let epoch_nonce: Value = serde_json::from_str(&epoch_nonce)
+        .map_err(|error| format!("Failed to parse epoch nonce: {}", error.to_string()))?;
+    let epoch_nonce = epoch_nonce["epochNonce"]
+        .as_str()
+        .ok_or("Failed to extract epoch nonce")?;
+
+    let pool_params = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(&["query", "ledger-state", "--testnet-magic", "42"])
+        .output()
+        .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?
+        .stdout;
+
+    let pool_params = String::from_utf8(pool_params)
+        .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?;
+
+    let pool_params: Value = serde_json::from_str(&pool_params)
+        .map_err(|error| format!("Failed to parse pool params: {}", error.to_string()))?;
+    let pool_params = pool_params["stateBefore"]["esSnapshots"]["pstakeMark"]["poolParams"]
+        .as_object()
+        .ok_or("Failed to extract pool params")?;
+
+    let base_info_dir = cardano_dir.join("baseinfo");
+    fs::create_dir_all(&base_info_dir)
+        .map_err(|error| format!("Failed to create baseinfo directory: {}", error.to_string()))?;
+
+    let pool_params_str = serde_json::to_string(pool_params)
+        .map_err(|error| format!("Failed to serialize poolParams: {}", error.to_string()))?;
+
+    let info = format!(
+        "{{\"Epoch0Nonce\": {}, \"poolParams\": {}}}",
+        epoch_nonce.trim(),
+        pool_params_str.trim()
+    );
+    fs::write(base_info_dir.join("info.json"), info)
+        .map_err(|error| format!("Failed to write info.json file: {}", error.to_string()))?;
+
+    let cardano_source_dir = cardano_dir.join("../../cardano");
+    let gateway_dir = cardano_source_dir.join("gateway");
+    let gateway_env = gateway_dir.join(".env.example");
+
+    replace_text_in_file(
+        &gateway_env,
+        r#"CARDANO_EPOCH_NONCE_GENESIS=.*"#,
+        &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
+    )?;
+
+    Ok(())
+}
