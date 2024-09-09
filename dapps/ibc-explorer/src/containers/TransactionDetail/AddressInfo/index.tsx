@@ -37,7 +37,7 @@ const AddressInfoCard = ({ fromOrTo = 'From' }) => {
     navigator.clipboard.writeText(data.address);
   };
   return (
-    <Box maxWidth="31%" overflow="hidden">
+    <Box overflow="hidden">
       <Typography fontWeight={600} mb={1}>
         {fromOrTo}
       </Typography>
