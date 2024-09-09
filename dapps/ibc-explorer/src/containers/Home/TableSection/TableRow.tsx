@@ -56,7 +56,7 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
           </Box>
         </Box>
       </TableCell>
-      <TableCell>
+      <TableCell width={100}>
         <Box>
           <Typography
             color={getStatusColor()}
@@ -69,7 +69,7 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
       <TableCell>
         <Typography>{truncateString(rowData.toAddress, 6, 6)}</Typography>
       </TableCell>
-      <TableCell>
+      <TableCell width={100}>
         {rowData.toTxHash?.length ? (
           <Link href="./#" underline="hover">
             <Typography>{truncateString(rowData.toTxHash, 4, 4)}</Typography>
@@ -78,10 +78,10 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
           <Typography>--</Typography>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell width={120}>
         <Typography>{formatUnixTimestamp(rowData.createTime)}</Typography>
       </TableCell>
-      <TableCell>
+      <TableCell width={120}>
         <Typography>{formatUnixTimestamp(rowData.endTime)}</Typography>
       </TableCell>
     </StyledContentTableRow>

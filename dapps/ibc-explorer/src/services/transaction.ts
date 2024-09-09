@@ -9,7 +9,7 @@ type getListTxsProps = {
   filterToken: string | undefined;
   filterChains: {
     fromChain: string | undefined;
-    toChain: string | undefined;
+    toChain?: string | undefined;
   };
   filterStatus: string | undefined;
   filterDate: string | undefined;
