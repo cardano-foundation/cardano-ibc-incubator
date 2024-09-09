@@ -1,5 +1,5 @@
 use crate::logger::{
-    self, error, verbose,
+    self, verbose,
     Verbosity::{Info, Standard, Verbose},
 };
 use console::style;
@@ -197,7 +197,7 @@ pub async fn wait_for_health_check(
                 ));
             }
             Err(e) => {
-                error(&format!(
+                verbose(&format!(
                     "Failed to send request to {} on retry {}: {}",
                     url,
                     retry + 1,
@@ -265,24 +265,22 @@ pub fn execute_script_with_progress(
     script_name: &str,
     script_args: Vec<&str>,
     start_message: &str,
-    success_message: &str,
-    error_message: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let progress_bar = ProgressBar::new_spinner();
     progress_bar.enable_steady_tick(Duration::from_millis(100));
     progress_bar.set_style(
-        ProgressStyle::default_spinner()
-            .tick_strings(&["-", "\\", "|", "/"])
-            .template(
-                format!("{} {}\n{}", "{spinner:.green}", start_message, "{wide_msg}").as_str(),
-            )
-            .unwrap(),
+        ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
     );
+
+    progress_bar.set_prefix(start_message.to_owned());
 
     let mut command = Command::new(script_name)
         .current_dir(script_dir)
         .args(script_args)
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
 
@@ -293,7 +291,7 @@ pub fn execute_script_with_progress(
 
             for line in reader.lines() {
                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                progress_bar.set_message(format!("{}", line));
+                progress_bar.set_message(format!("{}", line.trim()));
             }
         }
         Info => {
@@ -324,7 +322,7 @@ pub fn execute_script_with_progress(
 
                 for line in reader.lines() {
                     let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                    progress_bar.set_message(format!("{}", last_line));
+                    progress_bar.set_message(format!("{}", last_line.trim()));
                 }
             }
         }
@@ -334,11 +332,10 @@ pub fn execute_script_with_progress(
     let status = command
         .wait()
         .map_err(|error| format!("Command wasn't running: {}", error))?;
+    progress_bar.finish_and_clear();
     if status.success() {
-        progress_bar.finish_with_message(success_message.to_owned());
         Ok(())
     } else {
-        progress_bar.finish_with_message(error_message.to_owned());
         let mut error_output = String::new();
         if let Some(stderr) = command.stderr.take() {
             let reader = BufReader::new(stderr);

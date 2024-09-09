@@ -91,7 +91,7 @@ async fn main() {
             }
             // Start the local Cardano network and its services
             match start_local_cardano_network(project_root_path).await {
-                Ok(_) => logger::log("✅ Local Cardano network started"),
+                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
                 Err(error) => exit_with_error(&format!(
                     "❌ Failed to start local Cardano network: {}",
                     error
@@ -120,11 +120,11 @@ async fn main() {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
                 Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
             }
-            logger::log("✅ Bridge started successfully");
+            logger::log("\n✅ Bridge started successfully");
         }
         Commands::Stop => {
             stop_bridge_gracefully();
-            logger::log("✅ Bridge stopped successfully");
+            logger::log("\n✅ Bridge stopped successfully");
         }
         Commands::Demo => logger::log("Demo"),
     }

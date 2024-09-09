@@ -1,3 +1,4 @@
+use indicatif::ProgressBar;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
 
@@ -102,4 +103,12 @@ pub fn get_verbosity() -> Verbosity {
 
 pub fn is_quite() -> bool {
     get_verbosity() == Verbosity::Quite
+}
+
+pub fn log_or_show_progress(message: &str, optional_progress_bar: &Option<ProgressBar>) {
+    if let Some(progress_bar) = optional_progress_bar {
+        progress_bar.set_message(message.to_owned());
+    } else {
+        log(message);
+    }
 }

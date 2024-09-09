@@ -67,7 +67,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
     let osmosisd_check = Command::new("osmosisd").arg("version").output();
 
     if osmosis_dir.exists() {
-        logger::log(&format!("👀 Osmosis directory already exists"));
+        logger::verbose(&format!("👀 Osmosis directory already exists"));
     } else {
         download_osmosis(osmosis_dir).await;
     }
@@ -77,7 +77,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
             if output.status.success() {
                 let version = String::from_utf8_lossy(&output.stderr);
                 if let Some(osmosisd_version) = version.lines().next() {
-                    logger::log(&format!("✅ osmosisd {}", osmosisd_version));
+                    logger::verbose(&format!("✅ osmosisd {}", osmosisd_version));
                 }
             } else {
                 logger::log(&format!(
