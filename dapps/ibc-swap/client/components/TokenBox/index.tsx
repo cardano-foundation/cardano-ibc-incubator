@@ -1,9 +1,12 @@
-import React from 'react';
 import { Box, Button, Image, Input, Text } from '@chakra-ui/react';
 import { FaChevronDown } from 'react-icons/fa';
 import { FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
-import { formatTokenSymbol } from '@/utils/string';
+import { formatPrice, formatTokenSymbol } from '@/utils/string';
+import { useContext, useEffect, useState } from 'react';
+import { useCosmosChain } from '@/hooks/useCosmosChain';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
+import SwapContext from '@/contexts/SwapContext';
 
 import StyledTokenBox from './index.style';
 
@@ -23,11 +26,55 @@ const TokenBox = ({
   handleClick,
   handleChangeAmount,
 }: TokenBoxProps) => {
+  const { setSwapData } = useContext(SwapContext);
+
+  const [balance, setBalance] = useState<string>('0');
+  const cosmosChain = useCosmosChain(token?.network?.networkId!);
+  const cardano = useCardanoChain();
+
+  useEffect(() => {
+    const fetchBalance = async () => {
+      if (token?.tokenId) {
+        let balanceData = '0';
+        if (
+          token?.network?.networkId &&
+          token.network.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+        ) {
+          balanceData = cardano.getBalanceByDenom(token.tokenId);
+        } else {
+          balanceData = await cosmosChain.getBalanceByDenom({
+            denom: token.tokenId,
+          });
+        }
+
+        if (balanceData) {
+          setBalance(balanceData);
+          if (fromOrTo === FROM_TO.FROM) {
+            setSwapData((prev) => ({
+              ...prev,
+              fromToken: {
+                ...prev.fromToken,
+                balance: balanceData,
+              },
+            }));
+          }
+        }
+      }
+    };
+
+    fetchBalance();
+  }, [token?.tokenId]);
+  const boxValue =
+    fromOrTo === FROM_TO.FROM
+      ? { value: token?.swapAmount || "0"}
+      : { defaultValue: token?.swapAmount  || "0"};
   return (
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
         <Text className="label">{`${fromOrTo} token`}</Text>
-        <Text className="balance">Balance: 0</Text>
+        {fromOrTo === FROM_TO.FROM && (
+          <Text className="balance">{`Balance: ${formatPrice(balance)}`}</Text>
+        )}
       </Box>
       <Box display="flex" justifyContent="space-between" marginTop="5px">
         <Box display="flex" alignItems="center">
@@ -71,9 +118,9 @@ const TokenBox = ({
             variant="unstyled"
             textAlign="right"
             placeholder="0"
-            disabled={!token?.tokenId}
+            disabled={!token?.tokenId || fromOrTo === FROM_TO.TO}
             onChange={(event) => handleChangeAmount(event)}
-            value={token?.swapAmount}
+            {...boxValue}
           />
         </Box>
       </Box>

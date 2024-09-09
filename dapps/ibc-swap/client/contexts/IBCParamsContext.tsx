@@ -1,13 +1,30 @@
-import { createContext, useMemo, useState, useEffect } from 'react';
-
+import {
+  createContext,
+  useMemo,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
+import { osmosis } from 'osmojs';
 import {
   RawChannelMapping,
   IBCDenomTrace,
   ChainToChainChannels,
   TransferRoutes,
 } from '@/types/IBCParams';
-import { fetchOsmosisDenomTraces } from '@/services/Osmosis';
-import { fetchAllChannels } from '@/services/CommonCosmosServices';
+import {
+  fetchCrossChainSwapRouterState,
+  fetchOsmosisDenomTraces,
+} from '@/services/Osmosis';
+import {
+  fetchAllChannels,
+  fetchPacketForwardFee,
+} from '@/services/CommonCosmosServices';
+import BigNumber from 'bignumber.js';
+import { DEFAULT_PFM_FEE } from '@/constants';
+import { chainsRestEndpoints } from '@/configs/customChainInfo';
+import { getPathTrace } from '@/utils/string';
+import { findRouteAndPools } from '@/services/Common';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -19,6 +36,14 @@ type IBCParamsContextType = {
     destChainId: string,
     depth: number,
   ) => TransferRoutes;
+  getPfmFee: (chainId: string) => BigNumber;
+  calculateSwapEst: (data: {
+    fromChain: string;
+    tokenInDenom: string;
+    tokenInAmount: string;
+    toChain: string;
+    tokenOutDenom: string;
+  }) => Promise<any>;
 };
 
 type tmpResolveRoutes = {
@@ -31,18 +56,6 @@ const IBCParamsContext = createContext<IBCParamsContextType>(
   {} as IBCParamsContextType,
 );
 
-const getPathTrace = (path: string) => {
-  const steps = path.split('/');
-  if (steps.length % 2 !== 0) {
-    return [];
-  }
-  const tmp = [];
-  for (let index = 0; index < steps.length; index += 2) {
-    tmp.push(`${steps[index]}/${steps[index + 1]}`);
-  }
-  return tmp;
-};
-
 export const IBCParamsProvider = ({
   children,
 }: {
@@ -51,10 +64,32 @@ export const IBCParamsProvider = ({
   const [rawChannelMappings, setRawChannelMappings] = useState<
     RawChannelMapping[]
   >([]);
+  const [crossChainSwapRouterState, setCrossChainSwapRouterState] = useState<
+    any[]
+  >([]);
+  const [allChannelMappings, setAllChannelMappings] = useState<any>({});
+  const [availableChannelsMappings, setAvailableChannelsMappings] =
+    useState<any>({});
   const [chainToChainMappings, setChainToChainMappings] =
     useState<ChainToChainChannels>({});
   const [osmosisIBCTokenTraces, setOsmosisIBCTokenTraces] =
     useState<IBCDenomTrace>({});
+
+  const [osmosisRPCQueryClient, setOsmosisRPCQueryClient] = useState<any>(null);
+
+  const [pfmFees, setPfmFees] = useState<{ [key: string]: BigNumber }>({});
+
+  const getPfmFee = (chainId: string): BigNumber => {
+    return pfmFees[chainId] ?? BigNumber(DEFAULT_PFM_FEE);
+  };
+
+  const initRPCClient = async () => {
+    const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT!;
+    const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({
+      rpcEndpoint,
+    });
+    setOsmosisRPCQueryClient(rpcClient);
+  };
 
   const updateOsmosisDenomTrace = async () => {
     fetchOsmosisDenomTraces().then((res: IBCDenomTrace) => {
@@ -66,8 +101,10 @@ export const IBCParamsProvider = ({
     fetchAllChannels(
       'sidechain',
       process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!,
-    ).then((res: RawChannelMapping[]) => {
-      setRawChannelMappings(res);
+    ).then((res: any) => {
+      setRawChannelMappings(res.bestChannel);
+      setAllChannelMappings(res.channelsMap);
+      setAvailableChannelsMappings(res.availableChannelsMap);
     });
   };
 
@@ -174,7 +211,6 @@ export const IBCParamsProvider = ({
             });
         }
       });
-      console.timeEnd(`currentDepth:${currentDepth}`);
     }
     const routesResult = Object.keys(tmp).reduce((acc, thisDepth) => {
       const thisCurrentDepth = parseInt(thisDepth, 10);
@@ -206,9 +242,93 @@ export const IBCParamsProvider = ({
     };
   };
 
+  const getCrossChainSwapRouterState = async () => {
+    fetchCrossChainSwapRouterState().then((res) =>
+      setCrossChainSwapRouterState(res),
+    );
+  };
+  const fetchPFMs = async () => {
+    const chains = Object.keys(chainsRestEndpoints);
+    await Promise.all(
+      chains.map((chainId) => {
+        return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(
+          (res) => ({ chainId, fee: res }),
+        );
+      }),
+    ).then((fees: { chainId: string; fee: BigNumber }[]) => {
+      const dataFees = fees.reduce((acc: { [key: string]: BigNumber }, cur) => {
+        const { chainId, fee } = cur;
+        acc[chainId] = fee;
+        return acc;
+      }, {});
+      setPfmFees(dataFees);
+    });
+  };
+  const calculateSwapEst = useCallback(
+    async ({
+      fromChain,
+      tokenInDenom,
+      tokenInAmount,
+      toChain,
+      tokenOutDenom,
+    }: {
+      fromChain: string;
+      tokenInDenom: string;
+      tokenInAmount: string;
+      toChain: string;
+      tokenOutDenom: string;
+    }): Promise<any> => {
+      if (
+        Object.keys(allChannelMappings).length > 0 &&
+        Object.keys(availableChannelsMappings).length > 0 &&
+        Object.keys(pfmFees).length > 0 &&
+        Object.keys(osmosisIBCTokenTraces).length > 0 &&
+        osmosisRPCQueryClient?.osmosis &&
+        crossChainSwapRouterState.length > 0
+      ) {
+        return findRouteAndPools(
+          fromChain,
+          tokenInDenom,
+          tokenInAmount,
+          toChain,
+          tokenOutDenom,
+          allChannelMappings,
+          availableChannelsMappings,
+          getPfmFee,
+          osmosisIBCTokenTraces,
+          crossChainSwapRouterState,
+          osmosisRPCQueryClient,
+        );
+      }
+      return {
+        message: 'Loading services, pls wait!',
+        tokenOutAmount: BigInt(0),
+        tokenOutTransferBackAmount: BigInt(0),
+      };
+    },
+    [
+      JSON.stringify(allChannelMappings),
+      JSON.stringify(availableChannelsMappings),
+      JSON.stringify(pfmFees),
+      JSON.stringify(osmosisIBCTokenTraces),
+      osmosisRPCQueryClient,
+      JSON.stringify(crossChainSwapRouterState),
+    ],
+  );
+
+  useEffect(() => {
+    // fetch pfm fee
+    fetchPFMs();
+  }, []);
+
   useEffect(() => {
     // fetch and update channel mappings
     fetchRawChannelsMapping();
+  }, []);
+
+  useEffect(() => {
+    // getCrossChainSwapRouterState
+    getCrossChainSwapRouterState();
   }, []);
 
   useEffect(() => {
@@ -221,6 +341,11 @@ export const IBCParamsProvider = ({
     updateOsmosisDenomTrace();
   }, []);
 
+  useEffect(() => {
+    // initRPCClient
+    initRPCClient();
+  }, []);
+
   return (
     <IBCParamsContext.Provider
       value={useMemo(
@@ -230,8 +355,15 @@ export const IBCParamsProvider = ({
           updateOsmosisDenomTrace,
           chainToChainMappings,
           calculateTransferRoutes,
+          getPfmFee,
+          calculateSwapEst,
         }),
-        [rawChannelMappings, osmosisIBCTokenTraces],
+        [
+          rawChannelMappings,
+          osmosisIBCTokenTraces,
+          allChannelMappings,
+          osmosisRPCQueryClient,
+        ],
       )}
     >
       {children}

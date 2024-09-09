@@ -1,3 +1,4 @@
+'use client'
 import React from 'react';
 import Transfer from '@/containers/Transfer/Transfer';
 

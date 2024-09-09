@@ -41,4 +41,22 @@ const formatTokenSymbol = (symbol: string): string => {
     .toUpperCase();
 };
 
-export { capitalizeString, formatNumberInput, formatPrice, formatTokenSymbol };
+const getPathTrace = (path: string) => {
+  const steps = path.split('/');
+  if (steps.length % 2 !== 0) {
+    return [];
+  }
+  const tmp = [];
+  for (let index = 0; index < steps.length; index += 2) {
+    tmp.push(`${steps[index]}/${steps[index + 1]}`);
+  }
+  return tmp;
+};
+
+export {
+  capitalizeString,
+  formatNumberInput,
+  formatPrice,
+  formatTokenSymbol,
+  getPathTrace,
+};

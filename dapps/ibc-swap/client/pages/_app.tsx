@@ -79,7 +79,7 @@ function MyApp({ Component, pageProps }: AppProps) {
       <ChainProvider
         chains={customChains}
         assetLists={customChainassets}
-        wallets={[...wallets.keplr]}
+        wallets={[wallets.keplr[0]]}
         signerOptions={signerOptions}
         walletModal={CosmosWalletModal}
       >

@@ -182,6 +182,15 @@ const cardanoChain: Chain = {
     svg: 'https://beta.explorer.cardano.org/assets/ada-price-dark-D1XAVnue.svg',
   },
 };
+
+export const chainsRestEndpoints: { [key: string]: string } =
+  customChains.reduce((acc: { [key: string]: string }, chain) => {
+    const { apis, chain_id: chainId } = chain;
+    const [restEndpoint] = apis?.rest!;
+    acc[chainId] = restEndpoint.address!;
+    return acc;
+  }, {});
+
 export const allChains: any[] = [...customChains, cardanoChain];
 export const customChainassets: AssetList[] = [
   sideChainAssetList,

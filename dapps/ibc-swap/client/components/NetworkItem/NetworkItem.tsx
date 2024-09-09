@@ -9,6 +9,7 @@ export type NetworkItemProps = {
   networkPrettyName?: string;
   isActive?: boolean;
   onClick?: () => void;
+  isDisabled?: boolean;
 };
 
 export const NetworkItem = ({
@@ -18,12 +19,14 @@ export const NetworkItem = ({
   networkPrettyName,
   isActive,
   onClick,
+  isDisabled,
 }: NetworkItemProps) => {
   return (
     <StyledNetworkItemWrapper
-      onClick={onClick}
+      onClick={isDisabled ? () => {} : onClick}
       isActive={isActive}
       id={`${networkId}`}
+      isDisabled={isDisabled}
     >
       <Box borderRadius="100%" width={30}>
         <Image src={networkLogo} alt={networkName} width={30} height={30} />

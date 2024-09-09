@@ -18,7 +18,6 @@ import { verifyAddress } from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import {
-  cardanoChainsSupported,
   cosmosChainsSupported,
   defaultChainName,
   HOUR_IN_NANOSEC,
@@ -31,8 +30,9 @@ import {
 import { Loading } from '@/components/Loading/Loading';
 import { useAddress, useWallet } from '@meshsdk/react';
 import { formatPrice } from '@/utils/string';
-import { useCustomCardanoBalance } from '@/hooks/useCustomCardanoBalance';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
+import BigNumber from 'bignumber.js';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -45,11 +45,13 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
+import { debounce } from '@/utils/helper';
 
 type EstimateFeeType = {
   display: boolean;
   canEst: boolean;
   msgs: any[];
+  estReceiveAmount: string;
   estTime: string;
   estFee: string;
 };
@@ -66,6 +68,7 @@ const initEstData = {
   display: false,
   canEst: false,
   msgs: [],
+  estReceiveAmount: '',
   estFee: '----',
   estTime: '----',
 };
@@ -97,7 +100,7 @@ const Transfer = () => {
     setIsProcessingTransfer,
     isProcessingTransfer,
   } = useContext(TransferContext);
-  const { calculateTransferRoutes } = useContext(IBCParamsContext);
+  const { calculateTransferRoutes, getPfmFee } = useContext(IBCParamsContext);
   const { handleResetData: handleResetSwapData } = useContext(SwapContext);
 
   const {
@@ -111,16 +114,14 @@ const Transfer = () => {
     onClose: onCloseTokenModal,
   } = useDisclosure();
 
-  const cosmosChain = useCosmosChain(
-    fromNetwork.networkName || defaultChainName,
-  );
+  const cosmosChain = useCosmosChain(fromNetwork.networkId || defaultChainName);
   const { getAccount, estimateFee } = cosmosChain;
 
   // handle get cardano assets
-  const assets = useCustomCardanoBalance();
+  const cardano = useCardanoChain();
   const cardanoAddress = useAddress();
   const cardanoAssets: CardanoAsset[] = [];
-  assets?.forEach((asset) => {
+  cardano.getTotalSupply()?.forEach((asset) => {
     const assetWithName = asset as typeof asset & { assetName: string };
     cardanoAssets.push({
       quantity: assetWithName.quantity,
@@ -164,11 +165,29 @@ const Transfer = () => {
       toast.error('route not found', { theme: 'colored' });
       return initEstData;
     }
-    // check token amount > 0, decimals
-    setEstData({
-      ...initEstData,
-      display: true,
-    });
+
+    // // check token amount > 0, decimals
+    // setEstData({
+    //   ...initEstData,
+    //   display: true,
+    // });
+
+    // estimate amount after PFM
+    let estReceiveAmount = BigNumber(sendAmount);
+    if (chains.length > 2) {
+      const feeChains = chains.slice(1, chains.length - 1);
+      feeChains.forEach((chainId) => {
+        const fee = getPfmFee(chainId);
+        let rmAmount = estReceiveAmount
+          .multipliedBy(fee)
+          .dp(6, BigNumber.ROUND_HALF_CEIL);
+        if (!rmAmount.isInteger()) {
+          rmAmount = rmAmount.integerValue().plus(1);
+        }
+        estReceiveAmount = estReceiveAmount.minus(rmAmount);
+      });
+    }
+
     if (fromNetwork.networkId !== process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
       const senderAddress = await getAccount();
       const msg = unsignedTxTransferFromCosmos(
@@ -186,6 +205,7 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: msg,
+          estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
           estTime: '~2 mins',
         };
@@ -211,6 +231,7 @@ const Transfer = () => {
           display: true,
           canEst: true,
           msgs: [unsignedTx],
+          estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${formatPrice(estFee)} lovelace`,
           estTime: '~2 mins',
         };
@@ -244,7 +265,7 @@ const Transfer = () => {
     }
     try {
       // Cosmos
-      if (cosmosChainsSupported.includes(fromNetwork.networkName!)) {
+      if (cosmosChainsSupported.includes(fromNetwork.networkId!)) {
         setIsProcessingTransfer(true);
         const client = await cosmosChain.getSigningStargateClient();
         const tx = await client.signAndBroadcast(
@@ -291,8 +312,8 @@ const Transfer = () => {
 
     // Cosmos
     if (
-      fromNetwork.networkName &&
-      cosmosChainsSupported.includes(fromNetwork.networkName)
+      fromNetwork.networkId &&
+      cosmosChainsSupported.includes(fromNetwork.networkId)
     ) {
       try {
         setIsFetchDataLoading(true);
@@ -315,8 +336,8 @@ const Transfer = () => {
 
     // Cardano
     if (
-      fromNetwork.networkName &&
-      cardanoChainsSupported.includes(fromNetwork.networkName)
+      fromNetwork.networkId &&
+      fromNetwork.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
     ) {
       try {
         setIsFetchDataLoading(true);
@@ -349,7 +370,7 @@ const Transfer = () => {
     const onChangeFromNetwork = async () => {
       if (
         !cosmosChain?.isWalletConnected &&
-        cosmosChainsSupported.includes(fromNetwork.networkName!)
+        cosmosChainsSupported.includes(fromNetwork.networkId!)
       ) {
         await cosmosChain?.connect();
       } else if (fromNetwork.networkId) {
@@ -369,7 +390,7 @@ const Transfer = () => {
       await calculateEst().then(setEstData);
     };
     if (trySendAmount >= 1) {
-      checkEstData();
+      debounce(checkEstData, 500)();
     } else {
       setEstData(initEstData);
     }
@@ -379,6 +400,7 @@ const Transfer = () => {
   return isSubmitted ? (
     <TransferResult
       setIsSubmitted={setIsSubmitted}
+      estReceiveAmount={estData.estReceiveAmount}
       estFee={estData.estFee}
       estTime={estData.estTime}
       lastTxHash={lastTxHash}
