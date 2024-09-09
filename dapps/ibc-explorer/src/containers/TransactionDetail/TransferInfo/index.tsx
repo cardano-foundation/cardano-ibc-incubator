@@ -90,23 +90,21 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
   const renderValue = (data: { label: string; value: string }[]) => {
     return data.map((dt) => {
       return (
-        <Grid item xs={12}>
-          <Box display="flex">
-            <Typography
-              fontSize="14px"
-              width={matches ? '150px' : '230px'}
-              fontWeight="600"
-            >
-              {`${dt.label}:`}
-            </Typography>
-            {dt.label === 'Status' ? (
-              renderStatus(dt.value)
-            ) : (
-              <Typography fontSize="14px">
-                {dt.value.length > 30 ? shortenAddress(dt.value, 6) : dt.value}
+        <Grid container item xs={12}>
+          <Grid item container>
+            <Grid item xs={5} sm={3} md={2}>
+              <Typography fontSize="14px" fontWeight="600">
+                {`${dt.label}:`}
               </Typography>
-            )}
-          </Box>
+            </Grid>
+            <Grid item xs={7} sm={9} md={10}>
+              {dt.label === 'Status' ? (
+                renderStatus(dt.value)
+              ) : (
+                <Typography fontSize="14px">{dt.value}</Typography>
+              )}
+            </Grid>
+          </Grid>
         </Grid>
       );
     });
@@ -142,18 +140,20 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
           {open ? <ArrowDropUpIcon /> : <ArrowDropDownIcon />}
         </IconButton>
       </Box>
-      <CardContent>
-        <Grid container spacing={2}>
-          {renderValue(dataRender.slice(0, 3))}
-        </Grid>
-      </CardContent>
-      <Collapse in={open} timeout="auto" unmountOnExit>
-        <CardContent sx={{ paddingTop: 0 }}>
+      <Box overflow="scroll">
+        <CardContent>
           <Grid container spacing={2}>
-            {renderValue(dataRender.slice(3, dataRender.length))}
+            {renderValue(dataRender.slice(0, 3))}
           </Grid>
         </CardContent>
-      </Collapse>
+        <Collapse in={open} timeout="auto" unmountOnExit>
+          <CardContent sx={{ paddingTop: 0 }}>
+            <Grid container spacing={2}>
+              {renderValue(dataRender.slice(3, dataRender.length))}
+            </Grid>
+          </CardContent>
+        </Collapse>
+      </Box>
     </Card>
   );
 };
