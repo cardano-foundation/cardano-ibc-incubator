@@ -1,6 +1,11 @@
-import { Box, Typography, Grid } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
+import { Box, Typography, Grid, useMediaQuery } from '@mui/material';
+import { shortenAddress } from '@src/utils/string';
 
 const SendReceiveSection = () => {
+  const theme = useTheme();
+  const matches = useMediaQuery(theme.breakpoints.down('md'));
+
   const data = [
     {
       label: 'Amount',
@@ -31,10 +36,23 @@ const SendReceiveSection = () => {
           return (
             <Grid item xs={12}>
               <Box display="flex">
-                <Typography fontSize="14px" width="230px" fontWeight="600">
+                <Typography
+                  fontSize="14px"
+                  width={matches ? '160px' : '230px'}
+                  fontWeight="600"
+                  textAlign="justify"
+                >
                   {dt.label}
                 </Typography>
-                <Typography fontSize="14px">{dt.value}</Typography>
+                <Box maxWidth={matches ? '100px' : undefined}>
+                  {matches && dt.label === 'Send Token Denom' ? (
+                    <Typography fontSize="14px">
+                      {shortenAddress(dt.value, 8)}
+                    </Typography>
+                  ) : (
+                    <Typography fontSize="14px">{dt.value}</Typography>
+                  )}
+                </Box>
               </Box>
             </Grid>
           );

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTheme } from '@mui/material/styles';
 import {
   Box,
   Typography,
@@ -7,9 +8,11 @@ import {
   Card,
   CardContent,
   Grid,
+  useMediaQuery,
 } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import ArrowDropDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { shortenAddress } from '@src/utils/string';
 
 type TransferInfoProps = {
   title: string;
@@ -57,6 +60,8 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
       value: '',
     },
   ];
+  const theme = useTheme();
+  const matches = useMediaQuery(theme.breakpoints.down('md'));
   const [open, setOpen] = useState(false);
 
   const handleToggle = () => {
@@ -87,13 +92,19 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
       return (
         <Grid item xs={12}>
           <Box display="flex">
-            <Typography fontSize="14px" width="230px" fontWeight="600">
+            <Typography
+              fontSize="14px"
+              width={matches ? '150px' : '230px'}
+              fontWeight="600"
+            >
               {`${dt.label}:`}
             </Typography>
             {dt.label === 'Status' ? (
               renderStatus(dt.value)
             ) : (
-              <Typography fontSize="14px">{dt.value}</Typography>
+              <Typography fontSize="14px">
+                {dt.value.length > 30 ? shortenAddress(dt.value, 6) : dt.value}
+              </Typography>
             )}
           </Box>
         </Grid>
