@@ -3,9 +3,16 @@ import SearchIcon from '@src/assets/logo/search-normal.svg';
 
 type SearchInputProps = {
   placeholder?: string;
+  handleChangeInput?: (
+    // eslint-disable-next-line no-unused-vars
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => void;
 };
 
-export const SearchInput = ({ placeholder }: SearchInputProps) => {
+export const SearchInput = ({
+  placeholder,
+  handleChangeInput,
+}: SearchInputProps) => {
   return (
     <Box
       height="40px"
@@ -17,7 +24,11 @@ export const SearchInput = ({ placeholder }: SearchInputProps) => {
       alignItems="center"
       justifyContent="space-between"
     >
-      <InputBase sx={{ width: '250px' }} placeholder={placeholder || ''} />
+      <InputBase
+        sx={{ width: '250px' }}
+        placeholder={placeholder || ''}
+        onChange={(e) => (handleChangeInput ? handleChangeInput(e) : {})}
+      />
       <img
         style={{ cursor: 'pointer' }}
         height={22}

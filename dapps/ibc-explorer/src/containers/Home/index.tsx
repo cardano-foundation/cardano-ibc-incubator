@@ -18,10 +18,9 @@ import { StyledWrapperCointainer } from './index.style';
 const App = () => {
   const [txList, setTxList] = useState<TransactionType[]>([]);
   const [selectedToken] = useState<TokenType>({} as TokenType);
-  const [selectedChains, setSelectedChains] = useState<{
-    transferChain: ChainType | null;
-    receiveChain: ChainType | null;
-  }>({ transferChain: null, receiveChain: null });
+  const [selectedChain, setSelectedChain] = useState<ChainType | null>(
+    {} as ChainType,
+  );
   const [selectedStatus, setSelectedStatus] = useState<StatusType>(
     {} as StatusType,
   );
@@ -40,8 +39,7 @@ const App = () => {
       },
       filterToken: selectedToken.tokenDenom,
       filterChains: {
-        fromChain: selectedChains.transferChain?.chainName,
-        toChain: selectedChains.receiveChain?.chainName,
+        fromChain: selectedChain?.chainName,
       },
       filterStatus: selectedStatus.value,
       filterDate: dateValues.join(','),
@@ -55,7 +53,7 @@ const App = () => {
 
   useEffect(() => {
     fetchCount();
-  }, [selectedToken, selectedChains, selectedStatus, dateValues]);
+  }, [selectedToken, selectedChain, selectedStatus, dateValues]);
 
   useEffect(() => {
     const fetchListTxs = () => {
@@ -66,8 +64,7 @@ const App = () => {
         },
         filterToken: selectedToken.tokenDenom,
         filterChains: {
-          fromChain: selectedChains.transferChain?.chainName,
-          toChain: selectedChains.receiveChain?.chainName,
+          fromChain: selectedChain?.chainName,
         },
         filterStatus: selectedStatus.value,
         filterDate: dateValues.join(','),
@@ -82,10 +79,10 @@ const App = () => {
       <StyledWrapperCointainer>
         <HeaderTitle title="IBC Packet" />
         <FilterSection
-          selectedChains={selectedChains}
+          selectedChain={selectedChain}
           selectedStatus={selectedStatus}
           dateValues={dateValues}
-          setSelectedChains={setSelectedChains}
+          setSelectedChain={setSelectedChain}
           setSelectedStatus={setSelectedStatus}
           setDateValues={setDateValues}
         />

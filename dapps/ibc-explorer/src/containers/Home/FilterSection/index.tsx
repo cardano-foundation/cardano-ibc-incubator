@@ -14,25 +14,17 @@ import { StyledStatusBox } from './index.style';
 import { ChainListData } from '../fakeData';
 
 type FilterSectionProps = {
-  selectedChains: {
-    transferChain: ChainType | null;
-    receiveChain: ChainType | null;
-  };
+  selectedChain: ChainType | null;
   selectedStatus: StatusType;
   dateValues: any;
-  setSelectedChains: React.Dispatch<
-    React.SetStateAction<{
-      transferChain: ChainType | null;
-      receiveChain: ChainType | null;
-    }>
-  >;
+  setSelectedChain: React.Dispatch<React.SetStateAction<ChainType | null>>;
   setSelectedStatus: React.Dispatch<React.SetStateAction<StatusType>>;
   setDateValues: React.Dispatch<React.SetStateAction<never[]>>;
 };
 
 export const FilterSection = ({
-  setSelectedChains,
-  selectedChains,
+  setSelectedChain,
+  selectedChain,
   setSelectedStatus,
   selectedStatus,
   setDateValues,
@@ -47,7 +39,7 @@ export const FilterSection = ({
   };
 
   const handleReset = () => {
-    setSelectedChains({ transferChain: null, receiveChain: null });
+    setSelectedChain({} as ChainType);
     setSelectedStatus({} as StatusType);
     setDateValues([]);
   };
@@ -58,11 +50,9 @@ export const FilterSection = ({
         <Grid container spacing={2}>
           <Grid item>
             <SelectDropdown
-              placeholder="All Chains - All Chains"
+              placeholder="From Chain"
               anchorEl={chainBoxAnchorEl}
-              selectedItem={`${
-                selectedChains.transferChain?.chainName || 'All Chains'
-              } - ${selectedChains.receiveChain?.chainName || 'All Chains'}`}
+              selectedItem={`${selectedChain?.chainName || 'All Chains'}`}
               handleClick={(e: any) => {
                 handleClick(e, chainBoxAnchorEl, setChainBoxAnchorEl);
               }}
@@ -72,12 +62,9 @@ export const FilterSection = ({
                   { chainId: 'all', chainName: 'All Chains', chainLogo: '' },
                   ...ChainListData,
                 ]}
-                selectedChains={selectedChains}
-                setSelectedChains={(
-                  transferChain: ChainType,
-                  receiveChain: ChainType,
-                ) => {
-                  setSelectedChains({ transferChain, receiveChain });
+                selectedChain={selectedChain}
+                setSelectedChain={(transferChain: ChainType) => {
+                  setSelectedChain(transferChain);
                   setChainBoxAnchorEl(null);
                 }}
               />
