@@ -1,5 +1,5 @@
 use crate::config;
-use crate::logger::{log, verbose};
+use crate::logger::{log, log_or_show_progress, verbose, warn};
 use crate::utils::{
     change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
     IndicatorMessage,
@@ -7,6 +7,7 @@ use crate::utils::{
 use chrono::{SecondsFormat, Utc};
 use console::style;
 use fs_extra::{copy_items, file::copy};
+use indicatif::ProgressBar;
 use serde_json::Value;
 use std::io::{self, Write};
 use std::process::Output;
@@ -189,16 +190,19 @@ pub fn configure_local_cardano_devnet(
     Ok(())
 }
 
-pub fn seed_cardano_devnet(cardano_dir: &Path) {
-    log("💸 Seeding Cardano Devnet");
+pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+    log_or_show_progress("💸 Seeding Cardano Devnet", &optional_progress_bar);
     let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
 
     for bootstrap_address in bootstrap_addresses {
-        log(&format!(
-            "🚀 Sending {} ADA to {}",
-            style(bootstrap_address.amount).bold().dim(),
-            style(&bootstrap_address.address).bold().dim()
-        ));
+        log_or_show_progress(
+            &format!(
+                "🚀 Sending {} ADA to {}",
+                style(bootstrap_address.amount).bold().dim(),
+                style(&bootstrap_address.address).bold().dim()
+            ),
+            &optional_progress_bar,
+        );
         let cardano_cli_args = vec!["compose", "exec", "cardano-node", "cardano-cli"];
         let build_address_args = vec![
             "address",
@@ -348,10 +352,10 @@ pub fn seed_cardano_devnet(cardano_dir: &Path) {
                         "--testnet-magic",
                         "42",
                     ];
-                    log(&format!(
-                        "Waiting for utxo {} to settle",
-                        style(tx_in).bold().dim()
-                    ));
+                    log_or_show_progress(
+                        &format!("Waiting for utxo {} to settle", style(tx_in).bold().dim()),
+                        &optional_progress_bar,
+                    );
 
                     let mut is_not_on_chain = true;
                     while is_not_on_chain {
@@ -386,7 +390,7 @@ pub fn seed_cardano_devnet(cardano_dir: &Path) {
                 }
             }
             None => {
-                log("It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue.");
+                warn("It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue.");
                 return;
             }
         }
