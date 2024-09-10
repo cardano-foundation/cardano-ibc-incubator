@@ -1,11 +1,13 @@
 use crate::check::check_osmosisd;
 use crate::logger::{log_or_show_progress, verbose, warn};
 use crate::setup::{
-    configure_local_cardano_devnet, copy_cardano_env_file, prepare_db_sync, seed_cardano_devnet,
+    configure_local_cardano_devnet, copy_cardano_env_file, download_mithril, prepare_db_sync,
+    seed_cardano_devnet,
 };
 use crate::utils::{
     execute_script, execute_script_with_progress, extract_tendermint_client_id,
-    extract_tendermint_connection_id, wait_for_health_check, wait_until_file_exists,
+    extract_tendermint_connection_id, get_cardano_epoch, wait_for_health_check,
+    wait_until_file_exists,
 };
 use crate::{
     config,
@@ -17,7 +19,7 @@ use fs_extra::copy_items;
 use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
-use std::fs::remove_dir_all;
+use std::fs::{self, remove_dir_all};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -719,5 +721,221 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
         &options,
     )?;
 
+    Ok(())
+}
+
+pub async fn start_mithril(project_root_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let progress_bar = ProgressBar::new(2000);
+    let mithril_dir = project_root_dir.join("chains/mithrils");
+    let mithril_data_dir = mithril_dir.join("data");
+    let mithril_script_dir = mithril_dir.join("scripts");
+    let mithril_project_dir = mithril_dir.join("mithril");
+
+    if mithril_data_dir.exists() && mithril_data_dir.is_dir() {
+        fs::remove_dir_all(&mithril_data_dir).map_err(|error| {
+            format!(
+                "Failed to remove existing mithril data directory: {}",
+                error.to_string()
+            )
+        })?;
+    }
+    fs::create_dir_all(&mithril_data_dir).map_err(|error| {
+        format!(
+            "Failed to create mithril data directory: {}",
+            error.to_string()
+        )
+    })?;
+
+    if !mithril_project_dir.exists() {
+        download_mithril(&mithril_project_dir)
+            .await
+            .map_err(|error| {
+                format!(
+                    "Unable to download and extract mithril repository: {}",
+                    error
+                )
+            })?;
+    }
+
+    let mithril_config = config::get_config().mithril;
+
+    execute_script(
+        &mithril_script_dir,
+        "docker",
+        vec!["compose", "rm", "-f"],
+        Some(vec![
+            (
+                "MITHRIL_AGGREGATOR_IMAGE",
+                mithril_config.aggregator_image.as_str(),
+            ),
+            ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+            (
+                "CARDANO_NODE_VERSION",
+                mithril_config.cardano_node_version.as_str(),
+            ),
+            (
+                "CHAIN_OBSERVER_TYPE",
+                mithril_config.chain_observer_type.as_str(),
+            ),
+            ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
+            ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
+            (
+                "GENESIS_VERIFICATION_KEY",
+                mithril_config.genesis_verification_key.as_str(),
+            ),
+            (
+                "GENESIS_SECRET_KEY",
+                mithril_config.genesis_secret_key.as_str(),
+            ),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+        ]),
+    )
+    .map_err(|error| format!("Failed to bring down mithril services: {}", error))?;
+
+    execute_script(
+        &mithril_script_dir,
+        "docker",
+        vec![
+            "compose",
+            "-f",
+            "docker-compose.yaml",
+            "--profile",
+            "mithril",
+            "up",
+            "--remove-orphans",
+            "--force-recreate",
+            "-d",
+            "--no-build",
+        ],
+        Some(vec![
+            (
+                "MITHRIL_AGGREGATOR_IMAGE",
+                mithril_config.aggregator_image.as_str(),
+            ),
+            ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+            (
+                "CARDANO_NODE_VERSION",
+                mithril_config.cardano_node_version.as_str(),
+            ),
+            (
+                "CHAIN_OBSERVER_TYPE",
+                mithril_config.chain_observer_type.as_str(),
+            ),
+            ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
+            ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
+            (
+                "GENESIS_VERIFICATION_KEY",
+                mithril_config.genesis_verification_key.as_str(),
+            ),
+            (
+                "GENESIS_SECRET_KEY",
+                mithril_config.genesis_secret_key.as_str(),
+            ),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "docker compose up command failed for the mithril services: {}",
+            error
+        )
+    })?;
+
+    let current_epoch = get_cardano_epoch(project_root_dir).map_err(|error| {
+        format!(
+            "Failed to get the current epoch from the cardano node: {}",
+            error
+        )
+    })?;
+    let mut mithril_ready = false;
+    let offset = 2;
+
+    progress_bar
+        .set_message("🍵 Mithril has to wait until the immutable files have been created...");
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+        )
+        .unwrap()
+        .progress_chars("#>-"),
+    );
+    for _ in 0..1000 {
+        if get_cardano_epoch(project_root_dir)? > (current_epoch + offset) {
+            mithril_ready = true;
+            break;
+        } else {
+            std::thread::sleep(std::time::Duration::from_secs(5));
+            verbose("Waiting for at least 2 Cardano epochs...");
+            progress_bar.inc(2);
+        }
+    }
+    progress_bar.finish_and_clear();
+
+    if mithril_ready {
+        // docker compose -f docker-compose.yaml --profile mithril-genesis run mithril-aggregator-genesis
+        execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "--profile",
+                "mithril-genesis",
+                "run",
+                "mithril-aggregator-genesis",
+            ],
+            Some(vec![
+                (
+                    "MITHRIL_AGGREGATOR_IMAGE",
+                    mithril_config.aggregator_image.as_str(),
+                ),
+                ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
+                ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+                (
+                    "CARDANO_NODE_VERSION",
+                    mithril_config.cardano_node_version.as_str(),
+                ),
+                (
+                    "CHAIN_OBSERVER_TYPE",
+                    mithril_config.chain_observer_type.as_str(),
+                ),
+                ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
+                ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
+                (
+                    "GENESIS_VERIFICATION_KEY",
+                    mithril_config.genesis_verification_key.as_str(),
+                ),
+                (
+                    "GENESIS_SECRET_KEY",
+                    mithril_config.genesis_secret_key.as_str(),
+                ),
+                ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+            ]),
+        )?;
+
+        Ok(())
+    } else {
+        Err("Failed to start Mithril ... It seems there is an issue with the cardano devnet. Please check the logs of your docker containers.".into())
+    }
+}
+
+pub fn start_gateway(gateway_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    //cp ./.env.example .env
+    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    copy(
+        gateway_dir.join(".env.example"),
+        gateway_dir.join(".env"),
+        &options,
+    )?;
+    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    execute_script(
+        &gateway_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", "--build"]),
+        None,
+    )?;
     Ok(())
 }

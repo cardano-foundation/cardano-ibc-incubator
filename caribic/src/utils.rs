@@ -7,6 +7,7 @@ use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::Client;
+use serde_json::Value;
 use std::fs;
 use std::fs::File;
 use std::fs::Permissions;
@@ -47,6 +48,64 @@ pub fn default_config_path() -> PathBuf {
     config_path.push(".caribic");
     config_path.push("config.json");
     config_path
+}
+
+pub fn get_cardano_epoch(project_root_dir: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+    let mut command = Command::new("docker");
+    let query_output = command
+        .current_dir(&project_root_dir.join("chains/cardano"))
+        .args(&[
+            "compose",
+            "exec",
+            "cardano-node",
+            "cardano-cli",
+            "query",
+            "tip",
+            "--cardano-mode",
+            "--testnet-magic",
+            "42",
+        ]);
+
+    let output = query_output.output().map_err(|error| {
+        format!(
+            "Failed to query tip from cardano-node: {}",
+            error.to_string()
+        )
+    })?;
+
+    if output.status.success() {
+        verbose(&format!(
+            "Querying epoch from cardano-node: {}",
+            String::from_utf8_lossy(&output.stdout)
+        ));
+
+        let query_output_json: Value =
+            serde_json::from_str(String::from_utf8_lossy(&output.stdout).to_string().as_str())?;
+        let epoch_json = query_output_json.get("epoch");
+        if let Some(epoch) = epoch_json {
+            if epoch.is_i64() {
+                return Ok(epoch.as_i64().unwrap() as u64);
+            } else {
+                return Err(format!(
+                    "Failed to parse epoch from cardano-node: {}",
+                    String::from_utf8_lossy(&output.stdout)
+                )
+                .into());
+            }
+        } else {
+            return Err(format!(
+                "Failed to extract epoch from cardano-node: {}",
+                String::from_utf8_lossy(&output.stdout)
+            )
+            .into());
+        }
+    } else {
+        Err(format!(
+            "Failed to query tip from cardano-node: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into())
+    }
 }
 
 pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {

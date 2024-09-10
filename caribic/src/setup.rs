@@ -15,33 +15,75 @@ use std::thread;
 use std::time::Duration;
 use std::{fs, path::Path, process::Command};
 
-pub async fn download_osmosis(osmosis_path: &Path) {
+pub async fn download_repository(
+    url: &str,
+    path: &Path,
+    name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let base_path = path.parent();
+
+    if (base_path.is_none() || !base_path.unwrap().exists()) && base_path.is_some() {
+        fs::create_dir_all(base_path.unwrap()).map_err(|error| {
+            format!(
+                "Failed to create directory for {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+    }
+
+    if let Some(base_path) = base_path {
+        let zip_path = base_path.join(format!("{}.zip", name)).to_owned();
+
+        download_file(
+            url,
+            zip_path.as_path(),
+            Some(IndicatorMessage {
+                message: format!("Downloading {} source code", name),
+                step: "Step 1/2".to_string(),
+                emoji: "📥 ".to_string(),
+            }),
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to download {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+
+        log(&format!(
+            "{} 📦 Extracting {} source code...",
+            style("Step 2/2").bold().dim(),
+            name
+        ));
+
+        unzip_file(zip_path.as_path(), path).map_err(|error| {
+            format!(
+                "Failed to unzip {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+
+        delete_file(zip_path.as_path())
+            .map_err(|error| format!("Failed to cleanup {}.zip: {}", name, error.to_string()))?;
+
+        Ok(())
+    } else {
+        Err(format!("Failed to locate parent dir of {}", path.display()).into())
+    }
+}
+
+pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2430.0.zip";
+    download_repository(url, mithril_path, "mithril").await
+}
+
+pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
-
-    let base_path = osmosis_path
-        .parent()
-        .expect("osmosis_path should have a parent directory");
-    let zip_path = base_path.join("osmosis.zip").to_owned();
-
-    download_file(
-        url,
-        zip_path.as_path(),
-        Some(IndicatorMessage {
-            message: "Downloading osmosis source code".to_string(),
-            step: "Step 1/2".to_string(),
-            emoji: "📥 ".to_string(),
-        }),
-    )
-    .await
-    .expect("Failed to download osmosis source code");
-
-    log(&format!(
-        "{} 📦 Extracting osmosis source code...",
-        style("Step 2/2").bold().dim()
-    ));
-
-    unzip_file(zip_path.as_path(), osmosis_path).expect("Failed to unzip osmosis source code");
-    delete_file(zip_path.as_path()).expect("Failed to cleanup osmosis.zip");
+    download_repository(url, osmosis_path, "osmosis").await
 }
 
 pub async fn install_osmosisd(osmosis_path: &Path) {
