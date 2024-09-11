@@ -1,13 +1,13 @@
 use crate::check::check_osmosisd;
-use crate::logger::{log_or_show_progress, verbose, warn};
+use crate::logger::{log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril, prepare_db_sync,
     seed_cardano_devnet,
 };
 use crate::utils::{
     execute_script, execute_script_with_progress, extract_tendermint_client_id,
-    extract_tendermint_connection_id, get_cardano_epoch, wait_for_health_check,
-    wait_until_file_exists,
+    extract_tendermint_connection_id, get_cardano_state, wait_for_health_check,
+    wait_until_file_exists, CardanoQuery,
 };
 use crate::{
     config,
@@ -19,6 +19,7 @@ use fs_extra::copy_items;
 use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
+use std::cmp::min;
 use std::fs::{self, remove_dir_all};
 use std::path::Path;
 use std::process::Command;
@@ -570,16 +571,16 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                         String::from_utf8_lossy(&create_channel_output.stdout)
                     ));
                 } else {
-                    warn("Failed to get channel_id");
+                    return Err("Failed to get channel_id".into());
                 }
             } else {
-                warn("Failed to get connection_id");
+                return Err("Failed to get connection_id".into());
             }
         } else {
-            warn("Failed to get sidechain client_id");
+            return Err("Failed to get sidechain client_id".into());
         }
     } else {
-        warn("Failed to get localosmosis client_id");
+        return Err("Failed to get localosmosis client_id".into());
     }
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -724,8 +725,7 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
     Ok(())
 }
 
-pub async fn start_mithril(project_root_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let progress_bar = ProgressBar::new(2000);
+pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     let mithril_dir = project_root_dir.join("chains/mithrils");
     let mithril_data_dir = mithril_dir.join("data");
     let mithril_script_dir = mithril_dir.join("scripts");
@@ -757,8 +757,32 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<(), Box<dyn std::e
             })?;
     }
 
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("🔌 Power up Mithril to get started ...".to_owned());
+    } else {
+        log("🔌 Power up Mithril to get started ...");
+    }
+
     let mithril_config = config::get_config().mithril;
 
+    log_or_show_progress(
+        &format!(
+            "{} 🏗️ Configuring Mithril services",
+            style("Step 1/2").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
     execute_script(
         &mithril_script_dir,
         "docker",
@@ -793,6 +817,13 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<(), Box<dyn std::e
     )
     .map_err(|error| format!("Failed to bring down mithril services: {}", error))?;
 
+    log_or_show_progress(
+        &format!(
+            "{} 🚀 Starting Mithril services",
+            style("Step 2/2").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
     execute_script(
         &mithril_script_dir,
         "docker",
@@ -843,87 +874,126 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<(), Box<dyn std::e
         )
     })?;
 
-    let current_epoch = get_cardano_epoch(project_root_dir).map_err(|error| {
-        format!(
-            "Failed to get the current epoch from the cardano node: {}",
-            error
-        )
-    })?;
-    let mut mithril_ready = false;
-    let offset = 2;
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
 
-    progress_bar
-        .set_message("🍵 Mithril has to wait until the immutable files have been created...");
-    progress_bar.set_style(
-        ProgressStyle::with_template(
-            "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
-        )
-        .unwrap()
-        .progress_chars("#>-"),
-    );
-    for _ in 0..1000 {
-        if get_cardano_epoch(project_root_dir)? > (current_epoch + offset) {
-            mithril_ready = true;
-            break;
+    let current_cardano_epoch = get_cardano_state(project_root_dir, CardanoQuery::Epoch)?;
+
+    Ok(current_cardano_epoch)
+}
+
+pub fn wait_and_start_mithril_genesis(
+    project_root_dir: &Path,
+    cardano_epoch_on_mithril_start: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mithril_dir = project_root_dir.join("chains/mithrils");
+    let mithril_script_dir = mithril_dir.join("scripts");
+    let mithril_data_dir = mithril_dir.join("data");
+
+    let offset = 2;
+    let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+
+    let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
+        + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
+
+    let target_epoch = cardano_epoch_on_mithril_start + offset;
+    let target_slot = target_epoch * slots_per_epoch;
+    let mut slots_left = target_slot.saturating_sub(current_slot);
+
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
         } else {
-            std::thread::sleep(std::time::Duration::from_secs(5));
-            verbose("Waiting for at least 2 Cardano epochs...");
-            progress_bar.inc(2);
+            log(
+            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created ..",
+        );
         }
     }
-    progress_bar.finish_and_clear();
 
-    if mithril_ready {
-        // docker compose -f docker-compose.yaml --profile mithril-genesis run mithril-aggregator-genesis
-        execute_script(
-            &mithril_script_dir,
-            "docker",
-            vec![
-                "compose",
-                "-f",
-                "docker-compose.yaml",
-                "--profile",
-                "mithril-genesis",
-                "run",
-                "mithril-aggregator-genesis",
-            ],
-            Some(vec![
-                (
-                    "MITHRIL_AGGREGATOR_IMAGE",
-                    mithril_config.aggregator_image.as_str(),
-                ),
-                ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
-                ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
-                (
-                    "CARDANO_NODE_VERSION",
-                    mithril_config.cardano_node_version.as_str(),
-                ),
-                (
-                    "CHAIN_OBSERVER_TYPE",
-                    mithril_config.chain_observer_type.as_str(),
-                ),
-                ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
-                ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
-                (
-                    "GENESIS_VERIFICATION_KEY",
-                    mithril_config.genesis_verification_key.as_str(),
-                ),
-                (
-                    "GENESIS_SECRET_KEY",
-                    mithril_config.genesis_secret_key.as_str(),
-                ),
-                ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
-            ]),
-        )?;
+    while slots_left > 0 {
+        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+        slots_left = target_slot.saturating_sub(current_slot);
 
-        Ok(())
-    } else {
-        Err("Failed to start Mithril ... It seems there is an issue with the cardano devnet. Please check the logs of your docker containers.".into())
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(5));
     }
+
+    let mithril_config = config::get_config().mithril;
+
+    execute_script(
+        &mithril_script_dir,
+        "docker",
+        vec![
+            "compose",
+            "-f",
+            "docker-compose.yaml",
+            "--profile",
+            "mithril-genesis",
+            "run",
+            "mithril-aggregator-genesis",
+        ],
+        Some(vec![
+            (
+                "MITHRIL_AGGREGATOR_IMAGE",
+                mithril_config.aggregator_image.as_str(),
+            ),
+            ("MITHRIL_CLIENT_IMAGE", mithril_config.client_image.as_str()),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+            (
+                "CARDANO_NODE_VERSION",
+                mithril_config.cardano_node_version.as_str(),
+            ),
+            (
+                "CHAIN_OBSERVER_TYPE",
+                mithril_config.chain_observer_type.as_str(),
+            ),
+            ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
+            ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
+            (
+                "GENESIS_VERIFICATION_KEY",
+                mithril_config.genesis_verification_key.as_str(),
+            ),
+            (
+                "GENESIS_SECRET_KEY",
+                mithril_config.genesis_secret_key.as_str(),
+            ),
+            ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
+        ]),
+    )?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
+    Ok(())
 }
 
 pub fn start_gateway(gateway_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    //cp ./.env.example .env
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
     copy(
         gateway_dir.join(".env.example"),

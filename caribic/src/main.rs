@@ -5,6 +5,7 @@ use clap::Parser;
 use clap::Subcommand;
 use start::start_gateway;
 use start::start_mithril;
+use start::wait_and_start_mithril_genesis;
 use start::{
     configure_hermes, prepare_osmosis, start_cosmos_sidechain, start_local_cardano_network,
     start_osmosis, start_relayer,
@@ -104,10 +105,14 @@ async fn main() {
                 )),
             }
 
+            let mut cardano_current_epoch = 0;
             if project_config.mithril.enabled {
                 // Start Mithril if needed
                 match start_mithril(&project_root_path).await {
-                    Ok(_) => logger::log("✅ Mithril up and running"),
+                    Ok(current_epoch) => {
+                        cardano_current_epoch = current_epoch;
+                        logger::log("✅ Mithril up and running")
+                    }
                     Err(error) => {
                         exit_with_error(&format!("❌ Failed to start Mithril: {}", error))
                     }
@@ -142,6 +147,16 @@ async fn main() {
             match configure_hermes(osmosis_dir.as_path()) {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
                 Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
+            }
+
+            if project_config.mithril.enabled {
+                // Wait for Mithril to start reading the immutable cardano node files
+                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                    Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
+                    Err(error) => {
+                        exit_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                }
+            }
             }
             logger::log("\n✅ Bridge started successfully");
         }

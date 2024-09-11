@@ -395,7 +395,10 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         "42",
                     ];
                     log_or_show_progress(
-                        &format!("Waiting for utxo {} to settle", style(tx_in).bold().dim()),
+                        &format!(
+                            "Waiting for transaction {} to settle",
+                            style(tx_in).bold().dim()
+                        ),
                         &optional_progress_bar,
                     );
 

@@ -50,7 +50,9 @@ pub fn default_config_path() -> PathBuf {
     config_path
 }
 
-pub fn get_cardano_epoch(project_root_dir: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+pub fn get_cardano_tip_state(
+    project_root_dir: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
     let mut command = Command::new("docker");
     let query_output = command
         .current_dir(&project_root_dir.join("chains/cardano"))
@@ -75,36 +77,62 @@ pub fn get_cardano_epoch(project_root_dir: &Path) -> Result<u64, Box<dyn std::er
 
     if output.status.success() {
         verbose(&format!(
-            "Querying epoch from cardano-node: {}",
+            "Querying tip from cardano-node: {}",
             String::from_utf8_lossy(&output.stdout)
         ));
-
-        let query_output_json: Value =
-            serde_json::from_str(String::from_utf8_lossy(&output.stdout).to_string().as_str())?;
-        let epoch_json = query_output_json.get("epoch");
-        if let Some(epoch) = epoch_json {
-            if epoch.is_i64() {
-                return Ok(epoch.as_i64().unwrap() as u64);
-            } else {
-                return Err(format!(
-                    "Failed to parse epoch from cardano-node: {}",
-                    String::from_utf8_lossy(&output.stdout)
-                )
-                .into());
-            }
-        } else {
-            return Err(format!(
-                "Failed to extract epoch from cardano-node: {}",
-                String::from_utf8_lossy(&output.stdout)
-            )
-            .into());
-        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         Err(format!(
             "Failed to query tip from cardano-node: {}",
             String::from_utf8_lossy(&output.stderr)
         )
         .into())
+    }
+}
+
+pub enum CardanoQuery {
+    Epoch,
+    Slot,
+    SlotInEpoch,
+    SlotsToEpochEnd,
+}
+
+impl CardanoQuery {
+    fn as_str(&self) -> &'static str {
+        match self {
+            CardanoQuery::Epoch => "epoch",
+            CardanoQuery::Slot => "slot",
+            CardanoQuery::SlotInEpoch => "slotInEpoch",
+            CardanoQuery::SlotsToEpochEnd => "slotsToEpochEnd",
+        }
+    }
+}
+
+pub fn get_cardano_state(
+    project_root_dir: &Path,
+    query: CardanoQuery,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let cardano_tip_state = get_cardano_tip_state(project_root_dir)?;
+    let cardano_tip_json: Value = serde_json::from_str(&cardano_tip_state)?;
+    let epoch_json = cardano_tip_json.get(query.as_str());
+    if let Some(epoch) = epoch_json {
+        if epoch.is_i64() {
+            return Ok(epoch.as_i64().unwrap() as u64);
+        } else {
+            return Err(format!(
+                "Failed to parse {} from cardano-node: {}",
+                query.as_str(),
+                cardano_tip_state
+            )
+            .into());
+        }
+    } else {
+        return Err(format!(
+            "Failed to extract {} from cardano-node: {}",
+            query.as_str(),
+            cardano_tip_state
+        )
+        .into());
     }
 }
 
