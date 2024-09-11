@@ -1,8 +1,8 @@
 import styled from '@emotion/styled';
-import { Box } from '@mui/material';
+import { Grid } from '@mui/material';
 import { COLOR } from '@src/styles/color';
 
-const StyledStatusBox = styled(Box)`
+const StyledStatusBox = styled(Grid)`
   gap: 4px;
   display: flex;
   align-items: center;
