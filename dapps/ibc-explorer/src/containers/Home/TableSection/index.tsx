@@ -9,7 +9,6 @@ import {
   Box,
   Pagination,
   TableCell,
-  TableFooter,
   TableRow,
   Typography,
 } from '@mui/material';
@@ -92,29 +91,23 @@ export const TableSection = ({
               ? data.map((tx, index) => renderTableRowItem(tx, index))
               : renderNoDataFound()}
           </TableBody>
-          <TableFooter>
-            <TableRow>
-              <TableCell align="center" colSpan={8}>
-                <Box display="flex" justifyContent="center" alignItems="center">
-                  {!!pagination.count && (
-                    <Pagination
-                      onChange={(e, page) => {
-                        setPagination((prev) => ({ ...prev, page }));
-                      }}
-                      sx={{
-                        alignItems: 'center',
-                      }}
-                      count={pagination.count}
-                      color="primary"
-                      shape="rounded"
-                    />
-                  )}
-                </Box>
-              </TableCell>
-            </TableRow>
-          </TableFooter>
         </Table>
       </TableContainer>
+      <Box display="flex" justifyContent="center" alignItems="center" py={2}>
+        {!!pagination.count && (
+          <Pagination
+            onChange={(e, page) => {
+              setPagination((prev) => ({ ...prev, page }));
+            }}
+            sx={{
+              alignItems: 'center',
+            }}
+            count={pagination.count}
+            color="primary"
+            shape="rounded"
+          />
+        )}
+      </Box>
     </Paper>
   );
 };

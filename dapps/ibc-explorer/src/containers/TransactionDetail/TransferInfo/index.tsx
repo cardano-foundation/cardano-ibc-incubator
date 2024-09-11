@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useTheme } from '@mui/material/styles';
 import {
   Box,
   Typography,
@@ -8,11 +7,9 @@ import {
   Card,
   CardContent,
   Grid,
-  useMediaQuery,
 } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import ArrowDropDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { shortenAddress } from '@src/utils/string';
 
 type TransferInfoProps = {
   title: string;
@@ -60,8 +57,6 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
       value: '',
     },
   ];
-  const theme = useTheme();
-  const matches = useMediaQuery(theme.breakpoints.down('md'));
   const [open, setOpen] = useState(false);
 
   const handleToggle = () => {

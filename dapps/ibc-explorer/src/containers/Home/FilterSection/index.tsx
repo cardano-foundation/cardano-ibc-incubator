@@ -1,15 +1,12 @@
 import { useRef, useState } from 'react';
 import { DatePickerRef } from 'react-multi-date-picker';
-import EastIcon from '@mui/icons-material/East';
-import { Box, Button, Grid, Typography } from '@mui/material';
+import { Box, Button, Grid } from '@mui/material';
 import ResetIcon from '@src/assets/logo/rotate-right.svg';
-import { COLOR } from '@src/styles/color';
 import { SelectDropdown } from '@src/components/SelectDropdown';
 import { CustomDatePickerInput } from '@src/components/CustomDatePickerInput';
 import { ChainType, StatusType } from '@src/types/transaction';
 import { StatusListBox } from '@src/components/StatusListBox';
 import { ChainListBox } from '@src/components/ChainListBox';
-import { StyledStatusBox } from './index.style';
 
 import { ChainListData } from '../fakeData';
 
@@ -117,20 +114,6 @@ export const FilterSection = ({
             </Button>
           </Grid>
         </Grid>
-      </Box>
-      <Box display="flex" gap={2} justifyContent="right">
-        <StyledStatusBox>
-          <EastIcon htmlColor={COLOR.success} />
-          <Typography className="status-label">Success</Typography>
-        </StyledStatusBox>
-        <StyledStatusBox>
-          <EastIcon htmlColor={COLOR.warning} />
-          <Typography className="status-label">Processing</Typography>
-        </StyledStatusBox>
-        <StyledStatusBox>
-          <EastIcon htmlColor={COLOR.error} />
-          <Typography className="status-label">Failed</Typography>
-        </StyledStatusBox>
       </Box>
     </Box>
   );
