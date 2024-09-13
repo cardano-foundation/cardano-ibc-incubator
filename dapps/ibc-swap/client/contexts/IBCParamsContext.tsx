@@ -160,87 +160,89 @@ export const IBCParamsProvider = ({
     }
   };
 
-  const calculateTransferRoutes = (
-    srcChainId: string,
-    destChainId: string,
-    depth: number = 4,
-  ): TransferRoutes => {
-    const tmpReturn = {
-      foundRoute: false,
-      chains: [srcChainId],
-      routes: [],
-    } as TransferRoutes;
+  const calculateTransferRoutes = useCallback(
+    (
+      srcChainId: string,
+      destChainId: string,
+      depth: number = 4,
+    ): TransferRoutes => {
+      const tmpReturn = {
+        foundRoute: false,
+        chains: [srcChainId],
+        routes: [],
+      } as TransferRoutes;
 
-    if (srcChainId === destChainId) {
-      return { ...tmpReturn, foundRoute: true };
-    }
+      if (srcChainId === destChainId) {
+        return { ...tmpReturn, foundRoute: true };
+      }
+      const chainNames = Object.keys(chainToChainMappings);
 
-    const chainNames = Object.keys(chainToChainMappings);
-
-    const fromChain = chainToChainMappings[srcChainId];
-    const tmp: tmpResolveRoutes = {};
-    let currentDepth = 1;
-    tmp[currentDepth] = {};
-    Object.keys(fromChain || {}).forEach((chain) => {
-      fromChain[chain].forEach((channelPair) => {
-        const channelPort = `${channelPair.port}/${channelPair.channel}`;
-        tmp[currentDepth][`${channelPort}`] = [srcChainId, chain];
-      });
-    });
-    while (currentDepth <= depth) {
-      currentDepth += 1;
+      const fromChain = chainToChainMappings[srcChainId];
+      const tmp: tmpResolveRoutes = {};
+      let currentDepth = 1;
       tmp[currentDepth] = {};
-      // eslint-disable-next-line no-loop-func
-      Object.keys(tmp[currentDepth - 1]).forEach((path) => {
-        const data = tmp[currentDepth - 1][path];
-        const processedChains = data;
-        const sourceChainName = processedChains[processedChains.length - 1];
-        if (sourceChainName !== destChainId) {
-          const chainAvail = chainNames.filter(
-            (i) => !processedChains.includes(i),
-          );
-          const sourceChain = chainToChainMappings[sourceChainName];
-          Object.keys(sourceChain)
-            .filter((nextChainName) => chainAvail.includes(nextChainName))
-            .forEach((chainName) => {
-              sourceChain[chainName].forEach((channelPair) => {
-                const channelPort = `${channelPair.port}/${channelPair.channel}`;
-                const tokenPath = `${path}/${channelPort}`;
-                tmp[currentDepth][`${tokenPath}`] = [...data, chainName];
-              });
-            });
-        }
+      Object.keys(fromChain || {}).forEach((chain) => {
+        fromChain[chain].forEach((channelPair) => {
+          const channelPort = `${channelPair.port}/${channelPair.channel}`;
+          tmp[currentDepth][`${channelPort}`] = [srcChainId, chain];
+        });
       });
-    }
-    const routesResult = Object.keys(tmp).reduce((acc, thisDepth) => {
-      const thisCurrentDepth = parseInt(thisDepth, 10);
-      const filferData = Object.keys(tmp[thisCurrentDepth]).reduce(
-        (accData, itemKey) => {
-          if (
-            tmp[thisCurrentDepth][itemKey][
-              tmp[thisCurrentDepth][itemKey].length - 1
-            ] === destChainId
-          ) {
-            accData[itemKey] = tmp[thisCurrentDepth][itemKey];
-            return accData;
+      while (currentDepth <= depth) {
+        currentDepth += 1;
+        tmp[currentDepth] = {};
+        // eslint-disable-next-line no-loop-func
+        Object.keys(tmp[currentDepth - 1]).forEach((path) => {
+          const data = tmp[currentDepth - 1][path];
+          const processedChains = data;
+          const sourceChainName = processedChains[processedChains.length - 1];
+          if (sourceChainName !== destChainId) {
+            const chainAvail = chainNames.filter(
+              (i) => !processedChains.includes(i),
+            );
+            const sourceChain = chainToChainMappings[sourceChainName];
+            Object.keys(sourceChain)
+              .filter((nextChainName) => chainAvail.includes(nextChainName))
+              .forEach((chainName) => {
+                sourceChain[chainName].forEach((channelPair) => {
+                  const channelPort = `${channelPair.port}/${channelPair.channel}`;
+                  const tokenPath = `${path}/${channelPort}`;
+                  tmp[currentDepth][`${tokenPath}`] = [...data, chainName];
+                });
+              });
           }
-          return accData;
-        },
-        {} as any,
-      );
-      acc = Object.assign(acc, filferData);
-      return acc;
-    }, {} as any);
-    const routesResultKey = Object.keys(routesResult);
-    if (routesResultKey.length === 0) {
-      return tmpReturn;
-    }
-    return {
-      foundRoute: true,
-      chains: routesResult[routesResultKey[0]],
-      routes: getPathTrace(routesResultKey[0]),
-    };
-  };
+        });
+      }
+      const routesResult = Object.keys(tmp).reduce((acc, thisDepth) => {
+        const thisCurrentDepth = parseInt(thisDepth, 10);
+        const filferData = Object.keys(tmp[thisCurrentDepth]).reduce(
+          (accData, itemKey) => {
+            if (
+              tmp[thisCurrentDepth][itemKey][
+                tmp[thisCurrentDepth][itemKey].length - 1
+              ] === destChainId
+            ) {
+              accData[itemKey] = tmp[thisCurrentDepth][itemKey];
+              return accData;
+            }
+            return accData;
+          },
+          {} as any,
+        );
+        acc = Object.assign(acc, filferData);
+        return acc;
+      }, {} as any);
+      const routesResultKey = Object.keys(routesResult);
+      if (routesResultKey.length === 0) {
+        return tmpReturn;
+      }
+      return {
+        foundRoute: true,
+        chains: routesResult[routesResultKey[0]],
+        routes: getPathTrace(routesResultKey[0]),
+      };
+    },
+    [JSON.stringify(chainToChainMappings)],
+  );
 
   const getCrossChainSwapRouterState = async () => {
     fetchCrossChainSwapRouterState().then((res) =>
@@ -363,6 +365,7 @@ export const IBCParamsProvider = ({
           osmosisIBCTokenTraces,
           allChannelMappings,
           osmosisRPCQueryClient,
+          calculateTransferRoutes,
         ],
       )}
     >

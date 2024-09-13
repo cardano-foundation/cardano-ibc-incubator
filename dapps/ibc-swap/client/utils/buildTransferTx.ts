@@ -23,6 +23,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver,
           port: srcPort,
           channel: srcChannel,
+          timeout: "60m",
         },
       };
     } else {
@@ -31,6 +32,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver: pfmReceiver,
           port: srcPort,
           channel: srcChannel,
+          timeout: "60m",
           next: JSON.stringify(result),
         },
       };
@@ -110,7 +112,11 @@ export async function unsignedTxTransferFromCardano(
       variables: { id: token.denom.replaceAll('.', '') },
       fetchPolicy: 'network-only',
     })
-    .then((res) => res.data?.cardanoIbcAsset);
+    .then((res) => res.data?.cardanoIbcAsset)
+    .catch(() => ({
+      denom: '',
+      path: '',
+    }));
   const sendTokenDenom = cardanoTokenTrace?.denom
     ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
     : token.denom;
