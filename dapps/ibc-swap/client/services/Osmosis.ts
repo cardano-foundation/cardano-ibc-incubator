@@ -41,8 +41,12 @@ export async function fetchCrossChainSwapRouterState() {
     'SWAP_ROUTER_ADDRESS',
     process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS!,
   )}`;
-  const data = await fetch(fetchUrl).then((res) => res.json());
-  const rawRoutes = data.models;
+  const data = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => ({
+      models: [],
+    }));
+  const rawRoutes = data?.models || [];
   const routes = rawRoutes.reduce((acc: any, cur: any) => {
     const { key, value } = cur;
     let keyStr = hex2a(key);
