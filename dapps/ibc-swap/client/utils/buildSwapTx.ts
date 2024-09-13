@@ -18,6 +18,7 @@ const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
           receiver,
           port: srcPort,
           channel: srcChannel,
+          timeout: "60m",
         },
       };
     } else {
@@ -27,6 +28,7 @@ const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
           port: srcPort,
           channel: srcChannel,
           next: result,
+          timeout: "60m",
         },
       };
     }
@@ -91,6 +93,7 @@ const buildForwardMemo = ({
           port: srcPort,
           channel: srcChannel,
           next: result,
+          timeout: "60m",
         },
       };
     }
@@ -145,7 +148,11 @@ export async function unsignedTxSwapFromCardano({
       variables: { id: tokenIn.denom.replaceAll('.', '') },
       fetchPolicy: 'network-only',
     })
-    .then((res) => res.data?.cardanoIbcAsset);
+    .then((res) => res.data?.cardanoIbcAsset)
+    .catch(() => ({
+      denom: '',
+      path: '',
+    }));
   const sendTokenDenom = cardanoTokenTrace?.denom
     ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
     : tokenIn.denom;
