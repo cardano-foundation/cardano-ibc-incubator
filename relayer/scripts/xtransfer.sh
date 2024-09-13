@@ -2,7 +2,8 @@
 
 path=demo
 amount1=2000stake
-amount2=1000-9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b
+tokenName=$(cat ../../cardano/deployments/handler.json | jq -r .tokens.mock)
+amount2=1000-$tokenName
 
 src_chain_name=ibc-0
 src_port=port-100
