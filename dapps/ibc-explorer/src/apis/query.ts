@@ -16,6 +16,15 @@ const MESSAGE_FRAGMENT = gql`
     gas
     packet {
       id
+      srcChain
+      srcPort
+      srcChannel
+      sequence
+      dstChain
+      dstPort
+      dstChannel
+      data
+      module
     }
   }
 `;
@@ -50,6 +59,9 @@ const PACKET_FRAGMENT_RECURSIVE = gql`
             ...PacketFragment
             parentPacket {
               ...PacketFragment
+              parentPacket {
+                ...PacketFragment
+              }
             }
           }
         }
@@ -92,11 +104,22 @@ export const GET_PACKET_BY_PACKET_ID = gql`
 `;
 
 export const GET_PACKET_BY_PARENT_PACKET_ID = gql`
-  ${PACKET_FRAGMENT}
+  ${PACKET_FRAGMENT_RECURSIVE}
   query GetPacketByParentPacketId($packetId: String!) {
     packets(filter: { parentPacketId: { equalTo: $packetId } }) {
       nodes {
         ...PacketFragmentRecursive
+      }
+    }
+  }
+`;
+
+export const GET_PACKET_BY_PARENT_PACKET_ID_SINGLE = gql`
+  ${PACKET_FRAGMENT}
+  query GetPacketByParentPacketIdSingle($packetId: String!) {
+    packets(filter: { parentPacketId: { equalTo: $packetId } }) {
+      nodes {
+        ...PacketFragment
       }
     }
   }
