@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import dayjs from 'dayjs';
+
 import {
   Box,
   Typography,
@@ -10,51 +12,51 @@ import {
 } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import ArrowDropDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import { chainsMapping } from '@src/configs/customChainInfo';
 
 type TransferInfoProps = {
   title: string;
   tag: string;
   icon: string;
+  msg: any;
 };
 
-const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
+const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
+  // console.log(msg);
+  const txTime = dayjs(Number(msg.time));
+  const msgId = msg.id;
+
+  const fromChainId = msgId.split('_')[0];
+  const chainPrettyName = chainsMapping[fromChainId]?.pretty_name;
+  const feeCurrency = chainsMapping[fromChainId]?.fees?.fee_tokens?.[0]?.denom;
   const dataRender = [
     {
       label: 'TxHash',
-      value: 'DABD8D5225A3F7D47A21DB6FA0141E28FB54CB091D5E7B436CB13835F1C719B2',
+      value: msg?.txHash,
     },
     {
       label: 'Status',
-      value: 'Success',
+      value: msg?.code === '0' ? 'Success' : 'Error',
     },
     {
       label: 'Fee',
-      value: '0.000847 STRD',
+      value: `${msg?.gas} ${feeCurrency.toUpperCase()}`,
+    },
+    {
+      label: 'Chain',
+      value: chainPrettyName,
     },
     {
       label: 'Signer',
-      value: 'stride1c5szhgwd48peyarrus03fhddekekrseq87x3km',
-    },
-    {
-      label: 'Memo',
-      value:
-        'Inter Blockchain Services Relayer | hermes 1.8.2+d223dd1e (https://hermes.informal.systems)',
-    },
-    {
-      label: 'Block',
-      value: '21497531',
+      value: msg?.sender,
     },
     {
       label: 'Time',
-      value: '2024-07-29 05:24:55 (> 18 mins 3 secs ago)',
-    },
-    {
-      label: 'Proof Height',
-      value: '1-18580820',
+      value: txTime.format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       label: 'Raw data',
-      value: '',
+      value: msg?.data,
     },
   ];
   const [open, setOpen] = useState(false);
@@ -85,7 +87,7 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
   const renderValue = (data: { label: string; value: string }[]) => {
     return data.map((dt) => {
       return (
-        <Grid container item xs={12}>
+        <Grid container item xs={12} key={JSON.stringify(dt)}>
           <Grid item container>
             <Grid item xs={5} sm={3} md={2}>
               <Typography fontSize="14px" fontWeight="600">
@@ -138,13 +140,13 @@ const TransferInfo = ({ title, tag, icon }: TransferInfoProps) => {
       <Box overflow="scroll">
         <CardContent>
           <Grid container spacing={2}>
-            {renderValue(dataRender.slice(0, 3))}
+            {renderValue(dataRender.slice(0, 4))}
           </Grid>
         </CardContent>
         <Collapse in={open} timeout="auto" unmountOnExit>
           <CardContent sx={{ paddingTop: 0 }}>
             <Grid container spacing={2}>
-              {renderValue(dataRender.slice(3, dataRender.length))}
+              {renderValue(dataRender.slice(4, dataRender.length))}
             </Grid>
           </CardContent>
         </Collapse>

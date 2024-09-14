@@ -1,4 +1,4 @@
 export default {
   HOME: '/',
-  DETAIL_TX: '/:txId',
+  DETAIL_TX: '/tx/:txHash',
 };

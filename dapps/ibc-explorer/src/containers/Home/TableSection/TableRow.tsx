@@ -31,7 +31,7 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
     event: React.MouseEvent<HTMLTableRowElement, MouseEvent>,
   ) => {
     event.preventDefault();
-    history.push(`/${rowData.fromTxHash}`);
+    history.push(`tx/${rowData.fromTxHash}`);
   };
 
   return (

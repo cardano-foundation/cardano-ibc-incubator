@@ -1,21 +1,56 @@
+import { useParams, useHistory } from 'react-router-dom';
 import { Box, Divider, Grid, Typography, useMediaQuery } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
 import { HeaderTitle } from '@src/components/HeaderTitle';
 import DoubleArrowIcon from '@src/components/DoubleArrowIcon';
-import TransferIcon from '@src/assets/logo/transfer-icon.svg';
-import ReceiveIcon from '@src/assets/logo/receive-icon.svg';
-import AcknowledgeIcon from '@src/assets/logo/acknowledge-icon.svg';
 import SendReceiveSection from './SendReceiveSection';
 import TokenAvatar from './TokenAvatar';
 import AddressInfoCard from './AddressInfo';
 import Relayer from './Relayer';
-import TransferInfo from './TransferInfo';
 import { StyledBasicInfo, StyledWrapperCointainer } from './index.style';
+import { useTransactionDetail } from './useTransactionDetail';
+import PacketMgsSection from './TransferInfo/PacketMgsSection';
 
 const TransactionDetail = () => {
   const theme = useTheme();
+  const { txHash } = useParams<{ txHash: string }>();
+  const history = useHistory();
+  if (!txHash.trim()) {
+    history.push('/');
+  }
+  const {
+    loading,
+    canLoadTx,
+    packetList,
+    packetsData,
+    packetDataMgs,
+    updatePacketDataMsg,
+    calculateOverallPacketStatus,
+  } = useTransactionDetail({
+    txHash,
+  });
   const matches = useMediaQuery(theme.breakpoints.down('md'));
+
+  if (loading) {
+    return (
+      <Box
+        display="flex"
+        flexDirection="column"
+        alignItems="center"
+        bgcolor="#F5F7F9"
+        paddingY={4}
+        paddingX={matches ? 2 : undefined}
+      >
+        <StyledWrapperCointainer>loading...</StyledWrapperCointainer>
+      </Box>
+    );
+  }
+
+  if (!canLoadTx) {
+    history.push('/');
+  }
+
   return (
     <Box
       display="flex"
@@ -27,7 +62,10 @@ const TransactionDetail = () => {
     >
       <StyledWrapperCointainer>
         <Box mb={3}>
-          <HeaderTitle title="IBC Packet Details" status="processing" />
+          <HeaderTitle
+            title="IBC Packet Details"
+            status={calculateOverallPacketStatus()}
+          />
         </Box>
         <StyledBasicInfo>
           <Typography fontWeight="700" mb="8px" fontSize="18px">
@@ -82,16 +120,17 @@ const TransactionDetail = () => {
       <StyledWrapperCointainer>
         <StyledBasicInfo>
           <Typography fontWeight="700" mb="8px" fontSize="18px">
-            Basic Info
+            Transactions Info
           </Typography>
           <Divider />
-          <TransferInfo title="Transfer" tag="From" icon={TransferIcon} />
-          <TransferInfo title="Receive" tag="To" icon={ReceiveIcon} />
-          <TransferInfo
-            title="Acknowledge"
-            tag="Result"
-            icon={AcknowledgeIcon}
-          />
+          {packetList.length > 0 &&
+            packetList.map((packet) => (
+              <PacketMgsSection
+                packetId={packet}
+                updatePacketDataMsg={updatePacketDataMsg}
+                key={packetsData[packet].id}
+              />
+            ))}
         </StyledBasicInfo>
       </StyledWrapperCointainer>
     </Box>
