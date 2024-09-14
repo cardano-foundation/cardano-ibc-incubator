@@ -1,3 +1,3 @@
-import * as auth from './auth';
+import * as apolloClient from './apollo';
 
-export default { auth };
+export default { apolloClient };
