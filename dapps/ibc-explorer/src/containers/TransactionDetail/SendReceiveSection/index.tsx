@@ -2,31 +2,38 @@ import { useTheme } from '@mui/material/styles';
 import { Box, Typography, Grid, useMediaQuery } from '@mui/material';
 import { shortenAddress } from '@src/utils/string';
 
-const SendReceiveSection = () => {
+const SendReceiveSection = ({
+  amount,
+  sendToken,
+  receiveToken,
+}: {
+  amount: string;
+  sendToken: string;
+  receiveToken: string;
+}) => {
   const theme = useTheme();
   const matches = useMediaQuery(theme.breakpoints.down('md'));
 
   const data = [
     {
       label: 'Amount',
-      value: '497.227868 TIA',
+      value: amount,
     },
+    // {
+    //   label: 'Send Token Path',
+    //   value: 'transfer/channel-162/utia',
+    // },
     {
-      label: 'Send Token Path',
-      value: 'transfer/channel-162/utia',
+      label: 'Send Token',
+      value: sendToken,
     },
+    // {
+    //   label: 'Received Token Path',
+    //   value: '--',
+    // },
     {
-      label: 'Send Token Denom',
-      value:
-        'ibc/3F384F35F3694B66E13C23107C84B6458D2B96296B7EC680EA778BA758A4801',
-    },
-    {
-      label: 'Received Token Path',
-      value: '--',
-    },
-    {
-      label: 'Received Token Denom',
-      value: '--',
+      label: 'Received Token',
+      value: receiveToken,
     },
   ];
   return (
