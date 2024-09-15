@@ -1,5 +1,5 @@
-import { Chain } from '@chain-registry/types';
-import { chains } from 'chain-registry';
+import { Chain, AssetList } from '@chain-registry/types';
+import { chains, assets } from 'chain-registry';
 
 const CARDANO_MAINNET_MAGIC = '764824073';
 
@@ -141,3 +141,128 @@ export const chainsMapping: { [key: string]: any } = allChains.reduce(
   },
   {},
 );
+
+export const CARDANO_LOVELACE_HEX = '6c6f76656c616365';
+
+export const UNKNOWN_TOKEN_IMG =
+  'https://ibc.iobscan.io/assets/token-default.87902364.png';
+
+const sideChainAssetList: AssetList = {
+  chain_name: 'sidechain',
+  assets: [
+    {
+      description: 'Registered denom token for sidechain testing',
+      denom_units: [
+        {
+          denom: 'token',
+          exponent: 0,
+          aliases: [],
+        },
+      ],
+      base: 'token',
+      display: 'token',
+      name: 'token',
+      symbol: 'token',
+    },
+    {
+      description: 'Registered denom token for sidechain testing',
+      denom_units: [
+        {
+          denom: 'stake',
+          exponent: 0,
+          aliases: [],
+        },
+      ],
+      base: 'stake',
+      display: 'stake',
+      name: 'stake',
+      symbol: 'stake',
+    },
+  ],
+};
+
+const localOsmosisAssetList: AssetList = {
+  chain_name: 'localosmosis',
+  assets: [
+    {
+      description: 'Registered denom uosmo for localosmosis testing',
+      denom_units: [
+        {
+          denom: 'uosmo',
+          exponent: 0,
+          aliases: [],
+        },
+      ],
+      base: 'uosmo',
+      display: 'uosmo',
+      name: 'uosmo',
+      symbol: 'uosmo',
+      logo_URIs: {
+        png: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png',
+        svg: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.svg',
+      },
+    },
+    {
+      description: 'Registered denom uosmo for localosmosis testing',
+      denom_units: [
+        {
+          denom: 'osmo',
+          exponent: 6,
+          aliases: [],
+        },
+      ],
+      base: 'osmo',
+      display: 'osmo',
+      name: 'osmo',
+      symbol: 'osmo',
+      logo_URIs: {
+        png: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.png',
+        svg: 'https://raw.githubusercontent.com/cosmos/chain-registry/master/osmosis/images/osmo.svg',
+      },
+    },
+  ],
+};
+
+const cardanoAssetList: AssetList = {
+  chain_name: process.env.REACT_APP_CARDANO_CHAIN_ID!,
+  assets: [
+    {
+      description: 'Lovelace',
+      denom_units: [
+        {
+          denom: 'lovelace',
+          exponent: 0,
+          aliases: [],
+        },
+      ],
+      base: 'lovelace',
+      display: 'lovelace',
+      name: 'lovelace',
+      symbol: 'lovelace',
+      logo_URIs: {
+        svg: 'https://cardano.org/img/brand-assets/cardano-starburst-blue.svg',
+      },
+    },
+  ],
+};
+
+const allAssetsAndChain = [
+  ...assets,
+  sideChainAssetList,
+  localOsmosisAssetList,
+  cardanoAssetList,
+];
+
+export const findTokenImg = (chainId: string, tokenName: string): string => {
+  const chainName = chainId.split('-')[0];
+  const chainAssets = allAssetsAndChain.find(
+    (chain) => chain.chain_name === chainName,
+  );
+  if (!chainAssets) return UNKNOWN_TOKEN_IMG;
+  const assetsData = chainAssets.assets;
+  const asset = assetsData.find(
+    (a) => a.base.toLowerCase() === tokenName.toLowerCase(),
+  );
+  if (!asset || !asset?.logo_URIs?.svg) return UNKNOWN_TOKEN_IMG;
+  return asset?.logo_URIs?.svg;
+};

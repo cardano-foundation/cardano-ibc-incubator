@@ -72,11 +72,11 @@ const TransactionDetail = () => {
           />
         </Box>
         <StyledBasicInfo>
-          <Typography fontWeight="700" mb="8px" fontSize="18px">
-            Basic Info
-          </Typography>
-          <Divider />
-          <PacketsOverview />
+          <PacketsOverview
+            packetList={packetList}
+            packetsData={packetsData}
+            packetDataMgs={packetDataMgs}
+          />
           {packetList.length > 0 &&
             packetList.map((packet) => (
               <PacketDisplay

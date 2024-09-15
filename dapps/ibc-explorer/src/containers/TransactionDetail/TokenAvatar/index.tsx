@@ -1,7 +1,12 @@
 import { Box, Typography } from '@mui/material';
-import TokenImage from '@src/assets/images/token-fake.png';
 
-const TokenAvatar = () => {
+const TokenAvatar = ({
+  tokenName,
+  tokenImg,
+}: {
+  tokenName: string;
+  tokenImg: string;
+}) => {
   return (
     <Box
       width="180px"
@@ -11,11 +16,11 @@ const TokenAvatar = () => {
       overflow="hidden"
     >
       <Box display="flex" justifyContent="center" paddingY="20px">
-        <img src={TokenImage} alt="token-image" width="96px" height="auto" />
+        <img src={tokenImg} alt="token-image" width="96px" height="auto" />
       </Box>
       <Box bgcolor="#F5F7F9" paddingY="5px">
         <Typography textAlign="center" fontWeight={600}>
-          TIA
+          {tokenName.toUpperCase()}
         </Typography>
       </Box>
     </Box>
