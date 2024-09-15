@@ -1,34 +1,41 @@
 import { Box, Typography, Grid } from '@mui/material';
 import PropTypes from 'prop-types';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { chainsMapping } from '@src/configs/customChainInfo';
 
-import ChainIcon from '@src/assets/logo/chain-icon-fake.svg';
 import { shortenAddress } from '@src/utils/string';
 import { StyledChip } from './index.style';
 
-const AddressInfoCard = ({ fromOrTo = 'From' }) => {
+const AddressInfoCard = ({
+  fromOrTo = 'From',
+  chainId,
+  port,
+  channel,
+  address,
+}: {
+  fromOrTo: string;
+  chainId: string;
+  port: string;
+  channel: string;
+  address: string;
+}) => {
+  const chainData = chainsMapping?.[chainId] || {};
+  const chainName = chainData?.pretty_name || chainId;
+  const chainLogo = chainData?.logo_URIs?.svg;
   const data = {
-    address: 'stride1c5szhgwd48peyarrus03fhddekekrseq87x3km',
+    address,
     connectionInfo: [
       {
         label: 'Chain ID',
-        value: 'Stride-1',
+        value: chainId,
       },
       {
         label: 'Port',
-        value: 'transfer',
+        value: port,
       },
       {
         label: 'Channel ID',
-        value: 'channel-162',
-      },
-      {
-        label: 'Connection ID',
-        value: 'connection-125',
-      },
-      {
-        label: 'Client ID',
-        value: '07-tendermint-137',
+        value: channel,
       },
     ],
   };
@@ -42,23 +49,30 @@ const AddressInfoCard = ({ fromOrTo = 'From' }) => {
         {fromOrTo}
       </Typography>
       <Box padding="15px" bgcolor="#F5F7F9" borderRadius="12px">
-        <Typography variant="body2">Strike Address</Typography>
-        <StyledChip
-          label={shortenAddress(data.address)}
-          onDelete={handleCopyAddressToClipboard}
-          variant="outlined"
-          deleteIcon={<ContentCopyIcon />}
-        />
+        <Typography variant="body2" fontSize="14px" fontWeight={700}>
+          {`${chainName} Address`}
+        </Typography>
+        {data.address ? (
+          <StyledChip
+            label={shortenAddress(data.address)}
+            onDelete={handleCopyAddressToClipboard}
+            variant="outlined"
+            deleteIcon={<ContentCopyIcon />}
+          />
+        ) : (
+          <Typography fontSize="14px">--</Typography>
+        )}
+
         <Grid container spacing={2} mt={1}>
           {data.connectionInfo.map((dt) => (
-            <Grid item xs={6}>
+            <Grid item xs={6} key={JSON.stringify(dt)}>
               <Typography variant="body2" fontWeight={700}>
                 {dt.label}
               </Typography>
 
               <Box display="flex" mt="3px" gap="5px">
                 {dt.label === 'Chain ID' && (
-                  <img height={32} src={ChainIcon} alt="Logo" />
+                  <img height={32} src={chainLogo} alt="Logo" />
                 )}
                 <Typography display="flex" alignItems="center" variant="body1">
                   {dt.value}

@@ -116,7 +116,7 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
         status = TX_STATUS.FAILED;
     });
     if (status !== TX_STATUS.FAILED) {
-      const firstPacketData = packetsData[packetList[0]]?.data;
+      const firstPacketData = packetsData?.[packetList[0]]?.data || '';
       let numPkgNeeded = 1;
       numPkgNeeded += (firstPacketData.match(/forward/g) || []).length;
       numPkgNeeded += (firstPacketData.match(/osmosis_swap/g) || []).length;
