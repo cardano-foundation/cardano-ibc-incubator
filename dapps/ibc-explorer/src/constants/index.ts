@@ -7,3 +7,6 @@ export const TX_STATUS = {
 };
 
 export const ROW_PER_PAGE = 10;
+
+export const CARDANO_DEFAULT_TRANSFER_PORT = 'port-100';
+export const DEFAULT_TRANSFER_PORT = 'transfer';

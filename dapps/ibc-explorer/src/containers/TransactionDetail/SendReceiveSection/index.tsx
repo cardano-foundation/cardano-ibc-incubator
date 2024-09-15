@@ -34,7 +34,7 @@ const SendReceiveSection = () => {
       <Grid container spacing={2}>
         {data.map((dt) => {
           return (
-            <Grid item xs={12}>
+            <Grid item xs={12} key={JSON.stringify(dt)}>
               <Box display="flex">
                 <Typography
                   fontSize="14px"

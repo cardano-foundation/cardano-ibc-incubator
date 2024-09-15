@@ -50,6 +50,9 @@ const sideChainConfig: Chain = {
   codebase: {
     ics_enabled: ['ibc-go'],
   },
+  logo_URIs: {
+    svg: 'https://cosmos.network/presskit/cosmos-brandmark-dynamic-dark.svg',
+  },
 };
 
 const localOsmosisChainConfig: Chain = {
