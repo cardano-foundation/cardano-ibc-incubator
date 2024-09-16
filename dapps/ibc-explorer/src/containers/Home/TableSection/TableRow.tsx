@@ -82,10 +82,10 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
         )}
       </TableCell>
       <TableCell width={120}>
-        <Typography>{formatUnixTimestamp(rowData.createTime)}</Typography>
+        <Typography>{formatUnixTimestamp(rowData.createTime, true)}</Typography>
       </TableCell>
       <TableCell width={120}>
-        <Typography>{formatUnixTimestamp(rowData.endTime)}</Typography>
+        <Typography>{formatUnixTimestamp(rowData.endTime, true)}</Typography>
       </TableCell>
     </StyledContentTableRow>
   );

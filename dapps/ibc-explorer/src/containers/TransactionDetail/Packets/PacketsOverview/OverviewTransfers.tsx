@@ -15,6 +15,7 @@ const OverviewTransfers = ({
   packetsData: { [key: string]: any };
   packetDataMgs: { [key: string]: any };
 }) => {
+  let isSwap = false;
   const firstPacket = packetList?.[0];
   const firstPacketData = packetsData?.[firstPacket] || {};
   const firstPacketDataInfo = JSON.parse(firstPacketData?.data || '{}');
@@ -28,8 +29,11 @@ const OverviewTransfers = ({
     sendToken = 'lovelace';
   }
   const tokenImg = findTokenImg(firstPacketData?.srcChain, sendToken);
-  const firstPacketMemo = JSON.parse(firstPacketDataInfo?.memo || '{}');
-  console.log(firstPacketMemo);
+  const firstPacketMemoStr = firstPacketDataInfo?.memo || '{}';
+  isSwap = (firstPacketMemoStr.match(/osmosis_swap/g) || []).length > 0;
+  console.log(`isSwap:`, isSwap);
+  console.log(`packetDataMgs:`, packetDataMgs);
+  // console.log(firstPacketMemo);
   // TODO: Check last packet
   return (
     <Box marginTop="12px" marginBottom="25px">
