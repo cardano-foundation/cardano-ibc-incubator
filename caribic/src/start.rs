@@ -645,28 +645,6 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
 
     verbose(&format!(
-        "Copying start.sh from {} to {}",
-        osmosis_dir.join("../scripts/start.sh").display(),
-        osmosis_dir.join("scripts/start.sh").display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/start.sh"),
-        osmosis_dir.join("scripts/start.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying stop.sh from {} to {}",
-        osmosis_dir.join("../scripts/stop.sh").display(),
-        osmosis_dir.join("scripts/stop.sh").display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/stop.sh"),
-        osmosis_dir.join("scripts/stop.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
         "Copying setup_crosschain_swaps.sh from {} to {}",
         osmosis_dir
             .join("../scripts/setup_crosschain_swaps.sh")
