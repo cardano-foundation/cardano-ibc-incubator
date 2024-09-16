@@ -267,3 +267,14 @@ export const findTokenImg = (chainId: string, tokenName: string): string => {
   if (!asset || !asset?.logo_URIs?.svg) return UNKNOWN_TOKEN_IMG;
   return asset?.logo_URIs?.svg;
 };
+
+export const chainsRestEndpoints: { [key: string]: string } = allChains.reduce(
+  (acc: { [key: string]: string }, chain) => {
+    const { apis, chain_id: chainId } = chain;
+    if (!chainId || (apis?.rest || []).length === 0) return acc;
+    const [restEndpoint] = apis?.rest!;
+    acc[chainId] = restEndpoint.address!;
+    return acc;
+  },
+  {},
+);
