@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "craco start",
-    "build": "craco build",
-    "test": "craco test",
+    "start": "NODE_OPTIONS=--max-old-space-size=8192 craco start",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 craco build",
+    "test": "NODE_OPTIONS=--max-old-space-size=8192 craco test",
     "eject": "craco eject",
     "deploy": "cross-env NODE_ENV=production node server",
     "lint": "eslint \"**/*.{ts,tsx}\""
@@ -15,6 +15,7 @@
     "@chain-registry/types": "^0.45.73",
     "@emotion/react": "^11.13.0",
     "@emotion/styled": "^11.13.0",
+    "@emurgo/cardano-serialization-lib-asmjs": "10.2.0",
     "@mui/icons-material": "^5.16.7",
     "@mui/material": "^5.16.7",
     "@testing-library/jest-dom": "^5.14.1",
@@ -26,6 +27,7 @@
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
     "axios": "^0.21.2",
+    "buffer": "^6.0.3",
     "camelcase-keys": "^6.2.2",
     "chain-registry": "^1.63.90",
     "cross-env": "^7.0.2",
