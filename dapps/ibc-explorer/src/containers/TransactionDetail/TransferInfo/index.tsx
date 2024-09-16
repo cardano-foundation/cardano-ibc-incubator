@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import dayjs from 'dayjs';
+import ReactJson from 'react-json-view';
+import axios from 'axios';
 
 import {
   Box,
@@ -12,7 +14,10 @@ import {
 } from '@mui/material';
 import ArrowDropUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import ArrowDropDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import { chainsMapping } from '@src/configs/customChainInfo';
+import {
+  chainsMapping,
+  chainsRestEndpoints,
+} from '@src/configs/customChainInfo';
 
 type TransferInfoProps = {
   title: string;
@@ -22,11 +27,15 @@ type TransferInfoProps = {
 };
 
 const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
-  // console.log(msg);
+  const [open, setOpen] = useState(false);
+  const [rawDataStr, setRawDataStr] = useState(msg?.data || '{}');
+
   const txTime = dayjs(Number(msg.time));
   const msgId = msg.id;
-
   const fromChainId = msgId.split('_')[0];
+
+  const chainRestRpc = chainsRestEndpoints?.[fromChainId];
+
   const chainPrettyName = chainsMapping[fromChainId]?.pretty_name;
   const feeCurrency = chainsMapping[fromChainId]?.fees?.fee_tokens?.[0]?.denom;
   const dataRender = [
@@ -56,13 +65,24 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
     },
     {
       label: 'Raw data',
-      value: msg?.data,
+      value: rawDataStr,
     },
   ];
-  const [open, setOpen] = useState(false);
 
+  const fetchTxData = async () => {
+    const url = `${chainRestRpc}/cosmos/tx/v1beta1/txs/${msg?.txHash}`;
+    const txData = await axios.get(url);
+    setRawDataStr(JSON.stringify(txData.data.tx_response));
+  };
   const handleToggle = () => {
     setOpen(!open);
+    if (
+      rawDataStr === '{}' &&
+      chainRestRpc &&
+      fromChainId !== process.env.REACT_APP_CARDANO_CHAIN_ID
+    ) {
+      fetchTxData();
+    }
   };
 
   const renderStatus = (status: string) => {
@@ -86,6 +106,16 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
 
   const renderValue = (data: { label: string; value: string }[]) => {
     return data.map((dt) => {
+      const valueComponent = () => {
+        switch (dt.label) {
+          case 'Raw data':
+            return <ReactJson src={JSON.parse(dt?.value || '{}')} collapsed />;
+          case 'Status':
+            return renderStatus(dt.value);
+          default:
+            return <Typography fontSize="14px">{dt.value}</Typography>;
+        }
+      };
       return (
         <Grid container item xs={12} key={JSON.stringify(dt)}>
           <Grid item container>
@@ -95,17 +125,14 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
               </Typography>
             </Grid>
             <Grid item xs={7} sm={9} md={10}>
-              {dt.label === 'Status' ? (
-                renderStatus(dt.value)
-              ) : (
-                <Typography fontSize="14px">{dt.value}</Typography>
-              )}
+              {valueComponent()}
             </Grid>
           </Grid>
         </Grid>
       );
     });
   };
+
   return (
     <Card variant="outlined" sx={{ marginTop: '20px', borderRadius: '12px' }}>
       <Box

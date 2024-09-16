@@ -9,6 +9,7 @@ export const usePacketMgs = ({
   updatePacketDataMsg,
 }: {
   packetId: string;
+  // eslint-disable-next-line no-unused-vars
   updatePacketDataMsg: (pId: string, data: any) => void;
 }) => {
   const [loading, setLoading] = useState<boolean>(false);
