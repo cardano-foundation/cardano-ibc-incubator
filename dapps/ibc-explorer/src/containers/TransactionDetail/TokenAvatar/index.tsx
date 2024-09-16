@@ -10,7 +10,6 @@ const TokenAvatar = ({
   return (
     <Box
       width="180px"
-      height="170px"
       border="1px solid #E9ECF1"
       borderRadius="20px"
       overflow="hidden"

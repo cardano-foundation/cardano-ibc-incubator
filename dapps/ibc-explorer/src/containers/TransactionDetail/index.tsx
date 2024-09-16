@@ -1,5 +1,6 @@
 import { useParams, useHistory } from 'react-router-dom';
 import {
+  Alert,
   Box,
   CircularProgress,
   Divider,
@@ -71,6 +72,12 @@ const TransactionDetail = () => {
             status={calculateOverallPacketStatus()}
           />
         </Box>
+        <Alert icon={false} severity="error" className="alert-error">
+          failed to execute message; message index: 0: spendable balance
+          96023318ibc/498A0751C798A0D9A389AA3691123DADA57D is smaller than
+          711533928ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4:
+          insufficient funds
+        </Alert>
         <StyledBasicInfo>
           <PacketsOverview
             packetList={packetList}
