@@ -40,54 +40,59 @@ const Relayer = ({
         <Box
           display="flex"
           flexDirection="column"
-          gap={1}
+          gap={2}
           padding={2}
           bgcolor="#F5F7F9"
           borderRadius="12px"
         >
-          <Typography fontSize="14px" fontWeight={700}>
-            {`${chainName1} Address`}
-          </Typography>
-          {address1 ? (
-            <StyledChip
-              label={shortenAddress(address1)}
-              onDelete={() => {
-                handleCopyAddressToClipboard(address1);
-              }}
-              sx={{
-                justifyContent: 'start',
-                maxWidth: 'max-content',
-              }}
-              variant="outlined"
-              deleteIcon={<ContentCopyIcon />}
-            />
-          ) : (
-            <Typography fontSize="14px">--</Typography>
-          )}
-          <Typography fontSize="14px" fontWeight={700}>
-            {`${chainName2} Address`}
-          </Typography>
-          {address2 ? (
-            <StyledChip
-              label={shortenAddress(address2)}
-              onDelete={() => {
-                handleCopyAddressToClipboard(address2);
-              }}
-              sx={{
-                justifyContent: 'start',
-                maxWidth: 'max-content',
-              }}
-              variant="outlined"
-              deleteIcon={<ContentCopyIcon />}
-            />
-          ) : (
-            <Typography fontSize="14px">--</Typography>
-          )}
-
-          <Typography fontSize="14px" fontWeight={700}>
-            Packet Sequence
-          </Typography>
-          <Typography>{packetSequence}</Typography>
+          <Box>
+            <Typography fontSize="14px" fontWeight={700}>
+              {`${chainName1} Address`}
+            </Typography>
+            {address1 ? (
+              <StyledChip
+                label={shortenAddress(address1)}
+                onDelete={() => {
+                  handleCopyAddressToClipboard(address1);
+                }}
+                sx={{
+                  justifyContent: 'start',
+                  maxWidth: 'max-content',
+                }}
+                variant="outlined"
+                deleteIcon={<ContentCopyIcon />}
+              />
+            ) : (
+              <Typography fontSize="14px">--</Typography>
+            )}
+          </Box>
+          <Box>
+            <Typography fontSize="14px" fontWeight={700}>
+              {`${chainName2} Address`}
+            </Typography>
+            {address2 ? (
+              <StyledChip
+                label={shortenAddress(address2)}
+                onDelete={() => {
+                  handleCopyAddressToClipboard(address2);
+                }}
+                sx={{
+                  justifyContent: 'start',
+                  maxWidth: 'max-content',
+                }}
+                variant="outlined"
+                deleteIcon={<ContentCopyIcon />}
+              />
+            ) : (
+              <Typography fontSize="14px">--</Typography>
+            )}
+          </Box>
+          <Box>
+            <Typography fontSize="14px" fontWeight={700}>
+              Packet Sequence
+            </Typography>
+            <Typography>{packetSequence}</Typography>
+          </Box>
         </Box>
       </Box>
     </Box>
