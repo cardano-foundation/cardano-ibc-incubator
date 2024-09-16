@@ -3,7 +3,7 @@ import { chains, assets } from 'chain-registry';
 
 import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 
-const CARDANO_MAINNET_MAGIC = '764824073';
+export const CARDANO_MAINNET_MAGIC = '764824073';
 
 const sideChainConfig: Chain = {
   chain_name: 'sidechain',
@@ -106,7 +106,7 @@ const localOsmosisChainConfig: Chain = {
 
 export const customChains: Chain[] = [sideChainConfig, localOsmosisChainConfig];
 
-const isCardanoMainnet =
+export const isCardanoMainnet =
   process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
 
 const cardanoChain: Chain = {

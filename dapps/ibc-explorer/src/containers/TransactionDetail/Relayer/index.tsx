@@ -1,7 +1,11 @@
 import { Typography, Box } from '@mui/material';
-import { chainsMapping } from '@src/configs/customChainInfo';
+import {
+  CARDANO_MAINNET_MAGIC,
+  chainsMapping,
+} from '@src/configs/customChainInfo';
 import { shortenAddress } from '@src/utils/string';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import { paymentCredToAddress } from '@src/utils/helper';
 import { StyledChip } from '../AddressInfo/index.style';
 
 const Relayer = ({
@@ -21,6 +25,20 @@ const Relayer = ({
   const chainName1 = chainData1?.pretty_name || chainId1;
   const chainData2 = chainsMapping?.[chainId2] || {};
   const chainName2 = chainData2?.pretty_name || chainId2;
+  let addressToDisplay1 = address1;
+  if (chainId1 === process.env.REACT_APP_CARDANO_CHAIN_ID) {
+    addressToDisplay1 = paymentCredToAddress(
+      addressToDisplay1,
+      chainId1 === CARDANO_MAINNET_MAGIC,
+    );
+  }
+  let addressToDisplay2 = address2;
+  if (chainId2 === process.env.REACT_APP_CARDANO_CHAIN_ID) {
+    addressToDisplay2 = paymentCredToAddress(
+      addressToDisplay2,
+      chainId2 === CARDANO_MAINNET_MAGIC,
+    );
+  }
 
   const handleCopyAddressToClipboard = (address: string) => {
     navigator.clipboard.writeText(address);
@@ -51,9 +69,9 @@ const Relayer = ({
             </Typography>
             {address1 ? (
               <StyledChip
-                label={shortenAddress(address1)}
+                label={shortenAddress(addressToDisplay1)}
                 onDelete={() => {
-                  handleCopyAddressToClipboard(address1);
+                  handleCopyAddressToClipboard(addressToDisplay1);
                 }}
                 sx={{
                   justifyContent: 'start',
@@ -72,9 +90,9 @@ const Relayer = ({
             </Typography>
             {address2 ? (
               <StyledChip
-                label={shortenAddress(address2)}
+                label={shortenAddress(addressToDisplay2)}
                 onDelete={() => {
-                  handleCopyAddressToClipboard(address2);
+                  handleCopyAddressToClipboard(addressToDisplay2);
                 }}
                 sx={{
                   justifyContent: 'start',

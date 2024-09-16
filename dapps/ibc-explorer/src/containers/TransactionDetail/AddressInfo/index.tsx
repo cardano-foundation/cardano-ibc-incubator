@@ -1,9 +1,14 @@
 import { Box, Typography, Grid } from '@mui/material';
 import PropTypes from 'prop-types';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { chainsMapping } from '@src/configs/customChainInfo';
+import {
+  CARDANO_MAINNET_MAGIC,
+  chainsMapping,
+} from '@src/configs/customChainInfo';
 
 import { shortenAddress } from '@src/utils/string';
+import { paymentCredToAddress } from '@src/utils/helper';
+
 import { StyledChip } from './index.style';
 
 const AddressInfoCard = ({
@@ -22,8 +27,15 @@ const AddressInfoCard = ({
   const chainData = chainsMapping?.[chainId] || {};
   const chainName = chainData?.pretty_name || chainId;
   const chainLogo = chainData?.logo_URIs?.svg;
+  let addressToDisplay = address;
+  if (chainId === process.env.REACT_APP_CARDANO_CHAIN_ID) {
+    addressToDisplay = paymentCredToAddress(
+      addressToDisplay,
+      chainId === CARDANO_MAINNET_MAGIC,
+    );
+  }
   const data = {
-    address,
+    address: addressToDisplay,
     connectionInfo: [
       {
         label: 'Chain ID',
