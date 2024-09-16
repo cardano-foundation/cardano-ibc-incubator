@@ -37,7 +37,7 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
   return (
     <StyledContentTableRow key={rowData.fromTxHash} onClick={handleClick}>
       <TableCell>
-        <Link href="./#" underline="hover">
+        <Link href={`/tx/${rowData.fromTxHash}`} underline="hover">
           <Typography>{truncateString(rowData.fromTxHash, 4, 4)}</Typography>
         </Link>
       </TableCell>
@@ -71,7 +71,10 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
       </TableCell>
       <TableCell width={100}>
         {rowData.toTxHash?.length ? (
-          <Link href="./#" underline="hover">
+          <Link
+            href={`/tx/${rowData.toTxHash || rowData.fromTxHash}`}
+            underline="hover"
+          >
             <Typography>{truncateString(rowData.toTxHash, 4, 4)}</Typography>
           </Link>
         ) : (
