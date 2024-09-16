@@ -39,20 +39,20 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
       value: msg?.code === '0' ? 'Success' : 'Error',
     },
     {
-      label: 'Fee',
-      value: `${msg?.gas} ${feeCurrency.toUpperCase()}`,
+      label: 'Time',
+      value: txTime.format('YYYY-MM-DD HH:mm:ss'),
     },
     {
       label: 'Chain',
       value: chainPrettyName,
     },
     {
-      label: 'Signer',
-      value: msg?.sender,
+      label: 'Fee',
+      value: `${msg?.gas} ${feeCurrency.toUpperCase()}`,
     },
     {
-      label: 'Time',
-      value: txTime.format('YYYY-MM-DD HH:mm:ss'),
+      label: 'Signer',
+      value: msg?.sender,
     },
     {
       label: 'Raw data',

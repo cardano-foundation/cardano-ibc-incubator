@@ -1,6 +1,8 @@
 import { Chain, AssetList } from '@chain-registry/types';
 import { chains, assets } from 'chain-registry';
 
+import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
+
 const CARDANO_MAINNET_MAGIC = '764824073';
 
 const sideChainConfig: Chain = {
@@ -144,8 +146,7 @@ export const chainsMapping: { [key: string]: any } = allChains.reduce(
 
 export const CARDANO_LOVELACE_HEX = '6c6f76656c616365';
 
-export const UNKNOWN_TOKEN_IMG =
-  'https://ibc.iobscan.io/assets/token-default.87902364.png';
+export const UNKNOWN_TOKEN_IMG = UnknownTokenIcon;
 
 const sideChainAssetList: AssetList = {
   chain_name: 'sidechain',
