@@ -5,11 +5,15 @@ import { shortenAddress } from '@src/utils/string';
 const SendReceiveSection = ({
   amount,
   sendToken,
+  sendTokenPath,
   receiveToken,
+  receiveTokenPath,
 }: {
   amount: string;
   sendToken: string;
+  sendTokenPath: string;
   receiveToken: string;
+  receiveTokenPath: string;
 }) => {
   const theme = useTheme();
   const matches = useMediaQuery(theme.breakpoints.down('md'));
@@ -19,21 +23,21 @@ const SendReceiveSection = ({
       label: 'Amount',
       value: amount,
     },
-    // {
-    //   label: 'Send Token Path',
-    //   value: 'transfer/channel-162/utia',
-    // },
     {
-      label: 'Send Token',
+      label: 'Send Token Denom',
       value: sendToken,
     },
-    // {
-    //   label: 'Received Token Path',
-    //   value: '--',
-    // },
     {
-      label: 'Received Token',
+      label: 'Send Token Path',
+      value: sendTokenPath,
+    },
+    {
+      label: 'Received Token Denom',
       value: receiveToken,
+    },
+    {
+      label: 'Received Token Path',
+      value: receiveTokenPath,
     },
   ];
   return (
@@ -52,7 +56,10 @@ const SendReceiveSection = ({
                   {dt.label}
                 </Typography>
                 <Box maxWidth={matches ? '100px' : undefined}>
-                  {matches && dt.label === 'Send Token Denom' ? (
+                  {matches &&
+                  ['Send Token Denom', 'Received Token Denom'].includes(
+                    dt.label,
+                  ) ? (
                     <Typography fontSize="14px">
                       {shortenAddress(dt.value, 8)}
                     </Typography>

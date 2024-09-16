@@ -23,10 +23,13 @@ const OverviewTransfers = ({
   }
   const sendAmount = firstPacketDataInfo?.amount || '--';
   let sendToken = firstPacketDataInfo?.denom;
+  const sendTokenPath = firstPacketDataInfo?.denom;
   if (sendToken.toLowerCase() === CARDANO_LOVELACE_HEX) {
     sendToken = 'lovelace';
   }
   const tokenImg = findTokenImg(firstPacketData?.srcChain, sendToken);
+  const firstPacketMemo = JSON.parse(firstPacketDataInfo?.memo || '{}');
+  console.log(firstPacketMemo);
   // TODO: Check last packet
   return (
     <Box marginTop="12px" marginBottom="25px">
@@ -39,7 +42,9 @@ const OverviewTransfers = ({
           <SendReceiveSection
             amount={sendAmount}
             sendToken={sendToken}
-            receiveToken=""
+            sendTokenPath={sendTokenPath}
+            receiveToken="ibc/BF3B4F53F3694B66E13C23107C84B6485BD2B96296BB7EC680EA77BBA75B4801"
+            receiveTokenPath="transfer/channel-162/utia"
           />
         </Grid>
       </Grid>

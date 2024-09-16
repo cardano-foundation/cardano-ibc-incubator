@@ -105,7 +105,8 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
 
   const calculateOverallPacketStatus = useCallback(() => {
     let status = TX_STATUS.PROCESSING;
-    if (loading) return status;
+    let msgError = '';
+    if (loading) return { status, msgError };
     packetList.forEach((packetId) => {
       const thisMsg = packetDataMgs[packetId];
       if (
@@ -114,13 +115,18 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
         (thisMsg?.AcknowledgePacket && thisMsg?.AcknowledgePacket?.code !== '0')
       )
         status = TX_STATUS.FAILED;
+      msgError =
+        thisMsg?.AcknowledgePacket?.msgError ||
+        thisMsg?.RecvPacket?.msgError ||
+        thisMsg?.SendPacket?.msgError ||
+        '';
     });
     if (status !== TX_STATUS.FAILED) {
       const firstPacketData = packetsData?.[packetList[0]]?.data || '';
       let numPkgNeeded = 1;
       numPkgNeeded += (firstPacketData.match(/forward/g) || []).length;
       numPkgNeeded += (firstPacketData.match(/osmosis_swap/g) || []).length;
-      if (packetList.length !== numPkgNeeded) return status;
+      if (packetList.length !== numPkgNeeded) return { status, msgError };
 
       const lastMsg = packetDataMgs[packetList[packetList.length - 1]];
       if (
@@ -130,7 +136,7 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
         status = TX_STATUS.SUCCESS;
       }
     }
-    return status;
+    return { status, msgError };
   }, [JSON.stringify(packetDataMgs)]);
 
   return {

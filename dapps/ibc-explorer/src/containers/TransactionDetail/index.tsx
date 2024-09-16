@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 
+import { TX_STATUS } from '@src/constants';
 import { HeaderTitle } from '@src/components/HeaderTitle';
 import { StyledBasicInfo, StyledWrapperCointainer } from './index.style';
 import { useTransactionDetail } from './useTransactionDetail';
@@ -55,7 +56,8 @@ const TransactionDetail = () => {
   if (!canLoadTx) {
     history.push('/');
   }
-
+  const { status: overallPacketStatus, msgError } =
+    calculateOverallPacketStatus();
   return (
     <Box
       display="flex"
@@ -69,15 +71,15 @@ const TransactionDetail = () => {
         <Box mb={3}>
           <HeaderTitle
             title="IBC Packet Details"
-            status={calculateOverallPacketStatus()}
+            status={overallPacketStatus}
           />
         </Box>
-        <Alert icon={false} severity="error" className="alert-error">
-          failed to execute message; message index: 0: spendable balance
-          96023318ibc/498A0751C798A0D9A389AA3691123DADA57D is smaller than
-          711533928ibc/498A0751C798A0D9A389AA3691123DADA57DAA4FE165D5C75894505B876BA6E4:
-          insufficient funds
-        </Alert>
+        {overallPacketStatus === TX_STATUS.FAILED && (
+          <Alert icon={false} severity="error" className="alert-error">
+            {msgError}
+          </Alert>
+        )}
+
         <StyledBasicInfo>
           <PacketsOverview
             packetList={packetList}
