@@ -59,7 +59,15 @@ export const ChainListBox = ({
           currentTransferChain?.chainId === chain.chainId ? 'selected' : ''
         }
       >
-        <Box display="flex" gap={1}>
+        <Box
+          display="flex"
+          gap={1}
+          sx={{
+            '&:hover': {
+              cursor: 'pointer',
+            },
+          }}
+        >
           {chain.chainLogo && (
             <img
               src={chain.chainLogo}

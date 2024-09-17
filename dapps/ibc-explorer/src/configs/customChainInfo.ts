@@ -118,7 +118,7 @@ const cardanoChain: Chain = {
   bech32_prefix: isCardanoMainnet ? 'addr' : 'addr_test',
   slip44: 1815,
   logo_URIs: {
-    svg: 'https://beta.explorer.cardano.org/assets/ada-price-dark-D1XAVnue.svg',
+    svg: 'https://cdn4.iconfinder.com/data/icons/crypto-currency-and-coin-2/256/cardano_ada-512.png',
   },
   fees: {
     fee_tokens: [
@@ -133,7 +133,7 @@ const cardanoChain: Chain = {
   },
 };
 
-export const allChains: any[] = [...customChains, ...chains, cardanoChain];
+export const allChains: any[] = [...customChains, cardanoChain, ...chains];
 
 export const chainsMapping: { [key: string]: any } = allChains.reduce(
   (acc: { [key: string]: any }, chain) => {
@@ -241,7 +241,7 @@ const cardanoAssetList: AssetList = {
       name: 'lovelace',
       symbol: 'lovelace',
       logo_URIs: {
-        svg: 'https://cardano.org/img/brand-assets/cardano-starburst-blue.svg',
+        svg: 'https://cdn4.iconfinder.com/data/icons/crypto-currency-and-coin-2/256/cardano_ada-512.png',
       },
     },
   ],
@@ -254,7 +254,11 @@ const allAssetsAndChain = [
   cardanoAssetList,
 ];
 
-export const findTokenImg = (chainId: string, tokenName: string): string => {
+export const findTokenImg = (chainId: string, tokenNameStr: string): string => {
+  let tokenName = tokenNameStr.split('/').reverse()?.[0] || tokenNameStr;
+  if (tokenName === CARDANO_LOVELACE_HEX) {
+    tokenName = 'lovelace';
+  }
   const chainName = chainId.split('-')[0];
   const chainAssets = allAssetsAndChain.find(
     (chain) => chain.chain_name === chainName,
@@ -278,3 +282,16 @@ export const chainsRestEndpoints: { [key: string]: string } = allChains.reduce(
   },
   {},
 );
+// {
+//   chainId: '1',
+//   chainName: 'AXL',
+//   chainLogo:
+//     'https://cdn4.iconfinder.com/data/icons/crypto-currency-and-coin-2/256/cardano_ada-512.png',
+// },
+export const ChainListData = [...customChains, cardanoChain].map((chain) => {
+  return {
+    chainId: chain.chain_id || chain.chain_name,
+    chainName: chain.pretty_name,
+    chainLogo: chain?.logo_URIs?.svg || chain?.images?.[0]?.svg || '',
+  };
+});

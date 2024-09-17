@@ -9,6 +9,7 @@ import {
   GET_PACKET_BY_PACKET_ID,
   GET_PACKET_BY_PARENT_PACKET_ID_SINGLE,
 } from '@src/apis/query';
+import { getNumPkgNeeded } from '@src/utils/helper';
 
 const getPacketsUp = async (packetId: string): Promise<any[]> => {
   const packets = await apolloClient
@@ -110,9 +111,15 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
     packetList.forEach((packetId) => {
       const thisMsg = packetDataMgs[packetId];
       if (
-        (thisMsg?.SendPacket && thisMsg?.SendPacket?.code !== '0') ||
-        (thisMsg?.RecvPacket && thisMsg?.RecvPacket?.code !== '0') ||
-        (thisMsg?.AcknowledgePacket && thisMsg?.AcknowledgePacket?.code !== '0')
+        (thisMsg?.SendPacket &&
+          thisMsg?.SendPacket?.code !== '0' &&
+          thisMsg?.SendPacket?.code !== null) ||
+        (thisMsg?.RecvPacket &&
+          thisMsg?.RecvPacket?.code !== '0' &&
+          thisMsg?.RecvPacket?.code !== null) ||
+        (thisMsg?.AcknowledgePacket &&
+          thisMsg?.AcknowledgePacket?.code !== '0' &&
+          thisMsg?.AcknowledgePacket?.code !== null)
       )
         status = TX_STATUS.FAILED;
       msgError =
@@ -123,15 +130,14 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
     });
     if (status !== TX_STATUS.FAILED) {
       const firstPacketData = packetsData?.[packetList[0]]?.data || '';
-      let numPkgNeeded = 1;
-      numPkgNeeded += (firstPacketData.match(/forward/g) || []).length;
-      numPkgNeeded += (firstPacketData.match(/osmosis_swap/g) || []).length;
+      const numPkgNeeded = getNumPkgNeeded(firstPacketData);
       if (packetList.length !== numPkgNeeded) return { status, msgError };
 
       const lastMsg = packetDataMgs[packetList[packetList.length - 1]];
       if (
         lastMsg?.AcknowledgePacket &&
-        lastMsg?.AcknowledgePacket?.code === '0'
+        (lastMsg?.AcknowledgePacket?.code === '0' ||
+          lastMsg?.AcknowledgePacket?.code === null)
       ) {
         status = TX_STATUS.SUCCESS;
       }
