@@ -2,22 +2,31 @@ import { useTheme } from '@mui/material/styles';
 import { Box, Typography, Grid, useMediaQuery } from '@mui/material';
 import { shortenAddress } from '@src/utils/string';
 
+const toShortenToken = (tokenName: string) => {
+  if (tokenName.includes('ibc/')) return tokenName;
+  if (tokenName.length > 20) return shortenAddress(tokenName);
+  return tokenName;
+};
+
 const SendReceiveSection = ({
   amount,
   sendToken,
   sendTokenPath,
+  receiveAmount,
   receiveToken,
   receiveTokenPath,
 }: {
   amount: string;
   sendToken: string;
   sendTokenPath: string;
+  receiveAmount: string;
   receiveToken: string;
   receiveTokenPath: string;
 }) => {
   const theme = useTheme();
   const matches = useMediaQuery(theme.breakpoints.down('md'));
-
+  const shortSendToken = toShortenToken(sendToken);
+  const shortReceiveToken = toShortenToken(receiveToken);
   const data = [
     {
       label: 'Amount',
@@ -25,15 +34,19 @@ const SendReceiveSection = ({
     },
     {
       label: 'Send Token Denom',
-      value: sendToken,
+      value: shortSendToken,
     },
     {
       label: 'Send Token Path',
       value: sendTokenPath,
     },
     {
+      label: 'Received Amount',
+      value: receiveAmount,
+    },
+    {
       label: 'Received Token Denom',
-      value: receiveToken,
+      value: shortReceiveToken,
     },
     {
       label: 'Received Token Path',

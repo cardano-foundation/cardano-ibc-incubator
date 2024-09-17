@@ -7,8 +7,7 @@ import { CustomDatePickerInput } from '@src/components/CustomDatePickerInput';
 import { ChainType, StatusType } from '@src/types/transaction';
 import { StatusListBox } from '@src/components/StatusListBox';
 import { ChainListBox } from '@src/components/ChainListBox';
-
-import { ChainListData } from '../fakeData';
+import { ChainListData } from '@src/configs/customChainInfo';
 
 type FilterSectionProps = {
   selectedChain: ChainType | null;

@@ -4,7 +4,7 @@ import {
   EnterpriseAddress,
   StakeCredential,
 } from '@emurgo/cardano-serialization-lib-asmjs';
-import { Buffer } from 'buffer/';
+
 // eslint-disable-next-line no-undef
 let timeout: NodeJS.Timeout;
 
@@ -25,7 +25,7 @@ export const debounce = <T extends (...args: any[]) => void>(
 
 export const txStatusFromCode = (code: string) => {
   if (typeof code === 'undefined') return TX_STATUS.PROCESSING;
-  if (code === '0') return TX_STATUS.SUCCESS;
+  if (code === '0' || code === null) return TX_STATUS.SUCCESS;
   return TX_STATUS.FAILED;
 };
 
@@ -60,10 +60,15 @@ export const paymentCredToAddress = (
       Ed25519KeyHash.from_bytes(hexToByte(paymentCredStr)),
     );
     const address = EnterpriseAddress.new(isMainnet ? 1 : 0, paymentCred);
-    console.log(address.to_address().to_bech32());
-
     return address.to_address().to_bech32();
   } catch (_) {
     return paymentCredStr;
   }
+};
+
+export const getNumPkgNeeded = (packetDataStr: string) => {
+  let numPkgNeeded = 1;
+  numPkgNeeded += ((packetDataStr || '').match(/forward/g) || []).length;
+  numPkgNeeded += ((packetDataStr || '').match(/osmosis_swap/g) || []).length;
+  return numPkgNeeded;
 };

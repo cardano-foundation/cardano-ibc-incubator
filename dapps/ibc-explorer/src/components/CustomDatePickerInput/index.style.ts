@@ -1,7 +1,7 @@
 import styled from '@emotion/styled';
 import { COLOR } from '@src/styles/color';
 
-const StyledDateRangePickerButton = styled.button`
+const StyledDateRangePickerButton = styled.div`
   display: flex;
   gap: 0px;
   padding: 1px 16px;
