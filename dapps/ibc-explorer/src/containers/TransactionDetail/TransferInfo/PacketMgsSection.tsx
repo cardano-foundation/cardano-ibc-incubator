@@ -52,7 +52,6 @@ const PacketMgsSection = ({
           msg={msgs.AcknowledgePacket}
         />
       )}
-      <Divider sx={{ marginTop: '15px' }} />
     </>
   );
 };
