@@ -45,7 +45,7 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
     },
     {
       label: 'Status',
-      value: msg?.code === '0' ? 'Success' : 'Error',
+      value: msg?.code === '0' || msg?.code === null ? 'Success' : 'Failed',
     },
     {
       label: 'Time',

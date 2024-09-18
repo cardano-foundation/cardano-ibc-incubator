@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { DatePickerRef } from 'react-multi-date-picker';
+import { DatePickerRef, DateObject } from 'react-multi-date-picker';
 import { Box, Button, Grid } from '@mui/material';
 import ResetIcon from '@src/assets/logo/rotate-right.svg';
 import { SelectDropdown } from '@src/components/SelectDropdown';
@@ -15,7 +15,7 @@ type FilterSectionProps = {
   dateValues: any;
   setSelectedChain: React.Dispatch<React.SetStateAction<ChainType | null>>;
   setSelectedStatus: React.Dispatch<React.SetStateAction<StatusType>>;
-  setDateValues: React.Dispatch<React.SetStateAction<never[]>>;
+  setDateValues: React.Dispatch<React.SetStateAction<DateObject[]>>;
 };
 
 export const FilterSection = ({

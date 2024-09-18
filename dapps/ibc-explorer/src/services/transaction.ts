@@ -6,7 +6,6 @@ type getListTxsProps = {
     page: number;
     rowsPerPage: number;
   };
-  filterToken: string | undefined;
   filterChains: {
     fromChain: string | undefined;
     toChain?: string | undefined;
@@ -17,7 +16,6 @@ type getListTxsProps = {
 
 const getListTxs = ({
   pagination,
-  filterToken,
   filterChains,
   filterStatus,
   filterDate,
@@ -28,12 +26,6 @@ const getListTxs = ({
   if (filterStatus) {
     responseData = responseData.filter(
       (data) => data.status.toLowerCase() === filterStatus.toLowerCase(),
-    );
-  }
-  if (filterToken && filterToken !== 'All Token') {
-    responseData = responseData.filter(
-      (data) =>
-        data.token.tokenDenom.toLowerCase() === filterToken.toLowerCase(),
     );
   }
   if (filterChains.fromChain && filterChains.fromChain !== 'All Chains') {
