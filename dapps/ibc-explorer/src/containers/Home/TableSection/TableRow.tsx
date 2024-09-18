@@ -4,7 +4,11 @@ import { TransactionType } from '@src/types/transaction';
 import { formatUnixTimestamp, truncateString } from '@src/utils/string';
 import { TX_STATUS } from '@src/constants';
 import { useHistory } from 'react-router-dom';
-import { chainsMapping } from '@src/configs/customChainInfo';
+import {
+  CARDANO_MAINNET_MAGIC,
+  chainsMapping,
+} from '@src/configs/customChainInfo';
+import { paymentCredToAddress } from '@src/utils/helper';
 
 import { StyledContentTableRow } from './index.style';
 
@@ -45,7 +49,16 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
         </Link>
       </TableCell>
       <TableCell>
-        <Typography>{truncateString(rowData.fromAddress, 6, 6)}</Typography>
+        <Typography>
+          {truncateString(
+            paymentCredToAddress(
+              rowData.fromAddress,
+              process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC,
+            ),
+            6,
+            6,
+          )}
+        </Typography>
       </TableCell>
       <TableCell>
         <Box>
@@ -66,7 +79,16 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
         </Box>
       </TableCell>
       <TableCell>
-        <Typography>{truncateString(rowData.toAddress, 6, 6)}</Typography>
+        <Typography>
+          {truncateString(
+            paymentCredToAddress(
+              rowData.toAddress,
+              process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC,
+            ),
+            6,
+            6,
+          )}
+        </Typography>
       </TableCell>
       <TableCell width={100}>
         {rowData.toTxHash?.length ? (
