@@ -41,27 +41,43 @@ pub fn len64(x: Int) -> Int {
 }
 
 pub fn put_uint64(v: Int) -> ByteArray {
+  let v_8 = v / 256
+  let v_16 = v_8 / 256
+  let v_24 = v_16 / 256
+  let v_32 = v_24 / 256
+  let v_40 = v_32 / 256
+  let v_48 = v_40 / 256
+  let v_56 = v_48 / 256
+
   #[]
-    |> push(v |> shr(56))
-    |> push(v |> shr(48))
-    |> push(v |> shr(40))
-    |> push(v |> shr(32))
-    |> push(v |> shr(24))
-    |> push(v |> shr(16))
-    |> push(v |> shr(8))
+    |> push(v_56)
+    |> push(v_48)
+    |> push(v_40)
+    |> push(v_32)
+    |> push(v_24)
+    |> push(v_16)
+    |> push(v_8)
     |> push(v)
 }
 
 pub fn put_uint64_big_endian(v: Int) -> ByteArray {
+  let v_8 = v / 256
+  let v_16 = v_8 / 256
+  let v_24 = v_16 / 256
+  let v_32 = v_24 / 256
+  let v_40 = v_32 / 256
+  let v_48 = v_40 / 256
+  let v_56 = v_48 / 256
+
   #[]
     |> push(v)
-    |> push(v |> shr(8))
-    |> push(v |> shr(16))
-    |> push(v |> shr(24))
-    |> push(v |> shr(32))
-    |> push(v |> shr(40))
-    |> push(v |> shr(48))
-    |> push(v |> shr(56))
+    |> push(v_8)
+    |> push(v_16)
+    |> push(v_24)
+    |> push(v_32)
+    |> push(v_40)
+    |> push(v_48)
+    |> push(v_56)
 }
 
 fn recursive_bitwise_operation(
