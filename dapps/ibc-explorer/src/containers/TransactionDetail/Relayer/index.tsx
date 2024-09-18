@@ -5,7 +5,7 @@ import {
 } from '@src/configs/customChainInfo';
 import { shortenAddress } from '@src/utils/string';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { paymentCredToAddress } from '@src/utils/helper';
+import { handleCopyToClipboard, paymentCredToAddress } from '@src/utils/helper';
 import { StyledChip } from '../AddressInfo/index.style';
 
 const Relayer = ({
@@ -40,10 +40,6 @@ const Relayer = ({
     );
   }
 
-  const handleCopyAddressToClipboard = (address: string) => {
-    navigator.clipboard.writeText(address);
-  };
-
   return (
     <Box flex="1">
       <Typography fontWeight={600} mb={1}>
@@ -71,7 +67,7 @@ const Relayer = ({
               <StyledChip
                 label={shortenAddress(addressToDisplay1)}
                 onDelete={() => {
-                  handleCopyAddressToClipboard(addressToDisplay1);
+                  handleCopyToClipboard(addressToDisplay1);
                 }}
                 sx={{
                   justifyContent: 'start',
@@ -92,7 +88,7 @@ const Relayer = ({
               <StyledChip
                 label={shortenAddress(addressToDisplay2)}
                 onDelete={() => {
-                  handleCopyAddressToClipboard(addressToDisplay2);
+                  handleCopyToClipboard(addressToDisplay2);
                 }}
                 sx={{
                   justifyContent: 'start',

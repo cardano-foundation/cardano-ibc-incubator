@@ -72,3 +72,7 @@ export const getNumPkgNeeded = (packetDataStr: string) => {
   numPkgNeeded += ((packetDataStr || '').match(/osmosis_swap/g) || []).length;
   return numPkgNeeded;
 };
+
+export const handleCopyToClipboard = (str: string) => {
+  navigator.clipboard.writeText(str);
+};
