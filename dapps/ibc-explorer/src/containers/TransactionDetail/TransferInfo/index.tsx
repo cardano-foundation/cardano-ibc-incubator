@@ -71,7 +71,11 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
 
   const fetchTxData = async () => {
     const url = `${chainRestRpc}/cosmos/tx/v1beta1/txs/${msg?.txHash}`;
-    const txData = await axios.get(url);
+    const txData = await axios.get(url).catch(() => ({
+      data: {
+        tx_response: {},
+      },
+    }));
     setRawDataStr(JSON.stringify(txData.data.tx_response));
   };
   const handleToggle = () => {

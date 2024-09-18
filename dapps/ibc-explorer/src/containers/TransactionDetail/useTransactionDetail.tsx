@@ -68,7 +68,7 @@ export const useTransactionDetail = ({ txHash }: { txHash: string }) => {
     const msgs = await apolloClient
       .query({
         query: GET_MESSAGES_BY_TX_HASH,
-        variables: { txHash },
+        variables: { txHash: txHash.toUpperCase() },
         fetchPolicy: 'network-only',
       })
       .then((res) => res.data.messages.nodes)

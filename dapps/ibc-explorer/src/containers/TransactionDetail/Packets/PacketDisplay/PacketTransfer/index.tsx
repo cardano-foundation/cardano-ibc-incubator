@@ -26,8 +26,12 @@ const PacketTransfer = ({
   let receiver = '';
   const packetDataStr = currentPacketData?.data || '';
   try {
-    const packetData = JSON.parse(packetDataStr);
+    let packetData = JSON.parse(packetDataStr);
     receiver = packetData?.receiver;
+    if (!receiver && packetData.send_data) {
+      packetData = JSON.parse(packetData.send_data);
+      receiver = packetData?.receiver;
+    }
   } catch (_) {
     // eslint-disable-next-line no-console
     console.log('Cannot parse pkg data');

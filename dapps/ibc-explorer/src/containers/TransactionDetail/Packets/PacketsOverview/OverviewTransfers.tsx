@@ -65,6 +65,7 @@ const OverviewTransfers = ({
         receiveToken = lastTransferData?.out?.token || NO_DATA;
         receiveTokenPath = lastTransferData?.out?.path || NO_DATA;
       } catch (e) {
+        // eslint-disable-next-line no-console
         console.log(e);
       }
     }
