@@ -1,10 +1,13 @@
-import { Box } from '@mui/material';
+import { Box, useMediaQuery, useTheme } from '@mui/material';
 import DatePicker from 'react-multi-date-picker';
 import CalendarIcon from '@src/assets/logo/calendar.svg';
 
 import { StyledDateRangePickerButton } from './index.style';
 
 export const CustomDatePickerInput = ({ datePickerRef, ...props }: any) => {
+  const theme = useTheme();
+  const matches = useMediaQuery(theme.breakpoints.down('md'));
+
   return (
     <StyledDateRangePickerButton>
       <DatePicker
@@ -14,7 +17,7 @@ export const CustomDatePickerInput = ({ datePickerRef, ...props }: any) => {
         inputClass="date-picker-input"
         ref={datePickerRef}
         editable={false}
-        numberOfMonths={2}
+        numberOfMonths={matches ? 1 : 2}
         dateSeparator=" - "
         offsetY={4}
         {...props}

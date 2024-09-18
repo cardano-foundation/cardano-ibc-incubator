@@ -39,6 +39,7 @@ export const SelectDropdown = ({
         open={open}
         disablePortal
         anchorEl={anchorEl}
+        sx={{ zIndex: 1 }}
       >
         <ClickAwayListener onClickAway={handleClick}>
           <Box>{children}</Box>
