@@ -134,7 +134,10 @@ const TransferInfo = ({ title, tag, icon, msg }: TransferInfoProps) => {
   };
 
   return (
-    <Card variant="outlined" sx={{ marginTop: '20px', borderRadius: '12px' }}>
+    <Card
+      variant="outlined"
+      sx={{ marginBottom: '20px', borderRadius: '12px' }}
+    >
       <Box
         display="flex"
         justifyContent="space-between"

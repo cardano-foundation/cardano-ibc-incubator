@@ -7,7 +7,7 @@ import {
 } from '@src/configs/customChainInfo';
 
 import { shortenAddress } from '@src/utils/string';
-import { paymentCredToAddress } from '@src/utils/helper';
+import { handleCopyToClipboard, paymentCredToAddress } from '@src/utils/helper';
 
 import { StyledChip } from './index.style';
 
@@ -52,9 +52,6 @@ const AddressInfoCard = ({
     ],
   };
 
-  const handleCopyAddressToClipboard = () => {
-    navigator.clipboard.writeText(data.address);
-  };
   return (
     <Box overflow="hidden">
       <Typography fontWeight={600} mb={1}>
@@ -67,7 +64,9 @@ const AddressInfoCard = ({
         {data.address ? (
           <StyledChip
             label={shortenAddress(data.address)}
-            onDelete={handleCopyAddressToClipboard}
+            onDelete={() => {
+              handleCopyToClipboard(data.address);
+            }}
             variant="outlined"
             deleteIcon={<ContentCopyIcon />}
           />

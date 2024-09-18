@@ -113,7 +113,6 @@ const TransactionDetail = () => {
                 key={packetsData[packet].id}
               />
             ))}
-          <Divider sx={{ marginTop: '15px' }} />
         </StyledBasicInfo>
       </StyledWrapperCointainer>
     </Box>

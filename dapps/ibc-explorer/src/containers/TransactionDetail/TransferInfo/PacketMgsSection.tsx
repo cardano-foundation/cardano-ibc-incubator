@@ -1,7 +1,9 @@
 import TransferIcon from '@src/assets/logo/transfer-icon.svg';
 import ReceiveIcon from '@src/assets/logo/receive-icon.svg';
 import AcknowledgeIcon from '@src/assets/logo/acknowledge-icon.svg';
-import { CircularProgress, Divider, Card } from '@mui/material';
+import { CircularProgress, Divider, Card, Typography } from '@mui/material';
+import { COLOR } from '@src/styles/color';
+import { chainsMapping } from '@src/configs/customChainInfo';
 
 import TransferInfo from '.';
 import { usePacketMgs } from './usePacketMgs';
@@ -26,8 +28,22 @@ const PacketMgsSection = ({
       </Card>
     );
   }
+  const [chainId, port, channel, sequence] = packetId.split('_');
+  const chainData = chainsMapping?.[chainId] || {};
+  const chainName = chainData?.pretty_name || chainId;
+  const packetText = `Packet: ${sequence} (${port}/${channel}) from: ${chainName}`;
   return (
     <>
+      <Typography
+        fontSize={14}
+        fontWeight={600}
+        marginTop="12px"
+        marginBottom="5px"
+        lineHeight="18px"
+        color={COLOR.neutral_1}
+      >
+        {packetText}
+      </Typography>
       {msgs?.SendPacket && (
         <TransferInfo
           title="Transfer"
@@ -52,6 +68,7 @@ const PacketMgsSection = ({
           msg={msgs.AcknowledgePacket}
         />
       )}
+      <Divider sx={{ marginTop: '15px' }} />
     </>
   );
 };
