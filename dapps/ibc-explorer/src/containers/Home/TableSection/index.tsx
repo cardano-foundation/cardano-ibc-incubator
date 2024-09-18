@@ -96,6 +96,7 @@ export const TableSection = ({
       <Box display="flex" justifyContent="center" alignItems="center" py={2}>
         {!!pagination.count && (
           <Pagination
+            key={JSON.stringify(pagination)}
             onChange={(e, page) => {
               setPagination((prev) => ({ ...prev, page }));
             }}
@@ -105,6 +106,7 @@ export const TableSection = ({
             count={pagination.count}
             color="primary"
             shape="rounded"
+            defaultPage={pagination.page}
           />
         )}
       </Box>

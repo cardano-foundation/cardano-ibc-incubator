@@ -21,7 +21,10 @@ export const formatUnixTimestamp = (
   if (!unixTimestamp) return '--';
   const timeStampNumber = Number(unixTimestamp);
   if (!timeStampNumber || Number.isNaN(timeStampNumber)) return '--';
-  const date = new Date(timeStampNumber * 1000); // Convert to milliseconds
+  const date =
+    unixTimestamp.length === 13
+      ? new Date(timeStampNumber)
+      : new Date(timeStampNumber * 1000); // Convert to milliseconds
 
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');

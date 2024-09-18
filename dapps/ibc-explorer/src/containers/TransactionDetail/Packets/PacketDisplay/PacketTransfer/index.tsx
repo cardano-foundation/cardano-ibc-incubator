@@ -19,6 +19,7 @@ const PacketTransfer = ({
   const currentPacketData = packetsData?.[packetId];
   if (!currentPacketData) return <></>;
   const packetMsgs = packetDataMgs?.[packetId];
+  // console.log(packetMsgs);
   const relayerChain1Address = packetMsgs?.AcknowledgePacket?.sender || '';
   const relayerChain2Address = packetMsgs?.RecvPacket?.sender || '';
   const sender = packetMsgs?.SendPacket?.sender;

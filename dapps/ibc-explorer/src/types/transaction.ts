@@ -19,7 +19,7 @@ export type TransactionType = {
   fromAddress: string;
   toAddress: string;
   toNetworkLogo: string;
-  fromNetworkLogo: string;
+  fromChainId: string;
   status: string;
   toTxHash?: string;
   createTime: string;
@@ -31,5 +31,3 @@ export type StatusType = {
   label: string;
   value: string;
 };
-
-

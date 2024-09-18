@@ -124,3 +124,34 @@ export const GET_PACKET_BY_PARENT_PACKET_ID_SINGLE = gql`
     }
   }
 `;
+
+const PACKET_FLOW_FRAGMENT = gql`
+  fragment PacketFlowFragment on PacketFlow {
+    id
+    fromTxHash
+    fromAddress
+    fromChainId
+    status
+    toTxHash
+    toAddress
+    createTime
+    endTime
+  }
+`;
+
+export const GET_PACKET_FLOWS = gql`
+  ${PACKET_FLOW_FRAGMENT}
+  query packetFlows($queryFilter: PacketFlowFilter, $first: Int, $offset: Int) {
+    packetFlows(
+      filter: $queryFilter
+      orderBy: CREATE_TIME_DESC
+      first: $first
+      offset: $offset
+    ) {
+      totalCount
+      nodes {
+        ...PacketFlowFragment
+      }
+    }
+  }
+`;

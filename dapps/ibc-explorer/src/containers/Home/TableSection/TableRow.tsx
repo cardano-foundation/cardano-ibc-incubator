@@ -4,6 +4,7 @@ import { TransactionType } from '@src/types/transaction';
 import { formatUnixTimestamp, truncateString } from '@src/utils/string';
 import { TX_STATUS } from '@src/constants';
 import { useHistory } from 'react-router-dom';
+import { chainsMapping } from '@src/configs/customChainInfo';
 
 import { StyledContentTableRow } from './index.style';
 
@@ -33,7 +34,9 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
     event.preventDefault();
     history.push(`tx/${rowData.fromTxHash}`);
   };
-
+  const chainData = chainsMapping?.[rowData.fromChainId] || {};
+  const chainName = chainData?.pretty_name || rowData.fromChainId;
+  const chainLogo = chainData?.logo_URIs?.svg;
   return (
     <StyledContentTableRow key={rowData.fromTxHash} onClick={handleClick}>
       <TableCell>
@@ -47,12 +50,8 @@ export const TableRowItem = ({ rowData }: TableRowItemProps) => {
       <TableCell>
         <Box>
           <Box display="flex" alignItems="center" gap={2}>
-            <img
-              width={24}
-              height={24}
-              src={rowData.fromNetworkLogo}
-              alt="fromNetworkLogo"
-            />
+            <img width={24} height={24} src={chainLogo} alt={chainName} />
+            {chainName}
           </Box>
         </Box>
       </TableCell>
