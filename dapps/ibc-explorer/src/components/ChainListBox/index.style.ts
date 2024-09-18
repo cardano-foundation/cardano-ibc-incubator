@@ -38,7 +38,7 @@ const StyledConfirmedButton = styled(Button)`
 `;
 
 const StyledWrapper = {
-  width: '320px',
+  maxWidth: '320px',
   maxHeight: '420px',
   padding: '16px',
   gap: '20px',
