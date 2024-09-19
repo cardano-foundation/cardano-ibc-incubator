@@ -1,10 +1,14 @@
 use aiken/list
+use aiken/math
 use aiken/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/cometbft/constants.{
+  max_consensus_state_size
+}
 
 pub type ClientDatum {
   state: ClientDatumState,
@@ -73,11 +77,13 @@ pub fn update_state(
       },
     )
 
+  let cs_len = list.length(expected_cons_state)
+
   let expected_cons_state =
     [
       Pair(header_height, header_mod.consensus_state(header)),
       ..expected_cons_state
-    ]
+    ] |> list.slice(from: 0, to: math.min(max_consensus_state_size, cs_len+1))
 
   let expected_updated_output =
     ClientDatum {
