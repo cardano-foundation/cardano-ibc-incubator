@@ -56,7 +56,7 @@ const App = () => {
       };
       if (endDate) {
         queryFilter.createTime.lessThanOrEqualTo = (
-          endDate.toUnix() * 1000
+          endDate.add(1, 'day').toUnix() * 1000
         ).toString();
       }
     }
