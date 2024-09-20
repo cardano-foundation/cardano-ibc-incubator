@@ -2,9 +2,12 @@ const path = require('path');
 const { join } = path;
 const { access, symlink } = require('fs/promises');
 
+const basePath = process?.env?.BASE_PATH || '';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  basePath,
   webpack: function (config, options) {
     config.experiments = {
       asyncWebAssembly: true,
@@ -70,7 +73,12 @@ const nextConfig = {
     return [
       {
         source: '/',
-        destination: '/swap',
+        destination: `${basePath}/swap`,
+        permanent: true,
+      },
+      {
+        source: basePath || '/',
+        destination: `${basePath}/swap`,
         permanent: true,
       },
     ];
