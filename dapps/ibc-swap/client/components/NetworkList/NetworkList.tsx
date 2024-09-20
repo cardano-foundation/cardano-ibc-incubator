@@ -32,8 +32,10 @@ export const NetworkList = ({
             isActive={networkSelected?.networkId === network.networkId}
             onClick={() => handleClickNetworkItem(network)}
             isDisabled={
-              !!(disabledNetwork?.networkId === OSMOSIS_CHAIN_ID &&
-              network?.networkId === OSMOSIS_CHAIN_ID)
+              !!(
+                disabledNetwork?.networkId === OSMOSIS_CHAIN_ID &&
+                network?.networkId === OSMOSIS_CHAIN_ID
+              )
             }
           />
         ))}
