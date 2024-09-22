@@ -83,7 +83,7 @@ pub fn update_state(
     [
       Pair(header_height, header_mod.consensus_state(header)),
       ..expected_cons_state
-    ] |> list.slice(from: 0, to: math.min(max_consensus_state_size, cs_len+1))
+    ] |> list.slice(from: 0, to: math.min(max_consensus_state_size-1, cs_len))
 
   let expected_updated_output =
     ClientDatum {

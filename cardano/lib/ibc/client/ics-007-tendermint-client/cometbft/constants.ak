@@ -2,7 +2,7 @@ pub const max_chain_id_len = 50
 
 pub const tm_hash_size = 32
 
-pub const max_consensus_state_size = 20
+pub const max_consensus_state_size = 300
 
 // 20 hex bytes
 pub const address_size = 20
