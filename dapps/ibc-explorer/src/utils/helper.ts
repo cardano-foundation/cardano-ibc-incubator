@@ -74,5 +74,14 @@ export const getNumPkgNeeded = (packetDataStr: string) => {
 };
 
 export const handleCopyToClipboard = (str: string) => {
-  navigator.clipboard.writeText(str);
+  const textArea = document.createElement('textarea');
+  textArea.value = str;
+  document.body.appendChild(textArea);
+  textArea.select();
+  try {
+    document.execCommand('copy');
+  } catch (err) {
+    console.error('Unable to copy to clipboard', err);
+  }
+  document.body.removeChild(textArea);
 };
