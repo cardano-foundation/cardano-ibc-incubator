@@ -19,9 +19,11 @@ const StyledNetworkItemWrapper = styled(Box)<StyledNetworkItemWrapperProps>`
   border-radius: 10px;
   opacity: ${(props) => (props.isDisabled ? 0.5 : 1)};
   margin: 8px 0px;
-  background-color: ${(props) => props.isActive ? COLOR.neutral_5: undefined};
+  background-color: ${(props) =>
+    props.isActive ? COLOR.neutral_5 : undefined};
   :hover {
-    background-color: ${(props) => !props.isDisabled ? COLOR.neutral_5 : undefined};
+    background-color: ${(props) =>
+      !props.isDisabled ? COLOR.neutral_5 : undefined};
   }
 `;
 

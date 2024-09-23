@@ -66,8 +66,8 @@ const TokenBox = ({
   }, [token?.tokenId]);
   const boxValue =
     fromOrTo === FROM_TO.FROM
-      ? { value: token?.swapAmount || "0"}
-      : { defaultValue: token?.swapAmount  || "0"};
+      ? { value: token?.swapAmount || '0' }
+      : { defaultValue: token?.swapAmount || '0' };
   return (
     <StyledTokenBox>
       <Box display="flex" justifyContent="space-between">
