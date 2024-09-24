@@ -1,75 +1,62 @@
 # Cardano IBC Incubator
-This project is working towards a bridge implementation to allow exchange of information from a Cardano blockchain to Cosmos SDK based blockchains. 
+This project is working towards a bridge implementation to allow exchange of information from a Cardano blockchain to Cosmos SDK based blockchains.
 
 It follows the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) and is trying to achieve full compliance with the parts of the specification identified necessary for the developed framework.
 
-## :heavy_exclamation_mark: Disclaimer
-Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
-
-:heavy_exclamation_mark: The software withing this repository is provided to you on an "as is" and "as available" basis.
-
-While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
+> [!CAUTION]
+> *Disclaimer*
+>
+> Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
+>
+>  :heavy_exclamation_mark: The software withing this repository is provided to you on an "as is" and "as available" basis.
+>
+> While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
 
 ## :eyes: Overview
-This repository is subdivided into three main folders:
+This repository is divided into four main directories:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
 - `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
 - `relayer`: Contains all relayer related source code. Forked from https://github.com/cosmos/relayer
+- `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
 
 ## :rocket: Getting Started
 
 ### Prerequisites
 
-Currently the project is tested on the following environment:
-
-- Ubuntu 20.04
-- AMD64 architecture
-
-The following software is required to run the project:
+The following components are required to run the project:
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Aiken](https://aiken-lang.org/installation-instructions)
 - [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
 - [jq](https://jqlang.github.io/jq/download/)
 - [golang](https://golang.org/doc/install)
-- [build-essential](https://packages.ubuntu.com/focal/build-essential)
+- [Rust & Cargo](https://www.rust-lang.org/tools/install)
 
-### Cardano developer ecosystem components used
-The current implementation leverages a number of frameworks maintained by the Cardano developer community. We list them here for appreciation and transparency. Without tools like those listed and others, projects like this would not be possible:
-- [Pallas](https://github.com/txpipe/pallas)
-- [Lucid](https://github.com/spacebudz/lucid)
-- [Ogmios](https://github.com/cardanosolutions/ogmios)
-- [Kupo](https://github.com/cardanosolutions/kupo)
-- [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
-- [gOuroboros](https://github.com/blinklabs-io/gouroboros)
+#### Verify Prerequisites
 
-### Run a test environment on a local machine
+To check if you have all the necessary prerequisites installed:
 
 ```sh
-./start.sh
+cd caribic
+cargo run check
 ```
 
-Note: This will spin up a local Cardano and Cosmos blockchain and a relayer instance.
+### Running the Services
 
-Note: On 1st start of the sidechain it might take a bit time to be readily booted. You can check in the logs if it is done via:
+To start the services:
 
 ```sh
-cd cosmos && docker compose logs sidechain-node-prod -f
+cd caribic
+cargo run start
 ```
 
-When it look like this, you can start to check create/update client:
-```sh
-....
-sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF finalizing commit of block hash=2FA357EEC3EF7431C85861E3A331C7D1C8D6D8AEB9751BD3870E003B300F45A7 height=8 module=consensus num_txs=0 root=9FBBFCB424872B3B764B3CEAA9079955BA02DDB1E35B29B867A8D88C7600DA03
-sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF finalized block block_app_hash=5EBC66EF091AEF3CB4E5BC6A31F5713162739A4127EB59AF3A47DB4BF26B3AE8 height=8 module=state num_txs_res=0 num_val_updates=0
-sidechain-node-prod-1  | [SIDECHAIND] 10:12AM INF executed block app_hash=5EBC66EF091AEF3CB4E5BC6A31F5713162739A4127EB59AF3A47DB4BF26B3AE8 height=8 
-....
-```
+### Stopping the services
 
-### Stopping the test environment
+To stop the services:
 
 ```sh
-./stop.sh
+cd caribic
+cargo run stop
 ```
 
 ### Using the faucet to create and fund accounts in the test environment
@@ -81,54 +68,7 @@ curl -X POST "http://localhost:4500/" -H  "accept: application/json" -H  "Conten
 
 or access to `http://localhost:4500`
 
-Mainchain:
-
-```sh
-cd cardano/chains
-```
-
-Open file `seed-devnet.sh`, navigate to last line, enter your address, save then run: `./seed-devnet.sh`
-
-### Running the Aiken tests
-
-```sh
-cd cardano
-aiken check
-```
-
-### Creating IBC clients, connections and channels
-```sh
-docker exec -it relayer sh # Access to relayer container
-cd /root && ./scripts/relayer-start.sh
-```
-
-The relayer will automatically create a new client, connection and channel.
-
-```sh
-2024-03-04T09:22:55.419918Z	info	Starting event processor for connection handshake ...
-...
-2024-03-04T09:23:21.817317Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.connection.v1.MsgConnectionOpenInit"], "tx_hash": "289dde7686a8bf1343278ddac0e6412b3a114367cd085e1e4f26dd7e682e9021"}
-...
-2024-03-04T09:23:27.312094Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "gas_used": 88187, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8365, "msg_types": ["/ibc.core.connection.v1.MsgConnectionOpenTry"], "tx_hash": "1D80F50E8848C00874150A3FF1457D3BDCAFE78656DBE84B3071E504C5C5FDBA"}
-...
-2024-03-04T09:23:28.544175Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.connection.v1.MsgConnectionOpenAck"], "tx_hash": "e01b3d28888d5a2fe5d94a37b7e59bd8450a81a9b8f7be8f89cd214a545a656f"}
-...
-2024-03-04T09:23:33.487369Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "gas_used": 48037, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8371, "msg_types": ["/ibc.core.connection.v1.MsgConnectionOpenConfirm"], "tx_hash": "15B1C9AB51B5BF62844E6868F4211D49CBD8117598C03A6837A6EF1AD2612B62"}
-
-...
-
-2024-03-04T09:24:55.505129Z	info	Starting event processor for channel handshake ...
-...
-2024-03-04T09:25:31.834377Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgChannelOpenInit"], "tx_hash": "c97e508b674b1ffec29ccc8b08ac2b8377c27ed872229be255a8747a1e22854a"}
-...
-2024-03-04T09:25:40.250480Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "gas_used": 102031, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8494, "msg_types": ["/ibc.core.channel.v1.MsgChannelOpenTry"], "tx_hash": "26B7A1736F6123BA3D6C8865329B52C5EE9FECDA0ABBA39597F0FB3884FE997A"}
-...
-2024-03-04T09:25:41.671332Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgChannelOpenAck"], "tx_hash": "d43661f0c9b02873119d3a1d8d96cdc871cb4d6f3330e4fb3f7b89ec1018b889"}
-...
-2024-03-04T09:25:44.371187Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "gas_used": 54884, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8498, "msg_types": ["/ibc.core.channel.v1.MsgChannelOpenConfirm"], "tx_hash": "CDF370C1C2F29DCB7E7846F893B88EC870C881873622397C6AF4C31469CF802B"}
-
-2024-03-04T09:25:44.547784Z	info	Successfully created new channel
-```
+To seed the Cardano addresses, you can use the `config.json` file generated by `caribic`. This file will be created the first time you run `caribic`. By default, it can be found at `<USER_HOME>/.caribic/config.json`.
 
 ### Sending tokens from Cosmos to Cardano and vice versa
 ```sh
@@ -269,9 +209,7 @@ After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you curre
 
 ### Test Crosschain Swap
 **Prerequisite:**
-  - [`osmosisd`]("https://github.com/osmosis-labs/osmosis"), [`hermes`](https://github.com/informalsystems/hermes) installed on host machine.
-  - Channels between `Cardano<=>Sidechain` and `Sidechain<=>Osmosis` are already established.
-  - Go relayer and Hermes relayer are running.
+  - `cargo run start` has been finished successfully.
 
 1. Run:
   ```sh
@@ -286,6 +224,18 @@ After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you curre
   swap.sh
   ```
   This command will send mock token in Cardano to Osmosis via IBC Packet Forward Middleware, swap this token to `uosmo` on created pool and send swapped token back to Cardano via Packet Forward Middleware again.
+
+### Kudos to the Developers in the Cardano Ecosystem
+
+This project stands on the shoulders of some incredible frameworks and tools developed by the Cardano community. Huge thanks to the developers behind these services—projects like this wouldn’t be possible without their hard work and innovation:
+
+- [Pallas](https://github.com/txpipe/pallas)
+- [Lucid](https://github.com/spacebudz/lucid)
+- [Ogmios](https://github.com/cardanosolutions/ogmios)
+- [Kupo](https://github.com/cardanosolutions/kupo)
+- [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
+- [gOuroboros](https://github.com/blinklabs-io/gouroboros)
+- [Mithril](https://github.com/input-output-hk/mithril)
 
 ## :blue_heart: Contributing
 All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.

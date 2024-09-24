@@ -65,11 +65,16 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
 
 pub async fn check_osmosisd(osmosis_dir: &Path) {
     let osmosisd_check = Command::new("osmosisd").arg("version").output();
-
     if osmosis_dir.exists() {
         logger::verbose(&format!("👀 Osmosis directory already exists"));
     } else {
-        download_osmosis(osmosis_dir).await;
+        let result = download_osmosis(osmosis_dir).await;
+        if result.is_err() {
+            logger::error(&format!(
+                "❌ Failed to download Osmosis: {}",
+                result.err().unwrap()
+            ));
+        }
     }
 
     match osmosisd_check {

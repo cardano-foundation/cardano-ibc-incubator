@@ -15,33 +15,75 @@ use std::thread;
 use std::time::Duration;
 use std::{fs, path::Path, process::Command};
 
-pub async fn download_osmosis(osmosis_path: &Path) {
+pub async fn download_repository(
+    url: &str,
+    path: &Path,
+    name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let base_path = path.parent();
+
+    if (base_path.is_none() || !base_path.unwrap().exists()) && base_path.is_some() {
+        fs::create_dir_all(base_path.unwrap()).map_err(|error| {
+            format!(
+                "Failed to create directory for {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+    }
+
+    if let Some(base_path) = base_path {
+        let zip_path = base_path.join(format!("{}.zip", name)).to_owned();
+
+        download_file(
+            url,
+            zip_path.as_path(),
+            Some(IndicatorMessage {
+                message: format!("Downloading {} source code", name),
+                step: "Step 1/2".to_string(),
+                emoji: "📥 ".to_string(),
+            }),
+        )
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to download {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+
+        log(&format!(
+            "{} 📦 Extracting {} source code...",
+            style("Step 2/2").bold().dim(),
+            name
+        ));
+
+        unzip_file(zip_path.as_path(), path).map_err(|error| {
+            format!(
+                "Failed to unzip {} source code: {}",
+                name,
+                error.to_string()
+            )
+        })?;
+
+        delete_file(zip_path.as_path())
+            .map_err(|error| format!("Failed to cleanup {}.zip: {}", name, error.to_string()))?;
+
+        Ok(())
+    } else {
+        Err(format!("Failed to locate parent dir of {}", path.display()).into())
+    }
+}
+
+pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2430.0.zip";
+    download_repository(url, mithril_path, "mithril").await
+}
+
+pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
-
-    let base_path = osmosis_path
-        .parent()
-        .expect("osmosis_path should have a parent directory");
-    let zip_path = base_path.join("osmosis.zip").to_owned();
-
-    download_file(
-        url,
-        zip_path.as_path(),
-        Some(IndicatorMessage {
-            message: "Downloading osmosis source code".to_string(),
-            step: "Step 1/2".to_string(),
-            emoji: "📥 ".to_string(),
-        }),
-    )
-    .await
-    .expect("Failed to download osmosis source code");
-
-    log(&format!(
-        "{} 📦 Extracting osmosis source code...",
-        style("Step 2/2").bold().dim()
-    ));
-
-    unzip_file(zip_path.as_path(), osmosis_path).expect("Failed to unzip osmosis source code");
-    delete_file(zip_path.as_path()).expect("Failed to cleanup osmosis.zip");
+    download_repository(url, osmosis_path, "osmosis").await
 }
 
 pub async fn install_osmosisd(osmosis_path: &Path) {
@@ -94,16 +136,21 @@ pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
-    let devnet_dir = cardano_dir.join("devnet");
+    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "postgres", "baseinfo"];
 
-    if devnet_dir.exists() && devnet_dir.is_dir() {
-        fs::remove_dir_all(&devnet_dir).map_err(|error| {
-            format!(
-                "Failed to remove existing devnet directory: {}",
-                error.to_string()
-            )
-        })?;
+    for service_folder in service_folders {
+        let serivce_folder_path = cardano_dir.join(service_folder);
+        if serivce_folder_path.exists() && serivce_folder_path.is_dir() {
+            fs::remove_dir_all(&serivce_folder_path).map_err(|error| {
+                format!(
+                    "Failed to remove existing devnet directory: {}",
+                    error.to_string()
+                )
+            })?;
+        }
     }
+
+    let devnet_dir = cardano_dir.join("devnet");
 
     let cardano_config_files = vec![
         cardano_config_dir.join("protocol-parameters.json"),
@@ -353,7 +400,10 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         "42",
                     ];
                     log_or_show_progress(
-                        &format!("Waiting for utxo {} to settle", style(tx_in).bold().dim()),
+                        &format!(
+                            "Waiting for transaction {} to settle",
+                            style(tx_in).bold().dim()
+                        ),
                         &optional_progress_bar,
                     );
 
@@ -402,7 +452,7 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
     let genesis_file = format!("/devnet/genesis-{}.json", era);
     if era == "byron" {
         cli_args = vec![
-            &era,
+            "byron",
             "genesis",
             "print-genesis-hash",
             "--genesis-json",
@@ -499,7 +549,7 @@ pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Err
         .map_err(|error| format!("Failed to serialize poolParams: {}", error.to_string()))?;
 
     let info = format!(
-        "{{\"Epoch0Nonce\": {}, \"poolParams\": {}}}",
+        "{{\"Epoch0Nonce\": \"{}\", \"poolParams\": {}}}",
         epoch_nonce.trim(),
         pool_params_str.trim()
     );

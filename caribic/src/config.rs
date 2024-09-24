@@ -14,9 +14,22 @@ use std::sync::Mutex;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub project_root: String,
-    pub use_mithril: bool,
+    pub mithril: Mithril,
     pub local_osmosis: bool,
     pub cardano: Cardano,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Mithril {
+    pub enabled: bool,
+    pub genesis_verification_key: String,
+    pub genesis_secret_key: String,
+    pub chain_observer_type: String,
+    pub cardano_node_dir: String,
+    pub cardano_node_version: String,
+    pub aggregator_image: String,
+    pub client_image: String,
+    pub signer_image: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -117,7 +130,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         .expect("Failed to cleanup cardano-ibc-incubator-main.zip");
                 }
 
-                default_config.project_root = project_root;
+                default_config.project_root = project_root.clone();
+                default_config.mithril.cardano_node_dir = format!("{}/chains/cardano/devnet", project_root);
                 verbose(&format!(
                     "Project root path set to: {}",
                     default_config.project_root
@@ -144,7 +158,19 @@ impl Config {
     fn default() -> Self {
         let mut default_config = Config {
             project_root: "/root/.caribic/cardano-ibc-incubator".to_string(),
-            use_mithril: false,
+            mithril: {
+                Mithril {
+                    enabled: true,
+                    genesis_verification_key: "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d".to_string(),
+                    genesis_secret_key: "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d".to_string(),
+                    chain_observer_type: "pallas".to_string(),
+                    cardano_node_dir: "/root/.caribic/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
+                    cardano_node_version: "8.9.1".to_string(),
+                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-820d937".to_string(),
+                    client_image: "ghcr.io/input-output-hk/mithril-client:main-820d937".to_string(),
+                    signer_image: "ghcr.io/input-output-hk/mithril-signer:main-820d937".to_string(),
+                }
+            },
             local_osmosis: true,
             cardano: Cardano {
             services: Services {
@@ -175,7 +201,8 @@ impl Config {
                 "{}/.caribic/cardano-ibc-incubator",
                 home_path.as_path().display()
             );
-            default_config.project_root = default_project_root;
+            default_config.project_root = default_project_root.clone();
+            default_config.mithril.cardano_node_dir = format!("{}/chains/cardano/devnet", default_project_root);
         }
         default_config
     }
