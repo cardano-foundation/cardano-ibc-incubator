@@ -16,6 +16,7 @@ use utils::default_config_path;
 mod check;
 mod config;
 mod logger;
+mod run;
 mod setup;
 mod start;
 mod stop;
@@ -44,8 +45,8 @@ enum Commands {
     Start,
     /// Stops the local development environment
     Stop,
-    /// Performs a token swap between Cardano and Osmosis
-    Demo,
+    /// Runs a demo transfer of tokens from Cosmos to Cardano and vice versa
+    Transfer,
 }
 
 fn stop_bridge_gracefully() {
@@ -164,6 +165,9 @@ async fn main() {
             stop_bridge_gracefully();
             logger::log("\n❎ Bridge stopped successfully");
         }
-        Commands::Demo => logger::log("Demo"),
+        Commands::Transfer => match run::transfer_tokens() {
+            Ok(_) => logger::log("✅ Tokens transferred successfully"),
+            Err(error) => exit_with_error(&format!("❌ Failed to transfer tokens: {}", error)),
+        },
     }
 }
