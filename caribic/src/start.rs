@@ -75,42 +75,8 @@ pub async fn start_local_cardano_network(
     configure_local_cardano_devnet(cardano_dir.as_path())?;
     log_or_show_progress(
         &format!(
-            "{} 📝 Copying Cardano environment file",
-            style("Step 2/5").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
-    log_or_show_progress(
-        &format!(
-            "{} 🛠️ Building Aiken validators",
-            style("Step 3/5").bold().dim()
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").as_path(),
-        "aiken",
-        Vec::from(["build", "--trace-level", "verbose"]),
-        None,
-    )?;
-    log_or_show_progress(
-        &format!(
-            "{} 🤖 Generating validator off-chain types",
-            style("Step 4/5").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").as_path(),
-        "deno",
-        Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
-        None,
-    )?;
-    log_or_show_progress(
-        &format!(
             "{} 🚀 Starting Cardano services",
-            style("Step 5/5").bold().dim(),
+            style("Step 2/5").bold().dim(),
         ),
         &optional_progress_bar,
     );
@@ -132,14 +98,58 @@ pub async fn start_local_cardano_network(
         return Err("❌ Failed to start Cardano services".into());
     }
 
-    if config::get_config().cardano.services.db_sync {
-        prepare_db_sync(cardano_dir.as_path())?;
-    }
     seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
     log_or_show_progress(
         "📄 Deploying the client, channel and connection contracts",
         &optional_progress_bar,
     );
+
+    if config::get_config().cardano.services.db_sync {
+        prepare_db_sync(cardano_dir.as_path())?;
+        execute_script(
+            &cardano_dir,
+            "docker",
+            vec!["compose", "up", "-d", "cardano-db-sync"],
+            None,
+        )?;
+    }
+
+    log_or_show_progress(
+        &format!(
+            "{} 📝 Copying Cardano environment file",
+            style("Step 3/5").bold().dim(),
+        ),
+        &optional_progress_bar,
+    );
+
+    copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+    log_or_show_progress(
+        &format!(
+            "{} 🛠️ Building Aiken validators",
+            style("Step 4/5").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+    execute_script(
+        project_root_path.join("cardano").as_path(),
+        "aiken",
+        Vec::from(["build", "--trace-level", "verbose"]),
+        None,
+    )?;
+    log_or_show_progress(
+        &format!(
+            "{} 🤖 Generating validator off-chain types",
+            style("Step 5/5").bold().dim(),
+        ),
+        &optional_progress_bar,
+    );
+    execute_script(
+        project_root_path.join("cardano").as_path(),
+        "deno",
+        Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
+        None,
+    )?;
+
     let handler_json_exists = wait_until_file_exists(
         project_root_path
             .join("cardano/deployments/handler.json")
@@ -250,9 +260,6 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
     }
     if configuration.services.ogmios {
         services.push("cardano-node-ogmios");
-    }
-    if configuration.services.db_sync {
-        services.push("cardano-db-sync");
     }
 
     let mut script_stop_args = vec!["compose", "stop"];

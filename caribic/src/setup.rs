@@ -136,16 +136,21 @@ pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
-    let devnet_dir = cardano_dir.join("devnet");
+    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "postgres", "baseinfo"];
 
-    if devnet_dir.exists() && devnet_dir.is_dir() {
-        fs::remove_dir_all(&devnet_dir).map_err(|error| {
-            format!(
-                "Failed to remove existing devnet directory: {}",
-                error.to_string()
-            )
-        })?;
+    for service_folder in service_folders {
+        let serivce_folder_path = cardano_dir.join(service_folder);
+        if serivce_folder_path.exists() && serivce_folder_path.is_dir() {
+            fs::remove_dir_all(&serivce_folder_path).map_err(|error| {
+                format!(
+                    "Failed to remove existing devnet directory: {}",
+                    error.to_string()
+                )
+            })?;
+        }
     }
+
+    let devnet_dir = cardano_dir.join("devnet");
 
     let cardano_config_files = vec![
         cardano_config_dir.join("protocol-parameters.json"),
@@ -447,7 +452,7 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
     let genesis_file = format!("/devnet/genesis-{}.json", era);
     if era == "byron" {
         cli_args = vec![
-            &era,
+            "byron",
             "genesis",
             "print-genesis-hash",
             "--genesis-json",
@@ -544,7 +549,7 @@ pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Err
         .map_err(|error| format!("Failed to serialize poolParams: {}", error.to_string()))?;
 
     let info = format!(
-        "{{\"Epoch0Nonce\": {}, \"poolParams\": {}}}",
+        "{{\"Epoch0Nonce\": \"{}\", \"poolParams\": {}}}",
         epoch_nonce.trim(),
         pool_params_str.trim()
     );
