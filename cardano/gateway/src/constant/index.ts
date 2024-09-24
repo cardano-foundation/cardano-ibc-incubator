@@ -4,7 +4,7 @@ import {
   STATE_MAPPING_CONNECTION,
   CONNECTION_ID_PREFIX,
   KEY_CONNECTION_PREFIX,
-} from './connection';
+} from "./connection";
 import {
   EVENT_TYPE_CHANNEL,
   ATTRIBUTE_KEY_CHANNEL,
@@ -15,11 +15,18 @@ import {
   KEY_PORT_PREFIX,
   KEY_CHANNEL_END_PREFIX,
   MOCK_MODULE_PORT,
-  ORDER_MAPPING_CHANNEL
-} from './channel';
-import { EVENT_TYPE_CLIENT, ATTRIBUTE_KEY_CLIENT, CLIENT_ID_PREFIX, KEY_CLIENT_PREFIX, KEY_CLIENT_STATE } from './client';
-import { EVENT_TYPE_SPO } from './spo';
-import { REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from './redeemer';
+  ORDER_MAPPING_CHANNEL,
+} from "./channel";
+import {
+  EVENT_TYPE_CLIENT,
+  ATTRIBUTE_KEY_CLIENT,
+  CLIENT_ID_PREFIX,
+  KEY_CLIENT_PREFIX,
+  KEY_CLIENT_STATE,
+  MAX_CONSENSUS_STATE_SIZE,
+} from "./client";
+import { EVENT_TYPE_SPO } from "./spo";
+import { REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from "./redeemer";
 import {
   EVENT_TYPE_PACKET,
   ATTRIBUTE_KEY_PACKET,
@@ -27,7 +34,7 @@ import {
   KEY_PACKET_COMMITMENT_PREFIX,
   KEY_PACKET_RECEIPT_PREFIX,
   KEY_SEQUENCE_PREFIX,
-} from './packet';
+} from "./packet";
 import {
   BLOCKID_FLAG_ABSENT,
   BLOCKID_FLAG_COMMIT,
@@ -36,21 +43,21 @@ import {
   MAX_SIGNATURE_SIZE,
   MAX_CHAIN_ID_LENGTH,
   TM_HASH_SIZE,
-} from './block';
+} from "./block";
 
-export const HANDLER_TOKEN_NAME = '68616e646c6572'; // fromText("handler")
-export const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText("ibc_client")
-export const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText("connection")
-export const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText("channel")
-export const DEFAULT_IDENTIFIER_VERSION = '31'; // fromText("1")
-export const DEFAULT_FEATURES_VERSION_ORDER_ORDERED = '4f524445525f4f524445524544'; // fromText("ORDER_ORDERED")
-export const DEFAULT_FEATURES_VERSION_ORDER_UNORDERED = '4f524445525f554e4f524445524544'; // fromText("connection")
-export const DEFAULT_MERKLE_PREFIX =  "696263"; // fromText("ibc")
-export const ACK_RESULT = 'AQ==';
+export const HANDLER_TOKEN_NAME = "68616e646c6572"; // fromText("handler")
+export const CLIENT_PREFIX = "6962635f636c69656e74"; // fromText("ibc_client")
+export const CONNECTION_TOKEN_PREFIX = "636f6e6e656374696f6e"; // fromText("connection")
+export const CHANNEL_TOKEN_PREFIX = "6368616e6e656c"; // fromText("channel")
+export const DEFAULT_IDENTIFIER_VERSION = "31"; // fromText("1")
+export const DEFAULT_FEATURES_VERSION_ORDER_ORDERED = "4f524445525f4f524445524544"; // fromText("ORDER_ORDERED")
+export const DEFAULT_FEATURES_VERSION_ORDER_UNORDERED = "4f524445525f554e4f524445524544"; // fromText("connection")
+export const DEFAULT_MERKLE_PREFIX = "696263"; // fromText("ibc")
+export const ACK_RESULT = "AQ==";
 
-export const LOVELACE = 'lovelace';
+export const LOVELACE = "lovelace";
 
-export const EMULATOR_ENV = 'emulator';
+export const EMULATOR_ENV = "emulator";
 
 export const MAX_EXPECTED_TIME_PER_BLOCK = 4000000000;
 
@@ -60,7 +67,6 @@ export {
   STATE_MAPPING_CONNECTION,
   CONNECTION_ID_PREFIX,
   KEY_CONNECTION_PREFIX,
-  
   EVENT_TYPE_CHANNEL,
   ATTRIBUTE_KEY_CHANNEL,
   CHANNEL_ID_PREFIX,
@@ -70,7 +76,6 @@ export {
   KEY_CHANNEL_PREFIX,
   KEY_CHANNEL_END_PREFIX,
   ORDER_MAPPING_CHANNEL,
-
   KEY_PORT_PREFIX,
   REDEEMER_TYPE,
   REDEEMER_EMPTY_DATA,
@@ -79,6 +84,7 @@ export {
   CLIENT_ID_PREFIX,
   KEY_CLIENT_PREFIX,
   KEY_CLIENT_STATE,
+  MAX_CONSENSUS_STATE_SIZE,
   EVENT_TYPE_SPO,
   EVENT_TYPE_PACKET,
   ATTRIBUTE_KEY_PACKET,
