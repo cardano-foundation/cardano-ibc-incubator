@@ -1,10 +1,14 @@
 use aiken/dict
 use aiken/list
+use aiken/math
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/header.{Header} as header_mod
 use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/cometbft/constants.{
+  max_consensus_state_size
+}
 
 pub type ClientDatum {
   state: ClientDatumState,
@@ -82,12 +86,14 @@ pub fn update_state(
       height.compare,
     )
 
+  let n_stale_consensus_states = ((expected_cons_state |> dict.size()) - max_consensus_state_size) |> math.max(0)
+
   let expected_updated_output =
     ClientDatum {
       ..input_datum,
       state: ClientDatumState {
         client_state: expected_client_state,
-        consensus_states: expected_cons_state |> dict.to_list(),
+        consensus_states: expected_cons_state |> dict.to_list() |> list.drop(n_stale_consensus_states),
       },
     }
 
