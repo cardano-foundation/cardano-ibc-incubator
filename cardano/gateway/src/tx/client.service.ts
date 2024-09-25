@@ -16,7 +16,7 @@ import { RpcException } from '@nestjs/microservices';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { ConfigService } from '@nestjs/config';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
-import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME } from 'src/constant';
+import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
 import { ClientDatum } from 'src/shared/types/client-datum';
 import { MintClientOperator } from 'src/shared/types/mint-client-operator';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
@@ -263,7 +263,7 @@ export class ClientService {
         hash: header.signedHeader.header.appHash,
       },
     };
-    const currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
+    let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
       ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
     const foundHeaderHeight = currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight);
@@ -286,6 +286,11 @@ export class ClientService {
       }
       return Number(height1.revisionNumber - height2.revisionNumber);
     });
+    if (currentConsStateInArray.length > MAX_CONSENSUS_STATE_SIZE) {
+      currentConsStateInArray = currentConsStateInArray.slice(
+        currentConsStateInArray.length - MAX_CONSENSUS_STATE_SIZE,
+      );
+    }
     const newConsStates = new Map(currentConsStateInArray);
     const newClientDatum: ClientDatum = {
       ...updateClientOperator.clientDatum,
