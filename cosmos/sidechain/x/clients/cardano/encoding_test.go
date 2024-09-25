@@ -1,6 +1,7 @@
 package cardano_test
 
 import (
+	"github.com/blinklabs-io/gouroboros/ledger"
 	"reflect"
 	"testing"
 
@@ -10,7 +11,7 @@ import (
 )
 
 func TestMarshalInterface(t *testing.T) {
-	i := []cardano.RegisCert{
+	i := []ledger.RegisCert{
 		{
 			Flag:         1,
 			RegisPoolId:  "RegisPoolId",
@@ -22,7 +23,7 @@ func TestMarshalInterface(t *testing.T) {
 }
 
 func TestUnmarshalInterface(t *testing.T) {
-	i := []cardano.RegisCert{
+	i := []ledger.RegisCert{
 		{
 			Flag:         1,
 			RegisPoolId:  "RegisPoolId",
@@ -30,16 +31,16 @@ func TestUnmarshalInterface(t *testing.T) {
 		},
 	}
 	iBytes, _ := cardano.MarshalInterface(i)
-	var o []cardano.RegisCert
+	var o []ledger.RegisCert
 	cardano.UnmarshalInterface(iBytes, &o)
 	require.Equal(t, true, reflect.DeepEqual(i, o), "TestUnmarshalInterface: Not equal")
 }
 
 func TestMarshalUnmarshalUTXO(t *testing.T) {
-	utxo := cardano.UTXOOutput{
+	utxo := ledger.UTXOOutput{
 		TxHash:      "dummyTxHash",
 		OutputIndex: "1",
-		Tokens: []cardano.UTXOOutputToken{{
+		Tokens: []ledger.UTXOOutputToken{{
 			TokenAssetName: "lovelace",
 			TokenValue:     "1",
 		}},

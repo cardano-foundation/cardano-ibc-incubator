@@ -2,11 +2,10 @@ package cardano
 
 import (
 	"bytes"
+	"github.com/fxamacker/cbor/v2"
+	"math"
 	"strings"
 	"time"
-
-	// ics23 "github.com/cosmos/ics23/go"
-	"github.com/fxamacker/cbor/v2"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -240,20 +239,27 @@ func (cs ClientState) VerifyMembership(
 	path exported.Path,
 	expectedValue []byte,
 ) error {
-	if cs.GetLatestHeight().LT(height) {
+	latestHeight := cs.GetLatestHeight()
+	if latestHeight.LT(height) {
 		return errorsmod.Wrapf(
 			ibcerrors.ErrInvalidHeight,
-			"client state height < proof height (%d < %d), please ensure the client has been updated", cs.GetLatestHeight(), height,
+			"client state height < proof height (%d < %d), please ensure the client has been updated", latestHeight, height,
 		)
 	}
-	// TODO: verifyDelayPeriodPassed
-	// if err := verifyDelayPeriodPassed(ctx, clientStore, height, delayTimePeriod, delayBlockPeriod); err != nil {
-	// 	return err
-	// }
 
-	_, found := GetConsensusState(clientStore, cdc, height)
-	if !found {
+	proofState, foundProofState := GetConsensusState(clientStore, cdc, height)
+	if !foundProofState {
 		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "please ensure the proof was constructed against a height that exists on the client")
+	}
+
+	if delayTimePeriod != 0 {
+		latestState, foundLatestState := GetConsensusState(clientStore, cdc, latestHeight)
+		if !foundLatestState {
+			return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "Latest client state does not exist %#v", latestHeight)
+		}
+		if err := verifyDelayPeriodPassed(latestState, proofState, delayTimePeriod); err != nil {
+			return err
+		}
 	}
 
 	merklePath, _ := path.(commitmenttypes.MerklePath)
@@ -421,21 +427,27 @@ func (cs ClientState) VerifyNonMembership(
 	proof []byte,
 	path exported.Path,
 ) error {
-	if cs.GetLatestHeight().LT(height) {
+	latestHeight := cs.GetLatestHeight()
+	if latestHeight.LT(height) {
 		return errorsmod.Wrapf(
 			ibcerrors.ErrInvalidHeight,
-			"client state height < proof height (%d < %d), please ensure the client has been updated", cs.GetLatestHeight(), height,
+			"client state height < proof height (%d < %d), please ensure the client has been updated", latestHeight, height,
 		)
 	}
 
-	// TODO: verifyDelayPeriodPassed
-	// if err := verifyDelayPeriodPassed(ctx, clientStore, height, delayTimePeriod, delayBlockPeriod); err != nil {
-	// 	return err
-	// }
-
-	_, found := GetConsensusState(clientStore, cdc, height)
-	if !found {
+	proofState, foundProofState := GetConsensusState(clientStore, cdc, height)
+	if !foundProofState {
 		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "please ensure the proof was constructed against a height that exists on the client")
+	}
+
+	if delayTimePeriod != 0 {
+		latestState, foundLatestState := GetConsensusState(clientStore, cdc, latestHeight)
+		if !foundLatestState {
+			return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "Latest client state does not exist %#v", latestHeight)
+		}
+		if err := verifyDelayPeriodPassed(latestState, proofState, delayTimePeriod); err != nil {
+			return err
+		}
 	}
 
 	merklePath, ok := path.(commitmenttypes.MerklePath)
@@ -444,6 +456,41 @@ func (cs ClientState) VerifyNonMembership(
 	}
 
 	return VerifyNonMembershipProof(proof, merklePath, cdc, clientStore)
+}
+
+// verifyDelayPeriodPassed will ensure that at least delayTimePeriod amount of slot have passed
+// since consensus state was submitted before allowing verification to continue.
+// delayTimePeriod in nanoseconds
+func verifyDelayPeriodPassed(latestCS *ConsensusState, proofCs *ConsensusState, delayTimePeriod uint64) error {
+	if delayTimePeriod != 0 {
+		proofSlot := proofCs.Slot
+		latestSlot := latestCS.Slot
+		delayTimePeriodSlot := uint64(math.Ceil(float64(delayTimePeriod) / math.Pow(float64(10), float64(9))))
+		validTime := proofSlot + delayTimePeriodSlot
+		if latestSlot < validTime {
+			return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "cannot verify packet until slot: %d, current slot: %d",
+				validTime, latestSlot)
+		}
+	}
+
+	//if delayBlockPeriod != 0 {
+	//	// check that executing chain's height has passed consensusState's processed height + delay block period
+	//	processedHeight, ok := GetProcessedHeight(store, proofHeight)
+	//	if !ok {
+	//		return errorsmod.Wrapf(ErrProcessedHeightNotFound, "processed height not found for height: %s", proofHeight)
+	//	}
+	//
+	//	currentHeight := clienttypes.GetSelfHeight(ctx)
+	//	validHeight := clienttypes.NewHeight(processedHeight.GetRevisionNumber(), processedHeight.GetRevisionHeight()+delayBlockPeriod)
+	//
+	//	// NOTE: delay block period is inclusive, so if currentHeight is validHeight, then we return no error
+	//	if currentHeight.LT(validHeight) {
+	//		return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "cannot verify packet until height: %s, current height: %s",
+	//			validHeight, currentHeight)
+	//	}
+	//}
+
+	return nil
 }
 
 func VerifyNonMembershipProof(proofPath []byte, merklePath commitmenttypes.MerklePath, cdc codec.BinaryCodec, clientStore storetypes.KVStore) error {
@@ -464,13 +511,13 @@ func VerifyNonMembershipProof(proofPath []byte, merklePath commitmenttypes.Merkl
 		pathData := pathKey + "/" + sequence
 
 		pathChannel := strings.ReplaceAll(pathKey, "/receipts/", "/channel/")
-		// Channel must existed
+		// Channel must exist
 		channelDataInStore := clientStore.Get([]byte(pathChannel))
 		if channelDataInStore == nil {
 			return errorsmod.Wrap(clienttypes.ErrFailedNonMembershipVerification, "VerifyPacketReceiptAbsence: Channel not existed")
 		}
 
-		// Data must not existed
+		// Data must not exist
 		proofDataInStore := clientStore.Get([]byte(pathData))
 		// compare value
 		if proofDataInStore != nil {
@@ -481,44 +528,3 @@ func VerifyNonMembershipProof(proofPath []byte, merklePath commitmenttypes.Merkl
 		return errorsmod.Wrap(clienttypes.ErrFailedNonMembershipVerification, "VerifyNonMembershipProof: not implemented")
 	}
 }
-
-// verifyDelayPeriodPassed will ensure that at least delayTimePeriod amount of time and delayBlockPeriod number of blocks have passed
-// since consensus state was submitted before allowing verification to continue.
-// func verifyDelayPeriodPassed(ctx sdk.Context, store storetypes.KVStore, proofHeight exported.Height, delayTimePeriod, delayBlockPeriod uint64) error {
-// 	if delayTimePeriod != 0 {
-// 		// check that executing chain's timestamp has passed consensusState's processed time + delay time period
-// 		processedTime, ok := GetProcessedTime(store, proofHeight)
-// 		if !ok {
-// 			return errorsmod.Wrapf(ErrProcessedTimeNotFound, "processed time not found for height: %s", proofHeight)
-// 		}
-
-// 		currentTimestamp := uint64(ctx.BlockTime().UnixNano())
-// 		validTime := processedTime + delayTimePeriod
-
-// 		// NOTE: delay time period is inclusive, so if currentTimestamp is validTime, then we return no error
-// 		if currentTimestamp < validTime {
-// 			return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "cannot verify packet until time: %d, current time: %d",
-// 				validTime, currentTimestamp)
-// 		}
-
-// 	}
-
-// 	if delayBlockPeriod != 0 {
-// 		// check that executing chain's height has passed consensusState's processed height + delay block period
-// 		processedHeight, ok := GetProcessedHeight(store, proofHeight)
-// 		if !ok {
-// 			return errorsmod.Wrapf(ErrProcessedHeightNotFound, "processed height not found for height: %s", proofHeight)
-// 		}
-
-// 		currentHeight := clienttypes.GetSelfHeight(ctx)
-// 		validHeight := clienttypes.NewHeight(processedHeight.GetRevisionNumber(), processedHeight.GetRevisionHeight()+delayBlockPeriod)
-
-// 		// NOTE: delay block period is inclusive, so if currentHeight is validHeight, then we return no error
-// 		if currentHeight.LT(validHeight) {
-// 			return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "cannot verify packet until height: %s, current height: %s",
-// 				validHeight, currentHeight)
-// 		}
-// 	}
-
-// 	return nil
-// }
