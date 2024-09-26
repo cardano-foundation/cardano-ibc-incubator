@@ -77,7 +77,7 @@ func (l latestClientState) update(ctx context.Context, clientInfo clientInfo, cc
 }
 
 const (
-	queryTimeout                = 5 * time.Second
+	queryTimeout                = 50 * time.Second
 	blockResultsQueryTimeout    = 2 * time.Minute
 	latestHeightQueryRetryDelay = 1 * time.Second
 	latestHeightQueryRetries    = 5
