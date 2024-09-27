@@ -263,6 +263,7 @@ const SwapContainer = () => {
   const debounceEstAmount = () => debounce(calculateAndSetSwapEst, 1000)();
 
   useEffect(() => {
+    setEstimateData(initEstData);
     // check amount out
     if (
       swapData?.fromToken?.swapAmount &&

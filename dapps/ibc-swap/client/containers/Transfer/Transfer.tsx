@@ -33,6 +33,7 @@ import { formatPrice } from '@/utils/string';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
 import BigNumber from 'bignumber.js';
+import { debounce } from '@/utils/helper';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -45,7 +46,6 @@ import {
   StyledTransferContainer,
   StyledWrapContainer,
 } from './index.style';
-import { debounce } from '@/utils/helper';
 
 type EstimateFeeType = {
   display: boolean;
@@ -385,6 +385,7 @@ const Transfer = () => {
   }, [fromNetwork.networkId, cosmosChain?.isWalletConnected]);
 
   useEffect(() => {
+    setEstData(initEstData);
     const trySendAmount = BigInt(sendAmount);
     const checkEstData = async () => {
       await calculateEst().then(setEstData);
