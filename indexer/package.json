@@ -1,0 +1,50 @@
+{
+  "name": "cardano-ibc",
+  "version": "0.0.1",
+  "description": "This project can be use as a starting point for developing your Cosmos (Cosmos Hub) based SubQuery project",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts",
+    "codegen": "subql codegen",
+    "start:docker": "docker-compose pull && docker-compose up --remove-orphans",
+    "dev": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose pull && docker compose up --remove-orphans",
+    "ddev": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose up --remove-orphans",
+    "prepack": "rm -rf dist && npm run build",
+    "test": "subql build && npx ts-node src/scripts/patchEnv.ts && subql-node-cosmos test",
+    "build:develop": "NODE_ENV=develop subql codegen && NODE_ENV=develop subql build && npx ts-node src/scripts/patchEnv.ts"
+  },
+  "homepage": "https://github.com/subquery/cosmos-subql-starter",
+  "repository": "github:subquery/cosmos-subql-starter",
+  "files": [
+    "dist",
+    "schema.graphql",
+    "project.yaml"
+  ],
+  "author": "SOSC",
+  "license": "MIT",
+  "devDependencies": {
+    "@cosmjs/stargate": "^0.28.9",
+    "@subql/cli": "latest",
+    "@subql/node-cosmos": "latest",
+    "@subql/testing": "latest",
+    "@types/node": "^22.5.5",
+    "@types/node-fetch": "2.6.2",
+    "dotenv": "^16.4.5",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "@dcspark/cardano-multiplatform-multiera-lib-nodejs": "^5.3.1",
+    "@harmoniclabs/uint8array-utils": "^1.0.0",
+    "@sinclair/typebox": "^0.32.35",
+    "@subql/types-cosmos": "latest",
+    "@types/node": "^17.0.21",
+    "blake2b": "^2.1.4",
+    "blakejs": "^1.2.1",
+    "crypto": "^1.0.1",
+    "js-sha3": "^0.9.3",
+    "node-fetch": "2.6.7",
+    "pino": "^7.8.0",
+    "ts-proto": "^1.112.1",
+    "tslib": "^2.3.1"
+  }
+}

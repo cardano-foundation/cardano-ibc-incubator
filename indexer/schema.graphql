@@ -1,0 +1,180 @@
+# To improve query performance, we strongly suggest adding indexes to any field that you plan to filter or sort by
+# Add the `@index` or `@index(unique: true)` annotation after any non-key field
+# https://academy.subquery.network/build/graphql.html#indexing-by-non-primary-key-field
+
+type Connection @entity {
+  id: ID!
+  chainId: String!
+  connectionId: String!
+  client: Client!
+  counterpartyChainId: String!
+  counterpartyClientId: String!
+  counterpartyConnectionId: String!
+}
+
+type Channel @entity {
+  id: ID!
+  chainId: String!
+
+  portId: String!
+  channelId: String!
+  connection: Connection!
+  counterpartyPortId: String!
+  counterpartyChannelId: String!
+  counterpartyChainId: String!
+}
+
+type Client @entity {
+  id: ID!
+  height: BigInt!
+  chainId: String!
+  clientId: String!
+  counterpartyChainId: String!
+}
+
+type Packet @entity {
+  id: ID!
+  sequence: BigInt!
+  srcChain: String!
+  srcPort: String!
+  srcChannel: String!
+  dstChain: String!
+  dstPort: String!
+  dstChannel: String!
+  data: String!
+  module: String
+  parentPacket: Packet
+  # packetRoot: Packet!
+}
+
+
+type PacketFlow @entity {
+  id: ID!
+  fromTxHash: String!
+  fromAddress: String!
+  fromChainId: String!
+  status: PacketFlowProcess!
+  
+  toTxHash: String
+  toAddress: String
+  createTime: BigInt!
+  endTime: BigInt
+  updatedTime: BigInt!
+}
+
+type Message @entity {
+  id: ID!
+  chainId: String!
+  code: BigInt
+  txHash: String!
+  msgIdx: BigInt!
+  sender: String
+  receiver: String
+  msgType: MsgType!
+  packet: Packet!
+  data: String
+  msgError: String
+  time: BigInt!
+  gas: BigInt
+}
+
+enum MsgType {
+  SendPacket
+  RecvPacket
+  AcknowledgePacket
+}
+
+# To improve query performance, we strongly suggest adding indexes to any field that you plan to filter or sort by
+# Add the `@index` or `@index(unique: true)` annotation after any non-key field
+# https://academy.subquery.network/build/graphql.html#indexing-by-non-primary-key-field
+
+enum EventType {
+  SendPacket
+  RecvPacket
+  WriteAck
+  AcknowledgePacket
+  TimeoutPacket
+  TimeoutPacketOnClose
+
+  ChannelOpenInit
+  ChannelOpenTry
+  ChannelOpenAck
+  ChannelOpenConfirm
+  ChannelCloseInit
+  ChannelCloseConfirm
+  ChannelClosed
+
+  ConnectionOpenInit
+  ConnectionOpenTry
+  ConnectionOpenAck
+  ConnectionOpenConfirm
+
+  CreateClient
+  UpdateClient
+}
+
+enum ChannelStateType {
+  Uninitialized
+  Init
+  TryOpen
+  Open
+  Closed
+}
+
+enum ChannelOrderType {
+  None
+  Unordered
+  Ordered
+}
+
+type CardanoTransfer @entity {
+  id: ID!
+  ibcTokenUnit: String!
+  blockHeight: BigInt!
+  slot: BigInt!
+  sender: String!
+  receiver: String!
+  sequence: String!
+  srcPort: String!
+  srcChannel: String!
+  dstPort: String!
+  dstChannel: String!
+  connectionId: String!
+  msgType: MsgType!
+  amount: String!
+  denom: String!
+  memo: String
+}
+
+type EventAttribute @jsonField(indexed: false) {
+  key: String!
+  value: String
+}
+
+type Event @entity {
+  id: ID!
+  blockHeight: BigInt!
+  txHash: String!
+  type: EventType!
+  eventAttributes: [EventAttribute]! # Store a list of JSON objects
+}
+
+type CardanoIbcAsset @entity {
+  id: ID!
+  accountAddress: String!
+  denom: String!
+  voucherTokenName: String!
+  connectionId: String!
+  srcPort: String!
+  srcChannel: String!
+  dstPort: String!
+  dstChannel: String!
+  path: String!
+}
+
+enum PacketFlowProcess {
+  success
+  failed
+  processing
+}
+

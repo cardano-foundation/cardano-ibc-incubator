@@ -1,0 +1,76 @@
+# // Auto-generated , DO NOT EDIT
+specVersion: 1.0.0
+version: 0.0.1
+name: osmosis-starter
+description: >-
+  This project can be use as a starting point for developing your Cosmos Osmosis
+  based SubQuery project. It indexes all swaps in the Osmosis DEX
+runner:
+  node:
+    name: "@subql/node-cosmos"
+    version: ">=3.0.0"
+    options:
+      unsafe: true
+  query:
+    name: "@subql/query"
+    version: "*"
+schema:
+  file: ./schema.graphql
+network:
+  chainId: localosmosis
+  endpoint:
+    - "http://63.33.19.209:26658"
+  chaintypes:
+    osmosis.gamm.v1beta1:
+      file: ./proto/osmosis/gamm/v1beta1/tx.proto
+      messages:
+        - MsgSwapExactAmountIn
+        - MsgSwapExactAmountOut
+        - MsgJoinSwapShareAmountOut
+    " osmosis.poolmanager.v1beta1":
+      file: ./proto/osmosis/poolmanager/v1beta1/swap_route.proto
+      messages:
+        - SwapAmountOutRoute
+        - SwapAmountInRoute
+    cosmos.base.v1beta1:
+      file: ./proto/cosmos/base/v1beta1/coin.proto
+      messages:
+        - Coin
+dataSources:
+  - kind: cosmos/Runtime
+    startBlock: 1464494
+    mapping:
+      file: ./dist/index.js
+      handlers:
+        - handler: handleMessageRecvPacket
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.channel.v1.MsgRecvPacket
+        - handler: handleMessageAckPacket
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.channel.v1.MsgAcknowledgement
+        - handler: handleMessageClient
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.client.v1.MsgCreateClient
+        - handler: handleMsgConnectionOpenAck
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.connection.v1.MsgConnectionOpenAck
+        - handler: handleMsgConnectionOpenConfirm
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.connection.v1.MsgConnectionOpenConfirm
+        - handler: handleMsgChannelOpenAck
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.channel.v1.MsgChannelOpenAck
+        - handler: handleMsgChannelOpenConfirm
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.core.channel.v1.MsgChannelOpenConfirm
+        - handler: handleMessageTransferPacket
+          kind: cosmos/MessageHandler
+          filter:
+            type: /ibc.applications.transfer.v1.MsgTransfer

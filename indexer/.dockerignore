@@ -1,0 +1,4 @@
+.data
+dist
+.yarn
+node_modules
