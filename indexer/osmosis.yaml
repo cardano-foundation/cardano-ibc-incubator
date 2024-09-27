@@ -19,7 +19,7 @@ schema:
 network:
   chainId: localosmosis
   endpoint:
-    - "http://63.33.19.209:26658"
+    - SUBQL_LOCAL_OSMOSIS_ENDPOINT
   chaintypes:
     osmosis.gamm.v1beta1:
       file: ./proto/osmosis/gamm/v1beta1/tx.proto

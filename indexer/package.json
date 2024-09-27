@@ -4,14 +4,14 @@
   "description": "This project can be use as a starting point for developing your Cosmos (Cosmos Hub) based SubQuery project",
   "main": "dist/index.js",
   "scripts": {
-    "build": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts",
+    "build": "npx ts-node src/scripts/patchYaml.ts && subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts",
     "codegen": "subql codegen",
     "start:docker": "docker-compose pull && docker-compose up --remove-orphans",
-    "dev": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose pull && docker compose up --remove-orphans",
-    "ddev": "subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose up --remove-orphans",
+    "dev": "npx ts-node src/scripts/patchYaml.ts && subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose pull && docker compose up --remove-orphans",
+    "ddev": "npx ts-node src/scripts/patchYaml.ts && subql codegen && subql build && npx ts-node src/scripts/patchEnv.ts && docker compose up --remove-orphans",
     "prepack": "rm -rf dist && npm run build",
     "test": "subql build && npx ts-node src/scripts/patchEnv.ts && subql-node-cosmos test",
-    "build:develop": "NODE_ENV=develop subql codegen && NODE_ENV=develop subql build && npx ts-node src/scripts/patchEnv.ts"
+    "build:develop": "NODE_ENV=develop npx ts-node src/scripts/patchYaml.ts && subql codegen && NODE_ENV=develop subql build && npx ts-node src/scripts/patchEnv.ts"
   },
   "homepage": "https://github.com/subquery/cosmos-subql-starter",
   "repository": "github:subquery/cosmos-subql-starter",

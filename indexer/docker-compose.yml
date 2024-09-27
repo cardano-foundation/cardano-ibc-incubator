@@ -90,7 +90,7 @@ services:
       retries: 10
 
   subquery-node-cardano:
-    image: cuonglv0297/subql-node-cardano:latest
+    image: cuonglv0297/subql-node-cardano:v2.0.3
     depends_on:
       "postgres":
         condition: service_healthy

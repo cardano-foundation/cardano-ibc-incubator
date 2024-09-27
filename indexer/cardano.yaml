@@ -1,5 +1,5 @@
 specVersion: 1.0.0
-name: cosmoshub-ibc
+name: cardano-ibc
 version: 0.0.1
 runner:
   node:
@@ -10,24 +10,26 @@ runner:
   query:
     name: '@subql/query'
     version: '*'
-repository: 'https://github.com/subquery/juno-subql-starter'
 schema:
   file: ./schema.graphql
 network:
   chainId: 'cardano'
-  networkMagic: 42
-  systemStart: 1506203091
-  slotLength: 1
+  networkMagic: 2
+  systemStart: 1666656000000
+  slotLength: 1000
+
   # This endpoint must be a public non-pruned archive node
   # We recommend providing more than one endpoint for improved reliability, performance, and uptime
   # Public nodes may be rate limited, which can affect indexing speed
   # When developing your project we suggest getting a private API key
-  endpoint: ['ws://dev.cf-ibc-testnet-mithril-sidechain.metadata.dev.cf-deployments.org:3001']
+  endpoint: 
+    - SUBQL_CARDANO_ENDPOINT
+    
 dataSources:
   - kind: cardano/Runtime
-    startBlock: 7
-    startSlot: 29
-    startBlockHash: F7C4B788C116BC0055480D5E01FD35DFA3739078643E1B009513C42EC15B9F46
+    startBlock: 2516332
+    startSlot: 60589344
+    startBlockHash: 1666BCA88995C6DB697DCEB506C7D3D36A502A248B9D43494D6AC2DF00D25529
     mapping:
       file: ./dist/index.js
       handlers:

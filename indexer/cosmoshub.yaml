@@ -19,7 +19,7 @@ schema:
 network:
   chainId: sidechain
   endpoint:
-    - 'http://34.250.140.20:26657'
+    - SUBQL_SIDE_CHAIN_ENDPOINT
   chaintypes:
     cosmos.slashing.v1beta1:
       file: ./proto/cosmos/slashing/v1beta1/tx.proto
