@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "NODE_OPTIONS=--max-old-space-size=8192 craco start",
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 craco build",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 craco build && gzipper compress --verbose ./build --include js,css,json ",
     "test": "NODE_OPTIONS=--max-old-space-size=8192 craco test",
     "eject": "craco eject",
     "deploy": "cross-env NODE_ENV=production node server",
@@ -35,6 +35,7 @@
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
     "graphql": "^16.9.0",
+    "gzipper": "7.2.0",
     "js-sha256": "^0.11.0",
     "nprogress": "^0.2.0",
     "prop-types": "^15.8.1",

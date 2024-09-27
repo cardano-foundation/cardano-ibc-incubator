@@ -1,5 +1,5 @@
 import { Chain, AssetList } from '@chain-registry/types';
-import { chains, assets } from 'chain-registry';
+import { chains, assets } from 'chain-registry/mainnet';
 
 import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 

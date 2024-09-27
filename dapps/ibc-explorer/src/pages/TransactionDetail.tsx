@@ -1,7 +1,15 @@
-import TransactionDetailContainer from '@src/containers/TransactionDetail';
+import { Suspense, lazy } from 'react';
+
+const TransactionDetailContainer = lazy(
+  () => import('@containers/TransactionDetail'),
+);
 
 const TransactionDetail = () => {
-  return <TransactionDetailContainer />;
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <TransactionDetailContainer />
+    </Suspense>
+  );
 };
 
 export default TransactionDetail;
