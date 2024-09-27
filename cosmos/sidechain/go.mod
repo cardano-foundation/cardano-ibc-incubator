@@ -23,7 +23,7 @@ require (
 	cosmossdk.io/x/evidence v0.1.0
 	cosmossdk.io/x/feegrant v0.1.0
 	cosmossdk.io/x/upgrade v0.1.1
-	github.com/blinklabs-io/gouroboros v0.90.0
+	github.com/blinklabs-io/gouroboros v0.95.0
 	github.com/bufbuild/buf v1.31.0
 	github.com/cometbft/cometbft v0.38.2
 	github.com/cosmos/cosmos-db v1.0.0
