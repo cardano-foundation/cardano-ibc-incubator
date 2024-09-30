@@ -19,7 +19,7 @@ const tryAssetName = (assetHex: string): string => {
   return toText(tokenName);
 };
 
-export const useCustomCardanoBalance = () => {
+export const useCardanoChain = () => {
   const [assets, setAssets] = useState<Asset[]>();
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
@@ -69,5 +69,32 @@ export const useCustomCardanoBalance = () => {
     }
   }, [cardanoAddress, connectedWalletName]);
 
-  return assets;
+  const sortAssetsByQuantity = (assets: Asset[]): Asset[] => {
+    return assets.sort((assetA, assetB) => {
+      const quantityA = BigInt(assetA.quantity);
+      const quantityB = BigInt(assetB.quantity);
+
+      if (quantityA === BigInt(0) && quantityB !== BigInt(0)) {
+        return 1;
+      }
+      if (quantityA !== BigInt(0) && quantityB === BigInt(0)) {
+        return -1;
+      }
+      return 0;
+    });
+  };
+
+  const getTotalSupply = (): Asset[] => {
+    return sortAssetsByQuantity(assets ?? []);
+  };
+
+  const getBalanceByDenom = (denom: string): string => {
+    const assetData = assets?.find((asset) => asset?.unit === denom);
+    if (!assetData) {
+      return '0';
+    }
+    return assetData?.quantity.toString();
+  };
+
+  return { getTotalSupply, getBalanceByDenom };
 };

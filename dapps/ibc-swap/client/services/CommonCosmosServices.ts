@@ -2,13 +2,14 @@
 /* eslint-disable camelcase */
 
 import { sha256 } from 'js-sha256';
-import { DenomTrace } from 'cosmjs-types/ibc/applications/transfer/v1/transfer';
 import { State, stateFromJSON } from 'cosmjs-types/ibc/core/channel/v1/channel';
 
 import {
+  DEFAULT_PFM_FEE,
   queryAllChannelsUrl,
   queryAllDenomTracesUrl,
   queryChannelsPrefixUrl,
+  queryPacketForwardParamsUrl,
 } from '@/constants';
 import {
   IBCDenomTrace,
@@ -16,33 +17,39 @@ import {
   QueryClientStateResponse,
   RawChannelMapping,
 } from '@/types/IBCParams';
+import BigNumber from 'bignumber.js';
+import { toast } from 'react-toastify';
 
 export async function fetchAllDenomTraces(
   restUrl: string,
 ): Promise<IBCDenomTrace> {
-  const fetchUrl = `${restUrl}/${queryAllDenomTracesUrl}?pagination.limit=10000`;
+  const fetchUrl = `${restUrl}${queryAllDenomTracesUrl}?pagination.limit=10000`;
   const tmpTrace: IBCDenomTrace = {};
-  const firstFetch = await fetch(fetchUrl).then((res) => res.json());
-  const denomTraces = (firstFetch?.denom_traces || []) as DenomTrace[];
+  const firstFetch = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch denom trace.', { theme: 'colored' });
+    });
+  const denomTraces = (firstFetch?.denom_traces || []) as any[];
   denomTraces.forEach((tracing) => {
-    const { path, baseDenom } = tracing;
-    const ibcHash = `ibc/${sha256(`${path}/${baseDenom}`).toUpperCase()}`;
+    const { path, base_denom } = tracing;
+    const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
     tmpTrace[`${ibcHash}`] = {
       path,
-      baseDenom,
+      baseDenom: base_denom,
     };
   });
   let nextKey = firstFetch?.pagination?.next_key;
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${fetchUrl}&pagination.key=${nextKey}`;
     const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
-    const denomTracesNext = (nextFetch?.denom_traces || []) as DenomTrace[];
+    const denomTracesNext = (nextFetch?.denom_traces || []) as any[];
     denomTracesNext.forEach((tracing) => {
-      const { path, baseDenom } = tracing;
-      const ibcHash = `ibc/${sha256(`${path}/${baseDenom}`).toUpperCase()}`;
+      const { path, base_denom } = tracing;
+      const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
       tmpTrace[`${ibcHash}`] = {
         path,
-        baseDenom,
+        baseDenom: base_denom,
       };
     });
     nextKey = nextFetch?.pagination?.next_key;
@@ -56,7 +63,11 @@ export async function fetchClientStateFromChannel(
   portId: string,
 ): Promise<QueryClientStateResponse> {
   const queryUrl = `${restUrl}${queryChannelsPrefixUrl}/${channelId}/ports/${portId}/client_state`;
-  const data = await fetch(queryUrl).then((res) => res.json());
+  const data = await fetch(queryUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch ports.', { theme: 'colored' });
+    });
   return (data?.identified_client_state || {}) as QueryClientStateResponse;
 }
 
@@ -76,11 +87,19 @@ type maxSrcChannelIdType = {
 export async function fetchAllChannels(
   chainId: string,
   restUrl: string,
-): Promise<RawChannelMapping[]> {
+): Promise<{
+  bestChannel: RawChannelMapping[];
+  channelsMap: any;
+  availableChannelsMap: any;
+}> {
   const tmpData: RawChannelMapping[] = [];
   const maxSrcChannelId: maxSrcChannelIdType = {};
   const fetchUrl = `${restUrl}${queryAllChannelsUrl}`;
-  const firstFetch = await fetch(fetchUrl).then((res) => res.json());
+  const firstFetch = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => {
+      toast.error('Failed to fetch channels.', { theme: 'colored' });
+    });
   (firstFetch?.channels || []).forEach((channel: QueryChannelResponse) => {
     const { channel_id, port_id, state, counterparty } = channel;
     if (stateFromJSON(state) === State.STATE_OPEN) {
@@ -97,7 +116,11 @@ export async function fetchAllChannels(
   let nextKey = firstFetch?.pagination?.next_key;
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${restUrl}${queryAllChannelsUrl}&pagination.key=${nextKey}`;
-    const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
+    const nextFetch = await fetch(nextFetchUrl)
+      .then((res) => res.json())
+      .catch(() => {
+        toast.error('Failed to fetch channels.', { theme: 'colored' });
+      });
     (nextFetch?.channels || []).forEach((channel: QueryChannelResponse) => {
       const { channel_id, port_id, state, counterparty } = channel;
       if (stateFromJSON(state) === State.STATE_OPEN) {
@@ -144,8 +167,82 @@ export async function fetchAllChannels(
       );
     }),
   );
-  return Object.keys(maxSrcChannelId).map((item) => {
+
+  const bestChannel = Object.keys(maxSrcChannelId).map((item) => {
     const { index } = maxSrcChannelId[item];
     return tmpData[index];
   });
+  const channelsMap: {
+    [key: string]: { destChain: string; destChannel: string; destPort: string };
+  } = {};
+  tmpData.forEach((channelPair) => {
+    const { srcChain, srcChannel, srcPort, destChannel, destPort, destChain } =
+      channelPair;
+    channelsMap[`${srcChain}_${srcPort}_${srcChannel}`] = {
+      destChain: destChain || '',
+      destChannel,
+      destPort,
+    };
+    channelsMap[`${destChain}_${destPort}_${destChannel}`] = {
+      destChain: srcChain,
+      destChannel: srcChannel,
+      destPort: srcPort,
+    };
+  });
+  const availableChannelsMap: {
+    [key: string]: { destChain: string; destChannel: string; destPort: string };
+  } = {};
+  bestChannel.forEach((channelPair) => {
+    const { srcChain, srcChannel, srcPort, destChannel, destPort, destChain } =
+      channelPair;
+    availableChannelsMap[`${srcChain}_${srcPort}_${srcChannel}`] = {
+      destChain: destChain || '',
+      destChannel,
+      destPort,
+    };
+    availableChannelsMap[`${destChain}_${destPort}_${destChannel}`] = {
+      destChain: srcChain,
+      destChannel: srcChannel,
+      destPort: srcPort,
+    };
+  });
+  return { bestChannel, channelsMap, availableChannelsMap };
+}
+
+export async function fetchPacketForwardFee(
+  restUrl: string,
+): Promise<BigNumber> {
+  const fetchUrl = `${restUrl}${queryPacketForwardParamsUrl}`;
+  const data = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => ({
+      params: {
+        fee_percentage: DEFAULT_PFM_FEE,
+      },
+    }));
+  return BigNumber(data.params.fee_percentage);
+}
+
+export async function getTokenDenomTraceCosmos(
+  restUrl: string,
+  token: string,
+): Promise<{
+  denom_trace: {
+    path: string;
+    base_denom: string;
+  };
+}> {
+  const queryTokenHash = token.replaceAll('ibc/', '');
+  const tokenTraceReturn = {
+    denom_trace: {
+      path: '',
+      base_denom: queryTokenHash,
+    },
+  };
+
+  const fetchUrl = `${restUrl}${queryAllDenomTracesUrl}/${queryTokenHash}`;
+  const data = await fetch(fetchUrl)
+    .then((res) => res.json())
+    .catch(() => tokenTraceReturn);
+  return data;
 }

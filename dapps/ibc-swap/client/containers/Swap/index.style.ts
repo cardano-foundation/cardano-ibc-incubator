@@ -69,12 +69,15 @@ export const StyledSwitchNetwork = styled(Box)`
   background: #26262a;
   border: 1px solid #47474b;
   box-shadow: 0px 0px 8px 0px #00000040;
-  cursor: pointer;
+  // cursor: pointer;
   position: absolute;
   margin-top: 10px;
   left: 50%;
   translate: -50% -50%;
-  transform: rotate(90deg);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  // transform: rotate(90deg);
 `;
 
 export const StyledSwapButton = styled.button`

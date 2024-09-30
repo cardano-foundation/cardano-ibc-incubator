@@ -1,6 +1,7 @@
 /* eslint-disable react/no-unescaped-entities */
 import React, { useContext } from 'react';
 import {
+  background,
   Box,
   Heading,
   Image,
@@ -72,8 +73,20 @@ const SettingSlippage = () => {
             >
               <NumberInputField />
               <NumberInputStepper>
-                <NumberIncrementStepper />
-                <NumberDecrementStepper />
+                <NumberIncrementStepper
+                  color={COLOR.neutral_1}
+                  border="none"
+                  _hover={{
+                    bgColor: COLOR.neutral_4,
+                  }}
+                />
+                <NumberDecrementStepper
+                  color={COLOR.neutral_1}
+                  border="none"
+                  _hover={{
+                    bgColor: COLOR.neutral_4,
+                  }}
+                />
               </NumberInputStepper>
             </NumberInput>
             <Text className="percent">%</Text>

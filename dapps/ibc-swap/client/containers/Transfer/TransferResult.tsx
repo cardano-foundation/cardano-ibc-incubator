@@ -22,6 +22,7 @@ type TransferResultProps = {
   // eslint-disable-next-line no-unused-vars
   setIsSubmitted: (isSubmitted: boolean) => void;
   resetLastTxData: () => void;
+  estReceiveAmount: string;
   estTime: string;
   estFee: string;
   lastTxHash: string;
@@ -29,6 +30,7 @@ type TransferResultProps = {
 
 export const TransferResult = ({
   setIsSubmitted,
+  estReceiveAmount,
   estTime,
   estFee,
   // eslint-disable-next-line no-unused-vars
@@ -120,7 +122,7 @@ export const TransferResult = ({
                 fontSize={16}
                 lineHeight="22px"
               >
-                {sendAmount}{' '}
+                {estReceiveAmount}{' '}
                 {formatTokenSymbol(selectedToken.tokenSymbol || '')}/
                 {toNetwork.networkPrettyName}
               </Text>
