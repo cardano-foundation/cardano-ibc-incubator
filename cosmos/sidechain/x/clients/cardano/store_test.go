@@ -2,6 +2,7 @@ package cardano_test
 
 import (
 	"encoding/hex"
+	"github.com/blinklabs-io/gouroboros/ledger"
 	cardano "sidechain/x/clients/cardano"
 	"time"
 
@@ -13,7 +14,7 @@ func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 	var (
 		path         *ibctesting.Path
 		tokenConfigs cardano.TokenConfigs
-		utxo         cardano.UTXOOutput
+		utxo         ledger.UTXOOutput
 	)
 
 	testCases := []struct {
@@ -37,10 +38,10 @@ func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 					},
 				}
 				clientDatumBytes, _ := cbor.Marshal(clientDatum)
-				utxo = cardano.UTXOOutput{
+				utxo = ledger.UTXOOutput{
 					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
 					OutputIndex: "0",
-					Tokens: []cardano.UTXOOutputToken{
+					Tokens: []ledger.UTXOOutputToken{
 						{TokenAssetName: "lovelace", TokenValue: "1"},
 						{TokenAssetName: tokenConfigs.ClientPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOClientStateTokenPrefix) + "31", TokenValue: "1"},
 					},
@@ -72,10 +73,10 @@ func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 					},
 				}
 				connectionDatumBytes, _ := cbor.Marshal(connectionDatum)
-				utxo = cardano.UTXOOutput{
+				utxo = ledger.UTXOOutput{
 					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
 					OutputIndex: "0",
-					Tokens: []cardano.UTXOOutputToken{
+					Tokens: []ledger.UTXOOutputToken{
 						{TokenAssetName: "lovelace", TokenValue: "1"},
 						{TokenAssetName: tokenConfigs.ConnectionPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOConnectionStatePrefix) + "31", TokenValue: "1"},
 					},
@@ -126,10 +127,10 @@ func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 					},
 				}
 				channelDatumBytes, _ := cbor.Marshal(channelDatumWithPort)
-				utxo = cardano.UTXOOutput{
+				utxo = ledger.UTXOOutput{
 					TxHash:      "124ba9d050c2ba4879f402ff0da8ed99c8b38d5aaa99fcca4b8fe6ad54f8f94d",
 					OutputIndex: "0",
-					Tokens: []cardano.UTXOOutputToken{
+					Tokens: []ledger.UTXOOutputToken{
 						{TokenAssetName: "lovelace", TokenValue: "1"},
 						{TokenAssetName: tokenConfigs.ConnectionPolicyId + cardano.IBCTokenPrefix(tokenConfigs.HandlerTokenUnit, cardano.KeyUTXOChannelStatePrefix) + "31", TokenValue: "1"},
 					},
@@ -151,7 +152,7 @@ func (suite *CardanoTestSuite) TestTryMatchAndSaveIBCType() {
 			tc.malleate()
 
 			clientStore := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-			actualOutput := utxo.TryMatchAndSaveIBCType(suite.chainA.GetContext(), tokenConfigs, clientStore, cardano.Height{RevisionNumber: 0, RevisionHeight: 5})
+			actualOutput := cardano.TryMatchAndSaveIBCType(suite.chainA.GetContext(), utxo, tokenConfigs, clientStore, cardano.Height{RevisionNumber: 0, RevisionHeight: 5})
 			suite.Require().Equal(tc.expOutput, actualOutput)
 		})
 	}
@@ -197,11 +198,11 @@ func (suite *CardanoTestSuite) TestGetSetClientSPOs() {
 	path = NewPath(suite.chainA, suite.chainB)
 	SetupCardanoClientInCosmos(suite.coordinator, path)
 	clientStore := suite.chainA.App.GetIBCKeeper().ClientKeeper.ClientStore(suite.chainA.GetContext(), path.EndpointA.ClientID)
-	cardano.UpdateRegisterCert(clientStore, []cardano.RegisCert{
+	cardano.UpdateRegisterCert(clientStore, []ledger.RegisCert{
 		{RegisPoolId: "pool1", RegisPoolVrf: "pool1Vrf1"}, {RegisPoolId: "pool2", RegisPoolVrf: "pool2Vrf1"}, {RegisPoolId: "pool3", RegisPoolVrf: "pool3Vrf1"},
 	}, 3, 303387)
 
-	cardano.UpdateUnregisterCert(clientStore, []cardano.DeRegisCert{
+	cardano.UpdateUnregisterCert(clientStore, []ledger.DeRegisCert{
 		{DeRegisPoolId: "pool1", DeRegisEpoch: "1"}, {DeRegisPoolId: "pool2", DeRegisEpoch: "1"},
 	}, 303387)
 	valSet := cardano.CalValidatorsNewEpoch(clientStore, 2, 3)
