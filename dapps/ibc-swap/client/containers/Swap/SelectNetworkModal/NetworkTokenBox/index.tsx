@@ -1,21 +1,25 @@
 /* eslint-disable no-unused-vars */
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
 import { Box, Image, Text } from '@chakra-ui/react';
-
 import { COLOR } from '@/styles/color';
 import { SearchInput } from '@/components/SearchInput/InputSearch';
 import { NetworkList } from '@/components/NetworkList/NetworkList';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { TokenItemProps, TokenList } from '@/components/TokenList/TokenList';
 import EarchIcon from '@/assets/icons/earth.svg';
-import { FROM_TO } from '@/constants';
+import { cosmosChainsSupported, FROM_TO } from '@/constants';
 import { SwapTokenType } from '@/types/SwapDataType';
+import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 
 import { formatTokenSymbol } from '@/utils/string';
-import { debounce } from '@/utils/helper';
-import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
+import { customSortTotalSupllyHasBalance, debounce } from '@/utils/helper';
+import { useCosmosChain } from '@/hooks/useCosmosChain';
+import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
+import { Loading } from '@/components/Loading/Loading';
+import { useCardanoChain } from '@/hooks/useCardanoChain';
 
-import { TokenListData } from '../data';
+import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
 type NetworkTokenBoxProps = {
   fromOrTo?: string;
@@ -23,6 +27,11 @@ type NetworkTokenBoxProps = {
   networkList: NetworkItemProps[];
   selectedToken?: SwapTokenType;
   disabledToken?: SwapTokenType;
+  disabledNetwork?: {
+    fromNetworkDisabled: NetworkItemProps | undefined;
+    toNetworkDisabled: NetworkItemProps | undefined;
+  };
+  setDisabledNetwork?: (network: NetworkItemProps) => void;
 };
 
 const NetworkTokenBox = ({
@@ -31,15 +40,21 @@ const NetworkTokenBox = ({
   networkList,
   selectedToken,
   disabledToken,
+  disabledNetwork,
+  setDisabledNetwork,
 }: NetworkTokenBoxProps) => {
   const [tokenSelected, setTokenSelected] = useState<TokenItemProps>();
   const [networkSelected, setNetworkSelected] = useState<NetworkItemProps>();
-  const [tokenList, setTokenList] = useState<TokenItemProps[]>([]);
   const [displayNetworkList, setDisplayNetworkList] =
     useState<NetworkItemProps[]>(networkList);
   const [displayTokenList, setDisplayTokenList] = useState<TokenItemProps[]>(
     [],
   );
+  const [isFetchingData, setIsFetchingData] = useState<boolean>(false);
+
+  const cosmos = useCosmosChain(networkSelected?.networkId!);
+
+  const cardano = useCardanoChain();
 
   const handleClickTokenItem = (token: TokenItemProps) => {
     if (!networkSelected) return;
@@ -54,6 +69,7 @@ const NetworkTokenBox = ({
 
   const handleClickNetworkItem = (network: NetworkItemProps) => {
     setNetworkSelected(network);
+    setDisabledNetwork?.(network);
     setTokenSelected({} as TokenItemProps);
     onChooseToken?.({} as SwapTokenType);
   };
@@ -89,15 +105,66 @@ const NetworkTokenBox = ({
   }, [selectedToken]);
 
   useEffect(() => {
-    const fetchTokenList = async () => {
-      // TODO: fetch token list when selected network
-      setTokenList(TokenListData);
-      setDisplayTokenList(TokenListData);
+    const fetchTokenListOfCosmos = async () => {
+      if (
+        networkSelected?.networkId &&
+        cosmosChainsSupported.includes(networkSelected.networkId)
+      ) {
+        let formatTokenList = [] as TokenItemProps[];
+        setIsFetchingData(true);
+
+        let totalSupplyOnCosmos = (await cosmos.getTotalSupply()) as Coin[];
+        if (fromOrTo === FROM_TO.FROM) {
+          const balances = (await cosmos.getAllBalances()) as Coin[];
+          totalSupplyOnCosmos = customSortTotalSupllyHasBalance(
+            totalSupplyOnCosmos,
+            balances,
+          );
+        }
+        formatTokenList = totalSupplyOnCosmos?.map((token) => ({
+          tokenId: token.denom,
+          tokenName: token.denom,
+          tokenLogo: DefaultCosmosNetworkIcon.src,
+        }));
+        setDisplayTokenList(formatTokenList);
+        setIsFetchingData(false);
+      }
     };
-    if (networkSelected?.networkId) {
-      fetchTokenList();
+    if (
+      !cosmos?.isWalletConnected &&
+      cosmosChainsSupported.includes(networkSelected?.networkId!)
+    ) {
+      cosmos?.connect();
+    } else {
+      fetchTokenListOfCosmos();
     }
-  }, [networkSelected]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [networkSelected, cosmos?.isWalletConnected]);
+
+  useEffect(() => {
+    const fetchTokenListOfCardano = async () => {
+      if (
+        networkSelected?.networkId &&
+        networkSelected.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+      ) {
+        let formatTokenList = [] as TokenItemProps[];
+        setIsFetchingData(true);
+        const totalSupplyOnCardano = cardano.getTotalSupply();
+        formatTokenList = totalSupplyOnCardano?.map((asset) => {
+          const assetWithName = asset as typeof asset & { assetName: string };
+          return {
+            tokenId: assetWithName.unit,
+            tokenName: assetWithName.assetName,
+            tokenLogo: DefaultCardanoNetworkIcon.src,
+          };
+        });
+        setDisplayTokenList(formatTokenList);
+        setIsFetchingData(false);
+      }
+    };
+    fetchTokenListOfCardano();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [networkSelected, cardano.getTotalSupply().length]);
 
   useEffect(() => {
     setDisplayNetworkList(networkList);
@@ -121,13 +188,13 @@ const NetworkTokenBox = ({
               <Text fontWeight="700" fontSize="18px">
                 {formatTokenSymbol(tokenSelected?.tokenName || '')}
               </Text>
-              <Text fontSize="12px">
-                {networkSelected?.networkId ? (
-                  networkSelected?.networkName
-                ) : (
-                  <Text fontSize="18px">Select Network</Text>
-                )}
-              </Text>
+              {networkSelected?.networkId ? (
+                <Text fontSize="12px">
+                  {networkSelected?.networkPrettyName}
+                </Text>
+              ) : (
+                <Text fontSize="18px">Select Network</Text>
+              )}
             </Box>
           </Box>
         </Box>
@@ -164,6 +231,11 @@ const NetworkTokenBox = ({
               networkList={displayNetworkList}
               networkSelected={networkSelected}
               onClickNetwork={handleClickNetworkItem}
+              disabledNetwork={
+                fromOrTo === FROM_TO.FROM
+                  ? disabledNetwork?.fromNetworkDisabled
+                  : disabledNetwork?.toNetworkDisabled
+              }
             />
           </Box>
         </Box>
@@ -181,7 +253,7 @@ const NetworkTokenBox = ({
                 handleSearch(
                   setDisplayTokenList,
                   searchString,
-                  tokenList,
+                  displayTokenList,
                   'tokenName',
                 );
               }}
@@ -193,12 +265,18 @@ const NetworkTokenBox = ({
             borderRightWidth="1px"
             borderColor={COLOR.neutral_5}
           >
-            <TokenList
-              tokenList={displayTokenList}
-              tokenSelected={tokenSelected}
-              onClickToken={handleClickTokenItem}
-              disabledToken={disabledToken}
-            />
+            {isFetchingData ? (
+              <Box mt={4}>
+                <Loading />
+              </Box>
+            ) : (
+              <TokenList
+                tokenList={displayTokenList}
+                tokenSelected={tokenSelected}
+                onClickToken={handleClickTokenItem}
+                disabledToken={disabledToken}
+              />
+            )}
           </Box>
         </Box>
       </Box>

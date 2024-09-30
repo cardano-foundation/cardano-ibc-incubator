@@ -3,6 +3,9 @@ import { transfer } from '@/apis/restapi/cardano';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
+import apolloClient from '@/apis/apollo/apolloClient';
+import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
+import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
 
@@ -21,6 +24,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver,
           port: srcPort,
           channel: srcChannel,
+          timeout: FORWARD_TIMEOUT,
         },
       };
     } else {
@@ -29,6 +33,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver: pfmReceiver,
           port: srcPort,
           channel: srcChannel,
+          timeout: FORWARD_TIMEOUT,
           next: JSON.stringify(result),
         },
       };
@@ -102,6 +107,20 @@ export async function unsignedTxTransferFromCardano(
   token: Token,
 ): Promise<{ typeUrl: string; value: any }[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
+  const cardanoTokenTrace = await apolloClient
+    .query({
+      query: GET_CARDANO_DENOM_BY_ID,
+      variables: { id: token.denom.replaceAll('.', '') },
+      fetchPolicy: 'network-only',
+    })
+    .then((res) => res.data?.cardanoIbcAsset)
+    .catch(() => ({
+      denom: '',
+      path: '',
+    }));
+  const sendTokenDenom = cardanoTokenTrace?.denom
+    ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
+    : token.denom;
   let data: any;
   if (routes.length === 1) {
     // normal transfer
@@ -112,7 +131,7 @@ export async function unsignedTxTransferFromCardano(
       sourcePort: srcPort,
       sourceChannel: srcChannel,
       token: {
-        denom: token.denom,
+        denom: sendTokenDenom,
         amount: token.amount,
       },
       sender: getPublicKeyHashFromAddress(sender),
@@ -138,7 +157,7 @@ export async function unsignedTxTransferFromCardano(
     sourcePort: srcPort,
     sourceChannel: srcChannel,
     token: {
-      denom: token.denom,
+      denom: sendTokenDenom,
       amount: token.amount,
     },
     sender: getPublicKeyHashFromAddress(sender),

@@ -1,0 +1,88 @@
+{
+  "name": "cardano-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "NODE_OPTIONS=--max-old-space-size=8192 craco start",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 craco build && gzipper compress --verbose ./build --include js,css,json ",
+    "test": "NODE_OPTIONS=--max-old-space-size=8192 craco test",
+    "eject": "craco eject",
+    "deploy": "cross-env NODE_ENV=production node server",
+    "lint": "eslint \"**/*.{ts,tsx}\""
+  },
+  "dependencies": {
+    "@apollo/client": "^3.11.8",
+    "@chain-registry/types": "^0.45.73",
+    "@emotion/react": "^11.13.0",
+    "@emotion/styled": "^11.13.0",
+    "@emurgo/cardano-serialization-lib-asmjs": "10.2.0",
+    "@mui/icons-material": "^5.16.7",
+    "@mui/material": "^5.16.7",
+    "@testing-library/jest-dom": "^5.14.1",
+    "@testing-library/react": "^13.0.0",
+    "@testing-library/user-event": "^13.2.1",
+    "@types/jest": "^27.0.1",
+    "@types/node": "^16.7.13",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "axios": "^0.21.2",
+    "buffer": "^6.0.3",
+    "chain-registry": "^1.63.90",
+    "cross-env": "^7.0.2",
+    "dayjs": "^1.11.13",
+    "dotenv": "^8.2.0",
+    "graphql": "^16.9.0",
+    "gzipper": "7.2.0",
+    "js-sha256": "^0.11.0",
+    "prop-types": "^15.8.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-json-view": "^1.21.3",
+    "react-multi-date-picker": "^4.5.2",
+    "react-router-dom": "^5.2.0",
+    "react-scripts": "5.0.1",
+    "typescript": "^4.4.2"
+  },
+  "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@babel/types": "^7.25.2",
+    "@craco/craco": "^7.1.0",
+    "@hot-loader/react-dom": "17.0.2",
+    "@types/react-router-dom": "^5.3.3",
+    "@typescript-eslint/parser": "^8.1.0",
+    "babel-eslint": "^10.1.0",
+    "eslint": "^6.6.0",
+    "eslint-config-airbnb": "^18.2.0",
+    "eslint-config-prettier": "^6.11.0",
+    "eslint-import-resolver-alias": "^1.1.2",
+    "eslint-plugin-import": "^2.24.2",
+    "eslint-plugin-jsx-a11y": "^6.3.1",
+    "eslint-plugin-prettier": "^3.1.4",
+    "eslint-plugin-react": "^7.35.0",
+    "eslint-plugin-react-hooks": "^4.0.8",
+    "husky": "^7.0.2",
+    "lint-staged": "^11.2.0",
+    "prettier": "^2.0.5"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": "eslint"
+  }
+}

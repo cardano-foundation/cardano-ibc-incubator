@@ -9,11 +9,21 @@ export const GET_CARDANO_IBC_ASSETS = gql`
         denom
         voucherTokenName
         connectionId
-        port
-        channelId
+        srcPort
+        dstChannel
+        dstPort
+        dstChannel
         path
-        id
       }
+    }
+  }
+`;
+
+export const GET_CARDANO_DENOM_BY_ID = gql`
+  query CardanoIbcAsset($id: String!) {
+    cardanoIbcAsset(id: $id) {
+      denom
+      path
     }
   }
 `;
