@@ -2,6 +2,7 @@ import { transfer } from '@/apis/restapi/cardano';
 import apolloClient from '@/apis/apollo/apolloClient';
 import { getPublicKeyHashFromAddress } from './address';
 import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
+import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
 const CROSSCHAIN_SWAPS_ADDRESS =
@@ -18,7 +19,7 @@ const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
           receiver,
           port: srcPort,
           channel: srcChannel,
-          timeout: "60m",
+          timeout: FORWARD_TIMEOUT,
         },
       };
     } else {
@@ -28,7 +29,7 @@ const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
           port: srcPort,
           channel: srcChannel,
           next: result,
-          timeout: "60m",
+          timeout: FORWARD_TIMEOUT,
         },
       };
     }
@@ -93,7 +94,7 @@ const buildForwardMemo = ({
           port: srcPort,
           channel: srcChannel,
           next: result,
-          timeout: "60m",
+          timeout: FORWARD_TIMEOUT,
         },
       };
     }

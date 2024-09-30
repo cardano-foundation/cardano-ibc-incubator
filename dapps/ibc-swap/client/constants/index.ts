@@ -34,6 +34,11 @@ export const DEFAULT_PFM_FEE = '0.100000000000000000';
 
 export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000);
 
+export const DEFAULT_FORWARD_TIMEOUT = '60m';
+
+export const FORWARD_TIMEOUT =
+  process.env.NEXT_PUBLIC_FORWARD_TIMEOUT || DEFAULT_FORWARD_TIMEOUT;
+
 // common Cosmos urls query
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denom_traces';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;

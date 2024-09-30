@@ -5,6 +5,7 @@ import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
 import apolloClient from '@/apis/apollo/apolloClient';
 import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
+import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
 
@@ -23,7 +24,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver,
           port: srcPort,
           channel: srcChannel,
-          timeout: "60m",
+          timeout: FORWARD_TIMEOUT,
         },
       };
     } else {
@@ -32,7 +33,7 @@ function buildForwardMemo(routes: string[], receiver: string): string {
           receiver: pfmReceiver,
           port: srcPort,
           channel: srcChannel,
-          timeout: "60m",
+          timeout: FORWARD_TIMEOUT,
           next: JSON.stringify(result),
         },
       };
