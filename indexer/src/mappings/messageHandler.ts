@@ -15,6 +15,10 @@ import { MsgTransfer } from "../types/proto-interfaces/ibc/applications/transfer
 import { getCounterChainFromChannel, getPathFromDenom } from "../query";
 import crypto from "crypto";
 
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+const MAX_RETRY = 5;
 export async function handleMsgAckPacket(
   msg: CosmosMessage<MsgAcknowledgement>
 ): Promise<void> {
@@ -75,7 +79,7 @@ export async function handleMsgAckPacket(
  * @returns
  */
 export async function handleMsgRecvPacket(
-  msg: CosmosMessage<MsgRecvPacket>
+  msg: CosmosMessage<MsgRecvPacket>, retry: number = 0 
 ): Promise<void> {
   const chainId = msg.block.header.chainId;
   const sourcePort = msg.msg.decodedMsg.packet.sourcePort.toString();
@@ -119,6 +123,12 @@ export async function handleMsgRecvPacket(
   );
   const base64Data = Buffer.from(msg.msg.decodedMsg.packet.data).toString();
   if (packet === undefined) {
+    if (["sidechain", "localosmosis"].includes(sourceChain) && retry < MAX_RETRY) {
+      await delay(1000);
+      logger.info(`Retry handleMsgRecvPacket: ${retry}`);
+      return handleMsgRecvPacket(msg, retry + 1)
+    }
+
     packet = Packet.create({
       id: `${sourceChain}_${sourcePort}_${sourceChannel}_${sequence}`,
       sequence: BigInt(sequence),
@@ -132,7 +142,12 @@ export async function handleMsgRecvPacket(
       parentPacketId: undefined,
       module: sourcePort === "transfer" ? "transfer" : "",
     });
+    logger.info(
+      `save packet recv: ${sourceChain}_${sourcePort}_${sourceChannel}_${sequence}`
+    );
     await packet.save();
+    const mock = await Packet.get(packet.id);
+    logger.info(`recv query: ${mock?.id}, ${mock?.parentPacketId}`);
   }
   // const packetFlow = await PacketFlow.get(packet.id);
   // if (packetFlow !== undefined) {
@@ -276,22 +291,22 @@ export async function handleMsgRecvPacket(
       } else {
         sendDestChain = sendChannel.counterpartyChainId;
       }
-
+     
       const sendPacket = Packet.create({
-        id: `${chainId}_${sendSourcePort}_${sendSourceChannel}_${sendSequence}`,
-        sequence: BigInt(sendSequence),
-        srcChain: chainId,
-        srcPort: sendSourcePort,
-        srcChannel: sendSourceChannel,
-        dstChain: sendDestChain,
-        dstPort: sendDestPort,
-        dstChannel: sendDestChannel,
-        data: sendData,
-        parentPacketId: packet.id,
-        module: sourcePort === "transfer" ? "transfer" : "",
-      });
-      // logger.info(`SendPacket: ${sendPacket.id}, ${sendPacket.parentPacketId}`);
-      await sendPacket.save();
+          id: `${chainId}_${sendSourcePort}_${sendSourceChannel}_${sendSequence}`,
+          sequence: BigInt(sendSequence),
+          srcChain: chainId,
+          srcPort: sendSourcePort,
+          srcChannel: sendSourceChannel,
+          dstChain: sendDestChain,
+          dstPort: sendDestPort,
+          dstChannel: sendDestChannel,
+          data: sendData,
+          parentPacketId: packet.id,
+          module: sourcePort === "transfer" ? "transfer" : "",
+        });
+      logger.info(`save SendPacket: ${sendPacket.id}, ${sendPacket.parentPacketId}`);
+        await sendPacket.save();
     
       // create send Msg
       const sendMsg = Message.create({
@@ -310,6 +325,7 @@ export async function handleMsgRecvPacket(
 
     }
   }
+  logger.info("finish handleMsgRecvPacket");
 }
 
 export async function handleMsgTransfer(

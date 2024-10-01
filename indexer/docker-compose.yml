@@ -44,6 +44,7 @@ services:
       - --multi-chain
       - --db-schema=cardano-ibc
       - --disable-historical
+      - --store-flush-interval=1
       - -f=app/osmosis.yaml
     healthcheck:
       test:
@@ -75,7 +76,8 @@ services:
       - ${SUB_COMMAND:-} # set SUB_COMMAND env variable to "test" to run tests
       - --multi-chain
       - --db-schema=cardano-ibc
-      - --disable-historicalql-node-cosm
+      - --disable-historical
+      - --store-flush-interval=1
       - -f=app/cosmoshub.yaml
     healthcheck:
       test:
@@ -90,7 +92,7 @@ services:
       retries: 10
 
   subquery-node-cardano:
-    image: cuonglv0297/subql-node-cardano:v2.0.3
+    image: cuonglv0297/subql-node-cardano:v2.0.6
     depends_on:
       "postgres":
         condition: service_healthy
