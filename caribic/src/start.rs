@@ -7,7 +7,7 @@ use crate::setup::{
 use crate::utils::{
     execute_script, execute_script_with_progress, extract_tendermint_client_id,
     extract_tendermint_connection_id, get_cardano_state, wait_for_health_check,
-    wait_until_file_exists, CardanoQuery,
+    wait_until_file_exists, download_file, unzip_file, copy_dir_all, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -25,22 +25,36 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     copy(
-        relayer_path.join(".env.example"),
+        relayer_env_template_path,
         relayer_path.join(".env"),
-        &options,
+        &fs_extra::file::CopyOptions::new().overwrite(true),
     )
     .map_err(|error| format!("Error copying template .env file {}", error.to_string()))?;
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
-    execute_script_with_progress(
+    let relayer_config_dest_path = relayer_path.join(".config");
+    if relayer_config_dest_path.as_path().exists() {
+        fs::remove_dir_all(relayer_config_dest_path.as_path()).expect("failed to cleanup target folder");
+    }
+    copy_dir_all(
+        relayer_config_source_path,
+        relayer_config_dest_path.as_path(),
+    ).map_err(|error| format!("Error copying relayer config directory {}", error.to_string()))?;
+    
+    /*execute_script(
+        relayer_path,
+        "docker",
+        Vec::from(["compose", "stop"]),
+        None)?;*/
+
+    /*execute_script_with_progress(
         relayer_path,
         "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
         "⚡ Starting relayer...",
-    )?;
+    )?;*/
+
     Ok(())
 }
 
@@ -178,7 +192,7 @@ pub async fn start_local_cardano_network(
             progress_bar.finish_and_clear();
         }
 
-        verbose("✅ Successully deployed the contracts");
+        verbose("✅ Successfully deployed the contracts");
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
         copy(
@@ -199,6 +213,44 @@ pub async fn start_local_cardano_network(
         }
         Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
     }
+}
+
+pub async fn start_cosmos_sidechain_from_repository(download_url: &str, chain_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if chain_root_path.exists() {
+        log(&format!(
+            "{} 📝 Demo chain already downloaded. Cleaning up to get the most recent version...",
+            style("Step 0/2").bold().dim()
+        ));
+        fs::remove_dir_all(&chain_root_path)
+        .expect("Failed to cleanup demo chain folder.");
+    }
+    fs::create_dir_all(&chain_root_path).expect("Failed to create folder for demo chain.");
+    download_file(
+        download_url,
+        &chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        Some(IndicatorMessage {
+            message: "Downloading cardano-ibc-summit-demo project".to_string(),
+            step: "Step 1/2".to_string(),
+            emoji: "📥 ".to_string(),
+        }),
+    )
+    .await
+    .expect("Failed to download cardano-ibc-summit-demo project");
+
+    log(&format!(
+        "{} 📦 Extracting cardano-ibc-summit-demo project...",
+        style("Step 2/2").bold().dim()
+    ));
+
+    unzip_file(
+        chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        chain_root_path,
+    )
+    .expect("Failed to unzip cardano-ibc-summit-demo project");
+    fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
+        .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
+    Ok(())
+    //return start_cosmos_sidechain(chain_root_path).await;
 }
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

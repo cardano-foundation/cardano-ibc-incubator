@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap::Subcommand;
+use start::start_cosmos_sidechain_from_repository;
 use start::start_gateway;
 use start::start_mithril;
 use start::wait_and_start_mithril_genesis;
@@ -46,6 +47,8 @@ enum Commands {
     Stop,
     /// Performs a token swap between Cardano and Osmosis
     Demo,
+    /// Creates a local development environment using a specific Cosmos side chain developed for demonstration purposes
+    VesselDemo,
 }
 
 fn stop_bridge_gracefully() {
@@ -96,6 +99,7 @@ async fn main() {
                     exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
                 }
             }
+
             // Start the local Cardano network and its services
             match start_local_cardano_network(&project_root_path).await {
                 Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
@@ -132,8 +136,12 @@ async fn main() {
                     exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
                 }
             }
+
             // Start the relayer
-            match start_relayer(project_root_path.join("relayer").as_path()) {
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                project_root_path.join("relayer/.env.example").as_path(),
+                project_root_path.join("relayer/examples").as_path()) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }
@@ -143,6 +151,7 @@ async fn main() {
                 Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
                 Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
             };
+
             // Configure Hermes and build channels between Osmosis with Cosmos
             match configure_hermes(osmosis_dir.as_path()) {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
@@ -165,5 +174,47 @@ async fn main() {
             logger::log("\n❎ Bridge stopped successfully");
         }
         Commands::Demo => logger::log("Demo"),
+        Commands::VesselDemo => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+
+            // Start the local Cardano network and its services
+            /*match start_local_cardano_network(&project_root_path).await {
+                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
+                Err(error) => exit_with_error(&format!(
+                    "❌ Failed to start local Cardano network: {}",
+                    error
+                )),
+            }
+
+            // Start gateway
+            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                Ok(_) => logger::log("✅ Gateway started successfully"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
+            }*/
+
+            // Start the Cosmos sidechain
+            let cosmos_chain_repo_url = format!("{}/archive/refs/heads/{}.zip", project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch);
+            let chain_root_path = project_root_path.join("chains/summit-demo/");
+            match start_cosmos_sidechain_from_repository(
+                &cosmos_chain_repo_url,
+                chain_root_path.as_path()).await {
+                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                Err(error) => {
+                    exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
+                }
+            }
+
+            // Start the relayer
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                chain_root_path.join("relayer/.env.relayer").as_path(),
+                chain_root_path.join("relayer/config").as_path()) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
+            }
+
+            logger::log("\n✅ Vessel Oracle demo started successfully");
+        }
     }
 }

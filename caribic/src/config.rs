@@ -17,6 +17,7 @@ pub struct Config {
     pub mithril: Mithril,
     pub local_osmosis: bool,
     pub cardano: Cardano,
+    pub vessel_oracle: VesselOracle,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +37,12 @@ pub struct Mithril {
 pub struct Cardano {
     pub services: Services,
     pub bootstrap_addresses: Vec<BootstrapAddress>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VesselOracle {
+    pub repo_base_url: String,
+    pub target_branch: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -194,6 +201,10 @@ impl Config {
                     amount: 30000000000,
                 }
             ]},
+            vessel_oracle: VesselOracle {
+                repo_base_url: "https://github.com/cardano-foundation/cardano-ibc-summit-demo".to_string(),
+                target_branch: "main".to_string(),
+            }
         };
 
         if let Some(home_path) = home_dir() {
