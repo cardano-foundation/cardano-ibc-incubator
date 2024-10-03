@@ -141,7 +141,8 @@ async fn main() {
             match start_relayer(
                 project_root_path.join("relayer").as_path(),
                 project_root_path.join("relayer/.env.example").as_path(),
-                project_root_path.join("relayer/examples").as_path()) {
+                project_root_path.join("relayer/examples").as_path(),
+                project_root_path.join("cardano/deployments/handler.json").as_path()) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }
@@ -179,7 +180,7 @@ async fn main() {
             let project_root_path = Path::new(&project_config.project_root);
 
             // Start the local Cardano network and its services
-            /*match start_local_cardano_network(&project_root_path).await {
+            match start_local_cardano_network(&project_root_path).await {
                 Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
                 Err(error) => exit_with_error(&format!(
                     "❌ Failed to start local Cardano network: {}",
@@ -191,7 +192,7 @@ async fn main() {
             match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
                 Ok(_) => logger::log("✅ Gateway started successfully"),
                 Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
-            }*/
+            }
 
             // Start the Cosmos sidechain
             let cosmos_chain_repo_url = format!("{}/archive/refs/heads/{}.zip", project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch);
@@ -209,7 +210,8 @@ async fn main() {
             match start_relayer(
                 project_root_path.join("relayer").as_path(),
                 chain_root_path.join("relayer/.env.relayer").as_path(),
-                chain_root_path.join("relayer/config").as_path()) {
+                chain_root_path.join("relayer/config").as_path(),
+                project_root_path.join("cardano/deployments/handler.json").as_path()) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }

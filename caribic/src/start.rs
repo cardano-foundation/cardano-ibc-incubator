@@ -25,7 +25,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
-pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path, chain_handler_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     copy(
         relayer_env_template_path,
         relayer_path.join(".env"),
@@ -42,18 +42,25 @@ pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, rela
         relayer_config_dest_path.as_path(),
     ).map_err(|error| format!("Error copying relayer config directory {}", error.to_string()))?;
     
-    /*execute_script(
+    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    copy(
+        chain_handler_path,
+        relayer_config_dest_path.as_path().join("chain_handler.json"),
+        &options,
+    )?;
+
+    execute_script(
         relayer_path,
         "docker",
         Vec::from(["compose", "stop"]),
-        None)?;*/
+        None)?;
 
-    /*execute_script_with_progress(
+    execute_script_with_progress(
         relayer_path,
         "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
         "⚡ Starting relayer...",
-    )?;*/
+    )?;
 
     Ok(())
 }
@@ -135,8 +142,8 @@ pub async fn start_local_cardano_network(
         ),
         &optional_progress_bar,
     );
-
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+
     log_or_show_progress(
         &format!(
             "{} 🛠️ Building Aiken validators",
@@ -150,6 +157,7 @@ pub async fn start_local_cardano_network(
         Vec::from(["build", "--trace-level", "verbose"]),
         None,
     )?;
+
     log_or_show_progress(
         &format!(
             "{} 🤖 Generating validator off-chain types",
@@ -200,11 +208,6 @@ pub async fn start_local_cardano_network(
             project_root_path.join("cardano/gateway/src/deployment/handler.json"),
             &options,
         )?;
-        copy(
-            project_root_path.join("cardano/deployments/handler.json"),
-            project_root_path.join("relayer/examples/demo/configs/chains/chain_handler.json"),
-            &options,
-        )?;
 
         Ok(())
     } else {
@@ -249,8 +252,8 @@ pub async fn start_cosmos_sidechain_from_repository(download_url: &str, chain_ro
     .expect("Failed to unzip cardano-ibc-summit-demo project");
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
-    Ok(())
-    //return start_cosmos_sidechain(chain_root_path).await;
+
+    return start_cosmos_sidechain(chain_root_path).await;
 }
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

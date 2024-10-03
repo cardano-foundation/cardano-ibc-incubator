@@ -35,7 +35,7 @@ WORKDIR /root/
 # Copy the built application binary and scripts from the builder stage
 COPY --from=builder /app/bin/rly ./bin/
 COPY --from=builder /app/scripts ./scripts
-COPY --from=builder /app/examples ./examples
+COPY --from=builder /app/.config ./.config
 COPY --from=builder /app/.env .env
 
 # Use Dockerize to wait for the Node.js service to be ready before starting the application
