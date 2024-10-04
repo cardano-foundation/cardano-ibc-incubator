@@ -24,4 +24,5 @@ export type UnsignedRecvPacketUnescrowDto = {
   verifyProofPolicyId: PolicyId;
   verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
+  denomToken: string;
 };

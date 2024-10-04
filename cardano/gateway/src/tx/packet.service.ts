@@ -466,10 +466,14 @@ export class PacketService {
     if (
       this._hasVoucherPrefix(
         fungibleTokenPacketData.denom,
-        convertHex2String(packet.destination_port),
-        convertHex2String(packet.destination_channel),
+        convertHex2String(packet.source_port),
+        convertHex2String(packet.source_channel),
       )
     ) {
+      const denomToken = fungibleTokenPacketData.denom.replace(
+        `${convertHex2String(packet.source_port)}/${convertHex2String(packet.source_channel)}/`,
+        '',
+      );
       this.logger.log('recv unescrow');
       const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
         channelUtxo,
@@ -494,6 +498,8 @@ export class PacketService {
         verifyProofPolicyId,
         verifyProofRefUTxO,
         encodedVerifyProofRedeemer,
+
+        denomToken: denomToken,
       };
       return this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
     }
@@ -961,7 +967,7 @@ export class PacketService {
 
         channelTokenUnit,
         voucherTokenUnit,
-        denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
+        denomToken: normalizeDenomTokenTransfer(voucherTokenUnit),
 
         sendPacketPolicyId,
         sendPacketRefUTxO,
@@ -1213,13 +1219,13 @@ export class PacketService {
       };
       return this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
     }
-    if (!('err' in acknowledgementResponse)) {
+    if (!('err' in acknowledgementResponse || 'error' in acknowledgementResponse)) {
       throw new GrpcInternalException('Acknowledgement Response invalid: unknown result');
     }
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       createIBCModuleRedeemer(channelId, fTokenPacketData, {
         AcknowledgementError: {
-          err: convertString2Hex(acknowledgementResponse.err as string),
+          err: convertString2Hex((acknowledgementResponse.err ?? acknowledgementResponse.error) as string),
         },
       }),
       'iBCModuleRedeemer',
@@ -1233,6 +1239,10 @@ export class PacketService {
       )
     ) {
       this.logger.log('AckPacketUnescrow');
+      let denom =
+        fungibleTokenPacketData.denom === convertString2Hex(LOVELACE)
+          ? convertHex2String(fungibleTokenPacketData.denom)
+          : fungibleTokenPacketData.denom;
       const unsignedAckPacketUnescrowParams: UnsignedAckPacketUnescrowDto = {
         channelUtxo,
         connectionUtxo,
@@ -1248,7 +1258,7 @@ export class PacketService {
         transferAmount: BigInt(fungibleTokenPacketData.amount),
         senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
 
-        denomToken: normalizeDenomTokenTransfer(fungibleTokenPacketData.denom),
+        denomToken: normalizeDenomTokenTransfer(denom),
         constructedAddress,
 
         ackPacketPolicyId,
@@ -1262,6 +1272,7 @@ export class PacketService {
       return this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
     }
 
+    this.logger.log('AckPacketMint');
     // build encode mint voucher redeemer
     const mintVoucherRedeemer: MintVoucherRedeemer = {
       RefundVoucher: {
