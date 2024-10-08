@@ -173,9 +173,9 @@ impl Config {
                     chain_observer_type: "pallas".to_string(),
                     cardano_node_dir: "/root/.caribic/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
                     cardano_node_version: "8.9.1".to_string(),
-                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-820d937".to_string(),
-                    client_image: "ghcr.io/input-output-hk/mithril-client:main-820d937".to_string(),
-                    signer_image: "ghcr.io/input-output-hk/mithril-signer:main-820d937".to_string(),
+                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-9fd9ae8".to_string(),
+                    client_image: "ghcr.io/input-output-hk/mithril-client:main-9fd9ae8".to_string(),
+                    signer_image: "ghcr.io/input-output-hk/mithril-signer:main-9fd9ae8".to_string(),
                 }
             },
             local_osmosis: true,
