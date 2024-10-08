@@ -931,7 +931,7 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let offset = 2;
+    let offset = 3;
     let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
     let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?

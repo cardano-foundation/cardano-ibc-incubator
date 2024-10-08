@@ -220,6 +220,7 @@ async fn main() {
             }
 
             let mut cardano_current_epoch = 0;
+
             if project_config.mithril.enabled {
                 // Start Mithril if needed
                 match start_mithril(&project_root_path).await {
@@ -251,16 +252,6 @@ async fn main() {
                 }
             }
 
-            // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                chain_root_path.join("relayer/.env.relayer").as_path(),
-                chain_root_path.join("relayer/config").as_path(),
-                project_root_path.join("cardano/deployments/handler.json").as_path()) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error)),
-            }
-
             if project_config.mithril.enabled {
                 // Wait for Mithril to start reading the immutable cardano node files
                 match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
@@ -269,6 +260,16 @@ async fn main() {
                         exit_vessel_demo_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
                 }
             }
+            }
+
+            // Start the relayer
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                chain_root_path.join("relayer/.env.relayer").as_path(),
+                chain_root_path.join("relayer/config").as_path(),
+                project_root_path.join("cardano/deployments/handler.json").as_path()) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }
 
             logger::log("\n✅ Vessel Oracle demo started successfully");
