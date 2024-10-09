@@ -931,13 +931,12 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let offset = 3;
     let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
     let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
         + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
 
-    let target_epoch = cardano_epoch_on_mithril_start + offset;
+    let target_epoch = cardano_epoch_on_mithril_start + 2;
     let target_slot = target_epoch * slots_per_epoch;
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
@@ -980,7 +979,7 @@ pub fn wait_and_start_mithril_genesis(
                 current_slot, slots_left
             ));
         }
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(Duration::from_secs(10));
     }
 
     let mithril_config = config::get_config().mithril;
@@ -1025,6 +1024,49 @@ pub fn wait_and_start_mithril_genesis(
             ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
         ]),
     )?;
+
+    current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+
+    let target_epoch = cardano_epoch_on_mithril_start + 4;
+    let target_slot = target_epoch * slots_per_epoch;
+    slots_left = target_slot.saturating_sub(current_slot);
+
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
+        } else {
+            log(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
+        );
+        }
+    }
+
+    while slots_left > 0 {
+        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+        slots_left = target_slot.saturating_sub(current_slot);
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
