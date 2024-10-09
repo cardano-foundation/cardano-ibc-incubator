@@ -60,7 +60,7 @@ pub struct Services {
     pub postgres: bool,
 }
 
-pub async fn create_config_file(config_path: &str) -> Config {
+pub async fn create_config_file(config_path: &str, target_branch: &str) -> Config {
     let mut default_config = Config::default();
 
     if get_verbosity() == Verbosity::Verbose
@@ -110,9 +110,9 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         project_root_path.display(),
                     ));
                     fs::create_dir_all(parent_dir).expect("Failed to create project root folder.");
-                    let github_url = "https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/main.zip";
+                    let github_url = format!("https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/{}.zip", target_branch);
                     download_file(
-                        github_url,
+                        &github_url,
                         &parent_dir.join("cardano-ibc-incubator-main.zip"),
                         Some(IndicatorMessage {
                             message: "Downloading cardano-ibc-incubator project".to_string(),
@@ -218,7 +218,7 @@ impl Config {
         default_config
     }
 
-    async fn load_from_file(config_path: &str) -> Self {
+    async fn load_from_file(config_path: &str, target_branch: &str) -> Self {
         if Path::new(config_path).exists() {
             let file_content =
                 fs::read_to_string(config_path).expect("Failed to read config file.");
@@ -227,7 +227,7 @@ impl Config {
                 Config::default()
             })
         } else {
-            let default_config = create_config_file(config_path).await;
+            let default_config = create_config_file(config_path, target_branch).await;
             let parent_dir = Path::new(config_path).parent().unwrap();
             create_all(parent_dir, false).expect("Failed to create config dir.");
             let json_content = serde_json::to_string_pretty(&default_config)
@@ -243,9 +243,9 @@ lazy_static! {
     static ref CONFIG: Mutex<Config> = Mutex::new(Config::default());
 }
 
-pub async fn init(config_path: &str) {
+pub async fn init(config_path: &str, target_branch: &str) {
     let mut config = CONFIG.lock().unwrap();
-    *config = Config::load_from_file(config_path).await;
+    *config = Config::load_from_file(config_path, target_branch).await;
 }
 
 pub fn get_config() -> Config {
