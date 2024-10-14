@@ -172,12 +172,16 @@ pub async fn start_local_cardano_network(
         None,
     )?;
 
+    // Remove the old handler file
+    fs::remove_file(project_root_path.join("cardano/deployments/handler.json"))
+        .expect("Failed to cleanup cardano/deployments/handler.json");
+
     let handler_json_exists = wait_until_file_exists(
         project_root_path
             .join("cardano/deployments/handler.json")
             .as_path(),
         20,
-        2000,
+        5000,
         || {
             let _ = execute_script(
                 project_root_path.join("cardano").as_path(),

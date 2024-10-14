@@ -60,7 +60,7 @@ pub struct Services {
     pub postgres: bool,
 }
 
-pub async fn create_config_file(config_path: &str, target_branch: &str) -> Config {
+pub async fn create_config_file(config_path: &str) -> Config {
     let mut default_config = Config::default();
 
     if get_verbosity() == Verbosity::Verbose
@@ -109,6 +109,21 @@ pub async fn create_config_file(config_path: &str, target_branch: &str) -> Confi
                         "cardano-ibc-incubator folder does not exist. It will be downloaded to: {}",
                         project_root_path.display(),
                     ));
+
+                    let default_target_branch = "main".to_string();
+                    log(&format!(
+                        "Enter the target branch you want to fetch the source code from (default: {}):",
+                        default_target_branch
+                    ));
+    
+                    let mut target_branch = String::new();
+                    stdin().read_line(&mut target_branch).unwrap();
+                    let target_branch = if target_branch.trim().is_empty() {
+                        default_target_branch
+                    } else {
+                        target_branch.trim().to_string()
+                    };
+
                     fs::create_dir_all(parent_dir).expect("Failed to create project root folder.");
                     let github_url = format!("https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/{}.zip", target_branch);
                     download_file(
@@ -227,7 +242,7 @@ impl Config {
         default_config
     }
 
-    async fn load_from_file(config_path: &str, target_branch: &str) -> Self {
+    async fn load_from_file(config_path: &str) -> Self {
         if Path::new(config_path).exists() {
             let file_content =
                 fs::read_to_string(config_path).expect("Failed to read config file.");
@@ -236,7 +251,7 @@ impl Config {
                 Config::default()
             })
         } else {
-            let default_config = create_config_file(config_path, target_branch).await;
+            let default_config = create_config_file(config_path).await;
             let parent_dir = Path::new(config_path).parent().unwrap();
             create_all(parent_dir, false).expect("Failed to create config dir.");
             let json_content = serde_json::to_string_pretty(&default_config)
@@ -252,9 +267,9 @@ lazy_static! {
     static ref CONFIG: Mutex<Config> = Mutex::new(Config::default());
 }
 
-pub async fn init(config_path: &str, target_branch: &str) {
+pub async fn init(config_path: &str) {
     let mut config = CONFIG.lock().unwrap();
-    *config = Config::load_from_file(config_path, target_branch).await;
+    *config = Config::load_from_file(config_path).await;
 }
 
 pub fn get_config() -> Config {

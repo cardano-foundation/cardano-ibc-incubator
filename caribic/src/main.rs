@@ -35,9 +35,6 @@ struct Args {
     /// Configuration file name. It should be in the root directory of the project
     #[arg(short, long, default_value = default_config_path().into_os_string())]
     config: PathBuf,
-    /// Target branch name to checkout core repository from
-    #[arg(short, long, default_value = "main")]
-    target_branch: String,
 }
 
 #[derive(Subcommand)]
@@ -115,7 +112,7 @@ async fn main() {
     config::init(args.config.to_str().unwrap_or_else(|| {
         logger::error("Failed to get configuration file path");
         panic!("Failed to get configuration file path");
-    }), args.target_branch.as_str())
+    }))
     .await;
 
     match args.command {
