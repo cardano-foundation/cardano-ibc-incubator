@@ -93,7 +93,7 @@ services:
       - ./kupo-db:/db
 
   postgres:
-    image: postgres:11.18-alpine
+    image: postgres:14.10-alpine
     environment:
       - POSTGRES_LOGGING=true
       - POSTGRES_DB_FILE=/run/secrets/postgres_db
