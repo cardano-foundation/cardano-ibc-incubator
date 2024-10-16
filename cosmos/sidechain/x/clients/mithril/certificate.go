@@ -14,9 +14,6 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-const LayoutMicros = "2006-01-02T15:04:05.000000Z"
-const Layout = "2006-01-02T15:04:05.000000000Z"
-
 type FeedHasher interface {
 	FeedHash(hasher hash.Hash)
 }
@@ -150,11 +147,11 @@ func FromCertificateMetadataProto(metadata *CertificateMetadata) (*entities.Cert
 		return nil, err
 	}
 
-	initiatedAt, err := time.Parse(LayoutMicros, metadata.InitiatedAt)
+	initiatedAt, err := time.Parse(time.RFC3339Nano, metadata.InitiatedAt)
 	if err != nil {
 		return nil, err
 	}
-	sealedAt, err := time.Parse(Layout, metadata.SealedAt)
+	sealedAt, err := time.Parse(time.RFC3339Nano, metadata.SealedAt)
 	if err != nil {
 		return nil, err
 	}

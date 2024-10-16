@@ -125,6 +125,53 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
 
+    // wait until slot 160 before starting db-sync
+    let mut current_slot = get_cardano_state(project_root_path, CardanoQuery::Slot)?;
+    let target_slot: u64 = 160;
+    let mut slots_left = target_slot.saturating_sub(current_slot);
+
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 db-sync needs to wait until slot 160 before starting up to not stall on index creation .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
+        } else {
+            log(
+            "🍵 db-sync needs to wait until slot 160 before starting up to not stall on index creation ..",
+        );
+        }
+    }
+
+    while slots_left > 0 {
+        current_slot = get_cardano_state(project_root_path, CardanoQuery::Slot)?;
+        slots_left = target_slot.saturating_sub(current_slot);
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
+
     if config::get_config().cardano.services.db_sync {
         prepare_db_sync(cardano_dir.as_path())?;
         execute_script(
@@ -294,7 +341,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     wait_for_health_check(
         "http://127.0.0.1:4500/",
         60,
-        5000,
+        10000,
         None::<fn(&String) -> bool>,
     )
     .await?;

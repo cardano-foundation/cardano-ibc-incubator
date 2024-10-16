@@ -266,9 +266,8 @@ export class ClientService {
     let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
       ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
-    const foundHeaderHeight = currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight);
 
-    if (foundHeaderHeight) {
+    if (!currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
       console.dir(
         {
           proofHeight: headerHeight,
