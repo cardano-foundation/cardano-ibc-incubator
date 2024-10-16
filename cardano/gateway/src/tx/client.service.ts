@@ -56,11 +56,11 @@ export class ClientService {
         constructedAddress,
       );
 
-      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 3n * 10n ** 5n);
+      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
       const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
-        throw new GrpcInternalException("create client failed: tx time invalid");
+        throw new GrpcInternalException(`create client failed: tx time invalid consesusState.timestamp ${consensusState.timestamp} validToTime ${validToTime} validToSlot ${validToSlot} currentSlot ${currentSlot}`);
       }
 
       const unSignedTxValidTo: Tx = unsignedCreateClientTx.validTo(validToTime);

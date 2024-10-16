@@ -722,6 +722,7 @@ export class QueryService {
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
+    this.logger.log(`found tx for hash = ${request.hash}`, 'queryTransactionByHash');
 
     // get create_client events from tx
     const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(tx.height);
@@ -730,6 +731,8 @@ export class QueryService {
       const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
       createClientEvent = txsAuthOrClientsResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
     }
+
+    this.logger.log(`create client events related to tx hash = ${request.hash} createClientEvent = ${createClientEvent}`, 'queryTransactionByHash');
 
     const response: QueryTransactionByHashResponse = {
       hash: tx.hash,
