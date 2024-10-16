@@ -1031,7 +1031,7 @@ pub fn wait_and_start_mithril_genesis(
 
     current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
-    let target_epoch = cardano_epoch_on_mithril_start + 4;
+    let target_epoch = cardano_epoch_on_mithril_start + 5;
     let target_slot = target_epoch * slots_per_epoch;
     slots_left = target_slot.saturating_sub(current_slot);
 

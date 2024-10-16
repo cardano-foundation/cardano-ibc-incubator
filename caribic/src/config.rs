@@ -187,7 +187,7 @@ impl Config {
                     genesis_secret_key: "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d".to_string(),
                     chain_observer_type: "pallas".to_string(),
                     cardano_node_dir: "/root/.caribic/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
-                    cardano_node_version: "9.1.0".to_string(),
+                    cardano_node_version: "9.1.1".to_string(),
                     aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-9fd9ae8".to_string(),
                     client_image: "ghcr.io/input-output-hk/mithril-client:main-9fd9ae8".to_string(),
                     signer_image: "ghcr.io/input-output-hk/mithril-signer:main-9fd9ae8".to_string(),
