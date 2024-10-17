@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -715,6 +716,7 @@ func (cc *CardanoProvider) broadcastTx(
 		res Response
 	)
 	if err := query(ctx, payload, &res, endpoint); err != nil {
+		fmt.Println("Could not print tx: ", len(tx), hex.EncodeToString(tx))
 		return err
 	}
 
@@ -1174,7 +1176,10 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 					fmt.Println("Error build message from gw: ", err.Error())
 					return nil
 				}
-				//fmt.Println(base64.StdEncoding.EncodeToString(txBytes))
+				if txBytes != nil {
+					fmt.Println(base64.StdEncoding.EncodeToString(txBytes))
+				}
+
 				return err
 			}
 			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)

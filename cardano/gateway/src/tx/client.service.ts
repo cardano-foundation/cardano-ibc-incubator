@@ -267,7 +267,7 @@ export class ClientService {
       ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
 
-    if (!currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
+    if (currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {
       console.dir(
         {
           proofHeight: headerHeight,
@@ -275,7 +275,7 @@ export class ClientService {
         },
         { depth: 10 },
       );
-      throw new GrpcInternalException(`Invalid proof height: ${headerHeight}`);
+      throw new GrpcInternalException(`Client already created at height: ${headerHeight}`);
     }
 
     currentConsStateInArray.unshift([newHeight, newConsState]);
