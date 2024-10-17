@@ -2,7 +2,6 @@ package cardano
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -46,6 +45,7 @@ import (
 	echovl "github.com/echovl/cardano-go"
 	any1 "github.com/golang/protobuf/ptypes/any"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // Variables used for retries
@@ -716,7 +716,7 @@ func (cc *CardanoProvider) broadcastTx(
 		res Response
 	)
 	if err := query(ctx, payload, &res, endpoint); err != nil {
-		fmt.Println("Could not print tx: ", len(tx), hex.EncodeToString(tx))
+		fmt.Println("Ogmios reported an error while trying to submit transaction: ", len(tx), submit)
 		return err
 	}
 
@@ -1166,30 +1166,65 @@ func (cc *CardanoProvider) SendMessagesToMempool(
 	defer sequenceGuard.Mu.Unlock()
 
 	// Currently only supports sending 1 message per transaction for Cardano
+	fields := []zapcore.Field{zap.String("chain_id", cc.ChainId())}
+	fields = append(fields,
+		zap.String("function", "SendMessagesToMempool"),
+		msgTypesField(msgs),
+		zap.Time("time", time.Now()),
+	)
+	cc.log.Info(
+		"Trying to submit messages",
+		fields...,
+	)
+
 	for _, msg := range msgs {
 		var seq uint64
 		err = retry.Do(func() error {
 			txBytes, sequence, fees, err := cc.buildMessages(ctx, []provider.RelayerMessage{msg}, memo, 0, txSignerKey, feegranterKey, sequenceGuard)
 			seq = sequence
 			if err != nil {
-				if strings.Contains(err.Error(), "Invalid proof height") || strings.Contains(err.Error(), "PacketReceivedException") || strings.Contains(err.Error(), "PacketAcknowledgedException") {
-					fmt.Println("Error build message from gw: ", err.Error())
+				if strings.Contains(err.Error(), "Invalid proof height") || strings.Contains(err.Error(), "Client already created at height") || strings.Contains(err.Error(), "PacketReceivedException") || strings.Contains(err.Error(), "PacketAcknowledgedException") {
+					fields := []zapcore.Field{zap.String("chain_id", cc.ChainId())}
+					fields = append(fields,
+						zap.String("msg_type", msg.Type()),
+						zap.Error(err),
+						zap.Time("time", time.Now()),
+					)
+					cc.log.Warn(
+						"Could not build transaction from message, caused by a well known error condition, will not retry if the build already failed:",
+						fields...,
+					)
+
 					return nil
 				}
-				if txBytes != nil {
-					fmt.Println(base64.StdEncoding.EncodeToString(txBytes))
-				}
+
+				fields := []zapcore.Field{zap.String("chain_id", cc.ChainId())}
+				fields = append(fields,
+					zap.String("msg_type", msg.Type()),
+					zap.Error(err),
+					zap.Time("time", time.Now()),
+				)
+				cc.log.Warn(
+					"Could not build transaction from message, caused by an unknown error condition, will retry:",
+					fields...,
+				)
 
 				return err
 			}
 			return cc.broadcastTx(ctx, txBytes, []provider.RelayerMessage{msg}, fees, asyncCtx, defaultBroadcastWaitTimeout, asyncCallbacks)
 		}, retry.Context(ctx), rtyAtt, retry.Delay(time.Second*10), rtyErr, retry.OnRetry(func(n uint, err error) {
-			cc.log.Info(
-				"Error broadcasting transaction",
-				zap.String("chain_id", cc.PCfg.ChainID),
+			fields := []zapcore.Field{zap.String("chain_id", cc.ChainId())}
+			fields = append(fields,
+				zap.String("msg_type", msg.Type()),
 				zap.Uint("attempt", n+1),
 				zap.Uint("max_attempts", rtyAttNum),
 				zap.Error(err),
+				zap.Time("time", time.Now()),
+			)
+
+			cc.log.Warn(
+				"Error broadcasting transaction",
+				fields...,
 			)
 		}))
 		if err != nil {
