@@ -8,8 +8,8 @@ export const LucidClient = {
   provide: LUCID_CLIENT,
   useFactory: async (configService: ConfigService) => {
     // Dynamically import Lucid library
-    const Lucid = await (eval(`import('@cuonglv0297/lucid-custom')`) as Promise<
-      typeof import("@cuonglv0297/lucid-custom")
+    const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<
+      typeof import("@lucid-evolution/lucid")
     >);
     // Create Lucid provider and instance
     const provider = new Lucid.Kupmios(configService.get("kupoEndpoint"), configService.get("ogmiosEndpoint"));
@@ -36,6 +36,6 @@ export const LucidImporter = {
   provide: LUCID_IMPORTER,
   useFactory: async () => {
     // Dynamically import Lucid library
-    return await (eval(`import('@cuonglv0297/lucid-custom')`) as Promise<typeof import("@cuonglv0297/lucid-custom")>);
+    return await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import("@lucid-evolution/lucid")>);
   },
 };

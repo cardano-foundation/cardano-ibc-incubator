@@ -20,7 +20,7 @@ import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { of } from 'rxjs';
-import { StateQueryClient, createStateQueryClient } from '@cardano-ogmios/client/dist/StateQuery';
+import { LedgerStateQueryClient, createLedgerStateQueryClient } from '@cardano-ogmios/client/dist/LedgerStateQuery';
 
 import blockDataMock from './mock/block-data';
 import { clientDatumMock } from './mock/client-datum';
@@ -160,9 +160,9 @@ jest.mock('@cardano-ogmios/client', () => {
     createInteractionContext: jest.fn(),
   };
 });
-jest.mock('@cardano-ogmios/client/dist/StateQuery', () => {
+jest.mock('@cardano-ogmios/client/dist/LedgerStateQuery', () => {
   return {
-    createStateQueryClient: jest.fn().mockImplementation(() => {
+    createLedgerStateQueryClient: jest.fn().mockImplementation(() => {
       return new Promise((resolve) =>
         resolve({
           blockHeight: jest
@@ -179,7 +179,7 @@ jest.mock('@cardano-ogmios/client/dist/StateQuery', () => {
     }),
   };
 });
-const createStateQueryClientMock = jest.mocked(createStateQueryClient);
+const createLedgerStateQueryClientMock = jest.mocked(createLedgerStateQueryClient);
 
 describe('QueryController', () => {
   let controller: QueryController;

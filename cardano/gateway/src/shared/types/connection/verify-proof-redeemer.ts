@@ -1,4 +1,4 @@
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 import { Height } from '../height';
 import { MerklePath, MerkleProof } from '../isc-23/merkle';
 import { ConsensusState } from '../consensus-state';
@@ -36,7 +36,7 @@ export type VerifyProofRedeemer =
 
 export function encodeVerifyProofRedeemer(
   verifyProofRedeemer: VerifyProofRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 

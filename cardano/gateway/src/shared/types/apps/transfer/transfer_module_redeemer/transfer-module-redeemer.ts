@@ -1,4 +1,4 @@
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 import { FungibleTokenPacketDatum } from '../types/fungible-token-packet-data';
 export type TransferModuleRedeemer =
   | {
@@ -11,7 +11,7 @@ export type TransferModuleRedeemer =
 
 export function encodeTransferModuleRedeemer(
   transferModuleRedeemer: TransferModuleRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
@@ -41,7 +41,7 @@ export function encodeTransferModuleRedeemer(
 // cast to fungibleTokenPacket
 export function castToTransferModuleRedeemer(
   transferModuleRedeemer: TransferModuleRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 

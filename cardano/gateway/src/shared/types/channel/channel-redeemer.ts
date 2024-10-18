@@ -1,5 +1,5 @@
 import { AuthToken } from '../auth-token';
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 import { Height } from '../height';
 import { Packet } from './packet';
 import { MerkleProof } from '../isc-23/merkle';
@@ -71,7 +71,7 @@ export type SpendChannelRedeemer =
   | 'RefreshUtxo';
 export async function encodeMintChannelRedeemer(
   mintChannelRedeemer: MintChannelRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({
@@ -151,7 +151,7 @@ export async function encodeMintChannelRedeemer(
 
 export async function encodeSpendChannelRedeemer(
   spendChannelRedeemer: SpendChannelRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const HeightSchema = Data.Object({
@@ -273,7 +273,7 @@ export async function encodeSpendChannelRedeemer(
 
 export function decodeMintChannelRedeemer(
   mintChannelRedeemer: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ): MintChannelRedeemer {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({
@@ -353,7 +353,7 @@ export function decodeMintChannelRedeemer(
 
 export function decodeSpendChannelRedeemer(
   spendChannelRedeemer: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ): SpendChannelRedeemer {
   const { Data } = Lucid;
   const HeightSchema = Data.Object({

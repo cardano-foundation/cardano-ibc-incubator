@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from "@plus/proto-types/build/ibc/core/client/v1/tx";
-import { type Tx, TxComplete, UTxO } from "@cuonglv0297/lucid-custom";
+import { type Tx, TxComplete, UTxO } from "@lucid-evolution/lucid";
 
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ConsensusState } from "../shared/types/consensus-state";

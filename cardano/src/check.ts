@@ -3,7 +3,7 @@ import {
   fromText,
   Kupmios,
   Lucid,
-} from "npm:@cuonglv0297/lucid-custom@latest";
+} from "npm:@lucid-evolution/lucid@0.3.50";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { DeploymentTemplate } from "./template.ts";

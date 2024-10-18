@@ -28,7 +28,7 @@ import {
   WebSocketErrorHandler,
   createInteractionContext,
 } from '@cardano-ogmios/client';
-import { StateQueryClient, createStateQueryClient } from '@cardano-ogmios/client/dist/StateQuery';
+import { LedgerStateQueryClient, createLedgerStateQueryClient } from '@cardano-ogmios/client/dist/LedgerStateQuery';
 import { BlockDto } from '../dtos/block.dto';
 import { connectionConfig } from '@config/kupmios.config';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
@@ -82,7 +82,7 @@ import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
-import { UTxO } from '@cuonglv0297/lucid-custom';
+import { UTxO } from '@lucid-evolution/lucid';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
@@ -212,7 +212,7 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    // const blockHeight = await (await this.getStateQueryClient()).blockHeight();
+    // const blockHeight = await (await this.getLedgerStateQueryClient()).blockHeight();
     // const latestBlockNo = await this.dbService.queryLatestBlockNo();
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
 

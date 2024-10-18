@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { type Lucid, type UTxO, Tx, type SpendingValidator, type MintingPolicy } from '@cuonglv0297/lucid-custom';
+import { type Lucid, type UTxO, TxBuilder, type SpendingValidator, type MintingPolicy } from '@lucid-evolution/lucid';
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
@@ -78,7 +78,7 @@ type CodecType =
 @Injectable()
 export class LucidService {
   constructor(
-    @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@cuonglv0297/lucid-custom'),
+    @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@lucid-evolution/lucid'),
     @Inject(LUCID_CLIENT) public lucid: Lucid,
     private configService: ConfigService,
   ) {}

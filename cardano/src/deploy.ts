@@ -2,7 +2,7 @@ import {
   Kupmios,
   Lucid,
   SLOT_CONFIG_NETWORK,
-} from "npm:@cuonglv0297/lucid-custom@latest";
+} from "npm:@lucid-evolution/lucid@latest";
 import { createDeployment } from "./create_deployment.ts";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { querySystemStart } from "./utils.ts";

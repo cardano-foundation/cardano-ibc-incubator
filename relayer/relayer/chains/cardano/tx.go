@@ -720,6 +720,7 @@ func (cc *CardanoProvider) broadcastTx(
 		return err
 	}
 
+	fmt.Println("Successfully submitted transaction via Ogmios: ", len(tx), submit)
 	go cc.waitForTx(asyncCtx, res.Result.Transaction.ID, msgs, asyncTimeout, asyncCallbacks)
 
 	return nil

@@ -1,5 +1,5 @@
 import { AuthToken } from './auth-token';
-import { type Data } from '@cuonglv0297/lucid-custom';
+import { type Data } from '@lucid-evolution/lucid';
 
 export type HandlerDatum = {
   state: {
@@ -12,7 +12,7 @@ export type HandlerDatum = {
 };
 export async function encodeHandlerDatum(
   handlerDatum: HandlerDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
@@ -35,7 +35,7 @@ export async function encodeHandlerDatum(
 
   return Data.to(handlerDatum, THandlerDatum);
 }
-export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof import('@cuonglv0297/lucid-custom')) {
+export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
   const HandlerStateSchema = Data.Object({
     next_client_sequence: Data.Integer(),

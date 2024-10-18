@@ -1,5 +1,4 @@
-import { UTxO } from '@cuonglv0297/lucid-custom';
-import { PolicyId } from 'lucid-cardano';
+import { UTxO, PolicyId } from '@lucid-evolution/lucid';
 import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedAckPacketSucceedDto = {

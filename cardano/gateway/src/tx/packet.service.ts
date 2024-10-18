@@ -16,7 +16,7 @@ import {
 } from "@plus/proto-types/build/ibc/core/channel/v1/tx";
 import { GrpcInternalException, GrpcInvalidArgumentException } from "nestjs-grpc-exceptions";
 import { RecvPacketOperator } from "./dto/packet/recv-packet-operator.dto";
-import { Tx, TxComplete, UTxO } from "@cuonglv0297/lucid-custom";
+import { TxBuilder, UTxO } from "@lucid-evolution/lucid";
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from "src/shared/helpers/sequence";
 import { ChannelDatum } from "src/shared/types/channel/channel-datum";
 import { ConnectionDatum } from "src/shared/types/connection/connection-datum";

@@ -1,4 +1,4 @@
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 export type MockModuleDatum = {
   opened_channels: Map<string, boolean>;
   received_packets: string[];
@@ -6,7 +6,7 @@ export type MockModuleDatum = {
 
 export async function decodeMockModuleDatum(
   mockModuleDatum: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
@@ -22,7 +22,7 @@ export async function decodeMockModuleDatum(
 
 export async function encodeMockModuleDatum(
   mockModuleDatum: MockModuleDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
