@@ -26,8 +26,11 @@ const env = await load();
   SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
   console.log({ chainZeroTime });
 
-  const lucid = await Lucid.new(provider, "Preview");
-  lucid.selectWalletFromPrivateKey(deployerSk);
+  const lucid = await Lucid(
+    provider,
+    "Preview"
+  );
+  lucid.selectWallet.fromPrivateKey(deployerSk);
 
   console.log("=".repeat(70));
   try {

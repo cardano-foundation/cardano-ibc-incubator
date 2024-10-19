@@ -19,7 +19,7 @@ import {
   toHex,
   Tx,
   UTxO,
-} from "npm:@lucid-evolution/lucid";
+} from "npm:@lucid-evolution/lucid@latest";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
@@ -136,14 +136,14 @@ export const setUp = async (
     );
   } else if (mode == KUPMIOS_ENV) {
     const kupo = "http://192.168.10.136:1442";
-    const ogmios = "ws://192.168.10.136:1337";
+    const ogmios = "http://192.168.10.136:1337";
     console.log("Deploy in Kupmios", kupo, ogmios);
     provider = new Kupmios(kupo, ogmios);
     const chainZeroTime = await querySystemStart(ogmios);
     SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
   } else if (mode == LOCAL_ENV) {
     const kupo = "http://localhost:1442";
-    const ogmios = "ws://localhost:1337";
+    const ogmios = "http://localhost:1337";
     console.log("Deploy in local", kupo, ogmios);
     provider = new Kupmios(kupo, ogmios);
 
@@ -158,8 +158,8 @@ export const setUp = async (
     throw new Error("Invalid provider type");
   }
 
-  const lucid = await Lucid.new(provider, "Preview");
-  lucid.selectWalletFromPrivateKey(signer.sk);
+  const lucid = await Lucid(provider, "Preview");
+  lucid.selectWallet.fromPrivateKey(signer.sk);
 
   return {
     lucid,
