@@ -8,14 +8,12 @@ export const LucidClient = {
   provide: LUCID_CLIENT,
   useFactory: async (configService: ConfigService) => {
     // Dynamically import Lucid library
-    const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<
-      typeof import("@lucid-evolution/lucid")
-    >);
+    const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import('@lucid-evolution/lucid')>);
     // Create Lucid provider and instance
-    const provider = new Lucid.Kupmios(configService.get("kupoEndpoint"), configService.get("ogmiosEndpoint"));
-    const chainZeroTime = await querySystemStart(configService.get("ogmiosEndpoint"));
+    const provider = new Lucid.Kupmios(configService.get('kupoEndpoint'), configService.get('ogmiosEndpoint'));
+    const chainZeroTime = await querySystemStart(configService.get('ogmiosEndpoint'));
     Lucid.SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
-    const lucid = await Lucid.Lucid.new(provider, "Preview");
+    const lucid = await Lucid.Lucid.new(provider, 'Preview');
     Lucid.SLOT_CONFIG_NETWORK.Preview.slotLength = 1000;
     // const lucid = await Lucid.Lucid.new(
     //   new Lucid.Blockfrost('https://cardano-preview.blockfrost.io/api/v0', 'preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC'),
@@ -36,6 +34,6 @@ export const LucidImporter = {
   provide: LUCID_IMPORTER,
   useFactory: async () => {
     // Dynamically import Lucid library
-    return await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import("@lucid-evolution/lucid")>);
+    return await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import('@lucid-evolution/lucid')>);
   },
 };

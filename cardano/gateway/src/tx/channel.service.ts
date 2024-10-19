@@ -44,7 +44,7 @@ import {
   UnsignedChannelOpenAckDto,
   UnsignedOrderedChannelOpenAckDto,
 } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
-import { UnsignedChannelCloseInitDto} from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
+import { UnsignedChannelCloseInitDto } from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,

@@ -8,7 +8,7 @@ import configuration from './config';
 import { LucidModule } from './shared/modules/lucid/lucid.module';
 import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protocals.module';
 import { ApiModule } from './api/api.module';
-import { MithrilModule } from "./shared/modules/mithril/mithril.module";
+import { MithrilModule } from './shared/modules/mithril/mithril.module';
 
 @Module({
   imports: [

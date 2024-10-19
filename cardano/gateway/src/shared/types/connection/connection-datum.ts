@@ -56,10 +56,7 @@ export async function encodeConnectionDatum(
   return Data.to(connectionDatum, TConnectionDatum);
 }
 
-export async function decodeConnectionDatum(
-  connectionDatum: string,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
+export async function decodeConnectionDatum(connectionDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const VersionSchema = Data.Object({

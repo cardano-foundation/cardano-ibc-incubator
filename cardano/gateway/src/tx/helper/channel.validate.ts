@@ -33,7 +33,7 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
   // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
 
   // Prepare the Channel open init operator object
-  let orderingChannel : Order;
+  let orderingChannel: Order;
   switch (data.channel.ordering) {
     case ChannelOrder.ORDER_NONE_UNSPECIFIED:
       orderingChannel = Order.None;
@@ -155,5 +155,5 @@ export function validateAndFormatChannelCloseInitParams(data: MsgChannelCloseIni
     channel_id: channelSequence,
     signer: data.signer,
   };
-  return { constructedAddress, channelCloseInitOperator};
+  return { constructedAddress, channelCloseInitOperator };
 }

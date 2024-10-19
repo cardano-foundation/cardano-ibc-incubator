@@ -1,5 +1,5 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from "@nestjs/common";
-import { RpcException } from "@nestjs/microservices";
+import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
+import { RpcException } from '@nestjs/microservices';
 import { Request, Response } from 'express';
 @Catch(RpcException)
 export class GrpcExceptionFilter implements ExceptionFilter {
@@ -8,8 +8,8 @@ export class GrpcExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const message = exception.message;
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-        message: message,
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: message,
     });
   }
 }

@@ -178,50 +178,53 @@ export function clientStatePath(clientId: string): string {
   return `${KEY_CLIENT_PREFIX}/${clientId}/${KEY_CLIENT_STATE}`;
 }
 
-export function getCardanoClientStateForVerifyProofRedeemer(cardanoClientState: CardanoClientState): CardanoClientState {
+export function getCardanoClientStateForVerifyProofRedeemer(
+  cardanoClientState: CardanoClientState,
+): CardanoClientState {
   return {
-     /** Chain id */
-     chain_id: convertHex2String(cardanoClientState.chain_id),
-     /** Latest height the client was updated to */
-     latest_height: cardanoClientState.latest_height,
-     /** Block height when the client was frozen due to a misbehaviour */
-     frozen_height: cardanoClientState.frozen_height,
-     /** To support finality, this state will be mark as finality after `valid_after` slots, default 0, unit: slot */
-     valid_after: cardanoClientState.valid_after,
-     /** Time when chain start */
-     genesis_time: cardanoClientState.genesis_time,
-     /** Epoch number of current chain state */
-     current_epoch: cardanoClientState.current_epoch,
-     /** Number of slots of this current epoch */
-     epoch_length: cardanoClientState.epoch_length,
-     /** Number of slots of per KES period */
-     slot_per_kes_period: cardanoClientState.slot_per_kes_period,
-     /** Current epoch validator set */
-     current_validator_set: cardanoClientState.current_validator_set.map((validator) => ({
+    /** Chain id */
+    chain_id: convertHex2String(cardanoClientState.chain_id),
+    /** Latest height the client was updated to */
+    latest_height: cardanoClientState.latest_height,
+    /** Block height when the client was frozen due to a misbehaviour */
+    frozen_height: cardanoClientState.frozen_height,
+    /** To support finality, this state will be mark as finality after `valid_after` slots, default 0, unit: slot */
+    valid_after: cardanoClientState.valid_after,
+    /** Time when chain start */
+    genesis_time: cardanoClientState.genesis_time,
+    /** Epoch number of current chain state */
+    current_epoch: cardanoClientState.current_epoch,
+    /** Number of slots of this current epoch */
+    epoch_length: cardanoClientState.epoch_length,
+    /** Number of slots of per KES period */
+    slot_per_kes_period: cardanoClientState.slot_per_kes_period,
+    /** Current epoch validator set */
+    current_validator_set: cardanoClientState.current_validator_set.map((validator) => ({
       /** vrf key hash of pool operator */
       vrf_key_hash: convertHex2String(validator.vrf_key_hash),
       /** pool id of operator */
       pool_id: convertHex2String(validator.pool_id),
-     })),
-     /** Next epoch validator set */
-     next_validator_set: cardanoClientState.next_validator_set.map((validator) => ({
+    })),
+    /** Next epoch validator set */
+    next_validator_set: cardanoClientState.next_validator_set.map((validator) => ({
       /** vrf key hash of pool operator */
       vrf_key_hash: convertHex2String(validator.vrf_key_hash),
       /** pool id of operator */
       pool_id: convertHex2String(validator.pool_id),
-     })),
-     trusting_period: cardanoClientState.trusting_period,
-     /** Path at which next upgraded client will be committed. */
-     upgrade_path: cardanoClientState.upgrade_path.map((path) => convertHex2String(path)),
-     /** IBC related auth token policy configs */
-     token_configs: {/** IBC handler token uint (policyID + name), in hex format */
-     handler_token_unit: convertHex2String(cardanoClientState.token_configs.handler_token_unit),
-     /** IBC client token policyID, in hex format */
-     client_policy_id: convertHex2String(cardanoClientState.token_configs.client_policy_id),
-     /** IBC connection token policyID, in hex format */
-     connection_policy_id: convertHex2String(cardanoClientState.token_configs.connection_policy_id),
-     /** IBC channel token policyID, in hex format */
-     channel_policy_id: convertHex2String(cardanoClientState.token_configs.channel_policy_id),
-     },
-  }
+    })),
+    trusting_period: cardanoClientState.trusting_period,
+    /** Path at which next upgraded client will be committed. */
+    upgrade_path: cardanoClientState.upgrade_path.map((path) => convertHex2String(path)),
+    /** IBC related auth token policy configs */
+    token_configs: {
+      /** IBC handler token uint (policyID + name), in hex format */
+      handler_token_unit: convertHex2String(cardanoClientState.token_configs.handler_token_unit),
+      /** IBC client token policyID, in hex format */
+      client_policy_id: convertHex2String(cardanoClientState.token_configs.client_policy_id),
+      /** IBC connection token policyID, in hex format */
+      connection_policy_id: convertHex2String(cardanoClientState.token_configs.connection_policy_id),
+      /** IBC channel token policyID, in hex format */
+      channel_policy_id: convertHex2String(cardanoClientState.token_configs.channel_policy_id),
+    },
+  };
 }

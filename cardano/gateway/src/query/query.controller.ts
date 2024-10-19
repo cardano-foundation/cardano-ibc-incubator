@@ -203,16 +203,12 @@ export class QueryController {
     return response as unknown as QueryIBCHeaderResponse;
   }
   @GrpcMethod('Query', 'NextSequenceReceive')
-  async queryNextSequenceReceive(
-    request: QueryNextSequenceReceiveRequest
-  ): Promise<QueryNextSequenceReceiveResponse> {
+  async queryNextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
     const response: QueryNextSequenceReceiveResponse = await this.packetService.queryNextSequenceReceive(request);
     return response as unknown as QueryNextSequenceReceiveResponse;
   }
   @GrpcMethod('Query', 'NextSequenceAck')
-  async queryNextSequenceAck(
-    request: QueryNextSequenceReceiveRequest
-  ): Promise<QueryNextSequenceReceiveResponse> {
+  async queryNextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
     const response: QueryNextSequenceReceiveResponse = await this.packetService.QueryNextSequenceAck(request);
     return response as unknown as QueryNextSequenceReceiveResponse;
   }
