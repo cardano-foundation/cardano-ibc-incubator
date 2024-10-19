@@ -1,6 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { type Lucid, type UTxO, TxBuilder, type SpendingValidator, type MintingPolicy } from '@lucid-evolution/lucid';
+import {
+  type LucidEvolution,
+  type UTxO,
+  type SpendingValidator,
+  type MintingPolicy,
+  getAddressDetails,
+  credentialToAddress,
+  TxBuilder,
+} from '@lucid-evolution/lucid';
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
@@ -79,7 +87,7 @@ type CodecType =
 export class LucidService {
   constructor(
     @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@lucid-evolution/lucid'),
-    @Inject(LUCID_CLIENT) public lucid: Lucid,
+    @Inject(LUCID_CLIENT) public lucid: LucidEvolution,
     private configService: ConfigService,
   ) {}
   // ========================== Public functions ==========================
@@ -113,7 +121,7 @@ export class LucidService {
     return handlerUtxo;
   }
   public async getPublicKeyHash(address: string): Promise<string> {
-    return this.lucid.utils.getAddressDetails(address).paymentCredential?.hash;
+    return getAddressDetails(address).paymentCredential?.hash;
   }
   // ========================== helper ==========================
   public getHandlerTokenUnit(): string {
@@ -157,7 +165,7 @@ export class LucidService {
   }
   //hex to string
   public credentialToAddress(address: string) {
-    return this.lucid.utils.credentialToAddress({
+    return credentialToAddress(this.lucid.config().network, {
       hash: address,
       type: 'Key',
     });
@@ -249,15 +257,15 @@ export class LucidService {
     encodedNewClientDatum: string,
     clientTokenUnit: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
     const clientRefUTxO: UTxO = deploymentConfig.validators.spendClient.refUtxo;
     tx.collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
       .readFrom([clientRefUTxO])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendClient.address,
-        { inline: encodedNewClientDatum },
+        { kind: 'inline', value: encodedNewClientDatum },
         {
           [clientTokenUnit]: 1n,
         },
@@ -273,10 +281,10 @@ export class LucidService {
     encodedUpdatedHandlerDatum: string,
     encodedClientDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
     tx.collectFrom([handlerUtxo], encodedHandlerOperator)
       .readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintClient.refUtxo])
@@ -288,7 +296,7 @@ export class LucidService {
       );
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [handlerAuthToken]: 1n,
@@ -308,9 +316,9 @@ export class LucidService {
     encodedUpdatedHandlerDatum: string,
     encodedConnectionDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
     tx.readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintConnection.refUtxo])
       .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
@@ -323,7 +331,7 @@ export class LucidService {
       .readFrom([clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
@@ -342,9 +350,9 @@ export class LucidService {
     encodedUpdatedHandlerDatum: string,
     encodedConnectionDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
     tx.readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintConnection.refUtxo])
       .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
@@ -357,7 +365,7 @@ export class LucidService {
       .readFrom([clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
@@ -367,16 +375,16 @@ export class LucidService {
     });
     return tx;
   }
-  public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): Tx {
+  public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo, dto.verifyProofRefUTxO])
       .collectFrom([dto.connectionUtxo], dto.encodedSpendConnectionRedeemer)
       .readFrom([dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendConnection.address,
-        { inline: dto.encodedUpdatedConnectionDatum },
+        { kind: 'inline', value: dto.encodedUpdatedConnectionDatum },
         {
           [dto.connectionTokenUnit]: 1n,
         },
@@ -396,25 +404,25 @@ export class LucidService {
     clientUtxo: UTxO,
     encodedUpdatedConnectionDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
     tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo])
       .collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
       .readFrom([clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendConnection.address,
-        { inline: encodedUpdatedConnectionDatum },
+        { kind: 'inline', value: encodedUpdatedConnectionDatum },
         {
           [connectionTokenUnit]: 1n,
         },
       );
     return tx;
   }
-  public createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): Tx {
+  public createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([dto.spendHandlerRefUtxo, dto.mintChannelRefUtxo, dto.spendTransferModuleRefUtxo])
       .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
@@ -428,7 +436,7 @@ export class LucidService {
       .readFrom([dto.connectionUtxo, dto.clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
 
     addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
@@ -445,9 +453,9 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedOrderedChannelOpenInitTransaction(dto: UnsignedOrderedChannelOpenInitDto): Tx {
+  public createUnsignedOrderedChannelOpenInitTransaction(dto: UnsignedOrderedChannelOpenInitDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendHandlerRefUtxo, dto.mintChannelRefUtxo, dto.spendMockModuleRefUtxo])
       .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
@@ -460,7 +468,7 @@ export class LucidService {
       .readFrom([dto.connectionUtxo, dto.clientUtxo]);
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
     addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
@@ -488,9 +496,9 @@ export class LucidService {
     encodedChannelDatum: string,
     encodedNewMockModuleDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
     tx.collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
       .readFrom([spendHandlerRefUtxo, mintChannelRefUtxo, spendMockModuleRefUtxo])
@@ -502,7 +510,7 @@ export class LucidService {
       )
       .readFrom([connectionUtxo, clientUtxo]);
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.payToContract(address, { inline }, token);
+      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
@@ -515,9 +523,9 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedChannelOpenAckTransaction(dto: UnsignedChannelOpenAckDto): Tx {
+  public createUnsignedChannelOpenAckTransaction(dto: UnsignedChannelOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([
       dto.spendChannelRefUtxo,
@@ -528,19 +536,21 @@ export class LucidService {
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         dto.transferModuleUtxo.assets,
       )
@@ -559,27 +569,29 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedChannelCloseInitTransaction(dto: UnsignedChannelCloseInitDto): Tx {
+  public createUnsignedChannelCloseInitTransaction(dto: UnsignedChannelCloseInitDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendMockModuleRefUtxo, dto.channelCloseInitRefUtxO])
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.mock.address,
         {
-          inline: dto.mockModuleUtxo.datum,
+          kind: 'inline',
+          value: dto.mockModuleUtxo.datum,
         },
         dto.mockModuleUtxo.assets,
       )
@@ -591,27 +603,29 @@ export class LucidService {
       );
     return tx;
   }
-  public createUnsignedOrderedChannelOpenAckTransaction(dto: UnsignedOrderedChannelOpenAckDto): Tx {
+  public createUnsignedOrderedChannelOpenAckTransaction(dto: UnsignedOrderedChannelOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendMockModuleRefUtxo, dto.chanOpenAckRefUtxo, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.mock.address,
         {
-          inline: dto.mockModuleUtxo.datum,
+          kind: 'inline',
+          value: dto.mockModuleUtxo.datum,
         },
         dto.mockModuleUtxo.assets,
       )
@@ -643,38 +657,40 @@ export class LucidService {
     encodedUpdatedChannelDatum: string,
     encodedNewMockModuleDatum: string,
     constructedAddress: string,
-  ): Tx {
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
     tx.readFrom([spendChannelRefUtxo, spendMockModuleRefUtxo])
 
       .collectFrom([channelUtxo], encodedSpendChannelRedeemer)
       .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
       .readFrom([connectionUtxo, clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: encodedUpdatedChannelDatum,
         },
         {
           [channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.mock.address,
         {
-          inline: encodedNewMockModuleDatum,
+          kind: 'inline',
+          value: encodedNewMockModuleDatum,
         },
         mockModuleUtxo.assets,
       );
 
     return tx;
   }
-  public createUnsignedRecvPacketUnescrowTx(dto: UnsignedRecvPacketUnescrowDto): Tx {
+  public createUnsignedRecvPacketUnescrowTx(dto: UnsignedRecvPacketUnescrowDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([
       dto.spendChannelRefUtxo,
       dto.spendTransferModuleRefUtxo,
@@ -684,26 +700,28 @@ export class LucidService {
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
           lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
         },
       )
-      .payToAddress(dto.receiverAddress, {
+      .pay.ToAddress(dto.receiverAddress, {
         lovelace: dto.transferAmount,
       })
       .mintAssets(
@@ -721,10 +739,10 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedRecvPacketMintTx(dto: UnsignedRecvPacketMintDto): Tx {
+  public createUnsignedRecvPacketMintTx(dto: UnsignedRecvPacketMintDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([
       dto.spendChannelRefUtxo,
       dto.spendTransferModuleRefUtxo,
@@ -741,25 +759,27 @@ export class LucidService {
         },
         dto.encodedMintVoucherRedeemer,
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
         },
       )
-      .payToAddress(dto.receiverAddress, {
+      .pay.ToAddress(dto.receiverAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
       .mintAssets(
@@ -777,27 +797,29 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedRecvPacketOrderedChannelMintTx(dto: UnsignedRecvPacketMintForOrderedChannelDto): Tx {
+  public createUnsignedRecvPacketOrderedChannelMintTx(dto: UnsignedRecvPacketMintForOrderedChannelDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendMockModuleRefUtxo, dto.recvPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.mock.address,
         {
-          inline: dto.mockModuleUtxo.datum,
+          kind: 'inline',
+          value: dto.mockModuleUtxo.datum,
         },
         {
           ...dto.mockModuleUtxo.assets,
@@ -818,27 +840,29 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedAckPacketSucceedTx(dto: UnsignedAckPacketSucceedDto): Tx {
+  public createUnsignedAckPacketSucceedTx(dto: UnsignedAckPacketSucceedDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
@@ -859,27 +883,31 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedAckPacketSucceedTxForOrderedChannel(dto: UnsignedAckPacketSucceedForOrderedChannelDto): Tx {
+  public createUnsignedAckPacketSucceedTxForOrderedChannel(
+    dto: UnsignedAckPacketSucceedForOrderedChannelDto,
+  ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendMockModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelOrderedDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelOrderedDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.mock.address,
         {
-          inline: dto.mockModuleUtxo.datum,
+          kind: 'inline',
+          value: dto.mockModuleUtxo.datum,
         },
         {
           ...dto.mockModuleUtxo.assets,
@@ -900,27 +928,29 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedAckPacketUnescrowTx(dto: UnsignedAckPacketUnescrowDto): Tx {
+  public createUnsignedAckPacketUnescrowTx(dto: UnsignedAckPacketUnescrowDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUtxo, dto.spendTransferModuleRefUtxo, dto.ackPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
@@ -931,7 +961,7 @@ export class LucidService {
           ),
         },
       )
-      .payToAddress(dto.senderAddress, {
+      .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
       })
       .mintAssets(
@@ -949,10 +979,10 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedAckPacketMintTx(dto: UnsignedAckPacketMintDto): Tx {
+  public createUnsignedAckPacketMintTx(dto: UnsignedAckPacketMintDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([
       dto.spendChannelRefUtxo,
       dto.spendTransferModuleRefUtxo,
@@ -969,19 +999,21 @@ export class LucidService {
         },
         dto.encodedMintVoucherRedeemer,
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
@@ -992,7 +1024,7 @@ export class LucidService {
           ),
         },
       )
-      .payToAddress(dto.senderAddress, {
+      .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
       .mintAssets(
@@ -1011,25 +1043,27 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+  public createUnsignedSendPacketEscrowTx(dto: UnsignedSendPacketEscrowDto): TxBuilder {
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
-      .payToContract(
+      .pay.ToContract(
         dto.spendChannelAddress,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         dto.transferModuleAddress,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUTxO.assets,
@@ -1050,25 +1084,29 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedSendPacketEscrowTxForOrderedChannel(dto: UnsignedSendPacketEscrowForOrderedChannelDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+  public createUnsignedSendPacketEscrowTxForOrderedChannel(
+    dto: UnsignedSendPacketEscrowForOrderedChannelDto,
+  ): TxBuilder {
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUTxO, dto.spendMockModuleUTxO, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.mockModuleUTxO], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
-      .payToContract(
+      .pay.ToContract(
         dto.spendChannelAddress,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         dto.mockModuleAddress,
         {
-          inline: dto.mockModuleUTxO.datum,
+          kind: 'inline',
+          value: dto.mockModuleUTxO.datum,
         },
         dto.mockModuleUTxO.assets,
       )
@@ -1082,10 +1120,10 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedSendPacketBurnTx(dto: UnsignedSendPacketBurnDto): Tx {
+  public createUnsignedSendPacketBurnTx(dto: UnsignedSendPacketBurnDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([dto.spendChannelRefUTxO, dto.spendTransferModuleUTxO, dto.mintVoucherRefUtxo, dto.sendPacketRefUTxO])
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
@@ -1097,19 +1135,21 @@ export class LucidService {
         },
         dto.encodedMintVoucherRedeemer,
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUTxO.assets,
@@ -1130,8 +1170,8 @@ export class LucidService {
     return tx;
   }
 
-  public createUnsignedTimeoutPacketMintTx(dto: UnsignedTimeoutPacketMintDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+  public createUnsignedTimeoutPacketMintTx(dto: UnsignedTimeoutPacketMintDto): TxBuilder {
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([
       dto.spendChannelRefUtxo,
       dto.spendTransferModuleRefUtxo,
@@ -1148,26 +1188,28 @@ export class LucidService {
         },
         dto.encodedMintVoucherRedeemer,
       )
-      .payToContract(
+      .pay.ToContract(
         dto.spendChannelAddress,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         dto.transferModuleAddress,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
           lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
         },
       )
-      .payToAddress(dto.senderAddress, {
+      .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
       .mintAssets(
@@ -1185,8 +1227,8 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedTimeoutPacketUnescrowTx(dto: UnsignedTimeoutPacketUnescrowDto): Tx {
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+  public createUnsignedTimeoutPacketUnescrowTx(dto: UnsignedTimeoutPacketUnescrowDto): TxBuilder {
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     tx.readFrom([
       dto.spendChannelRefUtxo,
       dto.spendTransferModuleUtxo,
@@ -1196,19 +1238,21 @@ export class LucidService {
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
-      .payToContract(
+      .pay.ToContract(
         dto.spendChannelAddress,
         {
-          inline: dto.encodedUpdatedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .payToContract(
+      .pay.ToContract(
         dto.transferModuleAddress,
         {
-          inline: this.LucidImporter.Data.void(),
+          kind: 'inline',
+          value: this.LucidImporter.Data.void(),
         },
         {
           ...dto.transferModuleUtxo.assets,
@@ -1219,7 +1263,7 @@ export class LucidService {
           ),
         },
       )
-      .payToAddress(dto.senderAddress, {
+      .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
       })
       .mintAssets(
@@ -1237,16 +1281,17 @@ export class LucidService {
 
     return tx;
   }
-  createUnsignedTimeoutRefreshTx(dto: UnsignedTimeoutRefreshDto): Tx {
+  createUnsignedTimeoutRefreshTx(dto: UnsignedTimeoutRefreshDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: Tx = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
     tx.readFrom([dto.spendChannelRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .payToContract(
+      .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
         {
-          inline: dto.encodedChannelDatum,
+          kind: 'inline',
+          value: dto.encodedChannelDatum,
         },
         {
           [dto.channelTokenUnit]: 1n,
@@ -1287,12 +1332,12 @@ export class LucidService {
     return fullName;
   };
 
-  private txFromWallet(constructedAddress: string): Tx {
+  private txFromWallet(constructedAddress: string): TxBuilder {
     if (constructedAddress) {
       try {
         let signer = constructedAddress;
         if (!constructedAddress.startsWith('addr_')) {
-          signer = this.lucid.utils.credentialToAddress({
+          signer = credentialToAddress(this.lucid.config().network, {
             hash: constructedAddress,
             type: 'Key',
           });
@@ -1301,8 +1346,8 @@ export class LucidService {
         // const seed =
         //   'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';
         // const lucid = this.lucid.selectWalletFromSeed(seed, { addressType: 'Enterprise' });
-        const lucid = this.lucid.selectWalletFrom({ address: signer });
-        return lucid.newTx();
+        this.lucid.selectWallet.fromAddress(signer, []);
+        return this.lucid.newTx();
       } catch (err) {
         throw new GrpcInternalException('invalid constructed address');
       }

@@ -1,5 +1,5 @@
 import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, TxSignBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -28,7 +28,7 @@ import { State } from 'src/shared/types/connection/state';
 import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
-import { convertHex2String, convertString2Hex, fromHex, fromText, toHex, toHexString } from '@shared/helpers/hex';
+import { convertHex2String, convertString2Hex, fromText, toHex, toHexString } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
@@ -64,19 +64,21 @@ export class ConnectionService {
       this.logger.log('Connection Open Init is processing');
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenInitTx: Tx = await this.buildUnsignedConnectionOpenInitTx(
+      const unsignedConnectionOpenInitTx: TxBuilder = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenInitTxValidTo: Tx = unsignedConnectionOpenInitTx.validTo(Date.now() + 100 * 1e3);
+      const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(
+        Date.now() + 100 * 1e3,
+      );
 
-      const unsignedConnectionOpenInitTxCompleted: TxComplete = await unsignedConnectionOpenInitTxValidTo.complete();
+      const unsignedConnectionOpenInitTxCompleted: TxSignBuilder = await unsignedConnectionOpenInitTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedConnectionOpenInitTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedConnectionOpenInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgUpdateClientResponse;
       return response;
@@ -99,19 +101,19 @@ export class ConnectionService {
     try {
       const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenTryTx: Tx = await this.buildUnsignedConnectionOpenTryTx(
+      const unsignedConnectionOpenTryTx: TxBuilder = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenTryTxValidTo: Tx = unsignedConnectionOpenTryTx.validTo(Date.now() + 100 * 1e3);
+      const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(Date.now() + 100 * 1e3);
 
-      const unsignedConnectionOpenTryTxCompleted: TxComplete = await unsignedConnectionOpenTryTxValidTo.complete();
+      const unsignedConnectionOpenTryTxCompleted: TxSignBuilder = await unsignedConnectionOpenTryTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedConnectionOpenTryTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedConnectionOpenTryTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenTryResponse;
       return response;
@@ -134,19 +136,19 @@ export class ConnectionService {
       this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenAckTx: Tx = await this.buildUnsignedConnectionOpenAckTx(
+      const unsignedConnectionOpenAckTx: TxBuilder = await this.buildUnsignedConnectionOpenAckTx(
         connectionOpenAckOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenAckTxValidTo: Tx = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
+      const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
 
-      const unsignedConnectionOpenAckTxCompleted: TxComplete = await unsignedConnectionOpenAckTxValidTo.complete();
+      const unsignedConnectionOpenAckTxCompleted: TxSignBuilder = await unsignedConnectionOpenAckTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedConnectionOpenAckTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedConnectionOpenAckTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
@@ -173,21 +175,21 @@ export class ConnectionService {
       this.logger.log('Connection Open Confirm is processing');
       const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenConfirmTx: Tx = await this.buildUnsignedConnectionOpenConfirmTx(
+      const unsignedConnectionOpenConfirmTx: TxBuilder = await this.buildUnsignedConnectionOpenConfirmTx(
         connectionOpenConfirmOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenConfirmTxValidTo: Tx = unsignedConnectionOpenConfirmTx.validTo(
+      const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(
         Date.now() + 150 * 1e3,
       );
-      const unsignedConnectionOpenConfirmTxCompleted: TxComplete =
+      const unsignedConnectionOpenConfirmTxCompleted: TxSignBuilder =
         await unsignedConnectionOpenConfirmTxValidTo.complete();
 
       this.logger.log(unsignedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedConnectionOpenConfirmTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedConnectionOpenConfirmTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
       return response;
@@ -211,7 +213,7 @@ export class ConnectionService {
   async buildUnsignedConnectionOpenInitTx(
     connectionOpenInitOperator: ConnectionOpenInitOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
@@ -283,7 +285,7 @@ export class ConnectionService {
   public async buildUnsignedConnectionOpenTryTx(
     connectionOpenTryOperator: ConnectionOpenTryOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
@@ -357,7 +359,7 @@ export class ConnectionService {
   private async buildUnsignedConnectionOpenAckTx(
     connectionOpenAckOperator: ConnectionOpenAckOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       BigInt(connectionOpenAckOperator.connectionSequence),
@@ -501,7 +503,7 @@ export class ConnectionService {
   async buildUnsignedConnectionOpenConfirmTx(
     connectionOpenConfirmOperator: ConnectionOpenConfirmOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       BigInt(connectionOpenConfirmOperator.connectionSequence),

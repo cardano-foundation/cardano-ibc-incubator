@@ -16,7 +16,7 @@ import {
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { RecvPacketOperator } from './dto/packet/recv-packet-operator.dto';
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, slotToUnixTime, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -92,10 +92,13 @@ export class PacketService {
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
 
       // Build and complete the unsigned transaction
-      const unsignedRecvPacketTx: Tx = await this.buildUnsignedRecvPacketTx(recvPacketOperator, constructedAddress);
+      const unsignedRecvPacketTx: TxBuilder = await this.buildUnsignedRecvPacketTx(
+        recvPacketOperator,
+        constructedAddress,
+      );
 
       const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
@@ -109,17 +112,17 @@ export class PacketService {
       if (BigInt(validToTime) * 10n ** 6n > recvPacketOperator.timeoutTimestamp) {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 < packet.timeout_timestamp');
       }
-      const unsignedRecvPacketTxValidTo: Tx = unsignedRecvPacketTx.validTo(
-        this.lucidService.lucid.utils.slotToUnixTime(validToSlot),
+      const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(
+        slotToUnixTime(this.lucidService.lucid.config().network, validToSlot),
       );
-      const unsignedRecvPacketCompleted: TxComplete = await unsignedRecvPacketTxValidTo.complete();
+      const unsignedRecvPacketCompleted: TxSignBuilder = await unsignedRecvPacketTxValidTo.complete();
 
       this.logger.log(unsignedRecvPacketCompleted.toHash(), 'recv packet - unsignedTX - hash');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: unsignedRecvPacketCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedRecvPacketCompleted.toCBOR()),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -137,24 +140,24 @@ export class PacketService {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
 
-      const unsignedSendPacketTx: Tx = await this.buildUnsignedSendPacketTx(sendPacketOperator);
+      const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedSendPacketTx(sendPacketOperator);
       const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
 
-      const unsignedSendPacketTxValidTo: Tx = unsignedSendPacketTx.validTo(validToTime);
+      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      const unsignedSendPacketTxCompleted: TxComplete = await unsignedSendPacketTxValidTo.complete();
+      const unsignedSendPacketTxCompleted: TxSignBuilder = await unsignedSendPacketTxValidTo.complete();
 
       this.logger.log(unsignedSendPacketTxCompleted.toHash(), 'send packet - unsignedTX - hash');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: unsignedSendPacketTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedSendPacketTxCompleted.toCBOR()),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -177,20 +180,20 @@ export class PacketService {
     try {
       this.logger.log('timeoutPacket is processing');
       const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
-      const unsignedSendPacketTx: Tx = await this.buildUnsignedTimeoutPacketTx(
+      const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedTimeoutPacketTx(
         timeoutPacketOperator,
         constructedAddress,
       );
-      const unsignedSendPacketTxValidTo: Tx = unsignedSendPacketTx.validTo(Date.now() + 3 * 1e5);
+      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(Date.now() + 3 * 1e5);
 
-      const unsignedSendPacketTxCompleted: TxComplete = await unsignedSendPacketTxValidTo.complete();
+      const unsignedSendPacketTxCompleted: TxSignBuilder = await unsignedSendPacketTxValidTo.complete();
 
       this.logger.log(unsignedSendPacketTxCompleted.toHash(), 'timeout packet - unsignedTX - hash');
       const response: MsgTimeoutResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: unsignedSendPacketTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedSendPacketTxCompleted.toCBOR()),
         },
       } as unknown as MsgTimeoutResponse;
       return response;
@@ -227,12 +230,12 @@ export class PacketService {
       };
 
       // Build and complete the unsigned transaction
-      const unsignedTimeoutRefreshTx: Tx = await this.buildUnsignedTimeoutRefreshTx(
+      const unsignedTimeoutRefreshTx: TxBuilder = await this.buildUnsignedTimeoutRefreshTx(
         timeoutRefreshOperator,
         constructedAddress,
       );
       const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       console.log({
         validToTime,
@@ -242,15 +245,15 @@ export class PacketService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
-      const unsignedTimeoutRefreshTxValidTo: Tx = unsignedTimeoutRefreshTx.validTo(validToTime);
+      const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
-      const unsignedTimeoutRefreshCompleted: TxComplete = await unsignedTimeoutRefreshTxValidTo.complete();
+      const unsignedTimeoutRefreshCompleted: TxSignBuilder = await unsignedTimeoutRefreshTxValidTo.complete();
 
       this.logger.log(unsignedTimeoutRefreshCompleted.toHash(), 'TimeoutRefresh - unsignedTX - hash');
       const response: MsgTimeoutRefreshResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedTimeoutRefreshCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedTimeoutRefreshCompleted.toCBOR()),
         },
       } as unknown as MsgTimeoutRefreshResponse;
       return response;
@@ -272,20 +275,20 @@ export class PacketService {
       const { constructedAddress, ackPacketOperator } = validateAndFormatAcknowledgementPacketParams(data);
 
       // Build and complete the unsigned transaction
-      const unsignedAckPacketTx: Tx = await this.buildUnsignedAcknowlegementPacketTx(
+      const unsignedAckPacketTx: TxBuilder = await this.buildUnsignedAcknowlegementPacketTx(
         ackPacketOperator,
         constructedAddress,
       );
-      const unsignedAckPacketTxValidTo: Tx = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
+      const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
 
-      const unsignedAckPacketCompleted: TxComplete = await unsignedAckPacketTxValidTo.complete();
+      const unsignedAckPacketCompleted: TxSignBuilder = await unsignedAckPacketTxValidTo.complete();
 
       this.logger.log(unsignedAckPacketCompleted.toHash(), 'ack packet - unsignedTX - hash');
       const response: MsgAcknowledgementResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: unsignedAckPacketCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedAckPacketCompleted.toCBOR()),
         },
       } as unknown as MsgAcknowledgementResponse;
       return response;
@@ -302,7 +305,7 @@ export class PacketService {
   async buildUnsignedTimeoutRefreshTx(
     timeoutRefreshOperator: TimeoutRefreshOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const channelSequence: string = timeoutRefreshOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -329,7 +332,10 @@ export class PacketService {
     };
     return this.lucidService.createUnsignedTimeoutRefreshTx(unsignedTimeoutRefreshParams);
   }
-  async buildUnsignedRecvPacketTx(recvPacketOperator: RecvPacketOperator, constructedAddress: string): Promise<Tx> {
+  async buildUnsignedRecvPacketTx(
+    recvPacketOperator: RecvPacketOperator,
+    constructedAddress: string,
+  ): Promise<TxBuilder> {
     const channelSequence: string = recvPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -703,7 +709,7 @@ export class PacketService {
   async buildUnsignedTimeoutPacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const channelSequence = parseChannelSequence(convertHex2String(timeoutPacketOperator.packet.source_channel));
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -928,7 +934,7 @@ export class PacketService {
     };
     return this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
   }
-  async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<Tx> {
+  async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<TxBuilder> {
     const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1187,7 +1193,7 @@ export class PacketService {
   async buildUnsignedAcknowlegementPacketTx(
     ackPacketOperator: AckPacketOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const channelSequence: string = ackPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));

@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { type Tx, TxComplete, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -31,7 +31,6 @@ import {
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto/client/update-client-operator.dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
-import { toHex } from '@shared/helpers/hex';
 
 @Injectable()
 export class ClientService {
@@ -57,7 +56,7 @@ export class ClientService {
       );
 
       const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException(
@@ -65,15 +64,15 @@ export class ClientService {
         );
       }
 
-      const unSignedTxValidTo: Tx = unsignedCreateClientTx.validTo(validToTime);
-      const unsignedCreateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+      const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
+      const unsignedCreateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
       this.logger.log(unsignedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
       this.logger.log(clientId, 'create client - clientId');
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedCreateClientTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedCreateClientTxCompleted.toCBOR()),
         },
         client_id: `${CLIENT_ID_PREFIX}-${clientId.toString()}`,
       } as unknown as MsgCreateClientResponse;
@@ -120,18 +119,19 @@ export class ClientService {
           currentClientUtxo,
         };
 
-        const unsignedUpdateClientTx: Tx = await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
-        const unSignedTxValidTo: Tx = unsignedUpdateClientTx
+        const unsignedUpdateClientTx: TxBuilder =
+          await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
+        const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
           .validTo(new Date().valueOf());
-        const unsignedUpdateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+        const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
         this.logger.log(clientId, 'update client - client Id');
         this.logger.log(unsignedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: unsignedUpdateClientTxCompleted.txComplete.to_bytes(),
+            value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -155,18 +155,18 @@ export class ClientService {
         txValidFrom: validFromTime,
       };
 
-      const unsignedUpdateClientTx: Tx = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-      const validFromSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validFromTime));
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
+      const validFromSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validFromTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot < validFromSlot || currentSlot > validToSlot) {
         throw new GrpcInternalException('tx time invalid');
       }
 
-      const unSignedTxValidTo: Tx = unsignedUpdateClientTx
+      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
         .validFrom(Number(validFromTime))
         .validTo(new Date().valueOf() + 100 * 1e3);
-      const unsignedUpdateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+      const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
       // Build and complete the unsigned transaction
       this.logger.log(clientId, 'update client - client Id');
@@ -175,7 +175,7 @@ export class ClientService {
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedUpdateClientTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;
@@ -193,7 +193,7 @@ export class ClientService {
   }
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
     const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
     const clientMessage: ClientMessage = getClientMessageFromTendermint(clientMessageAny);
@@ -235,7 +235,7 @@ export class ClientService {
   /**
    * Builds an unsigned UpdateClient transaction.
    */
-  public async buildUnsignedUpdateClientTx(updateClientOperator: UpdateClientOperatorDto): Promise<Tx> {
+  public async buildUnsignedUpdateClientTx(updateClientOperator: UpdateClientOperatorDto): Promise<TxBuilder> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
     // Create a SpendClientRedeemer using the provided header
@@ -313,7 +313,7 @@ export class ClientService {
     clientState: ClientState,
     consensusState: ConsensusState,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: Tx; clientId: bigint }> {
+  ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     // Decode the handler datum from the handler UTXO
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
