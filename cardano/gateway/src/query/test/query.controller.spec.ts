@@ -15,7 +15,10 @@ import {
   QueryLatestHeightRequest,
   QueryNewClientRequest,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { QueryBlockResultsRequest, QueryTransactionByHashRequest } from '@plus/proto-types/build/ibc/core/types/v1/query';
+import {
+  QueryBlockResultsRequest,
+  QueryTransactionByHashRequest,
+} from '@plus/proto-types/build/ibc/core/types/v1/query';
 import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';

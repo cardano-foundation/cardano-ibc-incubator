@@ -17,10 +17,7 @@ export type ChannelDatum = {
   token: AuthToken;
 };
 
-export async function encodeChannelDatum(
-  channelDatum: ChannelDatum,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
+export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const StateSchema = Data.Enum([

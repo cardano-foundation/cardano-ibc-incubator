@@ -732,7 +732,10 @@ export class QueryService {
       createClientEvent = txsAuthOrClientsResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
     }
 
-    this.logger.log(`create client events related to tx hash = ${request.hash} createClientEvent = ${createClientEvent}`, 'queryTransactionByHash');
+    this.logger.log(
+      `create client events related to tx hash = ${request.hash} createClientEvent = ${createClientEvent}`,
+      'queryTransactionByHash',
+    );
 
     const response: QueryTransactionByHashResponse = {
       hash: tx.hash,

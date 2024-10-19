@@ -4,10 +4,7 @@ export type MockModuleDatum = {
   received_packets: string[];
 };
 
-export async function decodeMockModuleDatum(
-  mockModuleDatum: string,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
+export async function decodeMockModuleDatum(mockModuleDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const MockModuleDatumSchema = Data.Object({

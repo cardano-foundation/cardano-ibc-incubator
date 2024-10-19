@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, ParseBoolPipe, ParseIntPipe, Post, Query, UseFilters } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseBoolPipe,
+  ParseIntPipe,
+  Post,
+  Query,
+  UseFilters,
+} from '@nestjs/common';
 import { MsgtransferDto } from './api.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
@@ -25,8 +36,7 @@ export class ApiController {
     @Query('limit', ParseIntPipe) limit: number,
     @Query('countTotal', ParseBoolPipe) countTotal: boolean,
     @Query('reverse', ParseBoolPipe) reverse: boolean,
-
-  ) {    
+  ) {
     const pageRequestDto = {
       pagination: {
         key: key,
@@ -34,11 +44,11 @@ export class ApiController {
         limit: limit,
         count_total: countTotal,
         reverse: reverse,
-      }
+      },
     };
     const request = QueryChannelsRequest.fromJSON(pageRequestDto);
-    const response = await this.channelService.queryChannels(request);    
-    const next_key  = Buffer.from(response.pagination.next_key||"").toString('base64');
+    const response = await this.channelService.queryChannels(request);
+    const next_key = Buffer.from(response.pagination.next_key || '').toString('base64');
     return {
       channels: response.channels.map((chann) => IdentifiedChannel.toJSON(chann)),
       pagination: {
@@ -48,21 +58,21 @@ export class ApiController {
       height: {
         revision_height: response.height.revision_height.toString(),
         revision_number: response.height.revision_number.toString(),
-      }
-    };    
+      },
+    };
   }
   @Post('transfer')
   @HttpCode(200)
   async buildTransferMsg(@Body() msgtransferDto: MsgtransferDto) {
     const request = MsgTransfer.fromJSON(msgtransferDto);
     const response = await this.packetService.sendPacket(request);
-  
+
     return {
       result: response.result,
       unsigned_tx: {
-      type_url: response.unsigned_tx.type_url,
-      value: Buffer.from( response.unsigned_tx.value).toString('base64'),
-      }
-    }
+        type_url: response.unsigned_tx.type_url,
+        value: Buffer.from(response.unsigned_tx.value).toString('base64'),
+      },
+    };
   }
 }

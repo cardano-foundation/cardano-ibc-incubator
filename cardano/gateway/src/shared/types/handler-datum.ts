@@ -10,10 +10,7 @@ export type HandlerDatum = {
   };
   token: AuthToken;
 };
-export async function encodeHandlerDatum(
-  handlerDatum: HandlerDatum,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
+export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const HandlerStateSchema = Data.Object({
