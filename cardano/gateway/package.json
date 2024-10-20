@@ -20,8 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@cardano-ogmios/client": "6.7.0",
-    "@cardano-ogmios/schema": "6.7.0",
+    "@cardano-ogmios/client": "6.6.2",
+    "@cardano-ogmios/schema": "6.6.2",
     "@lucid-evolution/lucid": "0.3.50",
     "@dcspark/cardano-multiplatform-lib-nodejs": "6.0.1",
     "@mithril-dev/mithril-client-wasm": "^0.4.1",

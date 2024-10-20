@@ -36,7 +36,7 @@ services:
       ]
 
   cardano-node-ogmios:
-    image: cardanosolutions/ogmios:v6.7.0
+    image: cardanosolutions/ogmios:v6.6.2
     logging:
       driver: "json-file"
       options:
