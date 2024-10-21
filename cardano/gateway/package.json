@@ -22,7 +22,7 @@
   "dependencies": {
     "@cardano-ogmios/client": "6.6.2",
     "@cardano-ogmios/schema": "6.6.2",
-    "@lucid-evolution/lucid": "0.3.50",
+    "@lucid-evolution/lucid": "0.3.51",
     "@dcspark/cardano-multiplatform-lib-nodejs": "6.0.1",
     "@mithril-dev/mithril-client-wasm": "^0.4.1",
     "@grpc/grpc-js": "^1.9.13",

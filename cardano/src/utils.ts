@@ -19,7 +19,7 @@ import {
   toHex,
   Tx,
   UTxO,
-} from "npm:@lucid-evolution/lucid@latest";
+} from "npm:@lucid-evolution/lucid@0.3.51";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
