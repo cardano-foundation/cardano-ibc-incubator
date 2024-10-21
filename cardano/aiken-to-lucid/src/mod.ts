@@ -241,7 +241,7 @@ export function generateType(
       const dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "https://deno.land/x/lucid@0.10.7/mod.ts",
+          path: "npm:@lucid-evolution/lucid@0.3.51",
         }],
       ]);
 
@@ -301,7 +301,7 @@ export function generateType(
       let dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "https://deno.land/x/lucid@0.10.7/mod.ts",
+          path: "npm:@lucid-evolution/lucid@0.3.51",
         }],
       ]);
       const schema: string[] = [];
