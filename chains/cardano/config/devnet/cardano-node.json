@@ -1,5 +1,6 @@
 {
   "Protocol": "Cardano",
+  "ConwayEra": true,
 
   "ByronGenesisFile": "genesis-byron.json",
   "ShelleyGenesisFile": "genesis-shelley.json",
