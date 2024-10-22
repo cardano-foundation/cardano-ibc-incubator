@@ -153,7 +153,7 @@ pub fn configure_local_cardano_devnet(
     let devnet_dir = cardano_dir.join("devnet");
 
     let cardano_config_files = vec![
-        cardano_config_dir.join("protocol-parameters.json"),
+        //cardano_config_dir.join("protocol-parameters.json"),
         cardano_config_dir.join("credentials"),
     ];
 

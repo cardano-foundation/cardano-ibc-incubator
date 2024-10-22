@@ -1,31 +1,26 @@
 {
   "Protocol": "Cardano",
-  "ConwayEra": true,
 
   "ByronGenesisFile": "genesis-byron.json",
   "ShelleyGenesisFile": "genesis-shelley.json",
   "AlonzoGenesisFile": "genesis-alonzo.json",
   "ConwayGenesisFile": "genesis-conway.json",
 
-  "ByronGenesisHash": "xByronGenesisHash",
-  "ShelleyGenesisHash": "xShelleyGenesisHash",
-  "AlonzoGenesisHash": "xAlonzoGenesisHash",
-  "ConwayGenesisHash": "xConwayGenesisHash",
-
   "ApplicationName": "cardano-sl",
   "ApplicationVersion": 1,
-  
-  "NetworkId": "IbcTestnet",
-  
-  "MaxKnownMajorProtocolVersion": 9,
-  "LastKnownBlockVersion-Major": 9,
-  "LastKnownBlockVersion-Minor": 1,
-  "LastKnownBlockVersion-Alt": 0,
 
-  "TestShelleyHardForkAtEpoch": 0,
+  "NetworkId": "IbcTestnet",
+
+  "MaxKnownMajorProtocolVersion": 9,
+  "LastKnownBlockVersion-Alt": 0,
+  "LastKnownBlockVersion-Major": 6,
+  "LastKnownBlockVersion-Minor": 0,
+
   "TestAllegraHardForkAtEpoch": 0,
-  "TestMaryHardForkAtEpoch": 0,
   "TestAlonzoHardForkAtEpoch": 0,
+  "TestMaryHardForkAtEpoch": 0,
+  "TestShelleyHardForkAtEpoch": 0,
+  "TestConwayHardForkAtEpoch": 0,
   "TestBabbageHardForkAtEpoch": 0,
 
   "RequiresNetworkMagic": "RequiresNoMagic",

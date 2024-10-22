@@ -1,6 +1,6 @@
 services:
   cardano-node:
-    image: ghcr.io/intersectmbo/cardano-node:9.1.1
+    image: ghcr.io/intersectmbo/cardano-node:9.2.1
     container_name: cardano-node
     volumes:
       - ./devnet:/devnet
@@ -36,7 +36,7 @@ services:
       ]
 
   cardano-node-ogmios:
-    image: cardanosolutions/ogmios:v6.6.2
+    image: cardanosolutions/ogmios:v6.8.0
     logging:
       driver: "json-file"
       options:
