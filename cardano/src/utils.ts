@@ -1,6 +1,8 @@
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import blueprint from "../plutus.json" with { type: "json" };
 import {
+  validatorToScriptHash,
+  validatorToAddress,
   Address,
   applyParamsToScript,
   Blockfrost,
@@ -32,7 +34,6 @@ import { OutputReference } from "../lucid-types/aiken/transaction/OutputReferenc
 
 export const readValidator = <T extends unknown[] = Data[]>(
   title: string,
-  lucid: Lucid,
   params?: Exact<[...T]>,
   type?: T
 ): [Script, ScriptHash, Address] => {
@@ -58,8 +59,8 @@ export const readValidator = <T extends unknown[] = Data[]>(
     };
   }
 
-  const scriptHash = lucid.utils.validatorToScriptHash(validator);
-  const address = lucid.utils.validatorToAddress(validator);
+  const scriptHash = validatorToScriptHash(validator);
+  const address = validatorToAddress(validator);
 
   return [validator, scriptHash, address];
 };
