@@ -24,6 +24,7 @@ use std::fs::{self, remove_dir_all};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+use std::u64;
 
 pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path, chain_handler_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     copy(
@@ -119,23 +120,29 @@ pub async fn start_local_cardano_network(
         return Err("❌ Failed to start Cardano services".into());
     }
 
-    seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
-    log_or_show_progress(
-        "📄 Deploying the client, channel and connection contracts",
-        &optional_progress_bar,
-    );
+    // wait until network is running
+    let mut slot_querried = u64::MAX;
+    while slot_querried == u64::MAX {
+        match get_cardano_state(project_root_path, CardanoQuery::Slot) {
+            Ok(value) => slot_querried = value,
+            Err(_e) => {
+                log("Waiting for node to start up ...");
+                std::thread::sleep(Duration::from_secs(5))
+            }
+        }
+    }
 
-    // wait until slot 160 before starting db-sync
-    let mut current_slot = get_cardano_state(project_root_path, CardanoQuery::Slot)?;
-    let target_slot: u64 = 160;
-    let mut slots_left = target_slot.saturating_sub(current_slot);
+    // wait until network hard forked into Conway era after 1 epoch
+    let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+    let target_epoch: u64 = 1;
+    let target_slot: u64 = target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
 
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
     };
 
-    if slots_left > 0 {
+    if current_epoch < target_epoch {
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.enable_steady_tick(Duration::from_millis(100));
             progress_bar.set_style(
@@ -145,32 +152,37 @@ pub async fn start_local_cardano_network(
                 .progress_chars("#>-")
         );
             progress_bar.set_prefix(
-            "🍵 db-sync needs to wait until slot 160 before starting up to not stall on index creation .."
+            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
                 .to_owned(),
         );
             progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
+            progress_bar.set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
         } else {
             log(
-            "🍵 db-sync needs to wait until slot 160 before starting up to not stall on index creation ..",
+            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
         );
         }
     }
 
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_path, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
+    while current_epoch < target_epoch {
+        current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
 
         if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
+            progress_bar.set_position(min(get_cardano_state(project_root_path, CardanoQuery::Slot)?, target_slot));
         } else {
             verbose(&format!(
                 "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
+                get_cardano_state(project_root_path, CardanoQuery::Slot)?, get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
             ));
         }
         std::thread::sleep(Duration::from_secs(10));
     }
+
+    seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
+    log_or_show_progress(
+        "📄 Deploying the client, channel and connection contracts",
+        &optional_progress_bar,
+    );
 
     if config::get_config().cardano.services.db_sync {
         prepare_db_sync(cardano_dir.as_path())?;

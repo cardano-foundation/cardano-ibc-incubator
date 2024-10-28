@@ -231,9 +231,6 @@ pub fn configure_local_cardano_devnet(
         )
     })?;
 
-    let content = r#"{"Producers": []}"#;
-    fs::write(devnet_dir.join("topology.json"), content)
-        .map_err(|error| format!("Failed to write topology.json file: {}", error.to_string()))?;
     Ok(())
 }
 
