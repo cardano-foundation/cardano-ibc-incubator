@@ -10,6 +10,8 @@ import (
 
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"github.com/blinklabs-io/gouroboros/ledger/babbage"
+	"github.com/blinklabs-io/gouroboros/ledger/common"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,7 +33,7 @@ type BabbageTransactionBody struct {
 		Epoch                uint64
 	} `cbor:"6,keyasint,omitempty"`
 	MetadataHash     []byte                                        `cbor:"7,keyasint,omitempty"`
-	Mint             *ledger.MultiAsset[ledger.MultiAssetTypeMint] `cbor:"9,keyasint,omitempty"`
+	Mint             *common.MultiAsset[ledger.MultiAssetTypeMint] `cbor:"9,keyasint,omitempty"`
 	CollateralReturn BabbageTransactionOutput                      `cbor:"16,keyasint,omitempty"`
 }
 
@@ -85,10 +87,10 @@ type AlonzoTransactionOutputTmp struct {
 
 type BabbageTransactionOutputTmp struct {
 	cbor.DecodeStoreCbor
-	OutputAddress ledger.Address                              `cbor:"0,keyasint,omitempty"`
-	OutputAmount  ledger.MaryTransactionOutputValue           `cbor:"1,keyasint,omitempty"`
-	DatumOption   *ledger.BabbageTransactionOutputDatumOption `cbor:"2,keyasint,omitempty"`
-	ScriptRef     *cbor.Tag                                   `cbor:"3,keyasint,omitempty"`
+	OutputAddress ledger.Address                               `cbor:"0,keyasint,omitempty"`
+	OutputAmount  ledger.MaryTransactionOutputValue            `cbor:"1,keyasint,omitempty"`
+	DatumOption   *babbage.BabbageTransactionOutputDatumOption `cbor:"2,keyasint,omitempty"`
+	ScriptRef     *cbor.Tag                                    `cbor:"3,keyasint,omitempty"`
 	legacyOutput  bool
 }
 
