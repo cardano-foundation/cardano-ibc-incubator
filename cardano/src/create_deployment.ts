@@ -392,21 +392,8 @@ async function createReferenceUtxos(
     for (const _ of referredValidators) {
       const newLucid = await Lucid(provider, "Preview");
       newLucid.selectWallet.fromSeed(generateSeedPhrase());
-
       deployLucids.push(newLucid);
     }
-    // const deployLucids: Lucid[] = await Promise.all(
-    //   referredValidators.map(async (_) => {
-    //     const newLucid = await Lucid.new(provider, "Preview");
-    //     const sk = newLucid.utils.generatePrivateKey();
-    //     newLucid.selectWalletFromPrivateKey(sk);
-    //     console.log({
-    //       sk,
-    //     });
-
-    //     return newLucid;
-    //   })
-    // );
 
     const fundDeployAccTx = lucid.newTx();
     await Promise.all(
@@ -422,29 +409,12 @@ async function createReferenceUtxos(
       lucid
     );
 
-    // const createRefUtxoTxs = referredValidators.map((validator, index) => {
-    //   const curLucid = deployLucids[index];
-    //   const tx = curLucid.newTx().pay.ToContract(
-    //     referenceAddress,
-    //     {
-    //       inline: Data.void(),
-    //       scriptRef: validator,
-    //     },
-    //     {}
-    //   );
-
-    //   return submitTx(
-    //     tx,
-    //     curLucid,
-    //     validatorToScriptHash(validator),
-    //     true
-    //   );
-    // });
     console.log(
       "Submitting transactions for",
-      deployLucids.keys.length,
+      referredValidators.length,
       "validators. This might take a while."
     );
+
     const createRefUtxoTxs: string[] = [];
     let index = 0;
     for (const validator of referredValidators) {
@@ -454,9 +424,9 @@ async function createReferenceUtxos(
         {
           kind: "inline",
           value: Data.void(),
-          scriptRef: validator,
         },
-        {}
+        {},
+        validator
       );
 
       const txHash = await submitTx(
@@ -469,7 +439,6 @@ async function createReferenceUtxos(
       index++;
     }
 
-    // const txHash = await Promise.all(createRefUtxoTxs);
     const txHash = createRefUtxoTxs;
     const outRef: OutRef[] = txHash.map((hash) => ({
       txHash: hash,
