@@ -1,4 +1,4 @@
-import { UTxO } from '@cuonglv0297/lucid-custom';
+import { UTxO } from '@lucid-evolution/lucid';
 
 export type UnsignedChannelOpenInitDto = {
   handlerUtxo: UTxO;

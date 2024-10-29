@@ -1,6 +1,6 @@
-import { Module } from "@nestjs/common";
-import { HttpModule } from "@nestjs/axios";
-import { MithrilService } from "./mithril.service";
+import { Module } from '@nestjs/common';
+import { HttpModule } from '@nestjs/axios';
+import { MithrilService } from './mithril.service';
 
 @Module({
   imports: [HttpModule],

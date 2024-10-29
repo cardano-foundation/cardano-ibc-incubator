@@ -9,7 +9,7 @@ import {
   Kupmios,
   Provider,
   toText,
-} from '@cuonglv0297/lucid-custom';
+} from '@lucid-evolution/lucid';
 
 const tryAssetName = (assetHex: string): string => {
   const tokenName = assetHex.slice(56);

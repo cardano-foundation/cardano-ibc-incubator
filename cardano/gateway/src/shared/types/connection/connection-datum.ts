@@ -1,4 +1,4 @@
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 import { AuthToken } from '../auth-token';
 import { ConnectionEnd } from './connection-end';
 
@@ -9,7 +9,7 @@ export type ConnectionDatum = {
 
 export async function encodeConnectionDatum(
   connectionDatum: ConnectionDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
@@ -56,10 +56,7 @@ export async function encodeConnectionDatum(
   return Data.to(connectionDatum, TConnectionDatum);
 }
 
-export async function decodeConnectionDatum(
-  connectionDatum: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
-) {
+export async function decodeConnectionDatum(connectionDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const VersionSchema = Data.Object({

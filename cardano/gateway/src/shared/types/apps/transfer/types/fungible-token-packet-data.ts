@@ -1,4 +1,4 @@
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 export type FungibleTokenPacketDatum = {
   denom: string;
   amount: string;
@@ -9,7 +9,7 @@ export type FungibleTokenPacketDatum = {
 
 export function encodeFungibleTokenPacketDatum(
   fungibleTokenPacketDatum: FungibleTokenPacketDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ): string {
   const { Data } = Lucid;
 
@@ -28,7 +28,7 @@ export function encodeFungibleTokenPacketDatum(
 
 export function decodeFungibleTokenPacketDatum(
   fungibleTokenPacketDatum: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ): FungibleTokenPacketDatum {
   const { Data } = Lucid;
 
@@ -48,7 +48,7 @@ export function decodeFungibleTokenPacketDatum(
 // cast to fungibleTokenPacket
 export function castToFungibleTokenPacket(
   fungibleTokenPacket: FungibleTokenPacketDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const FungibleTokenPacketDatumSchema = Data.Object({

@@ -1,10 +1,5 @@
 // rpc-utils.ts
-async function callJsonRpcMethod<T>(
-    url: string,
-    method: string,
-    params: any[] = [],
-    id: number = 1
-): Promise<T> {
+async function callJsonRpcMethod<T>(url: string, method: string, params: any[] = [], id: number = 1): Promise<T> {
   const payload = {
     jsonrpc: '2.0',
     method,
@@ -36,4 +31,3 @@ async function callJsonRpcMethod<T>(
 }
 
 export { callJsonRpcMethod };
-  

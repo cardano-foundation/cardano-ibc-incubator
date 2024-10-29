@@ -1,4 +1,4 @@
-import { type Data } from '@cuonglv0297/lucid-custom';
+import { type Data } from '@lucid-evolution/lucid';
 import { ClientMessage } from './msgs/client-message';
 
 export type SpendClientRedeemer =
@@ -10,7 +10,7 @@ export type SpendClientRedeemer =
     };
 export async function encodeSpendClientRedeemer(
   spendClientRedeemer: SpendClientRedeemer,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const PartSetHeaderSchema = Data.Object({
@@ -103,7 +103,7 @@ export async function encodeSpendClientRedeemer(
 
 export function decodeSpendClientRedeemer(
   spendClientRedeemer: string,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ): SpendClientRedeemer {
   const { Data } = Lucid;
   const PartSetHeaderSchema = Data.Object({

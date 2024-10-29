@@ -3,35 +3,34 @@ import {
   MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from "@plus/proto-types/build/ibc/core/client/v1/tx";
-import { type Tx, TxComplete, UTxO } from "@cuonglv0297/lucid-custom";
+} from '@plus/proto-types/build/ibc/core/client/v1/tx';
+import { fromHex, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
 
-import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ConsensusState } from "../shared/types/consensus-state";
-import { ClientState } from "../shared/types/client-state-types";
-import { LucidService } from "src/shared/modules/lucid/lucid.service";
-import { GrpcInternalException } from "nestjs-grpc-exceptions";
-import { decodeHeader, initializeHeader } from "../shared/types/header";
-import { RpcException } from "@nestjs/microservices";
-import { HandlerDatum } from "src/shared/types/handler-datum";
-import { ConfigService } from "@nestjs/config";
-import { ClientDatumState } from "src/shared/types/client-datum-state";
-import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from "src/constant";
-import { ClientDatum } from "src/shared/types/client-datum";
-import { MintClientOperator } from "src/shared/types/mint-client-operator";
-import { HandlerOperator } from "src/shared/types/handler-operator";
-import { SpendClientRedeemer } from "src/shared/types/client-redeemer";
-import { Height } from "src/shared/types/height";
-import { isExpired } from "@shared/helpers/client-state";
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConsensusState } from '../shared/types/consensus-state';
+import { ClientState } from '../shared/types/client-state-types';
+import { LucidService } from 'src/shared/modules/lucid/lucid.service';
+import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { decodeHeader, initializeHeader } from '../shared/types/header';
+import { RpcException } from '@nestjs/microservices';
+import { HandlerDatum } from 'src/shared/types/handler-datum';
+import { ConfigService } from '@nestjs/config';
+import { ClientDatumState } from 'src/shared/types/client-datum-state';
+import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
+import { ClientDatum } from 'src/shared/types/client-datum';
+import { MintClientOperator } from 'src/shared/types/mint-client-operator';
+import { HandlerOperator } from 'src/shared/types/handler-operator';
+import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
+import { Height } from 'src/shared/types/height';
+import { isExpired } from '@shared/helpers/client-state';
 import {
   ClientMessage,
   getClientMessageFromTendermint,
   verifyClientMessage,
-} from "../shared/types/msgs/client-message";
-import { checkForMisbehaviour } from "@shared/types/misbehaviour/misbehaviour";
-import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from "./dto/client/update-client-operator.dto";
-import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from "./helper/client.validate";
-import { toHex } from "@shared/helpers/hex";
+} from '../shared/types/msgs/client-message';
+import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
+import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto/client/update-client-operator.dto';
+import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
 
 @Injectable()
 export class ClientService {
@@ -47,7 +46,7 @@ export class ClientService {
    */
   async createClient(data: MsgCreateClient): Promise<MsgCreateClientResponse> {
     try {
-      this.logger.log("Create client is processing", "createClient");
+      this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
       // Build unsigned create client transaction
       const { unsignedTx: unsignedCreateClientTx, clientId } = await this.buildUnsignedCreateClientTx(
@@ -57,21 +56,23 @@ export class ClientService {
       );
 
       const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
-        throw new GrpcInternalException(`create client failed: tx time invalid consesusState.timestamp ${consensusState.timestamp} validToTime ${validToTime} validToSlot ${validToSlot} currentSlot ${currentSlot}`);
+        throw new GrpcInternalException(
+          `create client failed: tx time invalid consesusState.timestamp ${consensusState.timestamp} validToTime ${validToTime} validToSlot ${validToSlot} currentSlot ${currentSlot}`,
+        );
       }
 
-      const unSignedTxValidTo: Tx = unsignedCreateClientTx.validTo(validToTime);
-      const unsignedCreateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+      const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
+      const unsignedCreateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
-      this.logger.log(unsignedCreateClientTxCompleted.toHash(), "create client - unsignedTX");
-      this.logger.log(clientId, "create client - clientId");
+      this.logger.log(unsignedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
+      this.logger.log(clientId, 'create client - clientId');
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
-          type_url: "",
-          value: unsignedCreateClientTxCompleted.txComplete.to_bytes(),
+          type_url: '',
+          value: fromHex(unsignedCreateClientTxCompleted.toCBOR()),
         },
         client_id: `${CLIENT_ID_PREFIX}-${clientId.toString()}`,
       } as unknown as MsgCreateClientResponse;
@@ -101,7 +102,7 @@ export class ClientService {
       // Retrieve the current client datum from the UTXO
       const currentClientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(
         currentClientUtxo.datum!,
-        "client",
+        'client',
       );
 
       verifyClientMessage(data.client_message, currentClientDatum);
@@ -118,18 +119,19 @@ export class ClientService {
           currentClientUtxo,
         };
 
-        const unsignedUpdateClientTx: Tx = await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
-        const unSignedTxValidTo: Tx = unsignedUpdateClientTx
+        const unsignedUpdateClientTx: TxBuilder =
+          await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
+        const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
           .validTo(new Date().valueOf());
-        const unsignedUpdateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+        const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
-        this.logger.log(clientId, "update client - client Id");
-        this.logger.log(unsignedUpdateClientTxCompleted.toHash(), "update client on misbehaviour - unsignedTX - hash");
+        this.logger.log(clientId, 'update client - client Id');
+        this.logger.log(unsignedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
-            type_url: "",
-            value: unsignedUpdateClientTxCompleted.txComplete.to_bytes(),
+            type_url: '',
+            value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -153,27 +155,27 @@ export class ClientService {
         txValidFrom: validFromTime,
       };
 
-      const unsignedUpdateClientTx: Tx = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-      const validFromSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validFromTime));
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
+      const validFromSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validFromTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot < validFromSlot || currentSlot > validToSlot) {
-        throw new GrpcInternalException("tx time invalid");
+        throw new GrpcInternalException('tx time invalid');
       }
 
-      const unSignedTxValidTo: Tx = unsignedUpdateClientTx
+      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
         .validFrom(Number(validFromTime))
         .validTo(new Date().valueOf() + 100 * 1e3);
-      const unsignedUpdateClientTxCompleted: TxComplete = await unSignedTxValidTo.complete();
+      const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
 
       // Build and complete the unsigned transaction
-      this.logger.log(clientId, "update client - client Id");
-      this.logger.log(header.signedHeader.header.height, "update client - header height");
-      this.logger.log(unsignedUpdateClientTxCompleted.toHash(), "update client - unsignedTX - hash");
+      this.logger.log(clientId, 'update client - client Id');
+      this.logger.log(header.signedHeader.header.height, 'update client - header height');
+      this.logger.log(unsignedUpdateClientTxCompleted.toHash(), 'update client - unsignedTX - hash');
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
-          type_url: "",
-          value: unsignedUpdateClientTxCompleted.txComplete.to_bytes(),
+          type_url: '',
+          value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;
@@ -191,7 +193,7 @@ export class ClientService {
   }
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
     const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
     const clientMessage: ClientMessage = getClientMessageFromTendermint(clientMessageAny);
@@ -219,8 +221,8 @@ export class ClientService {
       },
     };
 
-    const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, "spendClientRedeemer");
-    const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, "client");
+    const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
+    const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     return this.lucidService.createUnsignedUpdateClientTransaction(
       updateOnMisbehaviourOperator.currentClientUtxo,
       encodedSpendClientRedeemer,
@@ -233,7 +235,7 @@ export class ClientService {
   /**
    * Builds an unsigned UpdateClient transaction.
    */
-  public async buildUnsignedUpdateClientTx(updateClientOperator: UpdateClientOperatorDto): Promise<Tx> {
+  public async buildUnsignedUpdateClientTx(updateClientOperator: UpdateClientOperatorDto): Promise<TxBuilder> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
     // Create a SpendClientRedeemer using the provided header
@@ -292,8 +294,8 @@ export class ClientService {
       },
     };
 
-    const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, "spendClientRedeemer");
-    const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, "client");
+    const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
+    const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     return this.lucidService.createUnsignedUpdateClientTransaction(
       updateClientOperator.currentClientUtxo,
       encodedSpendClientRedeemer,
@@ -311,10 +313,10 @@ export class ClientService {
     clientState: ClientState,
     consensusState: ConsensusState,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: Tx; clientId: bigint }> {
+  ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     // Decode the handler datum from the handler UTXO
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, "handler");
+    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Create an updated handler datum with an incremented client sequence
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
@@ -323,7 +325,7 @@ export class ClientService {
         next_client_sequence: handlerDatum.state.next_client_sequence + 1n,
       },
     };
-    const mintClientScriptHash = this.configService.get("deployment").validators.mintClient.scriptHash;
+    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
 
     const clientDatumState: ClientDatumState = {
       clientState: clientState,
@@ -341,15 +343,15 @@ export class ClientService {
     };
     const mintClientOperator: MintClientOperator = this.createMintClientOperator();
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
-    const handlerOperator: HandlerOperator = "CreateClient";
+    const handlerOperator: HandlerOperator = 'CreateClient';
     // Encode encoded data for created transaction
-    const encodedMintClientOperator: string = await this.lucidService.encode(mintClientOperator, "mintClientOperator");
-    const encodedHandlerOperator: string = await this.lucidService.encode(handlerOperator, "handlerOperator");
+    const encodedMintClientOperator: string = await this.lucidService.encode(mintClientOperator, 'mintClientOperator');
+    const encodedHandlerOperator: string = await this.lucidService.encode(handlerOperator, 'handlerOperator');
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
       updatedHandlerDatum,
-      "handler",
+      'handler',
     );
-    const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, "client");
+    const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
     // Create and return the unsigned transaction for creating new client
     return {
       unsignedTx: this.lucidService.createUnsignedCreateClientTransaction(
@@ -378,7 +380,7 @@ export class ClientService {
       MintNewClient: {
         handlerAuthToken: {
           name: HANDLER_TOKEN_NAME,
-          policyId: this.configService.get("deployment").handlerAuthToken.policyId,
+          policyId: this.configService.get('deployment').handlerAuthToken.policyId,
         },
       },
     };
