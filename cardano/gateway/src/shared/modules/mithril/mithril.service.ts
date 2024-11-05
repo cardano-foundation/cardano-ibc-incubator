@@ -8,7 +8,7 @@ import { CertificateDTO } from './dtos/get-most-recent-certificates.dto';
 import { RegisterdSignersResponseDTO } from './dtos/get-registerd-signers-for-epoch.dto';
 import { CertificateDetailDTO } from './dtos/get-certificate-by-hash.dto';
 import { SnapshotDTO } from './dtos/get-most-recent-snapshots.dto';
-import { MithrilClient } from '@mithril-dev/mithril-client-wasm';
+import { MithrilClient } from '@cuonglv0297/mithril-client-wasm';
 import { CardanoTransactionSetSnapshotDTO } from './dtos/get-most-recent-cardano-transactions.dto';
 import { MithrilStakeDistributionDTO } from './dtos/get-most-recent-mithril-stake-distributions.dto';
 
@@ -22,8 +22,7 @@ export class MithrilService {
   ) {
     this.mithrilClient = new MithrilClient(
       this.configService.get('mithrilEndpoint'),
-      this.configService.get('mtithrilGenesisVerificationKey'),
-      {}
+      this.configService.get('mtithrilGenesisVerificationKey')
     );
   }
 

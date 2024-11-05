@@ -23,13 +23,10 @@
       "~@/*": ["src/*"],
       "@shared/*": ["src/shared/*"],
       "@utils/*": ["src/utils/*"],
-      "@config/*": ["src/config/*"],
+      "@config/*": ["src/config/*"]
     }
   },
   "include": ["src/**/*", "handler.json", "src/deployment/handler.json"],
   "exclude": ["*.test.ts", "*.spec.ts"],
-  "rootDirs": [
-    "src",
-    "../../proto-types"
-  ],
+  "rootDirs": ["src", "../../proto-types"]
 }
