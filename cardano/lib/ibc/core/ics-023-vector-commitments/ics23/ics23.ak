@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Batch, CommitmentProof_Compressed,
@@ -55,9 +55,11 @@ pub fn get_non_exist_proof_for_key(
   when comm_proof.proof is {
     CommitmentProof_Exist { .. } -> fail
     CommitmentProof_Nonexist { non_exist } ->
-      if
-      is_left(spec, non_exist.left, key) && is_right(spec, non_exist.right, key){
-      
+      if is_left(spec, non_exist.left, key) && is_right(
+        spec,
+        non_exist.right,
+        key,
+      ) {
         non_exist
       } else {
         proofs.null_non_existance_proof()

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/utils/string
 
 pub type Version {

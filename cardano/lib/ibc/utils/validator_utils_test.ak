@@ -1,14 +1,13 @@
-use aiken/bytearray
+use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
-use aiken/list
-use aiken/transaction.{
+use aiken/primitive/bytearray
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset, zero}
+use cardano/transaction.{
   Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
-  Publish, Redeemer, ScriptContext, ScriptPurpose, Spend, Transaction,
-  TransactionId, ValidityRange, WithdrawFrom,
+  Publish, Redeemer, ScriptPurpose, Spend, Transaction, TransactionId,
+  ValidityRange,
 }
-use aiken/transaction/certificate.{CredentialRegistration}
-use aiken/transaction/credential.{Inline, ScriptCredential}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -50,20 +49,20 @@ test test_quantity_token_output() {
   let mock_outputs: List<Output> =
     [
       Output {
-        address: credential.from_script(hash_sample),
-        value: value.from_asset(mock_policy_id, mock_asset_name, 1),
+        address: from_script(hash_sample),
+        value: from_asset(mock_policy_id, mock_asset_name, 1),
         datum: NoDatum,
         reference_script: None,
       },
       Output {
-        address: credential.from_script(hash_sample),
-        value: value.from_asset(mock_policy_id, mock_asset_name, 2),
+        address: from_script(hash_sample),
+        value: from_asset(mock_policy_id, mock_asset_name, 2),
         datum: NoDatum,
         reference_script: None,
       },
       Output {
-        address: credential.from_script(hash_sample),
-        value: value.from_asset(mock_policy_id, mock_asset_name, 3),
+        address: from_script(hash_sample),
+        value: from_asset(mock_policy_id, mock_asset_name, 3),
         datum: NoDatum,
         reference_script: None,
       },
@@ -82,24 +81,24 @@ test test_quantity_token_input() {
     [
       Input {
         output_reference: OutputReference {
-          transaction_id: TransactionId(hash_sample),
+          transaction_id: hash_sample,
           output_index: 0,
         },
         output: Output {
-          address: credential.from_script(hash_sample),
-          value: value.from_asset(mock_policy_id, mock_asset_name, 1),
+          address: from_script(hash_sample),
+          value: from_asset(mock_policy_id, mock_asset_name, 1),
           datum: NoDatum,
           reference_script: None,
         },
       },
       Input {
         output_reference: OutputReference {
-          transaction_id: TransactionId(hash_sample),
+          transaction_id: hash_sample,
           output_index: 1,
         },
         output: Output {
-          address: credential.from_script(hash_sample),
-          value: value.from_asset(mock_policy_id, mock_asset_name, 2),
+          address: from_script(hash_sample),
+          value: from_asset(mock_policy_id, mock_asset_name, 2),
           datum: NoDatum,
           reference_script: None,
         },
@@ -146,99 +145,6 @@ test test_get_tx_valid_to_failed_with_upper_bound_is_infinity() fail {
   validator_utils.get_tx_valid_to(mock_validity_range) == expected_valid_to
 }
 
-// Test for successfully extracting minting context in case purpose is mint
-test extract_minting_context_succeed() {
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let policy_id: PolicyId = hash_sample
-  let purpose = Mint(policy_id)
-  let script_context = ScriptContext { transaction, purpose }
-  validator_utils.extract_minting_context(script_context) == (
-    policy_id,
-    [input],
-    [output],
-    mint,
-  )
-}
-
-// Test for failing to extract minting context when purpose is spend
-test extract_minting_context_fail_when_purpose_is_spend() fail {
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let purpose = Spend(input.output_reference)
-  let script_context = ScriptContext { transaction, purpose }
-  validator_utils.extract_minting_context(script_context) == (
-    hash_sample,
-    [input],
-    [output],
-    mint,
-  )
-}
-
-// Test for failing to extract minting context when purpose is withdraw_from
-test extract_minting_context_fail_when_purpose_is_withdraw_from() fail {
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let credential = ScriptCredential(hash_sample)
-  let stake_credential = Inline(credential)
-  let purpose = WithdrawFrom(stake_credential)
-
-  let Transaction { inputs, outputs, mint, .. } = transaction
-  let script_context = ScriptContext { transaction, purpose }
-  validator_utils.extract_minting_context(script_context) == (
-    hash_sample,
-    inputs,
-    outputs,
-    mint,
-  )
-}
-
-// Test for failing to extract minting context when purpose is publish
-test extract_minting_context_fail_when_purpose_is_publish() fail {
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let credential = ScriptCredential(hash_sample)
-  let stake_credential = Inline(credential)
-  let certificate = CredentialRegistration(stake_credential)
-  let purpose = Publish(certificate)
-  let Transaction { inputs, outputs, mint, .. } = transaction
-  let script_context = ScriptContext { transaction, purpose }
-  validator_utils.extract_minting_context(script_context) == (
-    hash_sample,
-    inputs,
-    outputs,
-    mint,
-  )
-}
-
 // Test for successfully getting inline datum from an output
 test get_inline_datum_succeed() {
   let datum = InlineDatum(hash_sample)
@@ -263,129 +169,8 @@ test get_inline_datum_fail_when_datum_hash() fail {
   data == hash_sample
 }
 
-test test_extract_spending_context_succeed() {
-  // Define sample data for the transaction
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let mock_transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-
-  // Define the purpose as Spend, representing a spending operation
-  let purpose = Spend(input.output_reference)
-
-  // Create the script context using the mock transaction and purpose
-  let script_context = ScriptContext { transaction: mock_transaction, purpose }
-
-  // Call the function under test
-  let (spent_output, transaction) =
-    validator_utils.extract_spending_context(script_context)
-
-  // Assert that the output and transaction match the mock data
-  spent_output == input.output && transaction == mock_transaction
-}
-
-test test_extract_spending_context_fail_when_spent_ref_differs_from_input_output_ref() fail {
-  // Define sample data for the transaction
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let mock_transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-
-  // Define the purpose as Spend, representing a spending operation
-  let purpose = Spend(OutputReference(TransactionId(hash_sample_second), 0))
-
-  // Create the script context using the mock transaction and purpose
-  let script_context = ScriptContext { transaction: mock_transaction, purpose }
-
-  // Call the function under test
-  let (spent_output, transaction) =
-    validator_utils.extract_spending_context(script_context)
-
-  // Assert that the output and transaction match the mock data
-  spent_output == input.output && transaction == mock_transaction
-}
-
-test test_extract_spending_context_fail_when_purpose_is_withdraw_from() fail {
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let mock_transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-
-  // Define the purpose as WithdrawFrom, representing a withdrawal operation
-  let stake_credential = Inline(ScriptCredential(hash_sample))
-  let purpose = WithdrawFrom(stake_credential)
-
-  // Create the script context using the mock transaction and purpose
-  let script_context = ScriptContext { transaction: mock_transaction, purpose }
-
-  // Call the function under test
-  let (spent_output, transaction) =
-    validator_utils.extract_spending_context(script_context)
-
-  // Assert that the output and transaction match the mock data
-  spent_output == input.output && transaction == mock_transaction
-}
-
-test test_extract_spending_context_when_purpose_is_mint_purpose() fail {
-  // Define sample data for the transaction
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let policy_id: PolicyId = hash_sample
-  let purpose = Mint(policy_id)
-  // Create the script context using the mock transaction and purpose
-  let script_context = ScriptContext { transaction, purpose }
-  // Call the function under test
-  let (spent_output, transaction_result) =
-    validator_utils.extract_spending_context(script_context)
-  spent_output == input.output && transaction_result == transaction
-}
-
-test test_extract_spending_context_when_purpose_is_publish() fail {
-  // Define sample data for the transaction
-  let (input, output) = create_sample_data_input_output()
-  let mint = value.to_minted_value(value.zero())
-  let transaction =
-    Transaction {
-      ..transaction.placeholder(),
-      inputs: [input],
-      outputs: [output],
-      mint: mint,
-    }
-  let credential = ScriptCredential(hash_sample)
-  let stake_credential = Inline(credential)
-  let certificate = CredentialRegistration(stake_credential)
-  let purpose = Publish(certificate)
-  let script_context = ScriptContext { transaction, purpose }
-  // Call the function under test
-  let (spent_output, transaction_result) =
-    validator_utils.extract_spending_context(script_context)
-  spent_output == input.output && transaction_result == transaction
-}
-
 fn create_sample_data_input_output() -> (Input, Output) {
-  let transaction_id = TransactionId(hash_sample)
+  let transaction_id = hash_sample
   let output = create_output_sample(NoDatum)
   let input =
     Input { output_reference: OutputReference(transaction_id, 0), output }
@@ -395,8 +180,8 @@ fn create_sample_data_input_output() -> (Input, Output) {
 fn create_output_sample(datum: Datum) -> Output {
   let output =
     Output {
-      address: credential.from_script(hash_sample),
-      value: value.zero(),
+      address: from_script(hash_sample),
+      value: zero,
       datum,
       reference_script: None,
     }
@@ -420,12 +205,10 @@ test test_validate_mint_succeed() {
   let token_name =
     auth.generate_token_name(handler_token, token_name_prefix, sequence)
   let mint =
-    value.to_minted_value(
-      value.from_asset(
-        policy_id: mock_minting_policy_id,
-        asset_name: token_name,
-        quantity: 1,
-      ),
+    from_asset(
+      policy_id: mock_minting_policy_id,
+      asset_name: token_name,
+      quantity: 1,
     )
   // Call the function under test
   let result =
@@ -457,12 +240,10 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
   let token_name =
     auth.generate_token_name(handler_token, token_name_prefix, sequence)
   let mint =
-    value.to_minted_value(
-      value.from_asset(
-        policy_id: mock_minting_policy_id,
-        asset_name: token_name,
-        quantity: 0,
-      ),
+    from_asset(
+      policy_id: mock_minting_policy_id,
+      asset_name: token_name,
+      quantity: 0,
     )
   // Call the function under test
   let result =
@@ -517,8 +298,8 @@ fn setup_extract_module_redeemer() -> (
 
   let module_output =
     Output {
-      address: credential.from_script("mock module script hash"),
-      value: value.from_asset(port_token.policy_id, port_token.name, 1),
+      address: from_script("mock module script hash"),
+      value: from_asset(port_token.policy_id, port_token.name, 1),
       datum: InlineDatum(Void),
       reference_script: None,
     }
@@ -647,13 +428,13 @@ fn setup_validate_token_remain() -> (
   let output_value =
     list.reduce(
       tokens,
-      value.zero(),
+      zero,
       fn(acc, token) { value.add(acc, token.policy_id, token.name, 1) },
     )
 
   let spent_output =
     Output {
-      address: credential.from_script("mock script hash"),
+      address: from_script("mock script hash"),
       value: output_value,
       datum: InlineDatum(Void),
       reference_script: None,
@@ -690,7 +471,7 @@ test validate_token_remain_fail_if_token_not_remained() {
 
   expect [output, ..] = outputs
 
-  let output = Output { ..output, value: value.zero() }
+  let output = Output { ..output, value: zero() }
 
   validator_utils.validate_token_remain(spent_output, [output], tokens) == None
 }
@@ -713,7 +494,7 @@ test extract_token_unit_succeed() {
 
 test extract_token_unit_succeed_if_unit_is_lovelace() {
   validator_utils.extract_token_unit("lovelace") == Some(
-    (value.ada_policy_id, value.ada_asset_name),
+    (ada_policy_id, ada_asset_name),
   )
 }
 
@@ -758,8 +539,8 @@ fn setup_validate_handler_redeemer() -> (
 
   let handler_output =
     Output {
-      address: credential.from_script("mock script hash"),
-      value: value.from_asset(handler_token.policy_id, handler_token.name, 1),
+      address: from_script("mock script hash"),
+      value: from_asset(handler_token.policy_id, handler_token.name, 1),
       datum: InlineDatum(handler_datum),
       reference_script: None,
     }
@@ -928,12 +709,14 @@ fn setup_validate_referred_client() -> (
     )
   let mock_consensus_states =
     [
-      Pair(height.zero_height(),
-      ConsensusState {
-        timestamp: 1,
-        next_validators_hash: "mock_next_validators_hash",
-        root: merkle.new_merkle_root("mock_app_hash"),
-      }),
+      Pair(
+        height.zero_height(),
+        ConsensusState {
+          timestamp: 1,
+          next_validators_hash: "mock_next_validators_hash",
+          root: merkle.new_merkle_root("mock_app_hash"),
+        },
+      ),
     ]
 
   let client_datum =
@@ -947,8 +730,8 @@ fn setup_validate_referred_client() -> (
 
   let client_output =
     Output {
-      address: credential.from_script("mock script hash"),
-      value: value.from_asset(client_token.policy_id, client_token.name, 1),
+      address: from_script("mock script hash"),
+      value: from_asset(client_token.policy_id, client_token.name, 1),
       datum: InlineDatum(client_datum),
       reference_script: None,
     }
@@ -1094,12 +877,8 @@ fn setup_validate_referred_connection() -> (
 
   let connection_output =
     Output {
-      address: credential.from_script("mock script hash"),
-      value: value.from_asset(
-        connection_token.policy_id,
-        connection_token.name,
-        1,
-      ),
+      address: from_script("mock script hash"),
+      value: from_asset(connection_token.policy_id, connection_token.name, 1),
       datum: InlineDatum(connection_datum),
       reference_script: None,
     }

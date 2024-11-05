@@ -1,13 +1,13 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, TransactionId, ValidityRange,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -23,8 +23,8 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 }
 use ibc/client/mithril_client/client_state as mithril_client_state
 use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, MithrilClientState,
-  MithrilProtocolParameters, Fraction, CardanoHeight
+  AnyMithrilClientState, CardanoHeight, Fraction, MithrilClientState,
+  MithrilProtocolParameters,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
@@ -48,19 +48,29 @@ use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
-validator(
+validator spend_connection(
   client_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  fn spend_connection(
-    datum: ConnectionDatum,
+  spend(
+    datum: Option<ConnectionDatum>,
     redeemer: SpendConnectionRedeemer,
-    context: ScriptContext,
-  ) -> Bool {
-    let (spent_output, transaction) =
-      validator_utils.extract_spending_context(context)
-    let Transaction { outputs, reference_inputs, validity_range, redeemers, .. } =
-      transaction
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction {
+      inputs,
+      outputs,
+      reference_inputs,
+      validity_range,
+      redeemers,
+      ..
+    } = transaction
+
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    let spent_output = spent_input.output
+
+    expect Some(datum) = datum
 
     expect spent_output |> auth.contain_auth_token(datum.token)
     trace @"spend_connection: input contains auth token"
@@ -174,6 +184,10 @@ validator(
         True
       }
     }
+  }
+
+  else(_) {
+    fail
   }
 }
 
@@ -455,12 +469,12 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock client script hash"),
-        value: value.from_asset(client_token.policy_id, client_token.name, 1),
+        address: from_script("mock client script hash"),
+        value: from_asset(client_token.policy_id, client_token.name, 1),
         datum: InlineDatum(client_datum),
         reference_script: None,
       },
@@ -503,8 +517,8 @@ fn setup() -> MockData {
 fn build_output(datum: Data, token: AuthToken) -> Output {
   let output =
     Output {
-      address: credential.from_script("mock script hash"),
-      value: value.from_asset(token.policy_id, token.name, 1),
+      address: from_script("mock script hash"),
+      value: from_asset(token.policy_id, token.name, 1),
       datum: InlineDatum(datum),
       reference_script: None,
     }
@@ -518,7 +532,7 @@ fn build_input(datum: Data, token: AuthToken) -> Input {
   let input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output,
@@ -596,8 +610,12 @@ test conn_open_ack_succeed() {
   let counterparty_client_state =
     MithrilClientState {
       chain_id: "42",
-      latest_height: Some(CardanoHeight { revision_number: 0, revision_height: 1 }),
-      frozen_height: Some(CardanoHeight { revision_number: 0, revision_height: 0 }),
+      latest_height: Some(
+        CardanoHeight { revision_number: 0, revision_height: 1 },
+      ),
+      frozen_height: Some(
+        CardanoHeight { revision_number: 0, revision_height: 0 },
+      ),
       current_epoch: 1,
       trusting_period: 1,
       protocol_parameters: Some(
@@ -716,24 +734,22 @@ test conn_open_ack_succeed() {
   expect connection_redeemer: SpendConnectionRedeemer = connection_redeemer
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(conn_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_connection(
+  spend_connection.spend(
     mock.client_minting_policy_id,
     mock.verify_proof_policy_id,
-    input_conn_datum,
+    Some(input_conn_datum),
     connection_redeemer,
-    context,
+    conn_input.output_reference,
+    transaction,
   )
 }

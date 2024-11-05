@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 
 pub fn sender_chain_is_source(
   source_port: ByteArray,

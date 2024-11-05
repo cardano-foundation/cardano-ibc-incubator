@@ -1,5 +1,5 @@
-use aiken/list
-use aiken/pairs
+use aiken/collection/list
+use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -288,7 +288,7 @@ pub fn validate_timeout_packet(
           ..input_datum.state.channel,
           state: expected_channel_state,
         },
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_datum.state.packet_commitment,
           packet.sequence,
         ),
@@ -315,7 +315,7 @@ pub fn validate_acknowledge_packet(
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_datum.state.packet_commitment,
           packet.sequence,
         ),

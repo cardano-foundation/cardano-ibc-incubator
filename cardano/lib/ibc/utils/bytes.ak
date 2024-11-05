@@ -1,7 +1,7 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
-use aiken/bytearray.{push}
+use aiken/primitive/bytearray.{push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64}
 

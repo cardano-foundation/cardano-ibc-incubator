@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -110,12 +110,14 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
 
   let mock_consensus_states =
     [
-      Pair(latest_height,
-      ConsensusState {
-        timestamp: mock_timestamp,
-        next_validators_hash: mock_next_validators_hash,
-        root: merkle.new_merkle_root(mock_app_hash),
-      }),
+      Pair(
+        latest_height,
+        ConsensusState {
+          timestamp: mock_timestamp,
+          next_validators_hash: mock_next_validators_hash,
+          root: merkle.new_merkle_root(mock_app_hash),
+        },
+      ),
     ]
 
   let mock_auth_token =
@@ -149,12 +151,14 @@ test test_is_initialized_valid_success() {
 
   let mock_consensus_states =
     [
-      Pair(mock_latest_height,
-      ConsensusState {
-        timestamp: mock_timestamp,
-        next_validators_hash: mock_next_validators_hash,
-        root: merkle.new_merkle_root(mock_app_hash),
-      }),
+      Pair(
+        mock_latest_height,
+        ConsensusState {
+          timestamp: mock_timestamp,
+          next_validators_hash: mock_next_validators_hash,
+          root: merkle.new_merkle_root(mock_app_hash),
+        },
+      ),
     ]
 
   let mock_auth_token =
@@ -194,12 +198,14 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
 
   let mock_consensus_states =
     [
-      Pair(mock_latest_height,
-      ConsensusState {
-        timestamp: mock_timestamp,
-        next_validators_hash: mock_next_validators_hash,
-        root: merkle.new_merkle_root(mock_app_hash),
-      }),
+      Pair(
+        mock_latest_height,
+        ConsensusState {
+          timestamp: mock_timestamp,
+          next_validators_hash: mock_next_validators_hash,
+          root: merkle.new_merkle_root(mock_app_hash),
+        },
+      ),
     ]
 
   let mock_auth_token =
@@ -266,12 +272,14 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
     )
   let mock_consensus_states =
     [
-      Pair(mock_latest_height,
-      ConsensusState {
-        timestamp: mock_timestamp,
-        next_validators_hash: mock_next_validators_hash,
-        root: merkle.new_merkle_root(mock_app_hash),
-      }),
+      Pair(
+        mock_latest_height,
+        ConsensusState {
+          timestamp: mock_timestamp,
+          next_validators_hash: mock_next_validators_hash,
+          root: merkle.new_merkle_root(mock_app_hash),
+        },
+      ),
     ]
   let mock_auth_token =
     AuthToken {
@@ -313,8 +321,10 @@ test test_update_state_succeed_01() {
       ..mock_client_datum,
       state: ClientDatumState {
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
         client_state: ClientState {
@@ -349,8 +359,10 @@ test test_update_state_succeed_02() {
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
       },
@@ -384,8 +396,10 @@ test test_update_state_succeed_03() {
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: [
-          Pair(Height { revision_number: 0, revision_height: 88 },
-          pruned_cons_state),
+          Pair(
+            Height { revision_number: 0, revision_height: 88 },
+            pruned_cons_state,
+          ),
           ..mock_client_datum.state.consensus_states
         ],
       },
@@ -407,8 +421,10 @@ test test_update_state_succeed_03() {
       },
     )
       |> list.push(
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
         )
 
   let input_client_datum = mock_client_datum
@@ -443,8 +459,10 @@ test test_update_state_return_false_01() {
       ..mock_client_datum,
       state: ClientDatumState {
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
         client_state: ClientState {
@@ -477,8 +495,10 @@ test test_update_state_return_false_02() {
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
       },
@@ -505,8 +525,10 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
       },
@@ -517,8 +539,10 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: [
-          Pair(header.get_height(mock_header),
-          header.consensus_state(mock_header)),
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
           ..mock_client_datum.state.consensus_states
         ],
       },

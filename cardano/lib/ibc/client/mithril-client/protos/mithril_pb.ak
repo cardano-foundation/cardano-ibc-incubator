@@ -2,11 +2,11 @@
 // source: ibc/clients/mithril/v1/mithril.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, length, push}
-use aiken/list
+use aiken/collection/list
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bytes.{encode_varint, sov}
-use ibc/utils/int.{uint64, Uint64}
+use ibc/utils/int.{Uint64, uint64}
 
 pub type MithrilClientState {
   chain_id: ByteArray,
@@ -304,22 +304,22 @@ pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
       let CardanoHeight { revision_number, revision_height } = height
       #[]
         |> concat(
-             ite(
-               revision_number == 0,
-               #[],
-               revision_number |> uint64() |> encode_varint() |> push(8),
-             ),
-           )
+            ite(
+              revision_number == 0,
+              #[],
+              revision_number |> uint64() |> encode_varint() |> push(8),
+            ),
+          )
         |> concat(
-             ite(
-               revision_height == 0,
-               #[],
-               revision_height
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(0x10),
-             ),
-           )
+            ite(
+              revision_height == 0,
+              #[],
+              revision_height
+                |> uint64()
+                |> encode_varint()
+                |> push(0x10),
+            ),
+          )
     },
   )
 }
@@ -333,19 +333,19 @@ pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
       let CardanoHeight { revision_number, revision_height } = height
       0
         |> add(
-             ite(
-               revision_number == 0,
-               0,
-               revision_number |> uint64() |> sov() |> add(1),
-             ),
-           )
+            ite(
+              revision_number == 0,
+              0,
+              revision_number |> uint64() |> sov() |> add(1),
+            ),
+          )
         |> add(
-             ite(
-               revision_height == 0,
-               0,
-               revision_height |> uint64() |> sov() |> add(1),
-             ),
-           )
+            ite(
+              revision_height == 0,
+              0,
+              revision_height |> uint64() |> sov() |> add(1),
+            ),
+          )
     },
   )
 }
@@ -366,7 +366,12 @@ pub fn marshal_for_protocol_parameters(
             ite(
               is_none(phi_f),
               #[],
-              phi_f |> size_for_fraction() |> uint64() |> encode_varint() |> concat(marshal_for_fraction(phi_f)) |> push(0x1a)
+              phi_f
+                |> size_for_fraction()
+                |> uint64()
+                |> encode_varint()
+                |> concat(marshal_for_fraction(phi_f))
+                |> push(0x1a),
             ),
           )
     },
@@ -386,15 +391,15 @@ pub fn size_for_protocol_parameters(
         |> add(ite(k == 0, 0, k |> uint64() |> sov() |> add(1)))
         |> add(ite(m == 0, 0, m |> uint64() |> sov() |> add(1)))
         |> add(
-          ite(
-            is_none(phi_f),
-            0,
-            {
-              let l = size_for_fraction(phi_f)
-              l |> uint64() |> sov() |> add(l + 1)
-            }
+            ite(
+              is_none(phi_f),
+              0,
+              {
+                let l = size_for_fraction(phi_f)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
           )
-        )
     },
   )
 }
@@ -455,10 +460,12 @@ pub fn size_for_fraction(fraction_opt: Option<Fraction>) -> Int {
     {
       expect Some(fraction) = fraction_opt
       let Fraction { numerator, denominator } = fraction
-      0 
+      0
         |> add(ite(numerator == 0, 0, numerator |> uint64() |> sov() |> add(1)))
-        |> add(ite(denominator == 0, 0, denominator |> uint64() |> sov() |> add(1)))
-    }
+        |> add(
+            ite(denominator == 0, 0, denominator |> uint64() |> sov() |> add(1)),
+          )
+    },
   )
 }
 
@@ -469,21 +476,22 @@ pub fn marshal_for_fraction(fraction_opt: Option<Fraction>) -> ByteArray {
     {
       expect Some(fraction) = fraction_opt
       let Fraction { numerator, denominator } = fraction
-      #[] |> concat(
-        ite(
-          numerator == 0,
-          #[],
-          numerator |> uint64() |> encode_varint() |> push(8),
-        )
-      )
-      |> concat(
-        ite(
-          denominator == 0,
-          #[],
-          denominator |> uint64() |> encode_varint() |> push(0x10),
-        )
-      )
-    }
+      #[]
+        |> concat(
+            ite(
+              numerator == 0,
+              #[],
+              numerator |> uint64() |> encode_varint() |> push(8),
+            ),
+          )
+        |> concat(
+            ite(
+              denominator == 0,
+              #[],
+              denominator |> uint64() |> encode_varint() |> push(0x10),
+            ),
+          )
+    },
   )
 }
 
@@ -492,18 +500,19 @@ test test_marshal_for_client_state() {
     Some(
       MithrilClientState {
         chain_id: "chain-id",
-        latest_height: Some(CardanoHeight { revision_height: 11, revision_number: 0}),
-        frozen_height: Some(CardanoHeight { revision_height: 12, revision_number: 0 }),
+        latest_height: Some(
+          CardanoHeight { revision_height: 11, revision_number: 0 },
+        ),
+        frozen_height: Some(
+          CardanoHeight { revision_height: 12, revision_number: 0 },
+        ),
         current_epoch: 2,
         trusting_period: 10000,
         protocol_parameters: Some(
-          MithrilProtocolParameters { 
-            k: 2, 
-            m: 3, 
-            phi_f: Some(Fraction {
-              numerator: 20,
-              denominator: 100
-            })
+          MithrilProtocolParameters {
+            k: 2,
+            m: 3,
+            phi_f: Some(Fraction { numerator: 20, denominator: 100 }),
           },
         ),
         upgrade_path: ["abc", "xyz"],

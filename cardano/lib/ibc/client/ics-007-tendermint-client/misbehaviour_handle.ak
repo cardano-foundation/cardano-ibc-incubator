@@ -1,6 +1,6 @@
-use aiken/bytearray
-use aiken/list
-use aiken/pairs
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -66,26 +66,20 @@ pub fn check_for_misbehaviour(
       }
 
     MisbehaviourCase(misbehaviour) ->
-      if
-      height_mod.compare(
+      if height_mod.compare(
         header_mod.get_height(misbehaviour.header1),
         header_mod.get_height(misbehaviour.header2),
-      ) == Equal{
-      
-        if
-        !(bytearray.compare(
+      ) == Equal {
+        if !(bytearray.compare(
           misbehaviour.header1.signed_header.commit.block_id.hash,
           misbehaviour.header2.signed_header.commit.block_id.hash,
-        ) == Equal){
-        
+        ) == Equal) {
           True
         } else {
           False
         }
       } else {
-        if
-        !(misbehaviour.header1.signed_header.header.time > misbehaviour.header2.signed_header.header.time){
-        
+        if !(misbehaviour.header1.signed_header.header.time > misbehaviour.header2.signed_header.header.time) {
           True
         } else {
           False

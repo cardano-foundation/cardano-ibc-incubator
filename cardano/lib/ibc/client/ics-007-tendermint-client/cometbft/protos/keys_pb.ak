@@ -2,8 +2,8 @@
 // source: tendermint/crypto/keys.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{uint64}
 
@@ -49,17 +49,17 @@ pub fn marshal_for_ed25519(pk_opt: Option<PublicKey>) -> ByteArray {
       expect PublicKey_Ed25519(sum) = pk
       #[]
         |> concat(
-             ite(
-               length(sum) == 0,
-               #[],
-               sum
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(sum)
-                 |> push(10),
-             ),
-           )
+            ite(
+              length(sum) == 0,
+              #[],
+              sum
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(sum)
+                |> push(10),
+            ),
+          )
     },
   )
 }
@@ -92,17 +92,17 @@ pub fn marshal_for_secp256k1(pk_opt: Option<PublicKey>) -> ByteArray {
       expect PublicKey_Secp256K1(sum) = pk
       #[]
         |> concat(
-             ite(
-               length(sum) == 0,
-               #[],
-               sum
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(sum)
-                 |> push(0x12),
-             ),
-           )
+            ite(
+              length(sum) == 0,
+              #[],
+              sum
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(sum)
+                |> push(0x12),
+            ),
+          )
     },
   )
 }

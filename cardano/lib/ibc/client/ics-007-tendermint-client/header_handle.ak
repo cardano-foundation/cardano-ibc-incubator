@@ -1,5 +1,5 @@
-use aiken/bytearray
-use aiken/pairs
+use aiken/collection/pairs
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit
 use ibc/client/ics_007_tendermint_client/cometbft/block/header as tm_header

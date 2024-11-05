@@ -1,5 +1,6 @@
-use aiken/list
-use aiken/transaction.{Mint, ScriptContext}
+use aiken/collection/list
+use cardano/assets.{PolicyId}
+use cardano/transaction.{Transaction}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -22,8 +23,12 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
 
-validator {
-  fn verify_proof(redeemer: VerifyProofRedeemer, _context: Data) -> Bool {
+validator verify_proof {
+  mint(
+    redeemer: VerifyProofRedeemer,
+    _policy_id: PolicyId,
+    _transaction: Transaction,
+  ) {
     when redeemer is {
       VerifyMembership {
         cs,
@@ -84,6 +89,10 @@ validator {
 
       _ -> False
     }
+  }
+
+  else(_) {
+    fail
   }
 }
 
@@ -371,11 +380,11 @@ test verify_non_membership_succeed() {
       path: merkle_path,
     }
 
-  //========================arrange context=======================
-  let context =
-    ScriptContext { purpose: Mint(""), transaction: transaction.placeholder() }
-
-  verify_proof(redeemer, context)
+  verify_proof.mint(
+    redeemer,
+    #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
+    transaction.placeholder,
+  )
 }
 
 test verify_membership_succeed() {
@@ -532,11 +541,11 @@ test verify_membership_succeed() {
       value: packet_commitment,
     }
 
-  //========================arrange context=======================
-  let context =
-    ScriptContext { purpose: Mint(""), transaction: transaction.placeholder() }
-
-  verify_proof(redeemer, context)
+  verify_proof.mint(
+    redeemer,
+    #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
+    transaction.placeholder,
+  )
 }
 
 test batch_verify_membership_succeed() {
@@ -694,10 +703,9 @@ test batch_verify_membership_succeed() {
     }
 
   let redeemer = BatchVerifyMembership([item])
-
-  //========================arrange context=======================
-  let context =
-    ScriptContext { purpose: Mint(""), transaction: transaction.placeholder() }
-
-  verify_proof(redeemer, context)
+  verify_proof.mint(
+    redeemer,
+    #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
+    transaction.placeholder,
+  )
 }

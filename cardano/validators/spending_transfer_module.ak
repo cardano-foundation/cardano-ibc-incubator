@@ -1,14 +1,16 @@
-use aiken/bytearray
-use aiken/int
-use aiken/list
-use aiken/pairs
-use aiken/string
-use aiken/transaction.{
-  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptContext, ScriptPurpose, Spend, Transaction, TransactionId,
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/primitive/bytearray
+use aiken/primitive/int
+use aiken/primitive/string
+use cardano/address.{from_script, from_verification_key}
+use cardano/assets.{
+  PolicyId, ada_asset_name, ada_policy_id, add, from_asset, quantity_of,
 }
-use aiken/transaction/credential
-use aiken/transaction/value.{PolicyId}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
+  ScriptPurpose, Spend, Transaction, TransactionId,
+}
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
@@ -44,7 +46,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
-validator(
+validator spend_transfer_module(
   handler_token: AuthToken,
   port_token: AuthToken,
   module_token: AuthToken,
@@ -52,13 +54,15 @@ validator(
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) {
-  fn spend_transfer_module(
-    _datum: TransferModuleDatum,
+  spend(
+    _datum: Option<TransferModuleDatum>,
     redeemer: IBCModuleRedeemer,
-    context: ScriptContext,
-  ) -> Bool {
-    let (spent_output, transaction) =
-      validator_utils.extract_spending_context(context)
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction { inputs, .. } = transaction
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    let spent_output = spent_input.output
 
     expect Some(updated_output) =
       validator_utils.validate_token_remain(
@@ -73,7 +77,8 @@ validator(
         handler_callback(
           cb,
           handler_token,
-          context,
+          spent_output_ref,
+          transaction,
           updated_output,
           port_id,
           channel_minting_policy_id,
@@ -83,27 +88,34 @@ validator(
         handler_operator(
           op,
           handler_token,
-          context,
+          spent_output_ref,
+          transaction,
           updated_output,
           channel_minting_policy_id,
           voucher_minting_policy_id,
         )
     }
   }
+
+  else(_) {
+    fail
+  }
 }
 
 fn handler_callback(
   cb: IBCModuleCallback,
   handler_token: AuthToken,
-  context: ScriptContext,
+  spent_output_ref: OutputReference,
+  transaction: Transaction,
   updated_output: Output,
   port_id: ByteArray,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  let (spent_output, transaction) =
-    validator_utils.extract_spending_context(context)
   let Transaction { outputs, redeemers, inputs, .. } = transaction
+
+  expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+  let spent_output = spent_input.output
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
@@ -218,13 +230,11 @@ fn handler_callback(
       expect fungible_token_packet_data.get_bytes(data) == packet.data
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
-      if
-      transfer_coin.receiver_chain_is_source(
+      if transfer_coin.receiver_chain_is_source(
         packet.source_port,
         packet.source_channel,
         data.denom,
-      ){
-      
+      ) {
         let voucher_prefix_len =
           transfer_coin.get_denom_prefix(
             packet.source_port,
@@ -247,13 +257,13 @@ fn handler_callback(
         trace @"spend_transfer_module: transfer amount is valid"
 
         let prev_escrowed_token =
-          value.quantity_of(
+          quantity_of(
             spent_output.value,
             escrowed_token_policy_id,
             escrowed_token_name,
           )
         let post_escrowed_token =
-          value.quantity_of(
+          quantity_of(
             updated_output.value,
             escrowed_token_policy_id,
             escrowed_token_name,
@@ -263,8 +273,7 @@ fn handler_callback(
 
         expect Some(receiver_public_key_hash) =
           string_utils.hex_string_to_bytes(data.receiver)
-        let receiver_address =
-          credential.from_verification_key(receiver_public_key_hash)
+        let receiver_address = from_verification_key(receiver_public_key_hash)
 
         let prev_receiver_token =
           list.reduce(
@@ -274,7 +283,7 @@ fn handler_callback(
               let output = input.output
               if output.address == receiver_address {
                 let output_token =
-                  value.quantity_of(
+                  quantity_of(
                     output.value,
                     escrowed_token_policy_id,
                     escrowed_token_name,
@@ -292,7 +301,7 @@ fn handler_callback(
             fn(acc, output) {
               if output.address == receiver_address {
                 let output_token =
-                  value.quantity_of(
+                  quantity_of(
                     output.value,
                     escrowed_token_policy_id,
                     escrowed_token_name,
@@ -403,15 +412,17 @@ fn handler_callback(
 fn handler_operator(
   op: IBCModuleOperator,
   handler_token: AuthToken,
-  context: ScriptContext,
+  spent_output_ref: OutputReference,
+  transaction: Transaction,
   updated_output: Output,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect TransferModuleOperator(op) = op
-  let (spent_output, transaction) =
-    validator_utils.extract_spending_context(context)
   let Transaction { redeemers, inputs, .. } = transaction
+
+  expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+  let spent_output = spent_input.output
 
   when op is {
     Transfer { channel_id, data } -> {
@@ -434,13 +445,11 @@ fn handler_operator(
       expect fungible_token_packet_data.get_bytes(data) == packet.data
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
-      if
-      transfer_coin.sender_chain_is_source(
+      if transfer_coin.sender_chain_is_source(
         packet.source_port,
         packet.source_channel,
         data.denom,
-      ){
-      
+      ) {
         expect
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) == None
         trace @"spend_transfer_module: tx not mint voucher token"
@@ -454,13 +463,13 @@ fn handler_operator(
         trace @"spend_transfer_module: extract escrowed token valid"
 
         let prev_escrowed_token =
-          value.quantity_of(
+          quantity_of(
             spent_output.value,
             escrowed_token_policy_id,
             escrowed_token_name,
           )
         let post_escrowed_token =
-          value.quantity_of(
+          quantity_of(
             updated_output.value,
             escrowed_token_policy_id,
             escrowed_token_name,
@@ -718,13 +727,11 @@ fn validate_refund_packet_token(
   data: FungibleTokenPacketData,
   packet: Packet,
 ) -> Bool {
-  if
-  transfer_coin.sender_chain_is_source(
+  if transfer_coin.sender_chain_is_source(
     packet.source_port,
     packet.source_channel,
     data.denom,
-  ){
-  
+  ) {
     expect Some(escrowed_token_unit) =
       string_utils.hex_string_to_bytes(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"
@@ -737,13 +744,13 @@ fn validate_refund_packet_token(
     trace @"spend_transfer_module: transfer amount is valid"
 
     let prev_escrowed_token =
-      value.quantity_of(
+      quantity_of(
         spent_output.value,
         escrowed_token_policy_id,
         escrowed_token_name,
       )
     let post_escrowed_token =
-      value.quantity_of(
+      quantity_of(
         updated_output.value,
         escrowed_token_policy_id,
         escrowed_token_name,
@@ -753,8 +760,7 @@ fn validate_refund_packet_token(
 
     expect Some(sender_public_key_hash) =
       string_utils.hex_string_to_bytes(data.sender)
-    let receiver_address =
-      credential.from_verification_key(sender_public_key_hash)
+    let receiver_address = from_verification_key(sender_public_key_hash)
 
     let prev_receiver_token =
       list.reduce(
@@ -764,7 +770,7 @@ fn validate_refund_packet_token(
           let output = input.output
           if output.address == receiver_address {
             let output_token =
-              value.quantity_of(
+              quantity_of(
                 output.value,
                 escrowed_token_policy_id,
                 escrowed_token_name,
@@ -782,7 +788,7 @@ fn validate_refund_packet_token(
         fn(acc, output) {
           if output.address == receiver_address {
             let output_token =
-              value.quantity_of(
+              quantity_of(
                 output.value,
                 escrowed_token_policy_id,
                 escrowed_token_name,
@@ -864,10 +870,10 @@ fn setup() -> MockData {
 
   let module_output =
     Output {
-      address: credential.from_script("mock module script hash"),
-      value: value.from_asset(module_token.policy_id, module_token.name, 1)
-        |> value.add(port_token.policy_id, port_token.name, 1)
-        |> value.add(value.ada_policy_id, value.ada_asset_name, 99999999999),
+      address: from_script("mock module script hash"),
+      value: from_asset(module_token.policy_id, module_token.name, 1)
+        |> add(port_token.policy_id, port_token.name, 1)
+        |> add(ada_policy_id, ada_asset_name, 99999999999),
       datum: InlineDatum(Void),
       reference_script: None,
     }
@@ -918,8 +924,8 @@ fn setup() -> MockData {
 
   let channel_output =
     Output {
-      address: credential.from_script("mock channel script hash"),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
+      address: from_script("mock channel script hash"),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
       reference_script: None,
     }
@@ -1020,7 +1026,7 @@ test on_chan_open_init_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1076,7 +1082,7 @@ test on_chan_open_try_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1131,7 +1137,7 @@ test on_chan_open_ack_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1182,7 +1188,7 @@ test on_chan_open_confirm_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1268,7 +1274,7 @@ test on_recv_packet_mint_voucher_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1307,7 +1313,7 @@ test on_recv_packet_unescrow_succeed() {
     Output {
       ..mock.module_output,
       value: mock.module_output.value
-        |> value.add(value.ada_policy_id, value.ada_asset_name, -transfer_amount),
+        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
     }
 
   expect Some(receiver_public_key_hash) =
@@ -1315,12 +1321,8 @@ test on_recv_packet_unescrow_succeed() {
 
   let receiver_output =
     Output {
-      address: credential.from_verification_key(receiver_public_key_hash),
-      value: value.from_asset(
-        value.ada_policy_id,
-        value.ada_asset_name,
-        transfer_amount,
-      ),
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
       datum: NoDatum,
       reference_script: None,
     }
@@ -1378,7 +1380,7 @@ test on_recv_packet_unescrow_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1417,7 +1419,7 @@ test transfer_escrow_succeed() {
     Output {
       ..mock.module_output,
       value: mock.module_output.value
-        |> value.add(value.ada_policy_id, value.ada_asset_name, transfer_amount),
+        |> add(ada_policy_id, ada_asset_name, transfer_amount),
     }
 
   let outputs =
@@ -1461,7 +1463,7 @@ test transfer_escrow_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1500,7 +1502,7 @@ test transfer_burn_voucher_succeed() {
     Output {
       ..mock.module_output,
       value: mock.module_output.value
-        |> value.add(value.ada_policy_id, value.ada_asset_name, -transfer_amount),
+        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
     }
 
   expect Some(receiver_public_key_hash) =
@@ -1508,12 +1510,8 @@ test transfer_burn_voucher_succeed() {
 
   let receiver_output =
     Output {
-      address: credential.from_verification_key(receiver_public_key_hash),
-      value: value.from_asset(
-        value.ada_policy_id,
-        value.ada_asset_name,
-        transfer_amount,
-      ),
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
       datum: NoDatum,
       reference_script: None,
     }
@@ -1567,7 +1565,7 @@ test transfer_burn_voucher_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1653,7 +1651,7 @@ test on_timeout_packet_mint_voucher_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1692,19 +1690,15 @@ test on_timeout_packet_unescrow_succeed() {
     Output {
       ..mock.module_output,
       value: mock.module_output.value
-        |> value.add(value.ada_policy_id, value.ada_asset_name, -transfer_amount),
+        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
     }
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
 
   let receiver_output =
     Output {
-      address: credential.from_verification_key(sender_public_key_hash),
-      value: value.from_asset(
-        value.ada_policy_id,
-        value.ada_asset_name,
-        transfer_amount,
-      ),
+      address: from_verification_key(sender_public_key_hash),
+      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
       datum: NoDatum,
       reference_script: None,
     }
@@ -1754,7 +1748,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1843,7 +1837,7 @@ test on_acknowledgement_packet_result_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1939,7 +1933,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -1978,19 +1972,15 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     Output {
       ..mock.module_output,
       value: mock.module_output.value
-        |> value.add(value.ada_policy_id, value.ada_asset_name, -transfer_amount),
+        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
     }
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
 
   let receiver_output =
     Output {
-      address: credential.from_verification_key(sender_public_key_hash),
-      value: value.from_asset(
-        value.ada_policy_id,
-        value.ada_asset_name,
-        transfer_amount,
-      ),
+      address: from_verification_key(sender_public_key_hash),
+      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
       datum: NoDatum,
       reference_script: None,
     }
@@ -2050,7 +2040,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -2097,7 +2087,7 @@ test on_chan_close_init_given_any_input_returns_false() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,
@@ -2144,7 +2134,7 @@ test on_chan_close_confirm_given_any_input_returns_false() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       redeemers: redeemers,

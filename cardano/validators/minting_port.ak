@@ -1,12 +1,12 @@
-use aiken/hash.{Blake2b_224, Hash}
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId,
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
@@ -17,10 +17,12 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
 }
 use ibc/utils/string as string_utils
 
-validator {
-  fn mint_port(redeemer: MintPortRedeemer, context: ScriptContext) -> Bool {
-    let ScriptContext { transaction, purpose } = context
-    expect Mint(port_minting_policy_id) = purpose
+validator mint_port {
+  mint(
+    redeemer: MintPortRedeemer,
+    port_minting_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
     trace @"mint_port: extracted context data"
 
@@ -58,6 +60,10 @@ validator {
 
     True
   }
+
+  else(_) {
+    fail
+  }
 }
 
 //=========================================Test=======================================
@@ -82,7 +88,7 @@ fn setup() -> MockData {
 
   let spend_handler_output_reference =
     OutputReference {
-      transaction_id: TransactionId { hash: "tx_hash" },
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -101,8 +107,8 @@ fn setup() -> MockData {
     Input {
       output_reference: spend_handler_output_reference,
       output: Output {
-        address: credential.from_script("mock handler script hash"),
-        value: value.from_asset(handler_token.policy_id, handler_token.name, 1),
+        address: from_script("mock handler script hash"),
+        value: from_asset(handler_token.policy_id, handler_token.name, 1),
         datum: InlineDatum(handler_datum),
         reference_script: None,
       },
@@ -142,21 +148,15 @@ test mint_port_succeed() {
   //==============================arrange outputs==============================
   let module_output =
     Output {
-      address: credential.from_script(mock.spend_module_script_hash),
-      value: value.from_asset(
-        mock.port_token.policy_id,
-        mock.port_token.name,
-        1,
-      ),
+      address: from_script(mock.spend_module_script_hash),
+      value: from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
       datum: InlineDatum(Void),
       reference_script: None,
     }
   let outputs =
     [module_output]
   //==============================arrange mint==============================
-  let mint =
-    value.from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
-      |> value.to_minted_value()
+  let mint = from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
 
   //==============================arrange redeemers==============================
   let handler_redeemer: Redeemer = HandlerBindPort
@@ -175,17 +175,14 @@ test mint_port_succeed() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Mint(mock.port_minting_policy_id),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        outputs: outputs,
-        mint: mint,
-        redeemers: redeemers,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
     }
 
-  mint_port(redeemer, context)
+  mint_port.mint(redeemer, mock.port_minting_policy_id, transaction)
 }

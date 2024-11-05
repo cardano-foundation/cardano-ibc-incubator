@@ -1,13 +1,13 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, TransactionId, ValidityRange,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -52,13 +52,18 @@ use ibc/utils/bits
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
-validator(
+validator timeout_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  fn timeout_packet(channel_token: AuthToken, context: ScriptContext) -> Bool {
+  spend(
+    _datum: Option<Data>,
+    channel_token: AuthToken,
+    spent_output: OutputReference,
+    transaction: Transaction,
+  ) {
     let Transaction {
       inputs,
       outputs,
@@ -66,7 +71,7 @@ validator(
       reference_inputs,
       validity_range,
       ..
-    } = context.transaction
+    } = transaction
 
     expect Some((datum, channel_redeemer, spent_output)) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
@@ -229,6 +234,10 @@ validator(
     trace @"timeout_packet: ibc module callback is valid"
 
     True
+  }
+
+  else(_) {
+    fail
   }
 }
 
@@ -416,16 +425,12 @@ fn setup() -> MockData {
   let connection_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock connection script hash"),
-        value: value.from_asset(
-          connection_token.policy_id,
-          connection_token.name,
-          1,
-        ),
+        address: from_script("mock connection script hash"),
+        value: from_asset(connection_token.policy_id, connection_token.name, 1),
         datum: InlineDatum(connection_datum),
         reference_script: None,
       },
@@ -528,12 +533,12 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock client script hash"),
-        value: value.from_asset(client_token.policy_id, client_token.name, 1),
+        address: from_script("mock client script hash"),
+        value: from_asset(client_token.policy_id, client_token.name, 1),
         datum: InlineDatum(client_datum),
         reference_script: None,
       },
@@ -561,12 +566,12 @@ fn setup() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock module tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock module script hash"),
-        value: value.from_asset(port_token.policy_id, port_token.name, 1),
+        address: from_script("mock module script hash"),
+        value: from_asset(port_token.policy_id, port_token.name, 1),
         datum: InlineDatum(Void),
         reference_script: None,
       },
@@ -678,7 +683,7 @@ test succeed_timeout_unordered_packet() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
         ),
@@ -862,26 +867,25 @@ test succeed_timeout_unordered_packet() {
     ]
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  timeout_packet(
+  timeout_packet.spend(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    None,
     mock_data.channel_token,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -972,7 +976,7 @@ test succeed_timeout_ordered_packet() {
           ..input_channel_datum.state.channel,
           state: chan_state_mod.Closed,
         },
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
         ),
@@ -1042,25 +1046,24 @@ test succeed_timeout_ordered_packet() {
       Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
     ]
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  timeout_packet(
+  timeout_packet.spend(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    None,
     mock_data.channel_token,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }

@@ -1,6 +1,6 @@
 use aiken/builtin.{if_then_else}
-use aiken/bytearray
-use aiken/list
+use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/core/ics_023_vector_commitments/ics23/ops
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Batch, CommitmentProof_Compressed,
@@ -198,24 +198,22 @@ pub fn is_left_most(spec: InnerSpec, path: List<InnerOp>) -> Bool {
   let (is_lm, _is_break) =
     path
       |> list.reduce(
-           (True, False),
-           fn(accum, step) {
-             if accum.2nd == False {
-               if
-               !has_padding(step, min_prefix, max_prefix, suffix) && !left_branches_are_empty(
-                 spec,
-                 step,
-               ){
-               
-                 (False, True)
-               } else {
-                 (True, False)
-               }
-             } else {
-               (False, True)
-             }
-           },
-         )
+          (True, False),
+          fn(accum, step) {
+            if accum.2nd == False {
+              if !has_padding(step, min_prefix, max_prefix, suffix) && !left_branches_are_empty(
+                spec,
+                step,
+              ) {
+                (False, True)
+              } else {
+                (True, False)
+              }
+            } else {
+              (False, True)
+            }
+          },
+        )
   is_lm
 }
 
@@ -228,24 +226,22 @@ pub fn is_right_most(spec: InnerSpec, path: List<InnerOp>) -> Bool {
   let (is_rm, _is_break) =
     path
       |> list.reduce(
-           (True, False),
-           fn(accum, step) {
-             if accum.2nd == False {
-               if
-               !has_padding(step, min_prefix, max_prefix, suffix) && !right_branches_are_empty(
-                 spec,
-                 step,
-               ){
-               
-                 (False, True)
-               } else {
-                 (True, False)
-               }
-             } else {
-               (False, True)
-             }
-           },
-         )
+          (True, False),
+          fn(accum, step) {
+            if accum.2nd == False {
+              if !has_padding(step, min_prefix, max_prefix, suffix) && !right_branches_are_empty(
+                spec,
+                step,
+              ) {
+                (False, True)
+              } else {
+                (True, False)
+              }
+            } else {
+              (False, True)
+            }
+          },
+        )
   is_rm
 }
 
@@ -258,69 +254,65 @@ pub fn is_left_neighbor(
   let (l, r, opt_top_left, otp_top_right, _is_break) =
     list.range(0, list.length(left) - 1)
       |> list.reduce(
-           (
-             list.slice(left, 0, list.length(left) - 2),
-             list.slice(right, 0, list.length(right) - 2),
-             list.at(left, list.length(left) - 1),
-             list.at(right, list.length(right) - 1),
-             False,
-           ),
-           fn(accum, _i) {
-             if accum.5th == False {
-               expect Some(t_left) = accum.3rd
-               expect Some(t_right) = accum.4th
-               if
-               t_left.prefix == t_right.prefix && t_left.suffix == t_right.suffix{
-               
-                 if list.length(accum.1st) < 2 && list.length(accum.2nd) < 2 {
-                   (
-                     [],
-                     [],
-                     list.at(accum.1st, list.length(accum.1st) - 1),
-                     list.at(accum.2nd, list.length(accum.2nd) - 1),
-                     False,
-                   )
-                 } else if list.length(accum.1st) < 2 && list.length(accum.2nd) >= 2 {
-                   (
-                     [],
-                     list.slice(accum.2nd, 0, list.length(accum.2nd) - 2),
-                     list.at(accum.1st, list.length(accum.1st) - 1),
-                     list.at(accum.2nd, list.length(accum.2nd) - 1),
-                     False,
-                   )
-                 } else if list.length(accum.1st) >= 2 && list.length(accum.2nd) < 2 {
-                   (
-                     list.slice(accum.1st, 0, list.length(accum.1st) - 2),
-                     [],
-                     list.at(accum.1st, list.length(accum.1st) - 1),
-                     list.at(accum.2nd, list.length(accum.2nd) - 1),
-                     False,
-                   )
-                 } else {
-                   (
-                     list.slice(accum.1st, 0, list.length(accum.1st) - 2),
-                     list.slice(accum.2nd, 0, list.length(accum.2nd) - 2),
-                     list.at(accum.1st, list.length(accum.1st) - 1),
-                     list.at(accum.2nd, list.length(accum.2nd) - 1),
-                     False,
-                   )
-                 }
-               } else {
-                 (accum.1st, accum.2nd, accum.3rd, accum.4th, True)
-               }
-             } else {
-               accum
-             }
-           },
-         )
+          (
+            list.slice(left, 0, list.length(left) - 2),
+            list.slice(right, 0, list.length(right) - 2),
+            list.at(left, list.length(left) - 1),
+            list.at(right, list.length(right) - 1),
+            False,
+          ),
+          fn(accum, _i) {
+            if accum.5th == False {
+              expect Some(t_left) = accum.3rd
+              expect Some(t_right) = accum.4th
+              if t_left.prefix == t_right.prefix && t_left.suffix == t_right.suffix {
+                if list.length(accum.1st) < 2 && list.length(accum.2nd) < 2 {
+                  (
+                    [],
+                    [],
+                    list.at(accum.1st, list.length(accum.1st) - 1),
+                    list.at(accum.2nd, list.length(accum.2nd) - 1),
+                    False,
+                  )
+                } else if list.length(accum.1st) < 2 && list.length(accum.2nd) >= 2 {
+                  (
+                    [],
+                    list.slice(accum.2nd, 0, list.length(accum.2nd) - 2),
+                    list.at(accum.1st, list.length(accum.1st) - 1),
+                    list.at(accum.2nd, list.length(accum.2nd) - 1),
+                    False,
+                  )
+                } else if list.length(accum.1st) >= 2 && list.length(accum.2nd) < 2 {
+                  (
+                    list.slice(accum.1st, 0, list.length(accum.1st) - 2),
+                    [],
+                    list.at(accum.1st, list.length(accum.1st) - 1),
+                    list.at(accum.2nd, list.length(accum.2nd) - 1),
+                    False,
+                  )
+                } else {
+                  (
+                    list.slice(accum.1st, 0, list.length(accum.1st) - 2),
+                    list.slice(accum.2nd, 0, list.length(accum.2nd) - 2),
+                    list.at(accum.1st, list.length(accum.1st) - 1),
+                    list.at(accum.2nd, list.length(accum.2nd) - 1),
+                    False,
+                  )
+                }
+              } else {
+                (accum.1st, accum.2nd, accum.3rd, accum.4th, True)
+              }
+            } else {
+              accum
+            }
+          },
+        )
   expect Some(top_left) = opt_top_left
   expect Some(top_right) = otp_top_right
-  if
-  !is_left_step(spec, top_left, top_right) || !is_right_most(spec, l) || !is_left_most(
+  if !is_left_step(spec, top_left, top_right) || !is_right_most(spec, l) || !is_left_most(
     spec,
     r,
-  ){
-  
+  ) {
     False
   } else {
     True
@@ -340,9 +332,7 @@ fn has_padding(
   max_prefix: Int,
   suffix: Int,
 ) -> Bool {
-  if
-  bytearray.length(op.prefix) < min_prefix || bytearray.length(op.prefix) > max_prefix{
-  
+  if bytearray.length(op.prefix) < min_prefix || bytearray.length(op.prefix) > max_prefix {
     False
   } else {
     bytearray.length(op.suffix) == suffix
@@ -375,27 +365,25 @@ fn left_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
     let (is_correspond, _is_break) =
       list.range(0, left_branches - 1)
         |> list.reduce(
-             (True, False),
-             fn(accum, i) {
-               if accum.2nd == False {
-                 let idx = get_position(spec.child_order, i)
-                 let from = actual_prefix + idx * spec.child_size
-                 if
-                 !(spec.empty_child == bytearray.slice(
-                   op.prefix,
-                   from,
-                   from + spec.child_size - 1,
-                 )){
-                 
-                   (False, True)
-                 } else {
-                   (True, False)
-                 }
-               } else {
-                 (False, True)
-               }
-             },
-           )
+            (True, False),
+            fn(accum, i) {
+              if accum.2nd == False {
+                let idx = get_position(spec.child_order, i)
+                let from = actual_prefix + idx * spec.child_size
+                if !(spec.empty_child == bytearray.slice(
+                  op.prefix,
+                  from,
+                  from + spec.child_size - 1,
+                )) {
+                  (False, True)
+                } else {
+                  (True, False)
+                }
+              } else {
+                (False, True)
+              }
+            },
+          )
     is_correspond
   }
 }
@@ -405,35 +393,31 @@ fn left_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
 fn right_branches_are_empty(spec: InnerSpec, op: InnerOp) -> Bool {
   let right_branches =
     list.length(spec.child_order) - 1 - order_from_padding(spec, op)
-  if
-  right_branches == 0 || bytearray.length(op.suffix) != right_branches * spec.child_size{
-  
+  if right_branches == 0 || bytearray.length(op.suffix) != right_branches * spec.child_size {
     False
   } else {
     let (is_correspond, _is_break) =
       list.range(0, right_branches - 1)
         |> list.reduce(
-             (True, False),
-             fn(accum, i) {
-               if accum.2nd == False {
-                 let idx = get_position(spec.child_order, i)
-                 let from = idx * spec.child_size
-                 if
-                 !(spec.empty_child == bytearray.slice(
-                   op.suffix,
-                   from,
-                   from + spec.child_size - 1,
-                 )){
-                 
-                   (False, True)
-                 } else {
-                   (True, False)
-                 }
-               } else {
-                 (False, True)
-               }
-             },
-           )
+            (True, False),
+            fn(accum, i) {
+              if accum.2nd == False {
+                let idx = get_position(spec.child_order, i)
+                let from = idx * spec.child_size
+                if !(spec.empty_child == bytearray.slice(
+                  op.suffix,
+                  from,
+                  from + spec.child_size - 1,
+                )) {
+                  (False, True)
+                } else {
+                  (True, False)
+                }
+              } else {
+                (False, True)
+              }
+            },
+          )
     is_correspond
   }
 }
@@ -453,20 +437,20 @@ fn order_from_padding(spec: InnerSpec, inner: InnerOp) -> Int {
   let (order, is_find) =
     list.range(0, max_branch - 1)
       |> list.reduce(
-           (0, False),
-           fn(accum, i) {
-             if accum.2nd == False {
-               let (minp, maxp, suffix) = get_padding(spec, i)
-               if has_padding(inner, minp, maxp, suffix) {
-                 (i, True)
-               } else {
-                 (0, False)
-               }
-             } else {
-               (accum.1st, True)
-             }
-           },
-         )
+          (0, False),
+          fn(accum, i) {
+            if accum.2nd == False {
+              let (minp, maxp, suffix) = get_padding(spec, i)
+              if has_padding(inner, minp, maxp, suffix) {
+                (i, True)
+              } else {
+                (0, False)
+              }
+            } else {
+              (accum.1st, True)
+            }
+          },
+        )
   expect is_find
   order
 }

@@ -1,4 +1,4 @@
-use aiken/pairs
+use aiken/collection/pairs
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 

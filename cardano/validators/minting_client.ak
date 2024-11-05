@@ -1,13 +1,13 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, TransactionId,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -30,10 +30,12 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
-validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
-  fn mint_client(redeemer: MintClientRedeemer, context: ScriptContext) -> Bool {
-    let ScriptContext { transaction, purpose } = context
-    expect Mint(client_mint_policy_id) = purpose
+validator mint_client(spend_client_script_hash: Hash<Blake2b_224, Script>) {
+  mint(
+    redeemer: MintClientRedeemer,
+    client_mint_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     let Transaction { inputs, outputs, mint, redeemers, validity_range, .. } =
       transaction
     let handler_auth_token = redeemer.handler_auth_token
@@ -95,6 +97,10 @@ validator(spend_client_script_hash: Hash<Blake2b_224, Script>) {
 
     True
   }
+
+  else(_) {
+    fail
+  }
 }
 
 //==========================test==========================
@@ -115,7 +121,7 @@ test test_create_valid_client() {
   let mock_client_sequence = 0
   let mock_spent_output_reference =
     OutputReference {
-      transaction_id: TransactionId { hash: "tx_hash" },
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -135,8 +141,8 @@ test test_create_valid_client() {
     Input {
       output_reference: mock_spent_output_reference,
       output: Output {
-        address: credential.from_script(mock_handler_script_hash),
-        value: value.from_asset(
+        address: from_script(mock_handler_script_hash),
+        value: from_asset(
           mock_handler_auth_token.policy_id,
           mock_handler_auth_token.name,
           1,
@@ -154,9 +160,7 @@ test test_create_valid_client() {
     string_utils.int_to_string(mock_client_sequence)
       |> auth.generate_token_name(mock_handler_auth_token, client_prefix, _)
 
-  let mint =
-    value.from_asset(mock_client_mint_policy_id, client_token_name, 1)
-      |> value.to_minted_value()
+  let mint = from_asset(mock_client_mint_policy_id, client_token_name, 1)
 
   //========================arrange output=======================
   let new_client_state =
@@ -191,8 +195,8 @@ test test_create_valid_client() {
 
   let client_output =
     Output {
-      address: credential.from_script(mock_spend_client_script_hash),
-      value: value.from_asset(mock_client_mint_policy_id, client_token_name, 1),
+      address: from_script(mock_spend_client_script_hash),
+      value: from_asset(mock_client_mint_policy_id, client_token_name, 1),
       datum: InlineDatum(client_datum),
       reference_script: None,
     }
@@ -200,22 +204,20 @@ test test_create_valid_client() {
   let valid_to =
     ( new_consensus_state.timestamp + new_client_state.trusting_period ) / 1_000_000 - 1
 
-  let context =
-    ScriptContext {
-      purpose: Mint(mock_client_mint_policy_id),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: [handler_input],
-        outputs: [client_output],
-        mint: mint,
-        redeemers: redeemers,
-        validity_range: interval.before(valid_to),
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [handler_input],
+      outputs: [client_output],
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: interval.before(valid_to),
     }
 
-  mint_client(
+  mint_client.mint(
     mock_spend_client_script_hash,
     MintClientRedeemer { handler_auth_token: mock_handler_auth_token },
-    context,
+    mock_client_mint_policy_id,
+    transaction,
   )
 }

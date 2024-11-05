@@ -1,5 +1,5 @@
 use aiken/builtin
-use aiken/list
+use aiken/collection/list
 use aiken/math/rational.{Rational}
 use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
@@ -179,9 +179,7 @@ fn verify_commit_single(
                   acc.1st
                 }
 
-              if
-              !count_all_signatures && new_tallied_voting_power > voting_power_needed{
-              
+              if !count_all_signatures && new_tallied_voting_power > voting_power_needed {
                 (new_tallied_voting_power, seen_vals, True)
               } else {
                 (new_tallied_voting_power, seen_vals, False)

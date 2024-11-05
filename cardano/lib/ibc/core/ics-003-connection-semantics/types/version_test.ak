@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 
 pub const default_ibc_version_identifier = "1"
@@ -135,10 +135,10 @@ test test_is_supported_version() {
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           version.is_supported_version(case.1st, case.2nd) == case.3rd
-         },
-       )
+        fn(case) {
+          version.is_supported_version(case.1st, case.2nd) == case.3rd
+        },
+      )
 }
 
 test test_is_supported_version_fail_when_the_identifier_not_match() fail {
@@ -164,10 +164,10 @@ test test_is_supported_version_fail_when_the_identifier_not_match() fail {
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           version.is_supported_version(case.1st, case.2nd) == case.3rd
-         },
-       )
+        fn(case) {
+          version.is_supported_version(case.1st, case.2nd) == case.3rd
+        },
+      )
 }
 
 test test_verify_proposed_version() {
@@ -248,10 +248,10 @@ test test_verify_proposed_version() {
   //TODO: more cases for allow_nil_feature_set functions
   test_cases
     |> list.all(
-         fn(case) {
-           version.verify_proposed_version(case.1st, case.2nd) == case.3rd
-         },
-       )
+        fn(case) {
+          version.verify_proposed_version(case.1st, case.2nd) == case.3rd
+        },
+      )
 }
 
 test test_verify_supported_feature() {
@@ -284,8 +284,8 @@ test test_verify_supported_feature() {
     ]
   test_cases
     |> list.all(
-         fn(case) {
-           version.verify_supported_feature(case.1st, case.2nd) == case.3rd
-         },
-       )
+        fn(case) {
+          version.verify_supported_feature(case.1st, case.2nd) == case.3rd
+        },
+      )
 }

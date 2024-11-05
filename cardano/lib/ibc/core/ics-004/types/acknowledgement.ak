@@ -1,5 +1,5 @@
-use aiken/bytearray.{concat}
-use aiken/hash
+use aiken/crypto
+use aiken/primitive/bytearray.{concat}
 use ibc/core/ics_004/types/acknowledgement_response.{
   AcknowledgementError, AcknowledgementResponse, AcknowledgementResult,
 }
@@ -21,7 +21,7 @@ pub fn acknowledgement(ack: Acknowledgement) -> ByteArray {
 }
 
 pub fn commit_acknowledgement(data: ByteArray) -> ByteArray {
-  hash.sha2_256(data)
+  crypto.sha2_256(data)
 }
 
 pub fn marshal_json(ack: Acknowledgement) -> ByteArray {

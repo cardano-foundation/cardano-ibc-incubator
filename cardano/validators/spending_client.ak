@@ -1,11 +1,10 @@
+use aiken/collection/list
 use aiken/interval
-use aiken/list
-use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, ScriptContext, Spend, Transaction,
-  TransactionId,
+use cardano/address.{from_script}
+use cardano/assets.{from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Spend, Transaction, TransactionId,
 }
-use aiken/transaction/credential
-use aiken/transaction/value
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -39,18 +38,20 @@ use ibc/core/ics_023_vector_commitments/merkle
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 use ibc/utils/validator_utils
 
-validator {
-  fn spend_client(
-    datum: ClientDatum,
+validator spend_client {
+  spend(
+    datum: Option<ClientDatum>,
     redeemer: SpendClientRedeemer,
-    context: ScriptContext,
-  ) -> Bool {
-    let (spent_output, transaction) =
-      validator_utils.extract_spending_context(context)
-    let Transaction { outputs, validity_range, .. } = transaction
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction { outputs, inputs, validity_range, .. } = transaction
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    let spent_output = spent_input.output
 
     //========================valid input=======================
     // input contains client token
+    expect Some(datum) = datum
     expect spent_output |> auth.contain_auth_token(datum.token)
 
     //========================valid output=======================
@@ -126,6 +127,10 @@ validator {
       Other -> False
     }
   }
+
+  else(_) {
+    fail
+  }
 }
 
 //======================================Test====================================
@@ -142,7 +147,7 @@ fn setup() -> MockData {
 
   let output_reference =
     OutputReference {
-      transaction_id: TransactionId("client tx hash"),
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -150,8 +155,8 @@ fn setup() -> MockData {
 
   let spent_output =
     Output {
-      address: credential.from_script(spend_client_script_hash),
-      value: value.from_asset(client_token.policy_id, client_token.name, 1),
+      address: from_script(spend_client_script_hash),
+      value: from_asset(client_token.policy_id, client_token.name, 1),
       datum: InlineDatum(Void),
       reference_script: None,
     }
@@ -408,20 +413,20 @@ test update_client_misbehaviour_conflict_header() {
       ( consensus_state.timestamp + client_state.trusting_period ) / 1_000_000 - 1000,
     )
 
-  //=======================Arrange context ==============================
-  let purpose = Spend(mock.output_reference)
-
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       validity_range: validity_range,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  spend_client(client_datum, redeemer, context)
+  spend_client.spend(
+    Some(client_datum),
+    redeemer,
+    mock.output_reference,
+    transaction,
+  )
 }
 
 test update_client_misbehaviour_monotonic_time_violation() {
@@ -649,20 +654,20 @@ test update_client_misbehaviour_monotonic_time_violation() {
       ( consensus_state.timestamp + client_state.trusting_period ) / 1_000_000 - 1000,
     )
 
-  //=======================Arrange context ==============================
-  let purpose = Spend(mock.output_reference)
-
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       validity_range: validity_range,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  spend_client(client_datum, redeemer, context)
+  spend_client.spend(
+    Some(client_datum),
+    redeemer,
+    mock.output_reference,
+    transaction,
+  )
 }
 
 test update_client_verify_adjacent_succeed() {
@@ -861,8 +866,10 @@ test update_client_verify_adjacent_succeed() {
           latest_height: header_mod.get_height(header),
         },
         consensus_states: [
-          Pair(header_mod.get_height(header),
-          header_mod.consensus_state(header)),
+          Pair(
+            header_mod.get_height(header),
+            header_mod.consensus_state(header),
+          ),
         ],
       },
     }
@@ -880,20 +887,15 @@ test update_client_verify_adjacent_succeed() {
       ( consensus_state.timestamp + client_state.trusting_period ) / 1_000_000 - 1000,
     )
 
-  //=======================Arrange context ==============================
-  let purpose = Spend(mock.output_reference)
-
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       validity_range: validity_range,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  spend_client(client_datum, redeemer, context)
+  spend_client.spend(client_datum, redeemer, mock.output_reference, transaction)
 }
 
 test update_client_verify_non_adjacent_succeed() {
@@ -1092,8 +1094,10 @@ test update_client_verify_non_adjacent_succeed() {
           latest_height: header_mod.get_height(header),
         },
         consensus_states: [
-          Pair(header_mod.get_height(header),
-          header_mod.consensus_state(header)),
+          Pair(
+            header_mod.get_height(header),
+            header_mod.consensus_state(header),
+          ),
         ],
       },
     }
@@ -1116,7 +1120,7 @@ test update_client_verify_non_adjacent_succeed() {
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: inputs,
       outputs: outputs,
       validity_range: validity_range,

@@ -1,12 +1,12 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, TransactionId, ValidityRange,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -57,16 +57,18 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
-validator(
+validator mint_channel(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
 ) {
-  fn mint_channel(redeemer: MintChannelRedeemer, context: ScriptContext) -> Bool {
-    let ScriptContext { transaction, purpose } = context
-    expect Mint(channel_minting_policy_id) = purpose
+  mint(
+    redeemer: MintChannelRedeemer,
+    channel_minting_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     let Transaction {
       inputs,
       reference_inputs,
@@ -281,6 +283,10 @@ validator(
       }
     }
   }
+
+  else(_) {
+    fail
+  }
 }
 
 fn validate_chan_open_try_proof(
@@ -396,7 +402,7 @@ fn setup() -> MockData {
 
   let spend_handler_output_reference =
     OutputReference {
-      transaction_id: TransactionId { hash: "tx_hash" },
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -404,8 +410,8 @@ fn setup() -> MockData {
     Input {
       output_reference: spend_handler_output_reference,
       output: Output {
-        address: credential.from_script("mock handler script hash"),
-        value: value.from_asset(handler_token.policy_id, handler_token.name, 1),
+        address: from_script("mock handler script hash"),
+        value: from_asset(handler_token.policy_id, handler_token.name, 1),
         datum: InlineDatum(handler_datum),
         reference_script: None,
       },
@@ -456,16 +462,12 @@ fn setup() -> MockData {
   let connection_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock connection script hash"),
-        value: value.from_asset(
-          connection_token.policy_id,
-          connection_token.name,
-          1,
-        ),
+        address: from_script("mock connection script hash"),
+        value: from_asset(connection_token.policy_id, connection_token.name, 1),
         datum: InlineDatum(connection_datum),
         reference_script: None,
       },
@@ -568,12 +570,12 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock client script hash"),
-        value: value.from_asset(client_token.policy_id, client_token.name, 1),
+        address: from_script("mock client script hash"),
+        value: from_asset(client_token.policy_id, client_token.name, 1),
         datum: InlineDatum(client_datum),
         reference_script: None,
       },
@@ -605,8 +607,8 @@ fn setup() -> MockData {
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock module script hash"),
-        value: value.from_asset(port_token.policy_id, port_token.name, 1),
+        address: from_script("mock module script hash"),
+        value: from_asset(port_token.policy_id, port_token.name, 1),
         datum: InlineDatum(Void),
         reference_script: None,
       },
@@ -683,8 +685,8 @@ test succeed_chan_open_init() {
 
   let channel_output =
     Output {
-      address: credential.from_script(mock_data.spend_channel_script_hash),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
+      address: from_script(mock_data.spend_channel_script_hash),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
       reference_script: None,
     }
@@ -694,7 +696,7 @@ test succeed_chan_open_init() {
 
   //========================arrange mint=======================
   let mint =
-    value.from_asset(channel_token.policy_id, channel_token.name, 1)
+    from_asset(channel_token.policy_id, channel_token.name, 1)
       |> value.to_minted_value()
 
   //========================arrange validity_range=======================
@@ -725,7 +727,7 @@ test succeed_chan_open_init() {
     ScriptContext {
       purpose: Mint(mock_data.channel_minting_policy_id),
       transaction: Transaction {
-        ..transaction.placeholder(),
+        ..transaction.placeholder,
         inputs: inputs,
         reference_inputs: reference_inputs,
         outputs: outputs,
@@ -800,8 +802,8 @@ test succeed_chan_open_try() {
 
   let channel_output =
     Output {
-      address: credential.from_script(mock_data.spend_channel_script_hash),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
+      address: from_script(mock_data.spend_channel_script_hash),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
       reference_script: None,
     }
@@ -811,7 +813,7 @@ test succeed_chan_open_try() {
 
   //========================arrange mint=======================
   let mint =
-    value.from_asset(channel_token.policy_id, channel_token.name, 1)
+    from_asset(channel_token.policy_id, channel_token.name, 1)
       |> value.to_minted_value()
 
   //========================arrange validity_range=======================
@@ -1004,7 +1006,7 @@ test succeed_chan_open_try() {
     ScriptContext {
       purpose: Mint(mock_data.channel_minting_policy_id),
       transaction: Transaction {
-        ..transaction.placeholder(),
+        ..transaction.placeholder,
         inputs: inputs,
         reference_inputs: reference_inputs,
         outputs: outputs,

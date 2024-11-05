@@ -1,4 +1,4 @@
-// use aiken/list
+// use aiken/collection/list
 // use aiken/math/rational
 // use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 // use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{

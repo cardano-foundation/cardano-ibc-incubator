@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 
 pub const key_client_store_prefix = "clients"
 

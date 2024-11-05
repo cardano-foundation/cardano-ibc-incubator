@@ -1,5 +1,5 @@
-use aiken/int
-use aiken/list
+use aiken/collection/list
+use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 

@@ -1,6 +1,6 @@
 use aiken/builtin
-use aiken/bytearray
-use aiken/list
+use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/core/ics_023_vector_commitments/ics23/constants.{hash_op_no_hash}
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   HashOp, InnerOp, InnerSpec, LeafOp, LengthOp, ProofSpec,
