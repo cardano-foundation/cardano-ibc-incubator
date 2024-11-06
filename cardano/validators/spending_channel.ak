@@ -6,7 +6,7 @@ use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, TransactionId, ValidityRange,
+  Spend, Transaction, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -725,20 +725,17 @@ test chan_open_ack_succeed() {
     ChanOpenAck { counterparty_version, proof_try, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -747,9 +744,10 @@ test chan_open_ack_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -943,20 +941,17 @@ test chan_open_confirm_succeed() {
   let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -965,9 +960,10 @@ test chan_open_confirm_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1187,20 +1183,17 @@ test recv_packet_succeed() {
     RecvPacket { packet, proof_commitment, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1209,9 +1202,10 @@ test recv_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1310,20 +1304,17 @@ test send_packet_succeed() {
   let spend_channel_redeemer = SendPacket { packet }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1332,9 +1323,10 @@ test send_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1577,20 +1569,17 @@ test timeout_packet_succeed() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1599,9 +1588,10 @@ test timeout_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1832,20 +1822,17 @@ test acknowledge_packet_succeed() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1854,9 +1841,10 @@ test acknowledge_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1904,19 +1892,16 @@ test chan_close_init_succeed() {
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        redeemers: redeemers,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      redeemers: redeemers,
     }
 
   let spend_channel_redeemer = ChanCloseInit
 
-  spend_channel(
+  spend_channel.spend(
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -1925,9 +1910,10 @@ test chan_close_init_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1980,14 +1966,11 @@ test chan_close_confirm_succeed() {
     ]
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        redeemers: redeemers,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      redeemers: redeemers,
     }
 
   let proof_init = MerkleProof { proofs: [] }
@@ -1996,7 +1979,7 @@ test chan_close_confirm_succeed() {
 
   let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
 
-  spend_channel(
+  spend_channel.spend(
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -2005,8 +1988,9 @@ test chan_close_confirm_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }

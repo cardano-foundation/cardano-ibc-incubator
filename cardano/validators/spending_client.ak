@@ -3,7 +3,7 @@ use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Spend, Transaction, TransactionId,
+  InlineDatum, Input, Output, OutputReference, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -895,7 +895,12 @@ test update_client_verify_adjacent_succeed() {
       validity_range: validity_range,
     }
 
-  spend_client.spend(client_datum, redeemer, mock.output_reference, transaction)
+  spend_client.spend(
+    Some(client_datum),
+    redeemer,
+    mock.output_reference,
+    transaction,
+  )
 }
 
 test update_client_verify_non_adjacent_succeed() {
@@ -1115,9 +1120,6 @@ test update_client_verify_non_adjacent_succeed() {
       ( consensus_state.timestamp + client_state.trusting_period ) / 1_000_000 - 1000,
     )
 
-  //=======================Arrange context ==============================
-  let purpose = Spend(mock.output_reference)
-
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1126,7 +1128,10 @@ test update_client_verify_non_adjacent_succeed() {
       validity_range: validity_range,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  spend_client(client_datum, redeemer, context)
+  spend_client.spend(
+    Some(client_datum),
+    redeemer,
+    mock.output_reference,
+    transaction,
+  )
 }

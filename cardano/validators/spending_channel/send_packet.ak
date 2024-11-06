@@ -50,7 +50,7 @@ validator send_packet(
   spend(
     _datum: Option<Data>,
     channel_token: AuthToken,
-    spent_output: OutputReference,
+    _spent_output: OutputReference,
     transaction: Transaction,
   ) {
     let Transaction {

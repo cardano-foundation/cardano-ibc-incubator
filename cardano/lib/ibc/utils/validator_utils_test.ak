@@ -2,11 +2,12 @@ use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/primitive/bytearray
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset, zero}
+use cardano/assets.{
+  PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
+}
 use cardano/transaction.{
-  Datum, DatumHash, InlineDatum, Input, Mint, NoDatum, Output, OutputReference,
-  Publish, Redeemer, ScriptPurpose, Spend, Transaction, TransactionId,
-  ValidityRange,
+  Datum, DatumHash, InlineDatum, Input, NoDatum, Output, OutputReference,
+  Redeemer, ScriptPurpose, Spend, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -39,9 +40,6 @@ use ibc/utils/validator_utils
 
 const hash_sample =
   #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
-
-const hash_sample_second =
-  #"d8bba054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
 
 test test_quantity_token_output() {
   let mock_policy_id = #"786a02f742015903c6c6fd852552d272912f4740e1584761"
@@ -169,14 +167,6 @@ test get_inline_datum_fail_when_datum_hash() fail {
   data == hash_sample
 }
 
-fn create_sample_data_input_output() -> (Input, Output) {
-  let transaction_id = hash_sample
-  let output = create_output_sample(NoDatum)
-  let input =
-    Input { output_reference: OutputReference(transaction_id, 0), output }
-  (input, output)
-}
-
 fn create_output_sample(datum: Datum) -> Output {
   let output =
     Output {
@@ -292,7 +282,7 @@ fn setup_extract_module_redeemer() -> (
 
   let out_ref =
     OutputReference {
-      transaction_id: TransactionId("mock module input tx id"),
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -429,7 +419,7 @@ fn setup_validate_token_remain() -> (
     list.reduce(
       tokens,
       zero,
-      fn(acc, token) { value.add(acc, token.policy_id, token.name, 1) },
+      fn(acc, token) { add(acc, token.policy_id, token.name, 1) },
     )
 
   let spent_output =
@@ -471,7 +461,7 @@ test validate_token_remain_fail_if_token_not_remained() {
 
   expect [output, ..] = outputs
 
-  let output = Output { ..output, value: zero() }
+  let output = Output { ..output, value: zero }
 
   validator_utils.validate_token_remain(spent_output, [output], tokens) == None
 }
@@ -522,7 +512,7 @@ fn setup_validate_handler_redeemer() -> (
 
   let out_ref =
     OutputReference {
-      transaction_id: TransactionId("mock input tx id"),
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -693,7 +683,7 @@ fn setup_validate_referred_client() -> (
 
   let out_ref =
     OutputReference {
-      transaction_id: TransactionId("mock input tx id"),
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -855,7 +845,7 @@ fn setup_validate_referred_connection() -> (
 
   let out_ref =
     OutputReference {
-      transaction_id: TransactionId("mock input tx id"),
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 

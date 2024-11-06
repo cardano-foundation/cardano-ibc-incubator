@@ -5,7 +5,7 @@ use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, TransactionId, ValidityRange,
+  Spend, Transaction, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -603,7 +603,7 @@ fn setup() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock module tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
@@ -695,9 +695,7 @@ test succeed_chan_open_init() {
     [channel_output]
 
   //========================arrange mint=======================
-  let mint =
-    from_asset(channel_token.policy_id, channel_token.name, 1)
-      |> value.to_minted_value()
+  let mint = from_asset(channel_token.policy_id, channel_token.name, 1)
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -723,28 +721,26 @@ test succeed_chan_open_init() {
     ChanOpenInit { handler_token: mock_data.handler_token }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Mint(mock_data.channel_minting_policy_id),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        mint: mint,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  mint_channel(
+  mint_channel.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
     mock_data.spend_channel_script_hash,
     mint_channel_redeemer,
-    context,
+    mock_data.channel_minting_policy_id,
+    transaction,
   )
 }
 
@@ -812,9 +808,7 @@ test succeed_chan_open_try() {
     [channel_output]
 
   //========================arrange mint=======================
-  let mint =
-    from_asset(channel_token.policy_id, channel_token.name, 1)
-      |> value.to_minted_value()
+  let mint = from_asset(channel_token.policy_id, channel_token.name, 1)
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1002,27 +996,25 @@ test succeed_chan_open_try() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Mint(mock_data.channel_minting_policy_id),
-      transaction: Transaction {
-        ..transaction.placeholder,
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        mint: mint,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  mint_channel(
+  mint_channel.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
     mock_data.spend_channel_script_hash,
     mint_channel_redeemer,
-    context,
+    mock_data.channel_minting_policy_id,
+    transaction,
   )
 }

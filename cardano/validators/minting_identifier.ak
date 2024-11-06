@@ -4,7 +4,6 @@ use aiken/crypto
 use cardano/assets.{PolicyId}
 use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/utils/validator_utils
 
 validator minting_identifier {
   /// mint_identifier mint a nonce token to use it as an identifier.

@@ -5,11 +5,11 @@ use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use aiken/primitive/string
-use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, quantity_of, tokens}
+use cardano/address.{from_script, from_verification_key}
+use cardano/assets.{PolicyId, from_asset, quantity_of, tokens}
 use cardano/transaction.{
   Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
-  Transaction, TransactionId,
+  Transaction,
 }
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
@@ -145,7 +145,7 @@ validator mint_voucher(module_token: AuthToken) {
           expect Some(transfer_amount) = int.from_utf8(data.amount)
 
           let token_name = crypto.sha3_256(data.denom)
-          let minted_tokens = tokens(voucher_minting_policy_id)
+          let minted_tokens = tokens(mint, voucher_minting_policy_id)
           expect
             minted_tokens == (
               dict.empty
@@ -181,12 +181,10 @@ validator mint_voucher(module_token: AuthToken) {
 
           let token_name = crypto.sha3_256(data.denom)
 
-          let minted_tokens =
-            value.from_minted_value(mint)
-              |> value.tokens(voucher_minting_policy_id)
+          let minted_tokens = tokens(mint, voucher_minting_policy_id)
           expect
             minted_tokens == (
-              dict.new()
+              dict.empty
                 |> dict.insert(token_name, transfer_amount)
             )
           trace @"mint_voucher: minted token is valid"
@@ -286,7 +284,7 @@ fn prepare_mock_data() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "transaction id" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
@@ -365,10 +363,8 @@ test test_mint_voucher() {
   let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
   let token_name = crypto.sha3_256(prefixed_denom)
 
-  let token_value =
+  let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
-
-  let mint = value.to_minted_value(token_value)
 
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
@@ -376,7 +372,7 @@ test test_mint_voucher() {
   let voucher_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
-      value: token_value,
+      value: mint,
       datum: NoDatum,
       reference_script: None,
     }
@@ -390,9 +386,12 @@ test test_mint_voucher() {
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }
 
 test test_burn_voucher() {
@@ -442,13 +441,12 @@ test test_burn_voucher() {
 
   let token_name = crypto.sha3_256(packet_data.denom)
 
-  let token_value =
+  let mint =
     from_asset(
       mock_data.voucher_minting_policy_id,
       token_name,
       -transfer_amount,
     )
-  let mint = value.to_minted_value(token_value)
 
   let transaction =
     Transaction {
@@ -458,9 +456,12 @@ test test_burn_voucher() {
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }
 
 test test_refund_voucher() {
@@ -492,7 +493,7 @@ test test_refund_voucher() {
   //==================================arrange output============================
   let token_name = crypto.sha3_256(ftpd.denom)
 
-  let token_value =
+  let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
@@ -500,15 +501,12 @@ test test_refund_voucher() {
   let sender_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
-      value: token_value,
+      value: mint,
       datum: NoDatum,
       reference_script: None,
     }
   let outputs =
     [sender_output]
-
-  //==================================arrange mint============================
-  let mint = value.to_minted_value(token_value)
 
   //==================================arrange redeemers============================
   let mint_voucher_redeemer =
@@ -542,7 +540,10 @@ test test_refund_voucher() {
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }

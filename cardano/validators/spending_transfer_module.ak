@@ -9,7 +9,7 @@ use cardano/assets.{
 }
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptPurpose, Spend, Transaction, TransactionId,
+  ScriptPurpose, Spend, Transaction,
 }
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/mint_voucher_redeemer.{
@@ -881,7 +881,7 @@ fn setup() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId("mock module input tx id"),
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: module_output,
@@ -933,7 +933,7 @@ fn setup() -> MockData {
   let channel_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId("mock channel input tx id"),
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: channel_output,
@@ -1021,9 +1021,8 @@ test on_chan_open_init_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1032,20 +1031,19 @@ test on_chan_open_init_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1077,9 +1075,8 @@ test on_chan_open_try_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1088,20 +1085,19 @@ test on_chan_open_try_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1132,9 +1128,8 @@ test on_chan_open_ack_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1143,20 +1138,19 @@ test on_chan_open_ack_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1183,9 +1177,8 @@ test on_chan_open_confirm_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1194,20 +1187,19 @@ test on_chan_open_confirm_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1269,9 +1261,8 @@ test on_recv_packet_mint_voucher_succeed() {
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1280,20 +1271,19 @@ test on_recv_packet_mint_voucher_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1375,9 +1365,8 @@ test on_recv_packet_unescrow_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1386,20 +1375,19 @@ test on_recv_packet_unescrow_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1458,9 +1446,8 @@ test transfer_escrow_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1469,20 +1456,19 @@ test transfer_escrow_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1560,9 +1546,8 @@ test transfer_burn_voucher_succeed() {
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1571,20 +1556,19 @@ test transfer_burn_voucher_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1646,9 +1630,8 @@ test on_timeout_packet_mint_voucher_succeed() {
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1657,20 +1640,19 @@ test on_timeout_packet_mint_voucher_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1743,9 +1725,8 @@ test on_timeout_packet_unescrow_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1754,20 +1735,19 @@ test on_timeout_packet_unescrow_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1832,9 +1812,8 @@ test on_acknowledgement_packet_result_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1843,20 +1822,19 @@ test on_acknowledgement_packet_result_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -1928,9 +1906,8 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1939,20 +1916,19 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -2035,9 +2011,8 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       Pair(Spend(mock.module_input.output_reference), module_redeemer),
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
-  //==========================arrange context=========================
-  let purpose = Spend(mock.module_input.output_reference)
 
+  //==========================arrange context=========================
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -2046,20 +2021,19 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    mock.module_input.output_reference,
+    transaction,
   )
 }
 
@@ -2083,8 +2057,6 @@ test on_chan_close_init_given_any_input_returns_false() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
-  let purpose = Spend(fake_data.module_input.output_reference)
-
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -2093,20 +2065,19 @@ test on_chan_close_init_given_any_input_returns_false() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     fake_data.handler_token,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    fake_data.module_input.output_reference,
+    transaction,
   ) == False
 }
 
@@ -2130,8 +2101,6 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
-  let purpose = Spend(fake_data.module_input.output_reference)
-
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -2140,19 +2109,18 @@ test on_chan_close_confirm_given_any_input_returns_false() {
       redeemers: redeemers,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
-  spend_transfer_module(
+  spend_transfer_module.spend(
     fake_data.handler_token,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
-    Void,
+    None,
     module_redeemer,
-    context,
+    fake_data.module_input.output_reference,
+    transaction,
   ) == False
 }
