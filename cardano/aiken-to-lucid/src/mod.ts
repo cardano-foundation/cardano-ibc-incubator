@@ -229,9 +229,14 @@ export function generateType(
 
   if ("anyOf" in typeDef) {
     if (typeDef.anyOf.length == 1) {
+      let forwardTitle = typeDef.anyOf[0].dataType == "constructor" && !("title" in typeDef.anyOf[0])
+      let forwardItem = typeDef.anyOf[0];
+      if (forwardTitle) {
+        forwardItem.title = typeDef.title;
+      }
       const genType = generateType(
         plutusDefinition,
-        typeDef.anyOf[0] as unknown as AikenType,
+        forwardItem as unknown as AikenType,
       );
 
       if (genType.type != "composite") {
