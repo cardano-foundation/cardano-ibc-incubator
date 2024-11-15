@@ -49,6 +49,10 @@ export const builtInTypes: { [type: string]: GenType } = {
     type: "primitive",
     schema: ["Data.Bytes()"],
   },
+  ScriptHash: {
+    type: "primitive",
+    schema: ["Data.Bytes()"],
+  },
   Void: {
     type: "primitive",
     schema: ["Data.void()"],
