@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{tm_hash_size}
 
 pub type BlockID {

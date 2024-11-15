@@ -1,8 +1,8 @@
-use aiken/bytearray
-use aiken/dict
-use aiken/hash
-use aiken/transaction.{Output}
-use aiken/transaction/value.{AssetName, MintedValue, PolicyId}
+use aiken/collection/dict
+use aiken/crypto
+use aiken/primitive/bytearray
+use cardano/assets.{AssetName, PolicyId, Value, quantity_of, tokens}
+use cardano/transaction.{Output}
 
 pub type AuthToken {
   policy_id: PolicyId,
@@ -10,14 +10,13 @@ pub type AuthToken {
 }
 
 pub fn contain_auth_token(output: Output, token: AuthToken) -> Bool {
-  value.quantity_of(output.value, token.policy_id, token.name) == 1
+  quantity_of(output.value, token.policy_id, token.name) == 1
 }
 
-pub fn mint_auth_token(mint: MintedValue, token: AuthToken) -> Bool {
-  let minted_tokens =
-    mint |> value.from_minted_value() |> value.tokens(token.policy_id)
+pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
+  let minted_tokens = mint |> tokens(token.policy_id)
 
-  expect minted_tokens == ( dict.new() |> dict.insert(token.name, 1) )
+  expect minted_tokens == ( dict.empty |> dict.insert(token.name, 1) )
 
   True
 }
@@ -32,13 +31,13 @@ pub fn generate_token_name(
   expect (bytearray.length(postfix) <= 8)?
 
   let base_token_part =
-    hash.sha3_256(
+    crypto.sha3_256(
       base_token.policy_id
         |> bytearray.concat(base_token.name),
     )
       |> bytearray.take(20)
 
-  let prefix_part = hash.sha3_256(prefix) |> bytearray.take(4)
+  let prefix_part = crypto.sha3_256(prefix) |> bytearray.take(4)
 
   let full_name =
     base_token_part
@@ -61,7 +60,7 @@ pub fn generate_token_name_from_another(
 
   let base_token_part = extract_token_base(another_token_name)
 
-  let prefix_part = hash.sha3_256(prefix) |> bytearray.take(4)
+  let prefix_part = crypto.sha3_256(prefix) |> bytearray.take(4)
 
   let full_name =
     base_token_part

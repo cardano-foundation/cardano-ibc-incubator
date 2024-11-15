@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_024_host_requirements/validate
 
 test test_default_identifier_validator() {
@@ -31,10 +31,14 @@ test test_default_identifier_validator() {
     ]
 
   test_cases
-    |> list.all(fn(case) { and {
-             validate.client_identifier_validator(case.1st) == case.2nd,
-             validate.connection_identifier_validator(case.1st) == case.2nd,
-             validate.channel_identifier_validator(case.1st) == case.2nd,
-             validate.port_identifier_validator(case.1st) == case.2nd,
-           } })
+    |> list.all(
+        fn(case) {
+          and {
+            validate.client_identifier_validator(case.1st) == case.2nd,
+            validate.connection_identifier_validator(case.1st) == case.2nd,
+            validate.channel_identifier_validator(case.1st) == case.2nd,
+            validate.port_identifier_validator(case.1st) == case.2nd,
+          }
+        },
+      )
 }

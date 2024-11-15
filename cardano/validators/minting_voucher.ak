@@ -1,16 +1,16 @@
-use aiken/bytearray
-use aiken/dict
-use aiken/hash
-use aiken/int
-use aiken/list
-use aiken/pairs
-use aiken/string
-use aiken/transaction.{
-  Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId,
+use aiken/collection/dict
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto
+use aiken/primitive/bytearray
+use aiken/primitive/int
+use aiken/primitive/string
+use cardano/address.{from_script, from_verification_key}
+use cardano/assets.{PolicyId, from_asset, quantity_of, tokens}
+use cardano/transaction.{
+  Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
-use aiken/transaction/credential
-use aiken/transaction/value.{PolicyId}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
@@ -25,10 +25,12 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 }
 use ibc/utils/string as string_utils
 
-validator(module_token: AuthToken) {
-  fn mint_voucher(redeemer: MintVoucherRedeemer, context: ScriptContext) -> Bool {
-    let ScriptContext { transaction, purpose } = context
-    expect Mint(voucher_minting_policy_id) = purpose
+validator mint_voucher(module_token: AuthToken) {
+  mint(
+    redeemer: MintVoucherRedeemer,
+    voucher_minting_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
 
     expect
@@ -61,16 +63,14 @@ validator(module_token: AuthToken) {
               packet_dest_channel,
             )
           let prefixed_denom = bytearray.concat(source_prefix, data.denom)
-          let token_name = hash.sha3_256(prefixed_denom)
+          let token_name = crypto.sha3_256(prefixed_denom)
 
           expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-          let minted_tokens =
-            value.from_minted_value(mint)
-              |> value.tokens(voucher_minting_policy_id)
+          let minted_tokens = tokens(mint, voucher_minting_policy_id)
           expect
             minted_tokens == (
-              dict.new()
+              dict.empty
                 |> dict.insert(token_name, transfer_amount)
             )
           trace @"mint_voucher: minted token is valid"
@@ -78,8 +78,7 @@ validator(module_token: AuthToken) {
           expect Some(receiver_public_key_hash) =
             string_utils.hex_string_to_bytes(data.receiver)
           trace @"mint_voucher: converted receiver to public key hash"
-          let receiver_address =
-            credential.from_verification_key(receiver_public_key_hash)
+          let receiver_address = from_verification_key(receiver_public_key_hash)
 
           let inputs_token =
             list.reduce(
@@ -90,7 +89,7 @@ validator(module_token: AuthToken) {
 
                 if output.address == receiver_address {
                   let output_token =
-                    value.quantity_of(
+                    quantity_of(
                       output.value,
                       voucher_minting_policy_id,
                       token_name,
@@ -109,7 +108,7 @@ validator(module_token: AuthToken) {
               fn(acc, output) {
                 if output.address == receiver_address {
                   let output_token =
-                    value.quantity_of(
+                    quantity_of(
                       output.value,
                       voucher_minting_policy_id,
                       token_name,
@@ -145,13 +144,11 @@ validator(module_token: AuthToken) {
 
           expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-          let token_name = hash.sha3_256(data.denom)
-          let minted_tokens =
-            value.from_minted_value(mint)
-              |> value.tokens(voucher_minting_policy_id)
+          let token_name = crypto.sha3_256(data.denom)
+          let minted_tokens = tokens(mint, voucher_minting_policy_id)
           expect
             minted_tokens == (
-              dict.new()
+              dict.empty
                 |> dict.insert(token_name, -transfer_amount)
             )
           trace @"mint_voucher: burned token is valid"
@@ -182,14 +179,12 @@ validator(module_token: AuthToken) {
 
           expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-          let token_name = hash.sha3_256(data.denom)
+          let token_name = crypto.sha3_256(data.denom)
 
-          let minted_tokens =
-            value.from_minted_value(mint)
-              |> value.tokens(voucher_minting_policy_id)
+          let minted_tokens = tokens(mint, voucher_minting_policy_id)
           expect
             minted_tokens == (
-              dict.new()
+              dict.empty
                 |> dict.insert(token_name, transfer_amount)
             )
           trace @"mint_voucher: minted token is valid"
@@ -198,8 +193,7 @@ validator(module_token: AuthToken) {
             string_utils.hex_string_to_bytes(data.sender)
           trace @"mint_voucher: converted sender to public key hash"
 
-          let sender_address =
-            credential.from_verification_key(sender_public_key_hash)
+          let sender_address = from_verification_key(sender_public_key_hash)
 
           let inputs_token =
             list.reduce(
@@ -210,7 +204,7 @@ validator(module_token: AuthToken) {
 
                 if output.address == sender_address {
                   let output_token =
-                    value.quantity_of(
+                    quantity_of(
                       output.value,
                       voucher_minting_policy_id,
                       token_name,
@@ -229,7 +223,7 @@ validator(module_token: AuthToken) {
               fn(acc, output) {
                 if output.address == sender_address {
                   let output_token =
-                    value.quantity_of(
+                    quantity_of(
                       output.value,
                       voucher_minting_policy_id,
                       token_name,
@@ -248,6 +242,10 @@ validator(module_token: AuthToken) {
       }
 
     True
+  }
+
+  else(_) {
+    fail
   }
 }
 
@@ -286,12 +284,12 @@ fn prepare_mock_data() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "transaction id" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("spend module output address"),
-        value: value.from_asset(module_token.policy_id, module_token.name, 1),
+        address: from_script("spend module output address"),
+        value: from_asset(module_token.policy_id, module_token.name, 1),
         datum: NoDatum,
         reference_script: None,
       },
@@ -354,47 +352,46 @@ test test_mint_voucher() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(purpose, mint_voucher_redeemer_in_data),
-      Pair(Spend(mock_data.module_input.output_reference),
-      spend_module_redeemer_in_data),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
     ]
 
   let source_prefix =
     transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
   let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
-  let token_name = hash.sha3_256(prefixed_denom)
+  let token_name = crypto.sha3_256(prefixed_denom)
 
-  let token_value =
-    value.from_asset(
-      mock_data.voucher_minting_policy_id,
-      token_name,
-      transfer_amount,
-    )
-
-  let mint = value.to_minted_value(token_value)
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
 
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
 
   let voucher_output =
     Output {
-      address: credential.from_verification_key(receiver_public_key_hash),
-      value: token_value,
+      address: from_verification_key(receiver_public_key_hash),
+      value: mint,
       datum: NoDatum,
       reference_script: None,
     }
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: [mock_data.module_input],
       outputs: [voucher_output],
       redeemers: redeemers,
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }
 
 test test_burn_voucher() {
@@ -436,31 +433,35 @@ test test_burn_voucher() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(purpose, mint_voucher_redeemer_in_data),
-      Pair(Spend(mock_data.module_input.output_reference),
-      spend_module_redeemer_in_data),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
     ]
 
-  let token_name = hash.sha3_256(packet_data.denom)
+  let token_name = crypto.sha3_256(packet_data.denom)
 
-  let token_value =
-    value.from_asset(
+  let mint =
+    from_asset(
       mock_data.voucher_minting_policy_id,
       token_name,
       -transfer_amount,
     )
-  let mint = value.to_minted_value(token_value)
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: [mock_data.module_input],
       redeemers: redeemers,
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }
 
 test test_refund_voucher() {
@@ -490,29 +491,22 @@ test test_refund_voucher() {
     }
 
   //==================================arrange output============================
-  let token_name = hash.sha3_256(ftpd.denom)
+  let token_name = crypto.sha3_256(ftpd.denom)
 
-  let token_value =
-    value.from_asset(
-      mock_data.voucher_minting_policy_id,
-      token_name,
-      transfer_amount,
-    )
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
 
   let sender_output =
     Output {
-      address: credential.from_verification_key(sender_public_key_hash),
-      value: token_value,
+      address: from_verification_key(sender_public_key_hash),
+      value: mint,
       datum: NoDatum,
       reference_script: None,
     }
   let outputs =
     [sender_output]
-
-  //==================================arrange mint============================
-  let mint = value.to_minted_value(token_value)
 
   //==================================arrange redeemers============================
   let mint_voucher_redeemer =
@@ -531,20 +525,25 @@ test test_refund_voucher() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(purpose, mint_voucher_redeemer_in_data),
-      Pair(Spend(mock_data.module_input.output_reference),
-      spend_module_redeemer_in_data),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
     ]
 
   let transaction =
     Transaction {
-      ..transaction.placeholder(),
+      ..transaction.placeholder,
       inputs: [mock_data.module_input],
       outputs: outputs,
       redeemers: redeemers,
       mint: mint,
     }
 
-  let context = ScriptContext { purpose, transaction }
-
-  mint_voucher(mock_data.module_token, mint_voucher_redeemer, context)
+  mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
 }

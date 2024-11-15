@@ -1,4 +1,4 @@
-use aiken/string
+use aiken/primitive/string
 
 pub const max_uint64 = 18446744073709551616
 

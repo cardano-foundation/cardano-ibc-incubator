@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_024_host_requirements/validate as validate_mod
 use ibc/utils/string.{slash_char}
@@ -67,14 +67,10 @@ test test_validate_prefixed_denom() {
   let test_cases =
     [
       ("transfer/channel-1/uatom", True),
-      ("transfer/channel-1/gamm/pool/1", True),
-      ("/uatom", True),
-      ("//uatom", True),
-      ("uatom", True),
+      ("transfer/channel-1/gamm/pool/1", True), ("/uatom", True),
+      ("//uatom", True), ("uatom", True),
       ("erc20/0x85bcBCd7e79Ec36f4fBBDc54F90C643d921151AA", True),
-      ("gamm/pool/1", True),
-      ("(transfer)/channel-1/uatom", False),
-      ("", False),
+      ("gamm/pool/1", True), ("(transfer)/channel-1/uatom", False), ("", False),
       ("transfer/", False),
     ]
 

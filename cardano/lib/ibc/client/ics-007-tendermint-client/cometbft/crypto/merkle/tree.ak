@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use aiken/math
 use aiken/option
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/hash

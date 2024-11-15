@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_005/types/keys as keys_mod
 
 //============================format_port_identifier====================================

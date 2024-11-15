@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData} as ftpd_mod
 
 //=============================validate_basic===============================

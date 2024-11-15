@@ -1,4 +1,4 @@
-use aiken/pairs
+use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -59,7 +59,7 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
         ),

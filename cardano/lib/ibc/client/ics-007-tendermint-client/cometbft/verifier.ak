@@ -1,6 +1,6 @@
-use aiken/bytearray
-use aiken/list
+use aiken/collection/list
 use aiken/math/rational.{Rational}
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/signed_header.{SignedHeader}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}

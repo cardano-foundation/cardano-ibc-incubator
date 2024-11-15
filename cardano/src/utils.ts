@@ -50,12 +50,12 @@ export const readValidator = async <T extends unknown[] = Data[]>(
 
   if (params === undefined) {
     validator = {
-      type: "PlutusV2",
+      type: "PlutusV3",
       script: encodedValidator,
     };
   } else {
     validator = {
-      type: "PlutusV2",
+      type: "PlutusV3",
       script: applyParamsToScript(encodedValidator, params, type),
     };
   }
@@ -313,7 +313,7 @@ export const createReferenceScriptUtxo = async (
   referredScript: Script
 ) => {
   const [, , referenceAddress] = readValidator(
-    "reference_validator.refer_only",
+    "reference_validator.refer_only.else",
     lucid
   );
 
@@ -399,9 +399,7 @@ export const getNonceOutRef = async (
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
   const NONCE_UTXO = signerUtxos[0];
   const outputReference: OutputReference = {
-    transaction_id: {
-      hash: NONCE_UTXO.txHash,
-    },
+    transaction_id: NONCE_UTXO.txHash,
     output_index: BigInt(NONCE_UTXO.outputIndex),
   };
 

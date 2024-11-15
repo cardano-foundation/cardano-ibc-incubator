@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/utils/int
 

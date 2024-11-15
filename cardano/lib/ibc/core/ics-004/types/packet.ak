@@ -1,5 +1,5 @@
-use aiken/bytearray
-use aiken/hash
+use aiken/crypto
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_024_host_requirements/validate
 use ibc/utils/bits.{put_uint64_big_endian}
@@ -80,7 +80,7 @@ pub fn commit_packet(packet: Packet) -> ByteArray {
       |> bytearray.concat(put_uint64_big_endian(timeout_timestamp))
       |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_number))
       |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_height))
-      |> bytearray.concat(hash.sha2_256(data))
+      |> bytearray.concat(crypto.sha2_256(data))
 
-  hash.sha2_256(buf)
+  crypto.sha2_256(buf)
 }

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cometbft/crypto/merkle/tree
 
 test test_hash_from_byte_slices_sha2_256() {
@@ -24,6 +24,6 @@ test test_hash_from_byte_slices_sha2_256() {
     ]
   test_cases
     |> list.all(
-         fn(case) { tree.hash_from_byte_slices_sha2_256(case.1st) == case.2nd },
-       )
+        fn(case) { tree.hash_from_byte_slices_sha2_256(case.1st) == case.2nd },
+      )
 }

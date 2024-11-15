@@ -1,5 +1,4 @@
-use aiken/hash.{Blake2b_224, Hash}
-use aiken/transaction/credential.{Script}
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use ibc/auth.{AuthToken}
 
 pub type MintPortRedeemer {

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/auth.{AuthToken}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}

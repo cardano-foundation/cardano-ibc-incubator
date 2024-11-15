@@ -2,9 +2,9 @@
 // source: ibc/core/channel/v1/channel.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, length, push}
-use aiken/list
+use aiken/collection/list
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int32, Uint64, uint64}
 
@@ -69,29 +69,29 @@ pub fn marshal_for_counterparty(
       let Counterparty { port_id, channel_id } = counterparty
       #[]
         |> concat(
-             ite(
-               length(port_id) == 0,
-               #[],
-               port_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(port_id)
-                 |> push(10),
-             ),
-           )
+            ite(
+              length(port_id) == 0,
+              #[],
+              port_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(port_id)
+                |> push(10),
+            ),
+          )
         |> concat(
-             ite(
-               length(channel_id) == 0,
-               #[],
-               channel_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(channel_id)
-                 |> push(0x12),
-             ),
-           )
+            ite(
+              length(channel_id) == 0,
+              #[],
+              channel_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(channel_id)
+                |> push(0x12),
+            ),
+          )
     },
   )
 }
@@ -105,25 +105,25 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
       let Counterparty { port_id, channel_id } = counterparty
       0
         |> add(
-             ite(
-               length(port_id) == 0,
-               0,
-               {
-                 let l = length(port_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(port_id) == 0,
+              0,
+              {
+                let l = length(port_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             ite(
-               length(channel_id) == 0,
-               0,
-               {
-                 let l = length(channel_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(channel_id) == 0,
+              0,
+              {
+                let l = length(channel_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
     },
   )
 }
@@ -144,79 +144,79 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
       } = channel
       #[]
         |> concat(
-             ite(
-               state_to_int32(state) == 0,
-               #[],
-               state
-                 |> state_to_int32()
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(8),
-             ),
-           )
+            ite(
+              state_to_int32(state) == 0,
+              #[],
+              state
+                |> state_to_int32()
+                |> uint64()
+                |> encode_varint()
+                |> push(8),
+            ),
+          )
         |> concat(
-             ite(
-               order_to_int32(ordering) == 0,
-               #[],
-               ordering
-                 |> order_to_int32()
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(0x10),
-             ),
-           )
+            ite(
+              order_to_int32(ordering) == 0,
+              #[],
+              ordering
+                |> order_to_int32()
+                |> uint64()
+                |> encode_varint()
+                |> push(0x10),
+            ),
+          )
         |> concat(
-             counterparty
-               |> Some()
-               |> size_for_counterparty()
-               |> uint64()
-               |> encode_varint()
-               |> concat(marshal_for_counterparty(Some(counterparty)))
-               |> push(0x1a),
-           )
+            counterparty
+              |> Some()
+              |> size_for_counterparty()
+              |> uint64()
+              |> encode_varint()
+              |> concat(marshal_for_counterparty(Some(counterparty)))
+              |> push(0x1a),
+          )
         |> concat(
-             ite(
-               list.length(connection_hops) == 0,
-               #[],
-               connection_hops
-                 |> list.reduce(
-                      #[],
-                      fn(bz: ByteArray, connection_hop: ByteArray) -> ByteArray {
-                        bz
-                          |> concat(
-                               connection_hop
-                                 |> length()
-                                 |> uint64()
-                                 |> encode_varint()
-                                 |> concat(connection_hop)
-                                 |> push(0x22),
-                             )
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(connection_hops) == 0,
+              #[],
+              connection_hops
+                |> list.reduce(
+                    #[],
+                    fn(bz: ByteArray, connection_hop: ByteArray) -> ByteArray {
+                      bz
+                        |> concat(
+                            connection_hop
+                              |> length()
+                              |> uint64()
+                              |> encode_varint()
+                              |> concat(connection_hop)
+                              |> push(0x22),
+                          )
+                    },
+                  ),
+            ),
+          )
         |> concat(
-             ite(
-               length(version) == 0,
-               #[],
-               version
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(version)
-                 |> push(0x2a),
-             ),
-           )
+            ite(
+              length(version) == 0,
+              #[],
+              version
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(version)
+                |> push(0x2a),
+            ),
+          )
         |> concat(
-             ite(
-               upgrade_sequence == 0,
-               #[],
-               upgrade_sequence
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(0x30),
-             ),
-           )
+            ite(
+              upgrade_sequence == 0,
+              #[],
+              upgrade_sequence
+                |> uint64()
+                |> encode_varint()
+                |> push(0x30),
+            ),
+          )
     },
   )
 }
@@ -237,67 +237,67 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
       } = channel
       0
         |> add(
-             ite(
-               state_to_int32(state) == 0,
-               0,
-               state
-                 |> state_to_int32()
-                 |> uint64()
-                 |> sov()
-                 |> add(1),
-             ),
-           )
+            ite(
+              state_to_int32(state) == 0,
+              0,
+              state
+                |> state_to_int32()
+                |> uint64()
+                |> sov()
+                |> add(1),
+            ),
+          )
         |> add(
-             ite(
-               order_to_int32(ordering) == 0,
-               0,
-               ordering
-                 |> order_to_int32()
-                 |> uint64()
-                 |> sov()
-                 |> add(1),
-             ),
-           )
+            ite(
+              order_to_int32(ordering) == 0,
+              0,
+              ordering
+                |> order_to_int32()
+                |> uint64()
+                |> sov()
+                |> add(1),
+            ),
+          )
         |> add(
-             {
-               let l = size_for_counterparty(Some(counterparty))
-               l |> uint64() |> sov() |> add(l + 1)
-             },
-           )
+            {
+              let l = size_for_counterparty(Some(counterparty))
+              l |> uint64() |> sov() |> add(l + 1)
+            },
+          )
         |> add(
-             ite(
-               list.length(connection_hops) == 0,
-               0,
-               connection_hops
-                 |> list.reduce(
-                      0,
-                      fn(sz: Int, connection_hop: ByteArray) -> Int {
-                        let l = length(connection_hop)
-                        l
-                          |> uint64()
-                          |> sov()
-                          |> add(l + 1 + sz)
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(connection_hops) == 0,
+              0,
+              connection_hops
+                |> list.reduce(
+                    0,
+                    fn(sz: Int, connection_hop: ByteArray) -> Int {
+                      let l = length(connection_hop)
+                      l
+                        |> uint64()
+                        |> sov()
+                        |> add(l + 1 + sz)
+                    },
+                  ),
+            ),
+          )
         |> add(
-             ite(
-               length(version) == 0,
-               0,
-               {
-                 let l = length(version)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(version) == 0,
+              0,
+              {
+                let l = length(version)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             ite(
-               upgrade_sequence == 0,
-               0,
-               upgrade_sequence |> uint64() |> sov() |> add(1),
-             ),
-           )
+            ite(
+              upgrade_sequence == 0,
+              0,
+              upgrade_sequence |> uint64() |> sov() |> add(1),
+            ),
+          )
     },
   )
 }

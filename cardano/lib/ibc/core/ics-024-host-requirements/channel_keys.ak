@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 
 pub const key_channel_end_prefix = "channelEnds"

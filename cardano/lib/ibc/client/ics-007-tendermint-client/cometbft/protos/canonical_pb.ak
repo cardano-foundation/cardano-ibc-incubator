@@ -2,8 +2,8 @@
 // source: tendermint/types/canonical.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, length, push}
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
   marshal_for_timestamp, size_for_timestamp, size_of_std_time, timestamp_proto,
 }
@@ -45,24 +45,24 @@ pub fn marshal_for_part_set_header(
       let CanonicalPartSetHeader { total, hash } = psh
       #[]
         |> concat(
-             ite(
-               total == 0,
-               #[],
-               total |> uint64() |> encode_varint() |> push(8),
-             ),
-           )
+            ite(
+              total == 0,
+              #[],
+              total |> uint64() |> encode_varint() |> push(8),
+            ),
+          )
         |> concat(
-             ite(
-               length(hash) == 0,
-               #[],
-               hash
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(hash)
-                 |> push(0x12),
-             ),
-           )
+            ite(
+              length(hash) == 0,
+              #[],
+              hash
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(hash)
+                |> push(0x12),
+            ),
+          )
     },
   )
 }
@@ -87,15 +87,15 @@ pub fn size_for_part_set_header(
       0
         |> add(ite(total == 0, 0, total |> uint64() |> sov() |> add(1)))
         |> add(
-             ite(
-               length(hash) == 0,
-               0,
-               {
-                 let l = length(hash)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(hash) == 0,
+              0,
+              {
+                let l = length(hash)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
     },
   )
 }
@@ -109,26 +109,26 @@ pub fn marshal_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> ByteArray
       let CanonicalBlockID { hash, part_set_header } = block_id
       #[]
         |> concat(
-             ite(
-               length(hash) == 0,
-               #[],
-               hash
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(hash)
-                 |> push(10),
-             ),
-           )
+            ite(
+              length(hash) == 0,
+              #[],
+              hash
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(hash)
+                |> push(10),
+            ),
+          )
         |> concat(
-             part_set_header
-               |> Some
-               |> size_for_part_set_header()
-               |> uint64()
-               |> encode_varint()
-               |> concat(marshal_for_part_set_header(Some(part_set_header)))
-               |> push(0x12),
-           )
+            part_set_header
+              |> Some
+              |> size_for_part_set_header()
+              |> uint64()
+              |> encode_varint()
+              |> concat(marshal_for_part_set_header(Some(part_set_header)))
+              |> push(0x12),
+          )
     },
   )
 }
@@ -142,21 +142,21 @@ pub fn size_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> Int {
       let CanonicalBlockID { hash, part_set_header } = block_id
       0
         |> add(
-             ite(
-               length(hash) == 0,
-               0,
-               {
-                 let l = length(hash)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(hash) == 0,
+              0,
+              {
+                let l = length(hash)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             {
-               let l = size_for_part_set_header(Some(part_set_header))
-               l |> uint64() |> sov() |> add(l + 1)
-             },
-           )
+            {
+              let l = size_for_part_set_header(Some(part_set_header))
+              l |> uint64() |> sov() |> add(l + 1)
+            },
+          )
     },
   )
 }
@@ -172,49 +172,49 @@ pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
 
       #[]
         |> concat(
-             ite(
-               v_type == 0,
-               #[],
-               v_type |> uint64() |> encode_varint() |> push(8),
-             ),
-           )
+            ite(
+              v_type == 0,
+              #[],
+              v_type |> uint64() |> encode_varint() |> push(8),
+            ),
+          )
         |> concat(ite(height == 0, #[], height |> put_uint64() |> push(0x11)))
         |> concat(ite(round == 0, #[], round |> put_uint64() |> push(0x19)))
         |> concat(
-             ite(
-               is_none(block_id),
-               #[],
-               block_id
-                 |> size_for_block_id()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(marshal_for_block_id(block_id))
-                 |> push(0x22),
-             ),
-           )
+            ite(
+              is_none(block_id),
+              #[],
+              block_id
+                |> size_for_block_id()
+                |> uint64()
+                |> encode_varint()
+                |> concat(marshal_for_block_id(block_id))
+                |> push(0x22),
+            ),
+          )
         |> concat(
-             {
-               let ts_opt = timestamp_proto(timestamp)
-               ts_opt
-                 |> size_for_timestamp()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(marshal_for_timestamp(ts_opt))
-                 |> push(0x2a)
-             },
-           )
+            {
+              let ts_opt = timestamp_proto(timestamp)
+              ts_opt
+                |> size_for_timestamp()
+                |> uint64()
+                |> encode_varint()
+                |> concat(marshal_for_timestamp(ts_opt))
+                |> push(0x2a)
+            },
+          )
         |> concat(
-             ite(
-               length(chain_id) == 0,
-               #[],
-               chain_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(chain_id)
-                 |> push(0x32),
-             ),
-           )
+            ite(
+              length(chain_id) == 0,
+              #[],
+              chain_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(chain_id)
+                |> push(0x32),
+            ),
+          )
     },
   )
 }
@@ -232,31 +232,31 @@ pub fn size_for_vote(vote_opt: Option<CanonicalVote>) -> Int {
         |> add(ite(height == 0, 0, 9))
         |> add(ite(round == 0, 0, 9))
         |> add(
-             ite(
-               is_none(block_id),
-               0,
-               {
-                 let l = size_for_block_id(block_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              is_none(block_id),
+              0,
+              {
+                let l = size_for_block_id(block_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             {
-               let l = size_of_std_time(timestamp)
-               l |> uint64() |> sov() |> add(l + 1)
-             },
-           )
+            {
+              let l = size_of_std_time(timestamp)
+              l |> uint64() |> sov() |> add(l + 1)
+            },
+          )
         |> add(
-             ite(
-               length(chain_id) == 0,
-               0,
-               {
-                 let l = length(chain_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(chain_id) == 0,
+              0,
+              {
+                let l = length(chain_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
     },
   )
 }

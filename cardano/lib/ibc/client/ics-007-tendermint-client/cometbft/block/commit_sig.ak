@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{
   address_size, max_signature_size,
 }

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 

@@ -1,13 +1,13 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, ValidityRange,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -50,7 +50,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/validator_utils
 
-validator(
+validator spend_channel(
   chan_open_ack_policy_id: PolicyId,
   chan_open_confirm_policy_id: PolicyId,
   chan_close_init_policy_id: PolicyId,
@@ -60,15 +60,16 @@ validator(
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
 ) {
-  fn spend_channel(
-    datum: ChannelDatum,
+  spend(
+    optional_datum: Option<ChannelDatum>,
     redeemer: SpendChannelRedeemer,
-    context: ScriptContext,
-  ) -> Bool {
-    let (spent_output, transaction) =
-      validator_utils.extract_spending_context(context)
-    let Transaction { redeemers, .. } = transaction
-
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction { inputs, redeemers, .. } = transaction
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    expect Some(datum) = optional_datum
+    let spent_output = spent_input.output
     when redeemer is {
       ChanOpenAck { .. } -> {
         expect Some(redeemer) =
@@ -153,6 +154,10 @@ validator(
         True
       }
     }
+  }
+
+  else(_) {
+    fail
   }
 }
 
@@ -248,16 +253,12 @@ fn setup() -> MockData {
   let connection_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock connection script hash"),
-        value: value.from_asset(
-          connection_token.policy_id,
-          connection_token.name,
-          1,
-        ),
+        address: from_script("mock connection script hash"),
+        value: from_asset(connection_token.policy_id, connection_token.name, 1),
         datum: InlineDatum(connection_datum),
         reference_script: None,
       },
@@ -360,12 +361,12 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock client script hash"),
-        value: value.from_asset(client_token.policy_id, client_token.name, 1),
+        address: from_script("mock client script hash"),
+        value: from_asset(client_token.policy_id, client_token.name, 1),
         datum: InlineDatum(client_datum),
         reference_script: None,
       },
@@ -393,12 +394,12 @@ fn setup() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock module tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock module script hash"),
-        value: value.from_asset(port_token.policy_id, port_token.name, 1),
+        address: from_script("mock module script hash"),
+        value: from_asset(port_token.policy_id, port_token.name, 1),
         datum: InlineDatum(Void),
         reference_script: None,
       },
@@ -436,8 +437,8 @@ fn build_channel_output(
 ) -> Output {
   let channel_output =
     Output {
-      address: credential.from_script("mock spend channel script hash"),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
+      address: from_script("mock spend channel script hash"),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
       reference_script: None,
     }
@@ -454,7 +455,7 @@ fn build_channel_input(
   let channel_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock spent channel tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: channel_output,
@@ -724,20 +725,17 @@ test chan_open_ack_succeed() {
     ChanOpenAck { counterparty_version, proof_try, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -746,9 +744,10 @@ test chan_open_ack_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -933,27 +932,26 @@ test chan_open_confirm_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
-      Pair(Mint(mock_data.chan_open_confirm_policy_id),
-      chan_open_confirm_redeemer),
+      Pair(
+        Mint(mock_data.chan_open_confirm_policy_id),
+        chan_open_confirm_redeemer,
+      ),
     ]
 
   let spend_channel_redeemer = ChanOpenConfirm { proof_ack, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -962,9 +960,10 @@ test chan_open_confirm_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1184,20 +1183,17 @@ test recv_packet_succeed() {
     RecvPacket { packet, proof_commitment, proof_height }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1206,9 +1202,10 @@ test recv_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1307,20 +1304,17 @@ test send_packet_succeed() {
   let spend_channel_redeemer = SendPacket { packet }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1329,9 +1323,10 @@ test send_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1416,7 +1411,7 @@ test timeout_packet_succeed() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
         ),
@@ -1574,20 +1569,17 @@ test timeout_packet_succeed() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1596,9 +1588,10 @@ test timeout_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1677,7 +1670,7 @@ test acknowledge_packet_succeed() {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
-        packet_commitment: pairs.remove_first(
+        packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
         ),
@@ -1814,8 +1807,10 @@ test acknowledge_packet_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
-      Pair(Mint(mock_data.acknowledge_packet_policy_id),
-      acknowledge_packet_redeemer),
+      Pair(
+        Mint(mock_data.acknowledge_packet_policy_id),
+        acknowledge_packet_redeemer,
+      ),
     ]
 
   let spend_channel_redeemer =
@@ -1827,20 +1822,17 @@ test acknowledge_packet_succeed() {
     }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  spend_channel(
+  spend_channel.spend(
     mock_data.chan_open_ack_policy_id,
     mock_data.chan_open_confirm_policy_id,
     mock_data.chan_close_init_policy_id,
@@ -1849,9 +1841,10 @@ test acknowledge_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1899,19 +1892,16 @@ test chan_close_init_succeed() {
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        redeemers: redeemers,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      redeemers: redeemers,
     }
 
   let spend_channel_redeemer = ChanCloseInit
 
-  spend_channel(
+  spend_channel.spend(
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -1920,9 +1910,10 @@ test chan_close_init_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }
 
@@ -1968,19 +1959,18 @@ test chan_close_confirm_succeed() {
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
-      Pair(Mint(fake_data.chan_close_confirm_policy_id),
-      chan_close_init_redeemer),
+      Pair(
+        Mint(fake_data.chan_close_confirm_policy_id),
+        chan_close_init_redeemer,
+      ),
     ]
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Spend(channel_input.output_reference),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        redeemers: redeemers,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      redeemers: redeemers,
     }
 
   let proof_init = MerkleProof { proofs: [] }
@@ -1989,7 +1979,7 @@ test chan_close_confirm_succeed() {
 
   let spend_channel_redeemer = ChanCloseConfirm { proof_init, proof_height }
 
-  spend_channel(
+  spend_channel.spend(
     fake_data.chan_open_ack_policy_id,
     fake_data.chan_open_confirm_policy_id,
     fake_data.chan_close_init_policy_id,
@@ -1998,8 +1988,9 @@ test chan_close_confirm_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
-    input_channel_datum,
+    Some(input_channel_datum),
     spend_channel_redeemer,
-    context,
+    channel_input.output_reference,
+    transaction,
   )
 }

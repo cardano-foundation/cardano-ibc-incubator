@@ -1,8 +1,6 @@
-use aiken/transaction.{
-  InlineDatum, Input, Output, OutputReference, TransactionId,
-}
-use aiken/transaction/credential
-use aiken/transaction/value
+use cardano/address.{from_script}
+use cardano/assets.{from_asset}
+use cardano/transaction.{InlineDatum, Input, Output, OutputReference}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -20,8 +18,8 @@ pub fn build_channel_output(
 ) -> Output {
   let channel_output =
     Output {
-      address: credential.from_script("mock spend channel script hash"),
-      value: value.from_asset(channel_token.policy_id, channel_token.name, 1),
+      address: from_script("mock spend channel script hash"),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
       reference_script: None,
     }
@@ -38,7 +36,7 @@ pub fn build_channel_input(
   let channel_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "mock spent channel tx hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: channel_output,

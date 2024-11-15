@@ -1,7 +1,7 @@
 use aiken/builtin
-use aiken/bytearray
-use aiken/list
-use aiken/string
+use aiken/collection/list
+use aiken/primitive/bytearray
+use aiken/primitive/string
 
 pub const slash_char = 47
 

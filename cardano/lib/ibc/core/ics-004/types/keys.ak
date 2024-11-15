@@ -1,4 +1,4 @@
-use aiken/bytearray
+use aiken/primitive/bytearray
 use ibc/utils/string as string_utils
 
 pub const channel_prefix = "channel"
