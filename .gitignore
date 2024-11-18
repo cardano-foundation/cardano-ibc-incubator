@@ -42,3 +42,5 @@ cardano-cli
 cardano-node
 
 .vscode/
+
+chains/summit-demo/
