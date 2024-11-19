@@ -1,3 +1,5 @@
+import WebSocket from 'ws';
+
 const ogmiosWsp = async (ogmiosUrl: string, methodname: string, args: unknown) => {
   const client = new WebSocket(ogmiosUrl);
   await new Promise((res) => {
