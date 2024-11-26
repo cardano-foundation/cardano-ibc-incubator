@@ -15,7 +15,7 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
-} from "npm:@lucid-evolution/lucid@0.3.51";
+} from "npm:@lucid-evolution/lucid@0.4.6";
 import {
   formatTimestamp,
   generateIdentifierTokenName,
@@ -213,6 +213,10 @@ export const createDeployment = async (
   }, {});
 
   console.log("Deployment info created!");
+
+  console.log('refUtxos', refUtxosInfo)
+  console.log('spendHandlerScriptHash', spendHandlerScriptHash)
+
 
   const deploymentInfo: DeploymentTemplate = {
     validators: {
@@ -525,7 +529,7 @@ const deployHandler = async (
       }
     );
 
-  const mintHandlerTxHash = await submitTx(
+  await submitTx(
     mintHandlerTx,
     lucid,
     "Mint Handler"

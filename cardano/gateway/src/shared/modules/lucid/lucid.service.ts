@@ -286,8 +286,12 @@ export class LucidService {
     const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
-    tx.collectFrom([handlerUtxo], encodedHandlerOperator)
-      .readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintClient.refUtxo])
+    console.log('handlerUtxo', handlerUtxo);
+    console.log('deploymentConfig.validators.spendHandler', deploymentConfig.validators.spendHandler);
+    console.log('deploymentConfig.validators.mintClient', deploymentConfig.validators.mintClient);
+
+    tx.readFrom([deploymentConfig.validators.spendHandler.refUtxo, deploymentConfig.validators.mintClient.refUtxo])
+      .collectFrom([handlerUtxo], encodedHandlerOperator)
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
