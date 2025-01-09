@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_023_vector_commitments/ics23/ops
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{

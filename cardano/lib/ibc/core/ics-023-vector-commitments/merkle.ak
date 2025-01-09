@@ -1,5 +1,5 @@
-use aiken/bytearray
-use aiken/list
+use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/core/ics_023_vector_commitments/ics23/ics23
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{

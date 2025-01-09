@@ -192,6 +192,6 @@ export function validQueryNextSequenceReceiveParam(
   if (!request.port_id) throw new GrpcInvalidArgumentException('Invalid argument: "port_id" must be provided');
 
   request.channel_id = request.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
-    
+
   return request;
 }

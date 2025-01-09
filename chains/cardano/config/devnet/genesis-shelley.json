@@ -1,5 +1,5 @@
 {
-  "epochLength": 900,
+  "epochLength": 300,
   "activeSlotsCoeff": 0.25,
   "slotLength": 1,
   "securityParam": 18,
@@ -9,7 +9,7 @@
     "609783be7d3c54f11377966dfabc9284cd6c32fca1cd42ef0a4f1cc45b": 900000000000
   },
   "maxKESEvolutions": 60,
-  "maxLovelaceSupply": 2000000000000,
+  "maxLovelaceSupply": 45000000000000000,
   "networkId": "Testnet",
   "networkMagic": 42,
   "protocolParams": {
@@ -30,7 +30,7 @@
     "nOpt": 100,
     "poolDeposit": 0,
     "protocolVersion": {
-      "major": 7,
+      "major": 9,
       "minor": 0
     },
     "rho": 0.1,

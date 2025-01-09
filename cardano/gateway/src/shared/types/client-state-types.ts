@@ -1,4 +1,4 @@
-// import { type Data } from '@cuonglv0297/lucid-custom';
+// import { type Data } from '@lucid-evolution/lucid';
 import { CardanoClientState } from './cardano';
 import { Height } from './height';
 import { ProofSpec } from './proof-specs';

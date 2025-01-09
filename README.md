@@ -234,6 +234,7 @@ This project stands on the shoulders of some incredible frameworks and tools dev
 - [Ogmios](https://github.com/cardanosolutions/ogmios)
 - [Kupo](https://github.com/cardanosolutions/kupo)
 - [db-sync](https://github.com/IntersectMBO/cardano-db-sync)
+- [Apollo](https://github.com/Salvionied/apollo)
 - [gOuroboros](https://github.com/blinklabs-io/gouroboros)
 - [Mithril](https://github.com/input-output-hk/mithril)
 

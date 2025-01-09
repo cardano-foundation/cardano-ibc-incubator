@@ -2,8 +2,8 @@
 // source: google/protobuf/timestamp.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, push}
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, push}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int32, Int64, uint64}
 use ibc/utils/time.{Time}
@@ -26,19 +26,19 @@ pub fn marshal_for_timestamp(ts_opt: Option<Timestamp>) -> ByteArray {
       let Timestamp { seconds, nanos } = ts
       #[]
         |> concat(
-             ite(
-               seconds == 0,
-               #[],
-               seconds |> uint64() |> encode_varint() |> push(8),
-             ),
-           )
+            ite(
+              seconds == 0,
+              #[],
+              seconds |> uint64() |> encode_varint() |> push(8),
+            ),
+          )
         |> concat(
-             ite(
-               nanos == 0,
-               #[],
-               nanos |> uint64() |> encode_varint() |> push(0x10),
-             ),
-           )
+            ite(
+              nanos == 0,
+              #[],
+              nanos |> uint64() |> encode_varint() |> push(0x10),
+            ),
+          )
     },
   )
 }

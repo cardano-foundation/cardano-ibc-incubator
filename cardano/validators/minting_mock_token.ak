@@ -1,7 +1,12 @@
-use aiken/transaction.{ScriptContext}
+use cardano/assets.{PolicyId}
+use cardano/transaction.{Transaction}
 
-validator {
-  fn mint_mock_token(_redeemer: Data, _context: ScriptContext) -> Bool {
+validator mint_mock_token {
+  mint(_redeemer: Data, _policy_id: PolicyId, _transaction: Transaction) {
     True
+  }
+
+  else(_) {
+    fail
   }
 }

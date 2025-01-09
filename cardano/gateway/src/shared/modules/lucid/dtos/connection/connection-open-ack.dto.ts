@@ -1,4 +1,4 @@
-import { PolicyId, UTxO } from '@cuonglv0297/lucid-custom';
+import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 
 export type UnsignedConnectionOpenAckDto = {
   connectionUtxo: UTxO;

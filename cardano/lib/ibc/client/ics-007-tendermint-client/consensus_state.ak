@@ -1,4 +1,4 @@
-use aiken/hash.{Hash, Sha3_256}
+use aiken/crypto.{Hash, Sha3_256}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 
 pub type ConsensusState {

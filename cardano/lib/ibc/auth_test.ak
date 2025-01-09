@@ -1,7 +1,7 @@
-use aiken/list
-use aiken/transaction.{NoDatum, Output}
-use aiken/transaction/credential
-use aiken/transaction/value.{MintedValue}
+use aiken/collection/list
+use cardano/address.{from_script}
+use cardano/assets.{Value, add, from_asset, zero}
+use cardano/transaction.{NoDatum, Output}
 use ibc/auth.{AuthToken}
 
 test test_contain_auth_token() {
@@ -16,15 +16,15 @@ test test_contain_auth_token() {
     AuthToken { policy_id: mock_policy_id, name: "any" }
   let mock_valid_output =
     Output {
-      address: credential.from_script(hash_sample),
-      value: value.from_asset(mock_policy_id, mock_asset_name, 1),
+      address: from_script(hash_sample),
+      value: from_asset(mock_policy_id, mock_asset_name, 1),
       datum: NoDatum,
       reference_script: None,
     }
   let mock_invalid_output =
     Output {
-      address: credential.from_script(hash_sample),
-      value: value.zero(),
+      address: from_script(hash_sample),
+      value: zero,
       datum: NoDatum,
       reference_script: None,
     }
@@ -174,8 +174,7 @@ test test_extract_token_prefix() {
         #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b30",
         //take 20 to 23
         #"9ba0640b",
-      ),
-      (#"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031", #"19dd9b30"),
+      ), (#"db2f7e8cd6a8158ed3d3807abc09c1f7e866b57f19dd9b3031", #"19dd9b30"),
       (#"f3b58dc840a819f86dc3477508463d4c3141e119239b722032", #"239b7220"),
       (#"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33", #"27b1b82e"),
     ]
@@ -199,11 +198,10 @@ test test_extract_token_sequence() {
 }
 
 //===================================mint_auth_token==================================
-fn setup_mint_auth_token() -> (AuthToken, MintedValue) {
+fn setup_mint_auth_token() -> (AuthToken, Value) {
   let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
 
-  let mint =
-    value.from_asset(token.policy_id, token.name, 1) |> value.to_minted_value()
+  let mint = from_asset(token.policy_id, token.name, 1)
 
   (token, mint)
 }
@@ -219,9 +217,7 @@ test mint_auth_token_fail() fail {
 
   let mint =
     mint
-      |> value.from_minted_value()
-      |> value.add(token.policy_id, token.name, 1)
-      |> value.to_minted_value()
+      |> add(token.policy_id, token.name, 1)
 
   auth.mint_auth_token(mint, token)
 }

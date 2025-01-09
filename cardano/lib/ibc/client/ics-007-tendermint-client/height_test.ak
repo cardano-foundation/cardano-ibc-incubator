@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/height.{Height}
 
 test test_zero_height() {

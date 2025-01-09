@@ -1,5 +1,5 @@
-use aiken/bytearray
-use aiken/list
+use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/utils/string
 
 pub const default_max_character_length = 64
@@ -33,21 +33,21 @@ fn default_identifier_validator(id: ByteArray, min: Int, max: Int) -> Bool {
 fn is_valid_id(id: ByteArray) -> Bool {
   id
     |> bytearray.reduce(
-         True,
-         fn(result, cur_byte) {
-           let is_valid_char = or {
-               // 'a' <= char <= 'z'
-               0x61 <= cur_byte && cur_byte <= 0x7a,
-               // 'A' <= char <= 'Z'
-               0x41 <= cur_byte && cur_byte <= 0x5a,
-               // '0' <= char <= '9'
-               0x30 <= cur_byte && cur_byte <= 0x39,
-               // chars '.', '_', '+', '-', '#', '[', ']', '<', '>'
-               [0x2e, 0x5f, 0x2b, 0x2d, 0x23, 0x5b, 0x5d, 0x3c, 0x3e]
-                 |> list.has(cur_byte),
-             }
+        True,
+        fn(result, cur_byte) {
+          let is_valid_char = or {
+              // 'a' <= char <= 'z'
+              0x61 <= cur_byte && cur_byte <= 0x7a,
+              // 'A' <= char <= 'Z'
+              0x41 <= cur_byte && cur_byte <= 0x5a,
+              // '0' <= char <= '9'
+              0x30 <= cur_byte && cur_byte <= 0x39,
+              // chars '.', '_', '+', '-', '#', '[', ']', '<', '>'
+              [0x2e, 0x5f, 0x2b, 0x2d, 0x23, 0x5b, 0x5d, 0x3c, 0x3e]
+                |> list.has(cur_byte),
+            }
 
-           result && is_valid_char
-         },
-       )
+          result && is_valid_char
+        },
+      )
 }

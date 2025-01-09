@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_002_client_semantics/types/keys as keys_mod
 
 //=================================parse_client_id_sequence===========================

@@ -1,34 +1,39 @@
 #!/bin/sh
-
-path=demo
-configs_dir=examples/demo/configs
-
-src_chain_name=ibc-0
-src_port=port-100
-src_chain_config_path="${configs_dir}/chains/${src_chain_name}.json"
-src_mnemonic="direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal"
-
-dst_chain_name=ibc-1
-dst_port=transfer
-dst_chain_config_path="${configs_dir}/chains/${dst_chain_name}.json"
-dst_mnemonic="engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance"
-
-amount=2000stake
-src_address=addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql
-
-alias rly=./bin/rly
+set -x
 
 # Check if the .env file exists and export environment variables
 if [ -f ".env" ]; then
   echo "Found .env file. Exporting environment variables..."
-  export $(grep -v '^#' .env | xargs)
+  set -a 
+  source .env
+  set +a 
 else
   echo ".env file does not exist."
 fi
 
+path=${RELAYER_PATH_NAME}
+configs_dir=".config/${CONFIGS_DIR}"
+
+src_chain_name=${SRC_CHAIN_NAME}
+src_port=${SRC_PORT}
+src_chain_config_path="${configs_dir}/chains/${src_chain_name}.json"
+src_mnemonic="${SRC_MNEMONIC}"
+
+echo "Source Chain vals: " $src_chain_name $src_port $src_mnemonic
+
+dst_chain_name=${DST_CHAIN_NAME}
+dst_port=${DST_PORT}
+dst_chain_config_path="${configs_dir}/chains/${dst_chain_name}.json"
+dst_mnemonic="${DST_MNEMONIC}"
+
+echo "DST chain vals: " $dst_chain_name $dst_port $dst_mnemonic
+
+alias rly=./bin/rly
+
 src_rpc_addr=${SRC_RPC_ADDR}
 dst_rpc_addr=${DST_RPC_ADDR}
 mithril_endpoint=${MITHRIL_ENDPOINT}
+
 # Update the rpc-addr for the source chain if the SRC_RPC_ADDR variable is defined
 if [ ! -z "$src_rpc_addr" ]; then
   if [ -f "$src_chain_config_path" ]; then

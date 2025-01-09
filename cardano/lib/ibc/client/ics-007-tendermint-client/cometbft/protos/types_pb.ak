@@ -1,6 +1,6 @@
 use aiken/builtin.{if_then_else as ite}
-use aiken/bytearray.{concat, push}
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, push}
 use ibc/utils/bytes.{encode_varint}
 use ibc/utils/int.{uint64}
 

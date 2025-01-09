@@ -35,10 +35,10 @@ export function normalizeConsensusStateFromDatum(
 // Convert consensus state operator to a structured ConsensusState object to submit to cardano
 export function initializeConsensusState(consensusStateMsg: ConsensusStateTendermint): ConsensusState {
   const consensusState: ConsensusState = {
-    // timestamp: BigInt(Date.now()) * 10n ** 6n,
-    timestamp:
+    timestamp: BigInt(Date.now()) * 10n ** 6n,
+    /*timestamp:
       BigInt(consensusStateMsg.timestamp.seconds) * BigInt(1e9) + BigInt(consensusStateMsg.timestamp.nanos || 0n) ??
-      null,
+      null,*/
     next_validators_hash: toHex(consensusStateMsg.next_validators_hash),
     root: { hash: toHex(consensusStateMsg.root.hash) },
   };

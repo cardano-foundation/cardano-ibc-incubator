@@ -29,7 +29,7 @@ export const BlockFetchClientService = {
     });
     let mplexer: Multiplexer = new Multiplexer({
       protocolType: 'node-to-node',
-      connect: () =>{
+      connect: () => {
         if (socket.destroyed) {
           socket = null;
           socket = connect({
@@ -40,10 +40,9 @@ export const BlockFetchClientService = {
             timeout: 10000,
             autoSelectFamily: true,
             autoSelectFamilyAttemptTimeout: 5000,
-          })
+          });
         }
-        
-        
+
         return socket;
       },
     });

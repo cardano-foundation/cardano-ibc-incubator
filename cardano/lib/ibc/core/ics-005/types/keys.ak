@@ -1,5 +1,5 @@
-use aiken/bytearray
-use aiken/string
+use aiken/primitive/bytearray
+use aiken/primitive/string
 use ibc/utils/string as string_utils
 
 pub const port_prefix = "port"

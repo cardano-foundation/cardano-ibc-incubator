@@ -58,9 +58,9 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first transaction snapshot certificate", header.TransactionSnapshotCertificate.PreviousHash, expectedPreviousCerForTs.Hash)
 	}
 
-	_, err := time.Parse(Layout, header.TransactionSnapshotCertificate.Metadata.SealedAt)
+	_, err := time.Parse(time.RFC3339Nano, header.TransactionSnapshotCertificate.Metadata.SealedAt)
 	if err != nil {
-		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v, expected: %v", "invalid timestamp layout", header.TransactionSnapshotCertificate.Metadata.SealedAt, Layout)
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "%s received: %v, expected: %v", "invalid timestamp layout", header.TransactionSnapshotCertificate.Metadata.SealedAt, time.RFC3339Nano)
 	}
 
 	msdVerifier := &MithrilCertificateVerifier{

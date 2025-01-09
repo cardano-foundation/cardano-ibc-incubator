@@ -1,6 +1,6 @@
 use aiken/builtin.{if_then_else}
-use aiken/bytearray.{push}
 use aiken/math.{log, pow2}
+use aiken/primitive/bytearray.{push}
 
 pub type BitwiseOperator {
   AND

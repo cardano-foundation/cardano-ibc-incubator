@@ -1,14 +1,15 @@
-use aiken/bytearray
+use aiken/collection/list
+use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/list
 use aiken/option
-use aiken/pairs
-use aiken/time.{PosixTime}
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, Redeemer, ScriptContext, ScriptPurpose,
-  Spend, Transaction, ValidityRange,
+use aiken/primitive/bytearray
+use cardano/assets.{
+  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
+  without_lovelace,
 }
-use aiken/transaction/value.{AssetName, MintedValue, PolicyId}
+use cardano/transaction.{
+  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
@@ -21,29 +22,12 @@ use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerOperator}
 
+type PosixTime =
+  Int
+
 pub fn get_inline_datum(output: Output) -> Data {
   expect InlineDatum(data) = output.datum
   data
-}
-
-pub fn extract_minting_context(
-  context: ScriptContext,
-) -> (ByteArray, List<Input>, List<Output>, MintedValue) {
-  let ScriptContext { transaction, purpose } = context
-  expect Mint(policy_id) = purpose
-  let Transaction { inputs, outputs, mint, .. } = transaction
-  (policy_id, inputs, outputs, mint)
-}
-
-pub fn extract_spending_context(context: ScriptContext) -> (Output, Transaction) {
-  let ScriptContext { transaction, purpose } = context
-  let Transaction { inputs, .. } = transaction
-
-  expect Spend(spent_ref) = purpose
-  expect Some(spent_input) = transaction.find_input(inputs, spent_ref)
-  let spent_output = spent_input.output
-
-  (spent_output, transaction)
 }
 
 pub fn quantity_token_output(
@@ -57,7 +41,7 @@ pub fn quantity_token_output(
         fn(prev, cur) {
           prev + (
             cur.value
-              |> value.quantity_of(policy_id, asset_name)
+              |> quantity_of(policy_id, asset_name)
           )
         },
       )
@@ -227,7 +211,7 @@ pub fn validate_referred_connection(
 }
 
 pub fn validate_mint(
-  mint: MintedValue,
+  mint: Value,
   minting_policy_id: PolicyId,
   handler_token: AuthToken,
   token_name_prefix: ByteArray,
@@ -256,14 +240,14 @@ pub fn validate_token_remain(
     [updated_output] -> {
       let is_remain =
         if list.length(tokens) == 0 {
-          value.without_lovelace(spent_output.value) == value.without_lovelace(
+          without_lovelace(spent_output.value) == without_lovelace(
             updated_output.value,
           )
         } else {
           list.all(
             tokens,
             fn(token) {
-              value.quantity_of(spent_output.value, token.policy_id, token.name) == value.quantity_of(
+              quantity_of(spent_output.value, token.policy_id, token.name) == quantity_of(
                 updated_output.value,
                 token.policy_id,
                 token.name,
@@ -290,7 +274,7 @@ pub fn extract_token_unit(unit: ByteArray) -> Option<(ByteArray, ByteArray)> {
   let len = bytearray.length(unit)
 
   if unit == "lovelace" {
-    Some((value.ada_policy_id, value.ada_asset_name))
+    Some((ada_policy_id, ada_asset_name))
   } else if 28 <= len && len <= 60 {
     let policy_id = bytearray.take(unit, 28)
     let name = bytearray.slice(unit, 28, 59)

@@ -1,4 +1,4 @@
-import { type Tx, TxComplete, UTxO } from '@cuonglv0297/lucid-custom';
+import { fromHex, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -44,7 +44,7 @@ import {
   UnsignedChannelOpenAckDto,
   UnsignedOrderedChannelOpenAckDto,
 } from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
-import { UnsignedChannelCloseInitDto} from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
+import { UnsignedChannelCloseInitDto } from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -84,14 +84,14 @@ export class ChannelService {
         constructedAddress,
       );
       const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
-      const unsignedChannelOpenInitTxValidTo: Tx = unsignedChannelOpenInitTx.validTo(validToTime);
+      const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
 
-      const unsignedChannelOpenInitTxCompleted: TxComplete = await unsignedChannelOpenInitTxValidTo.complete();
+      const unsignedChannelOpenInitTxCompleted: TxSignBuilder = await unsignedChannelOpenInitTxValidTo.complete();
       // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
       // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
       await sleep(7000);
@@ -101,7 +101,7 @@ export class ChannelService {
         version: data.channel.version,
         unsigned_tx: {
           type_url: '',
-          value: unsignedChannelOpenInitTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedChannelOpenInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenInitResponse;
       return response;
@@ -120,20 +120,20 @@ export class ChannelService {
       this.logger.log('Channel Open Try is processing');
       const { constructedAddress, channelOpenTryOperator } = validateAndFormatChannelOpenTryParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelOpenTryTx: Tx = await this.buildUnsignedChannelOpenTryTx(
+      const unsignedChannelOpenTryTx: TxBuilder = await this.buildUnsignedChannelOpenTryTx(
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: Tx = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
+      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
 
-      const unsignedChannelOpenTryTxCompleted: TxComplete = await unsignedChannelOpenTryTxValidTo.complete();
+      const unsignedChannelOpenTryTxCompleted: TxSignBuilder = await unsignedChannelOpenTryTxValidTo.complete();
 
       this.logger.log(unsignedChannelOpenTryTxCompleted.toHash(), 'channel open try - unsignedTX - hash');
       const response: MsgChannelOpenTryResponse = {
         version: channelOpenTryOperator.version,
         unsigned_tx: {
           type_url: '',
-          value: unsignedChannelOpenTryTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedChannelOpenTryTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenTryResponse;
       return response;
@@ -151,24 +151,24 @@ export class ChannelService {
       this.logger.log('Channel Open Ack is processing');
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelOpenAckTx: Tx = await this.buildUnsignedChannelOpenAckTx(
+      const unsignedChannelOpenAckTx: TxBuilder = await this.buildUnsignedChannelOpenAckTx(
         channelOpenAckOperator,
         constructedAddress,
       );
       const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = this.lucidService.lucid.utils.unixTimeToSlot(Number(validToTime));
+      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
-      const unsignedChannelOpenAckTxValidTo: Tx = unsignedChannelOpenAckTx.validTo(validToTime);
-      const unsignedChannelOpenAckTxCompleted: TxComplete = await unsignedChannelOpenAckTxValidTo.complete();
+      const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
+      const unsignedChannelOpenAckTxCompleted: TxSignBuilder = await unsignedChannelOpenAckTxValidTo.complete();
       await sleep(7000);
       this.logger.log(unsignedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedChannelOpenAckTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedChannelOpenAckTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenAckResponse;
       return response;
@@ -187,19 +187,21 @@ export class ChannelService {
       this.logger.log('Channel Open Confirm is processing');
       const { constructedAddress, channelOpenConfirmOperator } = validateAndFormatChannelOpenConfirmParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelConfirmInitTx: Tx = await this.buildUnsignedChannelOpenConfirmTx(
+      const unsignedChannelConfirmInitTx: TxBuilder = await this.buildUnsignedChannelOpenConfirmTx(
         channelOpenConfirmOperator,
         constructedAddress,
       );
-      const unsignedChannelConfirmInitTxValidTo: Tx = unsignedChannelConfirmInitTx.validTo(Date.now() + 600 * 1e3);
+      const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(
+        Date.now() + 600 * 1e3,
+      );
 
-      const unsignedChannelConfirmInitTxCompleted: TxComplete = await unsignedChannelConfirmInitTxValidTo.complete();
+      const unsignedChannelConfirmInitTxCompleted: TxSignBuilder = await unsignedChannelConfirmInitTxValidTo.complete();
 
       this.logger.log(unsignedChannelConfirmInitTxCompleted.toHash(), 'channelOpenConfirm - unsignedTX - hash');
       const response: MsgChannelOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedChannelConfirmInitTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedChannelConfirmInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenConfirmResponse;
       return response;
@@ -225,19 +227,19 @@ export class ChannelService {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelCloseInitTx: Tx = await this.buildUnsignedChannelCloseInitTx(
+      const unsignedChannelCloseInitTx: TxBuilder = await this.buildUnsignedChannelCloseInitTx(
         channelCloseInitOperator,
         constructedAddress,
       );
-      const unsignedChannelCloseInitTxValidTo: Tx = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
+      const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
 
-      const unsignedChannelCloseInitTxCompleted: TxComplete = await unsignedChannelCloseInitTxValidTo.complete();
+      const unsignedChannelCloseInitTxCompleted: TxSignBuilder = await unsignedChannelCloseInitTxValidTo.complete();
 
       this.logger.log(unsignedChannelCloseInitTxCompleted.toHash(), 'channel close init - unsignedTX - hash');
       const response: MsgChannelCloseInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: unsignedChannelCloseInitTxCompleted.txComplete.to_bytes(),
+          value: fromHex(unsignedChannelCloseInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelCloseInitResponse;
       return response;
@@ -253,7 +255,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenInitTx(
     channelOpenInitOperator: ChannelOpenInitOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: Tx; channelId: string }> {
+  ): Promise<{ unsignedTx: TxBuilder; channelId: string }> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
 
@@ -429,7 +431,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenTryTx(
     channelOpenTryOperator: ChannelOpenTryOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
@@ -563,7 +565,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenAckTx(
     channelOpenAckOperator: ChannelOpenAckOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
       BigInt(channelOpenAckOperator.channelSequence),
@@ -771,7 +773,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenConfirmTx(
     channelOpenConfirmOperator: ChannelOpenConfirmOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
       BigInt(channelOpenConfirmOperator.channelSequence),
@@ -871,7 +873,7 @@ export class ChannelService {
   async buildUnsignedChannelCloseInitTx(
     channelCloseInitOperator: ChannelCloseInitOperator,
     constructedAddress: string,
-  ): Promise<Tx> {
+  ): Promise<TxBuilder> {
     const channelSequence = channelCloseInitOperator.channel_id;
 
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));

@@ -1,4 +1,4 @@
-import { type Data } from '@cuonglv0297/lucid-custom';
+import { type Data } from '@lucid-evolution/lucid';
 
 export type MintClientOperator =
   | 'MintConsensusState'
@@ -12,7 +12,7 @@ export type MintClientOperator =
     };
 export async function encodeMintClientOperator(
   mintClientOperator: MintClientOperator,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
+  Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
   const AuthTokenSchema = Data.Object({

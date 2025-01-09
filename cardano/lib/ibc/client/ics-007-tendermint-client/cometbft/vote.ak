@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
 use ibc/client/ics_007_tendermint_client/cometbft/canonical

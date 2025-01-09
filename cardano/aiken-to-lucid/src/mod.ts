@@ -229,9 +229,14 @@ export function generateType(
 
   if ("anyOf" in typeDef) {
     if (typeDef.anyOf.length == 1) {
+      let forwardTitle = typeDef.anyOf[0].dataType == "constructor" && !("title" in typeDef.anyOf[0])
+      let forwardItem = typeDef.anyOf[0];
+      if (forwardTitle) {
+        forwardItem.title = typeDef.title;
+      }
       const genType = generateType(
         plutusDefinition,
-        typeDef.anyOf[0] as unknown as AikenType,
+        forwardItem as unknown as AikenType,
       );
 
       if (genType.type != "composite") {
@@ -241,7 +246,7 @@ export function generateType(
       const dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "https://deno.land/x/lucid@0.10.7/mod.ts",
+          path: "npm:@lucid-evolution/lucid@0.3.51",
         }],
       ]);
 
@@ -301,7 +306,7 @@ export function generateType(
       let dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "https://deno.land/x/lucid@0.10.7/mod.ts",
+          path: "npm:@lucid-evolution/lucid@0.3.51",
         }],
       ]);
       const schema: string[] = [];

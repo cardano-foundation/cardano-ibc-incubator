@@ -1,5 +1,5 @@
 import { AuthToken } from '../auth-token';
-import { Data } from '@cuonglv0297/lucid-custom';
+import { Data } from '@lucid-evolution/lucid';
 import { Channel } from './channel';
 export type ChannelDatumState = {
   channel: Channel;
@@ -17,10 +17,7 @@ export type ChannelDatum = {
   token: AuthToken;
 };
 
-export async function encodeChannelDatum(
-  channelDatum: ChannelDatum,
-  Lucid: typeof import('@cuonglv0297/lucid-custom'),
-) {
+export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const StateSchema = Data.Enum([
@@ -66,7 +63,7 @@ export async function encodeChannelDatum(
   return Data.to(channelDatum, TChannelDatum);
 }
 
-export async function decodeChannelDatum(channelDatum: string, Lucid: typeof import('@cuonglv0297/lucid-custom')) {
+export async function decodeChannelDatum(channelDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const StateSchema = Data.Enum([

@@ -1,7 +1,7 @@
-use aiken/bytearray
+use aiken/collection/pairs
 use aiken/math/rational
 use aiken/option
-use aiken/pairs
+use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/cometbft/constants.{max_chain_id_len}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}

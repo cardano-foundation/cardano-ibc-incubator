@@ -77,7 +77,7 @@ pub async fn download_repository(
 }
 
 pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2430.0.zip";
+    let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2437.1.zip";
     download_repository(url, mithril_path, "mithril").await
 }
 
@@ -153,7 +153,7 @@ pub fn configure_local_cardano_devnet(
     let devnet_dir = cardano_dir.join("devnet");
 
     let cardano_config_files = vec![
-        cardano_config_dir.join("protocol-parameters.json"),
+        //cardano_config_dir.join("protocol-parameters.json"),
         cardano_config_dir.join("credentials"),
     ];
 
@@ -231,9 +231,6 @@ pub fn configure_local_cardano_devnet(
         )
     })?;
 
-    let content = r#"{"Producers": []}"#;
-    fs::write(devnet_dir.join("topology.json"), content)
-        .map_err(|error| format!("Failed to write topology.json file: {}", error.to_string()))?;
     Ok(())
 }
 
@@ -320,10 +317,9 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         &format!("/devnet/seed-{}.signed", wallet_address.as_str());
 
                     let build_tx_args = vec![
+                        "conway",
                         "transaction",
                         "build",
-                        "--babbage-era",
-                        "--cardano-mode",
                         "--change-address",
                         &faucet_address,
                         "--tx-in",
@@ -344,6 +340,7 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         .expect("Failed to build transaction");
 
                     let sign_tx_args = vec![
+                        "conway",
                         "transaction",
                         "sign",
                         "--tx-body-file",
@@ -366,7 +363,7 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                     let tx_id = Command::new("docker")
                         .current_dir(cardano_dir)
                         .args(&cardano_cli_args)
-                        .args(&["transaction", "txid", "--tx-file", signed_tx_file])
+                        .args(&["conway", "transaction", "txid", "--tx-file", signed_tx_file])
                         .output()
                         .expect("Failed to get txid")
                         .stdout;
@@ -376,6 +373,7 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
 
                     let tx_in = &format!("{}#0", tx_id);
                     let submit_tx_args = vec![
+                        "conway",
                         "transaction",
                         "submit",
                         "--tx-file",

@@ -2,9 +2,9 @@
 // source: ibc/core/connection/v1/connection.proto
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
-use aiken/bytearray.{concat, length, push}
-use aiken/list
+use aiken/collection/list
 use aiken/option.{is_none}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/commitment_pb.{
   marshal_for_merkle_prefix, size_for_merkle_prefix,
 }
@@ -46,40 +46,40 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
       let Version { identifier, features } = version
       #[]
         |> concat(
-             ite(
-               length(identifier) == 0,
-               #[],
-               {
-                 let l = length(identifier)
-                 l
-                   |> uint64()
-                   |> encode_varint()
-                   |> concat(identifier)
-                   |> push(10)
-               },
-             ),
-           )
+            ite(
+              length(identifier) == 0,
+              #[],
+              {
+                let l = length(identifier)
+                l
+                  |> uint64()
+                  |> encode_varint()
+                  |> concat(identifier)
+                  |> push(10)
+              },
+            ),
+          )
         |> concat(
-             ite(
-               list.length(features) == 0,
-               #[],
-               features
-                 |> list.reduce(
-                      #[],
-                      fn(bz: ByteArray, feature: ByteArray) -> ByteArray {
-                        bz
-                          |> concat(
-                               feature
-                                 |> length()
-                                 |> uint64()
-                                 |> encode_varint()
-                                 |> concat(feature)
-                                 |> push(0x12),
-                             )
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(features) == 0,
+              #[],
+              features
+                |> list.reduce(
+                    #[],
+                    fn(bz: ByteArray, feature: ByteArray) -> ByteArray {
+                      bz
+                        |> concat(
+                            feature
+                              |> length()
+                              |> uint64()
+                              |> encode_varint()
+                              |> concat(feature)
+                              |> push(0x12),
+                          )
+                    },
+                  ),
+            ),
+          )
     },
   )
 }
@@ -93,32 +93,32 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
       let Version { identifier, features } = version
       0
         |> add(
-             ite(
-               length(identifier) == 0,
-               0,
-               {
-                 let l = length(identifier)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(identifier) == 0,
+              0,
+              {
+                let l = length(identifier)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             ite(
-               list.length(features) == 0,
-               0,
-               features
-                 |> list.reduce(
-                      0,
-                      fn(sz: Int, feature: ByteArray) -> Int {
-                        let l = length(feature)
-                        l
-                          |> uint64()
-                          |> sov()
-                          |> add(l + 1 + sz)
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(features) == 0,
+              0,
+              features
+                |> list.reduce(
+                    0,
+                    fn(sz: Int, feature: ByteArray) -> Int {
+                      let l = length(feature)
+                      l
+                        |> uint64()
+                        |> sov()
+                        |> add(l + 1 + sz)
+                    },
+                  ),
+            ),
+          )
     },
   )
 }
@@ -134,38 +134,38 @@ pub fn marshal_for_counterparty(
       let Counterparty { client_id, connection_id, prefix } = counterparty
       #[]
         |> concat(
-             ite(
-               length(client_id) == 0,
-               #[],
-               client_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(client_id)
-                 |> push(10),
-             ),
-           )
+            ite(
+              length(client_id) == 0,
+              #[],
+              client_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(client_id)
+                |> push(10),
+            ),
+          )
         |> concat(
-             ite(
-               length(connection_id) == 0,
-               #[],
-               connection_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(connection_id)
-                 |> push(0x12),
-             ),
-           )
+            ite(
+              length(connection_id) == 0,
+              #[],
+              connection_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(connection_id)
+                |> push(0x12),
+            ),
+          )
         |> concat(
-             prefix
-               |> Some()
-               |> size_for_merkle_prefix()
-               |> uint64()
-               |> encode_varint()
-               |> concat(marshal_for_merkle_prefix(Some(prefix)))
-               |> push(0x1a),
-           )
+            prefix
+              |> Some()
+              |> size_for_merkle_prefix()
+              |> uint64()
+              |> encode_varint()
+              |> concat(marshal_for_merkle_prefix(Some(prefix)))
+              |> push(0x1a),
+          )
     },
   )
 }
@@ -179,31 +179,31 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
       let Counterparty { client_id, connection_id, prefix } = counterparty
       0
         |> add(
-             ite(
-               length(client_id) == 0,
-               0,
-               {
-                 let l = length(client_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(client_id) == 0,
+              0,
+              {
+                let l = length(client_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             ite(
-               length(connection_id) == 0,
-               0,
-               {
-                 let l = length(connection_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(connection_id) == 0,
+              0,
+              {
+                let l = length(connection_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             {
-               let l = size_for_merkle_prefix(Some(prefix))
-               l |> uint64() |> sov() |> add(l + 1)
-             },
-           )
+            {
+              let l = size_for_merkle_prefix(Some(prefix))
+              l |> uint64() |> sov() |> add(l + 1)
+            },
+          )
     },
   )
 }
@@ -225,68 +225,68 @@ pub fn marshal_for_connection_end(
       } = connection_end
       #[]
         |> concat(
-             ite(
-               length(client_id) == 0,
-               #[],
-               client_id
-                 |> length()
-                 |> uint64()
-                 |> encode_varint()
-                 |> concat(client_id)
-                 |> push(10),
-             ),
-           )
+            ite(
+              length(client_id) == 0,
+              #[],
+              client_id
+                |> length()
+                |> uint64()
+                |> encode_varint()
+                |> concat(client_id)
+                |> push(10),
+            ),
+          )
         |> concat(
-             ite(
-               list.length(versions) == 0,
-               #[],
-               versions
-                 |> list.reduce(
-                      #[],
-                      fn(bz: ByteArray, version_opt: Option<Version>) -> ByteArray {
-                        bz
-                          |> concat(
-                               version_opt
-                                 |> size_for_version()
-                                 |> uint64()
-                                 |> encode_varint()
-                                 |> concat(marshal_for_version(version_opt))
-                                 |> push(0x12),
-                             )
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(versions) == 0,
+              #[],
+              versions
+                |> list.reduce(
+                    #[],
+                    fn(bz: ByteArray, version_opt: Option<Version>) -> ByteArray {
+                      bz
+                        |> concat(
+                            version_opt
+                              |> size_for_version()
+                              |> uint64()
+                              |> encode_varint()
+                              |> concat(marshal_for_version(version_opt))
+                              |> push(0x12),
+                          )
+                    },
+                  ),
+            ),
+          )
         |> concat(
-             ite(
-               state_to_int32(state) == 0,
-               #[],
-               state
-                 |> state_to_int32()
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(0x18),
-             ),
-           )
+            ite(
+              state_to_int32(state) == 0,
+              #[],
+              state
+                |> state_to_int32()
+                |> uint64()
+                |> encode_varint()
+                |> push(0x18),
+            ),
+          )
         |> concat(
-             counterparty
-               |> Some()
-               |> size_for_counterparty()
-               |> uint64()
-               |> encode_varint()
-               |> concat(marshal_for_counterparty(Some(counterparty)))
-               |> push(0x22),
-           )
+            counterparty
+              |> Some()
+              |> size_for_counterparty()
+              |> uint64()
+              |> encode_varint()
+              |> concat(marshal_for_counterparty(Some(counterparty)))
+              |> push(0x22),
+          )
         |> concat(
-             ite(
-               delay_period == 0,
-               #[],
-               delay_period
-                 |> uint64()
-                 |> encode_varint()
-                 |> push(0x28),
-             ),
-           )
+            ite(
+              delay_period == 0,
+              #[],
+              delay_period
+                |> uint64()
+                |> encode_varint()
+                |> push(0x28),
+            ),
+          )
     },
   )
 }
@@ -306,61 +306,61 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
       } = connection_end
       0
         |> add(
-             ite(
-               length(client_id) == 0,
-               0,
-               {
-                 let l = length(client_id)
-                 l |> uint64() |> sov() |> add(l + 1)
-               },
-             ),
-           )
+            ite(
+              length(client_id) == 0,
+              0,
+              {
+                let l = length(client_id)
+                l |> uint64() |> sov() |> add(l + 1)
+              },
+            ),
+          )
         |> add(
-             ite(
-               list.length(versions) == 0,
-               0,
-               versions
-                 |> list.reduce(
-                      0,
-                      fn(sz: Int, version: Option<Version>) -> Int {
-                        sz
-                          |> add(
-                               {
-                                 let l = size_for_version(version)
-                                 l
-                                   |> uint64()
-                                   |> sov()
-                                   |> add(l + 1)
-                               },
-                             )
-                      },
-                    ),
-             ),
-           )
+            ite(
+              list.length(versions) == 0,
+              0,
+              versions
+                |> list.reduce(
+                    0,
+                    fn(sz: Int, version: Option<Version>) -> Int {
+                      sz
+                        |> add(
+                            {
+                              let l = size_for_version(version)
+                              l
+                                |> uint64()
+                                |> sov()
+                                |> add(l + 1)
+                            },
+                          )
+                    },
+                  ),
+            ),
+          )
         |> add(
-             ite(
-               state_to_int32(state) == 0,
-               0,
-               state
-                 |> state_to_int32()
-                 |> uint64()
-                 |> sov()
-                 |> add(1),
-             ),
-           )
+            ite(
+              state_to_int32(state) == 0,
+              0,
+              state
+                |> state_to_int32()
+                |> uint64()
+                |> sov()
+                |> add(1),
+            ),
+          )
         |> add(
-             {
-               let l = counterparty |> Some() |> size_for_counterparty()
-               l |> uint64() |> sov() |> add(l + 1)
-             },
-           )
+            {
+              let l = counterparty |> Some() |> size_for_counterparty()
+              l |> uint64() |> sov() |> add(l + 1)
+            },
+          )
         |> add(
-             ite(
-               delay_period == 0,
-               0,
-               delay_period |> uint64() |> sov() |> add(1),
-             ),
-           )
+            ite(
+              delay_period == 0,
+              0,
+              delay_period |> uint64() |> sov() |> add(1),
+            ),
+          )
     },
   )
 }

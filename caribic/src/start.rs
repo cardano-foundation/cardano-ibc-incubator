@@ -7,7 +7,7 @@ use crate::setup::{
 use crate::utils::{
     execute_script, execute_script_with_progress, extract_tendermint_client_id,
     extract_tendermint_connection_id, get_cardano_state, wait_for_health_check,
-    wait_until_file_exists, CardanoQuery,
+    wait_until_file_exists, download_file, unzip_file, copy_dir_all, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -24,16 +24,37 @@ use std::fs::{self, remove_dir_all};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
+use std::u64;
 
-pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path, chain_handler_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     copy(
-        relayer_path.join(".env.example"),
+        relayer_env_template_path,
         relayer_path.join(".env"),
-        &options,
+        &fs_extra::file::CopyOptions::new().overwrite(true),
     )
     .map_err(|error| format!("Error copying template .env file {}", error.to_string()))?;
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
+
+    let relayer_config_dest_path = relayer_path.join(".config");
+    if relayer_config_dest_path.as_path().exists() {
+        fs::remove_dir_all(relayer_config_dest_path.as_path()).expect("failed to cleanup target folder");
+    }
+    copy_dir_all(
+        relayer_config_source_path,
+        relayer_config_dest_path.as_path(),
+    ).map_err(|error| format!("Error copying relayer config directory {}", error.to_string()))?;
+    
+    let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    copy(
+        chain_handler_path,
+        relayer_config_dest_path.as_path().join("chain_handler.json"),
+        &options,
+    )?;
+
+    execute_script(
+        relayer_path,
+        "docker",
+        Vec::from(["compose", "stop"]),
+        None)?;
 
     execute_script_with_progress(
         relayer_path,
@@ -41,6 +62,7 @@ pub fn start_relayer(relayer_path: &Path) -> Result<(), Box<dyn std::error::Erro
         Vec::from(["compose", "up", "-d", "--build"]),
         "⚡ Starting relayer...",
     )?;
+
     Ok(())
 }
 
@@ -98,6 +120,64 @@ pub async fn start_local_cardano_network(
         return Err("❌ Failed to start Cardano services".into());
     }
 
+    // wait until network is running
+    let mut slot_querried = u64::MAX;
+    while slot_querried == u64::MAX {
+        match get_cardano_state(project_root_path, CardanoQuery::Slot) {
+            Ok(value) => slot_querried = value,
+            Err(_e) => {
+                log("Waiting for node to start up ...");
+                std::thread::sleep(Duration::from_secs(5))
+            }
+        }
+    }
+
+    // wait until network hard forked into Conway era after 1 epoch
+    let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+    let target_epoch: u64 = 1;
+    let target_slot: u64 = target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if current_epoch < target_epoch {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
+        } else {
+            log(
+            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
+        );
+        }
+    }
+
+    while current_epoch < target_epoch {
+        current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(get_cardano_state(project_root_path, CardanoQuery::Slot)?, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                get_cardano_state(project_root_path, CardanoQuery::Slot)?, get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
+
     seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
     log_or_show_progress(
         "📄 Deploying the client, channel and connection contracts",
@@ -121,8 +201,8 @@ pub async fn start_local_cardano_network(
         ),
         &optional_progress_bar,
     );
-
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+
     log_or_show_progress(
         &format!(
             "{} 🛠️ Building Aiken validators",
@@ -136,6 +216,7 @@ pub async fn start_local_cardano_network(
         Vec::from(["build", "--trace-level", "verbose"]),
         None,
     )?;
+
     log_or_show_progress(
         &format!(
             "{} 🤖 Generating validator off-chain types",
@@ -150,12 +231,18 @@ pub async fn start_local_cardano_network(
         None,
     )?;
 
+    // Remove the old handler file
+    if project_root_path.join("cardano/deployments/handler.json").exists() {
+        fs::remove_file(project_root_path.join("cardano/deployments/handler.json"))
+        .expect("Failed to cleanup cardano/deployments/handler.json");
+    }
+
     let handler_json_exists = wait_until_file_exists(
         project_root_path
             .join("cardano/deployments/handler.json")
             .as_path(),
         20,
-        2000,
+        5000,
         || {
             let _ = execute_script(
                 project_root_path.join("cardano").as_path(),
@@ -178,17 +265,12 @@ pub async fn start_local_cardano_network(
             progress_bar.finish_and_clear();
         }
 
-        verbose("✅ Successully deployed the contracts");
+        verbose("✅ Successfully deployed the contracts");
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
         copy(
             project_root_path.join("cardano/deployments/handler.json"),
             project_root_path.join("cardano/gateway/src/deployment/handler.json"),
-            &options,
-        )?;
-        copy(
-            project_root_path.join("cardano/deployments/handler.json"),
-            project_root_path.join("relayer/examples/demo/configs/chains/chain_handler.json"),
             &options,
         )?;
 
@@ -199,6 +281,44 @@ pub async fn start_local_cardano_network(
         }
         Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
     }
+}
+
+pub async fn start_cosmos_sidechain_from_repository(download_url: &str, chain_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if chain_root_path.exists() {
+        log(&format!(
+            "{} 📝 Demo chain already downloaded. Cleaning up to get the most recent version...",
+            style("Step 0/2").bold().dim()
+        ));
+        fs::remove_dir_all(&chain_root_path)
+        .expect("Failed to cleanup demo chain folder.");
+    }
+    fs::create_dir_all(&chain_root_path).expect("Failed to create folder for demo chain.");
+    download_file(
+        download_url,
+        &chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        Some(IndicatorMessage {
+            message: "Downloading cardano-ibc-summit-demo project".to_string(),
+            step: "Step 1/2".to_string(),
+            emoji: "📥 ".to_string(),
+        }),
+    )
+    .await
+    .expect("Failed to download cardano-ibc-summit-demo project");
+
+    log(&format!(
+        "{} 📦 Extracting cardano-ibc-summit-demo project...",
+        style("Step 2/2").bold().dim()
+    ));
+
+    unzip_file(
+        chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        chain_root_path,
+    )
+    .expect("Failed to unzip cardano-ibc-summit-demo project");
+    fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
+        .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
+
+    return start_cosmos_sidechain(chain_root_path).await;
 }
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -233,7 +353,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     wait_for_health_check(
         "http://127.0.0.1:4500/",
         60,
-        5000,
+        10000,
         None::<fn(&String) -> bool>,
     )
     .await?;
@@ -876,13 +996,12 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let offset = 2;
     let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
     let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
         + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
 
-    let target_epoch = cardano_epoch_on_mithril_start + offset;
+    let target_epoch = cardano_epoch_on_mithril_start + 2;
     let target_slot = target_epoch * slots_per_epoch;
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
@@ -925,7 +1044,7 @@ pub fn wait_and_start_mithril_genesis(
                 current_slot, slots_left
             ));
         }
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(Duration::from_secs(10));
     }
 
     let mithril_config = config::get_config().mithril;
@@ -970,6 +1089,49 @@ pub fn wait_and_start_mithril_genesis(
             ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
         ]),
     )?;
+
+    current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+
+    let target_epoch = cardano_epoch_on_mithril_start + 5;
+    let target_slot = target_epoch * slots_per_epoch;
+    slots_left = target_slot.saturating_sub(current_slot);
+
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
+        } else {
+            log(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
+        );
+        }
+    }
+
+    while slots_left > 0 {
+        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
+        slots_left = target_slot.saturating_sub(current_slot);
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();

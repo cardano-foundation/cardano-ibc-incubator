@@ -1,6 +1,8 @@
 import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
 import blueprint from "../plutus.json" with { type: "json" };
 import {
+  validatorToScriptHash,
+  validatorToAddress,
   Address,
   applyParamsToScript,
   Blockfrost,
@@ -17,9 +19,9 @@ import {
   ScriptHash,
   SLOT_CONFIG_NETWORK,
   toHex,
-  Tx,
+  TxBuilder,
   UTxO,
-} from "npm:@cuonglv0297/lucid-custom";
+} from "npm:@lucid-evolution/lucid@0.4.9";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
@@ -30,12 +32,12 @@ import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
 import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
 import { OutputReference } from "../lucid-types/aiken/transaction/OutputReference.ts";
 
-export const readValidator = <T extends unknown[] = Data[]>(
+export const readValidator = async <T extends unknown[] = Data[]>(
   title: string,
-  lucid: Lucid,
+  lucid?: Lucid,
   params?: Exact<[...T]>,
   type?: T
-): [Script, ScriptHash, Address] => {
+): Promise<[Script, ScriptHash, Address]> => {
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
@@ -48,51 +50,40 @@ export const readValidator = <T extends unknown[] = Data[]>(
 
   if (params === undefined) {
     validator = {
-      type: "PlutusV2",
+      type: "PlutusV3",
       script: encodedValidator,
     };
   } else {
     validator = {
-      type: "PlutusV2",
+      type: "PlutusV3",
       script: applyParamsToScript(encodedValidator, params, type),
     };
   }
 
-  const scriptHash = lucid.utils.validatorToScriptHash(validator);
-  const address = lucid.utils.validatorToAddress(validator);
-
-  return [validator, scriptHash, address];
+  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network, validator)];
 };
 
 export const submitTx = async (
-  tx: Tx,
-  lucid?: Lucid,
-  txName?: string,
+  tx: TxBuilder,
+  lucid: Lucid,
+  txName: string,
   logSize = true,
   nativeUplc?: boolean
 ) => {
-  if (txName !== undefined) {
-    console.log("Submit tx:", txName);
-  }
+  console.log("Submitting tx [", txName, "]");
   const completedTx = await tx.complete({ nativeUplc });
   if (logSize) {
-    if (txName !== undefined) {
-      console.log(txName, "size:", completedTx.txComplete.to_bytes().length);
-    } else {
-      console.log("Tx size:", completedTx.txComplete.to_bytes().length);
-    }
+    console.log("Submitting tx [", txName, "]: size in bytes", completedTx.toCBOR().length/2);
   }
-  const signedTx = await completedTx.sign().complete();
+  console.log("Submitting tx [", txName, "]: signing ...");
+  const signedTx = await completedTx.sign.withWallet().complete();
+  console.log("Submitting tx [", txName, "]: signed tx size in bytes", signedTx.toCBOR().length/2);
+  console.log("Submitting tx [", txName, "]: submitting ...");
   const txHash = await signedTx.submit();
-  if (txName !== undefined) {
-    console.log(txName, "submitted with hash:", txHash);
-  }
-  if (lucid !== undefined) {
-    await lucid.awaitTx(txHash);
-    if (txName !== undefined) {
-      console.log(txName, "done!");
-    }
-  }
+  console.log("Submitting tx [", txName, "]: tx hash is", txHash);
+  console.log("Submitting tx [", txName, "]: waiting for adoption ...");
+  await lucid.awaitTx(txHash);
+  console.log("Submitting tx [", txName, "]: done");
   return txHash;
 };
 
@@ -125,6 +116,7 @@ export const setUp = async (
     address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
   };
   let provider: Provider;
+  let lucid: Lucid;
   if (mode == EMULATOR_ENV) {
     console.log("Deploy in Emulator env");
     provider = new Emulator(
@@ -134,32 +126,35 @@ export const setUp = async (
       ],
       { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 900000 }
     );
+    lucid = await Lucid(provider, "Preview");
   } else if (mode == KUPMIOS_ENV) {
     const kupo = "http://192.168.10.136:1442";
-    const ogmios = "ws://192.168.10.136:1337";
+    const ogmios = "http://192.168.10.136:1337";
     console.log("Deploy in Kupmios", kupo, ogmios);
     provider = new Kupmios(kupo, ogmios);
     const chainZeroTime = await querySystemStart(ogmios);
     SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+    lucid = await Lucid(provider, "Preview");
   } else if (mode == LOCAL_ENV) {
     const kupo = "http://localhost:1442";
-    const ogmios = "ws://localhost:1337";
+    const ogmios = "http://localhost:1337";
     console.log("Deploy in local", kupo, ogmios);
     provider = new Kupmios(kupo, ogmios);
 
     const chainZeroTime = await querySystemStart(ogmios);
     SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+    lucid = await Lucid(provider, "Custom");
   } else if (mode == BLOCKFROST_ENV) {
     provider = new Blockfrost(
       "https://cardano-preview.blockfrost.io/api/v0",
       "preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC"
     );
+    lucid = await Lucid(provider, "Preview");
   } else {
     throw new Error("Invalid provider type");
   }
 
-  const lucid = await Lucid.new(provider, "Preview");
-  lucid.selectWalletFromPrivateKey(signer.sk);
+  lucid.selectWallet.fromPrivateKey(signer.sk);
 
   return {
     lucid,
@@ -318,7 +313,7 @@ export const createReferenceScriptUtxo = async (
   referredScript: Script
 ) => {
   const [, , referenceAddress] = readValidator(
-    "reference_validator.refer_only",
+    "reference_validator.refer_only.else",
     lucid
   );
 
@@ -400,13 +395,11 @@ export const deleteSortMap = <K, V>(
 export const getNonceOutRef = async (
   lucid: Lucid
 ): Promise<[UTxO, OutputReference]> => {
-  const signerUtxos = await lucid.wallet.getUtxos();
+  const signerUtxos = await lucid.wallet().getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
   const NONCE_UTXO = signerUtxos[0];
   const outputReference: OutputReference = {
-    transaction_id: {
-      hash: NONCE_UTXO.txHash,
-    },
+    transaction_id: NONCE_UTXO.txHash,
     output_index: BigInt(NONCE_UTXO.outputIndex),
   };
 

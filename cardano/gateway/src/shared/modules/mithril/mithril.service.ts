@@ -22,7 +22,7 @@ export class MithrilService {
   ) {
     this.mithrilClient = new MithrilClient(
       this.configService.get('mithrilEndpoint'),
-      this.configService.get('mtithrilGenesisVerificationKey'),
+      this.configService.get('mtithrilGenesisVerificationKey')
     );
   }
 

@@ -1,8 +1,9 @@
-use aiken/list
-use aiken/pairs
-use aiken/transaction.{Mint,
-  Redeemer, ScriptContext, ScriptPurpose, Transaction}
-use aiken/transaction/value.{PolicyId}
+use aiken/collection/list
+use aiken/collection/pairs
+use cardano/assets.{PolicyId}
+use cardano/transaction.{
+  Mint, OutputReference, Redeemer, ScriptPurpose, Transaction,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
@@ -19,23 +20,26 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
 }
 use ibc/utils/validator_utils
 
-validator(
+validator spend_handler(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
 ) {
-  fn spend_handler(
-    datum: HandlerDatum,
+  spend(
+    datum: Option<HandlerDatum>,
     redeemer: HandlerOperator,
-    context: ScriptContext,
-  ) -> Bool {
-    let (spent_output, transaction) =
-      validator_utils.extract_spending_context(context)
-    let Transaction { outputs, redeemers, .. } = transaction
+    spent_output_ref: OutputReference,
+    transaction: Transaction,
+  ) {
+    let Transaction { inputs, outputs, redeemers, .. } = transaction
+
+    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    let spent_output = spent_input.output
 
     //========================valid input=======================
     // input contains handler token
+    expect Some(datum) = datum
     expect spent_output |> auth.contain_auth_token(datum.token)
 
     //========================valid output=======================
@@ -111,6 +115,10 @@ validator(
         True
       }
     }
+  }
+
+  else(_) {
+    fail
   }
 }
 

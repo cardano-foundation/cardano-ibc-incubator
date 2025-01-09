@@ -1,12 +1,12 @@
-use aiken/hash.{Blake2b_224, Hash}
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/pairs
-use aiken/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptContext,
-  ScriptPurpose, Spend, Transaction, TransactionId, ValidityRange,
+use cardano/address.{from_script}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction, ValidityRange,
 }
-use aiken/transaction/credential.{Script}
-use aiken/transaction/value.{PolicyId}
 use ibc/auth.{AuthToken}
 use ibc/client/cardano_client/client_state as cardano_client
 use ibc/client/cardano_client/protos/cardano_pb.{
@@ -50,17 +50,16 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
-validator(
+validator mint_connection(
   client_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
 ) {
-  fn mint_connection(
+  mint(
     redeemer: MintConnectionRedeemer,
-    context: ScriptContext,
-  ) -> Bool {
-    let ScriptContext { transaction, purpose } = context
-    expect Mint(connection_minting_policy_id) = purpose
+    connection_minting_policy_id: PolicyId,
+    transaction: Transaction,
+  ) {
     let Transaction {
       inputs,
       reference_inputs,
@@ -210,6 +209,10 @@ validator(
       }
     }
   }
+
+  else(_) {
+    fail
+  }
 }
 
 fn validate_conn_open_try_proof(
@@ -347,7 +350,7 @@ fn setup() -> MockData {
 
   let spend_handler_output_reference =
     OutputReference {
-      transaction_id: TransactionId { hash: "mock handler tx hash" },
+      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
@@ -355,8 +358,8 @@ fn setup() -> MockData {
     Input {
       output_reference: spend_handler_output_reference,
       output: Output {
-        address: credential.from_script("mock handler script hash"),
-        value: value.from_asset(handler_token.policy_id, handler_token.name, 1),
+        address: from_script("mock handler script hash"),
+        value: from_asset(handler_token.policy_id, handler_token.name, 1),
         datum: InlineDatum(handler_datum),
         reference_script: None,
       },
@@ -458,12 +461,12 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: TransactionId { hash: "tx_hash" },
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
         output_index: 0,
       },
       output: Output {
-        address: credential.from_script("mock client script hash"),
-        value: value.from_asset(client_token.policy_id, client_token.name, 1),
+        address: from_script("mock client script hash"),
+        value: from_asset(client_token.policy_id, client_token.name, 1),
         datum: InlineDatum(client_datum),
         reference_script: None,
       },
@@ -530,8 +533,8 @@ test conn_open_init_succeed() {
 
   let conn_output =
     Output {
-      address: credential.from_script(mock.spend_connection_script_hash),
-      value: value.from_asset(conn_token.policy_id, conn_token.name, 1),
+      address: from_script(mock.spend_connection_script_hash),
+      value: from_asset(conn_token.policy_id, conn_token.name, 1),
       datum: InlineDatum(conn_datum),
       reference_script: None,
     }
@@ -540,9 +543,7 @@ test conn_open_init_succeed() {
     [conn_output]
 
   //========================arrange mint=======================
-  let mint =
-    value.from_asset(conn_token.policy_id, conn_token.name, 1)
-      |> value.to_minted_value()
+  let mint = from_asset(conn_token.policy_id, conn_token.name, 1)
 
   //========================arrange validity_range=======================
   let validity_range = mock.validity_range
@@ -563,25 +564,23 @@ test conn_open_init_succeed() {
     ConnOpenInit { handler_auth_token: mock.handler_token }
 
   //==========================arrange context=========================
-  let context =
-    ScriptContext {
-      purpose: Mint(mock.connection_minting_policy_id),
-      transaction: Transaction {
-        ..transaction.placeholder(),
-        inputs: inputs,
-        reference_inputs: reference_inputs,
-        outputs: outputs,
-        mint: mint,
-        redeemers: redeemers,
-        validity_range: validity_range,
-      },
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: validity_range,
     }
 
-  mint_connection(
+  mint_connection.mint(
     mock.client_minting_policy_id,
     mock.verify_proof_policy_id,
     mock.spend_connection_script_hash,
     mint_conn_redeemer,
-    context,
+    mock.connection_minting_policy_id,
+    transaction,
   )
 }

@@ -1,11 +1,11 @@
-import { type Data } from '@cuonglv0297/lucid-custom';
+import { type Data } from '@lucid-evolution/lucid';
 
 export type AuthToken = {
   policyId: string;
   name: string;
 };
 
-export function encodeAuthToken(token: AuthToken, Lucid: typeof import('@cuonglv0297/lucid-custom')) {
+export function encodeAuthToken(token: AuthToken, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
   const AuthTokenSchema = Data.Object({

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/core/ics_003_connection_semantics/types/keys as keys_mod
 
 test test_format_connection_identifier() {

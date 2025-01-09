@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb.{
   ConnectionEnd as ConnectionEndProto, INIT, OPEN, State as StateProto, TRYOPEN,
   UNINITIALIZED,

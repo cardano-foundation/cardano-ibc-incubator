@@ -17,6 +17,7 @@ pub struct Config {
     pub mithril: Mithril,
     pub local_osmosis: bool,
     pub cardano: Cardano,
+    pub vessel_oracle: VesselOracle,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +37,12 @@ pub struct Mithril {
 pub struct Cardano {
     pub services: Services,
     pub bootstrap_addresses: Vec<BootstrapAddress>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VesselOracle {
+    pub repo_base_url: String,
+    pub target_branch: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -102,10 +109,25 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         "cardano-ibc-incubator folder does not exist. It will be downloaded to: {}",
                         project_root_path.display(),
                     ));
+
+                    let default_target_branch = "main".to_string();
+                    log(&format!(
+                        "Enter the target branch you want to fetch the source code from (default: {}):",
+                        default_target_branch
+                    ));
+    
+                    let mut target_branch = String::new();
+                    stdin().read_line(&mut target_branch).unwrap();
+                    let target_branch = if target_branch.trim().is_empty() {
+                        default_target_branch
+                    } else {
+                        target_branch.trim().to_string()
+                    };
+
                     fs::create_dir_all(parent_dir).expect("Failed to create project root folder.");
-                    let github_url = "https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/main.zip";
+                    let github_url = format!("https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/{}.zip", target_branch);
                     download_file(
-                        github_url,
+                        &github_url,
                         &parent_dir.join("cardano-ibc-incubator-main.zip"),
                         Some(IndicatorMessage {
                             message: "Downloading cardano-ibc-incubator project".to_string(),
@@ -165,10 +187,10 @@ impl Config {
                     genesis_secret_key: "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d".to_string(),
                     chain_observer_type: "pallas".to_string(),
                     cardano_node_dir: "/root/.caribic/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
-                    cardano_node_version: "8.9.1".to_string(),
-                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-820d937".to_string(),
-                    client_image: "ghcr.io/input-output-hk/mithril-client:main-820d937".to_string(),
-                    signer_image: "ghcr.io/input-output-hk/mithril-signer:main-820d937".to_string(),
+                    cardano_node_version: "9.1.1".to_string(),
+                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:main-9fd9ae8".to_string(),
+                    client_image: "ghcr.io/input-output-hk/mithril-client:main-9fd9ae8".to_string(),
+                    signer_image: "ghcr.io/input-output-hk/mithril-signer:main-9fd9ae8".to_string(),
                 }
             },
             local_osmosis: true,
@@ -186,14 +208,27 @@ impl Config {
                     amount: 30000000000,
                 },
                 BootstrapAddress {
+                    address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
+                    amount: 30000000000,
+                },
+                BootstrapAddress {
                     address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
                     amount: 30000000000,
                 },
                 BootstrapAddress {
                     address: "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql".to_string(),
                     amount: 30000000000,
-                }
+                },
+                BootstrapAddress {
+                    address: "addr_test1wzfvnh20kanpp0qppn5a92kaamjdu9jfamt8hxqqrl43t7c2jw6u4".to_string(),
+                    amount: 30000000000,
+                },
+                
             ]},
+            vessel_oracle: VesselOracle {
+                repo_base_url: "https://github.com/cardano-foundation/cardano-ibc-summit-demo".to_string(),
+                target_branch: "main".to_string(),
+            }
         };
 
         if let Some(home_path) = home_dir() {

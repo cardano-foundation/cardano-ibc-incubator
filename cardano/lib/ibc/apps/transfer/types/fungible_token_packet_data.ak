@@ -1,5 +1,5 @@
-use aiken/bytearray.{concat, length}
-use aiken/int
+use aiken/primitive/bytearray.{concat, length}
+use aiken/primitive/int
 use ibc/apps/transfer/types/ibc_trace
 use ibc/utils/string
 

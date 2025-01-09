@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -404,12 +404,14 @@ test status() {
         },
         10000000,
         [
-          Pair(latest_height,
-          ConsensusState {
-            timestamp: 0,
-            next_validators_hash,
-            root: sample_root,
-          }),
+          Pair(
+            latest_height,
+            ConsensusState {
+              timestamp: 0,
+              next_validators_hash,
+              root: sample_root,
+            },
+          ),
         ],
         Frozen,
       ),
@@ -443,12 +445,14 @@ test status() {
         },
         10000000,
         [
-          Pair(latest_height,
-          ConsensusState {
-            timestamp: 9999000,
-            next_validators_hash,
-            root: sample_root,
-          }),
+          Pair(
+            latest_height,
+            ConsensusState {
+              timestamp: 9999000,
+              next_validators_hash,
+              root: sample_root,
+            },
+          ),
         ],
         Expired,
       ),
@@ -466,12 +470,14 @@ test status() {
         },
         10000000,
         [
-          Pair(latest_height,
-          ConsensusState {
-            timestamp: 10000000,
-            next_validators_hash,
-            root: sample_root,
-          }),
+          Pair(
+            latest_height,
+            ConsensusState {
+              timestamp: 10000000,
+              next_validators_hash,
+              root: sample_root,
+            },
+          ),
         ],
         Active,
       ),

@@ -1,4 +1,4 @@
-use aiken/list
+use aiken/collection/list
 use ibc/apps/transfer/types/coin as coin_mod
 
 test test_sender_chain_is_source() {
@@ -8,8 +8,7 @@ test test_sender_chain_is_source() {
       (
         ("port-0", "channel-0", "port-0/channel-0/port-11/channel-23/usdt"),
         False,
-      ),
-      (("port-0", "channel-0", "usdt"), True),
+      ), (("port-0", "channel-0", "usdt"), True),
       (("port-0", "channel-0", "port-12/channel-99/usdt"), True),
     ]
 
@@ -28,8 +27,7 @@ test test_receiver_chain_is_source() {
       (
         ("port-1", "channel-1", "port-1/channel-1/port-11/channel-23/usdt"),
         True,
-      ),
-      (("port-99", "channel-99", "usdt"), False),
+      ), (("port-99", "channel-99", "usdt"), False),
       (("port-999", "channel-999", "port-12/channel-99/usdt"), False),
     ]
 
