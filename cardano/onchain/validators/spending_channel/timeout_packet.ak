@@ -2,6 +2,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
+use aiken/primitive/bytearray.{from_int_big_endian}
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
@@ -48,7 +49,6 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
-use ibc/utils/bits
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 
@@ -328,7 +328,7 @@ fn validate_timeout_ordered_packet_proof(
       delay_block_period: block_delay,
       proof,
       path: merkle_path,
-      value: bits.put_uint64_big_endian(next_sequence_recv),
+      value: from_int_big_endian(next_sequence_recv, 8),
     }
 
   True
@@ -652,8 +652,7 @@ test succeed_timeout_unordered_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs =
-    [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -674,8 +673,7 @@ test succeed_timeout_unordered_packet() {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
-  let reference_inputs =
-    [mock_data.connection_input, client_input]
+  let reference_inputs = [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
   let output_channel_datum =
@@ -696,8 +694,7 @@ test succeed_timeout_unordered_packet() {
       mock_data.channel_token,
     )
 
-  let outputs =
-    [channel_output]
+  let outputs = [channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -941,8 +938,7 @@ test succeed_timeout_ordered_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs =
-    [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -963,8 +959,7 @@ test succeed_timeout_ordered_packet() {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
-  let reference_inputs =
-    [mock_data.connection_input, client_input]
+  let reference_inputs = [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
   let output_channel_datum =
@@ -989,8 +984,7 @@ test succeed_timeout_ordered_packet() {
       mock_data.channel_token,
     )
 
-  let outputs =
-    [channel_output]
+  let outputs = [channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1033,7 +1027,7 @@ test succeed_timeout_ordered_packet() {
       delay_block_period: 0,
       proof: proof_unreceived,
       path: merkle_path,
-      value: bits.put_uint64_big_endian(next_sequence_recv),
+      value: from_int_big_endian(next_sequence_recv, 8),
     }
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
