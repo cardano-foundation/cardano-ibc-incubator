@@ -44,3 +44,23 @@ test put_uint64_big_endian_succeed_128() {
 test put_uint64_big_endian_succeed_255() {
   put_uint64_big_endian(255) == from_int_big_endian(255, 8)
 }
+
+test put_uint64_succeed_lib_255() {
+  let foo = put_uint64(255)
+  foo == foo
+}
+
+test put_uint64_succeed_native_255() {
+  let foo = from_int_little_endian(255, 8)
+  foo == foo
+}
+
+test put_uint64_big_endian_cost_lib_255() {
+  let foo = put_uint64_big_endian(255)
+  foo == foo
+}
+
+test put_uint64_big_endian_cost_native_255() {
+  let foo = from_int_big_endian(255, 8)
+  foo == foo
+}

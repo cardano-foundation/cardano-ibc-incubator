@@ -126,7 +126,7 @@ services:
         max-file: "10"
 
   cardano-db-sync:
-    image: ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4
+    image: ghcr.io/blinklabs-io/cardano-db-sync:main
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
