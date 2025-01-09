@@ -3,11 +3,10 @@
 
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
-use aiken/primitive/bytearray.{concat, length, push}
+use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
   marshal_for_timestamp, size_for_timestamp, size_of_std_time, timestamp_proto,
 }
-use ibc/utils/bits.{put_uint64}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int32, Int64, uint64}
 use ibc/utils/time.{Time}
@@ -178,8 +177,20 @@ pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
               v_type |> uint64() |> encode_varint() |> push(8),
             ),
           )
-        |> concat(ite(height == 0, #[], height |> put_uint64() |> push(0x11)))
-        |> concat(ite(round == 0, #[], round |> put_uint64() |> push(0x19)))
+        |> concat(
+            ite(
+              height == 0,
+              #[],
+              height |> from_int_little_endian(8) |> push(0x11),
+            ),
+          )
+        |> concat(
+            ite(
+              round == 0,
+              #[],
+              round |> from_int_little_endian(8) |> push(0x19),
+            ),
+          )
         |> concat(
             ite(
               is_none(block_id),

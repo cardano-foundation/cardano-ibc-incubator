@@ -1,4 +1,5 @@
 use aiken/collection/pairs
+use aiken/primitive/bytearray.{from_int_big_endian}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
@@ -16,7 +17,6 @@ use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
-use ibc/utils/bits
 use ibc/utils/math
 
 pub fn verify_connection_state(
@@ -263,6 +263,6 @@ pub fn verify_next_sequence_recv(
     block_delay,
     proof,
     merkle_path,
-    bits.put_uint64_big_endian(next_sequence_recv),
+    from_int_big_endian(next_sequence_recv, 8),
   )
 }

@@ -1,8 +1,7 @@
 use aiken/crypto
-use aiken/primitive/bytearray
+use aiken/primitive/bytearray.{from_int_big_endian}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_024_host_requirements/validate
-use ibc/utils/bits.{put_uint64_big_endian}
 
 /// Packet defines a type that carries data across different chains through IBC
 pub type Packet {
@@ -77,9 +76,9 @@ pub fn commit_packet(packet: Packet) -> ByteArray {
 
   let buf =
     #[]
-      |> bytearray.concat(put_uint64_big_endian(timeout_timestamp))
-      |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_number))
-      |> bytearray.concat(put_uint64_big_endian(timeout_height.revision_height))
+      |> bytearray.concat(from_int_big_endian(timeout_timestamp, 8))
+      |> bytearray.concat(from_int_big_endian(timeout_height.revision_number, 8))
+      |> bytearray.concat(from_int_big_endian(timeout_height.revision_height, 8))
       |> bytearray.concat(crypto.sha2_256(data))
 
   crypto.sha2_256(buf)
