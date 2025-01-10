@@ -290,13 +290,6 @@ export const createDeployment = async (
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
-      spendMockModule: {
-        title: "spending_mock_module.spend_mock_module.spend",
-        script: spendMockModule.validator.script,
-        scriptHash: spendMockModule.scriptHash,
-        address: spendMockModule.address,
-        refUtxo: refUtxosInfo[spendMockModule.scriptHash],
-      },
       mintVoucher: {
         title: "minting_voucher.mint_voucher.mint",
         script: mintVoucher.validator.script,
@@ -324,11 +317,7 @@ export const createDeployment = async (
       transfer: {
         identifier: transferModuleIdentifier,
         address: spendTransferModule.address,
-      },
-      mock: {
-        identifier: mockModuleIdentifier,
-        address: spendMockModule.address,
-      },
+      }
     },
     tokens: {
       mock: mockTokenPolicyId + mockTokenName,
