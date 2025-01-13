@@ -1,0 +1,4 @@
+[[packages]]
+name = "aiken-lang/stdlib"
+version = "2.1.0"
+source = "github"

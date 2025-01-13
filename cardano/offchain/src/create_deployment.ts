@@ -701,7 +701,7 @@ const deploySpendChannel = async (
   ] as const;
 
   const referredValidatorsName = (
-    await Array.fromAsync(Deno.readDir("./validators/spending_channel"))
+    await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
   )
     .filter((val) => val.isFile)
     .map((val) => {
