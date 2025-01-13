@@ -42,21 +42,17 @@ export const readValidator = async <T extends unknown[] = Data[]>(
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
-  const encodedValidator = toHex(
-    cbor.encode(fromHex(rawValidator.compiledCode))
-  );
 
   let validator: Script;
-
   if (params === undefined) {
     validator = {
       type: "PlutusV3",
-      script: encodedValidator,
+      script: rawValidator.compiledCode,
     };
   } else {
     validator = {
       type: "PlutusV3",
-      script: applyParamsToScript(encodedValidator, params, type),
+      script: applyParamsToScript(rawValidator.compiledCode, params, type),
     };
   }
 
@@ -186,7 +182,7 @@ export const generateTokenName = (
 };
 
 export const hashSha3_256 = (data: string) => {
-  return toHex(crypto.subtle.digest("SHA3-256", fromHex(data)));
+  return toHex(new Uint8Array(crypto.subtle.digest("SHA3-256", fromHex(data))));
 };
 
 const ogmiosWsp = async (
