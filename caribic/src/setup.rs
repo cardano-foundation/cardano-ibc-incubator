@@ -457,7 +457,7 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
             genesis_file.as_str(),
         ];
     } else {
-        cli_args = vec!["genesis", "hash", "--genesis", genesis_file.as_str()];
+        cli_args = vec!["conway", "genesis", "hash", "--genesis", genesis_file.as_str()];
     }
 
     let genesis_hash = Command::new("docker")
