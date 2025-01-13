@@ -178,16 +178,16 @@ export const createDeployment = async (
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
-  const { identifierTokenUnit: mockModuleIdentifier, spendMockModule } =
-    await deployMockModule(
-      lucid,
-      handlerToken,
-      spendHandlerValidator,
-      mintPortValidator,
-      mintIdentifierValidator,
-      MOCK_MODULE_PORT
-    );
-  referredValidators.push(spendMockModule.validator);
+  // const { identifierTokenUnit: mockModuleIdentifier, spendMockModule } =
+  //   await deployMockModule(
+  //     lucid,
+  //     handlerToken,
+  //     spendHandlerValidator,
+  //     mintPortValidator,
+  //     mintIdentifierValidator,
+  //     MOCK_MODULE_PORT
+  //   );
+  // referredValidators.push(spendMockModule.validator);
 
   const refUtxosInfo = await createReferenceUtxos(
     lucid,
