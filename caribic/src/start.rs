@@ -5,9 +5,9 @@ use crate::setup::{
     seed_cardano_devnet,
 };
 use crate::utils::{
-    execute_script, execute_script_with_progress, extract_tendermint_client_id,
-    extract_tendermint_connection_id, get_cardano_state, wait_for_health_check,
-    wait_until_file_exists, download_file, unzip_file, copy_dir_all, CardanoQuery, IndicatorMessage
+    copy_dir_all, download_file, execute_script, execute_script_with_progress,
+    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, unzip_file,
+    wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
 };
 use crate::{
     config,
@@ -26,7 +26,12 @@ use std::process::Command;
 use std::time::Duration;
 use std::u64;
 
-pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, relayer_config_source_path: &Path, chain_handler_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_relayer(
+    relayer_path: &Path,
+    relayer_env_template_path: &Path,
+    relayer_config_source_path: &Path,
+    chain_handler_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     copy(
         relayer_env_template_path,
         relayer_path.join(".env"),
@@ -36,25 +41,30 @@ pub fn start_relayer(relayer_path: &Path, relayer_env_template_path: &Path, rela
 
     let relayer_config_dest_path = relayer_path.join(".config");
     if relayer_config_dest_path.as_path().exists() {
-        fs::remove_dir_all(relayer_config_dest_path.as_path()).expect("failed to cleanup target folder");
+        fs::remove_dir_all(relayer_config_dest_path.as_path())
+            .expect("failed to cleanup target folder");
     }
     copy_dir_all(
         relayer_config_source_path,
         relayer_config_dest_path.as_path(),
-    ).map_err(|error| format!("Error copying relayer config directory {}", error.to_string()))?;
-    
+    )
+    .map_err(|error| {
+        format!(
+            "Error copying relayer config directory {}",
+            error.to_string()
+        )
+    })?;
+
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
     copy(
         chain_handler_path,
-        relayer_config_dest_path.as_path().join("chain_handler.json"),
+        relayer_config_dest_path
+            .as_path()
+            .join("chain_handler.json"),
         &options,
     )?;
 
-    execute_script(
-        relayer_path,
-        "docker",
-        Vec::from(["compose", "stop"]),
-        None)?;
+    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
     execute_script_with_progress(
         relayer_path,
@@ -135,7 +145,8 @@ pub async fn start_local_cardano_network(
     // wait until network hard forked into Conway era after 1 epoch
     let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
     let target_epoch: u64 = 1;
-    let target_slot: u64 = target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+    let target_slot: u64 =
+        target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
 
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -168,11 +179,15 @@ pub async fn start_local_cardano_network(
         current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
 
         if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(get_cardano_state(project_root_path, CardanoQuery::Slot)?, target_slot));
+            progress_bar.set_position(min(
+                get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                target_slot,
+            ));
         } else {
             verbose(&format!(
                 "Current slot: {}, Slots left: {}",
-                get_cardano_state(project_root_path, CardanoQuery::Slot)?, get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
+                get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
             ));
         }
         std::thread::sleep(Duration::from_secs(10));
@@ -211,7 +226,7 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
     execute_script(
-        project_root_path.join("cardano").as_path(),
+        project_root_path.join("cardano").join("onchain").as_path(),
         "aiken",
         Vec::from(["build", "--trace-level", "verbose"]),
         None,
@@ -227,34 +242,30 @@ pub async fn start_local_cardano_network(
     execute_script(
         project_root_path.join("cardano").as_path(),
         "deno",
-        Vec::from(["run", "-A", "./aiken-to-lucid/src/main.ts"]),
+        Vec::from(["run", "-A", "./aiken-type-conversion/main.ts"]),
         None,
     )?;
 
     // Remove the old handler file
-    if project_root_path.join("cardano/deployments/handler.json").exists() {
-        fs::remove_file(project_root_path.join("cardano/deployments/handler.json"))
-        .expect("Failed to cleanup cardano/deployments/handler.json");
+    if project_root_path
+        .join("cardano/offchain/deployments/handler.json")
+        .exists()
+    {
+        fs::remove_file(project_root_path.join("cardano/offchain/deployments/handler.json"))
+            .expect("Failed to cleanup cardano/offchain/deployments/handler.json");
     }
 
     let handler_json_exists = wait_until_file_exists(
         project_root_path
-            .join("cardano/deployments/handler.json")
+            .join("cardano/offchain/deployments/handler.json")
             .as_path(),
         20,
         5000,
         || {
             let _ = execute_script(
-                project_root_path.join("cardano").as_path(),
+                project_root_path.join("cardano").join("offchain").as_path(),
                 "deno",
-                Vec::from([
-                    "run",
-                    "--allow-net",
-                    "--allow-env",
-                    "--allow-read",
-                    "--allow-write",
-                    "src/deploy.ts",
-                ]),
+                Vec::from(["task", "start"]),
                 None,
             );
         },
@@ -269,7 +280,7 @@ pub async fn start_local_cardano_network(
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
         copy(
-            project_root_path.join("cardano/deployments/handler.json"),
+            project_root_path.join("cardano/offchain/deployments/handler.json"),
             project_root_path.join("cardano/gateway/src/deployment/handler.json"),
             &options,
         )?;
@@ -283,19 +294,23 @@ pub async fn start_local_cardano_network(
     }
 }
 
-pub async fn start_cosmos_sidechain_from_repository(download_url: &str, chain_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_cosmos_sidechain_from_repository(
+    download_url: &str,
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     if chain_root_path.exists() {
         log(&format!(
             "{} 📝 Demo chain already downloaded. Cleaning up to get the most recent version...",
             style("Step 0/2").bold().dim()
         ));
-        fs::remove_dir_all(&chain_root_path)
-        .expect("Failed to cleanup demo chain folder.");
+        fs::remove_dir_all(&chain_root_path).expect("Failed to cleanup demo chain folder.");
     }
     fs::create_dir_all(&chain_root_path).expect("Failed to create folder for demo chain.");
     download_file(
         download_url,
-        &chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        &chain_root_path
+            .join("cardano-ibc-summit-demo.zip")
+            .as_path(),
         Some(IndicatorMessage {
             message: "Downloading cardano-ibc-summit-demo project".to_string(),
             step: "Step 1/2".to_string(),
@@ -311,7 +326,9 @@ pub async fn start_cosmos_sidechain_from_repository(download_url: &str, chain_ro
     ));
 
     unzip_file(
-        chain_root_path.join("cardano-ibc-summit-demo.zip").as_path(),
+        chain_root_path
+            .join("cardano-ibc-summit-demo.zip")
+            .as_path(),
         chain_root_path,
     )
     .expect("Failed to unzip cardano-ibc-summit-demo project");
