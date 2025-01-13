@@ -21,7 +21,7 @@ import {
   toHex,
   TxBuilder,
   UTxO,
-} from "@lucid-evolution/lucid";
+} from "npm:@lucid-evolution/lucid@0.4.18";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,

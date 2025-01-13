@@ -2,11 +2,11 @@ import {
   Kupmios,
   Lucid,
   SLOT_CONFIG_NETWORK,
-} from "@lucid-evolution/lucid";
-import { createDeployment } from "./src/create_deployment.ts";
-import { load } from "@std/dotenv";
-import { querySystemStart } from "./src/utils.ts";
-import { KUPMIOS_ENV } from "./src/constants.ts";
+} from "npm:@lucid-evolution/lucid@0.4.18";
+import { createDeployment } from "./create_deployment.ts";
+import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
+import { querySystemStart } from "./utils.ts";
+import { KUPMIOS_ENV } from "./constants.ts";
 
 const env = await load();
 

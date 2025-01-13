@@ -3,9 +3,9 @@ import {
   fromText,
   Kupmios,
   Lucid,
-} from "@lucid-evolution/lucid";
-import { load } from "@std/dotenv";
-import { Command } from "@cliffy/command";
+} from "npm:@lucid-evolution/lucid@0.4.18";
+import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
+import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { DeploymentTemplate } from "./template.ts";
 import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
 import {
