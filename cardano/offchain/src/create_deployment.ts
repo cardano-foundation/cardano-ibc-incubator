@@ -43,9 +43,14 @@ import { HandlerOperator } from "../../lucid-types/ibc/core/ics_025_handler_inte
 import {
   OutputReference,
   OutputReferenceSchema,
+<<<<<<< HEAD:cardano/offchain/src/create_deployment.ts
 } from "../../lucid-types/aiken/transaction/OutputReference.ts";
 import { MintPortRedeemer } from "../../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
 import { MockModuleDatum } from "../../lucid-types/ibc/apps/mock/datum/MockModuleDatum.ts";
+=======
+} from "../lucid-types/cardano/transaction/OutputReference.ts";
+import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+>>>>>>> 24d408e5 (chore: removed hopefully useless code :joy:):cardano/src/create_deployment.ts
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -818,11 +823,7 @@ const deployMockModule = async (
   const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const identifierTokenName = generateIdentifierTokenName(outputReference);
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
-
-  const initModuleDatum: MockModuleDatum = {
-    received_packets: [],
-  };
-
+  
   const mintModuleTx = lucid
     .newTx()
     .collectFrom([NONCE_UTXO], Data.void())
@@ -850,17 +851,6 @@ const deployMockModule = async (
       },
       {
         [handlerTokenUnit]: 1n,
-      }
-    )
-    .pay.ToContract(
-      spendMockModuleAddress,
-      {
-        kind: "inline",
-        value: Data.to(initModuleDatum, MockModuleDatum),
-      },
-      {
-        [identifierTokenUnit]: 1n,
-        [portTokenUnit]: 1n,
       }
     );
 

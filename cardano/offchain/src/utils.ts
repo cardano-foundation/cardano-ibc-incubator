@@ -28,9 +28,15 @@ import {
   KUPMIOS_ENV,
   LOCAL_ENV,
 } from "./constants.ts";
+<<<<<<< HEAD:cardano/offchain/src/utils.ts
 import { crypto } from "@std/crypto";
 import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
 import { OutputReference } from "../../lucid-types/aiken/transaction/OutputReference.ts";
+=======
+import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
+import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
+import { OutputReference } from "../lucid-types/cardano/transaction/OutputReference.ts";
+>>>>>>> 24d408e5 (chore: removed hopefully useless code :joy:):cardano/src/utils.ts
 
 export const readValidator = async <T extends unknown[] = Data[]>(
   title: string,
