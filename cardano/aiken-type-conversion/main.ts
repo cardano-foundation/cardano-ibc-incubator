@@ -10,7 +10,7 @@ async function main() {
     .version("0.1.0")
     .description("Generate Aiken types for Lucid")
     .option("-i, --in-file <path:string>", "Path to plutus.json file", {
-      default: "./plutus.json",
+      default: "./onchain/plutus.json",
     })
     .option(
       "-o, --out-dir <path:string>",

@@ -3,23 +3,29 @@ import {
   Lucid,
   SLOT_CONFIG_NETWORK,
 } from "npm:@lucid-evolution/lucid@0.4.18";
-import { createDeployment } from "./create_deployment.ts";
-import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
-import { querySystemStart } from "./utils.ts";
-import { KUPMIOS_ENV } from "./constants.ts";
-
-const env = await load();
+import { createDeployment } from "./src/create_deployment.ts";
+import { querySystemStart } from "./src/utils.ts";
+import { KUPMIOS_ENV } from "./src/constants.ts";
+import "jsr:@std/dotenv/load";
+import { crypto } from "@std/crypto";
 
 (async () => {
-  const deployerSk = env["DEPLOYER_SK"];
-  const kupoUrl = env["KUPO_URL"];
-  const ogmiosUrl = env["OGMIOS_URL"];
+
+  const deployerSk = Deno.env.get("DEPLOYER_SK");
+  const kupoUrl = Deno.env.get("KUPO_URL");
+  const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 
   console.log(deployerSk, kupoUrl, ogmiosUrl);
 
   if (!deployerSk || !kupoUrl || !ogmiosUrl) {
     throw new Error("Unable to load environment variables");
   }
+
+  // const encoder = new TextEncoder();
+
+  // await crypto.subtle.digest('SHA3-256', encoder.encode("Hello world!"));
+
+  // return;
 
   const provider = new Kupmios(kupoUrl, ogmiosUrl);
   const chainZeroTime = await querySystemStart(ogmiosUrl);

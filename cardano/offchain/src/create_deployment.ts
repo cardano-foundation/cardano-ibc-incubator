@@ -43,8 +43,8 @@ import { HandlerOperator } from "../../lucid-types/ibc/core/ics_025_handler_inte
 import {
   OutputReference,
   OutputReferenceSchema,
-} from "../lucid-types/cardano/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+} from "../../lucid-types/cardano/transaction/OutputReference.ts";
+import { MintPortRedeemer } from "../../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -555,7 +555,7 @@ const deployTransferModule = async (
 
   const portId = fromText("port-" + portNumber.toString());
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     portNumber
@@ -781,7 +781,7 @@ const deployMockModule = async (
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
 
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     mockModulePort

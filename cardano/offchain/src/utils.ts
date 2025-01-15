@@ -28,15 +28,10 @@ import {
   KUPMIOS_ENV,
   LOCAL_ENV,
 } from "./constants.ts";
-<<<<<<< HEAD:cardano/offchain/src/utils.ts
-import { crypto } from "@std/crypto";
-import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
-import { OutputReference } from "../../lucid-types/aiken/transaction/OutputReference.ts";
-=======
 import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
-import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
-import { OutputReference } from "../lucid-types/cardano/transaction/OutputReference.ts";
->>>>>>> 24d408e5 (chore: removed hopefully useless code :joy:):cardano/src/utils.ts
+import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
+import { OutputReference } from "../../lucid-types/cardano/transaction/OutputReference.ts";
+import { crypto } from "@std/crypto";
 
 export const readValidator = async <T extends unknown[] = Data[]>(
   title: string,
@@ -165,30 +160,30 @@ export const setUp = async (
   };
 };
 
-export const generateTokenName = (
+export const generateTokenName = async (
   baseToken: AuthToken,
   prefix: string,
   sequence: bigint
-): string => {
+): Promise<string> => {
   if (sequence < 0) throw new Error("sequence must be unsigned integer");
 
   const postfix = fromText(sequence.toString());
 
   if (postfix.length > 16) throw new Error("postfix size > 8 bytes");
 
-  const baseTokenPart = hashSha3_256(
+  const baseTokenPart = (await hashSha3_256(
     baseToken.policy_id + baseToken.name
-  ).slice(0, 40);
+  )).slice(0, 40);
 
-  const prefixPart = hashSha3_256(prefix).slice(0, 8);
+  const prefixPart = (await hashSha3_256(prefix)).slice(0, 8);
 
   const fullName = baseTokenPart + prefixPart + postfix;
 
   return fullName;
 };
 
-export const hashSha3_256 = (data: string) => {
-  return toHex(new Uint8Array(crypto.subtle.digest("SHA3-256", fromHex(data))));
+export const hashSha3_256 = async (data: string) => {
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA3-256", fromHex(data))));
 };
 
 const ogmiosWsp = async (
