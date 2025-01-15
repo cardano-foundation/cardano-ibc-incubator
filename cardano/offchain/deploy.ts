@@ -4,16 +4,14 @@ import {
   SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
 import { createDeployment } from "./src/create_deployment.ts";
-import { load } from "@std/dotenv";
 import { querySystemStart } from "./src/utils.ts";
 import { KUPMIOS_ENV } from "./src/constants.ts";
 
-const env = await load();
-
 (async () => {
-  const deployerSk = env["DEPLOYER_SK"];
-  const kupoUrl = env["KUPO_URL"];
-  const ogmiosUrl = env["OGMIOS_URL"];
+
+  const deployerSk = Deno.env.get("DEPLOYER_SK");
+  const kupoUrl = Deno.env.get("KUPO_URL");
+  const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 
   console.log(deployerSk, kupoUrl, ogmiosUrl);
 

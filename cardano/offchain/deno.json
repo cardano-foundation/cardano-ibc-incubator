@@ -10,6 +10,6 @@
     },
     "nodeModulesDir": "auto",
     "tasks": {
-        "start": "deno run --allow-net --allow-env --allow-read --allow-ffi --allow-write deploy.ts"
+        "start": "deno run --env-file=.env.example --allow-net --allow-env --allow-read --allow-ffi --allow-write deploy.ts"
     }
 }

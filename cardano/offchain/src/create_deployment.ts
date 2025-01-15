@@ -567,7 +567,7 @@ const deployTransferModule = async (
 
   const portId = fromText("port-" + portNumber.toString());
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     portNumber
@@ -793,7 +793,7 @@ const deployMockModule = async (
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
 
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     mockModulePort

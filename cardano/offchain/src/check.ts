@@ -54,7 +54,7 @@ await new Command()
 
     const clientSequence = parseClientSequence(id);
 
-    const clientTokenName = generateTokenName(
+    const clientTokenName = await generateTokenName(
       handlerToken,
       fromText("ibc_client"),
       clientSequence
@@ -88,7 +88,7 @@ await new Command()
 
     const sequence = parseConnectionSequence(id);
 
-    const tokenName = generateTokenName(
+    const tokenName = await generateTokenName(
       handlerToken,
       fromText("connection"),
       sequence
@@ -120,7 +120,7 @@ await new Command()
 
     const sequence = parseChannelSequence(id);
 
-    const tokenName = generateTokenName(
+    const tokenName = await generateTokenName(
       handlerToken,
       fromText("channel"),
       sequence
