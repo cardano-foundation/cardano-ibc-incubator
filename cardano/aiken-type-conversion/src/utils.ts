@@ -1,7 +1,7 @@
 import jsonpointer from "npm:jsonpointer";
 import { AikenType } from "./types.ts";
 import { GenType, ImportMap } from "./types.ts";
-import * as path from "./deps/std_path.ts";
+import * as path from "@std/path";
 import { PlutusDefinition } from "./types.ts";
 
 export function getPointer(

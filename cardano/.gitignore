@@ -1,17 +1,1 @@
-build
-node_modules
-aiken.lock
-plutus.json
-/chains/devnet/
-/chains/kupo-db/
-/chains/db-sync-data/
-/chains/postgres/
-/chains/baseinfo/
-/chains/persistence/
-deployments
-.vscode
-.env
 lucid-types/
-gateway/src/deployment/
-deno.lock
-keys/

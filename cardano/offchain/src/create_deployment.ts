@@ -15,7 +15,7 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
-} from "npm:@lucid-evolution/lucid@0.4.9";
+} from "@lucid-evolution/lucid";
 import {
   formatTimestamp,
   generateIdentifierTokenName,
@@ -32,20 +32,20 @@ import {
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
 import { DeploymentTemplate } from "./template.ts";
-import { ensureDir } from "https://deno.land/std@0.212.0/fs/mod.ts";
+import { ensureDir } from "@std/fs";
 import { submitTx } from "./utils.ts";
 import {
   AuthToken,
   AuthTokenSchema,
-} from "../lucid-types/ibc/auth/AuthToken.ts";
-import { HandlerDatum } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
-import { HandlerOperator } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
+} from "../../lucid-types/ibc/auth/AuthToken.ts";
+import { HandlerDatum } from "../../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
+import { HandlerOperator } from "../../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
 import {
   OutputReference,
   OutputReferenceSchema,
-} from "../lucid-types/aiken/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
-import { MockModuleDatum } from "../lucid-types/ibc/apps/mock/datum/MockModuleDatum.ts";
+} from "../../lucid-types/aiken/transaction/OutputReference.ts";
+import { MintPortRedeemer } from "../../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+import { MockModuleDatum } from "../../lucid-types/ibc/apps/mock/datum/MockModuleDatum.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -567,7 +567,7 @@ const deployTransferModule = async (
 
   const portId = fromText("port-" + portNumber.toString());
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     portNumber
@@ -701,7 +701,7 @@ const deploySpendChannel = async (
   ] as const;
 
   const referredValidatorsName = (
-    await Array.fromAsync(Deno.readDir("./validators/spending_channel"))
+    await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
   )
     .filter((val) => val.isFile)
     .map((val) => {
@@ -793,7 +793,7 @@ const deployMockModule = async (
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
 
-  const portTokenName = generateTokenName(
+  const portTokenName = await generateTokenName(
     handlerToken,
     PORT_PREFIX,
     mockModulePort

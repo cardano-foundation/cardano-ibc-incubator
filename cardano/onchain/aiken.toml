@@ -1,8 +1,8 @@
 # Project's name, as {organisation}/{project}
-name = "sosc/ibc"
+name = "cardanofoundation/cardano-ibc"
  
 # Project's version, we recommend semantic versioning for libraries
-version = "1.0.0"
+version = "0.2.0"
  
 # One or more license(s); we recommend Apache-2.0 or MPL-2.0 for open source
 # projects.

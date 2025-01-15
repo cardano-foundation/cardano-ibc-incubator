@@ -1,4 +1,4 @@
-import { UTxO } from "npm:@lucid-evolution/lucid@0.4.9";
+import { UTxO } from "@lucid-evolution/lucid";
 
 type Validator =
   | "spendHandler"

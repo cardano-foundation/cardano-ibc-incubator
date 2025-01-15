@@ -1,8 +1,8 @@
-import { Command } from "./deps/cliffy.ts";
-import { AikenType, PlutusDefinition } from "./types.ts";
-import { generateType } from "./mod.ts";
-import { ensureDirSync } from "./deps/std_fs.ts";
-import { genTypeToFile } from "./utils.ts";
+import { Command } from "@cliffy/command";
+import { AikenType, PlutusDefinition } from "./src/types.ts";
+import { generateType } from "./src/mod.ts";
+import { ensureDirSync } from "@std/fs";
+import { genTypeToFile } from "./src/utils.ts";
 
 async function main() {
   await (new Command()
@@ -10,7 +10,7 @@ async function main() {
     .version("0.1.0")
     .description("Generate Aiken types for Lucid")
     .option("-i, --in-file <path:string>", "Path to plutus.json file", {
-      default: "./plutus.json",
+      default: "./onchain/plutus.json",
     })
     .option(
       "-o, --out-dir <path:string>",

@@ -1,5 +1,5 @@
-import * as cbor from "https://deno.land/x/cbor@v1.4.1/index.js";
-import blueprint from "../plutus.json" with { type: "json" };
+import * as cbor from "cbor-x";
+import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import {
   validatorToScriptHash,
   validatorToAddress,
@@ -21,16 +21,16 @@ import {
   toHex,
   TxBuilder,
   UTxO,
-} from "npm:@lucid-evolution/lucid@0.4.9";
+} from "@lucid-evolution/lucid";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
   KUPMIOS_ENV,
   LOCAL_ENV,
 } from "./constants.ts";
-import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
-import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
-import { OutputReference } from "../lucid-types/aiken/transaction/OutputReference.ts";
+import { crypto } from "@std/crypto";
+import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
+import { OutputReference } from "../../lucid-types/aiken/transaction/OutputReference.ts";
 
 export const readValidator = async <T extends unknown[] = Data[]>(
   title: string,
@@ -42,21 +42,17 @@ export const readValidator = async <T extends unknown[] = Data[]>(
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
-  const encodedValidator = toHex(
-    cbor.encode(fromHex(rawValidator.compiledCode))
-  );
 
   let validator: Script;
-
   if (params === undefined) {
     validator = {
       type: "PlutusV3",
-      script: encodedValidator,
+      script: rawValidator.compiledCode,
     };
   } else {
     validator = {
       type: "PlutusV3",
-      script: applyParamsToScript(encodedValidator, params, type),
+      script: applyParamsToScript(rawValidator.compiledCode, params, type),
     };
   }
 
@@ -163,32 +159,30 @@ export const setUp = async (
   };
 };
 
-export const generateTokenName = (
+export const generateTokenName = async (
   baseToken: AuthToken,
   prefix: string,
   sequence: bigint
-): string => {
+): Promise<string> => {
   if (sequence < 0) throw new Error("sequence must be unsigned integer");
 
   const postfix = fromText(sequence.toString());
 
   if (postfix.length > 16) throw new Error("postfix size > 8 bytes");
 
-  const baseTokenPart = hashSha3_256(
+  const baseTokenPart = (await hashSha3_256(
     baseToken.policy_id + baseToken.name
-  ).slice(0, 40);
+  )).slice(0, 40);
 
-  const prefixPart = hashSha3_256(prefix).slice(0, 8);
+  const prefixPart = (await hashSha3_256(prefix)).slice(0, 8);
 
   const fullName = baseTokenPart + prefixPart + postfix;
 
   return fullName;
 };
 
-export const hashSha3_256 = (data: string) => {
-  const sha3Hasher = createHash("sha3-256");
-  const hash = sha3Hasher.update(fromHex(data)).toString();
-  return hash;
+export const hashSha3_256 = async (data: string) => {
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA3-256", fromHex(data))));
 };
 
 const ogmiosWsp = async (

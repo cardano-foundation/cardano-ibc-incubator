@@ -1,8 +1,8 @@
-import { AikenType } from "./types.ts";
-import { GenType, ImportMap } from "./types.ts";
+import { AikenType } from "../src/types.ts";
+import { GenType, ImportMap } from "../src/types.ts";
 import { builtInTypes } from "./const.ts";
-import { getPointer, insertDependencies } from "./utils.ts";
-import { PlutusDefinition } from "./types.ts";
+import { getPointer, insertDependencies } from "../src/utils.ts";
+import { PlutusDefinition } from "../src/types.ts";
 
 export function generateType(
   plutusDefinition: PlutusDefinition,
@@ -229,8 +229,8 @@ export function generateType(
 
   if ("anyOf" in typeDef) {
     if (typeDef.anyOf.length == 1) {
-      let forwardTitle = typeDef.anyOf[0].dataType == "constructor" && !("title" in typeDef.anyOf[0])
-      let forwardItem = typeDef.anyOf[0];
+      const forwardTitle = typeDef.anyOf[0].dataType == "constructor" && !("title" in typeDef.anyOf[0])
+      const forwardItem = typeDef.anyOf[0];
       if (forwardTitle) {
         forwardItem.title = typeDef.title;
       }

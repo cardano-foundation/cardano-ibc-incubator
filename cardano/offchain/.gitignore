@@ -1,0 +1,8 @@
+build
+node_modules
+plutus.json
+deployments
+.vscode
+.env
+lucid-types/
+deno.lock
