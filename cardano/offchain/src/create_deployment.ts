@@ -540,7 +540,7 @@ const deployTransferModule = async (
   // generate identifier token
   const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
   const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
-  const identifierTokenName = generateIdentifierTokenName(outputReference);
+  const identifierTokenName = await generateIdentifierTokenName(outputReference);
   const identifierToken: AuthToken = {
     policy_id: mintIdentifierPolicyId,
     name: identifierTokenName,
@@ -804,9 +804,9 @@ const deployMockModule = async (
   };
 
   const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
-  const identifierTokenName = generateIdentifierTokenName(outputReference);
+  const identifierTokenName = await generateIdentifierTokenName(outputReference);
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
-  
+
   const mintModuleTx = lucid
     .newTx()
     .collectFrom([NONCE_UTXO], Data.void())

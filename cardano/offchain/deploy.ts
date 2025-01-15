@@ -6,8 +6,6 @@ import {
 import { createDeployment } from "./src/create_deployment.ts";
 import { querySystemStart } from "./src/utils.ts";
 import { KUPMIOS_ENV } from "./src/constants.ts";
-import "jsr:@std/dotenv/load";
-import { crypto } from "@std/crypto";
 
 (async () => {
 
@@ -20,12 +18,6 @@ import { crypto } from "@std/crypto";
   if (!deployerSk || !kupoUrl || !ogmiosUrl) {
     throw new Error("Unable to load environment variables");
   }
-
-  // const encoder = new TextEncoder();
-
-  // await crypto.subtle.digest('SHA3-256', encoder.encode("Hello world!"));
-
-  // return;
 
   const provider = new Kupmios(kupoUrl, ogmiosUrl);
   const chainZeroTime = await querySystemStart(ogmiosUrl);

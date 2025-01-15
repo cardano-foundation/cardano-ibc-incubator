@@ -70,11 +70,11 @@ export const submitTx = async (
   console.log("Submitting tx [", txName, "]");
   const completedTx = await tx.complete({ nativeUplc });
   if (logSize) {
-    console.log("Submitting tx [", txName, "]: size in bytes", completedTx.toCBOR().length/2);
+    console.log("Submitting tx [", txName, "]: size in bytes", completedTx.toCBOR().length / 2);
   }
   console.log("Submitting tx [", txName, "]: signing ...");
   const signedTx = await completedTx.sign.withWallet().complete();
-  console.log("Submitting tx [", txName, "]: signed tx size in bytes", signedTx.toCBOR().length/2);
+  console.log("Submitting tx [", txName, "]: signed tx size in bytes", signedTx.toCBOR().length / 2);
   console.log("Submitting tx [", txName, "]: submitting ...");
   const txHash = await signedTx.submit();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
@@ -183,7 +183,8 @@ export const generateTokenName = async (
 };
 
 export const hashSha3_256 = async (data: string) => {
-  return toHex(new Uint8Array(await crypto.subtle.digest("SHA3-256", fromHex(data))));
+  const digest = await crypto.subtle.digest('SHA3-256', fromHex(data));
+  return toHex(new Uint8Array(digest));
 };
 
 const ogmiosWsp = async (
@@ -333,7 +334,7 @@ export const createReferenceScriptUtxo = async (
   return referenceUtxo;
 };
 
-export const generateIdentifierTokenName = (outRef: OutputReference) => {
+export const generateIdentifierTokenName = async (outRef: OutputReference) => {
   const serializedData = Data.to(outRef, OutputReference);
   return hashSha3_256(serializedData);
 };
