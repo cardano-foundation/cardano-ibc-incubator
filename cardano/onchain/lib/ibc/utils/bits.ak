@@ -1,6 +1,5 @@
 use aiken/builtin.{if_then_else}
 use aiken/math.{log, pow2}
-use aiken/primitive/bytearray.{push}
 
 pub type BitwiseOperator {
   AND
@@ -38,46 +37,6 @@ pub fn len(x: Int) -> Int {
 
 pub fn len64(x: Int) -> Int {
   log(x, 2) + 1
-}
-
-pub fn put_uint64(v: Int) -> ByteArray {
-  let v_8 = v / 256
-  let v_16 = v_8 / 256
-  let v_24 = v_16 / 256
-  let v_32 = v_24 / 256
-  let v_40 = v_32 / 256
-  let v_48 = v_40 / 256
-  let v_56 = v_48 / 256
-
-  #[]
-    |> push(v_56)
-    |> push(v_48)
-    |> push(v_40)
-    |> push(v_32)
-    |> push(v_24)
-    |> push(v_16)
-    |> push(v_8)
-    |> push(v)
-}
-
-pub fn put_uint64_big_endian(v: Int) -> ByteArray {
-  let v_8 = v / 256
-  let v_16 = v_8 / 256
-  let v_24 = v_16 / 256
-  let v_32 = v_24 / 256
-  let v_40 = v_32 / 256
-  let v_48 = v_40 / 256
-  let v_56 = v_48 / 256
-
-  #[]
-    |> push(v)
-    |> push(v_8)
-    |> push(v_16)
-    |> push(v_24)
-    |> push(v_32)
-    |> push(v_40)
-    |> push(v_48)
-    |> push(v_56)
 }
 
 fn recursive_bitwise_operation(
