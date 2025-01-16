@@ -1306,19 +1306,6 @@ export class LucidService {
   }
   // ========================== private functions ==========================
 
-  private getSpendingValidator(script: string): SpendingValidator {
-    return {
-      type: 'PlutusV2',
-      script: script,
-    };
-  }
-  private getMintingPolicy(script: string): MintingPolicy {
-    return {
-      type: 'PlutusV2',
-      script: script,
-    };
-  }
-
   private getMintConnectionScriptHash(): string {
     return this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
@@ -1340,17 +1327,21 @@ export class LucidService {
     if (constructedAddress) {
       try {
         let signer = constructedAddress;
-        if (!constructedAddress.startsWith('addr_')) {
-          signer = credentialToAddress(this.lucid.config().network, {
-            hash: constructedAddress,
-            type: 'Key',
-          });
-        }
+        /*
+          TODO: signing should be done by relayer in the future
 
-        // const seed =
-        //   'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';
-        // const lucid = this.lucid.selectWalletFromSeed(seed, { addressType: 'Enterprise' });
-        this.lucid.selectWallet.fromAddress(signer, []);
+          if (!constructedAddress.startsWith('addr_')) {
+            signer = credentialToAddress(this.lucid.config().network, {
+              hash: constructedAddress,
+              type: 'Key',
+            });
+          }
+        */
+
+        const seed =
+          'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';
+        this.lucid.selectWallet.fromSeed(seed, { addressType: 'Enterprise' });
+        // this.lucid.selectWallet.fromAddress(signer, []);
         return this.lucid.newTx();
       } catch (err) {
         throw new GrpcInternalException('invalid constructed address');
