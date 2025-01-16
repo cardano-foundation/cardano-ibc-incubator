@@ -1,4 +1,4 @@
-import { UTxO } from "npm:@lucid-evolution/lucid@0.4.9";
+import { UTxO } from "npm:@lucid-evolution/lucid@0.4.18";
 
 type Validator =
   | "spendHandler"
@@ -11,11 +11,10 @@ type Validator =
   | "mintPort"
   | "mintIdentifier"
   | "spendTransferModule"
-  | "spendMockModule"
   | "mintVoucher"
   | "verifyProof";
 
-type Module = "handler" | "transfer" | "mock";
+type Module = "handler" | "transfer";
 
 type Tokens = "mock";
 

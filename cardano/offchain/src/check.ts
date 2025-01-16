@@ -3,20 +3,20 @@ import {
   fromText,
   Kupmios,
   Lucid,
-} from "npm:@lucid-evolution/lucid@0.4.9";
+} from "npm:@lucid-evolution/lucid@0.4.18";
 import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
 import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
 import { DeploymentTemplate } from "./template.ts";
-import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
+import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
 import {
   generateTokenName,
   parseChannelSequence,
   parseClientSequence,
   parseConnectionSequence,
 } from "./utils.ts";
-import { ClientDatum } from "../lucid-types/ibc/client/ics_007_tendermint_client/client_datum/ClientDatum.ts";
-import { ConnectionDatum } from "../lucid-types/ibc/core/ics_003_connection_semantics/connection_datum/ConnectionDatum.ts";
-import { ChannelDatum } from "../lucid-types/ibc/core/ics_004/channel_datum/ChannelDatum.ts";
+import { ClientDatum } from "../../lucid-types/ibc/client/ics_007_tendermint_client/client_datum/ClientDatum.ts";
+import { ConnectionDatum } from "../../lucid-types/ibc/core/ics_003_connection_semantics/connection_datum/ConnectionDatum.ts";
+import { ChannelDatum } from "../../lucid-types/ibc/core/ics_004/channel_datum/ChannelDatum.ts";
 
 const env = await load({ allowEmptyValues: true });
 
@@ -54,7 +54,7 @@ await new Command()
 
     const clientSequence = parseClientSequence(id);
 
-    const clientTokenName = generateTokenName(
+    const clientTokenName = await generateTokenName(
       handlerToken,
       fromText("ibc_client"),
       clientSequence
@@ -88,7 +88,7 @@ await new Command()
 
     const sequence = parseConnectionSequence(id);
 
-    const tokenName = generateTokenName(
+    const tokenName = await generateTokenName(
       handlerToken,
       fromText("connection"),
       sequence
@@ -120,7 +120,7 @@ await new Command()
 
     const sequence = parseChannelSequence(id);
 
-    const tokenName = generateTokenName(
+    const tokenName = await generateTokenName(
       handlerToken,
       fromText("channel"),
       sequence

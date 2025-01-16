@@ -131,6 +131,8 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
       - RESTORE_RECREATE_DB=N
+      - CARDANO_NODE_SOCKET_PATH=/opt/cardano/config/devnet/node.socket
+      - NETWORK=devnet
     depends_on:
       - cardano-node
       - postgres
@@ -139,12 +141,10 @@ services:
       - postgres_user
       - postgres_db
     volumes:
-      - ./devnet:/devnet
+      - ./devnet:/opt/cardano/config/devnet
       - ./db-sync-data:/var/lib/cexplorer
     command:
       [
-        "--socket-path",
-        "/devnet/node.socket",
         "--config",
         "/devnet/db-sync-config.json"
       ]

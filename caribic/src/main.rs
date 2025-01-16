@@ -267,7 +267,7 @@ async fn main() {
                 project_root_path.join("relayer").as_path(),
                 chain_root_path.join("relayer/.env.relayer").as_path(),
                 chain_root_path.join("relayer/config").as_path(),
-                project_root_path.join("cardano/deployments/handler.json").as_path()) {
+                project_root_path.join("cardano/offchain/deployments/handler.json").as_path()) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }
