@@ -16,15 +16,12 @@ ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
 WORKDIR /usr/src/app
 
-# A wildcard is used to ensure both package.json AND package-lock.json are copied
-COPY ${MAIN_CONTEXT}/package*.json ./
-
-# Install app dependencies
-RUN npm install
-
 # Bundle app source
 COPY ${MAIN_CONTEXT} .
 COPY --from=protos /usr/src/proto-types /usr/proto-types
+
+# Install app dependencies
+RUN npm ci
 
 # Creates a "dist" folder with the production build
 RUN npm run build
