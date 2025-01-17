@@ -155,10 +155,10 @@ async fn main() {
             }
 
             // Start gateway
-            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-                Ok(_) => logger::log("✅ Gateway started successfully"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
-            }
+            // match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+            //     Ok(_) => logger::log("✅ Gateway started successfully"),
+            //     Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
+            // }
 
             // Start the Cosmos sidechain
             match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
@@ -169,14 +169,14 @@ async fn main() {
             }
 
             // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                project_root_path.join("relayer/.env.example").as_path(),
-                project_root_path.join("relayer/examples").as_path(),
-                project_root_path.join("cardano/deployments/handler.json").as_path()) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
-            }
+            // match start_relayer(
+            //     project_root_path.join("relayer").as_path(),
+            //     project_root_path.join("relayer/.env.example").as_path(),
+            //     project_root_path.join("relayer/examples").as_path(),
+            //     project_root_path.join("cardano/deployments/handler.json").as_path()) {
+            //     Ok(_) => logger::log("✅ Relayer started successfully"),
+            //     Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
+            // }
 
             // Start Osmosis
             match start_osmosis(osmosis_dir.as_path()).await {

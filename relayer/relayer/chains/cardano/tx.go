@@ -2,6 +2,7 @@ package cardano
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Salvionied/apollo"
+	"github.com/Salvionied/apollo/serialization/Key"
+	"github.com/Salvionied/apollo/txBuilding/Backend/Base"
+	"github.com/Salvionied/apollo/txBuilding/Backend/FixedChainContext"
 	"github.com/cometbft/cometbft/abci/types"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -1340,6 +1345,17 @@ func (cc *CardanoProvider) ValidatePacket(msgTransfer provider.PacketInfo, lates
 	return nil
 }
 
+// CustomChainContext allows Apollo to lookup script ref UTxOs from our storage
+type CustomChainContext struct {
+	Base.ChainContext
+}
+
+func NewCustomChainContext() CustomChainContext {
+	return CustomChainContext{
+		ChainContext: FixedChainContext.InitFixedChainContext(),
+	}
+}
+
 func (cc *CardanoProvider) buildMessages(
 	ctx context.Context,
 	msgs []provider.RelayerMessage,
@@ -1389,8 +1405,25 @@ func (cc *CardanoProvider) buildMessages(
 		return nil, 0, sdk.Coins{}, err
 	}
 
+	cc2 := NewCustomChainContext()
+	txa := apollo.New(&cc2)                                 // Tx is empty *Apollo
+	txa, err = txa.LoadTxCbor(hex.EncodeToString(msgBytes)) // raw bytes to hex string to being loaded into the *Apollo tx object
+	if err != nil {                                         // heh
+		return nil, 0, sdk.Coins{}, err
+	}
+
+	skey, err := Key.SigningKeyFromHexString(txSignerKey)
+	if err != nil { // heh
+		return nil, 0, sdk.Coins{}, err
+	}
+	vkey := new(Key.VerificationKey)
+
+	copy(vkey.Payload, ed25519.PrivateKey(skey.Payload).Public())
+
+	txa, err = txa.SignWithSkey(*vkey, *skey) // Leaving this to you to figure out how to load the keys
+
 	// Generate the bytes to be signed.
-	txHash := babbageTx.Body.Hash()
+	txHash := tx.Hash()
 	bytesToSign, err := hex.DecodeString(txHash)
 	if err != nil {
 		return nil, 0, sdk.Coins{}, err
@@ -1424,6 +1457,7 @@ func (cc *CardanoProvider) buildMessages(
 	for i, v := range vKeyWitnesses {
 		interfaces[i] = v
 	}
+
 	babbageTx.WitnessSet.VkeyWitnesses = interfaces
 
 	txBytes, err = cbor.Encode(babbageTx)

@@ -41,7 +41,8 @@ require (
 	google.golang.org/protobuf v1.35.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	github.com/blinklabs-io/gouroboros v0.102.0
+	github.com/blinklabs-io/gouroboros v0.107.1
+		github.com/Salvionied/apollo v1.0.13-0.20240908221422-e50b26fff03e
 )
 
 require (
