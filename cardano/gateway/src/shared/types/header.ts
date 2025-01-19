@@ -33,7 +33,7 @@ export function initializeHeader(headerMsg: HeaderMsg): Header {
           app: BigInt(headerMsg.signed_header.header.version.app),
         },
         chainId: toBytes(Buffer.from(headerMsg.signed_header.header.chain_id)),
-        height: headerMsg.signed_header.header.height,
+        height: BigInt(headerMsg.signed_header.header.height),
         time:
           BigInt(headerMsg.signed_header.header.time.seconds) * 10n ** 9n +
           BigInt(headerMsg.signed_header.header.time.nanos),
@@ -55,7 +55,7 @@ export function initializeHeader(headerMsg: HeaderMsg): Header {
         proposerAddress: toBytes(headerMsg.signed_header.header.proposer_address),
       },
       commit: {
-        height: headerMsg.signed_header.commit.height,
+        height: BigInt(headerMsg.signed_header.commit.height),
         round: BigInt(headerMsg.signed_header.commit.round),
         blockId: {
           hash: toBytes(headerMsg.signed_header.commit.block_id.hash),

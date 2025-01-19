@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { fromHex, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -56,7 +56,7 @@ export class ClientService {
       );
 
       const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException(
@@ -65,14 +65,15 @@ export class ClientService {
       }
 
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
-      const unsignedCreateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
+      // Todo: signing should be done by the relayer in the future
+      const signedCreateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
-      this.logger.log(unsignedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
+      this.logger.log(signedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
       this.logger.log(clientId, 'create client - clientId');
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedCreateClientTxCompleted.toCBOR()),
+          value: fromHex(signedCreateClientTxCompleted.toCBOR()),
         },
         client_id: `${CLIENT_ID_PREFIX}-${clientId.toString()}`,
       } as unknown as MsgCreateClientResponse;
@@ -124,14 +125,15 @@ export class ClientService {
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
           .validTo(new Date().valueOf());
-        const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
+        // Todo: signing should be done by the relayer in the future
+        const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
         this.logger.log(clientId, 'update client - client Id');
-        this.logger.log(unsignedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
+        this.logger.log(signedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
+            value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -156,8 +158,8 @@ export class ClientService {
       };
 
       const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-      const validFromSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validFromTime));
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validFromSlot = this.lucidService.lucid.unixTimeToSlot(Number(validFromTime));
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot < validFromSlot || currentSlot > validToSlot) {
         throw new GrpcInternalException('tx time invalid');
@@ -166,16 +168,17 @@ export class ClientService {
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
         .validFrom(Number(validFromTime))
         .validTo(new Date().valueOf() + 100 * 1e3);
-      const unsignedUpdateClientTxCompleted: TxSignBuilder = await unSignedTxValidTo.complete();
+      // Todo: signing should be done by the relayer in the future
+      const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
       // Build and complete the unsigned transaction
       this.logger.log(clientId, 'update client - client Id');
       this.logger.log(header.signedHeader.header.height, 'update client - header height');
-      this.logger.log(unsignedUpdateClientTxCompleted.toHash(), 'update client - unsignedTX - hash');
+      this.logger.log(signedUpdateClientTxCompleted.toHash(), 'update client - unsignedTX - hash');
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedUpdateClientTxCompleted.toCBOR()),
+          value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;

@@ -14,7 +14,6 @@ import (
 
 	"github.com/cometbft/cometbft/abci/types"
 
-	"github.com/blinklabs-io/gouroboros/cbor"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/joho/godotenv"
 
@@ -1384,54 +1383,58 @@ func (cc *CardanoProvider) buildMessages(
 		return nil, 0, sdk.Coins{}, err
 	}
 
-	var babbageTx BabbageTransaction
-	if _, err := cbor.Decode(msgBytes, &babbageTx); err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+	// TODO: Skip signing for now and move it to the gateway until we figure out why the deserialization is misbehaving
+	/*
+			var conwayTx conwaytypes.ConwayTransaction
+		       	if _, err := cbor.Decode(msgBytes, &conwayTx); err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
 
-	// Generate the bytes to be signed.
-	txHash := babbageTx.Body.Hash()
-	bytesToSign, err := hex.DecodeString(txHash)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+			// Generate the bytes to be signed.
+			txHash := conwayTx.Body.Hash()
+			bytesToSign, err := hex.DecodeString(txHash)
+			if err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
 
-	k, err := txf.Keybase().Key(txSignerKey)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+			k, err := txf.Keybase().Key(txSignerKey)
+			if err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
 
-	pubKey, err := k.GetPubKey()
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+			pubKey, err := k.GetPubKey()
+			if err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
 
-	// Sign those bytes
-	sigBytes, _, err := txf.Keybase().Sign(txSignerKey, bytesToSign)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+			// Sign those bytes
+			sigBytes, _, err := txf.Keybase().Sign(txSignerKey, bytesToSign)
+			if err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
 
-	// Construct signed transaction
-	var vKeyWitnesses []VKeyWitness = []VKeyWitness{
-		{
-			VKey:      pubKey.Bytes(),
-			Signature: sigBytes[:],
-		},
-	}
+			// Construct signed transaction
+			var vKeyWitnesses []VKeyWitness = []VKeyWitness{
+				{
+					VKey:      pubKey.Bytes(),
+					Signature: sigBytes[:],
+				},
+			}
 
-	var interfaces []interface{} = make([]interface{}, len(vKeyWitnesses))
-	for i, v := range vKeyWitnesses {
-		interfaces[i] = v
-	}
-	babbageTx.WitnessSet.VkeyWitnesses = interfaces
+			var interfaces []interface{} = make([]interface{}, len(vKeyWitnesses))
+			for i, v := range vKeyWitnesses {
+				interfaces[i] = v
+			}
+			conwayTx.WitnessSet.VkeyWitnesses = interfaces
 
-	txBytes, err = cbor.Encode(babbageTx)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
+			txBytes, err = cbor.Encode(conwayTx)
+			if err != nil {
+				return nil, 0, sdk.Coins{}, err
+			}
+	*/
 
-	return txBytes, 0, sdk.Coins{}, nil
+	// Todo: Return txBytes once signing is reimplemented
+	return msgBytes, 0, sdk.Coins{}, nil
 }
 
 // handleAccountSequenceMismatchError will parse the error string, e.g.:
