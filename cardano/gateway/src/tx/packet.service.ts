@@ -115,14 +115,17 @@ export class PacketService {
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(
         slotToUnixTime(this.lucidService.lucid.config().network, validToSlot),
       );
-      const unsignedRecvPacketCompleted: TxSignBuilder = await unsignedRecvPacketTxValidTo.complete();
+      // Todo: signing should be done in the relayer in the future
+      const signedRecvPacketCompleted = await (await unsignedRecvPacketTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedRecvPacketCompleted.toHash(), 'recv packet - unsignedTX - hash');
+      this.logger.log(signedRecvPacketCompleted.toHash(), 'recv packet - unsignedTX - hash');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedRecvPacketCompleted.toCBOR()),
+          value: fromHex(signedRecvPacketCompleted.toCBOR()),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -150,14 +153,17 @@ export class PacketService {
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      const unsignedSendPacketTxCompleted: TxSignBuilder = await unsignedSendPacketTxValidTo.complete();
+      // Todo: signing should be done in the relayer in the future
+      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedSendPacketTxCompleted.toHash(), 'send packet - unsignedTX - hash');
+      this.logger.log(signedSendPacketTxCompleted.toHash(), 'send packet - unsignedTX - hash');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -186,14 +192,17 @@ export class PacketService {
       );
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(Date.now() + 3 * 1e5);
 
-      const unsignedSendPacketTxCompleted: TxSignBuilder = await unsignedSendPacketTxValidTo.complete();
+      // Todo: signing should be done in the relayer in the future
+      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedSendPacketTxCompleted.toHash(), 'timeout packet - unsignedTX - hash');
+      this.logger.log(signedSendPacketTxCompleted.toHash(), 'timeout packet - unsignedTX - hash');
       const response: MsgTimeoutResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
         },
       } as unknown as MsgTimeoutResponse;
       return response;
@@ -247,13 +256,16 @@ export class PacketService {
       }
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
-      const unsignedTimeoutRefreshCompleted: TxSignBuilder = await unsignedTimeoutRefreshTxValidTo.complete();
+      // Todo: signing should be done in the relayer in the future
+      const signedTimeoutRefreshCompleted = await (await unsignedTimeoutRefreshTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedTimeoutRefreshCompleted.toHash(), 'TimeoutRefresh - unsignedTX - hash');
+      this.logger.log(signedTimeoutRefreshCompleted.toHash(), 'TimeoutRefresh - unsignedTX - hash');
       const response: MsgTimeoutRefreshResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTimeoutRefreshCompleted.toCBOR()),
+          value: fromHex(signedTimeoutRefreshCompleted.toCBOR()),
         },
       } as unknown as MsgTimeoutRefreshResponse;
       return response;
@@ -281,14 +293,15 @@ export class PacketService {
       );
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
 
-      const unsignedAckPacketCompleted: TxSignBuilder = await unsignedAckPacketTxValidTo.complete();
+      // Todo: signing should be done in the relayer in the future
+      const signedAckPacketCompleted = await (await unsignedAckPacketTxValidTo.complete()).sign.withWallet().complete();
 
-      this.logger.log(unsignedAckPacketCompleted.toHash(), 'ack packet - unsignedTX - hash');
+      this.logger.log(signedAckPacketCompleted.toHash(), 'ack packet - unsignedTX - hash');
       const response: MsgAcknowledgementResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedAckPacketCompleted.toCBOR()),
+          value: fromHex(signedAckPacketCompleted.toCBOR()),
         },
       } as unknown as MsgAcknowledgementResponse;
       return response;

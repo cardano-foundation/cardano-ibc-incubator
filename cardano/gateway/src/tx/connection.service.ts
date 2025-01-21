@@ -72,13 +72,16 @@ export class ConnectionService {
         Date.now() + 100 * 1e3,
       );
 
-      const unsignedConnectionOpenInitTxCompleted: TxSignBuilder = await unsignedConnectionOpenInitTxValidTo.complete();
+      // Todo: signing should be done by the relayer in the future
+      const signedConnectionOpenInitTxCompleted = await (await unsignedConnectionOpenInitTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
+      this.logger.log(signedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedConnectionOpenInitTxCompleted.toCBOR()),
+          value: fromHex(signedConnectionOpenInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgUpdateClientResponse;
       return response;
@@ -107,13 +110,16 @@ export class ConnectionService {
       );
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(Date.now() + 100 * 1e3);
 
-      const unsignedConnectionOpenTryTxCompleted: TxSignBuilder = await unsignedConnectionOpenTryTxValidTo.complete();
+      // Todo: signing should be done by the relayer in the future
+      const signedConnectionOpenTryTxCompleted = await (await unsignedConnectionOpenTryTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
+      this.logger.log(signedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedConnectionOpenTryTxCompleted.toCBOR()),
+          value: fromHex(signedConnectionOpenTryTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenTryResponse;
       return response;
@@ -142,13 +148,16 @@ export class ConnectionService {
       );
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
 
-      const unsignedConnectionOpenAckTxCompleted: TxSignBuilder = await unsignedConnectionOpenAckTxValidTo.complete();
+      // Todo: signing should be done by the relayer in the future
+      const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
+      this.logger.log(signedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedConnectionOpenAckTxCompleted.toCBOR()),
+          value: fromHex(signedConnectionOpenAckTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
@@ -182,14 +191,19 @@ export class ConnectionService {
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(
         Date.now() + 150 * 1e3,
       );
-      const unsignedConnectionOpenConfirmTxCompleted: TxSignBuilder =
-        await unsignedConnectionOpenConfirmTxValidTo.complete();
 
-      this.logger.log(unsignedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
+      // Todo: signing should be done by the relayer in the future
+      const signedConnectionOpenConfirmTxCompleted = await (
+        await unsignedConnectionOpenConfirmTxValidTo.complete()
+      ).sign
+        .withWallet()
+        .complete();
+
+      this.logger.log(signedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedConnectionOpenConfirmTxCompleted.toCBOR()),
+          value: fromHex(signedConnectionOpenConfirmTxCompleted.toCBOR()),
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
       return response;

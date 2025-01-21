@@ -1,4 +1,4 @@
-import { fromHex, TxBuilder, TxSignBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, TxBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -91,17 +91,20 @@ export class ChannelService {
       }
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
 
-      const unsignedChannelOpenInitTxCompleted: TxSignBuilder = await unsignedChannelOpenInitTxValidTo.complete();
+      // TODO: signing should be done by the relayer in the future
+      const signedChannelOpenInitTxCompleted = await (await unsignedChannelOpenInitTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
       // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
       // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
       await sleep(7000);
-      this.logger.log(unsignedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
+      this.logger.log(signedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
         version: data.channel.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedChannelOpenInitTxCompleted.toCBOR()),
+          value: fromHex(signedChannelOpenInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenInitResponse;
       return response;
@@ -125,15 +128,17 @@ export class ChannelService {
         constructedAddress,
       );
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
+      // TODO: signing should be done by the relayer in the future
+      const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      const unsignedChannelOpenTryTxCompleted: TxSignBuilder = await unsignedChannelOpenTryTxValidTo.complete();
-
-      this.logger.log(unsignedChannelOpenTryTxCompleted.toHash(), 'channel open try - unsignedTX - hash');
+      this.logger.log(signedChannelOpenTryTxCompleted.toHash(), 'channel open try - unsignedTX - hash');
       const response: MsgChannelOpenTryResponse = {
         version: channelOpenTryOperator.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedChannelOpenTryTxCompleted.toCBOR()),
+          value: fromHex(signedChannelOpenTryTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenTryResponse;
       return response;
@@ -162,13 +167,18 @@ export class ChannelService {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
-      const unsignedChannelOpenAckTxCompleted: TxSignBuilder = await unsignedChannelOpenAckTxValidTo.complete();
+
+      // TODO: signing should be done by the relayer in the future
+      const signedChannelOpenAckTxCompleted = await (await unsignedChannelOpenAckTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
+
       await sleep(7000);
-      this.logger.log(unsignedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
+      this.logger.log(signedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedChannelOpenAckTxCompleted.toCBOR()),
+          value: fromHex(signedChannelOpenAckTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenAckResponse;
       return response;
@@ -195,13 +205,16 @@ export class ChannelService {
         Date.now() + 600 * 1e3,
       );
 
-      const unsignedChannelConfirmInitTxCompleted: TxSignBuilder = await unsignedChannelConfirmInitTxValidTo.complete();
+      // TODO: signing should be done by the relayer in the future
+      const signedChannelConfirmInitTxCompleted = await (await unsignedChannelConfirmInitTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedChannelConfirmInitTxCompleted.toHash(), 'channelOpenConfirm - unsignedTX - hash');
+      this.logger.log(signedChannelConfirmInitTxCompleted.toHash(), 'channelOpenConfirm - unsignedTX - hash');
       const response: MsgChannelOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedChannelConfirmInitTxCompleted.toCBOR()),
+          value: fromHex(signedChannelConfirmInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelOpenConfirmResponse;
       return response;
@@ -233,13 +246,16 @@ export class ChannelService {
       );
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
 
-      const unsignedChannelCloseInitTxCompleted: TxSignBuilder = await unsignedChannelCloseInitTxValidTo.complete();
+      // TODO: signing should be done by the relayer in the future
+      const signedChannelCloseInitTxCompleted = await (await unsignedChannelCloseInitTxValidTo.complete()).sign
+        .withWallet()
+        .complete();
 
-      this.logger.log(unsignedChannelCloseInitTxCompleted.toHash(), 'channel close init - unsignedTX - hash');
+      this.logger.log(signedChannelCloseInitTxCompleted.toHash(), 'channel close init - unsignedTX - hash');
       const response: MsgChannelCloseInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedChannelCloseInitTxCompleted.toCBOR()),
+          value: fromHex(signedChannelCloseInitTxCompleted.toCBOR()),
         },
       } as unknown as MsgChannelCloseInitResponse;
       return response;

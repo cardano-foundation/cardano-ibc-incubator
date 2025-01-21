@@ -105,22 +105,15 @@ validator spend_client {
 
         if found_misbehaviour {
           trace @"spend_client: found misbehaviour"
-          expect
-            client_datum_mod.update_state_on_misbehaviour(datum, updated_datum)
-          trace @"spend_client: update client misbehaviour succeeded"
-          True
+          client_datum_mod.update_state_on_misbehaviour(datum, updated_datum)
         } else {
           expect HeaderCase(header) = msg
-
-          expect
-            client_datum_mod.update_state(
-              datum,
-              updated_datum,
-              header,
-              tx_valid_from,
-            )
-
-          True
+          client_datum_mod.update_state(
+            datum,
+            updated_datum,
+            header,
+            tx_valid_from,
+          )
         }
       }
 
