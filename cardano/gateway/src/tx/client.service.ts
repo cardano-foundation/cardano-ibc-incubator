@@ -67,7 +67,6 @@ export class ClientService {
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
       // Todo: signing should be done by the relayer in the future
       const signedCreateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
-
       this.logger.log(signedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
       this.logger.log(clientId, 'create client - clientId');
       const response: MsgCreateClientResponse = {
@@ -158,6 +157,7 @@ export class ClientService {
       };
 
       const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
+
       const validFromSlot = this.lucidService.lucid.unixTimeToSlot(Number(validFromTime));
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -165,16 +165,15 @@ export class ClientService {
         throw new GrpcInternalException('tx time invalid');
       }
 
-      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
-        .validFrom(Number(validFromTime))
-        .validTo(new Date().valueOf() + 100 * 1e3);
+      const validFrom = Number(validFromTime);
+      const validTo = new Date().valueOf() + 100 * 1e3;
+
+      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
+
       // Todo: signing should be done by the relayer in the future
       const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
       // Build and complete the unsigned transaction
-      this.logger.log(clientId, 'update client - client Id');
-      this.logger.log(header.signedHeader.header.height, 'update client - header height');
-      this.logger.log(signedUpdateClientTxCompleted.toHash(), 'update client - unsignedTX - hash');
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',

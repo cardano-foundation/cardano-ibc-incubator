@@ -48,7 +48,7 @@ pub fn update_state(
 
   let input_datum_cons_state = input_datum.state.consensus_states
 
-  expect !pairs.has_key(input_datum_cons_state, header_height)
+  expect (!pairs.has_key(input_datum_cons_state, header_height))?
 
   let latest_height = {
     let input_height =
@@ -95,7 +95,25 @@ pub fn update_state(
       },
     }
 
-  expected_updated_output == output_datum
+  expect
+    (expected_updated_output.state.client_state == output_datum.state.client_state)?
+  expect (expected_updated_output.token == output_datum.token)?
+
+  let output_cons_states = output_datum.state.consensus_states
+  let expected_cons_states = expected_updated_output.state.consensus_states
+
+  let block_heights = pairs.keys(output_cons_states)
+  expect list.difference(block_heights, pairs.keys(expected_cons_states)) == []
+  expect list.difference(pairs.keys(expected_cons_states), block_heights) == []
+  list.all(
+    block_heights,
+    fn(block_height) {
+      pairs.get_all(output_cons_states, block_height) == pairs.get_all(
+        expected_cons_states,
+        block_height,
+      )
+    },
+  )
 }
 
 pub fn update_state_on_misbehaviour(

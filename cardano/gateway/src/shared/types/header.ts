@@ -392,8 +392,6 @@ function verifyNonAdjacent(
   maxClockDrift: bigint,
   trustedLevel: Rational,
 ): boolean {
-  console.log('verifyNonAdjacent');
-
   if (untrustedHeader.header.height === trustedHeader.header.height + 1n) {
     throw new GrpcInvalidArgumentException('headers must be non adjacent in height');
   }
