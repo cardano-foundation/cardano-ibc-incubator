@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap::Subcommand;
+use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
 use start::start_gateway;
 use start::start_mithril;
@@ -12,7 +13,7 @@ use start::{
     start_osmosis, start_relayer,
 };
 use stop::stop_mithril;
-use stop::{stop_cardano_network, stop_cosmos, stop_osmosis, stop_relayer};
+use stop::{stop_cardano_network, stop_cosmos, stop_osmosis, stop_relayer, stop_gateway};
 use utils::default_config_path;
 mod check;
 mod config;
@@ -50,7 +51,8 @@ enum Commands {
     /// Creates a local development environment using a specific Cosmos side chain developed for demonstration purposes
     VesselDemo,
     /// Stops the vessel oracle demo
-    StopVesselDemo
+    StopVesselDemo,
+    RelayerStart
 }
 
 fn stop_bridge_gracefully() {
@@ -90,6 +92,17 @@ fn stop_vessel_demo_gracefully() {
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
+
+fn stop_gtw_relayer_demo_gracefully() {
+    let project_config = config::get_config();
+    let project_root_path = Path::new(&project_config.project_root);
+    
+    // Stop Relayer
+    stop_relayer(project_root_path.join("relayer").as_path());
+    stop_gateway(project_root_path.join("cardano/gateway").as_path());
+
+}
+
 fn exit_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
@@ -101,6 +114,13 @@ fn exit_vessel_demo_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
     stop_vessel_demo_gracefully();
+    std::process::exit(1);
+}
+
+fn exit_gtw_relayer_with_error(message: &str) {
+    logger::error(message);
+    logger::log("🚨 Stopping services...");
+    stop_gtw_relayer_demo_gracefully();
     std::process::exit(1);
 }
 
@@ -155,10 +175,10 @@ async fn main() {
             }
 
             // Start gateway
-            // match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-            //     Ok(_) => logger::log("✅ Gateway started successfully"),
-            //     Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
-            // }
+            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                Ok(_) => logger::log("✅ Gateway started successfully"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
+            }
 
             // Start the Cosmos sidechain
             match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
@@ -169,14 +189,14 @@ async fn main() {
             }
 
             // Start the relayer
-            // match start_relayer(
-            //     project_root_path.join("relayer").as_path(),
-            //     project_root_path.join("relayer/.env.example").as_path(),
-            //     project_root_path.join("relayer/examples").as_path(),
-            //     project_root_path.join("cardano/deployments/handler.json").as_path()) {
-            //     Ok(_) => logger::log("✅ Relayer started successfully"),
-            //     Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
-            // }
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                project_root_path.join("relayer/.env.example").as_path(),
+                project_root_path.join("relayer/examples").as_path(),
+                project_root_path.join("cardano/deployments/handler.json").as_path()) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
+            }
 
             // Start Osmosis
             match start_osmosis(osmosis_dir.as_path()).await {
@@ -192,7 +212,7 @@ async fn main() {
 
             if project_config.mithril.enabled {
                 // Wait for Mithril to start reading the immutable cardano node files
-                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch).await {
                     Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
                         exit_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
@@ -211,13 +231,20 @@ async fn main() {
             let project_root_path = Path::new(&project_config.project_root);
 
             // Start the local Cardano network and its services
-            match start_local_cardano_network(&project_root_path).await {
-                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
-                    "❌ Failed to start local Cardano network: {}",
-                    error
-                )),
+            // match start_local_cardano_network(&project_root_path).await {
+            //     Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
+            //     Err(error) => exit_vessel_demo_with_error(&format!(
+            //         "❌ Failed to start local Cardano network: {}",
+            //         error
+            //     )),
+            // }
+
+            // Start the local Cardano network and its services
+            match deploy_contracts(&project_root_path).await {
+                Ok(_) => logger::log("✅ Deployed contracts"),
+                Err(error) => logger::error(&format!("❌ Failed deploy contracts: {}", error)),
             }
+
 
             let mut cardano_current_epoch = 0;
 
@@ -234,12 +261,6 @@ async fn main() {
                 }
             }
 
-            // Start gateway
-            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-                Ok(_) => logger::log("✅ Gateway started successfully"),
-                Err(error) => exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error)),
-            }
-
             // Start the Cosmos sidechain
             let cosmos_chain_repo_url = format!("{}/archive/refs/heads/{}.zip", project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch);
             let chain_root_path = project_root_path.join("chains/summit-demo/");
@@ -254,22 +275,12 @@ async fn main() {
 
             if project_config.mithril.enabled {
                 // Wait for Mithril to start reading the immutable cardano node files
-                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch).await {
                     Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
                         exit_vessel_demo_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
                 }
             }
-            }
-
-            // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                chain_root_path.join("relayer/.env.relayer").as_path(),
-                chain_root_path.join("relayer/config").as_path(),
-                project_root_path.join("cardano/offchain/deployments/handler.json").as_path()) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error)),
             }
 
             logger::log("\n✅ Vessel Oracle demo started successfully");
@@ -278,5 +289,31 @@ async fn main() {
             stop_vessel_demo_gracefully();
             logger::log("\n❎ Bridge stopped successfully");
         }
+        Commands::RelayerStart => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let chain_root_path = project_root_path.join("chains/summit-demo/");
+            let mut cardano_current_epoch = 0;
+
+            // Start gateway
+            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                Ok(_) => logger::log("✅ Gateway started successfully"),
+                Err(error) => exit_gtw_relayer_with_error(&format!("❌ Failed to start gateway: {}", error)),
+            }
+
+
+            // Start the relayer
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                chain_root_path.join("relayer/.env.relayer").as_path(),
+                chain_root_path.join("relayer/config").as_path(),
+                project_root_path.join("cardano/offchain/deployments/handler.json").as_path()) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => exit_gtw_relayer_with_error(&format!("❌ Failed to start relayer: {}", error)),
+            }
+
+            logger::log("\n✅ Vessel Oracle demo started successfully");
+        }
+        
     }
 }

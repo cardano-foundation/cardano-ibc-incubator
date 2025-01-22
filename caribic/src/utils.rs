@@ -90,6 +90,23 @@ pub fn get_cardano_tip_state(
     }
 }
 
+pub async fn get_yaci_state(query: CardanoQuery) -> Result<u64, Box<dyn Error>> {
+    let latest_block =
+        reqwest::get("http://localhost:8080/api/v1/blocks/latest").await?.text().await?;
+    let latest_block_json: Value = serde_json::from_str(&latest_block)?;
+    let slot_json = latest_block_json.get(query.as_str());
+
+    if let Some(slot) = slot_json {
+        if slot.is_i64() {
+            return Ok(slot.as_i64().unwrap() as u64);
+        } else {
+            return Err(format!("Failed to parse {}", "slot".to_string()).into());
+        }
+    } else {
+        return Err(format!("Failed to extract {}", "slot".to_string()).into());
+    }
+}
+
 pub enum CardanoQuery {
     Epoch,
     Slot,
@@ -536,7 +553,7 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
-        
+
         // Get the source and destination paths
         let src_path = entry.path();
         let dst_path = dst.as_ref().join(entry.file_name());

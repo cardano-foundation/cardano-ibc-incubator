@@ -6,8 +6,9 @@ use crate::setup::{
 };
 use crate::utils::{
     copy_dir_all, download_file, execute_script, execute_script_with_progress,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, unzip_file,
-    wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
+    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state,
+    get_yaci_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
+    IndicatorMessage,
 };
 use crate::{
     config,
@@ -217,6 +218,88 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+
+    log_or_show_progress(
+        &format!(
+            "{} 🛠️ Building Aiken validators",
+            style("Step 4/5").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+    execute_script(
+        project_root_path.join("cardano").join("onchain").as_path(),
+        "aiken",
+        Vec::from(["build", "--trace-level", "verbose"]),
+        None,
+    )?;
+
+    log_or_show_progress(
+        &format!(
+            "{} 🤖 Generating validator off-chain types",
+            style("Step 5/5").bold().dim(),
+        ),
+        &optional_progress_bar,
+    );
+    execute_script(
+        project_root_path.join("cardano").as_path(),
+        "deno",
+        Vec::from(["run", "-A", "./aiken-type-conversion/main.ts"]),
+        None,
+    )?;
+
+    // Remove the old handler file
+    if project_root_path
+        .join("cardano/offchain/deployments/handler.json")
+        .exists()
+    {
+        fs::remove_file(project_root_path.join("cardano/offchain/deployments/handler.json"))
+            .expect("Failed to cleanup cardano/offchain/deployments/handler.json");
+    }
+
+    let handler_json_exists = wait_until_file_exists(
+        project_root_path
+            .join("cardano/offchain/deployments/handler.json")
+            .as_path(),
+        20,
+        5000,
+        || {
+            let _ = execute_script(
+                project_root_path.join("cardano").join("offchain").as_path(),
+                "deno",
+                Vec::from(["task", "start"]),
+                None,
+            );
+        },
+    );
+
+    if handler_json_exists.is_ok() {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+
+        verbose("✅ Successfully deployed the contracts");
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
+        copy(
+            project_root_path.join("cardano/offchain/deployments/handler.json"),
+            project_root_path.join("cardano/gateway/src/deployment/handler.json"),
+            &options,
+        )?;
+
+        Ok(())
+    } else {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+    }
+}
+
+pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
 
     log_or_show_progress(
         &format!(
@@ -1000,12 +1083,12 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
         progress_bar.finish_and_clear();
     }
 
-    let current_cardano_epoch = get_cardano_state(project_root_dir, CardanoQuery::Epoch)?;
+    let current_cardano_epoch = get_yaci_state(CardanoQuery::Epoch).await?;
 
     Ok(current_cardano_epoch)
 }
 
-pub fn wait_and_start_mithril_genesis(
+pub async fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
     cardano_epoch_on_mithril_start: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1013,54 +1096,14 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
-        + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 2;
-    let target_slot = target_epoch * slots_per_epoch;
-    let mut slots_left = target_slot.saturating_sub(current_slot);
-
+    let mut current_epoch = get_yaci_state(CardanoQuery::Epoch).await?;
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
     };
 
-    if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created ..",
-        );
-        }
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
-        }
+    while current_epoch < cardano_epoch_on_mithril_start + 2 {
+        current_epoch = get_yaci_state(CardanoQuery::Epoch).await?;
         std::thread::sleep(Duration::from_secs(10));
     }
 
@@ -1106,53 +1149,6 @@ pub fn wait_and_start_mithril_genesis(
             ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
         ]),
     )?;
-
-    current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 5;
-    let target_slot = target_epoch * slots_per_epoch;
-    slots_left = target_slot.saturating_sub(current_slot);
-
-    if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
-        );
-        }
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
-        }
-        std::thread::sleep(Duration::from_secs(10));
-    }
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
 
     Ok(())
 }

@@ -6,7 +6,9 @@ require (
 	cosmossdk.io/api v0.3.1
 	cosmossdk.io/errors v1.0.0
 	cosmossdk.io/math v1.1.2
+	github.com/Salvionied/apollo v1.0.13-0.20250116203813-b1928b7dbead
 	github.com/avast/retry-go/v4 v4.3.4
+	github.com/blinklabs-io/gouroboros v0.107.1
 	github.com/btcsuite/btcd v0.23.4
 	github.com/btcsuite/btcd/btcutil v1.1.3
 	github.com/cometbft/cometbft v0.37.2
@@ -41,8 +43,6 @@ require (
 	google.golang.org/protobuf v1.35.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	github.com/blinklabs-io/gouroboros v0.107.1
-		github.com/Salvionied/apollo v1.0.13-0.20240908221422-e50b26fff03e
 )
 
 require (

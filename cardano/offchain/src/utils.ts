@@ -79,7 +79,7 @@ export const submitTx = async (
   const txHash = await signedTx.submit();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
   console.log("Submitting tx [", txName, "]: waiting for adoption ...");
-  await lucid.awaitTx(txHash);
+  await lucid.awaitTx(txHash, 2000);
   console.log("Submitting tx [", txName, "]: done");
   return txHash;
 };

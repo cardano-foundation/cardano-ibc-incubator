@@ -62,6 +62,19 @@ pub fn stop_osmosis(osmosis_path: &Path) {
     }
 }
 
+pub fn stop_gateway(gateway_dir: &Path) {
+    let gateway_result =
+        execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None);
+    match gateway_result {
+        Ok(_) => {
+            log("❎ Gateway stopped successfully");
+        }
+        Err(e) => {
+            error(&format!("❌ Failed to stop Gateway: {}", e));
+        }
+    }
+}
+
 pub fn stop_relayer(relayer_path: &Path) {
     let relayer_result =
         execute_script(relayer_path, "docker", Vec::from(["compose", "down"]), None);

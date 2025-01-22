@@ -19,7 +19,6 @@ import (
 	"github.com/Salvionied/apollo/txBuilding/Backend/FixedChainContext"
 	"github.com/cometbft/cometbft/abci/types"
 
-	"github.com/blinklabs-io/gouroboros/cbor"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/joho/godotenv"
 
@@ -1400,71 +1399,48 @@ func (cc *CardanoProvider) buildMessages(
 		return nil, 0, sdk.Coins{}, err
 	}
 
-	var babbageTx BabbageTransaction
-	if _, err := cbor.Decode(msgBytes, &babbageTx); err != nil {
+	txAsString := hex.EncodeToString(msgBytes)
+	cc.log.Info("tx as string", zap.String("txAsString", txAsString))
+	aCtx := NewCustomChainContext()
+	tx := apollo.New(&aCtx)
+	tx, err = tx.LoadTxCbor(txAsString)
+	if err != nil {
 		return nil, 0, sdk.Coins{}, err
 	}
 
-	cc2 := NewCustomChainContext()
-	txa := apollo.New(&cc2)                                 // Tx is empty *Apollo
-	txa, err = txa.LoadTxCbor(hex.EncodeToString(msgBytes)) // raw bytes to hex string to being loaded into the *Apollo tx object
-	if err != nil {                                         // heh
-		return nil, 0, sdk.Coins{}, err
-	}
-
+	cc.log.Info("about to generate skey")
 	skey, err := Key.SigningKeyFromHexString(txSignerKey)
 	if err != nil { // heh
 		return nil, 0, sdk.Coins{}, err
 	}
+
+	cc.log.Info("preparing vkey")
 	vkey := new(Key.VerificationKey)
 
-	copy(vkey.Payload, ed25519.PrivateKey(skey.Payload).Public())
+	cc.log.Info("pub key created")
+	pKey := ed25519.PrivateKey(skey.Payload).Public() // this is a byte[]
 
-	txa, err = txa.SignWithSkey(*vkey, *skey) // Leaving this to you to figure out how to load the keys
+	cc.log.Info("casting pubkey")
+	foo := pKey.([]byte)
 
-	// Generate the bytes to be signed.
-	txHash := tx.Hash()
-	bytesToSign, err := hex.DecodeString(txHash)
+	cc.log.Info("copying vkey")
+	copy(vkey.Payload, foo[:])
+
+	cc.log.Info("signing")
+	tx, err = tx.SignWithSkey(*vkey, *skey) // Leaving this to you to figure out how to load the keys
 	if err != nil {
+		fmt.Println("error mf") // heh
 		return nil, 0, sdk.Coins{}, err
 	}
 
-	k, err := txf.Keybase().Key(txSignerKey)
-	if err != nil {
+	cc.log.Info("getting byz")
+	txBytes, err = tx.GetTx().Bytes()
+	if err != nil { // heh
+		cc.log.Error("error byz")
 		return nil, 0, sdk.Coins{}, err
 	}
 
-	pubKey, err := k.GetPubKey()
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	// Sign those bytes
-	sigBytes, _, err := txf.Keybase().Sign(txSignerKey, bytesToSign)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
-	// Construct signed transaction
-	var vKeyWitnesses []VKeyWitness = []VKeyWitness{
-		{
-			VKey:      pubKey.Bytes(),
-			Signature: sigBytes[:],
-		},
-	}
-
-	var interfaces []interface{} = make([]interface{}, len(vKeyWitnesses))
-	for i, v := range vKeyWitnesses {
-		interfaces[i] = v
-	}
-
-	babbageTx.WitnessSet.VkeyWitnesses = interfaces
-
-	txBytes, err = cbor.Encode(babbageTx)
-	if err != nil {
-		return nil, 0, sdk.Coins{}, err
-	}
-
+	cc.log.Info("*** ALL DONE MOFO")
 	return txBytes, 0, sdk.Coins{}, nil
 }
 
