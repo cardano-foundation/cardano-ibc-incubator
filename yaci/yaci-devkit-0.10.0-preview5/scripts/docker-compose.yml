@@ -11,7 +11,7 @@ services:
       - "${HOST_OGMIOS_PORT}:1337"
       - "${HOST_KUPO_PORT}:1442"
     volumes:
-      - cluster-data:/clusters
+      - "${CLUSTERS_FOLDER}:/clusters"
       - ../config/node.properties:/app/config/node.properties
     env_file:
       - ../config/env

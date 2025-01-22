@@ -988,6 +988,7 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
         ),
         &optional_progress_bar,
     );
+    logger::log(&format!("CARDANO_NODE_DIR {}", mithril_config.cardano_node_dir.as_str()));
     execute_script(
         &mithril_script_dir,
         "docker",

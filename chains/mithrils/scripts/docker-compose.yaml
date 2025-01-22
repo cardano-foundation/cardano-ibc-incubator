@@ -25,7 +25,7 @@ services:
       - SNAPSHOT_UPLOADER_TYPE=local
       - SNAPSHOT_COMPRESSION_ALGORITHM=zstandard
       - DATA_STORES_DIRECTORY=/mithril/aggregator/stores
-      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/data/node.sock
       - CARDANO_NODE_VERSION=${CARDANO_NODE_VERSION}
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
       - CHAIN_OBSERVER_TYPE=${CHAIN_OBSERVER_TYPE}
@@ -38,11 +38,7 @@ services:
       - ERA_ADAPTER_TYPE=bootstrap
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
-    command:
-      [
-        "-vvv",
-        "serve"
-      ]
+    command: [ "-vvv", "serve" ]
 
   mithril-aggregator-genesis:
     image: ${MITHRIL_AGGREGATOR_IMAGE}
@@ -52,7 +48,7 @@ services:
       - ${CARDANO_NODE_DIR}:/data:z
       - ${MITHRIL_DATA_DIR}:/mithril:z
     networks:
-    - mithril_network
+      - mithril_network
     ports:
       - "8080:8080"
     environment:
@@ -69,7 +65,7 @@ services:
       - SNAPSHOT_UPLOADER_TYPE=local
       - SNAPSHOT_COMPRESSION_ALGORITHM=zstandard
       - DATA_STORES_DIRECTORY=/mithril/aggregator/stores
-      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/data/node.sock
       - CARDANO_NODE_VERSION=${CARDANO_NODE_VERSION}
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
       - CHAIN_OBSERVER_TYPE=${CHAIN_OBSERVER_TYPE}
@@ -83,12 +79,7 @@ services:
       - ERA_ADAPTER_TYPE=bootstrap
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=15
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER=30
-    command:
-      [
-        "-vvv",
-        "genesis",
-        "bootstrap"
-      ]
+    command: [ "-vvv", "genesis", "bootstrap" ]
   mithril-signer-1:
     image: ${MITHRIL_SIGNER_IMAGE}
     restart: always
@@ -98,7 +89,7 @@ services:
       - ${CARDANO_NODE_DIR}:/data:z
       - ${MITHRIL_DATA_DIR}:/mithril:z
     networks:
-    - mithril_network
+      - mithril_network
     environment:
       - RUST_BACKTRACE=1
       - AGGREGATOR_ENDPOINT=http://mithril-aggregator:8080/aggregator
@@ -107,15 +98,12 @@ services:
       - RUN_INTERVAL=6000
       - DB_DIRECTORY=/data/db
       - DATA_STORES_DIRECTORY=/mithril/signer-1/stores
-      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/data/node.sock
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
-      - KES_SECRET_KEY_PATH=/data/kes.skey
-      - OPERATIONAL_CERTIFICATE_PATH=/data/opcert.cert
+      - KES_SECRET_KEY_PATH=/data/pool-keys/kes.skey
+      - OPERATIONAL_CERTIFICATE_PATH=/data/pool-keys/opcert.cert
       - SIGNED_ENTITY_TYPES=CardanoTransactions
-    command:
-      [
-        "-vvv"
-      ]
+    command: [ "-vvv" ]
 
   mithril-signer-2:
     image: ${MITHRIL_SIGNER_IMAGE}
@@ -126,7 +114,7 @@ services:
       - ${CARDANO_NODE_DIR}:/data:z
       - ${MITHRIL_DATA_DIR}:/mithril:z
     networks:
-    - mithril_network
+      - mithril_network
     environment:
       - RUST_BACKTRACE=1
       - AGGREGATOR_ENDPOINT=http://mithril-aggregator:8080/aggregator
@@ -135,19 +123,15 @@ services:
       - RUN_INTERVAL=6000
       - DB_DIRECTORY=/data/db
       - DATA_STORES_DIRECTORY=/mithril/signer-2/stores
-      - CARDANO_NODE_SOCKET_PATH=/data/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/data/node.sock
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
-      - KES_SECRET_KEY_PATH=/data/kes.skey
-      - OPERATIONAL_CERTIFICATE_PATH=/data/opcert.cert
+      - KES_SECRET_KEY_PATH=/data/pool-keys/kes.skey
+      - OPERATIONAL_CERTIFICATE_PATH=/data/pool-keys/opcert.cert
       - SIGNED_ENTITY_TYPES=CardanoTransactions
-    command:
-      [
-        "-vvv"
-      ]
+    command: [ "-vvv" ]
 
 networks:
   mithril_network:
     driver: bridge
   cardano_network:
     driver: bridge
-    

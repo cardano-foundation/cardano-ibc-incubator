@@ -240,10 +240,10 @@ async fn main() {
             // }
 
             // Start the local Cardano network and its services
-            match deploy_contracts(&project_root_path).await {
-                Ok(_) => logger::log("✅ Deployed contracts"),
-                Err(error) => logger::error(&format!("❌ Failed deploy contracts: {}", error)),
-            }
+            // match deploy_contracts(&project_root_path).await {
+            //     Ok(_) => logger::log("✅ Deployed contracts"),
+            //     Err(error) => logger::error(&format!("❌ Failed deploy contracts: {}", error)),
+            // }
 
 
             let mut cardano_current_epoch = 0;
@@ -262,16 +262,16 @@ async fn main() {
             }
 
             // Start the Cosmos sidechain
-            let cosmos_chain_repo_url = format!("{}/archive/refs/heads/{}.zip", project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch);
-            let chain_root_path = project_root_path.join("chains/summit-demo/");
-            match start_cosmos_sidechain_from_repository(
-                &cosmos_chain_repo_url,
-                chain_root_path.as_path()).await {
-                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
-                }
-            }
+            // let cosmos_chain_repo_url = format!("{}/archive/refs/heads/{}.zip", project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch);
+            // let chain_root_path = project_root_path.join("chains/summit-demo/");
+            // match start_cosmos_sidechain_from_repository(
+            //     &cosmos_chain_repo_url,
+            //     chain_root_path.as_path()).await {
+            //     Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+            //     Err(error) => {
+            //         exit_vessel_demo_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
+            //     }
+            // }
 
             if project_config.mithril.enabled {
                 // Wait for Mithril to start reading the immutable cardano node files
