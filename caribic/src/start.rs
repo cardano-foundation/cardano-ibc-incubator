@@ -228,7 +228,7 @@ pub async fn start_local_cardano_network(
     execute_script(
         project_root_path.join("cardano").join("onchain").as_path(),
         "aiken",
-        Vec::from(["build", "--trace-level", "verbose"]),
+        Vec::from(["build"]),
         None,
     )?;
 
