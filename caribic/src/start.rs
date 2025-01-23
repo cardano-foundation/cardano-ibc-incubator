@@ -5,10 +5,7 @@ use crate::setup::{
     seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, download_file, execute_script, execute_script_with_progress,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state,
-    get_yaci_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
-    IndicatorMessage,
+    copy_dir_all, download_file, execute_script, execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_slots_in_epoch, get_yaci_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -146,8 +143,7 @@ pub async fn start_local_cardano_network(
     // wait until network hard forked into Conway era after 1 epoch
     let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
     let target_epoch: u64 = 1;
-    let target_slot: u64 =
-        target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+    let target_slot: u64 = get_slots_in_epoch().await?;
 
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -188,7 +184,7 @@ pub async fn start_local_cardano_network(
             verbose(&format!(
                 "Current slot: {}, Slots left: {}",
                 get_cardano_state(project_root_path, CardanoQuery::Slot)?,
-                get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
+                get_slots_in_epoch().await?
             ));
         }
         std::thread::sleep(Duration::from_secs(10));
@@ -988,7 +984,10 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
         ),
         &optional_progress_bar,
     );
-    logger::log(&format!("CARDANO_NODE_DIR {}", mithril_config.cardano_node_dir.as_str()));
+    logger::log(&format!(
+        "CARDANO_NODE_DIR {}",
+        mithril_config.cardano_node_dir.as_str()
+    ));
     execute_script(
         &mithril_script_dir,
         "docker",
@@ -1097,14 +1096,53 @@ pub async fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let mut current_epoch = get_yaci_state(CardanoQuery::Epoch).await?;
+    let mut current_slot = get_yaci_state(CardanoQuery::Slot).await?;
+
+    let slots_per_epoch = 600;
+
+    let target_epoch = cardano_epoch_on_mithril_start + 2;
+    let target_slot = target_epoch * slots_per_epoch;
+    let mut slots_left = target_slot.saturating_sub(current_slot);
+
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
     };
 
-    while current_epoch < cardano_epoch_on_mithril_start + 2 {
-        current_epoch = get_yaci_state(CardanoQuery::Epoch).await?;
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
+        } else {
+            log(
+            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created ..",
+        );
+        }
+    }
+
+    while slots_left > 0 {
+        current_slot = get_yaci_state(CardanoQuery::Slot).await?;
+        slots_left = target_slot.saturating_sub(current_slot);
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
         std::thread::sleep(Duration::from_secs(10));
     }
 
@@ -1150,6 +1188,53 @@ pub async fn wait_and_start_mithril_genesis(
             ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
         ]),
     )?;
+
+    current_slot = get_yaci_state( CardanoQuery::Slot).await?;
+
+    let target_epoch = cardano_epoch_on_mithril_start + 3;
+    let target_slot = target_epoch * slots_per_epoch;
+    slots_left = target_slot.saturating_sub(current_slot);
+
+    if slots_left > 0 {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                .progress_chars("#>-")
+        );
+            progress_bar.set_prefix(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
+                .to_owned(),
+        );
+            progress_bar.set_length(target_slot);
+            progress_bar.set_position(current_slot);
+        } else {
+            log(
+            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
+        );
+        }
+    }
+
+    while slots_left > 0 {
+        current_slot = get_yaci_state( CardanoQuery::Slot).await?;
+        slots_left = target_slot.saturating_sub(current_slot);
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.set_position(min(current_slot, target_slot));
+        } else {
+            verbose(&format!(
+                "Current slot: {}, Slots left: {}",
+                current_slot, slots_left
+            ));
+        }
+        std::thread::sleep(Duration::from_secs(10));
+    }
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
 
     Ok(())
 }

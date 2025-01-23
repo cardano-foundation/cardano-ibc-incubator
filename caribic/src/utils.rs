@@ -91,8 +91,10 @@ pub fn get_cardano_tip_state(
 }
 
 pub async fn get_yaci_state(query: CardanoQuery) -> Result<u64, Box<dyn Error>> {
-    let latest_block =
-        reqwest::get("http://localhost:8080/api/v1/blocks/latest").await?.text().await?;
+    let latest_block = reqwest::get("http://localhost:8080/api/v1/blocks/latest")
+        .await?
+        .text()
+        .await?;
     let latest_block_json: Value = serde_json::from_str(&latest_block)?;
     let slot_json = latest_block_json.get(query.as_str());
 
@@ -107,20 +109,36 @@ pub async fn get_yaci_state(query: CardanoQuery) -> Result<u64, Box<dyn Error>> 
     }
 }
 
+
+pub async fn get_slots_in_epoch() -> Result<u64, Box<dyn Error>> {
+    let devnet_params = reqwest::get("http://localhost:10000/local-cluster/api/admin/devnet")
+        .await?
+        .text()
+        .await?;
+    let devnet_params_json: Value = serde_json::from_str(&devnet_params)?;
+    let epoch_length_json = devnet_params_json.get("epochLength".to_string());
+
+    if let Some(slots) = epoch_length_json {
+        if slots.is_i64() {
+            return Ok(slots.as_i64().unwrap() as u64);
+        } else {
+            return Err(format!("Failed to parse {}", "slot".to_string()).into());
+        }
+    } else {
+        return Err(format!("Failed to extract {}", "slot".to_string()).into());
+    }
+}
+
 pub enum CardanoQuery {
     Epoch,
-    Slot,
-    SlotInEpoch,
-    SlotsToEpochEnd,
+    Slot
 }
 
 impl CardanoQuery {
     fn as_str(&self) -> &'static str {
         match self {
             CardanoQuery::Epoch => "epoch",
-            CardanoQuery::Slot => "slot",
-            CardanoQuery::SlotInEpoch => "slotInEpoch",
-            CardanoQuery::SlotsToEpochEnd => "slotsToEpochEnd",
+            CardanoQuery::Slot => "slot"
         }
     }
 }
