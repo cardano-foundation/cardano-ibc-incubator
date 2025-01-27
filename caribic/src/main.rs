@@ -5,6 +5,7 @@ use clap::Parser;
 use clap::Subcommand;
 use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
+use start::start_db_sync;
 use start::start_gateway;
 use start::start_mithril;
 use start::wait_and_start_mithril_genesis;
@@ -55,16 +56,15 @@ enum Commands {
     /// Stops the vessel oracle demo
     StopVesselDemo,
     RelayerStart,
-    StartMithril,
-    StopMithril,
+    NetworkUp,
+    NetworkDown,
+    BridgeUp,
+    BridgeDown,
 }
 
 fn stop_bridge_gracefully() {
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-
-    // Stop local cardano network
-    stop_cardano_network(project_root_path);
 
     // Stop Cosmos
     stop_cosmos(project_root_path.join("cosmos").as_path());
@@ -74,9 +74,6 @@ fn stop_bridge_gracefully() {
 
     // Stop Osmosis
     stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
-
-    // Stop Mithril
-    stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
 fn stop_vessel_demo_gracefully() {
@@ -231,9 +228,18 @@ async fn main() {
             logger::log("\n❎ Bridge stopped successfully");
         }
         Commands::Demo => logger::log("Demo"),
-        Commands::StartMithril => {
+        Commands::NetworkUp => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
+
+            // Start the local Cardano network and its services
+            match start_local_cardano_network(&project_root_path).await {
+                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
+                Err(error) => exit_vessel_demo_with_error(&format!(
+                    "❌ Failed to start local Cardano network: {}",
+                    error
+                )),
+            }
 
             let mut cardano_current_epoch: u64 = 0;
             if project_config.mithril.enabled {
@@ -260,10 +266,45 @@ async fn main() {
                 }
             }
         }
-        Commands::StopMithril => {
+        Commands::NetworkDown => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
             stop_mithril(project_root_path.join("chains/mithrils").as_path());
+        }
+        Commands::BridgeUp => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+
+            // Start gateway
+            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                Ok(_) => logger::log("✅ Gateway started successfully"),
+                Err(error) => {
+                    exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error))
+                }
+            }
+
+            // Start the Cosmos sidechain
+            let cosmos_chain_repo_url = format!(
+                "{}/archive/refs/heads/{}.zip",
+                project_config.vessel_oracle.repo_base_url,
+                project_config.vessel_oracle.target_branch
+            );
+            let chain_root_path = project_root_path.join("chains/summit-demo/");
+            match start_cosmos_sidechain_from_repository(
+                &cosmos_chain_repo_url,
+                chain_root_path.as_path(),
+            )
+            .await
+            {
+                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                Err(error) => exit_vessel_demo_with_error(&format!(
+                    "❌ Failed to start Cosmos sidechain: {}",
+                    error
+                )),
+            }
+        }
+        Commands::BridgeDown => {
+            stop_bridge_gracefully();
         }
         Commands::VesselDemo => {
             let project_config = config::get_config();

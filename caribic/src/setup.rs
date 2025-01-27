@@ -508,7 +508,7 @@ pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Err
 
     let epoch_nonce = Command::new("docker")
         .current_dir(cardano_dir)
-        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(&["exec", "node1-yaci-cli-1", "cardano-cli"])
         .args(&["query", "protocol-state", "--testnet-magic", "42"])
         .output()
         .map_err(|error| format!("Failed to get epoch nonce: {}", error.to_string()))?
@@ -524,7 +524,7 @@ pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Err
 
     let pool_params = Command::new("docker")
         .current_dir(cardano_dir)
-        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+        .args(&["exec", "node1-yaci-cli-1", "cardano-cli"])
         .args(&["query", "ledger-state", "--testnet-magic", "42"])
         .output()
         .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?
