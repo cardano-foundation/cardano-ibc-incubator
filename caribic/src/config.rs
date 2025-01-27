@@ -205,11 +205,7 @@ impl Config {
             bootstrap_addresses: vec![                    
                 BootstrapAddress {
                     address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
-                    amount: 30000000000,
-                },
-                BootstrapAddress {
-                    address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
-                    amount: 30000000000,
+                    amount: 60000000000,
                 },
                 BootstrapAddress {
                     address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
@@ -222,8 +218,7 @@ impl Config {
                 BootstrapAddress {
                     address: "addr_test1wzfvnh20kanpp0qppn5a92kaamjdu9jfamt8hxqqrl43t7c2jw6u4".to_string(),
                     amount: 30000000000,
-                },
-                
+                }, 
             ]},
             vessel_oracle: VesselOracle {
                 repo_base_url: "https://github.com/cardano-foundation/cardano-ibc-summit-demo".to_string(),
