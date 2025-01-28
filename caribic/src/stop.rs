@@ -38,6 +38,23 @@ pub fn stop_cardano_network(project_root_path: &Path) {
     }
 }
 
+pub fn stop_gateway(project_root_path: &Path) {
+    let gateway_result = execute_script(
+        project_root_path.join("cardano/gateway").as_path(),
+        "docker",
+        Vec::from(["compose", "down"]),
+        None,
+    );
+    match gateway_result {
+        Ok(_) => {
+            log("❎ Gateway stopped successfully");
+        }
+        Err(e) => {
+            error(&format!("❌ Failed to stop gateway: {}", e));
+        }
+    }
+}
+
 pub fn stop_cardano_network_v2(project_root_path: &Path) {
     let cardano_result = execute_script(
         project_root_path.join("chains/cardano").as_path(),

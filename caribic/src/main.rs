@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap::Subcommand;
+use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
 use start::start_gateway;
 use start::start_local_cardano_network_v2;
@@ -13,6 +14,7 @@ use start::{
     start_osmosis, start_relayer,
 };
 use stop::stop_cardano_network_v2;
+use stop::stop_gateway;
 use stop::stop_mithril;
 use stop::{stop_cardano_network, stop_cosmos, stop_osmosis, stop_relayer};
 use utils::default_config_path;
@@ -55,6 +57,10 @@ enum Commands {
     StopVesselDemo,
     NetworkUp,
     NetworkDown,
+    BridgeUp,
+    BridgeDown,
+    AppChainUp,
+    AppChainDown,
 }
 
 fn stop_bridge_gracefully() {
@@ -105,6 +111,17 @@ fn network_down() {
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
+fn bridge_down() {
+    let project_config = config::get_config();
+    let project_root_path = Path::new(&project_config.project_root);
+
+    // Stop Relayer
+    stop_relayer(project_root_path.join("relayer").as_path());
+
+    // Stop Mithril
+    stop_gateway(project_root_path.join("cardano/gateway").as_path());
+}
+
 fn exit_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
@@ -116,6 +133,11 @@ fn exit_vessel_demo_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
     stop_vessel_demo_gracefully();
+    std::process::exit(1);
+}
+
+fn exit_with_message(message: &str) {
+    logger::error(message);
     std::process::exit(1);
 }
 
@@ -355,6 +377,82 @@ async fn main() {
         Commands::NetworkDown => {
             network_down();
             logger::log("\n❎ Cardano Network successfully");
+        }
+        Commands::BridgeUp => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+
+            // Deploy Contracts
+            match deploy_contracts(&project_root_path).await {
+                Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
+                Err(error) => {
+                    exit_with_message(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
+                }
+            }
+
+            // Start gateway
+            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                Ok(_) => logger::log("✅ Gateway started successfully"),
+                Err(error) => {
+                    exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error))
+                }
+            }
+
+            match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                Err(error) => {
+                    exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
+                }
+            }
+
+            let chain_root_path = project_root_path.join("chains/summit-demo/");
+
+            // Start the relayer
+            match start_relayer(
+                project_root_path.join("relayer").as_path(),
+                chain_root_path.join("relayer/.env.relayer").as_path(),
+                chain_root_path.join("relayer/config").as_path(),
+                project_root_path
+                    .join("cardano/offchain/deployments/handler.json")
+                    .as_path(),
+            ) {
+                Ok(_) => logger::log("✅ Relayer started successfully"),
+                Err(error) => {
+                    exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error))
+                }
+            }
+        }
+        Commands::BridgeDown => bridge_down(),
+        Commands::AppChainUp => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            // Prepare the local Osmosis appchain
+            let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+            logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
+            match prepare_osmosis(osmosis_dir.as_path()).await {
+                Ok(_) => logger::log("✅ Osmosis appchain prepared"),
+                Err(error) => {
+                    exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
+                }
+            }
+            // Start Osmosis
+            match start_osmosis(osmosis_dir.as_path()).await {
+                Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
+                Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
+            };
+
+            // Configure Hermes and build channels between Osmosis with Cosmos
+            match configure_hermes(osmosis_dir.as_path()) {
+                Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
+                Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
+            }
+        }
+        Commands::AppChainDown => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+
+            // Stop Osmosis
+            stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
         }
     }
 }

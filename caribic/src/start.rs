@@ -294,7 +294,6 @@ pub async fn start_local_cardano_network(
     }
 }
 
-
 pub async fn start_local_cardano_network_v2(
     project_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -437,6 +436,15 @@ pub async fn start_local_cardano_network_v2(
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
 
+    Ok(())
+}
+
+pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
     log_or_show_progress(
         &format!(
             "{} 🛠️ Building Aiken validators",
@@ -512,80 +520,6 @@ pub async fn start_local_cardano_network_v2(
         Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
     }
 }
-
-
-pub async fn deploy_contracts(
-    project_root_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-
-    log_or_show_progress(
-        &format!(
-            "{} 🤖 Generating validator off-chain types",
-            style("Step 5/5").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").as_path(),
-        "deno",
-        Vec::from(["run", "-A", "./aiken-type-conversion/main.ts"]),
-        None,
-    )?;
-
-    // Remove the old handler file
-    if project_root_path
-        .join("cardano/offchain/deployments/handler.json")
-        .exists()
-    {
-        fs::remove_file(project_root_path.join("cardano/offchain/deployments/handler.json"))
-            .expect("Failed to cleanup cardano/offchain/deployments/handler.json");
-    }
-
-    let handler_json_exists = wait_until_file_exists(
-        project_root_path
-            .join("cardano/offchain/deployments/handler.json")
-            .as_path(),
-        20,
-        5000,
-        || {
-            let _ = execute_script(
-                project_root_path.join("cardano").join("offchain").as_path(),
-                "deno",
-                Vec::from(["task", "start"]),
-                None,
-            );
-        },
-    );
-
-    if handler_json_exists.is_ok() {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-
-        verbose("✅ Successfully deployed the contracts");
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
-        copy(
-            project_root_path.join("cardano/offchain/deployments/handler.json"),
-            project_root_path.join("cardano/gateway/src/deployment/handler.json"),
-            &options,
-        )?;
-
-        Ok(())
-    } else {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-        Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
-    }
-}
-
-
 
 pub async fn start_cosmos_sidechain_from_repository(
     download_url: &str,
