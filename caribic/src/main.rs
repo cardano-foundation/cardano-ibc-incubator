@@ -118,6 +118,9 @@ fn bridge_down() {
     // Stop Relayer
     stop_relayer(project_root_path.join("relayer").as_path());
 
+    // Stop Cosmos
+    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+
     // Stop Mithril
     stop_gateway(project_root_path.join("cardano/gateway").as_path());
 }
@@ -398,11 +401,24 @@ async fn main() {
                 }
             }
 
-            match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+            // Start the Cosmos sidechain
+            let cosmos_chain_repo_url = format!(
+                "{}/archive/refs/heads/{}.zip",
+                project_config.vessel_oracle.repo_base_url,
+                project_config.vessel_oracle.target_branch
+            );
+            let chain_root_path = project_root_path.join("chains/summit-demo/");
+            match start_cosmos_sidechain_from_repository(
+                &cosmos_chain_repo_url,
+                chain_root_path.as_path(),
+            )
+            .await
+            {
                 Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => {
-                    exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
-                }
+                Err(error) => exit_vessel_demo_with_error(&format!(
+                    "❌ Failed to start Cosmos sidechain: {}",
+                    error
+                )),
             }
 
             let chain_root_path = project_root_path.join("chains/summit-demo/");
