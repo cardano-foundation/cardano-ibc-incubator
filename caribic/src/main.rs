@@ -111,6 +111,14 @@ fn network_down() {
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
+
+fn network_down_with_error(message: &str) {
+    logger::error(message);
+    logger::log("🚨 Stopping services...");
+    network_down();
+    std::process::exit(1);
+}
+
 fn bridge_down() {
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
@@ -344,7 +352,7 @@ async fn main() {
             // Start the local Cardano network and its services
             match start_local_cardano_network_v2(&project_root_path).await {
                 Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
+                Err(error) => network_down_with_error(&format!(
                     "❌ Failed to start local Cardano network: {}",
                     error
                 )),
@@ -358,7 +366,7 @@ async fn main() {
                         cardano_current_epoch = current_epoch;
                         logger::log("✅ Mithril up and running")
                     }
-                    Err(error) => exit_vessel_demo_with_error(&format!(
+                    Err(error) => network_down_with_error(&format!(
                         "❌ Failed to start Mithril: {}",
                         error
                     )),
@@ -370,7 +378,7 @@ async fn main() {
                 match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
-                        exit_vessel_demo_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                        network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
                 }
             }
             }
