@@ -122,7 +122,7 @@ fn bridge_down() {
     stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
 
     // Stop Mithril
-    stop_gateway(project_root_path.join("cardano/gateway").as_path());
+    stop_gateway(&project_root_path);
 }
 
 fn exit_with_error(message: &str) {
