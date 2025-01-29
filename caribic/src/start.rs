@@ -1303,6 +1303,7 @@ pub fn wait_and_start_mithril_genesis(
             "--profile",
             "mithril-genesis",
             "run",
+            "--rm",
             "mithril-aggregator-genesis",
         ],
         Some(vec![
