@@ -140,6 +140,13 @@ fn exit_with_error(message: &str) {
     std::process::exit(1);
 }
 
+fn bridge_down_with_error(message: &str) {
+    logger::error(message);
+    logger::log("🚨 Stopping services...");
+    bridge_down();
+    std::process::exit(1);
+}
+
 fn exit_vessel_demo_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
@@ -397,7 +404,7 @@ async fn main() {
             match deploy_contracts(&project_root_path).await {
                 Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
                 Err(error) => {
-                    exit_with_message(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
                 }
             }
 
@@ -405,7 +412,7 @@ async fn main() {
             match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
                 Ok(_) => logger::log("✅ Gateway started successfully"),
                 Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
                 }
             }
 
@@ -423,7 +430,7 @@ async fn main() {
             .await
             {
                 Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
+                Err(error) => bridge_down_with_error(&format!(
                     "❌ Failed to start Cosmos sidechain: {}",
                     error
                 )),
@@ -442,7 +449,7 @@ async fn main() {
             ) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
                 }
             }
         }
@@ -456,19 +463,19 @@ async fn main() {
             match prepare_osmosis(osmosis_dir.as_path()).await {
                 Ok(_) => logger::log("✅ Osmosis appchain prepared"),
                 Err(error) => {
-                    exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
+                    exit_with_message(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
                 }
             }
             // Start Osmosis
             match start_osmosis(osmosis_dir.as_path()).await {
                 Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
+                Err(error) => exit_with_message(&format!("❌ Failed to start Osmosis: {}", error)),
             };
 
             // Configure Hermes and build channels between Osmosis with Cosmos
             match configure_hermes(osmosis_dir.as_path()) {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
-                Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
+                Err(error) => exit_with_message(&format!("❌ Failed to configure Hermes: {}", error)),
             }
         }
         Commands::AppChainDown => {
