@@ -100,7 +100,6 @@ pub fn marshal_for_any_client_state(
               #[],
               type_url
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(type_url)
                 |> push(10),
