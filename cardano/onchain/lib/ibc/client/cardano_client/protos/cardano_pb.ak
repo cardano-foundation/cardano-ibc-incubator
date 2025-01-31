@@ -66,7 +66,6 @@ pub fn marshal_for_any_client_state_v2(
               #[],
               type_url
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(type_url)
                 |> push(10),
@@ -78,7 +77,6 @@ pub fn marshal_for_any_client_state_v2(
               #[],
               value
                 |> size_for_client_state()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_client_state(value))
                 |> push(0x12),
@@ -114,7 +112,6 @@ pub fn marshal_for_any_client_state(
               #[],
               value
                 |> size_for_client_state()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_client_state(value))
                 |> push(0x12),
@@ -229,7 +226,6 @@ pub fn marshal_for_validator(
               #[],
               vrf_key_hash
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(vrf_key_hash)
                 |> push(10),
@@ -241,7 +237,6 @@ pub fn marshal_for_validator(
               #[],
               pool_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(pool_id)
                 |> push(0x12),
@@ -263,7 +258,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
               0,
               {
                 let l = length(vrf_key_hash)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -273,7 +268,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
               0,
               {
                 let l = length(pool_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -300,7 +295,6 @@ pub fn marshal_for_token_configs(
               #[],
               handler_token_unit
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(handler_token_unit)
                 |> push(10),
@@ -312,7 +306,6 @@ pub fn marshal_for_token_configs(
               #[],
               client_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(client_policy_id)
                 |> push(0x12),
@@ -324,7 +317,6 @@ pub fn marshal_for_token_configs(
               #[],
               connection_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(connection_policy_id)
                 |> push(0x1a),
@@ -336,7 +328,6 @@ pub fn marshal_for_token_configs(
               #[],
               channel_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(channel_policy_id)
                 |> push(0x22),
@@ -363,7 +354,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(handler_token_unit)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -373,7 +364,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(client_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -383,7 +374,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(connection_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -393,7 +384,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(channel_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -429,7 +420,6 @@ pub fn marshal_for_client_state(
               #[],
               chain_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(chain_id)
                 |> push(10),
@@ -441,7 +431,6 @@ pub fn marshal_for_client_state(
               #[],
               latest_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(latest_height))
                 |> push(0x12),
@@ -453,7 +442,6 @@ pub fn marshal_for_client_state(
               #[],
               frozen_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(frozen_height))
                 |> push(0x1a),
@@ -512,7 +500,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             validator_opt
                               |> size_for_validator()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(marshal_for_validator(validator_opt)),
                           )
@@ -533,7 +520,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             validator_opt
                               |> size_for_validator()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(marshal_for_validator(validator_opt)),
                           )
@@ -564,7 +550,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             up
                               |> length()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(up)
                               |> push(0x62),
@@ -579,7 +564,6 @@ pub fn marshal_for_client_state(
               #[],
               token_configs
                 |> size_for_token_configs()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_token_configs(token_configs))
                 |> push(0x6a),
@@ -617,7 +601,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = length(chain_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -627,7 +611,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(latest_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -637,7 +621,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(frozen_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -682,7 +666,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, validator_opt: Option<CardanoValidator>) -> Int {
                       let l = size_for_validator(validator_opt)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -699,7 +682,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, validator_opt: Option<CardanoValidator>) -> Int {
                       let l = size_for_validator(validator_opt)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -723,7 +705,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, up: ByteArray) -> Int {
                       let l = length(up)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -736,7 +717,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_token_configs(token_configs)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
