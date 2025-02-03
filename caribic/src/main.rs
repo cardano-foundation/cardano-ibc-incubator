@@ -111,6 +111,14 @@ fn network_down() {
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
+
+fn network_down_with_error(message: &str) {
+    logger::error(message);
+    logger::log("🚨 Stopping services...");
+    network_down();
+    std::process::exit(1);
+}
+
 fn bridge_down() {
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
@@ -122,13 +130,24 @@ fn bridge_down() {
     stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
 
     // Stop Mithril
+<<<<<<< HEAD
     stop_gateway(project_root_path);
+=======
+    stop_gateway(&project_root_path);
+>>>>>>> d479b8a8c42ab2897d02d1f8e18cdda6a3cf2887
 }
 
 fn exit_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
     stop_bridge_gracefully();
+    std::process::exit(1);
+}
+
+fn bridge_down_with_error(message: &str) {
+    logger::error(message);
+    logger::log("🚨 Stopping services...");
+    bridge_down();
     std::process::exit(1);
 }
 
@@ -344,7 +363,7 @@ async fn main() {
             // Start the local Cardano network and its services
             match start_local_cardano_network_v2(&project_root_path).await {
                 Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
+                Err(error) => network_down_with_error(&format!(
                     "❌ Failed to start local Cardano network: {}",
                     error
                 )),
@@ -358,7 +377,7 @@ async fn main() {
                         cardano_current_epoch = current_epoch;
                         logger::log("✅ Mithril up and running")
                     }
-                    Err(error) => exit_vessel_demo_with_error(&format!(
+                    Err(error) => network_down_with_error(&format!(
                         "❌ Failed to start Mithril: {}",
                         error
                     )),
@@ -370,7 +389,7 @@ async fn main() {
                 match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
-                        exit_vessel_demo_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                        network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
                 }
             }
             }
@@ -389,7 +408,7 @@ async fn main() {
             match deploy_contracts(&project_root_path).await {
                 Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
                 Err(error) => {
-                    exit_with_message(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
                 }
             }
 
@@ -397,7 +416,7 @@ async fn main() {
             match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
                 Ok(_) => logger::log("✅ Gateway started successfully"),
                 Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
                 }
             }
 
@@ -415,7 +434,7 @@ async fn main() {
             .await
             {
                 Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
+                Err(error) => bridge_down_with_error(&format!(
                     "❌ Failed to start Cosmos sidechain: {}",
                     error
                 )),
@@ -434,7 +453,7 @@ async fn main() {
             ) {
                 Ok(_) => logger::log("✅ Relayer started successfully"),
                 Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error))
+                    bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
                 }
             }
         }
@@ -448,19 +467,19 @@ async fn main() {
             match prepare_osmosis(osmosis_dir.as_path()).await {
                 Ok(_) => logger::log("✅ Osmosis appchain prepared"),
                 Err(error) => {
-                    exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
+                    exit_with_message(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
                 }
             }
             // Start Osmosis
             match start_osmosis(osmosis_dir.as_path()).await {
                 Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
+                Err(error) => exit_with_message(&format!("❌ Failed to start Osmosis: {}", error)),
             };
 
             // Configure Hermes and build channels between Osmosis with Cosmos
             match configure_hermes(osmosis_dir.as_path()) {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
-                Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
+                Err(error) => exit_with_message(&format!("❌ Failed to configure Hermes: {}", error)),
             }
         }
         Commands::AppChainDown => {
