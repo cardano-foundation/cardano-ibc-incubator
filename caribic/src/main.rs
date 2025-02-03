@@ -111,7 +111,6 @@ fn network_down() {
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
-
 fn network_down_with_error(message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
@@ -130,11 +129,7 @@ fn bridge_down() {
     stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
 
     // Stop Mithril
-<<<<<<< HEAD
-    stop_gateway(project_root_path);
-=======
     stop_gateway(&project_root_path);
->>>>>>> d479b8a8c42ab2897d02d1f8e18cdda6a3cf2887
 }
 
 fn exit_with_error(message: &str) {
@@ -377,10 +372,9 @@ async fn main() {
                         cardano_current_epoch = current_epoch;
                         logger::log("✅ Mithril up and running")
                     }
-                    Err(error) => network_down_with_error(&format!(
-                        "❌ Failed to start Mithril: {}",
-                        error
-                    )),
+                    Err(error) => {
+                        network_down_with_error(&format!("❌ Failed to start Mithril: {}", error))
+                    }
                 }
             }
 
@@ -407,9 +401,10 @@ async fn main() {
             // Deploy Contracts
             match deploy_contracts(&project_root_path).await {
                 Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
-                Err(error) => {
-                    bridge_down_with_error(&format!("❌ Failed to deploy Cardano Scripts: {}", error))
-                }
+                Err(error) => bridge_down_with_error(&format!(
+                    "❌ Failed to deploy Cardano Scripts: {}",
+                    error
+                )),
             }
 
             // Start gateway
@@ -479,7 +474,9 @@ async fn main() {
             // Configure Hermes and build channels between Osmosis with Cosmos
             match configure_hermes(osmosis_dir.as_path()) {
                 Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
-                Err(error) => exit_with_message(&format!("❌ Failed to configure Hermes: {}", error)),
+                Err(error) => {
+                    exit_with_message(&format!("❌ Failed to configure Hermes: {}", error))
+                }
             }
         }
         Commands::AppChainDown => {
