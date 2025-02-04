@@ -74,7 +74,6 @@ pub fn marshal_for_counterparty(
               #[],
               port_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(port_id)
                 |> push(10),
@@ -86,7 +85,6 @@ pub fn marshal_for_counterparty(
               #[],
               channel_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(channel_id)
                 |> push(0x12),
@@ -110,7 +108,7 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
               0,
               {
                 let l = length(port_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -120,7 +118,7 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
               0,
               {
                 let l = length(channel_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -149,7 +147,6 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
               #[],
               state
                 |> state_to_int32()
-                |> uint64()
                 |> encode_varint()
                 |> push(8),
             ),
@@ -160,7 +157,6 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
               #[],
               ordering
                 |> order_to_int32()
-                |> uint64()
                 |> encode_varint()
                 |> push(0x10),
             ),
@@ -169,7 +165,6 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
             counterparty
               |> Some()
               |> size_for_counterparty()
-              |> uint64()
               |> encode_varint()
               |> concat(marshal_for_counterparty(Some(counterparty)))
               |> push(0x1a),
@@ -186,7 +181,6 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
                         |> concat(
                             connection_hop
                               |> length()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(connection_hop)
                               |> push(0x22),
@@ -201,7 +195,6 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
               #[],
               version
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(version)
                 |> push(0x2a),
@@ -242,7 +235,6 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
               0,
               state
                 |> state_to_int32()
-                |> uint64()
                 |> sov()
                 |> add(1),
             ),
@@ -253,7 +245,6 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
               0,
               ordering
                 |> order_to_int32()
-                |> uint64()
                 |> sov()
                 |> add(1),
             ),
@@ -261,7 +252,7 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
         |> add(
             {
               let l = size_for_counterparty(Some(counterparty))
-              l |> uint64() |> sov() |> add(l + 1)
+              l |> sov() |> add(l + 1)
             },
           )
         |> add(
@@ -274,7 +265,6 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
                     fn(sz: Int, connection_hop: ByteArray) -> Int {
                       let l = length(connection_hop)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -287,7 +277,7 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
               0,
               {
                 let l = length(version)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )

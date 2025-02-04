@@ -60,7 +60,6 @@ pub fn marshal_for_any_client_state(
               #[],
               type_url
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(type_url)
                 |> push(10),
@@ -72,7 +71,6 @@ pub fn marshal_for_any_client_state(
               #[],
               value
                 |> size_for_client_state()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_client_state(value))
                 |> push(0x12),
@@ -106,7 +104,6 @@ pub fn marshal_for_client_state(
               #[],
               chain_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(chain_id)
                 |> push(10),
@@ -118,7 +115,6 @@ pub fn marshal_for_client_state(
               #[],
               latest_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(latest_height))
                 |> push(0x12),
@@ -130,7 +126,6 @@ pub fn marshal_for_client_state(
               #[],
               frozen_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(frozen_height))
                 |> push(0x1a),
@@ -151,7 +146,6 @@ pub fn marshal_for_client_state(
                 #[],
                 tp_dur
                   |> size_for_duration()
-                  |> uint64()
                   |> encode_varint()
                   |> concat(marshal_for_duration(tp_dur))
                   |> push(0x2a),
@@ -164,7 +158,6 @@ pub fn marshal_for_client_state(
               #[],
               protocol_parameters
                 |> size_for_protocol_parameters()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_protocol_parameters(protocol_parameters))
                 |> push(0x32),
@@ -182,7 +175,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             up
                               |> length()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(up)
                               |> push(0x3a),
@@ -219,7 +211,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = length(chain_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -229,7 +221,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(latest_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -239,7 +231,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(frozen_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -259,7 +251,7 @@ pub fn size_for_client_state(
                 0,
                 {
                   let l = size_for_duration(tp_dur)
-                  l |> uint64() |> sov() |> add(l + 1)
+                  l |> sov() |> add(l + 1)
                 },
               )
             },
@@ -270,7 +262,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_protocol_parameters(protocol_parameters)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -284,7 +276,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, up: ByteArray) -> Int {
                       let l = length(up)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -368,7 +359,6 @@ pub fn marshal_for_protocol_parameters(
               #[],
               phi_f
                 |> size_for_fraction()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_fraction(phi_f))
                 |> push(0x1a),
@@ -396,7 +386,7 @@ pub fn size_for_protocol_parameters(
               0,
               {
                 let l = size_for_fraction(phi_f)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
