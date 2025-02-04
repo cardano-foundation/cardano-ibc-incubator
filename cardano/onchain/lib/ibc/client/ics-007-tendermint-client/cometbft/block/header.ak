@@ -26,7 +26,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
   block_protocol,
 }
-use ibc/utils/bytes.{encode_varint}
+use ibc/utils/bytes.{encode_varint, is_empty_or_size}
 use ibc/utils/int.{uint64}
 
 pub type TmHeader {
@@ -58,16 +58,16 @@ pub fn validate_basic(header: TmHeader) -> Bool {
     bytearray.length(header.chain_id) <= max_chain_id_len,
     header.height > 0,
     block_id_mod.validate_basic(header.last_block_id),
-    validate_hash(header.last_commit_hash),
-    validate_hash(header.data_hash),
-    validate_hash(header.evidence_hash),
-    validate_hash(header.next_validators_hash),
+    is_empty_or_size(header.last_commit_hash, tm_hash_size),
+    is_empty_or_size(header.data_hash, tm_hash_size),
+    is_empty_or_size(header.evidence_hash, tm_hash_size),
+    is_empty_or_size(header.next_validators_hash, tm_hash_size),
     // AddressSize = 20
-    bytearray.length(header.proposer_address) == 20,
-    validate_hash(header.validators_hash),
-    validate_hash(header.next_validators_hash),
-    validate_hash(header.consensus_hash),
-    validate_hash(header.last_results_hash),
+    is_empty_or_size(header.proposer_address, 20),
+    is_empty_or_size(header.validators_hash, tm_hash_size),
+    is_empty_or_size(header.next_validators_hash, tm_hash_size),
+    is_empty_or_size(header.consensus_hash, tm_hash_size),
+    is_empty_or_size(header.last_results_hash, tm_hash_size),
     header.time > 0,
   }
 }
@@ -224,11 +224,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
       )
     },
   )
-}
-
-fn validate_hash(h: ByteArray) -> Bool {
-  let len = h |> bytearray.length()
-  len == 0 || len == tm_hash_size
 }
 
 test test_tmheader_hash() {

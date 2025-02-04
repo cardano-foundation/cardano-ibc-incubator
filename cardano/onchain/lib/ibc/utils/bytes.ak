@@ -55,3 +55,8 @@ pub fn encode_varint(v: Int64) -> ByteArray {
 pub fn sov(x: Int64) -> Int {
   x |> len64() |> add(6) |> div(7)
 }
+
+pub fn is_empty_or_size(h: ByteArray, size: Int) -> Bool {
+  let len = bytearray.length(h)
+  len == 0 || len == size
+}
