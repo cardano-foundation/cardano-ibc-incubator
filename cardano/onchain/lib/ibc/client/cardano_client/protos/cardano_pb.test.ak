@@ -3,12 +3,10 @@ use ibc/client/cardano_client/protos/cardano_pb.{
 }
 
 test test_marshal_for_any_client_state_empty() {
-  //     │ PASS [mem:  15868, cpu:  2912550] test_marshal_for_any_client_state_empty
   marshal_for_any_client_state(None) == #""
 }
 
 test test_marshal_for_any_client_state_some_data_success() {
-  // PASS [mem: 189252, cpu: 54678350] test_marshal_for_any_client_state_some_data_success
   let accs_opt =
     Some(
       AnyCardanoClientState(
