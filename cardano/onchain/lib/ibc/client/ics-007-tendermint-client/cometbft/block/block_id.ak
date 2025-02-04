@@ -16,13 +16,11 @@ pub fn null_block_id() -> BlockID {
 }
 
 pub fn validate_basic(block_id: BlockID) -> Bool {
-  expect validate_hash(block_id.hash)
-
-  expect validate_hash(block_id.part_set_header.hash)
-
-  expect block_id.part_set_header.total >= 0
-
-  True
+  and {
+    validate_hash(block_id.hash),
+    validate_hash(block_id.part_set_header.hash),
+    block_id.part_set_header.total >= 0,
+  }
 }
 
 fn validate_hash(h: ByteArray) -> Bool {
