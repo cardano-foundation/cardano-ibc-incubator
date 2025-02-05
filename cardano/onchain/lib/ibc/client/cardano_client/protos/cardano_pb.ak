@@ -52,40 +52,6 @@ pub type AnyCardanoClientState {
   value: Option<CardanoClientState>,
 }
 
-pub fn marshal_for_any_client_state_v2(
-  accs_opt: Option<AnyCardanoClientState>,
-) -> ByteArray {
-  marshal(
-    accs_opt,
-    fn(accs) {
-      let AnyCardanoClientState { type_url, value } = accs
-      #[]
-        |> concat(
-            ite(
-              length(type_url) == 0,
-              #[],
-              type_url
-                |> length()
-                |> encode_varint()
-                |> concat(type_url)
-                |> push(10),
-            ),
-          )
-        |> concat(
-            ite(
-              is_none(value),
-              #[],
-              value
-                |> size_for_client_state()
-                |> encode_varint()
-                |> concat(marshal_for_client_state(value))
-                |> push(0x12),
-            ),
-          )
-    },
-  )
-}
-
 pub fn marshal_for_any_client_state(
   accs_opt: Option<AnyCardanoClientState>,
 ) -> ByteArray {
