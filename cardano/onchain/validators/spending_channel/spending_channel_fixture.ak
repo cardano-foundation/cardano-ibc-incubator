@@ -41,6 +41,8 @@ pub type MockData {
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
+  chan_close_init_policy_id: PolicyId,
+  channel_id: ByteArray,
   channel_sequence: ByteArray,
   channel_token: AuthToken,
   handler_token: AuthToken,
@@ -60,6 +62,7 @@ pub fn setup() -> MockData {
     }
 
   //========================Channel============================
+  let channel_id = "channel-0"
   let channel_sequence = "0"
   let channel_minting_policy_id = "mock channel_minting_policy_id"
 
@@ -281,7 +284,9 @@ pub fn setup() -> MockData {
     send_packet_policy_id: "mock send_packet_policy_id",
     timeout_packet_policy_id: "mock timeout_packet_policy_id",
     acknowledge_packet_policy_id: "mock acknowledge_packet_policy_id",
+    chan_close_init_policy_id: "fake chan close init policy id",
     verify_proof_policy_id: "mock verify_proof_policy_id",
+    channel_id,
     channel_sequence,
     channel_token,
     handler_token,
