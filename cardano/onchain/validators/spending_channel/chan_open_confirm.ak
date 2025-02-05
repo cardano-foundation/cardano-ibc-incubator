@@ -58,8 +58,6 @@ validator chan_open_confirm(
     expect Some((datum, channel_redeemer, spent_output)) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
-    expect auth.contain_auth_token(spent_output, datum.token)
-
     expect [updated_output] =
       list.filter(
         outputs,
@@ -67,8 +65,6 @@ validator chan_open_confirm(
       )
     expect updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)
-
-    expect auth.contain_auth_token(updated_output, datum.token)
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
@@ -95,7 +91,7 @@ validator chan_open_confirm(
     trace @"chan_open_confirm: Connection is open"
 
     expect [connection_version] = connection_datum.state.versions
-    expect
+    let correct_ordering =
       chan_order_mod.string(datum.state.channel.ordering)
         |> version_mod.verify_supported_feature(connection_version, _)
     trace @"chan_open_confirm: connection support channel ordering"
@@ -117,10 +113,7 @@ validator chan_open_confirm(
       ) == client_status_mod.Active
     trace @"chan_open_confirm: client status is active"
 
-    expect channel_datum_mod.validate_chan_open_confirm(datum, updated_datum)
-    trace @"chan_open_confirm: output datum is updated valid"
-
-    expect
+    let valid_chan_open =
       validate_chan_open_confirm_proof(
         connection_datum.state,
         client_datum.state,
@@ -145,7 +138,13 @@ validator chan_open_confirm(
     expect ibc_module_callback == OnChanOpenConfirm { channel_id }
     trace @"chan_open_confirm: ibc module callback is valid"
 
-    True
+    and {
+      auth.contain_auth_token(spent_output, datum.token),
+      auth.contain_auth_token(updated_output, datum.token),
+      correct_ordering,
+      channel_datum_mod.validate_chan_open_confirm(datum, updated_datum),
+      valid_chan_open,
+    }
   }
 
   else(_) {
@@ -205,17 +204,14 @@ fn validate_chan_open_confirm_proof(
       Some(channel.convert_to_channel_proto(expected_channel)),
     )
 
-  expect
-    verify_proof_redeemer == VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof,
-      path: merkle_path,
-      value: channel_bz,
-    }
-
-  True
+  verify_proof_redeemer == VerifyMembership {
+    cs: client_datum_state.client_state,
+    cons_state: consensus_state,
+    height: proof_height,
+    delay_time_period: time_delay,
+    delay_block_period: block_delay,
+    proof,
+    path: merkle_path,
+    value: channel_bz,
+  }
 }
