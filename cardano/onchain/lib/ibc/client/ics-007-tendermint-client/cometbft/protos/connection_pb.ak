@@ -52,7 +52,6 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
               {
                 let l = length(identifier)
                 l
-                  |> uint64()
                   |> encode_varint()
                   |> concat(identifier)
                   |> push(10)
@@ -71,7 +70,6 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
                         |> concat(
                             feature
                               |> length()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(feature)
                               |> push(0x12),
@@ -98,7 +96,7 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
               0,
               {
                 let l = length(identifier)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -112,7 +110,6 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
                     fn(sz: Int, feature: ByteArray) -> Int {
                       let l = length(feature)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -139,7 +136,6 @@ pub fn marshal_for_counterparty(
               #[],
               client_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(client_id)
                 |> push(10),
@@ -151,7 +147,6 @@ pub fn marshal_for_counterparty(
               #[],
               connection_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(connection_id)
                 |> push(0x12),
@@ -161,7 +156,6 @@ pub fn marshal_for_counterparty(
             prefix
               |> Some()
               |> size_for_merkle_prefix()
-              |> uint64()
               |> encode_varint()
               |> concat(marshal_for_merkle_prefix(Some(prefix)))
               |> push(0x1a),
@@ -184,7 +178,7 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
               0,
               {
                 let l = length(client_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -194,14 +188,14 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
               0,
               {
                 let l = length(connection_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
         |> add(
             {
               let l = size_for_merkle_prefix(Some(prefix))
-              l |> uint64() |> sov() |> add(l + 1)
+              l |> sov() |> add(l + 1)
             },
           )
     },
@@ -230,7 +224,6 @@ pub fn marshal_for_connection_end(
               #[],
               client_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(client_id)
                 |> push(10),
@@ -248,7 +241,6 @@ pub fn marshal_for_connection_end(
                         |> concat(
                             version_opt
                               |> size_for_version()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(marshal_for_version(version_opt))
                               |> push(0x12),
@@ -263,7 +255,6 @@ pub fn marshal_for_connection_end(
               #[],
               state
                 |> state_to_int32()
-                |> uint64()
                 |> encode_varint()
                 |> push(0x18),
             ),
@@ -272,7 +263,6 @@ pub fn marshal_for_connection_end(
             counterparty
               |> Some()
               |> size_for_counterparty()
-              |> uint64()
               |> encode_varint()
               |> concat(marshal_for_counterparty(Some(counterparty)))
               |> push(0x22),
@@ -311,7 +301,7 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
               0,
               {
                 let l = length(client_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -328,7 +318,6 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
                             {
                               let l = size_for_version(version)
                               l
-                                |> uint64()
                                 |> sov()
                                 |> add(l + 1)
                             },
@@ -343,15 +332,14 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
               0,
               state
                 |> state_to_int32()
-                |> uint64()
                 |> sov()
                 |> add(1),
             ),
           )
         |> add(
             {
-              let l = counterparty |> Some() |> size_for_counterparty()
-              l |> uint64() |> sov() |> add(l + 1)
+              let l = size_for_counterparty(Some(counterparty))
+              l |> sov() |> add(l + 1)
             },
           )
         |> add(

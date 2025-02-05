@@ -26,7 +26,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/cometbft/version/consensus.{
   block_protocol,
 }
-use ibc/utils/bytes.{encode_varint}
+use ibc/utils/bytes.{encode_varint, is_empty_or_size}
 use ibc/utils/int.{uint64}
 
 pub type TmHeader {
@@ -53,36 +53,23 @@ pub type TmHeader {
 }
 
 pub fn validate_basic(header: TmHeader) -> Bool {
-  expect header.version.block == block_protocol
-
-  expect bytearray.length(header.chain_id) <= max_chain_id_len
-
-  expect header.height > 0
-
-  expect block_id_mod.validate_basic(header.last_block_id)
-
-  expect validate_hash(header.last_commit_hash)
-
-  expect validate_hash(header.data_hash)
-
-  expect validate_hash(header.evidence_hash)
-
-  expect validate_hash(header.next_validators_hash)
-
-  // AddressSize = 20
-  expect bytearray.length(header.proposer_address) == 20
-
-  expect validate_hash(header.validators_hash)
-
-  expect validate_hash(header.next_validators_hash)
-
-  expect validate_hash(header.consensus_hash)
-
-  expect validate_hash(header.last_results_hash)
-
-  expect header.time > 0
-
-  True
+  and {
+    header.version.block == block_protocol,
+    bytearray.length(header.chain_id) <= max_chain_id_len,
+    header.height > 0,
+    block_id_mod.validate_basic(header.last_block_id),
+    is_empty_or_size(header.last_commit_hash, tm_hash_size),
+    is_empty_or_size(header.data_hash, tm_hash_size),
+    is_empty_or_size(header.evidence_hash, tm_hash_size),
+    is_empty_or_size(header.next_validators_hash, tm_hash_size),
+    // AddressSize = 20
+    is_empty_or_size(header.proposer_address, 20),
+    is_empty_or_size(header.validators_hash, tm_hash_size),
+    is_empty_or_size(header.next_validators_hash, tm_hash_size),
+    is_empty_or_size(header.consensus_hash, tm_hash_size),
+    is_empty_or_size(header.last_results_hash, tm_hash_size),
+    header.time > 0,
+  }
 }
 
 pub fn null_tm_header() -> TmHeader {
@@ -141,7 +128,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             chain_id
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(chain_id)
               |> push(10),
@@ -158,7 +144,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             last_commit_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(last_commit_hash)
               |> push(10),
@@ -168,7 +153,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             data_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(data_hash)
               |> push(10),
@@ -178,7 +162,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             validators_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(validators_hash)
               |> push(10),
@@ -188,7 +171,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             next_validators_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(next_validators_hash)
               |> push(10),
@@ -198,7 +180,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             consensus_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(consensus_hash)
               |> push(10),
@@ -208,7 +189,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             app_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(app_hash)
               |> push(10),
@@ -218,7 +198,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             last_results_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(last_results_hash)
               |> push(10),
@@ -228,7 +207,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             evidence_hash
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(evidence_hash)
               |> push(10),
@@ -238,7 +216,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
             #[],
             proposer_address
               |> length()
-              |> uint64()
               |> encode_varint()
               |> concat(proposer_address)
               |> push(10),
@@ -247,11 +224,6 @@ pub fn hash(h: TmHeader) -> ByteArray {
       )
     },
   )
-}
-
-fn validate_hash(h: ByteArray) -> Bool {
-  let len = h |> bytearray.length()
-  len == 0 || len == tm_hash_size
 }
 
 test test_tmheader_hash() {

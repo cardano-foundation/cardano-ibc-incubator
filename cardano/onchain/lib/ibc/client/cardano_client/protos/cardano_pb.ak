@@ -5,6 +5,7 @@ use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
+use ibc/client/serde.{marshal, size}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Uint64, uint64}
 
@@ -54,11 +55,9 @@ pub type AnyCardanoClientState {
 pub fn marshal_for_any_client_state(
   accs_opt: Option<AnyCardanoClientState>,
 ) -> ByteArray {
-  ite(
-    is_none(accs_opt),
-    #[],
-    {
-      expect Some(accs) = accs_opt
+  marshal(
+    accs_opt,
+    fn(accs) {
       let AnyCardanoClientState { type_url, value } = accs
       #[]
         |> concat(
@@ -67,7 +66,6 @@ pub fn marshal_for_any_client_state(
               #[],
               type_url
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(type_url)
                 |> push(10),
@@ -79,7 +77,6 @@ pub fn marshal_for_any_client_state(
               #[],
               value
                 |> size_for_client_state()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_client_state(value))
                 |> push(0x12),
@@ -90,11 +87,9 @@ pub fn marshal_for_any_client_state(
 }
 
 pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
-  ite(
-    is_none(height_opt),
-    #[],
-    {
-      expect Some(height) = height_opt
+  marshal(
+    height_opt,
+    fn(height) {
       let CardanoHeight { revision_number, revision_height } = height
       #[]
         |> concat(
@@ -119,11 +114,9 @@ pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
 }
 
 pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
-  ite(
-    is_none(height_opt),
-    0,
-    {
-      expect Some(height) = height_opt
+  size(
+    height_opt,
+    fn(height) {
       let CardanoHeight { revision_number, revision_height } = height
       0
         |> add(
@@ -147,11 +140,9 @@ pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
 pub fn marshal_for_consensus_state(
   consensus_state_opt: Option<CardanoConsensusState>,
 ) -> ByteArray {
-  ite(
-    is_none(consensus_state_opt),
-    #[],
-    {
-      expect Some(consensus_state) = consensus_state_opt
+  marshal(
+    consensus_state_opt,
+    fn(consensus_state) {
       let CardanoConsensusState { timestamp, slot } = consensus_state
       #[]
         |> concat(
@@ -175,11 +166,9 @@ pub fn marshal_for_consensus_state(
 pub fn size_for_consensus_state(
   consensus_state_opt: Option<CardanoConsensusState>,
 ) -> Int {
-  ite(
-    is_none(consensus_state_opt),
-    0,
-    {
-      expect Some(consensus_state) = consensus_state_opt
+  size(
+    consensus_state_opt,
+    fn(consensus_state) {
       let CardanoConsensusState { timestamp, slot } = consensus_state
       0
         |> add(ite(timestamp == 0, 0, timestamp |> uint64() |> sov() |> add(1)))
@@ -191,11 +180,9 @@ pub fn size_for_consensus_state(
 pub fn marshal_for_validator(
   validator_opt: Option<CardanoValidator>,
 ) -> ByteArray {
-  ite(
-    is_none(validator_opt),
-    #[],
-    {
-      expect Some(validator_) = validator_opt
+  marshal(
+    validator_opt,
+    fn(validator_) {
       let CardanoValidator { vrf_key_hash, pool_id } = validator_
       #[]
         |> concat(
@@ -204,7 +191,6 @@ pub fn marshal_for_validator(
               #[],
               vrf_key_hash
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(vrf_key_hash)
                 |> push(10),
@@ -216,7 +202,6 @@ pub fn marshal_for_validator(
               #[],
               pool_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(pool_id)
                 |> push(0x12),
@@ -227,11 +212,9 @@ pub fn marshal_for_validator(
 }
 
 pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
-  ite(
-    is_none(validator_opt),
-    0,
-    {
-      expect Some(validator_) = validator_opt
+  size(
+    validator_opt,
+    fn(validator_) {
       let CardanoValidator { vrf_key_hash, pool_id } = validator_
       0
         |> add(
@@ -240,7 +223,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
               0,
               {
                 let l = length(vrf_key_hash)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -250,7 +233,7 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
               0,
               {
                 let l = length(pool_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -261,11 +244,9 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
 pub fn marshal_for_token_configs(
   token_configs_opt: Option<TokenConfigs>,
 ) -> ByteArray {
-  ite(
-    is_none(token_configs_opt),
-    #[],
-    {
-      expect Some(token_configs) = token_configs_opt
+  marshal(
+    token_configs_opt,
+    fn(token_configs) {
       let TokenConfigs {
         handler_token_unit,
         client_policy_id,
@@ -279,7 +260,6 @@ pub fn marshal_for_token_configs(
               #[],
               handler_token_unit
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(handler_token_unit)
                 |> push(10),
@@ -291,7 +271,6 @@ pub fn marshal_for_token_configs(
               #[],
               client_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(client_policy_id)
                 |> push(0x12),
@@ -303,7 +282,6 @@ pub fn marshal_for_token_configs(
               #[],
               connection_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(connection_policy_id)
                 |> push(0x1a),
@@ -315,7 +293,6 @@ pub fn marshal_for_token_configs(
               #[],
               channel_policy_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(channel_policy_id)
                 |> push(0x22),
@@ -326,11 +303,9 @@ pub fn marshal_for_token_configs(
 }
 
 pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
-  ite(
-    is_none(token_configs_opt),
-    0,
-    {
-      expect Some(token_configs) = token_configs_opt
+  size(
+    token_configs_opt,
+    fn(token_configs) {
       let TokenConfigs {
         handler_token_unit,
         client_policy_id,
@@ -344,7 +319,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(handler_token_unit)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -354,7 +329,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(client_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -364,7 +339,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(connection_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -374,7 +349,7 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
               0,
               {
                 let l = length(channel_policy_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -385,11 +360,9 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
 pub fn marshal_for_client_state(
   client_state_opt: Option<CardanoClientState>,
 ) -> ByteArray {
-  ite(
-    is_none(client_state_opt),
-    #[],
-    {
-      expect Some(client_state) = client_state_opt
+  marshal(
+    client_state_opt,
+    fn(client_state) {
       let CardanoClientState {
         chain_id,
         latest_height,
@@ -412,7 +385,6 @@ pub fn marshal_for_client_state(
               #[],
               chain_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(chain_id)
                 |> push(10),
@@ -424,7 +396,6 @@ pub fn marshal_for_client_state(
               #[],
               latest_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(latest_height))
                 |> push(0x12),
@@ -436,7 +407,6 @@ pub fn marshal_for_client_state(
               #[],
               frozen_height
                 |> size_for_height()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_height(frozen_height))
                 |> push(0x1a),
@@ -495,7 +465,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             validator_opt
                               |> size_for_validator()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(marshal_for_validator(validator_opt)),
                           )
@@ -516,7 +485,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             validator_opt
                               |> size_for_validator()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(marshal_for_validator(validator_opt)),
                           )
@@ -547,7 +515,6 @@ pub fn marshal_for_client_state(
                         |> concat(
                             up
                               |> length()
-                              |> uint64()
                               |> encode_varint()
                               |> concat(up)
                               |> push(0x62),
@@ -562,7 +529,6 @@ pub fn marshal_for_client_state(
               #[],
               token_configs
                 |> size_for_token_configs()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_token_configs(token_configs))
                 |> push(0x6a),
@@ -575,11 +541,9 @@ pub fn marshal_for_client_state(
 pub fn size_for_client_state(
   client_state_opt: Option<CardanoClientState>,
 ) -> Int {
-  ite(
-    is_none(client_state_opt),
-    0,
-    {
-      expect Some(client_state) = client_state_opt
+  size(
+    client_state_opt,
+    fn(client_state) {
       let CardanoClientState {
         chain_id,
         latest_height,
@@ -602,7 +566,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = length(chain_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -612,7 +576,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(latest_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -622,7 +586,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_height(frozen_height)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -667,7 +631,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, validator_opt: Option<CardanoValidator>) -> Int {
                       let l = size_for_validator(validator_opt)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -684,7 +647,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, validator_opt: Option<CardanoValidator>) -> Int {
                       let l = size_for_validator(validator_opt)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -708,7 +670,6 @@ pub fn size_for_client_state(
                     fn(sz: Int, up: ByteArray) -> Int {
                       let l = length(up)
                       l
-                        |> uint64()
                         |> sov()
                         |> add(l + 1 + sz)
                     },
@@ -721,7 +682,7 @@ pub fn size_for_client_state(
               0,
               {
                 let l = size_for_token_configs(token_configs)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )

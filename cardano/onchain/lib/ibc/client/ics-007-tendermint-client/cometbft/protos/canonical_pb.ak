@@ -56,7 +56,6 @@ pub fn marshal_for_part_set_header(
               #[],
               hash
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(hash)
                 |> push(0x12),
@@ -69,7 +68,6 @@ pub fn marshal_for_part_set_header(
 pub fn marshal_delimited_for_vote(vote_opt: Option<CanonicalVote>) {
   vote_opt
     |> size_for_vote()
-    |> uint64()
     |> encode_varint()
     |> concat(marshal_for_vote(vote_opt))
 }
@@ -91,7 +89,7 @@ pub fn size_for_part_set_header(
               0,
               {
                 let l = length(hash)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
@@ -113,7 +111,6 @@ pub fn marshal_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> ByteArray
               #[],
               hash
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(hash)
                 |> push(10),
@@ -123,7 +120,6 @@ pub fn marshal_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> ByteArray
             part_set_header
               |> Some
               |> size_for_part_set_header()
-              |> uint64()
               |> encode_varint()
               |> concat(marshal_for_part_set_header(Some(part_set_header)))
               |> push(0x12),
@@ -146,14 +142,14 @@ pub fn size_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> Int {
               0,
               {
                 let l = length(hash)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
         |> add(
             {
               let l = size_for_part_set_header(Some(part_set_header))
-              l |> uint64() |> sov() |> add(l + 1)
+              l |> sov() |> add(l + 1)
             },
           )
     },
@@ -197,7 +193,6 @@ pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
               #[],
               block_id
                 |> size_for_block_id()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_block_id(block_id))
                 |> push(0x22),
@@ -208,7 +203,6 @@ pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
               let ts_opt = timestamp_proto(timestamp)
               ts_opt
                 |> size_for_timestamp()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_timestamp(ts_opt))
                 |> push(0x2a)
@@ -220,7 +214,6 @@ pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
               #[],
               chain_id
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(chain_id)
                 |> push(0x32),
@@ -248,14 +241,14 @@ pub fn size_for_vote(vote_opt: Option<CanonicalVote>) -> Int {
               0,
               {
                 let l = size_for_block_id(block_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
         |> add(
             {
               let l = size_of_std_time(timestamp)
-              l |> uint64() |> sov() |> add(l + 1)
+              l |> sov() |> add(l + 1)
             },
           )
         |> add(
@@ -264,7 +257,7 @@ pub fn size_for_vote(vote_opt: Option<CanonicalVote>) -> Int {
               0,
               {
                 let l = length(chain_id)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )

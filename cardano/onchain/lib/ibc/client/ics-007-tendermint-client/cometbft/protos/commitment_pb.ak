@@ -1,12 +1,8 @@
-// DO NOT EDIT.
-// source: ibc/core/commitment/v1/commitment.proto
-
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/bytes.{encode_varint, sov}
-use ibc/utils/int.{uint64}
 
 pub fn marshal_for_merkle_prefix(
   merkle_prefix_opt: Option<MerklePrefix>,
@@ -24,7 +20,6 @@ pub fn marshal_for_merkle_prefix(
               #[],
               key_prefix
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(key_prefix)
                 |> push(10),
@@ -48,7 +43,7 @@ pub fn size_for_merkle_prefix(merkle_prefix_opt: Option<MerklePrefix>) -> Int {
               0,
               {
                 let l = length(key_prefix)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )

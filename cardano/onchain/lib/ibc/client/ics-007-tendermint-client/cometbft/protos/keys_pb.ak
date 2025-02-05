@@ -1,11 +1,7 @@
-// DO NOT EDIT.
-// source: tendermint/crypto/keys.proto
-
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bytes.{encode_varint, sov}
-use ibc/utils/int.{uint64}
 
 pub type PublicKey {
   PublicKey_Ed25519 { sum: ByteArray }
@@ -54,7 +50,6 @@ pub fn marshal_for_ed25519(pk_opt: Option<PublicKey>) -> ByteArray {
               #[],
               sum
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(sum)
                 |> push(10),
@@ -76,7 +71,7 @@ pub fn size_for_ed25519(pk_opt: Option<PublicKey>) -> Int {
         0,
         {
           let l = length(sum)
-          l |> uint64() |> sov() |> add(l + 1)
+          l |> sov() |> add(l + 1)
         },
       )
     },
@@ -97,7 +92,6 @@ pub fn marshal_for_secp256k1(pk_opt: Option<PublicKey>) -> ByteArray {
               #[],
               sum
                 |> length()
-                |> uint64()
                 |> encode_varint()
                 |> concat(sum)
                 |> push(0x12),
@@ -119,7 +113,7 @@ pub fn size_for_secp256k1(pk_opt: Option<PublicKey>) -> Int {
         0,
         {
           let l = length(sum)
-          l |> uint64() |> sov() |> add(l + 1)
+          l |> sov() |> add(l + 1)
         },
       )
     },

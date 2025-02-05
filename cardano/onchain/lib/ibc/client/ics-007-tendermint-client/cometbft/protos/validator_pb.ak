@@ -31,7 +31,6 @@ pub fn marshal_for_simple_validator(
               #[],
               pub_key
                 |> size_for_public_key()
-                |> uint64()
                 |> encode_varint()
                 |> concat(marshal_for_public_key(pub_key))
                 |> push(10),
@@ -65,7 +64,7 @@ pub fn size_for_simple_validator(sv_opt: Option<SimpleValidator>) -> Int {
               0,
               {
                 let l = size_for_public_key(pub_key)
-                l |> uint64() |> sov() |> add(l + 1)
+                l |> sov() |> add(l + 1)
               },
             ),
           )
