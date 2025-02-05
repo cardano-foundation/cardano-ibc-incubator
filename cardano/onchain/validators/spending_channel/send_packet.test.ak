@@ -1,10 +1,9 @@
-use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, ValidityRange,
+  Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -39,31 +38,9 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/test_utils
 use spending_channel/send_packet
+use spending_channel/spending_channel_fixture.{MockData}
 
 //==========================================Test================================================
-
-type MockData {
-  client_minting_policy_id: PolicyId,
-  connection_minting_policy_id: PolicyId,
-  port_minting_policy_id: PolicyId,
-  spend_channel_script_hash: Hash<Blake2b_224, Script>,
-  channel_minting_policy_id: PolicyId,
-  chan_open_ack_policy_id: PolicyId,
-  chan_open_confirm_policy_id: PolicyId,
-  recv_packet_policy_id: PolicyId,
-  send_packet_policy_id: PolicyId,
-  timeout_packet_policy_id: PolicyId,
-  acknowledge_packet_policy_id: PolicyId,
-  channel_sequence: ByteArray,
-  channel_token: AuthToken,
-  handler_token: AuthToken,
-  connection_id: ByteArray,
-  connection_input: Input,
-  client_input: Input,
-  validity_range: ValidityRange,
-  port_id: ByteArray,
-  module_input: Input,
-}
 
 fn setup() -> MockData {
   let handler_token =
@@ -286,6 +263,7 @@ fn setup() -> MockData {
     client_minting_policy_id,
     connection_minting_policy_id,
     port_minting_policy_id,
+    verify_proof_policy_id: "mock verify_proof_policy_id",
     spend_channel_script_hash: "mock spend_channel_script_hash",
     channel_minting_policy_id,
     chan_open_ack_policy_id: "mock chan_open_ack_policy_id",
