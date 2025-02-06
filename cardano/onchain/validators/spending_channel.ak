@@ -108,11 +108,10 @@ validator spend_channel(
         expect updated_datum: ChannelDatum =
           validator_utils.get_inline_datum(updated_output)
 
-        expect auth.contain_auth_token(updated_output, datum.token)
-
-        expect channel_datum_mod.validate_refresh_utxo(datum, updated_datum)
-
-        True
+        and {
+          auth.contain_auth_token(updated_output, datum.token),
+          channel_datum_mod.validate_refresh_utxo(datum, updated_datum),
+        }
       }
     }
   }
