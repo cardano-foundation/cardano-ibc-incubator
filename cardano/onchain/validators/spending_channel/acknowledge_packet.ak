@@ -60,8 +60,6 @@ validator acknowledge_packet(
     expect Some((datum, channel_redeemer, spent_output)) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
-    expect auth.contain_auth_token(spent_output, datum.token)
-
     expect [updated_output] =
       list.filter(
         outputs,
@@ -69,8 +67,6 @@ validator acknowledge_packet(
       )
     expect updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)
-
-    expect auth.contain_auth_token(updated_output, datum.token)
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
@@ -99,10 +95,10 @@ validator acknowledge_packet(
       ..
     } = cur_channel_state
 
-    expect cur_channel.state == chan_state_mod.Open
+    let is_cur_chan_open = cur_channel.state == chan_state_mod.Open
     trace @"acknowledge_packet: channel state is open"
 
-    expect and {
+    let valid_packet = and {
         packet.source_port == port_id,
         packet.source_channel == channel_id,
         packet.destination_port == cur_channel.counterparty.port_id,
@@ -119,7 +115,8 @@ validator acknowledge_packet(
       )
     trace @"acknowledge_packet: reference_inputs contain Connection utxo"
 
-    expect connection_datum.state.state == conn_state_mod.Open
+    let is_connection_state_open =
+      connection_datum.state.state == conn_state_mod.Open
     trace @"acknowledge_packet: connection state is open"
 
     expect Some(client_datum) =
@@ -131,7 +128,7 @@ validator acknowledge_packet(
       )
     trace @"acknowledge_packet: reference_inputs contain Client utxo"
 
-    expect
+    let is_client_status_active =
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
@@ -143,11 +140,8 @@ validator acknowledge_packet(
       pairs.get_first(cur_packet_commitment, packet.sequence)
     trace @"acknowledge_packet: packet commitment existed"
 
-    let packet_commitment = packet_mod.commit_packet(packet)
-    expect commitment == packet_commitment
-    trace @"acknowledge_packet: ack packet match commit packet"
-
-    expect
+    let valid_commitment = commitment == packet_mod.commit_packet(packet)
+    let valid_packet_proof =
       validate_acknowledge_packet_proof(
         connection_datum.state,
         client_datum.state,
@@ -160,13 +154,7 @@ validator acknowledge_packet(
       )
     trace @"acknowledge_packet: packet proof is valid"
 
-    expect cur_channel.ordering != chan_order_mod.Ordered || {
-        expect packet.sequence == next_sequence_ack
-        trace @"acknowledge_packet: packet sequence matched next_sequence_ack"
-        True
-      }
-
-    expect
+    let is_packet_acknowledged =
       channel_datum_mod.validate_acknowledge_packet(
         datum,
         updated_datum,
@@ -185,10 +173,20 @@ validator acknowledge_packet(
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect OnAcknowledgementPacket { channel_id: module_chan_id, .. } =
       ibc_module_callback
-    expect module_chan_id == channel_id
-    trace @"acknowledge_packet: ibc module callback is valid\n"
 
-    True
+    and {
+      auth.contain_auth_token(spent_output, datum.token),
+      auth.contain_auth_token(updated_output, datum.token),
+      is_connection_state_open,
+      is_client_status_active,
+      is_cur_chan_open,
+      valid_packet,
+      valid_commitment,
+      is_packet_acknowledged,
+      valid_packet_proof,
+      cur_channel.ordering != chan_order_mod.Ordered || packet.sequence == next_sequence_ack,
+      module_chan_id == channel_id,
+    }
   }
 
   else(_) {
@@ -231,17 +229,14 @@ fn validate_acknowledge_packet_proof(
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
-  expect
-    verify_proof_redeemer == VerifyMembership {
-      cs: client_datum_state.client_state,
-      cons_state: consensus_state,
-      height: proof_height,
-      delay_time_period: time_delay,
-      delay_block_period: block_delay,
-      proof,
-      path: merkle_path,
-      value: commit_ack,
-    }
-
-  True
+  verify_proof_redeemer == VerifyMembership {
+    cs: client_datum_state.client_state,
+    cons_state: consensus_state,
+    height: proof_height,
+    delay_time_period: time_delay,
+    delay_block_period: block_delay,
+    proof,
+    path: merkle_path,
+    value: commit_ack,
+  }
 }
