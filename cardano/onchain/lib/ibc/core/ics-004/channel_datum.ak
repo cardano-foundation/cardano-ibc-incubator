@@ -41,31 +41,24 @@ pub fn validate_chan_open_init(
     packet_acknowledgement,
   } = state
 
-  expect channel.validate_basic(channel)
-
   let Channel { state: chan_state, counterparty, .. } = channel
-
-  expect token == auth_token
-
-  expect chan_state == channel_state.Init
-
-  expect counterparty.channel_id == ""
-
-  expect and {
+  and {
+    channel.validate_basic(channel),
+    token == auth_token,
+    chan_state == channel_state.Init,
+    counterparty.channel_id == "",
+    and {
       next_sequence_send == 1,
       next_sequence_recv == 1,
       next_sequence_ack == 1,
-    }
-
-  expect and {
+    },
+    and {
       list.is_empty(packet_commitment),
       list.is_empty(packet_receipt),
       list.is_empty(packet_acknowledgement),
-    }
-
-  expect port_keys_mod.is_valid_port_id(port_id)
-
-  True
+    },
+    port_keys_mod.is_valid_port_id(port_id),
+  }
 }
 
 pub fn validate_chan_open_try(
@@ -84,31 +77,25 @@ pub fn validate_chan_open_try(
     packet_acknowledgement,
   } = state
 
-  expect channel.validate_basic(channel)
-
   let Channel { state: chan_state, counterparty, .. } = channel
 
-  expect token == auth_token
-
-  expect chan_state == channel_state.TryOpen
-
-  expect counterparty.channel_id != ""
-
-  expect and {
+  and {
+    channel.validate_basic(channel),
+    token == auth_token,
+    chan_state == channel_state.TryOpen,
+    counterparty.channel_id != "",
+    and {
       next_sequence_send == 1,
       next_sequence_recv == 1,
       next_sequence_ack == 1,
-    }
-
-  expect and {
+    },
+    and {
       list.is_empty(packet_commitment),
       list.is_empty(packet_receipt),
       list.is_empty(packet_acknowledgement),
-    }
-
-  expect port_keys_mod.is_valid_port_id(port_id)
-
-  True
+    },
+    port_keys_mod.is_valid_port_id(port_id),
+  }
 }
 
 pub fn validate_chan_open_ack(

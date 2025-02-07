@@ -12,14 +12,20 @@ pub type Commit {
 }
 
 pub fn validate_basic(commit: Commit) -> Bool {
-  expect commit.height >= 0 && commit.round >= 0
-  if commit.height >= 1 {
-    expect !is_zero_block_id(commit.block_id)
-    expect list.length(commit.signatures) > 0
-    commit.signatures
-      |> list.all(fn(com_sig) { commit_sig.validate_basic(com_sig) == True })
-  } else {
-    True
+  and {
+    commit.height >= 0 && commit.round >= 0,
+    if commit.height >= 1 {
+      and {
+        !is_zero_block_id(commit.block_id),
+        list.length(commit.signatures) > 0,
+        commit.signatures
+          |> list.all(
+              fn(com_sig) { commit_sig.validate_basic(com_sig) == True },
+            ),
+      }
+    } else {
+      True
+    },
   }
 }
 
