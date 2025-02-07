@@ -45,7 +45,7 @@ validator mint_voucher(module_token: AuthToken) {
         expect TransferModuleData(data) = data
         trace @"mint_voucher: module redeemer is valid"
 
-        expect
+        let valid_receiver =
           !transfer_coin.receiver_chain_is_source(
             packet_source_port,
             packet_source_channel,
@@ -61,7 +61,7 @@ validator mint_voucher(module_token: AuthToken) {
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
-        expect
+        let valid_minted_tokens =
           minted_tokens == (
             dict.empty
               |> dict.insert(token_name, transfer_amount)
@@ -112,7 +112,11 @@ validator mint_voucher(module_token: AuthToken) {
               }
             },
           )
-        outputs_token - inputs_token == transfer_amount
+        and {
+          valid_receiver,
+          valid_minted_tokens,
+          outputs_token - inputs_token == transfer_amount,
+        }
       }
       BurnVoucher { packet_source_port, packet_source_channel } -> {
         trace @"mint_voucher: MintVoucher branch"
@@ -123,7 +127,7 @@ validator mint_voucher(module_token: AuthToken) {
         expect Transfer { data, .. } = ibc_module_operator
         trace @"mint_voucher: module redeemer is valid"
 
-        expect
+        let valid_sender =
           !transfer_coin.sender_chain_is_source(
             packet_source_port,
             packet_source_channel,
@@ -135,10 +139,15 @@ validator mint_voucher(module_token: AuthToken) {
 
         let token_name = crypto.sha3_256(data.denom)
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
-        minted_tokens == (
-          dict.empty
-            |> dict.insert(token_name, -transfer_amount)
-        )
+        let valid_minted_tokens =
+          minted_tokens == (
+            dict.empty
+              |> dict.insert(token_name, -transfer_amount)
+          )
+        and {
+          valid_sender,
+          valid_minted_tokens,
+        }
       }
       RefundVoucher { packet_source_port, packet_source_channel } -> {
         trace @"mint_voucher: RefundVoucher branch"
@@ -154,7 +163,7 @@ validator mint_voucher(module_token: AuthToken) {
         expect TransferModuleData(data) = data
         trace @"mint_voucher: module redeemer is valid"
 
-        expect
+        let valid_sender =
           !transfer_coin.sender_chain_is_source(
             packet_source_port,
             packet_source_channel,
@@ -167,7 +176,7 @@ validator mint_voucher(module_token: AuthToken) {
         let token_name = crypto.sha3_256(data.denom)
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
-        expect
+        let valid_minted_tokens =
           minted_tokens == (
             dict.empty
               |> dict.insert(token_name, transfer_amount)
@@ -219,7 +228,11 @@ validator mint_voucher(module_token: AuthToken) {
               }
             },
           )
-        outputs_token - inputs_token == transfer_amount
+        and {
+          outputs_token - inputs_token == transfer_amount,
+          valid_minted_tokens,
+          valid_sender,
+        }
       }
     }
   }
