@@ -49,26 +49,20 @@ pub fn verify_adjacent(
   tx_time: TxTime,
   max_clock_drift: Duration,
 ) -> Bool {
-  expect untrusted_header.header.height == trusted_header.header.height + 1
-
-  expect !header_expired(trusted_header, trusting_period, tx_time.valid_to)
-
-  expect
+  and {
+    untrusted_header.header.height == trusted_header.header.height + 1,
+    !header_expired(trusted_header, trusting_period, tx_time.valid_to),
     verify_new_header_and_vals(
       untrusted_header,
       untrusted_vals,
       trusted_header,
       tx_time.valid_from,
       max_clock_drift,
-    )
-
-  expect
+    ),
     bytearray.compare(
       untrusted_header.header.validators_hash,
       trusted_header.header.next_validators_hash,
-    ) == Equal
-
-  expect
+    ) == Equal,
     validation.verify_commit_light(
       trusted_header.header.chain_id,
       untrusted_vals,
@@ -76,8 +70,8 @@ pub fn verify_adjacent(
       untrusted_header.header.height,
       untrusted_header.commit,
       None,
-    )
-  True
+    ),
+  }
 }
 
 pub fn verify_non_adjacent(
@@ -90,19 +84,6 @@ pub fn verify_non_adjacent(
   max_clock_drift: Duration,
   trust_level: Rational,
 ) -> Bool {
-  expect untrusted_header.header.height != trusted_header.header.height + 1
-
-  expect !header_expired(trusted_header, trusting_period, tx_time.valid_to)
-
-  expect
-    verify_new_header_and_vals(
-      untrusted_header,
-      untrusted_vals,
-      trusted_header,
-      tx_time.valid_from,
-      max_clock_drift,
-    )
-
   let list_vote_sign_bytes =
     list.indexed_map(
       untrusted_header.commit.signatures,
@@ -115,15 +96,23 @@ pub fn verify_non_adjacent(
       },
     )
 
-  expect
+  and {
+    untrusted_header.header.height != trusted_header.header.height + 1,
+    !header_expired(trusted_header, trusting_period, tx_time.valid_to),
+    verify_new_header_and_vals(
+      untrusted_header,
+      untrusted_vals,
+      trusted_header,
+      tx_time.valid_from,
+      max_clock_drift,
+    ),
     validation.verify_commit_light_trusting(
       trusted_header.header.chain_id,
       trusted_vals,
       untrusted_header.commit,
       trust_level,
       Some(list_vote_sign_bytes),
-    )
-  expect
+    ),
     validation.verify_commit_light(
       trusted_header.header.chain_id,
       untrusted_vals,
@@ -131,8 +120,8 @@ pub fn verify_non_adjacent(
       untrusted_header.header.height,
       untrusted_header.commit,
       Some(list_vote_sign_bytes),
-    )
-  True
+    ),
+  }
 }
 
 fn header_expired(h: SignedHeader, trusting_period: Duration, now: Time) -> Bool {
@@ -147,19 +136,14 @@ fn verify_new_header_and_vals(
   now: Time,
   max_clock_drift: Duration,
 ) -> Bool {
-  expect
+  and {
     untrusted_header
-      |> signed_header.validate_basic(trusted_header.header.chain_id)
-
-  expect untrusted_header.header.height > trusted_header.header.height
-
-  expect untrusted_header.header.time > trusted_header.header.time
-
-  expect untrusted_header.header.time < now + max_clock_drift
-
-  expect
+      |> signed_header.validate_basic(trusted_header.header.chain_id),
+    untrusted_header.header.height > trusted_header.header.height,
+    untrusted_header.header.time > trusted_header.header.time,
+    untrusted_header.header.time < now + max_clock_drift,
     untrusted_header.header.validators_hash == validator_set.hash(
       untrusted_vals,
-    )
-  True
+    ),
+  }
 }
