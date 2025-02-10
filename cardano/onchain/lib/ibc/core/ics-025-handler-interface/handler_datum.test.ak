@@ -33,7 +33,7 @@ test validate_create_client_succeed() {
   let auth_token = AuthToken { policy_id: policy_id_sample, name: name_sample }
   let old = HandlerDatum { state: old_handler_state, token: auth_token }
   let new = HandlerDatum { state: new_handler_state, token: auth_token }
-  handler_datum.validate_create_client(old, new) == True
+  handler_datum.validate_create_client(old, new)
 }
 
 // Test to check if client creation fails with an invalid token name

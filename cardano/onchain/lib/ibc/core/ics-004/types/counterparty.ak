@@ -9,10 +9,8 @@ pub type ChannelCounterparty {
 }
 
 pub fn validate_basic(c: ChannelCounterparty) -> Bool {
-  expect validate.port_identifier_validator(c.port_id)
-
-  expect
-    c.channel_id == "" || validate.channel_identifier_validator(c.channel_id)
-
-  True
+  and {
+    validate.port_identifier_validator(c.port_id),
+    c.channel_id == "" || validate.channel_identifier_validator(c.channel_id),
+  }
 }

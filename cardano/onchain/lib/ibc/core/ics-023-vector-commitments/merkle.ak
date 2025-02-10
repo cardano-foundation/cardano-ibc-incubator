@@ -61,8 +61,7 @@ pub fn null_merkle_proof() -> MerkleProof {
 
 /// validate_basic() checks if the proof is empty
 pub fn validate_basic(mr_proof: MerkleProof) -> Bool {
-  expect !is_empty_merkle_proof(mr_proof)
-  True
+  !is_empty_merkle_proof(mr_proof)
 }
 
 pub fn apply_prefix(prefix: MerklePrefix, path: MerklePath) -> MerklePath {
@@ -110,15 +109,14 @@ pub fn verify_non_membership(
       // Verify non membership will verify the absence of key in lowest subtree, and then chain inclusion proofs
       // of all subroots up to final root
       let sub_root = proof.calculate(first_ele_proof)
-      expect
+      and {
         ics23.verify_non_membership(
           first_ele_spec,
           sub_root,
           first_ele_proof,
           get_key(path, list.length(path.key_path) - 1),
-        )
-      // Verify chained membership proof starting from index 1 with value = subroot
-      expect
+        ),
+        // Verify chained membership proof starting from index 1 with value = subroot
         verify_chained_membership_proof(
           get_hash(root),
           specs,
@@ -126,8 +124,8 @@ pub fn verify_non_membership(
           path,
           sub_root,
           1,
-        )
-      True
+        ),
+      }
     }
     CommitmentProof_Batch -> fail
     CommitmentProof_Compressed -> fail
@@ -178,8 +176,7 @@ fn verify_chained_membership_proof(
       },
     )
 
-  expect bytearray.compare(root, subroot) == Equal
-  True
+  bytearray.compare(root, subroot) == Equal
 }
 
 /// validate_verification_args() verifies the proof arguments are valid
@@ -188,9 +185,10 @@ fn validate_verification_args(
   specs: List<ProofSpec>,
   root: MerkleRoot,
 ) -> Bool {
-  expect !is_empty_merkle_proof(mr_proof)
-  expect !is_empty_merkle_root(root)
-  expect list.length(specs) == list.length(mr_proof.proofs)
-  expect list.all(specs, fn(spec) { spec != proofs.null_proof_spec() })
-  True
+  and {
+    !is_empty_merkle_proof(mr_proof),
+    !is_empty_merkle_root(root),
+    list.length(specs) == list.length(mr_proof.proofs),
+    list.all(specs, fn(spec) { spec != proofs.null_proof_spec() }),
+  }
 }
