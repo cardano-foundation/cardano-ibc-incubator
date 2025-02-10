@@ -18,24 +18,21 @@ pub type CommitSig {
 pub fn validate_basic(c: CommitSig) -> Bool {
   when c.block_id_flag is {
     0 -> fail
-    1 -> {
-      expect bytearray.length(c.validator_address) == 0
-      expect c.timestamp == 0
-      expect bytearray.length(c.signature) == 0
-      True
-    }
-    2 -> {
-      expect bytearray.length(c.validator_address) == address_size
-      expect bytearray.length(c.signature) > 0
-      expect bytearray.length(c.signature) <= max_signature_size
-      True
-    }
-    3 -> {
-      expect bytearray.length(c.validator_address) == address_size
-      expect bytearray.length(c.signature) > 0
-      expect bytearray.length(c.signature) <= max_signature_size
-      True
-    }
+    1 -> and {
+        bytearray.length(c.validator_address) == 0,
+        c.timestamp == 0,
+        bytearray.length(c.signature) == 0,
+      }
+    2 -> and {
+        bytearray.length(c.validator_address) == address_size,
+        bytearray.length(c.signature) > 0,
+        bytearray.length(c.signature) <= max_signature_size,
+      }
+    3 -> and {
+        bytearray.length(c.validator_address) == address_size,
+        bytearray.length(c.signature) > 0,
+        bytearray.length(c.signature) <= max_signature_size,
+      }
     _n -> fail
   }
 }

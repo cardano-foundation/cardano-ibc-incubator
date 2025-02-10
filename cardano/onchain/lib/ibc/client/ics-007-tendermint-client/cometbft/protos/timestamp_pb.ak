@@ -77,8 +77,9 @@ fn nanosecond(t: Time) -> Int {
 
 fn validate_timestamp(ts_opt: Option<Timestamp>) -> Bool {
   expect Some(ts) = ts_opt
-  expect ts.seconds >= min_valid_seconds
-  expect ts.seconds < max_valid_seconds
-  expect ts.nanos >= 0 && ts.nanos <= 1_000_000_000
-  True
+  and {
+    ts.seconds >= min_valid_seconds,
+    ts.seconds < max_valid_seconds,
+    ts.nanos >= 0 && ts.nanos <= 1_000_000_000,
+  }
 }

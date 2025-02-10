@@ -50,25 +50,17 @@ pub fn new_packet(
 
 /// validate_basic validate minimum requirements of a valid packet
 pub fn validate_basic(p: Packet) -> Bool {
-  expect validate.port_identifier_validator(p.source_port)
-
-  expect validate.port_identifier_validator(p.destination_port)
-
-  expect validate.channel_identifier_validator(p.source_channel)
-
-  expect validate.channel_identifier_validator(p.destination_channel)
-
-  expect p.sequence > 0
-
-  expect height.is_valid(p.timeout_height)
-
-  expect p.timeout_timestamp >= 0
-
-  expect !height.is_zero(p.timeout_height) || p.timeout_timestamp != 0
-
-  expect bytearray.length(p.data) > 0
-
-  True
+  and {
+    validate.port_identifier_validator(p.source_port),
+    validate.port_identifier_validator(p.destination_port),
+    validate.channel_identifier_validator(p.source_channel),
+    validate.channel_identifier_validator(p.destination_channel),
+    p.sequence > 0,
+    height.is_valid(p.timeout_height),
+    p.timeout_timestamp >= 0,
+    !height.is_zero(p.timeout_height) || p.timeout_timestamp != 0,
+    bytearray.length(p.data) > 0,
+  }
 }
 
 pub fn commit_packet(packet: Packet) -> ByteArray {
@@ -77,8 +69,12 @@ pub fn commit_packet(packet: Packet) -> ByteArray {
   let buf =
     #[]
       |> bytearray.concat(from_int_big_endian(timeout_timestamp, 8))
-      |> bytearray.concat(from_int_big_endian(timeout_height.revision_number, 8))
-      |> bytearray.concat(from_int_big_endian(timeout_height.revision_height, 8))
+      |> bytearray.concat(
+          from_int_big_endian(timeout_height.revision_number, 8),
+        )
+      |> bytearray.concat(
+          from_int_big_endian(timeout_height.revision_height, 8),
+        )
       |> bytearray.concat(crypto.sha2_256(data))
 
   crypto.sha2_256(buf)

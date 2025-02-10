@@ -19,25 +19,22 @@ pub fn is_conn_open_init_valid(
 ) -> Bool {
   let ConnectionDatum { state, token } = datum
 
-  expect connection_end_mod.validate_basic(state)
+  let valid_connection_end = connection_end_mod.validate_basic(state)
 
   let ConnectionEnd { versions, state, counterparty, .. } = state
 
   let compatible_versions = version_mod.get_compatible_versions()
 
-  expect token == auth_token
-
-  expect
+  and {
+    valid_connection_end,
+    token == auth_token,
     list.all(
       versions,
       fn(ver) { version_mod.is_supported_version(compatible_versions, ver) },
-    )
-
-  expect state == connection_state.Init
-
-  expect counterparty.connection_id == ""
-
-  True
+    ),
+    state == connection_state.Init,
+    counterparty.connection_id == "",
+  }
 }
 
 /// Validate whether the connection datum is initialized valid for OpenTry step. 
@@ -47,26 +44,20 @@ pub fn is_conn_open_try_valid(
   auth_token: AuthToken,
 ) -> Bool {
   let ConnectionDatum { state, token } = datum
-
-  expect connection_end_mod.validate_basic(state)
-
+  let valid_connection_end = connection_end_mod.validate_basic(state)
   let ConnectionEnd { versions, state, counterparty, .. } = state
 
   let compatible_versions = version_mod.get_compatible_versions()
-
-  expect token == auth_token
-
-  expect
+  and {
+    valid_connection_end,
+    token == auth_token,
     list.all(
       versions,
       fn(ver) { version_mod.is_supported_version(compatible_versions, ver) },
-    )
-
-  expect state == connection_state.TryOpen
-
-  expect counterparty.connection_id != ""
-
-  True
+    ),
+    state == connection_state.TryOpen,
+    counterparty.connection_id != "",
+  }
 }
 
 /// Validate whether the connection datum is updated valid for OpenAck step. 

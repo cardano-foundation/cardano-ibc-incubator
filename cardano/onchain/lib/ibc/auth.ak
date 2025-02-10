@@ -16,9 +16,7 @@ pub fn contain_auth_token(output: Output, token: AuthToken) -> Bool {
 pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
   let minted_tokens = mint |> tokens(token.policy_id)
 
-  expect minted_tokens == ( dict.empty |> dict.insert(token.name, 1) )
-
-  True
+  minted_tokens == ( dict.empty |> dict.insert(token.name, 1) )
 }
 
 pub fn generate_token_name(

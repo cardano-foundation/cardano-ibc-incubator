@@ -145,13 +145,14 @@ fn hex_char_to_dec(char: Int) -> Option<Int> {
 }
 
 test test_trim_space() {
-  expect trim_space("") == ""
-  expect trim_space("             ") == ""
-  expect trim_space("   abc") == "abc"
-  expect trim_space("abc    ") == "abc"
-  expect trim_space("    abc    ") == "abc"
-  expect trim_space("    a   b  cd    ") == "a   b  cd"
-  True
+  and {
+    trim_space("") == "",
+    trim_space("             ") == "",
+    trim_space("   abc") == "abc",
+    trim_space("abc    ") == "abc",
+    trim_space("    abc    ") == "abc",
+    trim_space("    a   b  cd    ") == "a   b  cd",
+  }
 }
 
 test test_split() {
@@ -177,8 +178,7 @@ test test_split() {
 }
 
 test test_hex_string_to_bytes() {
-  let test_cases =
-    [("abcd1234", Some(#"abcd1234")), ("123x", None)]
+  let test_cases = [("abcd1234", Some(#"abcd1234")), ("123x", None)]
 
   list.all(test_cases, fn(case) { hex_string_to_bytes(case.1st) == case.2nd })
 }

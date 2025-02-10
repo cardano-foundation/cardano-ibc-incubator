@@ -21,12 +21,6 @@ pub fn verify_header(
   expect Some(cons_state) =
     pairs.get_first(consensus_states, header.trusted_height)
 
-  expect check_trusted_header(header, cons_state)
-  expect
-    header_mod.get_height(header).revision_number == header.trusted_height.revision_number
-  expect
-    height.compare(header_mod.get_height(header), header.trusted_height) == Greater
-
   expect Some(cs_trust_level) = unchecked_rational.to_rational(cs.trust_level)
 
   // Only height, time, and next_validators_hash are necessary for verification
@@ -42,7 +36,10 @@ pub fn verify_header(
       commit: commit.null_commit(),
     }
 
-  expect
+  and {
+    check_trusted_header(header, cons_state),
+    header_mod.get_height(header).revision_number == header.trusted_height.revision_number,
+    height.compare(header_mod.get_height(header), header.trusted_height) == Greater,
     verifier.verify(
       trusted_header,
       header.trusted_validators,
@@ -52,17 +49,14 @@ pub fn verify_header(
       tx_time,
       cs.max_clock_drift,
       cs_trust_level,
-    )
-
-  True
+    ),
+  }
 }
 
 /// check_trusted_header() checks that consensus state matches trusted fields of Header
 pub fn check_trusted_header(header: Header, cons_state: ConsensusState) {
-  expect
-    bytearray.compare(
-      cons_state.next_validators_hash,
-      validator_set.hash(header.trusted_validators),
-    ) == Equal
-  True
+  bytearray.compare(
+    cons_state.next_validators_hash,
+    validator_set.hash(header.trusted_validators),
+  ) == Equal
 }

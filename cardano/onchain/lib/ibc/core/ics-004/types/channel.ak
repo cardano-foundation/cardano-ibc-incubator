@@ -71,16 +71,12 @@ pub fn convert_to_counterparty_proto(
 pub fn validate_basic(ch: Channel) -> Bool {
   // state should be checked at another functions
   // expect ch.state != Uninitialized 
-
-  expect ch.ordering == Ordered || ch.ordering == Unordered
-
   expect [connection_id] = ch.connection_hops
-
-  expect conn_keys_mod.is_valid_connection_id(connection_id)
-
-  expect counterparty.validate_basic(ch.counterparty)
-
-  True
+  and {
+    ch.ordering == Ordered || ch.ordering == Unordered,
+    conn_keys_mod.is_valid_connection_id(connection_id),
+    counterparty.validate_basic(ch.counterparty),
+  }
 }
 
 /// return a new Channel with all fields set to zero.

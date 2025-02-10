@@ -31,16 +31,17 @@ pub fn check_against_spec_leaf_op(
   is_iavl_spec: Bool,
 ) -> Bool {
   let lspec = spec.leaf_spec
-  expect op.hash == lspec.hash
-  expect op.prehash_key == lspec.prehash_key
-  expect op.prehash_value == lspec.prehash_value
-  expect op.length == lspec.length
-  expect has_prefix(op.prefix, lspec.prefix)
-  if is_iavl_spec {
-    expect validate_iavl_ops_leaf_op(op, 0)
-    True
-  } else {
-    True
+  and {
+    op.hash == lspec.hash,
+    op.prehash_key == lspec.prehash_key,
+    op.prehash_value == lspec.prehash_value,
+    op.length == lspec.length,
+    has_prefix(op.prefix, lspec.prefix),
+    if is_iavl_spec {
+      validate_iavl_ops_leaf_op(op, 0)
+    } else {
+      True
+    },
   }
 }
 
@@ -53,18 +54,17 @@ pub fn check_against_spec_inner_op(
   max_op_prefix_length: Int,
   is_iavl_spec: Bool,
 ) -> Bool {
-  expect op.hash == inner_spec.hash
-
-  expect !has_prefix(op.prefix, spec.leaf_spec.prefix)
-
-  expect bytearray.length(op.prefix) >= inner_spec.min_prefix_length
-  expect bytearray.length(op.prefix) <= max_op_prefix_length
-  expect bytearray.length(op.suffix) % inner_spec.child_size == 0
-
-  if is_iavl_spec {
-    validate_iavl_ops_inner_op(op, b)
-  } else {
-    True
+  and {
+    op.hash == inner_spec.hash,
+    !has_prefix(op.prefix, spec.leaf_spec.prefix),
+    bytearray.length(op.prefix) >= inner_spec.min_prefix_length,
+    bytearray.length(op.prefix) <= max_op_prefix_length,
+    bytearray.length(op.suffix) % inner_spec.child_size == 0,
+    if is_iavl_spec {
+      validate_iavl_ops_inner_op(op, b)
+    } else {
+      True
+    },
   }
 }
 
