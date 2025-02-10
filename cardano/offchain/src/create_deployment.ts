@@ -688,10 +688,18 @@ const deploySpendChannel = async (
     "acknowledge_packet.spend",
   ] as const;
 
+  const moduleNamesToIgnore = [
+    "spending_channel_fixture.ak",
+  ];
+
   const referredValidatorsName = (
     await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
   )
     .filter((val) => val.isFile)
+    // Filtering out test modules
+    .filter((val) => !val.name.endsWith(".test.ak"))
+    // Filter out modules to ignore
+    .filter((val) => moduleNamesToIgnore.indexOf(val.name) == -1)
     .map((val) => {
       const name = val.name.split(".").slice(0, -1).join(".");
       // deno-lint-ignore no-explicit-any
