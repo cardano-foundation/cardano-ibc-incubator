@@ -165,7 +165,7 @@ pub fn marshal_for_client_state(
           )
         |> concat(
             ite(
-              list.length(upgrade_path) == 0,
+              list.is_empty(upgrade_path),
               #[],
               upgrade_path
                 |> list.reduce(
@@ -268,7 +268,7 @@ pub fn size_for_client_state(
           )
         |> add(
             ite(
-              list.length(upgrade_path) == 0,
+              list.is_empty(upgrade_path),
               0,
               upgrade_path
                 |> list.reduce(
@@ -352,7 +352,9 @@ pub fn marshal_for_protocol_parameters(
       let MithrilProtocolParameters { k, m, phi_f } = pp
       #[]
         |> concat(ite(k == 0, #[], k |> uint64() |> encode_varint() |> push(8)))
-        |> concat(ite(m == 0, #[], m |> uint64() |> encode_varint() |> push(0x10)))
+        |> concat(
+            ite(m == 0, #[], m |> uint64() |> encode_varint() |> push(0x10)),
+          )
         |> concat(
             ite(
               is_none(phi_f),

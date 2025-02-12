@@ -171,7 +171,7 @@ pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
           )
         |> concat(
             ite(
-              list.length(connection_hops) == 0,
+              list.is_empty(connection_hops),
               #[],
               connection_hops
                 |> list.reduce(
@@ -257,7 +257,7 @@ pub fn size_for_channel(channel_opt: Option<Channel>) -> Int {
           )
         |> add(
             ite(
-              list.length(connection_hops) == 0,
+              list.is_empty(connection_hops),
               0,
               connection_hops
                 |> list.reduce(
