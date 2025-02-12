@@ -18,6 +18,7 @@ use stop::stop_gateway;
 use stop::stop_mithril;
 use stop::{stop_cardano_network, stop_cosmos, stop_osmosis, stop_relayer};
 use utils::default_config_path;
+use utils::query_balance;
 mod check;
 mod config;
 mod logger;
@@ -398,6 +399,15 @@ async fn main() {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::log(&format!(
+                "Initial balance {}",
+                &balance.to_string().as_str()
+            ));
+
             // Deploy Contracts
             match deploy_contracts(&project_root_path).await {
                 Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
@@ -406,6 +416,15 @@ async fn main() {
                     error
                 )),
             }
+
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::log(&format!(
+                "Post deploy contract balance {}",
+                &balance.to_string().as_str()
+            ));
 
             // Start gateway
             match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
@@ -451,6 +470,12 @@ async fn main() {
                     bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
                 }
             }
+
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
         }
         Commands::BridgeDown => bridge_down(),
         Commands::AppChainUp => {
