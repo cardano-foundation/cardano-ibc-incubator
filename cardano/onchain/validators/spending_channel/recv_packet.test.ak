@@ -74,7 +74,8 @@ test succeed_recv_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs =
+    [mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 19 }
@@ -91,7 +92,8 @@ test succeed_recv_packet() {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
-  let reference_inputs = [mock_data.connection_input, client_input]
+  let reference_inputs =
+    [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
   let ack = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -132,7 +134,8 @@ test succeed_recv_packet() {
       mock_data.channel_token,
     )
 
-  let outputs = [channel_output]
+  let outputs =
+    [channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -303,14 +306,13 @@ test succeed_recv_packet() {
       validity_range: validity_range,
     }
 
-  recv_packet.recv_packet.spend(
+  recv_packet.recv_packet.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
-    None,
     mock_data.channel_token,
-    channel_input.output_reference,
+    mock_data.recv_packet_policy_id,
     transaction,
   )
 }

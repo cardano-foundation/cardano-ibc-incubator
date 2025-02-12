@@ -470,6 +470,8 @@ export class PacketService {
       },
     };
 
+    this.logger.log('verify proof redeemer', verifyProofRedeemer);
+
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
@@ -626,6 +628,8 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
+
+    this.logger.log('updated channel datum', updatedChannelDatum);
 
     const unsignedRecvPacketMintParams: UnsignedRecvPacketDto = {
       channelUtxo,
