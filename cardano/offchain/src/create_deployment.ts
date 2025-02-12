@@ -391,7 +391,7 @@ async function createReferenceUtxos(
     await Promise.all(
       deployLucids.map(async (inst) => {
         const address = await inst.wallet().address();
-        fundDeployAccTx.pay.ToAddress(address, { lovelace: 1000000000n });
+        fundDeployAccTx.pay.ToAddress(address, { lovelace: 100_000_000n });
       })
     );
     await submitTx(fundDeployAccTx, lucid, "Fund Deploy Account", false);
