@@ -61,7 +61,7 @@ pub fn verify_proposed_version(
 ) -> Bool {
   and {
     version.identifier == proposed_version.identifier,
-    list.length(proposed_version.features) > 0 || allow_nil_feature_set(
+    !list.is_empty(proposed_version.features) || allow_nil_feature_set(
       proposed_version.identifier,
     ),
     proposed_version.features

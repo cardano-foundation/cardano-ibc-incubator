@@ -455,7 +455,7 @@ pub fn marshal_for_client_state(
           )
         |> concat(
             ite(
-              list.length(current_validator_set) == 0,
+              list.is_empty(current_validator_set),
               #[],
               current_validator_set
                 |> list.reduce(
@@ -475,7 +475,7 @@ pub fn marshal_for_client_state(
           )
         |> concat(
             ite(
-              list.length(next_validator_set) == 0,
+              list.is_empty(next_validator_set),
               #[],
               next_validator_set
                 |> list.reduce(
@@ -505,7 +505,7 @@ pub fn marshal_for_client_state(
           )
         |> concat(
             ite(
-              list.length(upgrade_path) == 0,
+              list.is_empty(upgrade_path),
               #[],
               upgrade_path
                 |> list.reduce(
@@ -623,7 +623,7 @@ pub fn size_for_client_state(
           )
         |> add(
             ite(
-              list.length(current_validator_set) == 0,
+              list.is_empty(current_validator_set),
               0,
               current_validator_set
                 |> list.reduce(
@@ -639,7 +639,7 @@ pub fn size_for_client_state(
           )
         |> add(
             ite(
-              list.length(next_validator_set) == 0,
+              list.is_empty(next_validator_set),
               0,
               next_validator_set
                 |> list.reduce(
@@ -662,7 +662,7 @@ pub fn size_for_client_state(
           )
         |> add(
             ite(
-              list.length(upgrade_path) == 0,
+              list.is_empty(upgrade_path),
               0,
               upgrade_path
                 |> list.reduce(

@@ -1,4 +1,3 @@
-use aiken/collection/list
 use aiken/primitive/int
 use ibc/utils/string
 
@@ -19,16 +18,17 @@ pub fn new_height(revision_number: Int, revision_height: Int) -> Height {
 pub fn parse_chain_id(chain_id: ByteArray) -> Int {
   let parsed_str = string.split(chain_id, 45)
 
-  if list.length(parsed_str) == 1 {
-    0
-  } else {
-    expect [_, revision_number] = parsed_str
+  when parsed_str is {
+    [_] -> 0
+    _ -> {
+      expect [_, revision_number] = parsed_str
 
-    expect Some(revision_number) = int.from_utf8(revision_number)
+      expect Some(revision_number) = int.from_utf8(revision_number)
 
-    expect revision_number >= 0
+      expect revision_number >= 0
 
-    revision_number
+      revision_number
+    }
   }
 }
 
