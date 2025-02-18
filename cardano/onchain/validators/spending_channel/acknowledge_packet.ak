@@ -70,8 +70,6 @@ validator acknowledge_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect [connection_id] = datum.state.channel.connection_hops
-
     expect Some(channel_sequence) =
       auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
@@ -94,6 +92,8 @@ validator acknowledge_packet(
       next_sequence_ack,
       ..
     } = cur_channel_state
+
+    expect [connection_id] = cur_channel.connection_hops
 
     let is_cur_chan_open = cur_channel.state == chan_state_mod.Open
     trace @"acknowledge_packet: channel state is open"
@@ -175,7 +175,7 @@ validator acknowledge_packet(
       ibc_module_callback
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
+      channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
       is_connection_state_open,
       is_client_status_active,
