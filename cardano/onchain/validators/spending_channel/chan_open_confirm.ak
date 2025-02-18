@@ -139,7 +139,7 @@ validator chan_open_confirm(
     trace @"chan_open_confirm: ibc module callback is valid"
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
+      channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
       correct_ordering,
       channel_datum_mod.validate_chan_open_confirm(datum, updated_datum),

@@ -67,8 +67,6 @@ validator timeout_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect [connection_id] = datum.state.channel.connection_hops
-
     expect Some(channel_sequence) =
       auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
@@ -88,6 +86,8 @@ validator timeout_packet(
       packet_commitment: cur_packet_commitment,
       ..
     } = cur_channel_state
+
+    expect [connection_id] = cur_channel.connection_hops
 
     expect cur_channel.state == chan_state_mod.Open
     trace @"timeout_packet: channel state is open"
@@ -187,7 +187,7 @@ validator timeout_packet(
     trace @"timeout_packet: ibc module callback is valid"
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
+      channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
       is_valid_packet,
       valid_timestamp,
