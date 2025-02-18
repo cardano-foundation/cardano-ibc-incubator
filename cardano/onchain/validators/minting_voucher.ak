@@ -73,49 +73,20 @@ validator mint_voucher(module_token: AuthToken) {
         trace @"mint_voucher: converted receiver to public key hash"
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        let inputs_token =
-          list.reduce(
-            inputs,
-            0,
-            fn(acc, input) {
-              let output = input.output
-
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    voucher_minting_policy_id,
-                    token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
+        expect Some(payout_output) =
+          list.find(
+            transaction.outputs,
+            fn(output) { output.address == receiver_address },
           )
 
-        let outputs_token =
-          list.reduce(
-            outputs,
-            0,
-            fn(acc, output) {
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    voucher_minting_policy_id,
-                    token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
-          )
         and {
           valid_receiver,
           valid_minted_tokens,
-          outputs_token - inputs_token == transfer_amount,
+          quantity_of(
+            payout_output.value,
+            voucher_minting_policy_id,
+            token_name,
+          ) >= transfer_amount,
         }
       }
       BurnVoucher { packet_source_port, packet_source_channel } -> {
