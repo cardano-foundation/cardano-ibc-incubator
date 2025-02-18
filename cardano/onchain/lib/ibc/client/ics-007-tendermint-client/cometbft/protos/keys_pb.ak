@@ -42,7 +42,7 @@ pub fn marshal_for_ed25519(pk_opt: Option<PublicKey>) -> ByteArray {
     #[],
     {
       expect Some(pk) = pk_opt
-      expect PublicKey_Ed25519(sum) = pk
+      expect PublicKey_Ed25519 { sum } = pk
       #[]
         |> concat(
             ite(
@@ -65,7 +65,7 @@ pub fn size_for_ed25519(pk_opt: Option<PublicKey>) -> Int {
     0,
     {
       expect Some(pk) = pk_opt
-      expect PublicKey_Ed25519(sum) = pk
+      expect PublicKey_Ed25519 { sum } = pk
       ite(
         length(sum) == 0,
         0,
@@ -84,7 +84,7 @@ pub fn marshal_for_secp256k1(pk_opt: Option<PublicKey>) -> ByteArray {
     #[],
     {
       expect Some(pk) = pk_opt
-      expect PublicKey_Secp256K1(sum) = pk
+      expect PublicKey_Secp256K1 { sum } = pk
       #[]
         |> concat(
             ite(
@@ -107,7 +107,7 @@ pub fn size_for_secp256k1(pk_opt: Option<PublicKey>) -> Int {
     0,
     {
       expect Some(pk) = pk_opt
-      expect PublicKey_Secp256K1(sum) = pk
+      expect PublicKey_Secp256K1 { sum } = pk
       ite(
         length(sum) == 0,
         0,

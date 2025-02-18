@@ -84,12 +84,12 @@ validator spend_connection(
     trace @"spend_connection: extract connection_id"
 
     when redeemer is {
-      ConnOpenAck(
+      ConnOpenAck {
         counterparty_client_state,
         proof_try,
         proof_client,
         proof_height,
-      ) -> {
+      } -> {
         trace @"spend_connection: ConnOpenAck branch"
 
         expect Some(client_datum) =
