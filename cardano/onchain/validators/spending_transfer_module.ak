@@ -52,14 +52,14 @@ validator spend_transfer_module(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, .. } = transaction
+    let Transaction { inputs, outputs, .. } = transaction
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
     expect Some(updated_output) =
       validator_utils.validate_token_remain(
         spent_output,
-        transaction.outputs,
+        outputs,
         [port_token, module_token],
       )
     trace @"spend_transfer_module: token is remained"
