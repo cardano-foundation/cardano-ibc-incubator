@@ -1,15 +1,18 @@
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 // DO NOT EDIT.
 // source: ibc/core/connection/v1/connection.proto
 
-use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/commitment_pb.{
   marshal_for_merkle_prefix, size_for_merkle_prefix,
 }
-use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
+use ibc/core/ics_003_connection_semantics/types/counterparty.{
+  Counterparty, new_counterparty,
+}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
+use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int32, Uint64, uint64}
 
@@ -352,3 +355,50 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
     },
   )
 }
+
+test marshal_for_version_cost() {
+  let some_version = Some(Version(#"0101", [#"0201", #"0202"]))
+  let bytes = marshal_for_version(some_version)
+  let length = size_for_version(some_version)
+  trace length
+  trace bytearray.to_hex(bytes)
+  True
+}
+
+test marshal_for_merkle_prefix_cost() {
+  let some_merkle_prefix = Some(MerklePrefix(#"0501"))
+  let bytes = marshal_for_merkle_prefix(some_merkle_prefix)
+  let length = size_for_merkle_prefix(some_merkle_prefix)
+  trace length
+  trace bytearray.to_hex(bytes)
+  True
+}
+
+test marshal_for_counerparty_cost() {
+  let some_counterparty =
+    Some(new_counterparty(#"0301", #"0401", MerklePrefix(#"0501")))
+  let bytes = marshal_for_counterparty(some_counterparty)
+  let length = size_for_counterparty(some_counterparty)
+  trace length
+  trace bytearray.to_hex(bytes)
+  True
+}
+
+test marshal_for_connection_end_cost() {
+  let bytes =
+    marshal_for_connection_end(
+      Some(
+        ConnectionEnd(
+          #"0001",
+          [Some(Version(#"0101", [#"0201", #"0202"]))],
+          UNINITIALIZED,
+          new_counterparty(#"0301", #"0401", MerklePrefix(#"0501")),
+          10,
+        ),
+      ),
+    )
+  trace bytearray.to_hex(bytes)
+  True
+}
+// 58240A020001120C0A0201011202020112020202220E0A020301120204011A040A020501280A
+// 58240A020001120C0A0201011202020112020202220C0A020301120204011A040A020501280A
