@@ -52,8 +52,27 @@ pub fn encode_varint(v: Int64) -> ByteArray {
   )
 }
 
+pub fn encode_length_varint(v: Int64) -> ByteArray {
+  if v < 128 {
+    push(#[], v)
+  } else {
+    // implies x < 16384 always
+    push(#[], v / 128)
+      |> push(v % 128 + 128)
+  }
+}
+
 pub fn sov(x: Int64) -> Int {
   x |> len64() |> add(6) |> div(7)
+}
+
+pub fn sov_length(x: Int64) -> Int {
+  if x < 128 {
+    1
+  } else {
+    // implies x < 16384 always
+    2
+  }
 }
 
 pub fn is_empty_or_size(h: ByteArray, size: Int) -> Bool {
