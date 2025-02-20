@@ -1,5 +1,5 @@
-use cardano/address.{Address, Script}
-use cardano/assets.{from_asset}
+use cardano/address.{Address, Script, VerificationKey}
+use cardano/assets.{from_asset, from_lovelace}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
@@ -47,7 +47,7 @@ test mint_handler() {
           output_reference,
           Output {
             address: output_address,
-            value: from_asset(policy_id, handler_token_name, 1),
+            value: from_lovelace(15_000_000),
             datum: NoDatum,
             reference_script: None,
           },
@@ -65,6 +65,152 @@ test mint_handler() {
     }
 
   minting_handler.mint_handler.mint(
+    output_reference,
+    update_handler_script_hash,
+    Void,
+    policy_id,
+    transaction,
+  )
+}
+
+test mint_handler_fails_dust() {
+  let output_reference =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+  let update_handler_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let policy_id = #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+
+  let output_address =
+    Address(
+      Script(#"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"),
+      None,
+    )
+  let dust_policy_id =
+    #"00000000000000000000000000000000000000000000000000000001"
+
+  let dust_asset_name = "DUST"
+
+  let handler_state =
+    HandlerState {
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+    }
+
+  let handler_token = AuthToken { policy_id, name: handler_token_name }
+
+  let init_handler_datum =
+    HandlerDatum { state: handler_state, token: handler_token }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [
+        Input(
+          output_reference,
+          Output {
+            address: output_address,
+            value: from_lovelace(15_000_000)
+              |> assets.add(dust_policy_id, dust_asset_name, 1_000_000),
+            datum: NoDatum,
+            reference_script: None,
+          },
+        ),
+      ],
+      outputs: [
+        Output {
+          address: output_address,
+          value: from_lovelace(15_000_000)
+            |> assets.add(policy_id, handler_token_name, 1)
+            |> assets.add(dust_policy_id, dust_asset_name, 1_000_000),
+          datum: InlineDatum(init_handler_datum),
+          reference_script: None,
+        },
+      ],
+      mint: from_asset(policy_id, handler_token_name, 1),
+    }
+
+  !minting_handler.mint_handler.mint(
+    output_reference,
+    update_handler_script_hash,
+    Void,
+    policy_id,
+    transaction,
+  )
+}
+
+test mint_handler_fails_nft_not_locked() {
+  let output_reference =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+  let update_handler_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let policy_id = #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+
+  let output_address =
+    Address(
+      Script(#"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"),
+      None,
+    )
+  let wallet_address =
+    Address(
+      VerificationKey(
+        #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371",
+      ),
+      None,
+    )
+
+  let handler_state =
+    HandlerState {
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+    }
+
+  let handler_token = AuthToken { policy_id, name: handler_token_name }
+
+  let init_handler_datum =
+    HandlerDatum { state: handler_state, token: handler_token }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [
+        Input(
+          output_reference,
+          Output {
+            address: output_address,
+            value: from_lovelace(15_000_000),
+            datum: NoDatum,
+            reference_script: None,
+          },
+        ),
+      ],
+      outputs: [
+        Output {
+          address: output_address,
+          value: from_lovelace(15_000_000),
+          datum: InlineDatum(init_handler_datum),
+          reference_script: None,
+        },
+        Output {
+          address: wallet_address,
+          value: from_asset(policy_id, handler_token_name, 1),
+          datum: NoDatum,
+          reference_script: None,
+        },
+      ],
+      mint: from_asset(policy_id, handler_token_name, 1),
+    }
+
+  !minting_handler.mint_handler.mint(
     output_reference,
     update_handler_script_hash,
     Void,
