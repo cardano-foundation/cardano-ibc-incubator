@@ -1,5 +1,6 @@
-use aiken/builtin.{if_then_else as ite}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
+use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb.{
   INIT, OPEN, State, TRYOPEN, UNINITIALIZED,
@@ -9,7 +10,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{
 }
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/utils/bytes.{encode_length_varint, encode_varint, sov_length}
+use ibc/utils/bytes.{encode_length_varint, encode_varint, sov, sov_length}
 use ibc/utils/int.{Int32, Uint64}
 
 pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
@@ -197,4 +198,64 @@ test marshal_for_connection_end_cost() {
     )
   trace bytearray.to_hex(bytes)
   True
+}
+
+test client_id() {
+  let client_id = #"01f1"
+  let l = length(client_id)
+  let l2 = l |> sov() |> add(l + 1)
+  l2 == 4
+}
+
+test client_id_new() {
+  let client_id = #"01f1"
+  let (a, _) = (0, #[]) |> size_and_concat(encode_bytearray(client_id, 10))
+  a == 4
+}
+
+test connection_id() {
+  let client_id = #"0401"
+  let l = length(client_id)
+  let l2 = l |> sov() |> add(l + 1)
+  l2 == 4
+}
+
+test connection_id_new() {
+  let client_id = #"0401"
+  let (a, _) = (0, #[]) |> size_and_concat(encode_bytearray(client_id, 10))
+  a == 4
+}
+
+pub fn size_for_merkle_prefix(merkle_prefix_opt: Option<MerklePrefix>) -> Int {
+  ite(
+    is_none(merkle_prefix_opt),
+    0,
+    {
+      expect Some(merkle_prefix) = merkle_prefix_opt
+      let MerklePrefix { key_prefix } = merkle_prefix
+      0
+        |> add(
+            ite(
+              length(key_prefix) == 0,
+              0,
+              {
+                let l = length(key_prefix)
+                l |> sov() |> add(l + 1)
+              },
+            ),
+          )
+    },
+  )
+}
+
+test merkle_prefix() {
+  let prefix = MerklePrefix(#"0501")
+  let l = size_for_merkle_prefix(Some(prefix))
+  let l2 = l |> sov() |> add(l + 1)
+  l2 == 6
+}
+
+test merkle_prefix_new() {
+  let (l, _) = marshal_for_merkle_prefix(MerklePrefix(#"0501"))
+  l == 4
 }
