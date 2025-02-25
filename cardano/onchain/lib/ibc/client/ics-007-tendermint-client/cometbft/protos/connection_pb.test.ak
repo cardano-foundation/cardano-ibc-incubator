@@ -155,7 +155,7 @@ pub fn marshal_for_counterparty(counterparty: Counterparty) -> (Int, ByteArray) 
               |> encode_length_varint()
               |> concat(bz1)
               |> push(0x1a)
-          (size, bz2)
+          (sov_length(size) + size + 1, bz2)
         },
       )
 }
