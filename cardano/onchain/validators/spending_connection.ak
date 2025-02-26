@@ -234,7 +234,7 @@ fn validate_conn_open_ack_proof(
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let counterparty_client_state_bz =
@@ -310,7 +310,7 @@ fn validate_conn_open_confirm_proof(
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let time_delay = connection.delay_period

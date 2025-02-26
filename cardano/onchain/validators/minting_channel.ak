@@ -13,7 +13,6 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
