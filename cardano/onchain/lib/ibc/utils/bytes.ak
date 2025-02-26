@@ -3,7 +3,7 @@ use aiken/builtin.{
 }
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bits.{len64}
-use ibc/utils/int.{Int64}
+use ibc/utils/int.{Int64, uint64}
 
 fn inner_read_uvarint(bz: ByteArray, index: Int) -> (Int, Int) {
   let cur_bz = builtin.index_bytearray(bz, index)
@@ -96,6 +96,18 @@ pub fn add_and_concat(
   let (size1, bz1) = a
   let (size2, bz2) = b
   (size1 + size2, concat(bz1, bz2))
+}
+
+pub fn encode_int(int: Int, identifier: Int) -> (Int, ByteArray) {
+  let l = uint64(int) |> sov() |> add(1)
+  let hash = uint64(int) |> encode_varint() |> push(identifier)
+  (l, hash)
+}
+
+pub fn encode_int_length(int: Int, identifier: Int) -> (Int, ByteArray) {
+  let l = sov_length(int) + 1
+  let hash = encode_length_varint(int) |> push(identifier)
+  (l, hash)
 }
 
 pub fn encode_bytearray(bz1: ByteArray, identifier: Int) -> (Int, ByteArray) {

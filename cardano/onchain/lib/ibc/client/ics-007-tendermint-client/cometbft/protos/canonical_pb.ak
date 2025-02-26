@@ -7,7 +7,10 @@ use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
   marshal_for_timestamp, size_for_timestamp, size_of_std_time, timestamp_proto,
 }
-use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/bytes.{
+  add_and_concat, encode_bytearray, encode_int, encode_varint, size_and_concat,
+  sov,
+}
 use ibc/utils/int.{Int32, Int64, uint64}
 use ibc/utils/time.{Time}
 
@@ -31,6 +34,25 @@ pub type CanonicalVote {
   block_id: Option<CanonicalBlockID>,
   timestamp: Time,
   chain_id: ByteArray,
+}
+
+pub type CanonicalVoteV2 {
+  v_type: SignedMsgType,
+  height: Int64,
+  round: Int64,
+  block_id: CanonicalBlockID,
+  timestamp: Time,
+  chain_id: ByteArray,
+}
+
+pub fn marshal_for_part_set_header_v2(
+  psh: CanonicalPartSetHeader,
+) -> (Int, ByteArray) {
+  let CanonicalPartSetHeader { total, hash } = psh
+  // total |> uint64() |> sov() |> add(1)
+  (0, #[])
+    |> add_and_concat(encode_int(total, 8))
+    |> size_and_concat(encode_bytearray(hash, 0x12))
 }
 
 pub fn marshal_for_part_set_header(
@@ -154,6 +176,15 @@ pub fn size_for_block_id(block_id_opt: Option<CanonicalBlockID>) -> Int {
           )
     },
   )
+}
+
+pub fn marshal_for_vote_v2(vote: CanonicalVoteV2) -> (Int, ByteArray) {
+  let CanonicalVoteV2 { v_type, height, round, block_id, timestamp, chain_id } =
+    vote
+  // (0, #[])
+  //   |> size_and_concat(encode_bytearray(client_id, 10))
+  //   |> size_and_concat(encode_bytearray(connection_id, 0x12))
+  (0, #"")
 }
 
 pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
