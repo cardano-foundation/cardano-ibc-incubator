@@ -45,9 +45,7 @@ pub fn verify_connection_state(
     proof,
     merkle_path,
     connection_pb.marshal_for_connection_end(
-      Some(
-        connection_end.convert_to_connection_end_proto(counterparty_connection),
-      ),
+      connection_end.convert_to_connection_end_proto(counterparty_connection),
     ),
   )
 }
