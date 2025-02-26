@@ -23,7 +23,7 @@ test marshal_for_version_produces_same_results() {
   bytes == bytes_legacy && length == length_legacy
 }
 
-test marshal_for_counerparty_cost() {
+test marshal_for_counerparty_produces_same_results() {
   let counterparty = new_counterparty(#"0301", #"0401", MerklePrefix(#"0501"))
   let (length, bytes) = marshal_for_counterparty(counterparty)
   let bytes_deprecated = marshal_for_counterparty_deprecated(Some(counterparty))
@@ -31,7 +31,7 @@ test marshal_for_counerparty_cost() {
   bytes == bytes_deprecated && length == length_deprecated
 }
 
-test marshal_for_connection_end_cost() {
+test marshal_for_connection_end_produces_same_results() {
   let connection_end =
     ConnectionEnd(
       #"0001",
