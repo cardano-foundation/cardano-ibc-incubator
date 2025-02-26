@@ -1,7 +1,7 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
-use aiken/primitive/bytearray.{push}
+use aiken/primitive/bytearray.{concat, length, push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64}
 
@@ -78,4 +78,34 @@ pub fn sov_length(x: Int64) -> Int {
 pub fn is_empty_or_size(h: ByteArray, size: Int) -> Bool {
   let len = bytearray.length(h)
   len == 0 || len == size
+}
+
+pub fn size_and_concat(
+  a: (Int, ByteArray),
+  b: (Int, ByteArray),
+) -> (Int, ByteArray) {
+  let (size, bz1) = a
+  let (length, bz2) = b
+  (size + sov_length(length) + length + 1, concat(bz1, bz2))
+}
+
+pub fn add_and_concat(
+  a: (Int, ByteArray),
+  b: (Int, ByteArray),
+) -> (Int, ByteArray) {
+  let (size1, bz1) = a
+  let (size2, bz2) = b
+  (size1 + size2, concat(bz1, bz2))
+}
+
+pub fn encode_bytearray(bz1: ByteArray, identifier: Int) -> (Int, ByteArray) {
+  let l = length(bz1)
+  ite(
+    l == 0,
+    (0, #[]),
+    {
+      let bz2 = l |> encode_length_varint() |> concat(bz1) |> push(identifier)
+      (l, bz2)
+    },
+  )
 }
