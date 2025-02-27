@@ -10,7 +10,7 @@ pub fn validate_prefixed_denom(denom: ByteArray) -> Bool {
     True
   } else {
     expect Some(base) = list.last(denom_split)
-    if string.trim_space(base) == "" {
+    if string.is_only_space(base) {
       False
     } else {
       let paths =
