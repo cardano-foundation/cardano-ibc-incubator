@@ -1,8 +1,9 @@
 use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
   CanonicalBlockID, CanonicalPartSetHeader, CanonicalVote, CanonicalVoteV2,
-  marshal_delimited_for_vote, marshal_for_part_set_header,
-  marshal_for_part_set_header_v2, marshal_for_vote, marshal_for_vote_v2,
-  size_for_part_set_header, size_for_vote,
+  marshal_delimited_for_vote, marshal_for_block_id, marshal_for_block_id_v2,
+  marshal_for_part_set_header, marshal_for_part_set_header_v2, marshal_for_vote,
+  marshal_for_vote_v2, size_for_block_id, size_for_part_set_header,
+  size_for_vote,
 }
 
 const canonical_vote1 =
@@ -128,4 +129,24 @@ test marshal_for_part_set_header_produces_same_results_large_values() {
   trace length
   trace length_deprecated
   length == length_deprecated && bytes == bytes_deprecated
+}
+
+test marshal_for_block_id_produces_same_results() {
+  let block_id =
+    CanonicalBlockID {
+      hash: #[4, 5, 6],
+      part_set_header: CanonicalPartSetHeader { total: 7, hash: #[8, 9, 10] },
+    }
+
+  let (lenght, bytes) = marshal_for_block_id_v2(block_id)
+  let length_deprecated = size_for_block_id(Some(block_id))
+  let bytes_deprecated = marshal_for_block_id(Some(block_id))
+
+  trace bytes
+  trace bytes_deprecated
+
+  and {
+    lenght == length_deprecated,
+    bytes == bytes_deprecated,
+  }
 }
