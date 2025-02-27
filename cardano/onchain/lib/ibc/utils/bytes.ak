@@ -1,7 +1,7 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
-use aiken/primitive/bytearray.{concat, length, push}
+use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64, uint64}
 
@@ -98,16 +98,43 @@ pub fn add_and_concat(
   (size1 + size2, concat(bz1, bz2))
 }
 
+// Test for int = 0
 pub fn encode_int(int: Int, identifier: Int) -> (Int, ByteArray) {
-  let l = uint64(int) |> sov() |> add(1)
-  let hash = uint64(int) |> encode_varint() |> push(identifier)
-  (l, hash)
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = uint64(int) |> sov() |> add(1)
+      let hash = uint64(int) |> encode_varint() |> push(identifier)
+      (l, hash)
+    }
+  }
 }
 
+// Test for int = 0
 pub fn encode_int_length(int: Int, identifier: Int) -> (Int, ByteArray) {
-  let l = sov_length(int) + 1
-  let hash = encode_length_varint(int) |> push(identifier)
-  (l, hash)
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = sov_length(int) + 1
+      let hash = encode_length_varint(int) |> push(identifier)
+      (l, hash)
+    }
+  }
+}
+
+pub fn encode_int_little_endian(
+  int: Int,
+  identifier: Int,
+  constant_lenght: Int,
+) -> (Int, ByteArray) {
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = ite(int == 0, 0, constant_lenght)
+      let hash = int |> from_int_little_endian(8) |> push(identifier)
+      (l, hash)
+    }
+  }
 }
 
 pub fn encode_bytearray(bz1: ByteArray, identifier: Int) -> (Int, ByteArray) {
