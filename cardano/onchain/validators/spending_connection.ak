@@ -92,7 +92,7 @@ validator spend_connection(
       } -> {
         trace @"spend_connection: ConnOpenAck branch"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             datum.token.name,
@@ -131,7 +131,7 @@ validator spend_connection(
       ConnOpenConfirm { proof_ack, proof_height } -> {
         trace @"spend_connection: ConnOpenConfirm branch"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             datum.token.name,

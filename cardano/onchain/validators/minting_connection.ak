@@ -72,7 +72,7 @@ validator mint_connection(
       ConnOpenInit { handler_auth_token } -> {
         trace @"mint_connection: ConnOpenInit branch"
 
-        expect Some(handler_datum) =
+        let handler_datum =
           validator_utils.validate_handler_redeemer(
             inputs,
             redeemers,
@@ -81,7 +81,7 @@ validator mint_connection(
           )
         trace @"mint_connection: validator_utils.validate_handler_redeemer"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             connection_output_datum.token.name,
@@ -126,7 +126,7 @@ validator mint_connection(
       } -> {
         trace @"mint_connection: ConnOpenTry branch\n"
 
-        expect Some(handler_datum) =
+        let handler_datum =
           validator_utils.validate_handler_redeemer(
             inputs,
             redeemers,
@@ -135,7 +135,7 @@ validator mint_connection(
           )
         trace @"mint_connection: validator_utils.validate_handler_redeemer\n"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             connection_output_datum.token.name,

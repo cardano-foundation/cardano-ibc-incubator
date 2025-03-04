@@ -90,7 +90,7 @@ validator chan_open_ack(
         |> version_mod.verify_supported_feature(connection_version, _)
     trace @"chan_open_ack: connection support channel ordering"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -123,7 +123,7 @@ validator chan_open_ack(
       )
     trace @"chan_open_ack: channel proof is valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,

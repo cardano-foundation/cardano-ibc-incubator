@@ -119,7 +119,7 @@ validator acknowledge_packet(
       connection_datum.state.state == conn_state_mod.Open
     trace @"acknowledge_packet: connection state is open"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -162,7 +162,7 @@ validator acknowledge_packet(
       )
     trace @"acknowledge_packet: channel datum is updated valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,

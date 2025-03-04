@@ -103,7 +103,7 @@ validator recv_packet(
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"recv_packet: Connection is open"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -132,7 +132,7 @@ validator recv_packet(
       )
     trace @"recv_packet: packet proof is valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,

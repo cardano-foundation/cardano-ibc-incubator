@@ -80,7 +80,7 @@ validator chan_close_init(
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"chan_close_init: Connection is open"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -97,7 +97,7 @@ validator chan_close_init(
       ) == client_status_mod.Active
     trace @"chan_close_init: client status is active"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
