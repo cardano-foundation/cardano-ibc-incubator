@@ -54,8 +54,6 @@ validator send_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect [connection_id] = datum.state.channel.connection_hops
-
     expect Some(channel_sequence) =
       auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
@@ -67,6 +65,8 @@ validator send_packet(
     let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
     let ChannelDatumState { channel: cur_channel, next_sequence_send, .. } =
       cur_channel_state
+
+    expect [connection_id] = cur_channel.connection_hops
 
     expect cur_channel.state == chan_state_mod.Open
     trace @"send_packet: channel state is open"
@@ -139,7 +139,7 @@ validator send_packet(
     trace @"send_packet: tx spends module utxo"
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
+      channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
       packet_mod.validate_basic(packet),
       is_valid_packet,
