@@ -51,5 +51,33 @@ test marshal_for_connection_end_produces_same_results() {
   let bytes = marshal_for_connection_end(connection_end)
   let bytes_deprecated =
     marshal_for_connection_end_deprecated(Some(connection_end_deprecated))
+  trace bytes
+  trace bytes_deprecated
+  bytes == #"0a020001120c0a0201011202020112020202220e0a020301120204011a040a020501280a" && bytes == bytes_deprecated
+}
+
+test marshal_for_connection_end_produces_same_results_empty_values() {
+  let connection_end =
+    ConnectionEnd(
+      #"",
+      [Version(#"", [#""])],
+      UNINITIALIZED,
+      new_counterparty(#"", #"", MerklePrefix(#"")),
+      0,
+    )
+  let connection_end_deprecated =
+    ConnectionEndDeprecated(
+      #"",
+      [Some(Version(#"", [#""]))],
+      UNINITIALIZED_DEPRECATED,
+      new_counterparty(#"", #"", MerklePrefix(#"")),
+      0,
+    )
+  let bytes = marshal_for_connection_end(connection_end)
+  let bytes_deprecated =
+    marshal_for_connection_end_deprecated(Some(connection_end_deprecated))
+
+  trace bytes
+  trace bytes_deprecated
   bytes == #"0a020001120c0a0201011202020112020202220e0a020301120204011a040a020501280a" && bytes == bytes_deprecated
 }
