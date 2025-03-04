@@ -225,10 +225,18 @@ pub async fn start_local_cardano_network(
         ),
         &optional_progress_bar,
     );
+
+    let mut aiken_build_args = Vec::from(["build"]);
+
+    if logger::get_verbosity() == logger::Verbosity::Verbose {
+        aiken_build_args.push("--trace-level");
+        aiken_build_args.push("verbose");
+    }
+
     execute_script(
         project_root_path.join("cardano").join("onchain").as_path(),
         "aiken",
-        Vec::from(["build"]),
+        aiken_build_args,
         None,
     )?;
 
