@@ -210,7 +210,7 @@ test test_validate_mint_succeed() {
       sequence,
     )
   // Assert that the result is as expected
-  result == Some(AuthToken { ..handler_token, name: token_name })
+  result == AuthToken { ..handler_token, name: token_name }
 }
 
 test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
@@ -245,7 +245,7 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
       sequence,
     )
   // Assert that the result is as expected
-  result == Some(AuthToken { ..handler_token, name: token_name })
+  result == AuthToken { ..handler_token, name: token_name }
 }
 
 //==============================extract_module_redeemer===============================

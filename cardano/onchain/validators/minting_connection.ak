@@ -97,7 +97,7 @@ validator mint_connection(
           ) == Active
         trace @"mint_connection: client status is active"
 
-        expect Some(connection_token) =
+        let connection_token =
           string_utils.int_to_string(
             handler_datum.state.next_connection_sequence,
           )
@@ -152,7 +152,7 @@ validator mint_connection(
           ) == Active
         trace @"mint_connection: client status is active\n"
 
-        expect Some(connection_token) =
+        let connection_token =
           string_utils.int_to_string(
             handler_datum.state.next_connection_sequence,
           )
