@@ -204,16 +204,16 @@ pub fn validate_mint(
   handler_token: AuthToken,
   token_name_prefix: ByteArray,
   sequence: ByteArray,
-) -> Option<AuthToken> {
+) -> AuthToken {
   let token_name =
     auth.generate_token_name(handler_token, token_name_prefix, sequence)
 
   let token = AuthToken { policy_id: minting_policy_id, name: token_name }
 
   if auth.mint_auth_token(mint, token) {
-    Some(token)
+    token
   } else {
-    None
+    fail @"Auth Token Not Minted"
   }
 }
 

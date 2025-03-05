@@ -121,7 +121,7 @@ validator mint_channel(
           ) == Active
         trace @"mint_channel: client status is active"
 
-        expect Some(channel_token) =
+        let channel_token =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> validator_utils.validate_mint(
                 mint,
@@ -210,7 +210,7 @@ validator mint_channel(
           ) == Active
         trace @"mint_channel: client status is active"
 
-        expect Some(channel_token) =
+        let channel_token =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> validator_utils.validate_mint(
                 mint,
