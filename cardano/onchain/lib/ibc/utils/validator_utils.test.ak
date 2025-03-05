@@ -439,28 +439,26 @@ test validate_token_remain_succeed() {
   let (spent_output, outputs, tokens, updated_output) =
     setup_validate_token_remain()
 
-  validator_utils.validate_token_remain(spent_output, outputs, tokens) == Some(
-    updated_output,
-  )
+  validator_utils.validate_token_remain(spent_output, outputs, tokens) == updated_output
 }
 
 test validate_token_remain_succeed_if_required_tokens_is_empty() {
   let (spent_output, outputs, _tokens, updated_output) =
     setup_validate_token_remain()
 
-  validator_utils.validate_token_remain(spent_output, outputs, []) == Some(
-    updated_output,
-  )
+  validator_utils.validate_token_remain(spent_output, outputs, []) == updated_output
 }
 
-test validate_token_remain_fail_if_token_not_remained() {
+test validate_token_remain_fail_if_token_not_remained() fail {
   let (spent_output, outputs, tokens, _) = setup_validate_token_remain()
 
   expect [output, ..] = outputs
 
   let output = Output { ..output, value: zero }
 
-  validator_utils.validate_token_remain(spent_output, [output], tokens) == None
+  let result =
+    validator_utils.validate_token_remain(spent_output, [output], tokens)
+  result == result
 }
 
 //=====================================extract_token_unit===================================
@@ -476,24 +474,28 @@ fn setup_extract_token_unit() -> (ByteArray, ByteArray, ByteArray) {
 test extract_token_unit_succeed() {
   let (unit, policy_id, name) = setup_extract_token_unit()
 
-  validator_utils.extract_token_unit(unit) == Some((policy_id, name))
+  validator_utils.extract_token_unit(unit) == (policy_id, name)
 }
 
 test extract_token_unit_succeed_if_unit_is_lovelace() {
-  validator_utils.extract_token_unit("lovelace") == Some(
-    (ada_policy_id, ada_asset_name),
+  validator_utils.extract_token_unit("lovelace") == (
+    ada_policy_id,
+    ada_asset_name,
   )
 }
 
-test extract_token_unit_fail_if_unit_length_invalid() {
+test extract_token_unit_fail_if_unit_length_invalid_too_long() fail {
   let too_long_unit =
     #"a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c235a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c235a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c2"
+  let result = validator_utils.extract_token_unit(too_long_unit)
+  result == result
+}
+
+test extract_token_unit_fail_if_unit_length_invalid_too_short() fail {
   let too_short_unit = #"a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c2"
 
-  and {
-    validator_utils.extract_token_unit(too_long_unit) == None,
-    validator_utils.extract_token_unit(too_short_unit) == None,
-  }
+  let result = validator_utils.extract_token_unit(too_short_unit)
+  result == result
 }
 
 //===================================validate_handler_redeemer==========================

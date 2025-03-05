@@ -221,36 +221,32 @@ pub fn validate_token_remain(
   spent_output: Output,
   outputs: List<Output>,
   tokens: List<AuthToken>,
-) -> Option<Output> {
-  when
+) -> Output {
+  expect [updated_output] =
     list.filter(outputs, fn(output) { output.address == spent_output.address })
-  is {
-    [updated_output] -> {
-      let is_remain =
-        if list.is_empty(tokens) {
-          without_lovelace(spent_output.value) == without_lovelace(
-            updated_output.value,
-          )
-        } else {
-          list.all(
-            tokens,
-            fn(token) {
-              quantity_of(spent_output.value, token.policy_id, token.name) == quantity_of(
-                updated_output.value,
-                token.policy_id,
-                token.name,
-              )
-            },
-          )
-        }
 
-      if is_remain {
-        Some(updated_output)
-      } else {
-        None
-      }
+  let is_remain =
+    if list.is_empty(tokens) {
+      without_lovelace(spent_output.value) == without_lovelace(
+        updated_output.value,
+      )
+    } else {
+      list.all(
+        tokens,
+        fn(token) {
+          quantity_of(spent_output.value, token.policy_id, token.name) == quantity_of(
+            updated_output.value,
+            token.policy_id,
+            token.name,
+          )
+        },
+      )
     }
-    _ -> None
+
+  if is_remain {
+    updated_output
+  } else {
+    fail @"Invalid tokens amount"
   }
 }
 
@@ -258,18 +254,18 @@ pub fn compare_purpose(_key1: ScriptPurpose, _key2: ScriptPurpose) -> Ordering {
   Greater
 }
 
-pub fn extract_token_unit(unit: ByteArray) -> Option<(ByteArray, ByteArray)> {
+pub fn extract_token_unit(unit: ByteArray) -> (ByteArray, ByteArray) {
   let len = bytearray.length(unit)
 
   if unit == "lovelace" {
-    Some((ada_policy_id, ada_asset_name))
+    (ada_policy_id, ada_asset_name)
   } else if 28 <= len && len <= 60 {
     let policy_id = bytearray.take(unit, 28)
     let name = bytearray.slice(unit, 28, 59)
 
-    Some((policy_id, name))
+    (policy_id, name)
   } else {
-    None
+    fail @"Could not extract token unit"
   }
 }
 
