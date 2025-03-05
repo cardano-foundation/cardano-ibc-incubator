@@ -111,7 +111,7 @@ fn handler_callback(
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
-      expect Some(output_channel) =
+      let output_channel =
         validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
@@ -460,7 +460,7 @@ fn validate_channel_open_init(
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
-) -> Option<Channel> {
+) -> Channel {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
@@ -495,7 +495,7 @@ fn validate_channel_open_init(
 
   expect channel_datum.port_id == port_id
 
-  Some(channel_datum.state.channel)
+  channel_datum.state.channel
 }
 
 fn validate_channel_open_try(

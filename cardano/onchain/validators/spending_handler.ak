@@ -95,7 +95,7 @@ validator spend_handler(
             ),
           }
         HandlerBindPort -> {
-          expect Some(port_number) =
+          let port_number =
             validate_bind_port(redeemers, datum.token, port_minting_policy_id)
 
           handler_datum.validate_bind_port(datum, updated_datum, port_number)
@@ -187,7 +187,7 @@ fn validate_bind_port(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   port_minting_policy_id: PolicyId,
-) -> Option<Int> {
+) -> Int {
   // valid mint port redeemer for bind port
   expect Some(mint_port_redeemer) =
     pairs.get_first(redeemers, Mint(port_minting_policy_id))
@@ -199,5 +199,5 @@ fn validate_bind_port(
 
   expect port_handler_token == handler_token
 
-  Some(port_number)
+  port_number
 }
