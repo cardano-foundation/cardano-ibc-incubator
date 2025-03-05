@@ -284,28 +284,24 @@ pub fn extract_channel(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_token: AuthToken,
-) -> Option<(ChannelDatum, SpendChannelRedeemer, Output)> {
-  when
+) -> (ChannelDatum, SpendChannelRedeemer, Output) {
+  expect [channel_input] =
     list.filter(
       inputs,
       fn(input) { input.output |> auth.contain_auth_token(channel_token) },
     )
-  is {
-    [channel_input] -> {
-      expect channel_datum: ChannelDatum =
-        get_inline_datum(channel_input.output)
 
-      pairs.get_first(redeemers, Spend(channel_input.output_reference))
-        |> option.map(
-            fn(spend_channel_redeemer) {
-              expect spend_channel_redeemer: SpendChannelRedeemer =
-                spend_channel_redeemer
+  expect channel_datum: ChannelDatum = get_inline_datum(channel_input.output)
 
-              (channel_datum, spend_channel_redeemer, channel_input.output)
-            },
-          )
-    }
+  expect Some(channel_details) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+      |> option.map(
+          fn(spend_channel_redeemer) {
+            expect spend_channel_redeemer: SpendChannelRedeemer =
+              spend_channel_redeemer
 
-    _ -> None
-  }
+            (channel_datum, spend_channel_redeemer, channel_input.output)
+          },
+        )
+  channel_details
 }
