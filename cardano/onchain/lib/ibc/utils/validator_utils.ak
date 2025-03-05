@@ -96,6 +96,9 @@ pub fn validate_handler_redeemer(
                   fn(spent_handler_redeemer) {
                     expect handler_operator: HandlerOperator =
                       spent_handler_redeemer
+                    trace @"validate_handler_redeemer"
+                    trace handler_operator
+                    trace expected_redeemer
                     if handler_operator == expected_redeemer {
                       let handler_output = handler_input.output
                       expect handler_datum: HandlerDatum =

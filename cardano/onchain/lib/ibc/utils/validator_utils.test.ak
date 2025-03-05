@@ -590,6 +590,7 @@ test validate_handler_redeemer_fail_redeemers_not_contain_handler_redeemer() fai
 }
 
 test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fail {
+  // FIX_ME: this should not pass
   let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
@@ -598,6 +599,11 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fai
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
+
+  trace CreateClient
+  trace HandlerConnOpenInit
+  trace handler_redeemer
+  trace redeemers
 
   let result =
     validator_utils.validate_handler_redeemer(
@@ -954,4 +960,46 @@ test validate_referred_connection_if_found_datum_is_not_connection_datum() fail 
     connection_minting_policy_id,
     connection_id,
   ) == None
+}
+
+pub type Types {
+  MyType
+  NotMyType
+  SomeType { value: Int }
+}
+
+pub type OtherTypes {
+  DefinitelyNotMyType
+  MyOtherType
+}
+
+test test_my_type() fail {
+  let my_type = MyType
+  let not_my_type = NotMyType
+  // MyType == NotMyType 
+  trace my_type
+  trace not_my_type
+  my_type == not_my_type
+}
+
+test test_some_type() fail {
+  MyType == SomeType(42)
+}
+
+test test_definitely_not_my_type() {
+  let my_type: Redeemer = MyType
+  let definitely_not_my_type: Redeemer = MyOtherType
+  my_type == definitely_not_my_type
+}
+
+test test_void_is_constr_0() {
+  let it_should_be_void: Redeemer = Void
+  expect not_void_anymore: Types = it_should_be_void
+  not_void_anymore == MyType
+}
+
+test test_void_is_not_constr_0() {
+  let it_should_be_void: Redeemer = Void
+  expect not_void_anymore: Types = it_should_be_void
+  not_void_anymore == NotMyType
 }
