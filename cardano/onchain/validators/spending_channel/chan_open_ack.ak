@@ -48,7 +48,7 @@ validator chan_open_ack(
       ..
     } = transaction
 
-    expect Some((datum, channel_redeemer, spent_output)) =
+    let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
     expect [updated_output] =
