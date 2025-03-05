@@ -89,7 +89,7 @@ validator mint_channel(
           )
         trace @"mint_channel: spent handler redeemer is valid"
 
-        expect Some(connection_datum) =
+        let connection_datum =
           validator_utils.validate_referred_connection(
             reference_inputs,
             channel_output_datum.token.name,
@@ -178,7 +178,7 @@ validator mint_channel(
           )
         trace @"mint_channel: spent handler redeemer is HandlerChanOpenTry"
 
-        expect Some(connection_datum) =
+        let connection_datum =
           validator_utils.validate_referred_connection(
             reference_inputs,
             channel_output_datum.token.name,

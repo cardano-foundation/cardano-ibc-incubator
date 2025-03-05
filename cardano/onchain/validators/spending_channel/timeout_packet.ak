@@ -100,7 +100,7 @@ validator timeout_packet(
       }
     trace @"timeout_packet: packet info matched channel state"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,

@@ -172,7 +172,7 @@ pub fn validate_referred_connection(
   referrer_token_name: ByteArray,
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
-) -> Option<ConnectionDatum> {
+) -> ConnectionDatum {
   let connection_sequence =
     connection_keys.parse_connection_id_sequence(connection_id)
 
@@ -188,19 +188,14 @@ pub fn validate_referred_connection(
       name: connection_token_name,
     }
 
-  when
+  expect Some(data) =
     list.find(
       reference_inputs,
       fn(input) { input.output |> auth.contain_auth_token(connection_token) },
     )
-  is {
-    Some(connection_input) -> {
-      expect connection_datum: ConnectionDatum =
-        get_inline_datum(connection_input.output)
-      Some(connection_datum)
-    }
-    None -> None
-  }
+      |> map(fn(connection_input) { get_inline_datum(connection_input.output) })
+  expect connection_datum: ConnectionDatum = data
+  connection_datum
 }
 
 pub fn validate_mint(
