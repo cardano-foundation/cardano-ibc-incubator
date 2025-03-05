@@ -907,10 +907,10 @@ test validate_referred_connection_succeed() {
     referrer_token_name,
     connection_minting_policy_id,
     connection_id,
-  ) == Some(connection_datum)
+  ) == connection_datum
 }
 
-test validate_referred_connection_if_not_found_connection_input() {
+test validate_referred_connection_if_not_found_connection_input() fail {
   let (
     _reference_inputs,
     referrer_token_name,
@@ -921,12 +921,14 @@ test validate_referred_connection_if_not_found_connection_input() {
 
   let reference_inputs = []
 
-  validator_utils.validate_referred_connection(
-    reference_inputs,
-    referrer_token_name,
-    connection_minting_policy_id,
-    connection_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_connection(
+      reference_inputs,
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
 }
 
 test validate_referred_connection_if_found_datum_is_not_connection_datum() fail {
@@ -948,10 +950,12 @@ test validate_referred_connection_if_found_datum_is_not_connection_datum() fail 
 
   let reference_inputs = [connection_input]
 
-  validator_utils.validate_referred_connection(
-    reference_inputs,
-    referrer_token_name,
-    connection_minting_policy_id,
-    connection_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_connection(
+      reference_inputs,
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
 }

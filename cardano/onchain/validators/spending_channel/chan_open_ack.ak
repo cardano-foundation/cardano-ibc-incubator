@@ -72,7 +72,7 @@ validator chan_open_ack(
 
     trace @"chan_open_ack: tx context extracted"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,

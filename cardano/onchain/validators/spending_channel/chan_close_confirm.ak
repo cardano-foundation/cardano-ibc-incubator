@@ -82,7 +82,7 @@ validator chan_close_confirm(
     expect cur_channel.state != chan_state_mod.Closed
     trace @"chan_close_confirm: channel state is not Closed"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,

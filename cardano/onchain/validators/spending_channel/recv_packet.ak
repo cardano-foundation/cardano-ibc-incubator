@@ -86,7 +86,7 @@ validator recv_packet(
     expect cur_channel.state == chan_state_mod.Open
     trace @"recv_packet: channel state is open"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
