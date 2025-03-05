@@ -80,7 +80,7 @@ validator mint_channel(
       ChanOpenInit { handler_token } -> {
         trace @"mint_channel: ChanOpenInit branch"
 
-        expect Some(handler_datum) =
+        let handler_datum =
           validator_utils.validate_handler_redeemer(
             inputs,
             redeemers,
@@ -89,7 +89,7 @@ validator mint_channel(
           )
         trace @"mint_channel: spent handler redeemer is valid"
 
-        expect Some(connection_datum) =
+        let connection_datum =
           validator_utils.validate_referred_connection(
             reference_inputs,
             channel_output_datum.token.name,
@@ -104,7 +104,7 @@ validator mint_channel(
             |> version.verify_supported_feature(connection_version, _)
         trace @"mint_channel: validate connection support channel ordering"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             channel_output_datum.token.name,
@@ -121,7 +121,7 @@ validator mint_channel(
           ) == Active
         trace @"mint_channel: client status is active"
 
-        expect Some(channel_token) =
+        let channel_token =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> validator_utils.validate_mint(
                 mint,
@@ -143,7 +143,7 @@ validator mint_channel(
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> channel_keys.format_channel_identifier()
 
-        expect Some(ibc_module_redeemer) =
+        let ibc_module_redeemer =
           validator_utils.extract_module_redeemer(
             inputs,
             redeemers,
@@ -169,7 +169,7 @@ validator mint_channel(
       } -> {
         trace @"mint_channel: ChanOpenTry branch"
 
-        expect Some(handler_datum) =
+        let handler_datum =
           validator_utils.validate_handler_redeemer(
             inputs,
             redeemers,
@@ -178,7 +178,7 @@ validator mint_channel(
           )
         trace @"mint_channel: spent handler redeemer is HandlerChanOpenTry"
 
-        expect Some(connection_datum) =
+        let connection_datum =
           validator_utils.validate_referred_connection(
             reference_inputs,
             channel_output_datum.token.name,
@@ -193,7 +193,7 @@ validator mint_channel(
             |> version.verify_supported_feature(connection_version, _)
         trace @"mint_channel: connection support channel ordering"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             channel_output_datum.token.name,
@@ -210,7 +210,7 @@ validator mint_channel(
           ) == Active
         trace @"mint_channel: client status is active"
 
-        expect Some(channel_token) =
+        let channel_token =
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> validator_utils.validate_mint(
                 mint,
@@ -245,7 +245,7 @@ validator mint_channel(
           string_utils.int_to_string(handler_datum.state.next_channel_sequence)
             |> channel_keys.format_channel_identifier()
 
-        expect Some(ibc_module_redeemer) =
+        let ibc_module_redeemer =
           validator_utils.extract_module_redeemer(
             inputs,
             redeemers,

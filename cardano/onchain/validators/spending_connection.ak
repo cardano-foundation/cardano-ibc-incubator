@@ -77,8 +77,7 @@ validator spend_connection(
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
     trace @"spend_connection: extract tx valid_to"
 
-    expect Some(connection_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let connection_sequence = auth.extract_token_sequence(datum.token.name)
     let connection_id =
       conn_keys.format_connection_identifier(connection_sequence)
     trace @"spend_connection: extract connection_id"
@@ -92,7 +91,7 @@ validator spend_connection(
       } -> {
         trace @"spend_connection: ConnOpenAck branch"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             datum.token.name,
@@ -131,7 +130,7 @@ validator spend_connection(
       ConnOpenConfirm { proof_ack, proof_height } -> {
         trace @"spend_connection: ConnOpenConfirm branch"
 
-        expect Some(client_datum) =
+        let client_datum =
           validator_utils.validate_referred_client(
             reference_inputs,
             datum.token.name,

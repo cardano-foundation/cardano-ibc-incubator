@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option
+use aiken/option.{and_then, map}
 use aiken/primitive/bytearray
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
@@ -67,16 +67,14 @@ pub fn get_tx_valid_to(validity_range: ValidityRange) -> PosixTime {
   valid_to
 }
 
-pub fn get_tx_valid_from(validity_range: ValidityRange) -> Option<PosixTime> {
+pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   let lower_bound = validity_range.lower_bound
 
   if lower_bound.is_inclusive {
-    when lower_bound.bound_type is {
-      Finite(valid_from) -> Some(valid_from)
-      _ -> None
-    }
+    expect Finite(valid_from) = lower_bound.bound_type
+    valid_from
   } else {
-    None
+    fail @"Lower bound is not inclusive"
   }
 }
 
@@ -85,32 +83,32 @@ pub fn validate_handler_redeemer(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   expected_redeemer: HandlerOperator,
-) -> Option<HandlerDatum> {
-  when
+) -> HandlerDatum {
+  expect Some(handler_datum) =
     list.find(
       inputs,
       fn(input) { input.output |> auth.contain_auth_token(handler_token) },
     )
-  is {
-    Some(handler_input) ->
-      when
-        pairs.get_first(redeemers, Spend(handler_input.output_reference))
-      is {
-        Some(spent_handler_redeemer) -> {
-          expect handler_operator: HandlerOperator = spent_handler_redeemer
-          if handler_operator == expected_redeemer {
-            let handler_output = handler_input.output
-            expect handler_datum: HandlerDatum =
-              get_inline_datum(handler_output)
-            Some(handler_datum)
-          } else {
-            None
-          }
-        }
-        None -> None
-      }
-    None -> None
-  }
+      |> and_then(
+          fn(handler_input) {
+            pairs.get_first(redeemers, Spend(handler_input.output_reference))
+              |> map(
+                  fn(spent_handler_redeemer) {
+                    expect handler_operator: HandlerOperator =
+                      spent_handler_redeemer
+                    if handler_operator == expected_redeemer {
+                      let handler_output = handler_input.output
+                      expect handler_datum: HandlerDatum =
+                        get_inline_datum(handler_output)
+                      handler_datum
+                    } else {
+                      fail @"Handler is not matching"
+                    }
+                  },
+                )
+          },
+        )
+  handler_datum
 }
 
 pub fn extract_module_redeemer(
@@ -119,7 +117,7 @@ pub fn extract_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
-) -> Option<IBCModuleRedeemer> {
+) -> IBCModuleRedeemer {
   let port_number = port_keys.parse_port_id_number(port_id)
   let port_token_name =
     auth.generate_token_name_from_another(
@@ -140,7 +138,7 @@ pub fn extract_module_redeemer(
     pairs.get_first(redeemers, Spend(module_input.output_reference))
   expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
 
-  Some(ibc_module_redeemer)
+  ibc_module_redeemer
 }
 
 pub fn validate_referred_client(
@@ -148,7 +146,7 @@ pub fn validate_referred_client(
   referrer_token_name: ByteArray,
   client_minting_policy_id: PolicyId,
   client_id: ByteArray,
-) -> Option<ClientDatum> {
+) -> ClientDatum {
   let client_sequence = client_keys.parse_client_id_sequence(client_id)
 
   let client_token_name =
@@ -160,18 +158,13 @@ pub fn validate_referred_client(
   let client_token =
     AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
 
-  when
+  expect Some(client_input) =
     list.find(
       reference_inputs,
       fn(input) { input.output |> auth.contain_auth_token(client_token) },
     )
-  is {
-    Some(client_input) -> {
-      expect client_datum: ClientDatum = get_inline_datum(client_input.output)
-      Some(client_datum)
-    }
-    None -> None
-  }
+  expect client_datum: ClientDatum = get_inline_datum(client_input.output)
+  client_datum
 }
 
 pub fn validate_referred_connection(
@@ -179,7 +172,7 @@ pub fn validate_referred_connection(
   referrer_token_name: ByteArray,
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
-) -> Option<ConnectionDatum> {
+) -> ConnectionDatum {
   let connection_sequence =
     connection_keys.parse_connection_id_sequence(connection_id)
 
@@ -195,19 +188,14 @@ pub fn validate_referred_connection(
       name: connection_token_name,
     }
 
-  when
+  expect Some(data) =
     list.find(
       reference_inputs,
       fn(input) { input.output |> auth.contain_auth_token(connection_token) },
     )
-  is {
-    Some(connection_input) -> {
-      expect connection_datum: ConnectionDatum =
-        get_inline_datum(connection_input.output)
-      Some(connection_datum)
-    }
-    None -> None
-  }
+      |> map(fn(connection_input) { get_inline_datum(connection_input.output) })
+  expect connection_datum: ConnectionDatum = data
+  connection_datum
 }
 
 pub fn validate_mint(
@@ -216,16 +204,16 @@ pub fn validate_mint(
   handler_token: AuthToken,
   token_name_prefix: ByteArray,
   sequence: ByteArray,
-) -> Option<AuthToken> {
+) -> AuthToken {
   let token_name =
     auth.generate_token_name(handler_token, token_name_prefix, sequence)
 
   let token = AuthToken { policy_id: minting_policy_id, name: token_name }
 
   if auth.mint_auth_token(mint, token) {
-    Some(token)
+    token
   } else {
-    None
+    fail @"Auth Token Not Minted"
   }
 }
 
@@ -233,36 +221,32 @@ pub fn validate_token_remain(
   spent_output: Output,
   outputs: List<Output>,
   tokens: List<AuthToken>,
-) -> Option<Output> {
-  when
+) -> Output {
+  expect [updated_output] =
     list.filter(outputs, fn(output) { output.address == spent_output.address })
-  is {
-    [updated_output] -> {
-      let is_remain =
-        if list.is_empty(tokens) {
-          without_lovelace(spent_output.value) == without_lovelace(
-            updated_output.value,
-          )
-        } else {
-          list.all(
-            tokens,
-            fn(token) {
-              quantity_of(spent_output.value, token.policy_id, token.name) == quantity_of(
-                updated_output.value,
-                token.policy_id,
-                token.name,
-              )
-            },
-          )
-        }
 
-      if is_remain {
-        Some(updated_output)
-      } else {
-        None
-      }
+  let is_remain =
+    if list.is_empty(tokens) {
+      without_lovelace(spent_output.value) == without_lovelace(
+        updated_output.value,
+      )
+    } else {
+      list.all(
+        tokens,
+        fn(token) {
+          quantity_of(spent_output.value, token.policy_id, token.name) == quantity_of(
+            updated_output.value,
+            token.policy_id,
+            token.name,
+          )
+        },
+      )
     }
-    _ -> None
+
+  if is_remain {
+    updated_output
+  } else {
+    fail @"Invalid tokens amount"
   }
 }
 
@@ -270,18 +254,18 @@ pub fn compare_purpose(_key1: ScriptPurpose, _key2: ScriptPurpose) -> Ordering {
   Greater
 }
 
-pub fn extract_token_unit(unit: ByteArray) -> Option<(ByteArray, ByteArray)> {
+pub fn extract_token_unit(unit: ByteArray) -> (ByteArray, ByteArray) {
   let len = bytearray.length(unit)
 
   if unit == "lovelace" {
-    Some((ada_policy_id, ada_asset_name))
+    (ada_policy_id, ada_asset_name)
   } else if 28 <= len && len <= 60 {
     let policy_id = bytearray.take(unit, 28)
     let name = bytearray.slice(unit, 28, 59)
 
-    Some((policy_id, name))
+    (policy_id, name)
   } else {
-    None
+    fail @"Could not extract token unit"
   }
 }
 
@@ -296,28 +280,24 @@ pub fn extract_channel(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_token: AuthToken,
-) -> Option<(ChannelDatum, SpendChannelRedeemer, Output)> {
-  when
+) -> (ChannelDatum, SpendChannelRedeemer, Output) {
+  expect [channel_input] =
     list.filter(
       inputs,
       fn(input) { input.output |> auth.contain_auth_token(channel_token) },
     )
-  is {
-    [channel_input] -> {
-      expect channel_datum: ChannelDatum =
-        get_inline_datum(channel_input.output)
 
-      pairs.get_first(redeemers, Spend(channel_input.output_reference))
-        |> option.map(
-            fn(spend_channel_redeemer) {
-              expect spend_channel_redeemer: SpendChannelRedeemer =
-                spend_channel_redeemer
+  expect channel_datum: ChannelDatum = get_inline_datum(channel_input.output)
 
-              (channel_datum, spend_channel_redeemer, channel_input.output)
-            },
-          )
-    }
+  expect Some(channel_details) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+      |> option.map(
+          fn(spend_channel_redeemer) {
+            expect spend_channel_redeemer: SpendChannelRedeemer =
+              spend_channel_redeemer
 
-    _ -> None
-  }
+            (channel_datum, spend_channel_redeemer, channel_input.output)
+          },
+        )
+  channel_details
 }

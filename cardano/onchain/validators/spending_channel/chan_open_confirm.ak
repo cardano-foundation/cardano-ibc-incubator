@@ -55,7 +55,7 @@ validator chan_open_confirm(
       ..
     } = transaction
 
-    expect Some((datum, channel_redeemer, spent_output)) =
+    let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
     expect [updated_output] =
@@ -70,15 +70,14 @@ validator chan_open_confirm(
 
     expect [connection_id] = datum.state.channel.connection_hops
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect ChanOpenConfirm { proof_ack, proof_height } = channel_redeemer
 
     trace @"chan_open_confirm: tx context extracted"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
@@ -96,7 +95,7 @@ validator chan_open_confirm(
         |> version_mod.verify_supported_feature(connection_version, _)
     trace @"chan_open_confirm: connection support channel ordering"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -126,7 +125,7 @@ validator chan_open_confirm(
       )
     trace @"chan_open_confirm: channel proof is valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
