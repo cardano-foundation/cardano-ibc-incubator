@@ -67,8 +67,7 @@ validator timeout_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect TimeoutPacket {

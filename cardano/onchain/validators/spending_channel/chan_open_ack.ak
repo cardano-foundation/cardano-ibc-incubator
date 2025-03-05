@@ -63,8 +63,7 @@ validator chan_open_ack(
 
     expect [connection_id] = datum.state.channel.connection_hops
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect ChanOpenAck { counterparty_version, proof_try, proof_height } =
