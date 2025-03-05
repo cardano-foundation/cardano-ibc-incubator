@@ -62,8 +62,7 @@ validator recv_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     trace @"recv_packet: datum.token.name": datum.token.name
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
@@ -143,7 +142,7 @@ validator recv_packet(
     //expect OnRecvPacket { channel_id: module_chan_id, acknowledgement, data: _ } =
     //  ibc_module_callback
     // This block below was removed during the recv_packet.ak merge
-    //  let valid_ordering = 
+    //  let valid_ordering =
     //     when cur_channel.ordering is {
     //       chan_order_mod.Unordered ->
     //         !pairs.has_key(cur_packet_receipt, packet.sequence)

@@ -70,8 +70,7 @@ validator chan_open_confirm(
 
     expect [connection_id] = datum.state.channel.connection_hops
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect ChanOpenConfirm { proof_ack, proof_height } = channel_redeemer
