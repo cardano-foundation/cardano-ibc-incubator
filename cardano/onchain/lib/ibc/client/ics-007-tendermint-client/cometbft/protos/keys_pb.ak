@@ -1,11 +1,21 @@
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
-use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/bytes.{encode_bytearray, encode_varint, size_and_concat, sov}
 
 pub type PublicKey {
   PublicKey_Ed25519 { sum: ByteArray }
   PublicKey_Secp256K1 { sum: ByteArray }
+}
+
+pub fn marshal_for_public_key_v2(pk: PublicKey) -> (Int, ByteArray) {
+  let (key, identifier) =
+    when pk is {
+      PublicKey_Ed25519 { sum } -> (sum, 10)
+      PublicKey_Secp256K1 { sum } -> (sum, 0x12)
+    }
+  (0, #"")
+    |> size_and_concat(encode_bytearray(key, identifier))
 }
 
 pub fn marshal_for_public_key(pk_opt: Option<PublicKey>) -> ByteArray {
