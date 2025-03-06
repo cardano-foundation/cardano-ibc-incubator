@@ -260,46 +260,19 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(data.receiver)
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        let prev_receiver_token =
-          list.reduce(
-            inputs,
-            0,
-            fn(acc, input) {
-              let output = input.output
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
+        expect Some(payout_output) =
+          list.find(
+            transaction.outputs,
+            fn(output) { output.address == receiver_address },
           )
-        let post_receiver_token =
-          list.reduce(
-            outputs,
-            0,
-            fn(acc, output) {
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
-          )
+
         and {
           valid_transfer_amount,
-          post_receiver_token - prev_receiver_token == transfer_amount,
+          quantity_of(
+            payout_output.value,
+            escrowed_token_policy_id,
+            escrowed_token_name,
+          ) >= transfer_amount,
         }
       } else {
         expect Some(mint_voucher_redeemer) =

@@ -84,7 +84,7 @@ pub fn get_delay_period(c: ConnectionEnd) -> Int {
 pub fn validate_basic(c: ConnectionEnd) -> Bool {
   and {
     client_keys_mod.is_valid_client_id(c.client_id),
-    list.length(c.versions) > 0,
+    !list.is_empty(c.versions),
     list.all(c.versions, fn(ver) { version.validate_version(ver) }),
     counterparty.validate_basic(c.counterparty),
   }

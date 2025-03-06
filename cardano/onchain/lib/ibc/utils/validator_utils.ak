@@ -239,7 +239,7 @@ pub fn validate_token_remain(
   is {
     [updated_output] -> {
       let is_remain =
-        if list.length(tokens) == 0 {
+        if list.is_empty(tokens) {
           without_lovelace(spent_output.value) == without_lovelace(
             updated_output.value,
           )
