@@ -4,8 +4,9 @@
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, push}
-use ibc/client/ics_007_tendermint_client/cometbft/protos/keys_pb.{
-  PublicKey, marshal_for_public_key, size_for_public_key,
+use ibc/client/ics_007_tendermint_client/cometbft/protos/keys_pb.{PublicKey}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/keys_pb_deprecated.{
+  marshal_for_public_key, size_for_public_key,
 }
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int64, uint64}
