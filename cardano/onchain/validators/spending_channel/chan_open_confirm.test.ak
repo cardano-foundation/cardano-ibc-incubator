@@ -247,8 +247,8 @@ test succeed_chan_open_confirm() {
 
   let channel_bz =
     channel_pb.marshal_for_channel(
-      Some(channel.convert_to_channel_proto(expected_channel)),
-    )
+      channel.convert_to_channel_proto(expected_channel),
+    ).2nd
 
   let verify_proof_redeemer: Redeemer =
     VerifyMembership {
