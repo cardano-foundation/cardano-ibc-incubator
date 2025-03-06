@@ -69,7 +69,6 @@ pub fn marshal_for_vote(vote: CanonicalVote) -> (Int, ByteArray) {
 
 pub fn marshal_delimited_for_vote(vote: CanonicalVote) {
   let (length, bytes) = marshal_for_vote(vote)
-
   length
     |> encode_varint()
     |> concat(bytes)
