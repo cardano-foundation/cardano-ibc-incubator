@@ -53,6 +53,7 @@ pub fn generate_token_name_from_another(
   sequence: ByteArray,
 ) -> ByteArray {
   let postfix = sequence
+  trace @"generate_token_name_from_another: postfix": postfix
 
   expect (bytearray.length(postfix) <= 8)?
 

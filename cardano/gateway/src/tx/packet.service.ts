@@ -88,7 +88,6 @@ export class PacketService {
    */
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
-      this.logger.log('RecvPacket is processing');
       this.logger.log('RecvPacket data: ', data);
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
       // Build and complete the unsigned transaction
@@ -377,7 +376,6 @@ export class PacketService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-
     // Decode connection datum
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
@@ -469,8 +467,6 @@ export class PacketService {
         value: commitPacket(packet),
       },
     };
-
-    this.logger.log('verify proof redeemer', verifyProofRedeemer);
 
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
@@ -579,8 +575,6 @@ export class PacketService {
       }
     }
 
-    this.logger.log('recv packet content');
-
     /*
     // build encode mint voucher redeemer
     const mintVoucherRedeemer: MintVoucherRedeemer = {
@@ -628,8 +622,6 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
-
-    this.logger.log('updated channel datum', updatedChannelDatum);
 
     const unsignedRecvPacketMintParams: UnsignedRecvPacketDto = {
       channelUtxo,
@@ -1166,6 +1158,7 @@ export class PacketService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    this.logger.log('connectionUtxo', connectionUtxo);
 
     // Decode connection datum
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
@@ -1178,6 +1171,7 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    this.logger.log('clientUtxo', clientUtxo);
     // Get client utxo by client unit associated
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
     // Get the token unit associated with the client by connection datum
@@ -1197,8 +1191,11 @@ export class PacketService {
     // Get mock module utxo
 
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
+    this.logger.log('transferModuleUtxo', transferModuleUtxo);
     const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
+    this.logger.log('spendChannelRefUtxo', spendChannelRefUtxo);
     const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
+    this.logger.log('spendTransferModuleRefUtxo', spendTransferModuleRefUtxo);
     // channel id
     const channelId = convertString2Hex(ackPacketOperator.channelId);
     // Init packet

@@ -743,22 +743,7 @@ export class LucidService {
 
   public createUnsignedRecvPacketTx(dto: UnsignedRecvPacketDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-
     const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
-
-    console.log('collectFrom', dto.spendChannelRefUtxo, dto.recvPacketRefUTxO, dto.verifyProofRefUTxO);
-    console.log('readFrom', dto.connectionUtxo, dto.clientUtxo);
-
-    console.log(
-      'policies',
-      'channelTokenUnit',
-      dto.channelTokenUnit,
-      'recvPacketPolicyId',
-      dto.recvPacketPolicyId,
-      'verifyProofPolicyId',
-      dto.verifyProofPolicyId,
-    );
-    console.dir(dto.channelToken);
 
     tx.readFrom([dto.spendChannelRefUtxo, dto.recvPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
