@@ -1,9 +1,7 @@
 use aiken/builtin.{if_then_else as ite}
 use aiken/crypto.{Hash, Sha3_256}
 use aiken/primitive/bytearray.{concat, length, push}
-use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
-  BlockID, PartSetHeader,
-} as block_id_mod
+use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID} as block_id_mod
 use ibc/client/ics_007_tendermint_client/cometbft/canonical.{
   canonicalize_block_id,
 }
