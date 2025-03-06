@@ -490,7 +490,6 @@ export class PacketService {
               convertHex2String(packet.destination_channel),
             )
           ) {
-            this.logger.log('recv unescrow');
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
               state: {
@@ -1158,8 +1157,6 @@ export class PacketService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-    this.logger.log('connectionUtxo', connectionUtxo);
-
     // Decode connection datum
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
@@ -1171,7 +1168,6 @@ export class PacketService {
     );
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    this.logger.log('clientUtxo', clientUtxo);
     // Get client utxo by client unit associated
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
     // Get the token unit associated with the client by connection datum
@@ -1191,11 +1187,8 @@ export class PacketService {
     // Get mock module utxo
 
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    this.logger.log('transferModuleUtxo', transferModuleUtxo);
     const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
-    this.logger.log('spendChannelRefUtxo', spendChannelRefUtxo);
     const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
-    this.logger.log('spendTransferModuleRefUtxo', spendTransferModuleRefUtxo);
     // channel id
     const channelId = convertString2Hex(ackPacketOperator.channelId);
     // Init packet
@@ -1209,19 +1202,6 @@ export class PacketService {
       timeout_height: ackPacketOperator.timeoutHeight,
       timeout_timestamp: ackPacketOperator.timeoutTimestamp,
     };
-
-    this.logger.log(
-      {
-        sequence: ackPacketOperator.packetSequence,
-        source_port: channelDatum.port,
-        source_channel: channelId,
-        destination_port: channelDatum.state.channel.counterparty.port_id,
-        destination_channel: channelDatum.state.channel.counterparty.channel_id,
-        ackHash: hashSHA256(ackPacketOperator.acknowledgement),
-        ack: ackPacketOperator.acknowledgement,
-      },
-      'buildUnsignedAcknowlegementPacketTx',
-    );
 
     // build spend channel redeemer
     const spendChannelRedeemer: SpendChannelRedeemer = {
@@ -1321,8 +1301,6 @@ export class PacketService {
     );
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
-      this.logger.log('AcknowledgementResult');
-
       switch (channelDatum.state.channel.ordering) {
         case Order.Unordered:
           // build update channel datum
