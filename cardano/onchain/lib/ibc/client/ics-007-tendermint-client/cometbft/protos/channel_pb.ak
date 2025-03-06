@@ -5,7 +5,10 @@ use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
-use ibc/utils/bytes.{encode_bytearray, encode_varint, size_and_concat, sov}
+use ibc/utils/bytes.{
+  add_and_concat, encode_bytearray, encode_int, encode_length_varint,
+  encode_varint, nest_record, size_and_concat, sov, sov_length,
+}
 use ibc/utils/int.{Int32, Uint64, uint64}
 
 pub type State {
@@ -131,6 +134,40 @@ pub fn size_for_counterparty(counterparty_opt: Option<Counterparty>) -> Int {
           )
     },
   )
+}
+
+pub fn marshal_for_channel_v2(channel: Channel) -> (Int, ByteArray) {
+  let Channel {
+    state,
+    ordering,
+    counterparty,
+    connection_hops,
+    version,
+    upgrade_sequence,
+  } = channel
+  (0, #"")
+    |> add_and_concat(encode_int(state_to_int32(state), 8))
+    |> add_and_concat(encode_int(order_to_int32(ordering), 0x10))
+    |> add_and_concat(
+        nest_record(marshal_for_counterparty_v2(counterparty), 0x1a),
+      )
+    |> add_and_concat(
+        list.reduce(
+          connection_hops,
+          (0, #[]),
+          fn((size, bz1), connection_hop: ByteArray) -> (Int, ByteArray) {
+            let l = length(connection_hop)
+            let bz2 =
+              l
+                |> encode_length_varint()
+                |> concat(connection_hop)
+                |> push(0x22)
+            (size + sov(l) + l + 1, concat(bz1, bz2))
+          },
+        ),
+      )
+    |> size_and_concat(encode_bytearray(version, 0x2a))
+    |> add_and_concat(encode_int(upgrade_sequence, 0x30))
 }
 
 pub fn marshal_for_channel(channel_opt: Option<Channel>) -> ByteArray {
