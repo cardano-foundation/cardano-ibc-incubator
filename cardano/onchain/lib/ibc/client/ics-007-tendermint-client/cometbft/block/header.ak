@@ -114,10 +114,9 @@ pub fn hash(h: TmHeader) -> ByteArray {
       } = h
       let hbz = version |> Some() |> marshal_for_consensus()
       let pbt = time |> timestamp_proto() |> marshal_for_timestamp()
-      let bzbi =
+      let (_, bzbi) =
         last_block_id
           |> canonicalize_block_id()
-          |> Some()
           |> marshal_for_block_id()
 
       hash_from_byte_slices_sha2_256(
