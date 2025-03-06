@@ -113,9 +113,7 @@ pub fn verify_channel_state(
     0,
     proof,
     merkle_path,
-    channel_pb.marshal_for_channel(
-      Some(channel.convert_to_channel_proto(channel)),
-    ),
+    channel_pb.marshal_for_channel(channel.convert_to_channel_proto(channel)).2nd,
   )
 }
 

@@ -197,8 +197,8 @@ fn validate_chan_close_confirm_proof(
 
   let channel_bz =
     channel_pb.marshal_for_channel(
-      Some(channel.convert_to_channel_proto(expected_channel)),
-    )
+      channel.convert_to_channel_proto(expected_channel),
+    ).2nd
 
   verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,

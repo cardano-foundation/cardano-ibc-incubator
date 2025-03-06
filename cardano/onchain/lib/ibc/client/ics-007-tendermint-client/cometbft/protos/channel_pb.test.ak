@@ -1,7 +1,12 @@
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb.{
   Channel, Counterparty, NONE, UNINITIALIZED, marshal_for_channel,
-  marshal_for_channel_v2, marshal_for_counterparty, marshal_for_counterparty_v2,
-  size_for_channel, size_for_counterparty,
+  marshal_for_counterparty,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb_deprecated.{
+  marshal_for_channel as marshal_for_channel_deprecated,
+  marshal_for_counterparty as marshal_for_counterparty_deprecated,
+  size_for_channel as size_for_channel_deprecated,
+  size_for_counterparty as size_for_counterparty_deprecated,
 }
 
 const counterparty_empty = Counterparty(#"", #"")
@@ -16,9 +21,11 @@ const counterparty_large =
   )
 
 test test_counterparty_same_results_empty() {
-  let (length, bytes) = marshal_for_counterparty_v2(counterparty_empty)
-  let length_deprecated = size_for_counterparty(Some(counterparty_empty))
-  let bytes_deprecated = marshal_for_counterparty(Some(counterparty_empty))
+  let (length, bytes) = marshal_for_counterparty(counterparty_empty)
+  let length_deprecated =
+    size_for_counterparty_deprecated(Some(counterparty_empty))
+  let bytes_deprecated =
+    marshal_for_counterparty_deprecated(Some(counterparty_empty))
 
   and {
     length == length_deprecated,
@@ -27,9 +34,9 @@ test test_counterparty_same_results_empty() {
 }
 
 test test_counterparty_same_results() {
-  let (length, bytes) = marshal_for_counterparty_v2(counterparty)
-  let length_deprecated = size_for_counterparty(Some(counterparty))
-  let bytes_deprecated = marshal_for_counterparty(Some(counterparty))
+  let (length, bytes) = marshal_for_counterparty(counterparty)
+  let length_deprecated = size_for_counterparty_deprecated(Some(counterparty))
+  let bytes_deprecated = marshal_for_counterparty_deprecated(Some(counterparty))
 
   and {
     length == length_deprecated,
@@ -38,9 +45,11 @@ test test_counterparty_same_results() {
 }
 
 test test_counterparty_same_results_large_values() {
-  let (length, bytes) = marshal_for_counterparty_v2(counterparty_large)
-  let length_deprecated = size_for_counterparty(Some(counterparty_large))
-  let bytes_deprecated = marshal_for_counterparty(Some(counterparty_large))
+  let (length, bytes) = marshal_for_counterparty(counterparty_large)
+  let length_deprecated =
+    size_for_counterparty_deprecated(Some(counterparty_large))
+  let bytes_deprecated =
+    marshal_for_counterparty_deprecated(Some(counterparty_large))
 
   and {
     length == length_deprecated,
@@ -50,9 +59,9 @@ test test_counterparty_same_results_large_values() {
 
 test test_channel_same_results_empty() {
   let channel = Channel(UNINITIALIZED, NONE, counterparty_empty, [], #"", 0)
-  let (length, bytes) = marshal_for_channel_v2(channel)
-  let length_deprecated = size_for_channel(Some(channel))
-  let bytes_deprecated = marshal_for_channel(Some(channel))
+  let (length, bytes) = marshal_for_channel(channel)
+  let length_deprecated = size_for_channel_deprecated(Some(channel))
+  let bytes_deprecated = marshal_for_channel_deprecated(Some(channel))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -72,9 +81,9 @@ test test_channel_same_results() {
       #"abba1202120022021a00abba",
       1337,
     )
-  let (length, bytes) = marshal_for_channel_v2(channel)
-  let length_deprecated = size_for_channel(Some(channel))
-  let bytes_deprecated = marshal_for_channel(Some(channel))
+  let (length, bytes) = marshal_for_channel(channel)
+  let length_deprecated = size_for_channel_deprecated(Some(channel))
+  let bytes_deprecated = marshal_for_channel_deprecated(Some(channel))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -102,9 +111,9 @@ test test_channel_same_results_large() {
       #"1202120022021a00",
       133713371337133713371337133713371337,
     )
-  let (length, bytes) = marshal_for_channel_v2(channel)
-  let length_deprecated = size_for_channel(Some(channel))
-  let bytes_deprecated = marshal_for_channel(Some(channel))
+  let (length, bytes) = marshal_for_channel(channel)
+  let length_deprecated = size_for_channel_deprecated(Some(channel))
+  let bytes_deprecated = marshal_for_channel_deprecated(Some(channel))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
