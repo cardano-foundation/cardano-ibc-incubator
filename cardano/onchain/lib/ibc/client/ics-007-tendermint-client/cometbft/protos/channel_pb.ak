@@ -5,7 +5,7 @@ use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
-use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/bytes.{encode_bytearray, encode_varint, size_and_concat, sov}
 use ibc/utils/int.{Int32, Uint64, uint64}
 
 pub type State {
@@ -56,6 +56,13 @@ pub fn order_to_int32(order: Order) -> Int32 {
     UNORDERED -> 1
     ORDERED -> 2
   }
+}
+
+pub fn marshal_for_counterparty_v2(counterparty: Counterparty) {
+  let Counterparty { port_id, channel_id } = counterparty
+  (0, #"")
+    |> size_and_concat(encode_bytearray(port_id, 10))
+    |> size_and_concat(encode_bytearray(channel_id, 0x12))
 }
 
 pub fn marshal_for_counterparty(
