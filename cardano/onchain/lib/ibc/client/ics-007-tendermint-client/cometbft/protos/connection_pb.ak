@@ -105,9 +105,13 @@ pub fn marshal_for_version(version: Version) -> (Int, ByteArray) {
         list.reduce(
           features,
           (0, #[]),
-          fn(acc, feature: ByteArray) -> (Int, ByteArray) {
-            acc
-              |> size_and_concat(encode_bytearray(feature, 0x12))
+          fn((size, bz1), feature: ByteArray) -> (Int, ByteArray) {
+            let l = bytearray.length(feature)
+            let bz2 = l
+                    |> encode_length_varint() 
+                    |> concat(feature) 
+                    |> push(0x12)
+            (size + sov_length(l) + l + 1, concat(bz1, bz2))
           },
         ),
       )

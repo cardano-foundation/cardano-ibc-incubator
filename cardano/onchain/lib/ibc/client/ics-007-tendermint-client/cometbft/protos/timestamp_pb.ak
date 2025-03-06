@@ -4,7 +4,7 @@
 use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, push}
-use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/bytes.{add_and_concat, encode_int, encode_varint, sov}
 use ibc/utils/int.{Int32, Int64, uint64}
 use ibc/utils/time.{Time}
 
@@ -15,6 +15,13 @@ const max_valid_seconds = 253402300800
 pub type Timestamp {
   seconds: Int64,
   nanos: Int32,
+}
+
+pub fn marshal_for_timestamp_v2(ts: Timestamp) -> (Int, ByteArray) {
+  let Timestamp { seconds, nanos } = ts
+  (0, #[])
+    |> add_and_concat(encode_int(seconds, 8))
+    |> add_and_concat(encode_int(nanos, 0x10))
 }
 
 pub fn marshal_for_timestamp(ts_opt: Option<Timestamp>) -> ByteArray {
