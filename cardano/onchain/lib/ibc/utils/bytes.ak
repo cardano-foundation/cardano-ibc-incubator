@@ -86,7 +86,21 @@ pub fn size_and_concat(
 ) -> (Int, ByteArray) {
   let (size, bz1) = a
   let (length, bz2) = b
-  (size + sov_length(length) + length + 1, concat(bz1, bz2))
+  if length == 0 {
+    (size, concat(bz1, bz2))
+  } else {
+    (size + sov_length(length) + length + 1, concat(bz1, bz2))
+  }
+}
+
+pub fn nest_record(a: (Int, ByteArray), identifier: Int) -> (Int, ByteArray) {
+  let (size, bz1) = a
+  let bz2 =
+    size
+      |> encode_length_varint()
+      |> concat(bz1)
+      |> push(identifier)
+  (sov_length(size) + size + 1, bz2)
 }
 
 pub fn add_and_concat(

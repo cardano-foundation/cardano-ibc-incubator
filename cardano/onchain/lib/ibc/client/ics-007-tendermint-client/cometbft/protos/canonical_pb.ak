@@ -5,11 +5,12 @@ use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
-  marshal_for_timestamp, size_for_timestamp, size_of_std_time, timestamp_proto,
+  marshal_for_timestamp, marshal_for_timestamp_v2, size_for_timestamp,
+  size_of_std_time, timestamp_proto,
 }
 use ibc/utils/bytes.{
   add_and_concat, encode_bytearray, encode_int, encode_int_little_endian,
-  encode_length_varint, encode_varint, size_and_concat, sov, sov_length,
+  encode_varint, nest_record, size_and_concat, sov,
 }
 use ibc/utils/int.{Int32, Int64, uint64}
 use ibc/utils/time.{Time}
@@ -124,15 +125,7 @@ pub fn marshal_for_block_id_v2(block_id: CanonicalBlockID) -> (Int, ByteArray) {
   (0, #"")
     |> size_and_concat(encode_bytearray(hash, 10))
     |> add_and_concat(
-        {
-          let (size, bz1) = marshal_for_part_set_header_v2(part_set_header)
-          let bz2 =
-            size
-              |> encode_length_varint()
-              |> concat(bz1)
-              |> push(0x12)
-          (sov_length(size) + size + 1, bz2)
-        },
+        nest_record(marshal_for_part_set_header_v2(part_set_header), 0x12),
       )
 }
 
@@ -202,6 +195,14 @@ pub fn marshal_for_vote_v2(vote: CanonicalVoteV2) -> (Int, ByteArray) {
     |> add_and_concat(encode_int(v_type, 8))
     |> add_and_concat(encode_int_little_endian(height, 0x11, 9))
     |> add_and_concat(encode_int_little_endian(round, 0x19, 9))
+    |> add_and_concat(nest_record(marshal_for_block_id_v2(block_id), 0x22))
+    |> add_and_concat(
+        {
+          expect Some(ts) = timestamp_proto(timestamp)
+          nest_record(marshal_for_timestamp_v2(ts), 0x2a)
+        },
+      )
+    |> size_and_concat(encode_bytearray(chain_id, 0x32))
 }
 
 pub fn marshal_for_vote(vote_opt: Option<CanonicalVote>) -> ByteArray {
