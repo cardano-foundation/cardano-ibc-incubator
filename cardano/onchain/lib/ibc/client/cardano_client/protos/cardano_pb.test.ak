@@ -1,26 +1,36 @@
 use ibc/client/cardano_client/protos/cardano_pb.{
-  AnyCardanoClientState, AnyCardanoClientStateV2, CardanoClientState,
-  CardanoClientStateV2, CardanoConsensusState, CardanoHeight, CardanoValidator,
-  TokenConfigs, marshal_for_any_client_state, marshal_for_any_client_state_v2,
-  marshal_for_client_state, marshal_for_client_state_v2,
-  marshal_for_consensus_state, marshal_for_consensus_state_v2,
-  marshal_for_height, marshal_for_height_v2, marshal_for_token_configs,
-  marshal_for_token_configs_v2, marshal_for_validator, marshal_for_validator_v2,
-  size_for_client_state, size_for_consensus_state, size_for_height,
-  size_for_token_configs, size_for_validator,
+  AnyCardanoClientState, CardanoClientState, CardanoConsensusState,
+  CardanoHeight, CardanoValidator, TokenConfigs, marshal_for_any_client_state,
+  marshal_for_client_state, marshal_for_consensus_state, marshal_for_height,
+  marshal_for_token_configs, marshal_for_validator,
+}
+use ibc/client/cardano_client/protos/cardano_pb_deprecated.{
+  AnyCardanoClientState as AnyCardanoClientStateDeprecated,
+  CardanoClientState as CardanoClientStateDeprecated,
+  marshal_for_any_client_state as marshal_for_any_client_state_deprecated,
+  marshal_for_client_state as marshal_for_client_state_deprecated,
+  marshal_for_consensus_state as marshal_for_consensus_state_deprecated,
+  marshal_for_height as marshal_for_height_deprecated,
+  marshal_for_token_configs as marshal_for_token_configs_deprecated,
+  marshal_for_validator as marshal_for_validator_deprecated,
+  size_for_client_state as size_for_client_state_deprecated,
+  size_for_consensus_state as size_for_consensus_state_deprecated,
+  size_for_height as size_for_height_deprecated,
+  size_for_token_configs as size_for_token_configs_deprecated,
+  size_for_validator as size_for_validator_deprecated,
 }
 
 test test_marshal_for_any_client_state_empty() {
-  marshal_for_any_client_state(None) == #""
+  marshal_for_any_client_state_deprecated(None) == #""
 }
 
 test test_marshal_for_any_client_state_some_data_success() {
   let accs_opt =
     Some(
-      AnyCardanoClientState(
+      AnyCardanoClientStateDeprecated(
         #"01",
         Some(
-          CardanoClientState(
+          CardanoClientStateDeprecated(
             #"00",
             None,
             None,
@@ -38,16 +48,15 @@ test test_marshal_for_any_client_state_some_data_success() {
         ),
       ),
     )
-  marshal_for_any_client_state(accs_opt) == #"0a0101120d0a010028013002380340045805"
+  marshal_for_any_client_state_deprecated(accs_opt) == #"0a0101120d0a010028013002380340045805"
 }
 
 test test_marshal_for_token_configs_same_results_empty() {
   let token_config = TokenConfigs(#"", #"", #"", #"")
-  let (length, bytes) = marshal_for_token_configs_v2(token_config)
-  let length_deprecated = size_for_token_configs(Some(token_config))
-  let bytes_deprecated = marshal_for_token_configs(Some(token_config))
-  trace length
-  trace bytes
+  let (length, bytes) = marshal_for_token_configs(token_config)
+  let length_deprecated = size_for_token_configs_deprecated(Some(token_config))
+  let bytes_deprecated =
+    marshal_for_token_configs_deprecated(Some(token_config))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -62,9 +71,10 @@ test test_marshal_for_token_configs_same_results() {
       #"0a0101120d0a010028013002380340045805",
       #"130102380340045805",
     )
-  let (lenght, bytes) = marshal_for_token_configs_v2(token_config)
-  let length_deprecated = size_for_token_configs(Some(token_config))
-  let bytes_deprecated = marshal_for_token_configs(Some(token_config))
+  let (lenght, bytes) = marshal_for_token_configs(token_config)
+  let length_deprecated = size_for_token_configs_deprecated(Some(token_config))
+  let bytes_deprecated =
+    marshal_for_token_configs_deprecated(Some(token_config))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -79,9 +89,10 @@ test test_marshal_for_token_configs_same_results_large() {
       #"0a0101120d0a0100280130023803400458050a0101120d0a0100280130023803400458050a0101120d0a010028013002380340045805",
       #"13002380a340045805",
     )
-  let (lenght, bytes) = marshal_for_token_configs_v2(token_config)
-  let length_deprecated = size_for_token_configs(Some(token_config))
-  let bytes_deprecated = marshal_for_token_configs(Some(token_config))
+  let (lenght, bytes) = marshal_for_token_configs(token_config)
+  let length_deprecated = size_for_token_configs_deprecated(Some(token_config))
+  let bytes_deprecated =
+    marshal_for_token_configs_deprecated(Some(token_config))
 
   and {
     lenght == length_deprecated,
@@ -91,11 +102,9 @@ test test_marshal_for_token_configs_same_results_large() {
 
 test test_marshal_for_validator_same_results_empty() {
   let token_config = CardanoValidator(#"", #"")
-  let (length, bytes) = marshal_for_validator_v2(token_config)
-  let length_deprecated = size_for_validator(Some(token_config))
-  let bytes_deprecated = marshal_for_validator(Some(token_config))
-  trace length
-  trace bytes
+  let (length, bytes) = marshal_for_validator(token_config)
+  let length_deprecated = size_for_validator_deprecated(Some(token_config))
+  let bytes_deprecated = marshal_for_validator_deprecated(Some(token_config))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -108,9 +117,9 @@ test test_marshal_for_validator_same_results() {
       #"0a0101120d0a010028013002380340045805",
       #"1300238040045805",
     )
-  let (lenght, bytes) = marshal_for_validator_v2(token_config)
-  let length_deprecated = size_for_validator(Some(token_config))
-  let bytes_deprecated = marshal_for_validator(Some(token_config))
+  let (lenght, bytes) = marshal_for_validator(token_config)
+  let length_deprecated = size_for_validator_deprecated(Some(token_config))
+  let bytes_deprecated = marshal_for_validator_deprecated(Some(token_config))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -123,9 +132,9 @@ test test_marshal_for_validator_same_results_large() {
       #"0a0101120d0a0100280130023803400458050a0101120d0a0100280130023803400458050a0101120d0a0100280130023803400458050a0101120d0a010028013002380340045805",
       #"13002380340045805130023803400458051300238034004580513002380340045805",
     )
-  let (lenght, bytes) = marshal_for_validator_v2(token_config)
-  let length_deprecated = size_for_validator(Some(token_config))
-  let bytes_deprecated = marshal_for_validator(Some(token_config))
+  let (lenght, bytes) = marshal_for_validator(token_config)
+  let length_deprecated = size_for_validator_deprecated(Some(token_config))
+  let bytes_deprecated = marshal_for_validator_deprecated(Some(token_config))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -134,11 +143,9 @@ test test_marshal_for_validator_same_results_large() {
 
 test test_marshal_for_height_same_results_empty() {
   let cardano_height = CardanoHeight(0, 0)
-  let (length, bytes) = marshal_for_height_v2(cardano_height)
-  let length_deprecated = size_for_height(Some(cardano_height))
-  let bytes_deprecated = marshal_for_height(Some(cardano_height))
-  trace length
-  trace bytes
+  let (length, bytes) = marshal_for_height(cardano_height)
+  let length_deprecated = size_for_height_deprecated(Some(cardano_height))
+  let bytes_deprecated = marshal_for_height_deprecated(Some(cardano_height))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -147,9 +154,9 @@ test test_marshal_for_height_same_results_empty() {
 
 test test_marshal_for_height_same_results() {
   let cardano_height = CardanoHeight(1337, 1442)
-  let (lenght, bytes) = marshal_for_height_v2(cardano_height)
-  let length_deprecated = size_for_height(Some(cardano_height))
-  let bytes_deprecated = marshal_for_height(Some(cardano_height))
+  let (lenght, bytes) = marshal_for_height(cardano_height)
+  let length_deprecated = size_for_height_deprecated(Some(cardano_height))
+  let bytes_deprecated = marshal_for_height_deprecated(Some(cardano_height))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -158,9 +165,9 @@ test test_marshal_for_height_same_results() {
 
 test test_marshal_for_height_same_results_large() {
   let cardano_height = CardanoHeight(13371337133713371337, 14421442144214421442)
-  let (lenght, bytes) = marshal_for_height_v2(cardano_height)
-  let length_deprecated = size_for_height(Some(cardano_height))
-  let bytes_deprecated = marshal_for_height(Some(cardano_height))
+  let (lenght, bytes) = marshal_for_height(cardano_height)
+  let length_deprecated = size_for_height_deprecated(Some(cardano_height))
+  let bytes_deprecated = marshal_for_height_deprecated(Some(cardano_height))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -169,11 +176,11 @@ test test_marshal_for_height_same_results_large() {
 
 test test_marshal_for_consensus_state_same_results_empty() {
   let consensus_state = CardanoConsensusState(0, 0)
-  let (length, bytes) = marshal_for_consensus_state_v2(consensus_state)
-  let length_deprecated = size_for_consensus_state(Some(consensus_state))
-  let bytes_deprecated = marshal_for_consensus_state(Some(consensus_state))
-  trace length
-  trace bytes
+  let (length, bytes) = marshal_for_consensus_state(consensus_state)
+  let length_deprecated =
+    size_for_consensus_state_deprecated(Some(consensus_state))
+  let bytes_deprecated =
+    marshal_for_consensus_state_deprecated(Some(consensus_state))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -182,9 +189,11 @@ test test_marshal_for_consensus_state_same_results_empty() {
 
 test test_marshal_for_consensus_state_same_results() {
   let consensus_state = CardanoConsensusState(1337, 1442)
-  let (lenght, bytes) = marshal_for_consensus_state_v2(consensus_state)
-  let length_deprecated = size_for_consensus_state(Some(consensus_state))
-  let bytes_deprecated = marshal_for_consensus_state(Some(consensus_state))
+  let (lenght, bytes) = marshal_for_consensus_state(consensus_state)
+  let length_deprecated =
+    size_for_consensus_state_deprecated(Some(consensus_state))
+  let bytes_deprecated =
+    marshal_for_consensus_state_deprecated(Some(consensus_state))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -197,9 +206,11 @@ test test_marshal_for_consensus_state_same_results_large() {
       1337133713371337133713371337,
       144214421442144214421442144214421442,
     )
-  let (lenght, bytes) = marshal_for_consensus_state_v2(consensus_state)
-  let length_deprecated = size_for_consensus_state(Some(consensus_state))
-  let bytes_deprecated = marshal_for_consensus_state(Some(consensus_state))
+  let (lenght, bytes) = marshal_for_consensus_state(consensus_state)
+  let length_deprecated =
+    size_for_consensus_state_deprecated(Some(consensus_state))
+  let bytes_deprecated =
+    marshal_for_consensus_state_deprecated(Some(consensus_state))
   and {
     lenght == length_deprecated,
     bytes == bytes_deprecated,
@@ -207,10 +218,24 @@ test test_marshal_for_consensus_state_same_results_large() {
 }
 
 const client_state_empty =
-  CardanoClientState(#"", None, None, 0, 0, 0, 0, 0, [], [], 0, [], None)
+  CardanoClientStateDeprecated(
+    #"",
+    None,
+    None,
+    0,
+    0,
+    0,
+    0,
+    0,
+    [],
+    [],
+    0,
+    [],
+    None,
+  )
 
 const client_state_empty_v2 =
-  CardanoClientStateV2(
+  CardanoClientState(
     #"",
     CardanoHeight(0, 0),
     CardanoHeight(0, 0),
@@ -226,15 +251,13 @@ const client_state_empty_v2 =
     TokenConfigs(#"", #"", #"", #""),
   )
 
-// This should not fail?!
+// This test does not make sense anymore, as the "optional" fields are not optional anymore.
 test test_marshal_for_client_state_same_results_empty() fail {
-  let (length, bytes) = marshal_for_client_state_v2(client_state_empty_v2)
-  let length_deprecated = size_for_client_state(Some(client_state_empty))
-  let bytes_deprecated = marshal_for_client_state(Some(client_state_empty))
-  trace length
-  trace bytes
-  trace length_deprecated
-  trace bytes_deprecated
+  let (length, bytes) = marshal_for_client_state(client_state_empty_v2)
+  let length_deprecated =
+    size_for_client_state_deprecated(Some(client_state_empty))
+  let bytes_deprecated =
+    marshal_for_client_state_deprecated(Some(client_state_empty))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -242,7 +265,7 @@ test test_marshal_for_client_state_same_results_empty() fail {
 }
 
 const client_state_some_empty =
-  CardanoClientState(
+  CardanoClientStateDeprecated(
     #"",
     Some(CardanoHeight(0, 0)),
     Some(CardanoHeight(0, 0)),
@@ -259,13 +282,11 @@ const client_state_some_empty =
   )
 
 test test_marshal_for_client_state_same_results_some_empty() {
-  let (length, bytes) = marshal_for_client_state_v2(client_state_empty_v2)
-  let length_deprecated = size_for_client_state(Some(client_state_some_empty))
-  let bytes_deprecated = marshal_for_client_state(Some(client_state_some_empty))
-  trace length
-  trace bytes
-  trace length_deprecated
-  trace bytes_deprecated
+  let (length, bytes) = marshal_for_client_state(client_state_empty_v2)
+  let length_deprecated =
+    size_for_client_state_deprecated(Some(client_state_some_empty))
+  let bytes_deprecated =
+    marshal_for_client_state_deprecated(Some(client_state_some_empty))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -273,7 +294,7 @@ test test_marshal_for_client_state_same_results_some_empty() {
 }
 
 const client_state =
-  CardanoClientState(
+  CardanoClientStateDeprecated(
     #"0a0101120d0a010028",
     Some(CardanoHeight(1337, 1442)),
     Some(CardanoHeight(1442, 1337)),
@@ -317,7 +338,7 @@ const client_state =
   )
 
 const client_state_v2 =
-  CardanoClientStateV2(
+  CardanoClientState(
     #"0a0101120d0a010028",
     CardanoHeight(1337, 1442),
     CardanoHeight(1442, 1337),
@@ -353,9 +374,9 @@ const client_state_v2 =
   )
 
 test test_marshal_for_client_state_same_results_some() {
-  let (length, bytes) = marshal_for_client_state_v2(client_state_v2)
-  let length_deprecated = size_for_client_state(Some(client_state))
-  let bytes_deprecated = marshal_for_client_state(Some(client_state))
+  let (length, bytes) = marshal_for_client_state(client_state_v2)
+  let length_deprecated = size_for_client_state_deprecated(Some(client_state))
+  let bytes_deprecated = marshal_for_client_state_deprecated(Some(client_state))
   and {
     length == length_deprecated,
     bytes == bytes_deprecated,
@@ -364,17 +385,20 @@ test test_marshal_for_client_state_same_results_some() {
 
 test test_marshal_for_any_client_state_some_empty() {
   let any_client_state =
-    AnyCardanoClientState(#"", Some(client_state_some_empty))
-  let any_client_state_v2 = AnyCardanoClientStateV2(#"", client_state_empty_v2)
-  let (_, bytes) = marshal_for_any_client_state_v2(any_client_state_v2)
-  let bytes_deprecated = marshal_for_any_client_state(Some(any_client_state))
+    AnyCardanoClientStateDeprecated(#"", Some(client_state_some_empty))
+  let any_client_state_v2 = AnyCardanoClientState(#"", client_state_empty_v2)
+  let (_, bytes) = marshal_for_any_client_state(any_client_state_v2)
+  let bytes_deprecated =
+    marshal_for_any_client_state_deprecated(Some(any_client_state))
   bytes == bytes_deprecated
 }
 
 test test_marshal_for_any_client_state() {
-  let any_client_state = AnyCardanoClientState(#"", Some(client_state))
-  let any_client_state_v2 = AnyCardanoClientStateV2(#"", client_state_v2)
-  let (_, bytes) = marshal_for_any_client_state_v2(any_client_state_v2)
-  let bytes_deprecated = marshal_for_any_client_state(Some(any_client_state))
+  let any_client_state =
+    AnyCardanoClientStateDeprecated(#"", Some(client_state))
+  let any_client_state_v2 = AnyCardanoClientState(#"", client_state_v2)
+  let (_, bytes) = marshal_for_any_client_state(any_client_state_v2)
+  let bytes_deprecated =
+    marshal_for_any_client_state_deprecated(Some(any_client_state))
   bytes == bytes_deprecated
 }
