@@ -1,6 +1,7 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
+use aiken/collection/list
 use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64, uint64}
@@ -161,4 +162,27 @@ pub fn encode_bytearray(bz1: ByteArray, identifier: Int) -> (Int, ByteArray) {
       (l, bz2)
     },
   )
+}
+
+pub fn reduce(
+  items: List<a>,
+  f: fn(a) -> (Int, ByteArray),
+  identifier: Int,
+) -> (Int, ByteArray) {
+  if list.is_empty(items) {
+    (0, #"")
+  } else {
+    let (l, bz) =
+      list.reduce(
+        items,
+        (0, #""),
+        fn(acc: (Int, ByteArray), list_iteam: a) -> (Int, ByteArray) {
+          let (size, bz1) = acc
+          let (l, bz2) = f(list_iteam)
+          let something = encode_length_varint(l) |> concat(bz2)
+          (size + sov(l) + l + 1, concat(bz1, something))
+        },
+      )
+    (l, push(bz, identifier))
+  }
 }

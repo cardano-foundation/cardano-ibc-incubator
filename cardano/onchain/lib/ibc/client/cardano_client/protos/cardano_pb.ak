@@ -6,7 +6,10 @@ use aiken/collection/list
 use aiken/option.{is_none}
 use aiken/primitive/bytearray.{concat, length, push}
 use ibc/client/serde.{marshal, size}
-use ibc/utils/bytes.{encode_varint, sov}
+use ibc/utils/bytes.{
+  add_and_concat, encode_bytearray, encode_int, encode_length_varint,
+  encode_varint, nest_record, reduce, size_and_concat, sov,
+}
 use ibc/utils/int.{Uint64, uint64}
 
 pub type CardanoHeight {
@@ -47,9 +50,39 @@ pub type CardanoClientState {
   token_configs: Option<TokenConfigs>,
 }
 
+pub type CardanoClientStateV2 {
+  chain_id: ByteArray,
+  latest_height: CardanoHeight,
+  frozen_height: CardanoHeight,
+  valid_after: Uint64,
+  genesis_time: Uint64,
+  current_epoch: Uint64,
+  epoch_length: Uint64,
+  slot_per_kes_period: Uint64,
+  current_validator_set: List<CardanoValidator>,
+  next_validator_set: List<CardanoValidator>,
+  trusting_period: Uint64,
+  upgrade_path: List<ByteArray>,
+  token_configs: TokenConfigs,
+}
+
 pub type AnyCardanoClientState {
   type_url: ByteArray,
   value: Option<CardanoClientState>,
+}
+
+pub type AnyCardanoClientStateV2 {
+  type_url: ByteArray,
+  value: CardanoClientStateV2,
+}
+
+pub fn marshal_for_any_client_state_v2(
+  accs: AnyCardanoClientStateV2,
+) -> (Int, ByteArray) {
+  let AnyCardanoClientStateV2 { type_url, value } = accs
+  (0, #"")
+    |> add_and_concat(encode_bytearray(type_url, 10))
+    |> add_and_concat(nest_record(marshal_for_client_state_v2(value), 0x12))
 }
 
 pub fn marshal_for_any_client_state(
@@ -84,6 +117,13 @@ pub fn marshal_for_any_client_state(
           )
     },
   )
+}
+
+pub fn marshal_for_height_v2(height: CardanoHeight) -> (Int, ByteArray) {
+  let CardanoHeight { revision_number, revision_height } = height
+  (0, #"")
+    |> add_and_concat(encode_int(revision_number, 8))
+    |> add_and_concat(encode_int(revision_height, 0x10))
 }
 
 pub fn marshal_for_height(height_opt: Option<CardanoHeight>) -> ByteArray {
@@ -137,6 +177,15 @@ pub fn size_for_height(height_opt: Option<CardanoHeight>) -> Int {
   )
 }
 
+pub fn marshal_for_consensus_state_v2(
+  consensus_state: CardanoConsensusState,
+) -> (Int, ByteArray) {
+  let CardanoConsensusState { timestamp, slot } = consensus_state
+  (0, #"")
+    |> add_and_concat(encode_int(timestamp, 8))
+    |> add_and_concat(encode_int(slot, 0x10))
+}
+
 pub fn marshal_for_consensus_state(
   consensus_state_opt: Option<CardanoConsensusState>,
 ) -> ByteArray {
@@ -175,6 +224,15 @@ pub fn size_for_consensus_state(
         |> add(ite(slot == 0, 0, slot |> uint64() |> sov() |> add(1)))
     },
   )
+}
+
+pub fn marshal_for_validator_v2(
+  validator_: CardanoValidator,
+) -> (Int, ByteArray) {
+  let CardanoValidator { vrf_key_hash, pool_id } = validator_
+  (0, #"")
+    |> size_and_concat(encode_bytearray(vrf_key_hash, 10))
+    |> size_and_concat(encode_bytearray(pool_id, 0x12))
 }
 
 pub fn marshal_for_validator(
@@ -239,6 +297,22 @@ pub fn size_for_validator(validator_opt: Option<CardanoValidator>) -> Int {
           )
     },
   )
+}
+
+pub fn marshal_for_token_configs_v2(
+  token_configs: TokenConfigs,
+) -> (Int, ByteArray) {
+  let TokenConfigs {
+    handler_token_unit,
+    client_policy_id,
+    connection_policy_id,
+    channel_policy_id,
+  } = token_configs
+  (0, #"")
+    |> size_and_concat(encode_bytearray(handler_token_unit, 10))
+    |> size_and_concat(encode_bytearray(client_policy_id, 0x12))
+    |> size_and_concat(encode_bytearray(connection_policy_id, 0x1a))
+    |> size_and_concat(encode_bytearray(channel_policy_id, 0x22))
 }
 
 pub fn marshal_for_token_configs(
@@ -357,6 +431,60 @@ pub fn size_for_token_configs(token_configs_opt: Option<TokenConfigs>) -> Int {
   )
 }
 
+pub fn marshal_for_client_state_v2(
+  client_state: CardanoClientStateV2,
+) -> (Int, ByteArray) {
+  let CardanoClientStateV2 {
+    chain_id,
+    latest_height,
+    frozen_height,
+    valid_after,
+    genesis_time,
+    current_epoch,
+    epoch_length,
+    slot_per_kes_period,
+    current_validator_set,
+    next_validator_set,
+    trusting_period,
+    upgrade_path,
+    token_configs,
+  } = client_state
+  (0, #"")
+    |> size_and_concat(encode_bytearray(chain_id, 10))
+    |> add_and_concat(nest_record(marshal_for_height_v2(latest_height), 0x12))
+    |> add_and_concat(nest_record(marshal_for_height_v2(frozen_height), 0x1a))
+    |> add_and_concat(encode_int(valid_after, 0x20))
+    |> add_and_concat(encode_int(genesis_time, 0x28))
+    |> add_and_concat(encode_int(current_epoch, 0x30))
+    |> add_and_concat(encode_int(epoch_length, 0x38))
+    |> add_and_concat(encode_int(slot_per_kes_period, 0x40))
+    |> add_and_concat(
+        reduce(current_validator_set, marshal_for_validator_v2, 0x4a),
+      )
+    |> add_and_concat(
+        reduce(next_validator_set, marshal_for_validator_v2, 0x52),
+      )
+    |> add_and_concat(encode_int(trusting_period, 0x58))
+    |> add_and_concat(
+        list.reduce(
+          upgrade_path,
+          (0, #[]),
+          fn((size, bz1), path: ByteArray) -> (Int, ByteArray) {
+            let l = length(path)
+            let bz2 =
+              l
+                |> encode_length_varint()
+                |> concat(path)
+                |> push(0x62)
+            (size + sov(l) + l + 1, concat(bz1, bz2))
+          },
+        ),
+      )
+    |> add_and_concat(
+        nest_record(marshal_for_token_configs_v2(token_configs), 0x6a),
+      )
+}
+
 pub fn marshal_for_client_state(
   client_state_opt: Option<CardanoClientState>,
 ) -> ByteArray {
@@ -430,10 +558,7 @@ pub fn marshal_for_client_state(
             ite(
               current_epoch == 0,
               #[],
-              current_epoch
-                |> uint64()
-                |> encode_varint()
-                |> push(0x30),
+              current_epoch |> uint64() |> encode_varint() |> push(0x30),
             ),
           )
         |> concat(
@@ -447,10 +572,7 @@ pub fn marshal_for_client_state(
             ite(
               slot_per_kes_period == 0,
               #[],
-              slot_per_kes_period
-                |> uint64()
-                |> encode_varint()
-                |> push(0x40),
+              slot_per_kes_period |> uint64() |> encode_varint() |> push(0x40),
             ),
           )
         |> concat(
