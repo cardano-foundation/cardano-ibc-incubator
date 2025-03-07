@@ -743,8 +743,8 @@ export class LucidService {
 
   public createUnsignedRecvPacketTx(dto: UnsignedRecvPacketDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-
     const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+
     tx.readFrom([dto.spendChannelRefUtxo, dto.recvPacketRefUTxO, dto.verifyProofRefUTxO])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])

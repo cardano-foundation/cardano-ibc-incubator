@@ -1,9 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  Mint, Output, OutputReference, Redeemer, ScriptPurpose, Transaction,
-}
+use cardano/transaction.{Mint, Output, Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -22,14 +20,11 @@ use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{RecvPacket}
-use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
-use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
-use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnRecvPacket}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
@@ -37,13 +32,12 @@ use ibc/utils/validator_utils
 validator recv_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
-  port_minting_policy_id: PolicyId,
+  _port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  spend(
-    _datum: Option<Data>,
+  mint(
     channel_token: AuthToken,
-    _spent_output: OutputReference,
+    _recv_packet_policy_id: PolicyId,
     transaction: Transaction,
   ) {
     let Transaction {
@@ -63,13 +57,14 @@ validator recv_packet(
         outputs,
         fn(output) { output.address == spent_output.address },
       )
-    expect updated_datum: ChannelDatum =
+    expect _updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
     expect Some(channel_sequence) =
       auth.extract_token_sequence(datum.token.name)
+    trace @"recv_packet: datum.token.name": datum.token.name
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect RecvPacket { packet, proof_commitment, proof_height } =
@@ -82,7 +77,7 @@ validator recv_packet(
       channel: cur_channel,
       packet_receipt: cur_packet_receipt,
       packet_acknowledgement: cur_packet_acknowledgement,
-      next_sequence_recv,
+      // next_sequence_recv,
       ..
     } = cur_channel_state
 
@@ -112,12 +107,16 @@ validator recv_packet(
       )
     trace @"recv_packet: validator_utils.validate_referred_client"
 
-    expect
+    let client_status =
       client_state_mod.status(
         client_datum.state.client_state,
         tx_valid_to * 1_000_000,
         client_datum.state.consensus_states,
-      ) == client_status_mod.Active
+      )
+
+    trace @"recv_packet: client status": client_status
+
+    expect (client_status == client_status_mod.Active)?
     trace @"recv_packet: client status is active"
 
     let valid_packet_proof =
@@ -130,52 +129,45 @@ validator recv_packet(
         redeemers,
         verify_proof_policy_id,
       )
-    trace @"recv_packet: packet proof is valid"
 
-    expect Some(ibc_module_redeemer) =
-      validator_utils.extract_module_redeemer(
-        inputs,
-        redeemers,
-        datum.token.name,
-        port_minting_policy_id,
-        datum.port_id,
-      )
-    expect Callback(ibc_module_callback) = ibc_module_redeemer
-    expect OnRecvPacket { channel_id: module_chan_id, acknowledgement, data: _ } =
-      ibc_module_callback
-    let valid_ordering =
-      when cur_channel.ordering is {
-        chan_order_mod.Unordered ->
-          !pairs.has_key(cur_packet_receipt, packet.sequence)
-        chan_order_mod.Ordered -> packet.sequence == next_sequence_recv
-        _ -> False
-      }
-
-    let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-    let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
-
-    let valid_packet =
-      channel_datum_mod.validate_recv_packet(
-        datum,
-        updated_datum,
-        packet,
-        commit_ack,
-      )
-    trace @"recv_packet: channel datum is updated valid"
+    //expect Some(ibc_module_redeemer) =
+    //  validator_utils.extract_module_redeemer(
+    //    inputs,
+    //    redeemers,
+    //    datum.token.name,
+    //    port_minting_policy_id,
+    //    datum.port_id,
+    //  )
+    //trace @"recv_packet: module redeemer is extracted"
+    //expect Callback(ibc_module_callback) = ibc_module_redeemer
+    //expect OnRecvPacket { channel_id: module_chan_id, acknowledgement, data: _ } =
+    //  ibc_module_callback
+    //let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
+    //let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
+    //let valid_packet =
+    //  channel_datum_mod.validate_recv_packet(
+    //    datum,
+    //    updated_datum,
+    //    packet,
+    //    commit_ack,
+    //  )
 
     and {
       channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
-      packet_mod.validate_basic(packet),
-      packet.destination_port == port_id && packet.destination_channel == channel_id,
-      packet.source_port == cur_channel.counterparty.port_id && packet.source_channel == cur_channel.counterparty.channel_id,
-      packet.timeout_timestamp != 0 && tx_valid_to * 1_000_000 < packet.timeout_timestamp,
-      valid_packet_proof,
-      module_chan_id == channel_id,
-      valid_ordering,
-      !pairs.has_key(cur_packet_acknowledgement, packet.sequence),
-      valid_packet,
+      packet_mod.validate_basic(packet)?,
+      (packet.destination_port == port_id)?,
+      (packet.destination_channel == channel_id)?,
+      (packet.source_port == cur_channel.counterparty.port_id)?,
+      (packet.source_channel == cur_channel.counterparty.channel_id)?,
+      valid_packet_proof?,
+      //module_chan_id == channel_id,
+      (!pairs.has_key(cur_packet_receipt, packet.sequence))?,
+      (!pairs.has_key(cur_packet_acknowledgement, packet.sequence))?,
+      (packet.timeout_timestamp != 0)?,
+      (tx_valid_to * 1_000_000 < packet.timeout_timestamp)?,
     }
+    //valid_packet,
   }
 
   else(_) {

@@ -88,7 +88,6 @@ export class PacketService {
    */
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
-      this.logger.log('RecvPacket is processing');
       this.logger.log('RecvPacket data: ', data);
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
       // Build and complete the unsigned transaction
@@ -377,7 +376,6 @@ export class PacketService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-
     // Decode connection datum
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
@@ -492,7 +490,6 @@ export class PacketService {
               convertHex2String(packet.destination_channel),
             )
           ) {
-            this.logger.log('recv unescrow');
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
               state: {
@@ -576,8 +573,6 @@ export class PacketService {
         this.logger.error('Error in parsing JSON packet data: ' + stringData, error);
       }
     }
-
-    this.logger.log('recv packet content');
 
     /*
     // build encode mint voucher redeemer
@@ -1162,7 +1157,6 @@ export class PacketService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-
     // Decode connection datum
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
@@ -1208,19 +1202,6 @@ export class PacketService {
       timeout_height: ackPacketOperator.timeoutHeight,
       timeout_timestamp: ackPacketOperator.timeoutTimestamp,
     };
-
-    this.logger.log(
-      {
-        sequence: ackPacketOperator.packetSequence,
-        source_port: channelDatum.port,
-        source_channel: channelId,
-        destination_port: channelDatum.state.channel.counterparty.port_id,
-        destination_channel: channelDatum.state.channel.counterparty.channel_id,
-        ackHash: hashSHA256(ackPacketOperator.acknowledgement),
-        ack: ackPacketOperator.acknowledgement,
-      },
-      'buildUnsignedAcknowlegementPacketTx',
-    );
 
     // build spend channel redeemer
     const spendChannelRedeemer: SpendChannelRedeemer = {
@@ -1320,8 +1301,6 @@ export class PacketService {
     );
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
-      this.logger.log('AcknowledgementResult');
-
       switch (channelDatum.state.channel.ordering) {
         case Order.Unordered:
           // build update channel datum
