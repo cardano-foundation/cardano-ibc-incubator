@@ -13,7 +13,6 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership, VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd} as connection_end_mod
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
@@ -316,8 +315,8 @@ fn validate_chan_open_try_proof(
 
   let channel_bz =
     channel_pb.marshal_for_channel(
-      Some(channel.convert_to_channel_proto(expected_channel)),
-    )
+      channel.convert_to_channel_proto(expected_channel),
+    ).2nd
 
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
