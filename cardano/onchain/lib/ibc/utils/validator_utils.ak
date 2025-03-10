@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option
+use aiken/option.{and_then, map}
 use aiken/primitive/bytearray
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
@@ -67,16 +67,14 @@ pub fn get_tx_valid_to(validity_range: ValidityRange) -> PosixTime {
   valid_to
 }
 
-pub fn get_tx_valid_from(validity_range: ValidityRange) -> Option<PosixTime> {
+pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   let lower_bound = validity_range.lower_bound
 
   if lower_bound.is_inclusive {
-    when lower_bound.bound_type is {
-      Finite(valid_from) -> Some(valid_from)
-      _ -> None
-    }
+    expect Finite(valid_from) = lower_bound.bound_type
+    valid_from
   } else {
-    None
+    fail @"Lower bound is not inclusive"
   }
 }
 
@@ -85,32 +83,32 @@ pub fn validate_handler_redeemer(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   expected_redeemer: HandlerOperator,
-) -> Option<HandlerDatum> {
-  when
+) -> HandlerDatum {
+  expect Some(handler_datum) =
     list.find(
       inputs,
       fn(input) { input.output |> auth.contain_auth_token(handler_token) },
     )
-  is {
-    Some(handler_input) ->
-      when
-        pairs.get_first(redeemers, Spend(handler_input.output_reference))
-      is {
-        Some(spent_handler_redeemer) -> {
-          expect handler_operator: HandlerOperator = spent_handler_redeemer
-          if handler_operator == expected_redeemer {
-            let handler_output = handler_input.output
-            expect handler_datum: HandlerDatum =
-              get_inline_datum(handler_output)
-            Some(handler_datum)
-          } else {
-            None
-          }
-        }
-        None -> None
-      }
-    None -> None
-  }
+      |> and_then(
+          fn(handler_input) {
+            pairs.get_first(redeemers, Spend(handler_input.output_reference))
+              |> map(
+                  fn(spent_handler_redeemer) {
+                    expect handler_operator: HandlerOperator =
+                      spent_handler_redeemer
+                    if handler_operator == expected_redeemer {
+                      let handler_output = handler_input.output
+                      expect handler_datum: HandlerDatum =
+                        get_inline_datum(handler_output)
+                      handler_datum
+                    } else {
+                      fail @"Handler is not matching"
+                    }
+                  },
+                )
+          },
+        )
+  handler_datum
 }
 
 pub fn extract_module_redeemer(
@@ -119,7 +117,7 @@ pub fn extract_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
-) -> Option<IBCModuleRedeemer> {
+) -> IBCModuleRedeemer {
   let port_number = port_keys.parse_port_id_number(port_id)
   let port_token_name =
     auth.generate_token_name_from_another(
@@ -140,7 +138,7 @@ pub fn extract_module_redeemer(
     pairs.get_first(redeemers, Spend(module_input.output_reference))
   expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
 
-  Some(ibc_module_redeemer)
+  ibc_module_redeemer
 }
 
 pub fn validate_referred_client(
@@ -148,7 +146,7 @@ pub fn validate_referred_client(
   referrer_token_name: ByteArray,
   client_minting_policy_id: PolicyId,
   client_id: ByteArray,
-) -> Option<ClientDatum> {
+) -> ClientDatum {
   let client_sequence = client_keys.parse_client_id_sequence(client_id)
 
   let client_token_name =
@@ -160,18 +158,13 @@ pub fn validate_referred_client(
   let client_token =
     AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
 
-  when
+  expect Some(client_input) =
     list.find(
       reference_inputs,
       fn(input) { input.output |> auth.contain_auth_token(client_token) },
     )
-  is {
-    Some(client_input) -> {
-      expect client_datum: ClientDatum = get_inline_datum(client_input.output)
-      Some(client_datum)
-    }
-    None -> None
-  }
+  expect client_datum: ClientDatum = get_inline_datum(client_input.output)
+  client_datum
 }
 
 pub fn validate_referred_connection(

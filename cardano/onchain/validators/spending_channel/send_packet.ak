@@ -89,7 +89,7 @@ validator send_packet(
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -127,7 +127,7 @@ validator send_packet(
 
     trace @"send_packet: channel_datum is updated valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
