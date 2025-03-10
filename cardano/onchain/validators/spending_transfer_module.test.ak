@@ -33,6 +33,10 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator, TransferModuleData,
   TransferModuleOperator,
 }
+use ibc/core/ics_023_vector_commitments/ics23/proofs.{
+  CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, InnerSpec,
+  LeafOp, ProofSpec,
+}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
 use spending_transfer_module
@@ -157,7 +161,100 @@ fn setup() -> MockData {
 
   let proof_height = Height { revision_number: 1, revision_height: 14 }
 
-  let proof = MerkleProof { proofs: [] }
+  let proof =
+    MerkleProof {
+      proofs: [
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              key: #"636f6d6d69746d656e74732f706f7274732f706f72742d312f6368616e6e656c732f6368616e6e656c2d302f73657175656e6365732f31",
+              value: #"fa365cf5deedf3169bfe56010f101be23eac638d3bc9f43c7634f78ef718aa10",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"000224",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"020424205fd25b3dc1314970dcbf74075f9d165af4a185eea459128edf21cfacc14b9c9e20",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"04062420",
+                  suffix: #"2067b76c7b82d60ebee7f41dd11a02534c1a16efa70c217310356230dfd5ad0c20",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"060a2420",
+                  suffix: #"20f21e95601cbd0028a9c3c4effd8afbbe068f086ab152ec0edb9cde2fdd6c568f",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"08162420",
+                  suffix: #"2038afa1cc8688eedde1256daab2bff7aade39a6db7320d62f47581fb65d9e8024",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0a2424203dd3101284b12a1c86ec48897aaf11781985de6f1eb75fdb6c8011a7d3e4d2ad20",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0c462420617a9deebfac19d019bc9f7179c90ed228ee21d7330bc10568918f6f26cbb75320",
+                  suffix: #"",
+                },
+              ],
+            },
+          },
+        },
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              key: #"696263",
+              value: #"6cfc3a7872f9703bcd5027ba7197890652bf545bd77a4ae7fa8b780746c91e42",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"00",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0106b99c0d8119ff1edbcbe165d0f19337dbbc080e677c88e57aa2ae767ebf0f0f",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"102be2509e02c885c7493d6e0fa2792b08de6bcc7157707f39f39163f6e68efd",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01168116e3f4be1a4955b203aa979d29f890ccc0e6d2214f7125aa1f61e826b77b",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01ef0d5a163ae333b43e2956b2d9660e65aaa9a1e2f90b30a91d97b5d0f12fb1fc",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"04634f3eedce1a4677cef6f418f7671437db345ad7e26581393b7cc6e722a2c7",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }
 
   //525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22
   let cardano_public_key_hash =
@@ -218,10 +315,12 @@ test on_chan_open_init_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input]
+  let inputs =
+    [mock.module_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -265,10 +364,12 @@ test on_chan_open_try_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input]
+  let inputs =
+    [mock.module_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -317,10 +418,12 @@ test on_chan_open_ack_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -332,6 +435,8 @@ test on_chan_open_ack_succeed() {
       proof_try: mock.proof,
       proof_height: mock.proof_height,
     }
+
+  trace @"on_chan_open_ack_succeed": channel_redeemer
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -368,10 +473,12 @@ test on_chan_open_confirm_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -415,10 +522,12 @@ test on_recv_packet_mint_voucher_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -501,7 +610,8 @@ test on_recv_packet_unescrow_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -522,7 +632,8 @@ test on_recv_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs =
+    [module_output, mock.channel_output, receiver_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -603,7 +714,8 @@ test transfer_escrow_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -613,7 +725,8 @@ test transfer_escrow_succeed() {
         |> add(ada_policy_id, ada_asset_name, transfer_amount),
     }
 
-  let outputs = [module_output, mock.channel_output]
+  let outputs =
+    [module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -682,7 +795,8 @@ test transfer_burn_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -703,7 +817,8 @@ test transfer_burn_voucher_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs =
+    [module_output, mock.channel_output, receiver_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -778,10 +893,12 @@ test on_timeout_packet_mint_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -862,7 +979,8 @@ test on_timeout_packet_unescrow_succeed() {
   let sender = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -882,7 +1000,8 @@ test on_timeout_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs =
+    [module_output, mock.channel_output, receiver_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -953,10 +1072,12 @@ test on_acknowledgement_packet_result_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1038,10 +1159,12 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs =
+    [mock.module_output, mock.channel_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1132,7 +1255,8 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   let sender = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs =
+    [mock.module_input, mock.channel_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -1152,7 +1276,8 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs =
+    [module_output, mock.channel_output, receiver_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1231,12 +1356,14 @@ test on_chan_close_init_given_any_input_returns_false() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input]
+  let inputs =
+    [fake_data.module_input]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
 
-  let outputs = [module_output]
+  let outputs =
+    [module_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -1273,12 +1400,14 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input]
+  let inputs =
+    [fake_data.module_input]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
 
-  let outputs = [module_output]
+  let outputs =
+    [module_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
