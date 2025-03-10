@@ -110,7 +110,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
         evidence_hash,
         proposer_address,
       } = h
-      let hbz = version |> Some() |> marshal_for_consensus()
+      let hbz = version |> marshal_for_consensus()
       let ts_opt = time |> timestamp_proto()
       let pbt =
         when ts_opt is {
@@ -125,7 +125,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
 
       hash_from_byte_slices_sha2_256(
         [
-          hbz,
+          hbz.2nd,
           ite(
             length(chain_id) == 0,
             #[],
