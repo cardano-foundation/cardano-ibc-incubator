@@ -346,6 +346,7 @@ export class PacketService {
     };
     return this.lucidService.createUnsignedTimeoutRefreshTx(unsignedTimeoutRefreshParams);
   }
+
   async buildUnsignedRecvPacketTx(
     recvPacketOperator: RecvPacketOperator,
     constructedAddress: string,
@@ -481,7 +482,40 @@ export class PacketService {
         jsonData = JSON.parse(stringData);
 
         if (jsonData.denom !== undefined) {
+          // Packet data seems to be ICS-20 related. Build transfer module redeemer.
           const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData;
+          const fTokenPacketData: FungibleTokenPacketDatum = {
+            denom: convertString2Hex(fungibleTokenPacketData.denom),
+            amount: convertString2Hex(fungibleTokenPacketData.amount),
+            sender: convertString2Hex(fungibleTokenPacketData.sender),
+            receiver: convertString2Hex(fungibleTokenPacketData.receiver),
+            memo: convertString2Hex(fungibleTokenPacketData.memo),
+          };
+
+          const spendTransferModuleRedeemer: IBCModuleRedeemer = {
+            Callback: [
+              {
+                OnRecvPacket: {
+                  channel_id: channelId,
+                  data: {
+                    TransferModuleData: [fTokenPacketData],
+                  },
+                  acknowledgement: {
+                    response: {
+                      AcknowledgementResult: {
+                        result: convertString2Hex(ACK_RESULT),
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          };
+
+          const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+            spendTransferModuleRedeemer,
+            'iBCModuleRedeemer',
+          );
 
           if (
             this._hasVoucherPrefix(
@@ -490,6 +524,7 @@ export class PacketService {
               convertHex2String(packet.destination_channel),
             )
           ) {
+            // Handle recv packet unescrow
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
               state: {
@@ -506,40 +541,6 @@ export class PacketService {
             const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
               updatedChannelDatum,
               'channel',
-            );
-
-            // build transfer module redeemer
-            const fTokenPacketData: FungibleTokenPacketDatum = {
-              denom: convertString2Hex(fungibleTokenPacketData.denom),
-              amount: convertString2Hex(fungibleTokenPacketData.amount),
-              sender: convertString2Hex(fungibleTokenPacketData.sender),
-              receiver: convertString2Hex(fungibleTokenPacketData.receiver),
-              memo: convertString2Hex(fungibleTokenPacketData.memo),
-            };
-
-            const spendTransferModuleRedeemer: IBCModuleRedeemer = {
-              Callback: [
-                {
-                  OnRecvPacket: {
-                    channel_id: channelId,
-                    data: {
-                      TransferModuleData: [fTokenPacketData],
-                    },
-                    acknowledgement: {
-                      response: {
-                        AcknowledgementResult: {
-                          result: convertString2Hex(ACK_RESULT),
-                        },
-                      },
-                    },
-                  },
-                },
-              ],
-            };
-
-            const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-              spendTransferModuleRedeemer,
-              'iBCModuleRedeemer',
             );
 
             const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
@@ -567,43 +568,86 @@ export class PacketService {
               encodedVerifyProofRedeemer,
             };
             return this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
+          } else {
+            // Handle recv packet escrow and voucher mint
+            const mintVoucherRedeemer: MintVoucherRedeemer = {
+              MintVoucher: {
+                packet_source_port: packet.source_port,
+                packet_source_channel: packet.source_channel,
+                packet_dest_port: packet.destination_port,
+                packet_dest_channel: packet.destination_channel,
+              },
+            };
+            const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
+              mintVoucherRedeemer,
+              'mintVoucherRedeemer',
+            );
+
+            // Add prefix voucher prefix with denom token
+            const sourcePrefix = getDenomPrefix(
+              convertHex2String(packet.destination_port),
+              convertHex2String(packet.destination_channel),
+            );
+
+            const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
+            const voucherTokenName = hashSha3_256(prefixedDenom);
+            const voucherTokenUnit =
+              this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
+            const updatedChannelDatum: ChannelDatum = {
+              ...channelDatum,
+              state: {
+                ...channelDatum.state,
+                packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ''),
+                packet_acknowledgement: prependToMap(
+                  channelDatum.state.packet_acknowledgement,
+                  packet.sequence,
+                  '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
+                ),
+              },
+            };
+
+            const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+              updatedChannelDatum,
+              'channel',
+            );
+
+            const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
+              channelUtxo,
+              connectionUtxo,
+              clientUtxo,
+              spendChannelRefUtxo,
+              spendTransferModuleRefUtxo,
+              transferModuleUtxo,
+              mintVoucherRefUtxo: this.getMintVoucherRefUtxo(),
+
+              encodedSpendChannelRedeemer,
+              encodedSpendTransferModuleRedeemer,
+              encodedMintVoucherRedeemer,
+              encodedUpdatedChannelDatum,
+
+              channelTokenUnit,
+              voucherTokenUnit,
+              transferAmount: BigInt(fungibleTokenPacketData.amount),
+              receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
+              constructedAddress,
+
+              recvPacketPolicyId,
+              recvPacketRefUTxO,
+              channelToken,
+
+              verifyProofPolicyId,
+              verifyProofRefUTxO,
+              encodedVerifyProofRedeemer,
+            };
+
+            return this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
           }
         }
       } catch (error) {
         this.logger.error('Error in parsing JSON packet data: ' + stringData, error);
       }
     }
-
-    /*
-    // build encode mint voucher redeemer
-    const mintVoucherRedeemer: MintVoucherRedeemer = {
-      MintVoucher: {
-        packet_source_port: packet.source_port,
-        packet_source_channel: packet.source_channel,
-        packet_dest_port: packet.destination_port,
-        packet_dest_channel: packet.destination_channel,
-      },
-    };
-    const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
-      mintVoucherRedeemer,
-      'mintVoucherRedeemer',
-    );
-
-
-    // add prefix voucher prefix with denom token
-    const sourcePrefix = getDenomPrefix(
-      convertHex2String(packet.destination_port),
-      convertHex2String(packet.destination_channel),
-    );
-
-
-    const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
-    const voucherTokenName = hashSha3_256(prefixedDenom);
-    const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
-    */
-
-    // handle recv packet mint
-
+    // Packet data is not related to an ICS-20 token transfer
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,
       state: {
