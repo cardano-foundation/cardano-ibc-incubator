@@ -79,13 +79,13 @@ pub fn extract_token_prefix(token_name: ByteArray) -> ByteArray {
   token_name |> bytearray.slice(20, 23)
 }
 
-pub fn extract_token_sequence(token_name: ByteArray) -> Option<ByteArray> {
+pub fn extract_token_sequence(token_name: ByteArray) -> ByteArray {
   if is_valid_token_name(token_name) {
     let postfix = bytearray.drop(token_name, 24)
 
-    Some(postfix)
+    postfix
   } else {
-    None
+    fail @"Invalid token"
   }
 }
 

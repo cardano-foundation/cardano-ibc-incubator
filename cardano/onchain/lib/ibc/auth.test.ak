@@ -183,18 +183,21 @@ test test_extract_token_prefix() {
 }
 
 test test_extract_token_sequence() {
-  let test_cases: List<(ByteArray, Option<ByteArray>)> =
+  let test_cases: List<(ByteArray, ByteArray)> =
     [
-      (
-        // length <= 24
-        #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b",
-        None,
-      ),
-      (#"f3b58dc840a819f86dc3477508463d4c3141e119239b722032", Some(#"32")),
-      (#"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33", Some(#"33")),
+      (#"f3b58dc840a819f86dc3477508463d4c3141e119239b722032", #"32"),
+      (#"ce71a7ad3269dd1796020cd46744571e7e086bf427b1b82e33", #"33"),
     ]
   test_cases
     |> list.all(fn(case) { auth.extract_token_sequence(case.1st) == case.2nd })
+}
+
+test test_extract_token_sequence_fail() fail {
+  let result =
+    auth.extract_token_sequence(
+      #"3f334ddd52c8f52f0ada7cce104ba1ba315cf0929ba0640b",
+    )
+  result == result
 }
 
 //===================================mint_auth_token==================================

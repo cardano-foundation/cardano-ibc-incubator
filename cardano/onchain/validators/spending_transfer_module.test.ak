@@ -34,8 +34,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   TransferModuleOperator,
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
-  CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, InnerSpec,
-  LeafOp, ProofSpec,
+  CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
@@ -142,21 +141,42 @@ fn setup() -> MockData {
       token: channel_token,
     }
 
+  let output_channel_datum =
+    ChannelDatum {
+      ..channel_datum,
+      state: ChannelDatumState {
+        ..channel_datum.state,
+        packet_receipt: [Pair(1, ""), ..channel_datum.state.packet_receipt],
+        packet_acknowledgement: [
+          Pair(
+            1,
+            #"08f7557ed51826fe18d84512bf24ec75001edbaf2123a477df72a0a9f3640a7c",
+          ),
+          ..channel_datum.state.packet_acknowledgement
+        ],
+      },
+    }
+
   let channel_output =
     Output {
       address: from_script("mock channel script hash"),
       value: from_asset(channel_token.policy_id, channel_token.name, 1),
-      datum: InlineDatum(channel_datum),
+      datum: InlineDatum(output_channel_datum),
       reference_script: None,
     }
 
   let channel_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        transaction_id: #"c936c81864dde93b47d2b98e7de9d988e0c2c9640da198e19462407670252cf9",
         output_index: 0,
       },
-      output: channel_output,
+      output: Output {
+        address: from_script("mock channel script hash"),
+        value: from_asset(channel_token.policy_id, channel_token.name, 1),
+        datum: InlineDatum(channel_datum),
+        reference_script: None,
+      },
     }
 
   let proof_height = Height { revision_number: 1, revision_height: 14 }
@@ -435,8 +455,6 @@ test on_chan_open_ack_succeed() {
       proof_try: mock.proof,
       proof_height: mock.proof_height,
     }
-
-  trace @"on_chan_open_ack_succeed": channel_redeemer
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [

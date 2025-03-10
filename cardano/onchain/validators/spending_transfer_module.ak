@@ -58,7 +58,7 @@ validator spend_transfer_module(
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
-    expect Some(updated_output) =
+    let updated_output =
       validator_utils.validate_token_remain(
         spent_output,
         transaction.outputs,
@@ -113,7 +113,7 @@ fn handler_callback(
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
-      expect Some(output_channel) =
+      let output_channel =
         validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
@@ -235,7 +235,7 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(unprefixed_denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -262,6 +262,7 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(data.receiver)
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
+        trace @"spend_transfer_module: start channel logic for transfer module"
         expect channel_keys.is_valid_channel_id(channel_id)
 
         let channel_sequence =
@@ -279,6 +280,8 @@ fn handler_callback(
             policy_id: channel_minting_policy_id,
             name: channel_token_name,
           }
+
+        trace @"spend_transfer_module: locating channel inputs and outputs"
         expect Some(channel_input) =
           list.find(
             inputs,
@@ -296,6 +299,8 @@ fn handler_callback(
         expect updated_channel_datum: ChannelDatum =
           validator_utils.get_inline_datum(channel_output)
 
+        trace @"spend_transfer_module: extracted datums from channel inputs and outputs"
+
         let channel_id_from_sequence =
           channel_keys.format_channel_identifier(channel_sequence)
 
@@ -309,51 +314,25 @@ fn handler_callback(
             commit_ack,
           )
 
-        let prev_receiver_token =
-          list.reduce(
-            inputs,
-            0,
-            fn(acc, input) {
-              let output = input.output
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
+        expect Some(payout_output) =
+          list.find(
+            transaction.outputs,
+            fn(output) { output.address == receiver_address },
           )
-        let post_receiver_token =
-          list.reduce(
-            outputs,
-            0,
-            fn(acc, output) {
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
-          )
+
+        let derived_channel_sequence =
+          auth.extract_token_sequence(updated_channel_datum.token.name)
+
         and {
-          valid_transfer_amount,
-          valid_packet,
-          auth.extract_token_sequence(updated_channel_datum.token.name) == Some(
-            channel_sequence,
-          ),
-          channel_id_from_sequence == channel_id,
-          post_receiver_token - prev_receiver_token == transfer_amount,
+          valid_packet?,
+          valid_transfer_amount?,
+          (channel_id_from_sequence == channel_id)?,
+          (derived_channel_sequence == channel_sequence)?,
+          (quantity_of(
+            payout_output.value,
+            escrowed_token_policy_id,
+            escrowed_token_name,
+          ) >= transfer_amount)?,
         }
       } else {
         expect Some(mint_voucher_redeemer) =
@@ -496,7 +475,7 @@ fn handler_operator(
           string_utils.hex_string_to_bytes(data.denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -541,7 +520,7 @@ fn validate_channel_open_init(
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
-) -> Option<Channel> {
+) -> Channel {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
@@ -576,7 +555,7 @@ fn validate_channel_open_init(
 
   expect channel_datum.port_id == port_id
 
-  Some(channel_datum.state.channel)
+  channel_datum.state.channel
 }
 
 fn validate_channel_open_try(
@@ -771,7 +750,7 @@ fn validate_refund_packet_token(
       string_utils.hex_string_to_bytes(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"
 
-    expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+    let (escrowed_token_policy_id, escrowed_token_name) =
       validator_utils.extract_token_unit(escrowed_token_unit)
     trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -792,7 +771,7 @@ fn validate_refund_packet_token(
       )
     let correct_transfer_amount =
       prev_escrowed_token - post_escrowed_token == transfer_amount
-    trace @"spend_transfer_module: unescrowed amount is valid"
+    trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
 
     expect Some(sender_public_key_hash) =
       string_utils.hex_string_to_bytes(data.sender)
@@ -845,7 +824,7 @@ fn validate_refund_packet_token(
     expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
     expect RefundVoucher { packet_source_port, packet_source_channel } =
       mint_voucher_redeemer
-    trace @"mint_voucher: tx mint voucher token"
+    trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
     and {
       packet_source_port == packet.source_port,

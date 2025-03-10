@@ -53,7 +53,7 @@ validator chan_close_confirm(
       ..
     } = transaction
 
-    expect Some((datum, channel_redeemer, spent_output)) =
+    let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
     expect [updated_output] =
@@ -66,10 +66,7 @@ validator chan_close_confirm(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect [connection_id] = datum.state.channel.connection_hops
-
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect ChanCloseConfirm { proof_init, proof_height } = channel_redeemer
@@ -79,10 +76,12 @@ validator chan_close_confirm(
     let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
     let ChannelDatumState { channel: cur_channel, .. } = cur_channel_state
 
+    expect [connection_id] = cur_channel.connection_hops
+
     expect cur_channel.state != chan_state_mod.Closed
     trace @"chan_close_confirm: channel state is not Closed"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
@@ -94,7 +93,7 @@ validator chan_close_confirm(
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"chan_close_confirm: Connection is open"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -124,7 +123,7 @@ validator chan_close_confirm(
       )
     trace @"chan_close_confirm: channel proof is valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
@@ -137,7 +136,7 @@ validator chan_close_confirm(
     trace @"chan_close_confirm: ibc module callback is valid"
 
     and {
-      auth.contain_auth_token(spent_output, datum.token),
+      channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
       channel_datum_mod.validate_chan_close_confirm(datum, updated_datum),
       valid_chan_close,

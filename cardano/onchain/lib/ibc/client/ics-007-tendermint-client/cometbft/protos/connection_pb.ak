@@ -60,7 +60,7 @@ pub fn marshal_for_version(version_opt: Option<Version>) -> ByteArray {
           )
         |> concat(
             ite(
-              list.length(features) == 0,
+              list.is_empty(features),
               #[],
               features
                 |> list.reduce(
@@ -102,7 +102,7 @@ fn size_for_version(version_opt: Option<Version>) -> Int {
           )
         |> add(
             ite(
-              list.length(features) == 0,
+              list.is_empty(features),
               0,
               features
                 |> list.reduce(
@@ -231,7 +231,7 @@ pub fn marshal_for_connection_end(
           )
         |> concat(
             ite(
-              list.length(versions) == 0,
+              list.is_empty(versions),
               #[],
               versions
                 |> list.reduce(
@@ -307,7 +307,7 @@ pub fn size_for_connection_end(connection_end_opt: Option<ConnectionEnd>) -> Int
           )
         |> add(
             ite(
-              list.length(versions) == 0,
+              list.is_empty(versions),
               0,
               versions
                 |> list.reduce(

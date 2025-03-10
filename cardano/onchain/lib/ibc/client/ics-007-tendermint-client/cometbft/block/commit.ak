@@ -17,7 +17,7 @@ pub fn validate_basic(commit: Commit) -> Bool {
     if commit.height >= 1 {
       and {
         !is_zero_block_id(commit.block_id),
-        list.length(commit.signatures) > 0,
+        !list.is_empty(commit.signatures),
         commit.signatures
           |> list.all(
               fn(com_sig) { commit_sig.validate_basic(com_sig) == True },

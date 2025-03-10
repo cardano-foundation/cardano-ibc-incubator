@@ -29,13 +29,15 @@ pub fn is_initialized_valid(datum: ClientDatum, auth_token: AuthToken) -> Bool {
 
   // validate consensus states
   let latest_height = client_state_mod.get_latest_height(client_state)
-  expect list.length(consensus_states) == 1
-  expect Some(_consensus_state) =
-    pairs.get_first(consensus_states, latest_height)
-  // TODO: add consensus_state.validate_basic()
-  expect token == auth_token
 
-  True
+  when consensus_states is {
+    [height_consensus_state] -> and {
+        // TODO: add consensus_state.validate_basic()
+        height_consensus_state.1st == latest_height,
+        token == auth_token,
+      }
+    _ -> False
+  }
 }
 
 pub fn update_state(

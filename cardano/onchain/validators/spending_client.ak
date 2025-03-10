@@ -49,8 +49,7 @@ validator spend_client {
 
         let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-        expect Some(tx_valid_from) =
-          validator_utils.get_tx_valid_from(validity_range)
+        let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
 
         expect
           client_state_mod.status(
