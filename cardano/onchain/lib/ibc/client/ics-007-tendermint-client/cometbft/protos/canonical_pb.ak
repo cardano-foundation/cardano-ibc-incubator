@@ -1,6 +1,6 @@
 use aiken/primitive/bytearray.{concat}
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
-  marshal_for_timestamp_v2, timestamp_proto,
+  marshal_for_timestamp, timestamp_proto,
 }
 use ibc/utils/bytes.{
   add_and_concat, encode_bytearray, encode_int, encode_int_little_endian,
@@ -61,7 +61,7 @@ pub fn marshal_for_vote(vote: CanonicalVote) -> (Int, ByteArray) {
     |> add_and_concat(
         {
           expect Some(ts) = timestamp_proto(timestamp)
-          nest_record(marshal_for_timestamp_v2(ts), 0x2a)
+          nest_record(marshal_for_timestamp(ts), 0x2a)
         },
       )
     |> size_and_concat(encode_bytearray(chain_id, 0x32))

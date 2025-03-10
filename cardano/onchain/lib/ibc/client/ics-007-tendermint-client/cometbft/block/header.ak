@@ -111,7 +111,13 @@ pub fn hash(h: TmHeader) -> ByteArray {
         proposer_address,
       } = h
       let hbz = version |> Some() |> marshal_for_consensus()
-      let pbt = time |> timestamp_proto() |> marshal_for_timestamp()
+      let ts_opt = time |> timestamp_proto()
+      let pbt =
+        when ts_opt is {
+          Some(ts) -> marshal_for_timestamp(ts).2nd
+          _ -> #""
+        }
+
       let (_, bzbi) =
         last_block_id
           |> canonicalize_block_id()

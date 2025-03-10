@@ -5,7 +5,10 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/canonical_pb.{
   CanonicalBlockID, CanonicalPartSetHeader, SignedMsgType,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb.{
-  marshal_for_timestamp, size_for_timestamp, size_of_std_time, timestamp_proto,
+  timestamp_proto,
+}
+use ibc/client/ics_007_tendermint_client/cometbft/protos/timestamp_pb_deprecated.{
+  marshal_for_timestamp, size_for_timestamp, size_of_std_time,
 }
 use ibc/utils/bytes.{encode_varint, sov}
 use ibc/utils/int.{Int64, uint64}
