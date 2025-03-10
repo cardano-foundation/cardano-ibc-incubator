@@ -41,7 +41,7 @@ validator send_packet(
       ..
     } = transaction
 
-    expect Some((datum, channel_redeemer, spent_output)) =
+    let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
     expect [updated_output] =
@@ -54,8 +54,7 @@ validator send_packet(
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
 
-    expect Some(channel_sequence) =
-      auth.extract_token_sequence(datum.token.name)
+    let channel_sequence = auth.extract_token_sequence(datum.token.name)
     let channel_id = chan_keys_mod.format_channel_identifier(channel_sequence)
 
     expect SendPacket { packet } = channel_redeemer
@@ -80,7 +79,7 @@ validator send_packet(
       }
     trace @"send_packet: packet info matched channel state"
 
-    expect Some(connection_datum) =
+    let connection_datum =
       validator_utils.validate_referred_connection(
         reference_inputs,
         datum.token.name,
@@ -89,7 +88,7 @@ validator send_packet(
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
 
-    expect Some(client_datum) =
+    let client_datum =
       validator_utils.validate_referred_client(
         reference_inputs,
         datum.token.name,
@@ -127,7 +126,7 @@ validator send_packet(
 
     trace @"send_packet: channel_datum is updated valid"
 
-    expect Some(ibc_module_redeemer) =
+    let ibc_module_redeemer =
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,

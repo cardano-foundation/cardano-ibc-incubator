@@ -210,7 +210,7 @@ test test_validate_mint_succeed() {
       sequence,
     )
   // Assert that the result is as expected
-  result == Some(AuthToken { ..handler_token, name: token_name })
+  result == AuthToken { ..handler_token, name: token_name }
 }
 
 test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
@@ -245,7 +245,7 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
       sequence,
     )
   // Assert that the result is as expected
-  result == Some(AuthToken { ..handler_token, name: token_name })
+  result == AuthToken { ..handler_token, name: token_name }
 }
 
 //==============================extract_module_redeemer===============================
@@ -329,7 +329,7 @@ test extract_module_redeemer_succeed() {
     channel_token_name,
     port_minting_policy_id,
     port_id,
-  ) == Some(module_redeemer)
+  ) == module_redeemer
 }
 
 test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
@@ -342,8 +342,7 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
-  let inputs =
-    []
+  let inputs = []
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -351,7 +350,7 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
-  ) == Some(module_redeemer)
+  ) == module_redeemer
 }
 
 test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fail {
@@ -364,8 +363,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
-  let redeemers =
-    []
+  let redeemers = []
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -373,7 +371,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     channel_token_name,
     port_minting_policy_id,
     port_id,
-  ) == Some(module_redeemer)
+  ) == module_redeemer
 }
 
 test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
@@ -399,7 +397,7 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
-  ) == Some(module_redeemer)
+  ) == module_redeemer
 }
 
 //==================================validate_token_remain================================
@@ -430,8 +428,7 @@ fn setup_validate_token_remain() -> (
       reference_script: None,
     }
 
-  let outputs =
-    [spent_output]
+  let outputs = [spent_output]
 
   let updated_output = spent_output
 
@@ -442,28 +439,26 @@ test validate_token_remain_succeed() {
   let (spent_output, outputs, tokens, updated_output) =
     setup_validate_token_remain()
 
-  validator_utils.validate_token_remain(spent_output, outputs, tokens) == Some(
-    updated_output,
-  )
+  validator_utils.validate_token_remain(spent_output, outputs, tokens) == updated_output
 }
 
 test validate_token_remain_succeed_if_required_tokens_is_empty() {
   let (spent_output, outputs, _tokens, updated_output) =
     setup_validate_token_remain()
 
-  validator_utils.validate_token_remain(spent_output, outputs, []) == Some(
-    updated_output,
-  )
+  validator_utils.validate_token_remain(spent_output, outputs, []) == updated_output
 }
 
-test validate_token_remain_fail_if_token_not_remained() {
+test validate_token_remain_fail_if_token_not_remained() fail {
   let (spent_output, outputs, tokens, _) = setup_validate_token_remain()
 
   expect [output, ..] = outputs
 
   let output = Output { ..output, value: zero }
 
-  validator_utils.validate_token_remain(spent_output, [output], tokens) == None
+  let result =
+    validator_utils.validate_token_remain(spent_output, [output], tokens)
+  result == result
 }
 
 //=====================================extract_token_unit===================================
@@ -479,24 +474,28 @@ fn setup_extract_token_unit() -> (ByteArray, ByteArray, ByteArray) {
 test extract_token_unit_succeed() {
   let (unit, policy_id, name) = setup_extract_token_unit()
 
-  validator_utils.extract_token_unit(unit) == Some((policy_id, name))
+  validator_utils.extract_token_unit(unit) == (policy_id, name)
 }
 
 test extract_token_unit_succeed_if_unit_is_lovelace() {
-  validator_utils.extract_token_unit("lovelace") == Some(
-    (ada_policy_id, ada_asset_name),
+  validator_utils.extract_token_unit("lovelace") == (
+    ada_policy_id,
+    ada_asset_name,
   )
 }
 
-test extract_token_unit_fail_if_unit_length_invalid() {
+test extract_token_unit_fail_if_unit_length_invalid_too_long() fail {
   let too_long_unit =
     #"a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c235a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c235a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c2"
+  let result = validator_utils.extract_token_unit(too_long_unit)
+  result == result
+}
+
+test extract_token_unit_fail_if_unit_length_invalid_too_short() fail {
   let too_short_unit = #"a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c2"
 
-  and {
-    validator_utils.extract_token_unit(too_long_unit) == None,
-    validator_utils.extract_token_unit(too_short_unit) == None,
-  }
+  let result = validator_utils.extract_token_unit(too_short_unit)
+  result == result
 }
 
 //===================================validate_handler_redeemer==========================
@@ -557,58 +556,62 @@ test validate_handler_redeemer_succeed() {
     redeemers,
     handler_token,
     handler_redeemer,
-  ) == Some(handler_datum)
+  ) == handler_datum
 }
 
-test validate_handler_redeemer_fail_inputs_not_contain_handler_input() {
+test validate_handler_redeemer_fail_inputs_not_contain_handler_input() fail {
   let (_inputs, redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
-  let inputs =
-    []
+  let inputs = []
 
-  validator_utils.validate_handler_redeemer(
-    inputs,
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == None
+  let result =
+    validator_utils.validate_handler_redeemer(
+      inputs,
+      redeemers,
+      handler_token,
+      handler_redeemer,
+    )
+  result == result
 }
 
-test validate_handler_redeemer_fail_redeemers_not_contain_handler_redeemer() {
+test validate_handler_redeemer_fail_redeemers_not_contain_handler_redeemer() fail {
   let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
-  let redeemers =
-    []
+  let redeemers = []
 
-  validator_utils.validate_handler_redeemer(
-    inputs,
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == None
+  let result =
+    validator_utils.validate_handler_redeemer(
+      inputs,
+      redeemers,
+      handler_token,
+      handler_redeemer,
+    )
+  result == result
 }
 
 test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fail {
   let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
-  let invalid_handler_redeemer: Redeemer = Void
+  let invalid_handler_redeemer: Redeemer = HandlerConnOpenInit
   expect [handler_input, ..] = inputs
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
 
-  validator_utils.validate_handler_redeemer(
-    inputs,
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == None
+  let result =
+    validator_utils.validate_handler_redeemer(
+      inputs,
+      redeemers,
+      handler_token,
+      handler_redeemer,
+    )
+  result == result
 }
 
-test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() {
+test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() fail {
   let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
     setup_validate_handler_redeemer()
 
@@ -619,12 +622,14 @@ test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
 
-  validator_utils.validate_handler_redeemer(
-    inputs,
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == None
+  let result =
+    validator_utils.validate_handler_redeemer(
+      inputs,
+      redeemers,
+      handler_token,
+      handler_redeemer,
+    )
+  result == result
 }
 
 test validate_handler_redeemer_fail_handler_datum_is_invalid() fail {
@@ -639,12 +644,14 @@ test validate_handler_redeemer_fail_handler_datum_is_invalid() fail {
       output: Output { ..handler_input.output, datum: InlineDatum(Void) },
     }
 
-  validator_utils.validate_handler_redeemer(
-    [handler_input],
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == None
+  let result =
+    validator_utils.validate_handler_redeemer(
+      [handler_input],
+      redeemers,
+      handler_token,
+      handler_redeemer,
+    )
+  result == result
 }
 
 //=====================================validate_referred_client=========================================
@@ -728,8 +735,7 @@ fn setup_validate_referred_client() -> (
 
   let client_input = Input { output_reference: out_ref, output: client_output }
 
-  let reference_inputs =
-    [client_input]
+  let reference_inputs = [client_input]
 
   (
     reference_inputs,
@@ -754,10 +760,10 @@ test validate_referred_client_succeed() {
     referrer_token_name,
     client_minting_policy_id,
     client_id,
-  ) == Some(client_datum)
+  ) == client_datum
 }
 
-test validate_referred_client_if_not_found_client_input() {
+test validate_referred_client_if_not_found_client_input() fail {
   let (
     _reference_inputs,
     referrer_token_name,
@@ -766,15 +772,16 @@ test validate_referred_client_if_not_found_client_input() {
     _client_datum,
   ) = setup_validate_referred_client()
 
-  let reference_inputs =
-    []
+  let reference_inputs = []
 
-  validator_utils.validate_referred_client(
-    reference_inputs,
-    referrer_token_name,
-    client_minting_policy_id,
-    client_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_client(
+      reference_inputs,
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+    )
+  result == result
 }
 
 test validate_referred_client_if_found_datum_is_not_client_datum() fail {
@@ -794,15 +801,16 @@ test validate_referred_client_if_found_datum_is_not_client_datum() fail {
       output: Output { ..client_input.output, datum: InlineDatum(Void) },
     }
 
-  let reference_inputs =
-    [client_input]
+  let reference_inputs = [client_input]
 
-  validator_utils.validate_referred_client(
-    reference_inputs,
-    referrer_token_name,
-    client_minting_policy_id,
-    client_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_client(
+      reference_inputs,
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+    )
+  result == result
 }
 
 // =====================================validate_referred_connection=========================================
@@ -876,8 +884,7 @@ fn setup_validate_referred_connection() -> (
   let connection_input =
     Input { output_reference: out_ref, output: connection_output }
 
-  let reference_inputs =
-    [connection_input]
+  let reference_inputs = [connection_input]
 
   (
     reference_inputs,
@@ -902,10 +909,10 @@ test validate_referred_connection_succeed() {
     referrer_token_name,
     connection_minting_policy_id,
     connection_id,
-  ) == Some(connection_datum)
+  ) == connection_datum
 }
 
-test validate_referred_connection_if_not_found_connection_input() {
+test validate_referred_connection_if_not_found_connection_input() fail {
   let (
     _reference_inputs,
     referrer_token_name,
@@ -914,15 +921,16 @@ test validate_referred_connection_if_not_found_connection_input() {
     _connection_datum,
   ) = setup_validate_referred_connection()
 
-  let reference_inputs =
-    []
+  let reference_inputs = []
 
-  validator_utils.validate_referred_connection(
-    reference_inputs,
-    referrer_token_name,
-    connection_minting_policy_id,
-    connection_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_connection(
+      reference_inputs,
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
 }
 
 test validate_referred_connection_if_found_datum_is_not_connection_datum() fail {
@@ -942,13 +950,14 @@ test validate_referred_connection_if_found_datum_is_not_connection_datum() fail 
       output: Output { ..connection_input.output, datum: InlineDatum(Void) },
     }
 
-  let reference_inputs =
-    [connection_input]
+  let reference_inputs = [connection_input]
 
-  validator_utils.validate_referred_connection(
-    reference_inputs,
-    referrer_token_name,
-    connection_minting_policy_id,
-    connection_id,
-  ) == None
+  let result =
+    validator_utils.validate_referred_connection(
+      reference_inputs,
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
 }

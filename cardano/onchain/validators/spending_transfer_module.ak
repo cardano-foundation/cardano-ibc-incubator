@@ -56,7 +56,7 @@ validator spend_transfer_module(
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
-    expect Some(updated_output) =
+    let updated_output =
       validator_utils.validate_token_remain(
         spent_output,
         transaction.outputs,
@@ -111,7 +111,7 @@ fn handler_callback(
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
-      expect Some(output_channel) =
+      let output_channel =
         validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
@@ -233,7 +233,7 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(unprefixed_denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -415,7 +415,7 @@ fn handler_operator(
           string_utils.hex_string_to_bytes(data.denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -460,7 +460,7 @@ fn validate_channel_open_init(
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
-) -> Option<Channel> {
+) -> Channel {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
@@ -495,7 +495,7 @@ fn validate_channel_open_init(
 
   expect channel_datum.port_id == port_id
 
-  Some(channel_datum.state.channel)
+  channel_datum.state.channel
 }
 
 fn validate_channel_open_try(
@@ -690,7 +690,7 @@ fn validate_refund_packet_token(
       string_utils.hex_string_to_bytes(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"
 
-    expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+    let (escrowed_token_policy_id, escrowed_token_name) =
       validator_utils.extract_token_unit(escrowed_token_unit)
     trace @"spend_transfer_module: extract escrowed token valid"
 
