@@ -129,35 +129,6 @@ validator recv_packet(
         verify_proof_policy_id,
       )
 
-    //let ibc_module_redeemer =
-    //  validator_utils.extract_module_redeemer(
-    //    inputs,
-    //    redeemers,
-    //    datum.token.name,
-    //    port_minting_policy_id,
-    //    datum.port_id,
-    //  )
-    //trace @"recv_packet: module redeemer is extracted"
-    //expect Callback(ibc_module_callback) = ibc_module_redeemer
-    //expect OnRecvPacket { channel_id: module_chan_id, acknowledgement, data: _ } =
-    //  ibc_module_callback
-    // This block below was removed during the recv_packet.ak merge
-    //  let valid_ordering =
-    //     when cur_channel.ordering is {
-    //       chan_order_mod.Unordered ->
-    //         !pairs.has_key(cur_packet_receipt, packet.sequence)
-    //       chan_order_mod.Ordered -> packet.sequence == next_sequence_recv
-    //       _ -> False
-    //     }
-    //let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-    //let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
-    //let valid_packet =
-    //  channel_datum_mod.validate_recv_packet(
-    //    datum,
-    //    updated_datum,
-    //    packet,
-    //    commit_ack,
-    //  )
     and {
       channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
@@ -167,13 +138,11 @@ validator recv_packet(
       (packet.source_port == cur_channel.counterparty.port_id)?,
       (packet.source_channel == cur_channel.counterparty.channel_id)?,
       valid_packet_proof?,
-      //module_chan_id == channel_id,
       (!pairs.has_key(cur_packet_receipt, packet.sequence))?,
       (!pairs.has_key(cur_packet_acknowledgement, packet.sequence))?,
       (packet.timeout_timestamp != 0)?,
       (tx_valid_to * 1_000_000 < packet.timeout_timestamp)?,
     }
-    //valid_packet,
   }
 
   else(_) {

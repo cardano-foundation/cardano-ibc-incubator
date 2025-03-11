@@ -344,7 +344,7 @@ test recv_packet_non_mock_data() {
   let recv_packet_policy_id =
     #"fb62d2738f5a9fdf049ef19229f82b4b427ed0aceab4282ba9a56039"
 
-  let validity_range = interval.before(1741267722930)
+  let validity_range = interval.before(1741267622930)
 
   let channel_token =
     AuthToken {

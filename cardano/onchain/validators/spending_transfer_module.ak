@@ -17,7 +17,9 @@ use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, validate_recv_packet,
+}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
   MintChannelRedeemer, RecvPacket, SendPacket, SpendChannelRedeemer,
@@ -260,19 +262,77 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(data.receiver)
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
+        trace @"spend_transfer_module: start channel logic for transfer module"
+        expect channel_keys.is_valid_channel_id(channel_id)
+
+        let channel_sequence =
+          channel_keys.parse_channel_id_sequence(channel_id)
+
+        let channel_token_name =
+          auth.generate_token_name(
+            handler_token,
+            channel_keys.channel_prefix,
+            channel_sequence,
+          )
+
+        let channel_token =
+          AuthToken {
+            policy_id: channel_minting_policy_id,
+            name: channel_token_name,
+          }
+
+        trace @"spend_transfer_module: locating channel inputs and outputs"
+        expect Some(channel_input) =
+          list.find(
+            inputs,
+            fn(input) { input.output |> auth.contain_auth_token(channel_token) },
+          )
+
+        expect Some(channel_output) =
+          list.find(
+            outputs,
+            fn(output) { auth.contain_auth_token(output, channel_token) },
+          )
+
+        expect input_channel_datum: ChannelDatum =
+          validator_utils.get_inline_datum(channel_input.output)
+        expect updated_channel_datum: ChannelDatum =
+          validator_utils.get_inline_datum(channel_output)
+
+        trace @"spend_transfer_module: extracted datums from channel inputs and outputs"
+
+        let channel_id_from_sequence =
+          channel_keys.format_channel_identifier(channel_sequence)
+
+        let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
+        let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
+        let valid_packet =
+          validate_recv_packet(
+            input_channel_datum,
+            updated_channel_datum,
+            packet,
+            commit_ack,
+          )
+
         expect Some(payout_output) =
           list.find(
             transaction.outputs,
             fn(output) { output.address == receiver_address },
           )
 
+        let derived_channel_sequence =
+          auth.extract_token_sequence(updated_channel_datum.token.name)
+
         and {
-          valid_transfer_amount,
-          quantity_of(
+          valid_packet?,
+          valid_transfer_amount?,
+          (channel_id_from_sequence == channel_id)?,
+          (derived_channel_sequence == channel_sequence)?,
+          (quantity_of(
             payout_output.value,
             escrowed_token_policy_id,
             escrowed_token_name,
-          ) >= transfer_amount,
+          ) >= transfer_amount)?,
         }
       } else {
         expect Some(mint_voucher_redeemer) =
@@ -711,7 +771,7 @@ fn validate_refund_packet_token(
       )
     let correct_transfer_amount =
       prev_escrowed_token - post_escrowed_token == transfer_amount
-    trace @"spend_transfer_module: unescrowed amount is valid"
+    trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
 
     expect Some(sender_public_key_hash) =
       string_utils.hex_string_to_bytes(data.sender)
@@ -764,7 +824,7 @@ fn validate_refund_packet_token(
     expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
     expect RefundVoucher { packet_source_port, packet_source_channel } =
       mint_voucher_redeemer
-    trace @"mint_voucher: tx mint voucher token"
+    trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
     and {
       packet_source_port == packet.source_port,
