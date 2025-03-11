@@ -257,17 +257,14 @@ async fn main() {
                 }
 
                 let mut cardano_current_epoch = 0;
-                if project_config.mithril.enabled {
-                    // Start Mithril if needed
-                    match start_mithril(&project_root_path).await {
-                        Ok(current_epoch) => {
-                            cardano_current_epoch = current_epoch;
-                            logger::log("✅ Mithril up and running")
-                        }
-                        Err(error) => network_down_with_error(&format!(
-                            "❌ Failed to start Mithril: {}",
-                            error
-                        )),
+                // Start Mithril if needed
+                match start_mithril(&project_root_path).await {
+                    Ok(current_epoch) => {
+                        cardano_current_epoch = current_epoch;
+                        logger::log("✅ Mithril up and running")
+                    }
+                    Err(error) => {
+                        network_down_with_error(&format!("❌ Failed to start Mithril: {}", error))
                     }
                 }
 

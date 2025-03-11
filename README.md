@@ -42,20 +42,23 @@ cargo run check
 
 ### ⛓ Running a local Cardano network
 
-To start the services:
+To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
 
 ```sh
 cd caribic
-cargo run network-up
+cargo run start network 
+# "cargo run start" without argument 
+# will start network and bridge components
 ```
 
 ### 🌉 Deploying the bridge components
 
-To start the services:
+To start the gateway, relayer and to deploy the light client contracts run:
 
 ```sh
-cd caribic
-cargo run bridge-up
+cargo run start bridge
+# "cargo run start" without argument 
+# will start network and bridge components
 ```
 
 ### ⛓️‍💥 Stopping the services
@@ -63,11 +66,16 @@ cargo run bridge-up
 To stop the services:
 
 ```sh
-cd caribic
-cargo run network-down # or bridge-down
+cargo run stop
 ```
 
 ### 🎉 Demo: Sending a demo message from Cosmos to Cardano
+
+Make sure you have the bridge and network components running. Then, run the following command:
+
+```sh
+cargo run demo message-exchange
+```
 
 To demonstrate the ability to exchange messages, a small [vessel demo use case](https://github.com/cardano-foundation/cardano-ibc-summit-demo) is included in the deployment.  
 It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way using a scaffolded Cosmos app-chain. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by a relayer and written to the Cardano blockchain, acting as an oracle.
@@ -98,6 +106,12 @@ go run . transmit -channelid $CHANNEL_ID -ts $CONSOLIDATION_TIMESTAMP
 > [!CAUTION]  
 > 🪡 Use case under construction:  
 > We are currently refactoring the code, so this use case might not work properly.
+
+Make sure you have the bridge and network components running. Then, run the following command:
+
+```sh
+cargo run demo token-swap
+```
 
 ```sh
 docker exec -it relayer sh # Access to relayer container
