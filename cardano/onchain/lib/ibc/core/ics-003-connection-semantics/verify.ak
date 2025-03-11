@@ -77,13 +77,11 @@ pub fn verify_client_state(
     proof,
     merkle_path,
     mithril_pb.marshal_for_any_client_state(
-      Some(
-        AnyMithrilClientState {
-          type_url: "/ibc.clients.mithril.v1.ClientState",
-          value: Some(counterparty_client_state),
-        },
-      ),
-    ),
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd,
   )
 }
 
