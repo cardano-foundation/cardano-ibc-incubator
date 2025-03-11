@@ -6,14 +6,12 @@ use clap::Subcommand;
 use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
 use start::start_gateway;
-use start::start_local_cardano_network_v2;
 use start::start_mithril;
 use start::wait_and_start_mithril_genesis;
 use start::{
     configure_hermes, prepare_osmosis, start_cosmos_sidechain, start_local_cardano_network,
     start_osmosis, start_relayer,
 };
-use stop::stop_cardano_network_v2;
 use stop::stop_gateway;
 use stop::stop_mithril;
 use stop::{stop_cardano_network, stop_cosmos, stop_osmosis, stop_relayer};
@@ -26,6 +24,36 @@ mod setup;
 mod start;
 mod stop;
 mod utils;
+
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
+enum DemoType {
+    /// Spawns up a specific Cosmos side chain developed for demonstration purposes
+    MessageExchange,
+    /// Spawns up a local Osmosis setup developed for demonstrating an interchain swap
+    TokenSwap,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
+enum StartTarget {
+    /// Starts the local Cardano network related services
+    Network,
+    /// Deploys the light client contracts and starts the gateway and relayer
+    Bridge,
+    /// Starts the local Cardano network, Mithril, gateway and relayer
+    All,
+}
+
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
+enum StopTarget {
+    /// Stops the local Cardano network related services
+    Network,
+    /// Tears down the gateway and relayer
+    Bridge,
+    /// Stops the demo services
+    Demo,
+    /// Stops the local Cardano network, Mithril, gateway and relayer and demo services
+    All,
+}
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -46,59 +74,21 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
-    /// Creates a local development environment including all necessary components for a IBC connection between Cardano and Osmosis
-    Start,
-    /// Stops the local development environment
-    Stop,
-    /// Performs a token swap between Cardano and Osmosis
-    Demo,
-    /// Creates a local development environment using a specific Cosmos side chain developed for demonstration purposes
-    VesselDemo,
-    /// Stops the vessel oracle demo
-    StopVesselDemo,
-    NetworkUp,
-    NetworkDown,
-    BridgeUp,
-    BridgeDown,
-    AppChainUp,
-    AppChainDown,
-}
-
-fn stop_bridge_gracefully() {
-    let project_config = config::get_config();
-    let project_root_path = Path::new(&project_config.project_root);
-
-    // Stop local cardano network
-    stop_cardano_network(project_root_path);
-
-    // Stop Cosmos
-    stop_cosmos(project_root_path.join("cosmos").as_path());
-
-    // Stop Relayer
-    stop_relayer(project_root_path.join("relayer").as_path());
-
-    // Stop Osmosis
-    stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
-
-    // Stop Mithril
-    stop_mithril(project_root_path.join("chains/mithrils").as_path());
-}
-
-fn stop_vessel_demo_gracefully() {
-    let project_config = config::get_config();
-    let project_root_path = Path::new(&project_config.project_root);
-
-    // Stop local cardano network
-    stop_cardano_network(project_root_path);
-
-    // Stop Cosmos
-    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-
-    // Stop Relayer
-    stop_relayer(project_root_path.join("relayer").as_path());
-
-    // Stop Mithril
-    stop_mithril(project_root_path.join("chains/mithrils").as_path());
+    /// Starts a specific bridge component. The component can be either the network, bridge or all. Default is all
+    Start {
+        #[arg(value_enum, default_value_t = StartTarget::All)]
+        target: StartTarget,
+    },
+    /// Stops a specific bridge component. The component can be either the network, bridge, demo or all. Default is all
+    Stop {
+        #[arg(value_enum, default_value_t = StopTarget::All)]
+        target: StopTarget,
+    },
+    /// Starts a demo use case. The use case can be either a token swap or a message exchange.
+    Demo {
+        #[arg(value_enum)]
+        use_case: DemoType,
+    },
 }
 
 fn network_down() {
@@ -106,7 +96,7 @@ fn network_down() {
     let project_root_path = Path::new(&project_config.project_root);
 
     // Stop local cardano network
-    stop_cardano_network_v2(project_root_path);
+    stop_cardano_network(project_root_path);
 
     // Stop Mithril
     stop_mithril(project_root_path.join("chains/mithrils").as_path());
@@ -122,22 +112,10 @@ fn network_down_with_error(message: &str) {
 fn bridge_down() {
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-
     // Stop Relayer
     stop_relayer(project_root_path.join("relayer").as_path());
-
-    // Stop Cosmos
-    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-
     // Stop Mithril
     stop_gateway(&project_root_path);
-}
-
-fn exit_with_error(message: &str) {
-    logger::error(message);
-    logger::log("🚨 Stopping services...");
-    stop_bridge_gracefully();
-    std::process::exit(1);
 }
 
 fn bridge_down_with_error(message: &str) {
@@ -147,15 +125,10 @@ fn bridge_down_with_error(message: &str) {
     std::process::exit(1);
 }
 
-fn exit_vessel_demo_with_error(message: &str) {
+fn exit_osmosis_demo_with_error(osmosis_dir: &PathBuf, message: &str) {
     logger::error(message);
     logger::log("🚨 Stopping services...");
-    stop_vessel_demo_gracefully();
-    std::process::exit(1);
-}
-
-fn exit_with_message(message: &str) {
-    logger::error(message);
+    stop_osmosis(osmosis_dir.as_path());
     std::process::exit(1);
 }
 
@@ -172,344 +145,200 @@ async fn main() {
 
     match args.command {
         Commands::Check => check::check_prerequisites().await,
-        Commands::Start => {
-            let project_config = config::get_config();
-            let project_root_path = Path::new(&project_config.project_root);
-            // Prepare the local Osmosis appchain
-            let osmosis_dir = utils::get_osmosis_dir(project_root_path);
-            logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
-
-            match prepare_osmosis(osmosis_dir.as_path()).await {
-                Ok(_) => logger::log("✅ Osmosis appchain prepared"),
-                Err(error) => {
-                    exit_with_error(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
-                }
-            }
-
-            // Start the local Cardano network and its services
-            match start_local_cardano_network(&project_root_path).await {
-                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => exit_with_error(&format!(
-                    "❌ Failed to start local Cardano network: {}",
-                    error
-                )),
-            }
-
-            let mut cardano_current_epoch = 0;
-            if project_config.mithril.enabled {
-                // Start Mithril if needed
-                match start_mithril(&project_root_path).await {
-                    Ok(current_epoch) => {
-                        cardano_current_epoch = current_epoch;
-                        logger::log("✅ Mithril up and running")
-                    }
-                    Err(error) => {
-                        exit_with_error(&format!("❌ Failed to start Mithril: {}", error))
-                    }
-                }
-            }
-
-            // Start gateway
-            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-                Ok(_) => logger::log("✅ Gateway started successfully"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start gateway: {}", error)),
-            }
-
-            // Start the Cosmos sidechain
-            match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
-                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => {
-                    exit_with_error(&format!("❌ Failed to start Cosmos sidechain: {}", error))
-                }
-            }
-
-            // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                project_root_path.join("relayer/.env.example").as_path(),
-                project_root_path.join("relayer/examples").as_path(),
-                project_root_path
-                    .join("cardano/deployments/handler.json")
-                    .as_path(),
-            ) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start relayer: {}", error)),
-            }
-
-            // Start Osmosis
-            match start_osmosis(osmosis_dir.as_path()).await {
-                Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
-                Err(error) => exit_with_error(&format!("❌ Failed to start Osmosis: {}", error)),
-            };
-
-            // Configure Hermes and build channels between Osmosis with Cosmos
-            match configure_hermes(osmosis_dir.as_path()) {
-                Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
-                Err(error) => exit_with_error(&format!("❌ Failed to configure Hermes: {}", error)),
-            }
-
-            if project_config.mithril.enabled {
-                // Wait for Mithril to start reading the immutable cardano node files
-                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                    Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
-                    Err(error) => {
-                        exit_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
-                }
-            }
-            }
-            logger::log("\n✅ Bridge started successfully");
-        }
-        Commands::Stop => {
-            stop_bridge_gracefully();
-            logger::log("\n❎ Bridge stopped successfully");
-        }
-        Commands::Demo => logger::log("Demo"),
-        Commands::VesselDemo => {
+        Commands::Demo { use_case } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
-            // Start the local Cardano network and its services
-            match start_local_cardano_network(&project_root_path).await {
-                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
-                    "❌ Failed to start local Cardano network: {}",
-                    error
-                )),
-            }
+            if use_case == DemoType::TokenSwap {
+                // Prepare the local Osmosis appchain
+                let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+                logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
 
-            let mut cardano_current_epoch = 0;
+                match prepare_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("✅ Osmosis appchain prepared"),
+                    Err(error) => exit_osmosis_demo_with_error(
+                        &osmosis_dir,
+                        &format!("❌ Failed to prepare Osmosis appchain: {}", error),
+                    ),
+                }
 
-            if project_config.mithril.enabled {
-                // Start Mithril if needed
-                match start_mithril(&project_root_path).await {
-                    Ok(current_epoch) => {
-                        cardano_current_epoch = current_epoch;
-                        logger::log("✅ Mithril up and running")
-                    }
-                    Err(error) => exit_vessel_demo_with_error(&format!(
-                        "❌ Failed to start Mithril: {}",
+                // Start the Cosmos sidechain
+                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                    Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                    Err(error) => exit_osmosis_demo_with_error(
+                        &osmosis_dir,
+                        &format!("❌ Failed to start Cosmos sidechain: {}", error),
+                    ),
+                }
+
+                // Start Osmosis
+                match start_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
+                    Err(error) => exit_osmosis_demo_with_error(
+                        &osmosis_dir,
+                        &format!("❌ Failed to start Osmosis: {}", error),
+                    ),
+                };
+
+                // Configure Hermes and build channels between Osmosis with Cosmos
+                match configure_hermes(osmosis_dir.as_path()) {
+                    Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
+                    Err(error) => exit_osmosis_demo_with_error(
+                        &osmosis_dir,
+                        &format!("❌ Failed to configure Hermes: {}", error),
+                    ),
+                }
+                logger::log("\n✅ Token swap demo services started successfully");
+            } else if use_case == DemoType::MessageExchange {
+                // Start the Cosmos sidechain
+                let cosmos_chain_repo_url = format!(
+                    "{}/archive/refs/heads/{}.zip",
+                    project_config.vessel_oracle.repo_base_url,
+                    project_config.vessel_oracle.target_branch
+                );
+                let chain_root_path = project_root_path.join("chains/summit-demo/");
+                match start_cosmos_sidechain_from_repository(
+                    &cosmos_chain_repo_url,
+                    chain_root_path.as_path(),
+                )
+                .await
+                {
+                    Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
+                    Err(error) => bridge_down_with_error(&format!(
+                        "❌ Failed to start Cosmos sidechain: {}",
                         error
                     )),
                 }
+                logger::log("\n✅ Message exchange demo services started successfully");
+            } else {
+                logger::error(
+                    "❌ Invalid demo type. Must be either 'token-swap' or 'message-exchange'",
+                );
             }
-
-            // Start gateway
-            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-                Ok(_) => logger::log("✅ Gateway started successfully"),
-                Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start gateway: {}", error))
-                }
-            }
-
-            // Start the Cosmos sidechain
-            let cosmos_chain_repo_url = format!(
-                "{}/archive/refs/heads/{}.zip",
-                project_config.vessel_oracle.repo_base_url,
-                project_config.vessel_oracle.target_branch
-            );
-            let chain_root_path = project_root_path.join("chains/summit-demo/");
-            match start_cosmos_sidechain_from_repository(
-                &cosmos_chain_repo_url,
-                chain_root_path.as_path(),
-            )
-            .await
-            {
-                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => exit_vessel_demo_with_error(&format!(
-                    "❌ Failed to start Cosmos sidechain: {}",
-                    error
-                )),
-            }
-
-            if project_config.mithril.enabled {
-                // Wait for Mithril to start reading the immutable cardano node files
-                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                    Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
-                    Err(error) => {
-                        exit_vessel_demo_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
-                }
-            }
-            }
-
-            // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                chain_root_path.join("relayer/.env.relayer").as_path(),
-                chain_root_path.join("relayer/config").as_path(),
-                project_root_path
-                    .join("cardano/offchain/deployments/handler.json")
-                    .as_path(),
-            ) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => {
-                    exit_vessel_demo_with_error(&format!("❌ Failed to start relayer: {}", error))
-                }
-            }
-
-            logger::log("\n✅ Vessel Oracle demo started successfully");
         }
-        Commands::StopVesselDemo => {
-            stop_vessel_demo_gracefully();
-            logger::log("\n❎ Bridge stopped successfully");
-        }
-        Commands::NetworkUp => {
+        Commands::Stop { target } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
+            let osmosis_dir = utils::get_osmosis_dir(project_root_path);
 
-            // Start the local Cardano network and its services
-            match start_local_cardano_network_v2(&project_root_path).await {
-                Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
-                Err(error) => network_down_with_error(&format!(
-                    "❌ Failed to start local Cardano network: {}",
-                    error
-                )),
+            if target == StopTarget::Bridge {
+                bridge_down();
+                logger::log("\n❎ Bridge stopped successfully");
+            } else if target == StopTarget::Network {
+                network_down();
+                logger::log("\n❎ Cardano Network successfully");
+            } else if target == StopTarget::Demo {
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_osmosis(osmosis_dir.as_path());
+                logger::log("\n❎ Demo services stopped successfully");
+            } else if target == StopTarget::All {
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_osmosis(osmosis_dir.as_path());
+                bridge_down();
+                network_down();
+                logger::log("\n❎ All services stopped successfully");
+            } else {
+                logger::error(
+                    "❌ Invalid target to stop must be either 'bridge', 'network', 'demo' or 'all'",
+                );
             }
+        }
+        Commands::Start { target } => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            if target == StartTarget::Network || target == StartTarget::All {
+                // Start the local Cardano network and its services
+                match start_local_cardano_network(&project_root_path).await {
+                    Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
+                    Err(error) => network_down_with_error(&format!(
+                        "❌ Failed to start local Cardano network: {}",
+                        error
+                    )),
+                }
 
-            let mut cardano_current_epoch = 0;
-            if project_config.mithril.enabled {
-                // Start Mithril if needed
-                match start_mithril(&project_root_path).await {
-                    Ok(current_epoch) => {
-                        cardano_current_epoch = current_epoch;
-                        logger::log("✅ Mithril up and running")
-                    }
-                    Err(error) => {
-                        network_down_with_error(&format!("❌ Failed to start Mithril: {}", error))
+                let mut cardano_current_epoch = 0;
+                if project_config.mithril.enabled {
+                    // Start Mithril if needed
+                    match start_mithril(&project_root_path).await {
+                        Ok(current_epoch) => {
+                            cardano_current_epoch = current_epoch;
+                            logger::log("✅ Mithril up and running")
+                        }
+                        Err(error) => network_down_with_error(&format!(
+                            "❌ Failed to start Mithril: {}",
+                            error
+                        )),
                     }
                 }
-            }
 
-            if project_config.mithril.enabled {
                 // Wait for Mithril to start reading the immutable cardano node files
                 match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
                         network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                }}
+
+                logger::log("\n✅ Cardano Network started successfully");
+            }
+
+            if target == StartTarget::Bridge || target == StartTarget::All {
+                let balance = query_balance(
+                    project_root_path,
+                    "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+                );
+                logger::log(&format!(
+                    "Initial balance {}",
+                    &balance.to_string().as_str()
+                ));
+
+                // Deploy Contracts
+                match deploy_contracts(&project_root_path).await {
+                    Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
+                    Err(error) => bridge_down_with_error(&format!(
+                        "❌ Failed to deploy Cardano Scripts: {}",
+                        error
+                    )),
                 }
-            }
-            }
 
-            logger::log("\n✅ Cardano Network started successfully");
-        }
-        Commands::NetworkDown => {
-            network_down();
-            logger::log("\n❎ Cardano Network successfully");
-        }
-        Commands::BridgeUp => {
-            let project_config = config::get_config();
-            let project_root_path = Path::new(&project_config.project_root);
+                let balance = query_balance(
+                    project_root_path,
+                    "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+                );
+                logger::log(&format!(
+                    "Post deploy contract balance {}",
+                    &balance.to_string().as_str()
+                ));
 
-            let balance = query_balance(
-                project_root_path,
-                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
-            logger::log(&format!(
-                "Initial balance {}",
-                &balance.to_string().as_str()
-            ));
-
-            // Deploy Contracts
-            match deploy_contracts(&project_root_path).await {
-                Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
-                Err(error) => bridge_down_with_error(&format!(
-                    "❌ Failed to deploy Cardano Scripts: {}",
-                    error
-                )),
-            }
-
-            let balance = query_balance(
-                project_root_path,
-                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
-            logger::log(&format!(
-                "Post deploy contract balance {}",
-                &balance.to_string().as_str()
-            ));
-
-            // Start gateway
-            match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
-                Ok(_) => logger::log("✅ Gateway started successfully"),
-                Err(error) => {
-                    bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
+                // Start gateway
+                match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                    Ok(_) => logger::log("✅ Gateway started successfully"),
+                    Err(error) => {
+                        bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
+                    }
                 }
-            }
 
-            // Start the Cosmos sidechain
-            let cosmos_chain_repo_url = format!(
-                "{}/archive/refs/heads/{}.zip",
-                project_config.vessel_oracle.repo_base_url,
-                project_config.vessel_oracle.target_branch
-            );
-            let chain_root_path = project_root_path.join("chains/summit-demo/");
-            match start_cosmos_sidechain_from_repository(
-                &cosmos_chain_repo_url,
-                chain_root_path.as_path(),
-            )
-            .await
-            {
-                Ok(_) => logger::log("✅ Cosmos sidechain up and running"),
-                Err(error) => bridge_down_with_error(&format!(
-                    "❌ Failed to start Cosmos sidechain: {}",
-                    error
-                )),
-            }
+                let chain_root_path = project_root_path.join("chains/summit-demo/");
 
-            let chain_root_path = project_root_path.join("chains/summit-demo/");
-
-            // Start the relayer
-            match start_relayer(
-                project_root_path.join("relayer").as_path(),
-                chain_root_path.join("relayer/.env.relayer").as_path(),
-                chain_root_path.join("relayer/config").as_path(),
-                project_root_path
-                    .join("cardano/offchain/deployments/handler.json")
-                    .as_path(),
-            ) {
-                Ok(_) => logger::log("✅ Relayer started successfully"),
-                Err(error) => {
-                    bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    chain_root_path.join("relayer/.env.relayer").as_path(),
+                    chain_root_path.join("relayer/config").as_path(),
+                    project_root_path
+                        .join("cardano/offchain/deployments/handler.json")
+                        .as_path(),
+                ) {
+                    Ok(_) => logger::log("✅ Relayer started successfully"),
+                    Err(error) => {
+                        bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
+                    }
                 }
-            }
 
-            let balance = query_balance(
-                project_root_path,
-                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
-            logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-        }
-        Commands::BridgeDown => bridge_down(),
-        Commands::AppChainUp => {
-            let project_config = config::get_config();
-            let project_root_path = Path::new(&project_config.project_root);
-            // Prepare the local Osmosis appchain
-            let osmosis_dir = utils::get_osmosis_dir(project_root_path);
-            logger::verbose(&format!("{}", osmosis_dir.display().to_string()));
-            match prepare_osmosis(osmosis_dir.as_path()).await {
-                Ok(_) => logger::log("✅ Osmosis appchain prepared"),
-                Err(error) => {
-                    exit_with_message(&format!("❌ Failed to prepare Osmosis appchain: {}", error))
-                }
+                let balance = query_balance(
+                    project_root_path,
+                    "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+                );
+                logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
             }
-            // Start Osmosis
-            match start_osmosis(osmosis_dir.as_path()).await {
-                Ok(_) => logger::log("✅ Osmosis appchain is up and running"),
-                Err(error) => exit_with_message(&format!("❌ Failed to start Osmosis: {}", error)),
-            };
-
-            // Configure Hermes and build channels between Osmosis with Cosmos
-            match configure_hermes(osmosis_dir.as_path()) {
-                Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
-                Err(error) => {
-                    exit_with_message(&format!("❌ Failed to configure Hermes: {}", error))
-                }
-            }
-        }
-        Commands::AppChainDown => {
-            let project_config = config::get_config();
-            let project_root_path = Path::new(&project_config.project_root);
-
-            // Stop Osmosis
-            stop_osmosis(project_root_path.join("chains/osmosis/osmosis").as_path());
         }
     }
 }
