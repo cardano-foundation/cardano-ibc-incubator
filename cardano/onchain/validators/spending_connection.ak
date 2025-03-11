@@ -233,18 +233,16 @@ fn validate_conn_open_ack_proof(
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let counterparty_client_state_bz =
     mithril_pb.marshal_for_any_client_state(
-      Some(
-        AnyMithrilClientState {
-          type_url: "/ibc.clients.mithril.v1.ClientState",
-          value: Some(counterparty_client_state),
-        },
-      ),
-    )
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
 
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
@@ -309,7 +307,7 @@ fn validate_conn_open_confirm_proof(
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let time_delay = connection.delay_period

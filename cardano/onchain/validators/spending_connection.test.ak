@@ -298,21 +298,15 @@ test conn_open_ack_succeed() {
   let counterparty_client_state =
     MithrilClientState {
       chain_id: "42",
-      latest_height: Some(
-        CardanoHeight { revision_number: 0, revision_height: 1 },
-      ),
-      frozen_height: Some(
-        CardanoHeight { revision_number: 0, revision_height: 0 },
-      ),
+      latest_height: CardanoHeight { revision_number: 0, revision_height: 1 },
+      frozen_height: CardanoHeight { revision_number: 0, revision_height: 0 },
       current_epoch: 1,
       trusting_period: 1,
-      protocol_parameters: Some(
-        MithrilProtocolParameters {
-          k: 0,
-          m: 0,
-          phi_f: Some(Fraction { numerator: 0, denominator: 1 }),
-        },
-      ),
+      protocol_parameters: MithrilProtocolParameters {
+        k: 0,
+        m: 0,
+        phi_f: Fraction { numerator: 0, denominator: 1 },
+      },
       upgrade_path: [],
     }
 
@@ -371,18 +365,16 @@ test conn_open_ack_succeed() {
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let counterparty_client_state_bz =
     mithril_pb.marshal_for_any_client_state(
-      Some(
-        AnyMithrilClientState {
-          type_url: "/ibc.clients.mithril.v1.ClientState",
-          value: Some(counterparty_client_state),
-        },
-      ),
-    )
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)

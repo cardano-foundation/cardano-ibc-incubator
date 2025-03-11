@@ -1,4 +1,3 @@
-use aiken/collection/list
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
 }
@@ -22,7 +21,7 @@ pub fn convert_to_canonical_vote_proto(cv: CanonicalVote) -> CanonicalVoteProto 
     v_type: cv.vote_type,
     height: cv.height,
     round: cv.round,
-    block_id: list.at([cv.block_id], 0),
+    block_id: cv.block_id,
     timestamp: cv.timestamp,
     chain_id: cv.chain_id,
   }

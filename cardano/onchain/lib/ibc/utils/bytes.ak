@@ -1,9 +1,10 @@
 use aiken/builtin.{
   add_integer as add, divide_integer as div, if_then_else as ite,
 }
-use aiken/primitive/bytearray.{push}
+use aiken/collection/list
+use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/utils/bits.{len64}
-use ibc/utils/int.{Int64}
+use ibc/utils/int.{Int64, uint64}
 
 fn inner_read_uvarint(bz: ByteArray, index: Int) -> (Int, Int) {
   let cur_bz = builtin.index_bytearray(bz, index)
@@ -52,11 +53,136 @@ pub fn encode_varint(v: Int64) -> ByteArray {
   )
 }
 
+pub fn encode_length_varint(v: Int64) -> ByteArray {
+  if v < 128 {
+    push(#[], v)
+  } else {
+    // implies x < 16384 always
+    push(#[], v / 128)
+      |> push(v % 128 + 128)
+  }
+}
+
 pub fn sov(x: Int64) -> Int {
   x |> len64() |> add(6) |> div(7)
+}
+
+pub fn sov_length(x: Int64) -> Int {
+  if x < 128 {
+    1
+  } else {
+    // implies x < 16384 always
+    2
+  }
 }
 
 pub fn is_empty_or_size(h: ByteArray, size: Int) -> Bool {
   let len = bytearray.length(h)
   len == 0 || len == size
+}
+
+pub fn size_and_concat(
+  a: (Int, ByteArray),
+  b: (Int, ByteArray),
+) -> (Int, ByteArray) {
+  let (size, bz1) = a
+  let (length, bz2) = b
+  if length == 0 {
+    (size, concat(bz1, bz2))
+  } else {
+    (size + sov_length(length) + length + 1, concat(bz1, bz2))
+  }
+}
+
+pub fn nest_record(a: (Int, ByteArray), identifier: Int) -> (Int, ByteArray) {
+  let (size, bz1) = a
+  let bz2 =
+    size
+      |> encode_length_varint()
+      |> concat(bz1)
+      |> push(identifier)
+  (sov_length(size) + size + 1, bz2)
+}
+
+pub fn add_and_concat(
+  a: (Int, ByteArray),
+  b: (Int, ByteArray),
+) -> (Int, ByteArray) {
+  let (size1, bz1) = a
+  let (size2, bz2) = b
+  (size1 + size2, concat(bz1, bz2))
+}
+
+// Test for int = 0
+pub fn encode_int(int: Int, identifier: Int) -> (Int, ByteArray) {
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = uint64(int) |> sov() |> add(1)
+      let hash = uint64(int) |> encode_varint() |> push(identifier)
+      (l, hash)
+    }
+  }
+}
+
+// Test for int = 0
+pub fn encode_int_length(int: Int, identifier: Int) -> (Int, ByteArray) {
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = sov_length(int) + 1
+      let hash = encode_length_varint(int) |> push(identifier)
+      (l, hash)
+    }
+  }
+}
+
+pub fn encode_int_little_endian(
+  int: Int,
+  identifier: Int,
+  constant_lenght: Int,
+) -> (Int, ByteArray) {
+  when int is {
+    0 -> (0, #"")
+    _ -> {
+      let l = ite(int == 0, 0, constant_lenght)
+      let hash = int |> from_int_little_endian(8) |> push(identifier)
+      (l, hash)
+    }
+  }
+}
+
+pub fn encode_bytearray(bz1: ByteArray, identifier: Int) -> (Int, ByteArray) {
+  let l = length(bz1)
+  ite(
+    l == 0,
+    (0, #[]),
+    {
+      let bz2 = l |> encode_length_varint() |> concat(bz1) |> push(identifier)
+      (l, bz2)
+    },
+  )
+}
+
+pub fn reduce(
+  items: List<a>,
+  f: fn(a) -> (Int, ByteArray),
+  identifier: Int,
+) -> (Int, ByteArray) {
+  if list.is_empty(items) {
+    (0, #"")
+  } else {
+    let (l, bz) =
+      list.reduce(
+        items,
+        (0, #""),
+        fn(acc: (Int, ByteArray), list_iteam: a) -> (Int, ByteArray) {
+          let (size, bz1) = acc
+          let (l, bz2) = f(list_iteam)
+          let something = encode_length_varint(l) |> concat(bz2)
+          (size + sov(l) + l + 1, concat(bz1, something))
+        },
+      )
+    (l, push(bz, identifier))
+  }
 }

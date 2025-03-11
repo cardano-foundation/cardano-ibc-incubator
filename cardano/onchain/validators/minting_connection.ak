@@ -250,18 +250,16 @@ fn validate_conn_open_try_proof(
 
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
-      Some(connection_end.convert_to_connection_end_proto(expected_connection)),
+      connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
   let counterparty_client_state_bz =
     cardano_pb.marshal_for_any_client_state(
-      Some(
-        AnyCardanoClientState {
-          type_url: "/ibc.clients.cardano.v1.ClientState",
-          value: Some(counterparty_client_state),
-        },
-      ),
-    )
+      AnyCardanoClientState {
+        type_url: "/ibc.clients.cardano.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
 
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
