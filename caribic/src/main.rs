@@ -180,6 +180,21 @@ async fn main() {
                     ),
                 };
 
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    project_root_path.join("relayer/.env.example").as_path(),
+                    project_root_path.join("relayer/examples").as_path(),
+                    project_root_path
+                        .join("cardano/deployments/handler.json")
+                        .as_path(),
+                ) {
+                    Ok(_) => logger::log("✅ Relayer started successfully"),
+                    Err(error) => exit_osmosis_demo_with_error(
+                        &osmosis_dir,
+                        &format!("❌ Failed to start relayer: {}", error),
+                    ),
+                }
+
                 // Configure Hermes and build channels between Osmosis with Cosmos
                 match configure_hermes(osmosis_dir.as_path()) {
                     Ok(_) => logger::log("✅ Hermes configured successfully and channels built"),
@@ -196,6 +211,7 @@ async fn main() {
                     project_config.vessel_oracle.repo_base_url,
                     project_config.vessel_oracle.target_branch
                 );
+
                 let chain_root_path = project_root_path.join("chains/summit-demo/");
                 match start_cosmos_sidechain_from_repository(
                     &cosmos_chain_repo_url,
@@ -209,6 +225,21 @@ async fn main() {
                         error
                     )),
                 }
+
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    chain_root_path.join("relayer/.env.relayer").as_path(),
+                    chain_root_path.join("relayer/config").as_path(),
+                    project_root_path
+                        .join("cardano/offchain/deployments/handler.json")
+                        .as_path(),
+                ) {
+                    Ok(_) => logger::log("✅ Relayer started successfully"),
+                    Err(error) => {
+                        bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
+                    }
+                }
+
                 logger::log("\n✅ Message exchange demo services started successfully");
             } else {
                 logger::error(
@@ -246,6 +277,7 @@ async fn main() {
         Commands::Start { target } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
+
             if target == StartTarget::Network || target == StartTarget::All {
                 // Start the local Cardano network and its services
                 match start_local_cardano_network(&project_root_path).await {
@@ -311,22 +343,6 @@ async fn main() {
                     Ok(_) => logger::log("✅ Gateway started successfully"),
                     Err(error) => {
                         bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
-                    }
-                }
-
-                let chain_root_path = project_root_path.join("chains/summit-demo/");
-
-                match start_relayer(
-                    project_root_path.join("relayer").as_path(),
-                    chain_root_path.join("relayer/.env.relayer").as_path(),
-                    chain_root_path.join("relayer/config").as_path(),
-                    project_root_path
-                        .join("cardano/offchain/deployments/handler.json")
-                        .as_path(),
-                ) {
-                    Ok(_) => logger::log("✅ Relayer started successfully"),
-                    Err(error) => {
-                        bridge_down_with_error(&format!("❌ Failed to start relayer: {}", error))
                     }
                 }
 
