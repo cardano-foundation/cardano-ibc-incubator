@@ -66,7 +66,7 @@ cargo run start bridge
 To stop the services:
 
 ```sh
-cargo run stop
+cargo run stop # network|bridge|demo|all (default: all)
 ```
 
 ### 🎉 Demo: Sending a demo message from Cosmos to Cardano
