@@ -5,7 +5,7 @@ use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, quantity_of, tokens}
+use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
   Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -82,11 +82,12 @@ validator mint_voucher(module_token: AuthToken) {
         and {
           valid_receiver,
           valid_minted_tokens,
-          quantity_of(
-            payout_output.value,
+          valid_voucher_output(
+            payout_output,
             voucher_minting_policy_id,
             token_name,
-          ) >= transfer_amount,
+            transfer_amount,
+          ),
         }
       }
       BurnVoucher { packet_source_port, packet_source_channel } -> {
@@ -231,4 +232,20 @@ fn extract_module_redeemer(
   expect spend_module_redeemer: IBCModuleRedeemer = spend_module_redeemer
 
   spend_module_redeemer
+}
+
+// Checks transfer amount is valid gte than the expected one
+// And that there is no token dust injection.
+fn valid_voucher_output(
+  voucher_output: Output,
+  voucher_policy_id: PolicyId,
+  asset_name: AssetName,
+  transfer_amount: Int,
+) -> Bool {
+  let voucher_output_value = assets.without_lovelace(voucher_output.value)
+  expect [actual_policy_id] = assets.policies(voucher_output_value)
+  and {
+    actual_policy_id == voucher_policy_id,
+    quantity_of(voucher_output_value, voucher_policy_id, asset_name) >= transfer_amount,
+  }
 }

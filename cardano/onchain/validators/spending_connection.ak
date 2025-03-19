@@ -71,7 +71,7 @@ validator spend_connection(
       validator_utils.get_inline_datum(updated_output)
     trace @"spend_connection: found connection output"
 
-    expect auth.contain_auth_token(updated_output, datum.token)
+    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
     trace @"spend_connection: output contains connection token"
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
