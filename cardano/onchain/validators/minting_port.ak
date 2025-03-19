@@ -1,7 +1,8 @@
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, NoDatum, Spend, Transaction}
+use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
@@ -9,6 +10,19 @@ use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerBindPort, HandlerOperator,
 }
 use ibc/utils/string as string_utils
+
+// Introduced to prevent high spending costs or potentially prevent tx from being executed.
+const max_number_of_ports = 10
+
+// Checks the max number of ports is not exceeded
+fn valid_number_of_ports(
+  module_output: Output,
+  port_minting_policy_id: PolicyId,
+) -> Bool {
+  let number_of_ports =
+    module_output.value |> assets.tokens(port_minting_policy_id) |> dict.size()
+  number_of_ports <= max_number_of_ports
+}
 
 validator mint_port {
   mint(
@@ -50,6 +64,7 @@ validator mint_port {
       valid_handler_operator,
       auth.mint_auth_token(mint, port_token),
       module_output |> auth.contain_auth_token(port_token),
+      valid_number_of_ports(module_output, port_minting_policy_id),
     }
   }
 

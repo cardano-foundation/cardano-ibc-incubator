@@ -284,6 +284,12 @@ cd /root && ./bin/rly start demo --processor legacy
 
 After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you current balance, notice that your token will be return back.
 
+## Additional Resources
+
+- [ELI5: What is IBC?](https://medium.com/the-interchain-foundation/eli5-what-is-ibc-def44d7b5b4c)
+- [IBC-Go Documentation](https://ibc.cosmos.network/v8/)
+- [ICS 20: The Transfer Module](https://ibc.cosmos.network/v8/apps/transfer/overview/)
+
 ## 🫂 Kudos to the Developers in the Cardano Ecosystem
 
 This project stands on the shoulders of some incredible frameworks and tools developed by the Cardano community. Huge thanks to the developers behind these services—projects like this wouldn’t be possible without their hard work and innovation:

@@ -110,7 +110,7 @@ validator mint_connection(
               )
         and {
           client_state_active,
-          auth.contain_auth_token(connection_output, connection_token),
+          auth.contains_only_auth_tokens(connection_output, [connection_token]),
           connection_datum.is_conn_open_init_valid(
             connection_output_datum,
             connection_token,
@@ -185,7 +185,7 @@ validator mint_connection(
           )
         and {
           client_state_active,
-          auth.contain_auth_token(connection_output, connection_token),
+          auth.contains_only_auth_tokens(connection_output, [connection_token]),
           is_open_connection,
         }
       }

@@ -155,7 +155,7 @@ validator mint_channel(
           valid_feature,
           is_status_active,
           is_channel_open,
-          auth.contain_auth_token(channel_output, channel_token),
+          auth.contains_only_auth_tokens(channel_output, [channel_token]),
           ibc_module_callback == OnChanOpenInit { channel_id },
         }
       }
@@ -256,7 +256,7 @@ validator mint_channel(
         and {
           connection_datum.state.state == connection_state.Open,
           is_channel_active,
-          auth.contain_auth_token(channel_output, channel_token),
+          auth.contains_only_auth_tokens(channel_output, [channel_token]),
           is_channel_open,
           valid_channel,
           ibc_module_callback == OnChanOpenTry { channel_id },

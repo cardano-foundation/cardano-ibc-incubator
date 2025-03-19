@@ -37,7 +37,7 @@ validator mint_handler(
     and {
       inputs |> list.any(fn(input) { input.output_reference == utxo_ref }),
       mint |> auth.mint_auth_token(auth_token),
-      handler_output |> auth.contain_auth_token(auth_token),
+      handler_output |> auth.contains_only_auth_tokens([auth_token]),
       valid_datum,
     }
   }
