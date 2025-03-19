@@ -37,7 +37,7 @@ validator spend_client {
         |> list.filter(fn(output) { output.address == spent_output.address })
 
     // output contains client token
-    expect updated_output |> auth.contain_auth_token(datum.token)
+    expect updated_output |> auth.contains_only_auth_tokens([datum.token])
 
     // TODO: add verify header
     // output datum is updated correctly
