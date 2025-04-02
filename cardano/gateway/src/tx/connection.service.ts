@@ -138,8 +138,8 @@ export class ConnectionService {
    * @returns A promise resolving to a message response for connection open ack include the unsigned_tx.
    */
   async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
+    this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
     try {
-      this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: TxBuilder = await this.buildUnsignedConnectionOpenAckTx(
@@ -499,6 +499,46 @@ export class ConnectionService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
+
+    function prettyPrint(obj: any, indent = 2): string {
+      const seen = new WeakSet();
+
+      function replacer(key: string, value: any): any {
+        // Handle circular references
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) {
+            return '[Circular Reference]';
+          }
+          seen.add(value);
+        }
+
+        // Handle Map objects
+        if (value instanceof Map) {
+          const mapEntries: Record<string, any> = {};
+          value.forEach((v, k) => {
+            mapEntries[String(k)] = v;
+          });
+          return { __type: 'Map', entries: mapEntries };
+        }
+
+        // Handle BigInt values
+        if (typeof value === 'bigint') {
+          return { __type: 'BigInt', value: value.toString() };
+        }
+
+        // Handle other special types as needed
+        // ...
+
+        return value;
+      }
+
+      return JSON.stringify(obj, replacer, indent);
+    }
+
+    console.log('verifyProofRedeemer', prettyPrint(verifyProofRedeemer));
+    console.log('spentConnectionRedeemer', prettyPrint(spendConnectionRedeemer));
+    console.log('updatedConnectionDatum', prettyPrint(updatedConnectionDatum));
+
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
       connectionUtxo,
       encodedSpendConnectionRedeemer,
