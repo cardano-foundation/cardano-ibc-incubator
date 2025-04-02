@@ -39,7 +39,6 @@ test test_split() {
 
 test test_hex_string_to_bytes() {
   let test_cases = [("abcd1234", Some(#"abcd1234")), ("123x", None)]
-
   list.all(test_cases, fn(case) { hex_string_to_bytes(case.1st) == case.2nd })
 }
 
