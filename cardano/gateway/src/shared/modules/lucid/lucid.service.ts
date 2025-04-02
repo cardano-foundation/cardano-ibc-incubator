@@ -380,6 +380,16 @@ export class LucidService {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
 
+    console.log('Building transaction for ConnectionOpenAck');
+    console.log('readFrom', [
+      deploymentConfig.validators.spendConnection.refUtxo,
+      dto.verifyProofRefUTxO,
+      dto.clientUtxo,
+    ]);
+    console.log('collectFrom', [dto.connectionUtxo]);
+    console.log('pay.ToContract', 'dto.connectionTokenUnit', dto.connectionTokenUnit);
+    console.log('mintAssets', 'dto.verifyProofPolicyId', dto.verifyProofPolicyId);
+
     tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo, dto.verifyProofRefUTxO])
       .collectFrom([dto.connectionUtxo], dto.encodedSpendConnectionRedeemer)
       .readFrom([dto.clientUtxo])
