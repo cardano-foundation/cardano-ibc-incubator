@@ -1,5 +1,4 @@
 use aiken/builtin
-use aiken/collection/list
 use aiken/primitive/bytearray
 use aiken/primitive/string
 
@@ -36,43 +35,44 @@ fn trim_right(str: ByteArray) -> ByteArray {
   }
 }
 
-/// split the string in ByteArray by a separator character
 pub fn split(str: ByteArray, sep: Int) -> List<ByteArray> {
   // valid 1 bytes utf-8 character
   expect 0 <= sep && sep <= 127
+  do_split(str, sep, bytearray.length(str), 0, identity)
+}
 
-  let str_len = bytearray.length(str)
-  if str_len == 0 {
-    [""]
+fn do_split(
+  str: ByteArray,
+  sep: Int,
+  len: Int,
+  i: Int,
+  return: fn(List<ByteArray>) -> a,
+) -> a {
+  if i >= len {
+    return([str])
   } else {
-    let res =
-      bytearray.reduce(
-        str,
-        ([], 0, 0),
-        fn(acc, cur_char) {
-          if cur_char == sep {
-            if acc.3rd == str_len - 1 {
-              (
-                ["", bytearray.slice(str, acc.2nd, acc.3rd - 1), ..acc.1st],
-                acc.3rd + 1,
-                acc.3rd + 1,
-              )
-            } else {
-              (
-                [bytearray.slice(str, acc.2nd, acc.3rd - 1), ..acc.1st],
-                acc.3rd + 1,
-                acc.3rd + 1,
-              )
-            }
-          } else if acc.3rd == str_len - 1 {
-            ([bytearray.slice(str, acc.2nd, acc.3rd), ..acc.1st], 0, 0)
-          } else {
-            (acc.1st, acc.2nd, acc.3rd + 1)
-          }
+    if bytearray.at(str, i) == sep {
+      do_split(
+        bytearray.drop(str, i + 1),
+        sep,
+        len - i - 1,
+        0,
+        fn(result) {
+          return(
+            [
+              if i > 0 {
+                bytearray.slice(str, 0, i - 1)
+              } else {
+                ""
+              },
+              ..result
+            ],
+          )
         },
       )
-
-    list.reverse(res.1st)
+    } else {
+      do_split(str, sep, len, i + 1, return)
+    }
   }
 }
 
