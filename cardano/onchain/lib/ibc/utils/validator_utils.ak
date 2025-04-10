@@ -217,6 +217,15 @@ pub fn validate_mint(
   }
 }
 
+pub fn find_matching_output(
+  spent_output: Output,
+  outputs: List<Output>,
+) -> Output {
+  expect [updated_output] =
+    list.filter(outputs, fn(output) { output.address == spent_output.address })
+  updated_output
+}
+
 pub fn validate_token_remain(
   spent_output: Output,
   outputs: List<Output>,
