@@ -104,8 +104,6 @@ fn validate_output_amount(
   let expected_output =
     locked_input.output.value
       |> assets.merge(additional_value)
-  trace @"expected_output": expected_output
-  trace @"actual_output": output.value
   output.value == expected_output
 }
 
