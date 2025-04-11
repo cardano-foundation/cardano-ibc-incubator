@@ -269,6 +269,7 @@ fn handler_callback(
             escrowed_token_name,
             transfer_amount,
           )
+            |> assets.negate()
 
         let valid_transfer_amount =
           validate_output_amount(
@@ -422,10 +423,11 @@ fn handler_callback(
         channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect TransferModuleData(data) = data
-      let valid_response =
-        when acknowledgement.response is {
-          AcknowledgementError { .. } ->
+      expect TransferModuleData(tf_data) = data
+      when acknowledgement.response is {
+        AcknowledgementError { .. } -> and {
+            fungible_token_packet_data.get_bytes(tf_data) == packet.data,
+            acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             validate_refund_packet_token(
               voucher_minting_policy_id,
               inputs,
@@ -433,16 +435,15 @@ fn handler_callback(
               redeemers,
               spent_input,
               updated_output,
-              data,
+              tf_data,
               packet,
-            )
-          _ -> True
-        }
-      and {
-        validate_output_amount(spent_input, updated_output, assets.zero),
-        fungible_token_packet_data.get_bytes(data) == packet.data,
-        acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
-        valid_response,
+            ),
+          }
+        _ -> and {
+            validate_output_amount(spent_input, updated_output, assets.zero),
+            fungible_token_packet_data.get_bytes(tf_data) == packet.data,
+            acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
+          }
       }
     }
   }
