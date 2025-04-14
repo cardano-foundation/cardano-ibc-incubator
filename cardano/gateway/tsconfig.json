@@ -26,7 +26,7 @@
       "@config/*": ["src/config/*"]
     }
   },
-  "include": ["src/**/*", "handler.json", "src/deployment/handler.json"],
+  "include": ["src/**/*"],
   "exclude": ["*.test.ts", "*.spec.ts"],
   "rootDirs": ["src", "../../proto-types"]
 }

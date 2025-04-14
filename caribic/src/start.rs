@@ -216,25 +216,46 @@ pub async fn start_local_cardano_network(
     Ok(())
 }
 
-pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn deploy_contracts(
+    project_root_path: &Path,
+    clean: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
     };
 
-    log_or_show_progress(
-        &format!(
-            "{} 🛠️ Building Aiken validators",
-            style("Step 4/5").bold().dim()
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").join("onchain").as_path(),
-        "aiken",
-        Vec::from(["build"]),
-        None,
-    )?;
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+
+    if !project_root_path
+        .join("cardano")
+        .join("plutus.json")
+        .as_path()
+        .exists()
+        || clean
+        || is_verbose
+    {
+        log_or_show_progress(
+            &format!(
+                "{} 🛠️ Building Aiken validators",
+                style("Step 4/5").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+
+        let build_args = if is_verbose {
+            vec!["build", "-t", "verbose"]
+        } else {
+            vec!["build"]
+        };
+
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            build_args,
+            None,
+        )?;
+    }
 
     log_or_show_progress(
         &format!(
@@ -279,16 +300,6 @@ pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn st
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-
-        verbose("✅ Successfully deployed the contracts");
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
-        copy(
-            project_root_path.join("cardano/offchain/deployments/handler.json"),
-            project_root_path.join("cardano/gateway/src/deployment/handler.json"),
-            &options,
-        )?;
-
         Ok(())
     } else {
         if let Some(progress_bar) = &optional_progress_bar {
@@ -1162,19 +1173,22 @@ pub fn wait_and_start_mithril_genesis(
     Ok(())
 }
 
-pub fn start_gateway(gateway_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
-    copy(
-        gateway_dir.join(".env.example"),
-        gateway_dir.join(".env"),
-        &options,
-    )?;
+pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if (gateway_dir.join(".env").exists() && clean) || !gateway_dir.join(".env").exists() {
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        copy(
+            gateway_dir.join(".env.example"),
+            gateway_dir.join(".env"),
+            &options,
+        )?;
+    }
+
+    let mut script_args = vec!["compose", "up", "-d"];
+    if clean {
+        script_args.push("--build");
+    }
+
     execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-    execute_script(
-        &gateway_dir,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        None,
-    )?;
+    execute_script(&gateway_dir, "docker", script_args, None)?;
     Ok(())
 }

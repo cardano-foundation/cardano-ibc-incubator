@@ -1,12 +1,11 @@
 services:
   app:
-    build: 
+    build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
-    network_mode: "host"
+    network_mode: 'host'
     volumes:
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
+      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
     env_file:
       - .env
-
-
