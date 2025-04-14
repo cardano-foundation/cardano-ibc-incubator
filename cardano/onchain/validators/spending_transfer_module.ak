@@ -460,7 +460,6 @@ fn handler_operator(
   let Transaction { redeemers, inputs, .. } = transaction
 
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-  let spent_output = spent_input.output
 
   when op is {
     Transfer { channel_id, data } -> {
@@ -500,22 +499,24 @@ fn handler_operator(
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
-        let prev_escrowed_token =
-          quantity_of(
-            spent_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          )
-        let post_escrowed_token =
-          quantity_of(
-            updated_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          )
         expect Some(transfer_amount) = int.from_utf8(data.amount)
         trace @"spend_transfer_module: transfer amount is valid"
 
-        post_escrowed_token - prev_escrowed_token == transfer_amount
+        let expected_escrow_value_difference =
+          assets.from_asset(
+            escrowed_token_policy_id,
+            escrowed_token_name,
+            transfer_amount,
+          )
+
+        let valid_transfer_amount =
+          validate_output_amount(
+            spent_input,
+            updated_output,
+            expected_escrow_value_difference,
+          )
+
+        valid_transfer_amount
       } else {
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
