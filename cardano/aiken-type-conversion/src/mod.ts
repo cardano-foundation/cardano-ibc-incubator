@@ -8,11 +8,23 @@ export function generateType(
   plutusDefinition: PlutusDefinition,
   typeDef: AikenType,
 ): GenType {
-  const path = typeDef.path;
+  console.log('typeDef: ' + JSON.stringify(typeDef));
+  const path = getType(typeDef.path);
+
+  let lastPath = "";
+  if (path != null) {
+    console.log('path: ' + path);
+    const path_parts = path.split("/");
+    lastPath = path_parts[path_parts.length - 1];
+    console.log('lastPath: ' + lastPath);
+  }
 
   if (path in builtInTypes) {
-    return builtInTypes[typeDef.path];
+    console.log('built in type!')
+    return builtInTypes[lastPath];
   }
+
+  console.log('NOT a built in type!')
 
   if ("dataType" in typeDef) {
     if (typeDef.dataType == "list" && "items" in typeDef) {
@@ -131,6 +143,7 @@ export function generateType(
 
             const listType = getPointer(plutusDefinition, cur.$ref);
             const genType = generateType(plutusDefinition, listType);
+            console.log('about to crash 2: ' + genType);
 
             if (genType.type == "primitive") {
               schema.push(`${cur.title}: ${genType.schema},`);
@@ -366,6 +379,17 @@ export function generateType(
       };
     }
   }
-
+  console.log('about to crash: ' + JSON.stringify(typeDef));
   throw new Error("Type is not recognized");
+}
+
+function getType(path: string) {
+  if (path != null && path.indexOf('/') != -1) {
+    const path_parts = path.split("/");
+    const lastPath = path_parts[path_parts.length - 1];
+    console.log('path: ' + path + ' lastPath: ' + lastPath);
+    return lastPath;
+  } else {
+    return path;
+  }
 }
