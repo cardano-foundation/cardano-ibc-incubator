@@ -1,6 +1,27 @@
 import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '../../../../types/auth-token';
 
+export type UnsignedRecvPacketDto = {
+  channelUtxo: UTxO;
+  connectionUtxo: UTxO;
+  clientUtxo: UTxO;
+  spendChannelRefUtxo: UTxO;
+
+  encodedSpendChannelRedeemer: string;
+  encodedUpdatedChannelDatum: string;
+
+  channelTokenUnit: string;
+
+  constructedAddress: string;
+  recvPacketRefUTxO: UTxO;
+  recvPacketPolicyId: PolicyId;
+  channelToken: AuthToken;
+
+  verifyProofPolicyId: PolicyId;
+  verifyProofRefUTxO: UTxO;
+  encodedVerifyProofRedeemer: string;
+};
+
 export type UnsignedRecvPacketMintDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;

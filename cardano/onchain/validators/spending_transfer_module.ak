@@ -2,14 +2,11 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use aiken/primitive/string
-use cardano/address.{from_script, from_verification_key}
-use cardano/assets.{
-  PolicyId, ada_asset_name, ada_policy_id, add, from_asset, quantity_of,
-}
+use cardano/address.{from_verification_key}
+use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptPurpose, Spend, Transaction,
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/mint_voucher_redeemer.{
@@ -19,10 +16,10 @@ use ibc/apps/transfer/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
-use ibc/apps/transfer/types/keys as transfer_module_keys
 use ibc/auth.{AuthToken}
-use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, validate_recv_packet,
+}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
   MintChannelRedeemer, RecvPacket, SendPacket, SpendChannelRedeemer,
@@ -33,16 +30,13 @@ use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
-use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet}
-use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
   OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
   OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket,
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
-use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -64,7 +58,7 @@ validator spend_transfer_module(
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
-    expect Some(updated_output) =
+    let updated_output =
       validator_utils.validate_token_remain(
         spent_output,
         transaction.outputs,
@@ -119,7 +113,7 @@ fn handler_callback(
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
-      expect Some(output_channel) =
+      let output_channel =
         validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
@@ -129,18 +123,16 @@ fn handler_callback(
           channel_id,
         )
 
-      expect
-        transfer_ibc_module.validate_on_chan_open_init(
-          output_channel.ordering,
-          output_channel.connection_hops,
-          port_id,
-          channel_id,
-          output_channel.counterparty,
-          output_channel.version,
-        )
-
-      True
+      transfer_ibc_module.validate_on_chan_open_init(
+        output_channel.ordering,
+        output_channel.connection_hops,
+        port_id,
+        channel_id,
+        output_channel.counterparty,
+        output_channel.version,
+      )
     }
+
     OnChanOpenTry { channel_id } -> {
       expect Some((output_channel, counterparty_version)) =
         validate_channel_open_try(
@@ -152,19 +144,17 @@ fn handler_callback(
           channel_id,
         )
 
-      expect
-        transfer_ibc_module.validate_on_chan_open_try(
-          output_channel.ordering,
-          output_channel.connection_hops,
-          port_id,
-          channel_id,
-          output_channel.counterparty,
-          output_channel.version,
-          counterparty_version,
-        )
-
-      True
+      transfer_ibc_module.validate_on_chan_open_try(
+        output_channel.ordering,
+        output_channel.connection_hops,
+        port_id,
+        channel_id,
+        output_channel.counterparty,
+        output_channel.version,
+        counterparty_version,
+      )
     }
+
     OnChanOpenAck { channel_id } -> {
       expect Some((output_channel, counterparty_version)) =
         validate_chan_open_ack(
@@ -177,16 +167,14 @@ fn handler_callback(
           channel_id,
         )
 
-      expect
-        transfer_ibc_module.validate_on_chan_open_ack(
-          port_id,
-          channel_id,
-          output_channel.counterparty.channel_id,
-          counterparty_version,
-        )
-
-      True
+      transfer_ibc_module.validate_on_chan_open_ack(
+        port_id,
+        channel_id,
+        output_channel.counterparty.channel_id,
+        counterparty_version,
+      )
     }
+
     OnChanOpenConfirm { channel_id } -> {
       expect Some(_) =
         validate_chan_open_confirm(
@@ -199,11 +187,9 @@ fn handler_callback(
           channel_id,
         )
 
-      expect
-        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)
-
-      True
+      transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)
     }
+
     OnChanCloseInit { .. } -> False
     OnChanCloseConfirm { .. } -> False
     OnRecvPacket { channel_id, acknowledgement, data } -> {
@@ -249,7 +235,7 @@ fn handler_callback(
           string_utils.hex_string_to_bytes(unprefixed_denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -268,54 +254,86 @@ fn handler_callback(
             escrowed_token_policy_id,
             escrowed_token_name,
           )
-        expect prev_escrowed_token - post_escrowed_token == transfer_amount
+        let valid_transfer_amount =
+          prev_escrowed_token - post_escrowed_token == transfer_amount
         trace @"spend_transfer_module: unescrowed amount is valid"
 
         expect Some(receiver_public_key_hash) =
           string_utils.hex_string_to_bytes(data.receiver)
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        let prev_receiver_token =
-          list.reduce(
-            inputs,
-            0,
-            fn(acc, input) {
-              let output = input.output
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
-          )
-        let post_receiver_token =
-          list.reduce(
-            outputs,
-            0,
-            fn(acc, output) {
-              if output.address == receiver_address {
-                let output_token =
-                  quantity_of(
-                    output.value,
-                    escrowed_token_policy_id,
-                    escrowed_token_name,
-                  )
-                acc + output_token
-              } else {
-                acc
-              }
-            },
-          )
-        expect post_receiver_token - prev_receiver_token == transfer_amount
-        trace @"spend_transfer_module: receiver's token is update valid"
+        trace @"spend_transfer_module: start channel logic for transfer module"
+        expect channel_keys.is_valid_channel_id(channel_id)
 
-        True
+        let channel_sequence =
+          channel_keys.parse_channel_id_sequence(channel_id)
+
+        let channel_token_name =
+          auth.generate_token_name(
+            handler_token,
+            channel_keys.channel_prefix,
+            channel_sequence,
+          )
+
+        let channel_token =
+          AuthToken {
+            policy_id: channel_minting_policy_id,
+            name: channel_token_name,
+          }
+
+        trace @"spend_transfer_module: locating channel inputs and outputs"
+        expect Some(channel_input) =
+          list.find(
+            inputs,
+            fn(input) { input.output |> auth.contain_auth_token(channel_token) },
+          )
+
+        expect Some(channel_output) =
+          list.find(
+            outputs,
+            fn(output) { auth.contain_auth_token(output, channel_token) },
+          )
+
+        expect input_channel_datum: ChannelDatum =
+          validator_utils.get_inline_datum(channel_input.output)
+        expect updated_channel_datum: ChannelDatum =
+          validator_utils.get_inline_datum(channel_output)
+
+        trace @"spend_transfer_module: extracted datums from channel inputs and outputs"
+
+        let channel_id_from_sequence =
+          channel_keys.format_channel_identifier(channel_sequence)
+
+        let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
+        let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
+        let valid_packet =
+          validate_recv_packet(
+            input_channel_datum,
+            updated_channel_datum,
+            packet,
+            commit_ack,
+          )
+
+        expect Some(payout_output) =
+          list.find(
+            transaction.outputs,
+            fn(output) { output.address == receiver_address },
+          )
+
+        let derived_channel_sequence =
+          auth.extract_token_sequence(updated_channel_datum.token.name)
+
+        and {
+          valid_packet?,
+          valid_transfer_amount?,
+          (channel_id_from_sequence == channel_id)?,
+          (derived_channel_sequence == channel_sequence)?,
+          (quantity_of(
+            payout_output.value,
+            escrowed_token_policy_id,
+            escrowed_token_name,
+          ) >= transfer_amount)?,
+        }
       } else {
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
@@ -329,15 +347,12 @@ fn handler_callback(
         } = mint_voucher_redeemer
         trace @"mint_voucher: tx mint voucher token"
 
-        expect and {
-            packet_source_port == packet.source_port,
-            packet_source_channel == packet.source_channel,
-            packet_dest_port == packet.destination_port,
-            packet_dest_channel == packet.destination_channel,
-          }
-        trace @"mint_voucher: mint voucher redeemer is valid"
-
-        True
+        and {
+          packet_source_port == packet.source_port,
+          packet_source_channel == packet.source_channel,
+          packet_dest_port == packet.destination_port,
+          packet_dest_channel == packet.destination_channel,
+        }
       }
     }
     OnTimeoutPacket { channel_id, data } -> {
@@ -355,19 +370,21 @@ fn handler_callback(
       trace @"spend_transfer_module: channel redeemer is valid"
 
       expect TransferModuleData(data) = data
-      expect fungible_token_packet_data.get_bytes(data) == packet.data
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
-
-      validate_refund_packet_token(
-        voucher_minting_policy_id,
-        inputs,
-        outputs,
-        redeemers,
-        spent_output,
-        updated_output,
-        data,
-        packet,
-      )
+      let valid_refund_packet =
+        validate_refund_packet_token(
+          voucher_minting_policy_id,
+          inputs,
+          outputs,
+          redeemers,
+          spent_output,
+          updated_output,
+          data,
+          packet,
+        )
+      and {
+        valid_refund_packet,
+        fungible_token_packet_data.get_bytes(data) == packet.data,
+      }
     }
     OnAcknowledgementPacket { channel_id, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnAcknowledgementPacket branch"
@@ -385,25 +402,25 @@ fn handler_callback(
       trace @"spend_transfer_module: channel redeemer is valid"
 
       expect TransferModuleData(data) = data
-      expect fungible_token_packet_data.get_bytes(data) == packet.data
-      trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
-
-      expect acknowledgement_mod.marshal_json(acknowledgement) == channel_ack
-      trace @"spend_transfer_module: Acknowledgement is unmarshal valid"
-
-      when acknowledgement.response is {
-        AcknowledgementError { .. } ->
-          validate_refund_packet_token(
-            voucher_minting_policy_id,
-            inputs,
-            outputs,
-            redeemers,
-            spent_output,
-            updated_output,
-            data,
-            packet,
-          )
-        _ -> True
+      let valid_response =
+        when acknowledgement.response is {
+          AcknowledgementError { .. } ->
+            validate_refund_packet_token(
+              voucher_minting_policy_id,
+              inputs,
+              outputs,
+              redeemers,
+              spent_output,
+              updated_output,
+              data,
+              packet,
+            )
+          _ -> True
+        }
+      and {
+        fungible_token_packet_data.get_bytes(data) == packet.data,
+        acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
+        valid_response,
       }
     }
   }
@@ -458,7 +475,7 @@ fn handler_operator(
           string_utils.hex_string_to_bytes(data.denom)
         trace @"spend_transfer_module: demon convert to token unit valid"
 
-        expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+        let (escrowed_token_policy_id, escrowed_token_name) =
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -477,10 +494,7 @@ fn handler_operator(
         expect Some(transfer_amount) = int.from_utf8(data.amount)
         trace @"spend_transfer_module: transfer amount is valid"
 
-        expect post_escrowed_token - prev_escrowed_token == transfer_amount
-        trace @"spend_transfer_module: escrowed amount is valid"
-
-        True
+        post_escrowed_token - prev_escrowed_token == transfer_amount
       } else {
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
@@ -488,10 +502,10 @@ fn handler_operator(
           mint_voucher_redeemer
         expect BurnVoucher { packet_source_port, packet_source_channel } =
           mint_voucher_redeemer
-        expect
-          packet_source_port == packet.source_port && packet_source_channel == packet.source_channel
-
-        True
+        and {
+          packet_source_port == packet.source_port,
+          packet_source_channel == packet.source_channel,
+        }
       }
     }
 
@@ -506,7 +520,7 @@ fn validate_channel_open_init(
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
-) -> Option<Channel> {
+) -> Channel {
   // validate mint channel redeemer
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
@@ -541,7 +555,7 @@ fn validate_channel_open_init(
 
   expect channel_datum.port_id == port_id
 
-  Some(channel_datum.state.channel)
+  channel_datum.state.channel
 }
 
 fn validate_channel_open_try(
@@ -736,7 +750,7 @@ fn validate_refund_packet_token(
       string_utils.hex_string_to_bytes(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"
 
-    expect Some((escrowed_token_policy_id, escrowed_token_name)) =
+    let (escrowed_token_policy_id, escrowed_token_name) =
       validator_utils.extract_token_unit(escrowed_token_unit)
     trace @"spend_transfer_module: extract escrowed token valid"
 
@@ -755,8 +769,9 @@ fn validate_refund_packet_token(
         escrowed_token_policy_id,
         escrowed_token_name,
       )
-    expect prev_escrowed_token - post_escrowed_token == transfer_amount
-    trace @"spend_transfer_module: unescrowed amount is valid"
+    let correct_transfer_amount =
+      prev_escrowed_token - post_escrowed_token == transfer_amount
+    trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
 
     expect Some(sender_public_key_hash) =
       string_utils.hex_string_to_bytes(data.sender)
@@ -799,1328 +814,21 @@ fn validate_refund_packet_token(
           }
         },
       )
-    expect post_receiver_token - prev_receiver_token == transfer_amount
-    trace @"mint_voucher: sender's token is update valid"
-
-    True
+    and {
+      correct_transfer_amount,
+      post_receiver_token - prev_receiver_token == transfer_amount,
+    }
   } else {
     expect Some(mint_voucher_redeemer) =
       pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
     expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
     expect RefundVoucher { packet_source_port, packet_source_channel } =
       mint_voucher_redeemer
-    trace @"mint_voucher: tx mint voucher token"
+    trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
-    expect and {
-        packet_source_port == packet.source_port,
-        packet_source_channel == packet.source_channel,
-      }
-    trace @"mint_voucher: mint voucher redeemer is valid"
-
-    True
+    and {
+      packet_source_port == packet.source_port,
+      packet_source_channel == packet.source_channel,
+    }
   }
-}
-
-//=====================================Test================================================
-
-type MockData {
-  handler_token: AuthToken,
-  port_token: AuthToken,
-  module_token: AuthToken,
-  port_id: ByteArray,
-  channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
-  channel_id: ByteArray,
-  module_output: Output,
-  module_input: Input,
-  channel_output: Output,
-  channel_input: Input,
-  proof_height: Height,
-  proof: MerkleProof,
-  cardano_public_key_hash: ByteArray,
-  cosmos_address: ByteArray,
-}
-
-fn setup() -> MockData {
-  let handler_token =
-    AuthToken {
-      policy_id: "mock handler token policy_id",
-      name: "mock handler token name",
-    }
-
-  let port_token =
-    AuthToken {
-      policy_id: "mock port token policy_id",
-      name: "mock port token name",
-    }
-
-  let module_token =
-    AuthToken {
-      policy_id: "mock module token policy_id",
-      name: "mock module token name",
-    }
-
-  let port_id = "port-1"
-
-  let channel_minting_policy_id = "mock channel minting policy id"
-
-  let voucher_minting_policy_id = "mock voucher minting policy id"
-
-  let channel_id = "channel-0"
-
-  let module_output =
-    Output {
-      address: from_script("mock module script hash"),
-      value: from_asset(module_token.policy_id, module_token.name, 1)
-        |> add(port_token.policy_id, port_token.name, 1)
-        |> add(ada_policy_id, ada_asset_name, 99999999999),
-      datum: InlineDatum(Void),
-      reference_script: None,
-    }
-
-  let module_input =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
-      },
-      output: module_output,
-    }
-
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-
-  let channel_token_name =
-    auth.generate_token_name(
-      handler_token,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-
-  let channel_datum =
-    ChannelDatum {
-      state: ChannelDatumState {
-        channel: Channel {
-          state: chan_state_mod.Init,
-          ordering: chan_order_mod.Unordered,
-          counterparty: ChannelCounterparty { port_id: "", channel_id: "" },
-          connection_hops: [],
-          version: transfer_module_keys.version,
-        },
-        next_sequence_send: 1,
-        next_sequence_recv: 1,
-        next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
-      },
-      port_id,
-      token: channel_token,
-    }
-
-  let channel_output =
-    Output {
-      address: from_script("mock channel script hash"),
-      value: from_asset(channel_token.policy_id, channel_token.name, 1),
-      datum: InlineDatum(channel_datum),
-      reference_script: None,
-    }
-
-  let channel_input =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
-      },
-      output: channel_output,
-    }
-
-  let proof_height = Height { revision_number: 1, revision_height: 14 }
-
-  let proof = MerkleProof { proofs: [] }
-
-  //525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22
-  let cardano_public_key_hash =
-    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
-
-  let cosmos_address = "mock cosmos address"
-
-  MockData {
-    handler_token,
-    port_token,
-    module_token,
-    port_id,
-    channel_minting_policy_id,
-    voucher_minting_policy_id,
-    channel_id,
-    module_output,
-    module_input,
-    channel_output,
-    channel_input,
-    proof_height,
-    proof,
-    cardano_public_key_hash,
-    cosmos_address,
-  }
-}
-
-fn build_packet(
-  denom: ByteArray,
-  amount: Int,
-  sender: ByteArray,
-  receiver: ByteArray,
-  source_port: ByteArray,
-  source_channel: ByteArray,
-  destination_port: ByteArray,
-  destination_channel: ByteArray,
-) -> (FungibleTokenPacketData, Packet) {
-  let amount = string.from_int(amount) |> string.to_bytearray()
-
-  let ftpd =
-    FungibleTokenPacketData { denom, amount, sender, receiver, memo: "" }
-
-  let packet =
-    Packet {
-      sequence: 1,
-      source_port,
-      source_channel,
-      destination_port,
-      destination_channel,
-      data: fungible_token_packet_data.get_bytes(ftpd),
-      timeout_height: height.zero_height(),
-      timeout_timestamp: 1111,
-    }
-
-  (ftpd, packet)
-}
-
-test on_chan_open_init_succeed() {
-  let mock = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanOpenInit { channel_id: mock.channel_id })
-
-  let channel_redeemer: Redeemer =
-    ChanOpenInit { handler_token: mock.handler_token }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_chan_open_try_succeed() {
-  let mock = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanOpenTry { channel_id: mock.channel_id })
-
-  let channel_redeemer: Redeemer =
-    ChanOpenTry {
-      handler_token: mock.handler_token,
-      counterparty_version: transfer_module_keys.version,
-      proof_init: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_chan_open_ack_succeed() {
-  let mock = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanOpenAck { channel_id: mock.channel_id })
-
-  let channel_redeemer: Redeemer =
-    ChanOpenAck {
-      counterparty_version: transfer_module_keys.version,
-      proof_try: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_chan_open_confirm_succeed() {
-  let mock = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanOpenConfirm { channel_id: mock.channel_id })
-
-  let channel_redeemer: Redeemer =
-    ChanOpenConfirm { proof_ack: mock.proof, proof_height: mock.proof_height }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_recv_packet_mint_voucher_succeed() {
-  let mock = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
-
-  let (ftpd, packet) =
-    build_packet(
-      "atom",
-      1234,
-      mock.cosmos_address,
-      mock.cardano_public_key_hash,
-      "port-0",
-      "channel-0",
-      mock.port_id,
-      mock.channel_id,
-    )
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(
-      OnRecvPacket {
-        channel_id: mock.channel_id,
-        acknowledgement,
-        data: packet_data,
-      },
-    )
-
-  let channel_redeemer: Redeemer =
-    RecvPacket {
-      packet,
-      proof_commitment: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let mint_voucher_redeemer: Redeemer =
-    MintVoucher {
-      packet_source_port: packet.source_port,
-      packet_source_channel: packet.source_channel,
-      packet_dest_port: packet.destination_port,
-      packet_dest_channel: packet.destination_channel,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_recv_packet_unescrow_succeed() {
-  let mock = setup()
-
-  let transfer_amount = 1234
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
-
-  let receiver_output =
-    Output {
-      address: from_verification_key(receiver_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let outputs =
-    [module_output, mock.channel_output, receiver_output]
-
-  //==========================arrange redeemers=========================
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
-
-  let source_port = "port-0"
-  let source_channel = "channel-0"
-
-  let denom =
-    transfer_coin.get_denom_prefix(source_port, source_channel)
-      |> bytearray.concat("6c6f76656c616365")
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      transfer_amount,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      mock.port_id,
-      mock.channel_id,
-    )
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(
-      OnRecvPacket {
-        channel_id: mock.channel_id,
-        acknowledgement,
-        data: packet_data,
-      },
-    )
-
-  let channel_redeemer: Redeemer =
-    RecvPacket {
-      packet,
-      proof_commitment: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test transfer_escrow_succeed() {
-  let mock = setup()
-
-  let transfer_amount = 1234
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, transfer_amount),
-    }
-
-  let outputs =
-    [module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = "port-0"
-  let source_channel = "channel-0"
-
-  // lovelace
-  let denom = "6c6f76656c616365"
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      transfer_amount,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      mock.port_id,
-      mock.channel_id,
-    )
-
-  let module_redeemer: Redeemer =
-    Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
-    )
-
-  let channel_redeemer: Redeemer = SendPacket { packet }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test transfer_burn_voucher_succeed() {
-  let mock = setup()
-
-  let transfer_amount = 1234
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
-
-  let receiver_output =
-    Output {
-      address: from_verification_key(receiver_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let outputs =
-    [module_output, mock.channel_output, receiver_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = mock.port_id
-  let source_channel = mock.channel_id
-
-  let denom =
-    transfer_coin.get_denom_prefix(source_port, source_channel)
-      |> bytearray.concat("atom")
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      transfer_amount,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      "port-0",
-      "channel-0",
-    )
-
-  let module_redeemer: Redeemer =
-    Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
-    )
-
-  let channel_redeemer: Redeemer = SendPacket { packet }
-
-  let mint_voucher_redeemer: Redeemer =
-    BurnVoucher {
-      packet_source_port: packet.source_port,
-      packet_source_channel: packet.source_channel,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_timeout_packet_mint_voucher_succeed() {
-  let mock = setup()
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = mock.port_id
-  let source_channel = mock.channel_id
-
-  let denom =
-    transfer_coin.get_denom_prefix(source_port, source_channel)
-      |> bytearray.concat("atom")
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      1234,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      "port-0",
-      "channel-0",
-    )
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
-
-  let channel_redeemer: Redeemer =
-    TimeoutPacket {
-      packet,
-      proof_unreceived: mock.proof,
-      proof_height: mock.proof_height,
-      next_sequence_recv: 1,
-    }
-
-  let mint_voucher_redeemer: Redeemer =
-    RefundVoucher {
-      packet_source_port: packet.source_port,
-      packet_source_channel: packet.source_channel,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_timeout_packet_unescrow_succeed() {
-  let mock = setup()
-
-  let transfer_amount = 1234
-
-  let sender = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
-
-  let receiver_output =
-    Output {
-      address: from_verification_key(sender_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let outputs =
-    [module_output, mock.channel_output, receiver_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = "port-0"
-  let source_channel = "channel-0"
-
-  // lovelace
-  let denom = "6c6f76656c616365"
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      transfer_amount,
-      sender,
-      mock.cosmos_address,
-      source_port,
-      source_channel,
-      mock.port_id,
-      mock.channel_id,
-    )
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
-
-  let channel_redeemer: Redeemer =
-    TimeoutPacket {
-      packet,
-      proof_unreceived: mock.proof,
-      proof_height: mock.proof_height,
-      next_sequence_recv: 1,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_acknowledgement_packet_result_succeed() {
-  let mock = setup()
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = mock.port_id
-  let source_channel = mock.channel_id
-
-  let denom =
-    transfer_coin.get_denom_prefix(source_port, source_channel)
-      |> bytearray.concat("atom")
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      1234,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      "port-0",
-      "channel-0",
-    )
-
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(
-      OnAcknowledgementPacket {
-        channel_id: mock.channel_id,
-        acknowledgement,
-        data: packet_data,
-      },
-    )
-
-  let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-
-  let channel_redeemer: Redeemer =
-    AcknowledgePacket {
-      packet,
-      acknowledgement: bz_ack,
-      proof_acked: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_acknowledgement_packet_error_mint_voucher_succeed() {
-  let mock = setup()
-
-  let receiver = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let outputs =
-    [mock.module_output, mock.channel_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = mock.port_id
-  let source_channel = mock.channel_id
-
-  let denom =
-    transfer_coin.get_denom_prefix(source_port, source_channel)
-      |> bytearray.concat("atom")
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      1234,
-      mock.cosmos_address,
-      receiver,
-      source_port,
-      source_channel,
-      "port-0",
-      "channel-0",
-    )
-
-  let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(
-      OnAcknowledgementPacket {
-        channel_id: mock.channel_id,
-        acknowledgement,
-        data: packet_data,
-      },
-    )
-
-  let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-
-  let channel_redeemer: Redeemer =
-    AcknowledgePacket {
-      packet,
-      acknowledgement: bz_ack,
-      proof_acked: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let mint_voucher_redeemer: Redeemer =
-    RefundVoucher {
-      packet_source_port: packet.source_port,
-      packet_source_channel: packet.source_channel,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_acknowledgement_packet_error_unescrow_succeed() {
-  let mock = setup()
-
-  let transfer_amount = 1234
-
-  let sender = mock.cardano_public_key_hash
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [mock.module_input, mock.channel_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
-  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
-
-  let receiver_output =
-    Output {
-      address: from_verification_key(sender_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let outputs =
-    [module_output, mock.channel_output, receiver_output]
-
-  //==========================arrange redeemers=========================
-  let source_port = "port-0"
-  let source_channel = "channel-0"
-
-  // lovelace
-  let denom = "6c6f76656c616365"
-
-  let (ftpd, packet) =
-    build_packet(
-      denom,
-      transfer_amount,
-      sender,
-      mock.cosmos_address,
-      source_port,
-      source_channel,
-      mock.port_id,
-      mock.channel_id,
-    )
-
-  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
-
-  let packet_data = TransferModuleData(ftpd)
-
-  let module_redeemer: Redeemer =
-    Callback(
-      OnAcknowledgementPacket {
-        channel_id: mock.channel_id,
-        acknowledgement,
-        data: packet_data,
-      },
-    )
-
-  let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-
-  let channel_redeemer: Redeemer =
-    AcknowledgePacket {
-      packet,
-      acknowledgement: bz_ack,
-      proof_acked: mock.proof,
-      proof_height: mock.proof_height,
-    }
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [
-      Pair(Spend(mock.module_input.output_reference), module_redeemer),
-      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
-    ]
-
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    mock.handler_token,
-    mock.port_token,
-    mock.module_token,
-    mock.port_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    mock.module_input.output_reference,
-    transaction,
-  )
-}
-
-test on_chan_close_init_given_any_input_returns_false() {
-  let fake_data = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [fake_data.module_input]
-
-  //==========================arrange outputs=========================
-  let module_output = fake_data.module_input.output
-
-  let outputs =
-    [module_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    fake_data.handler_token,
-    fake_data.port_token,
-    fake_data.module_token,
-    fake_data.port_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    fake_data.module_input.output_reference,
-    transaction,
-  ) == False
-}
-
-test on_chan_close_confirm_given_any_input_returns_false() {
-  let fake_data = setup()
-
-  //==========================arrange inputs=========================
-  let inputs =
-    [fake_data.module_input]
-
-  //==========================arrange outputs=========================
-  let module_output = fake_data.module_input.output
-
-  let outputs =
-    [module_output]
-
-  //==========================arrange redeemers=========================
-  let module_redeemer: Redeemer =
-    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
-  //==========================arrange context=========================
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
-
-  expect module_redeemer: IBCModuleRedeemer = module_redeemer
-
-  spend_transfer_module.spend(
-    fake_data.handler_token,
-    fake_data.port_token,
-    fake_data.module_token,
-    fake_data.port_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    None,
-    module_redeemer,
-    fake_data.module_input.output_reference,
-    transaction,
-  ) == False
 }

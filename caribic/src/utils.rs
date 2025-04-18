@@ -8,7 +8,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
-use std::fs;
+use std::{collections::HashMap, fs};
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
@@ -550,4 +550,36 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
         }
     }
     Ok(())
+}
+
+pub fn query_balance(project_root_path: &Path, address: &str,) -> u64 {
+    let cardano_dir = project_root_path.join("chains/cardano");
+
+    let cardano_cli_args = vec!["compose", "exec", "cardano-node", "cardano-cli"];
+    let build_address_args = vec![
+        "query",
+        "utxo",
+        "--address",
+        address,
+        "--testnet-magic",
+        "42",
+        "--output-json",
+    ];
+    let balance = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(&cardano_cli_args)
+        .args(build_address_args)
+        .output()
+        .expect("Failed to build address")
+        .stdout;
+
+    let v: HashMap<String, Value> =
+        serde_json::from_str(String::from_utf8(balance).unwrap().as_str()).unwrap();
+
+    v
+        .values()
+        .map(|k| k["value"]["lovelace"].as_u64().unwrap())
+        .sum()
+
+    
 }

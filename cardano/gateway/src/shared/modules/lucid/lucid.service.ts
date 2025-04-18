@@ -49,6 +49,7 @@ import { UnsignedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from './d
 import { calculateTransferToken } from './helpers/send-packet.helper';
 import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
 import {
+  UnsignedRecvPacketDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketMintForOrderedChannelDto,
 } from './dtos/packet/recv-packet-mint.dto';
@@ -739,6 +740,40 @@ export class LucidService {
 
     return tx;
   }
+
+  public createUnsignedRecvPacketTx(dto: UnsignedRecvPacketDto): TxBuilder {
+    const deploymentConfig = this.configService.get('deployment');
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+
+    tx.readFrom([dto.spendChannelRefUtxo, dto.recvPacketRefUTxO, dto.verifyProofRefUTxO])
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+
   public createUnsignedRecvPacketMintTx(dto: UnsignedRecvPacketMintDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
 

@@ -34,10 +34,7 @@ pub fn convert_to_connection_end_proto(
 ) -> ConnectionEndProto {
   ConnectionEndProto {
     client_id: connection_end.client_id,
-    versions: list.indexed_map(
-      connection_end.versions,
-      fn(i, _v) { list.at(connection_end.versions, i) },
-    ),
+    versions: connection_end.versions,
     state: convert_to_state_proto(connection_end.state),
     counterparty: connection_end.counterparty,
     delay_period: connection_end.delay_period,
@@ -84,7 +81,7 @@ pub fn get_delay_period(c: ConnectionEnd) -> Int {
 pub fn validate_basic(c: ConnectionEnd) -> Bool {
   and {
     client_keys_mod.is_valid_client_id(c.client_id),
-    list.length(c.versions) > 0,
+    !list.is_empty(c.versions),
     list.all(c.versions, fn(ver) { version.validate_version(ver) }),
     counterparty.validate_basic(c.counterparty),
   }

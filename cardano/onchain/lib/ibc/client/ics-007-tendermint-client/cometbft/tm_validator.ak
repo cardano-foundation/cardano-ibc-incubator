@@ -16,10 +16,10 @@ pub type Validator {
 pub fn bytes(v: Validator) -> ByteArray {
   let pbv =
     SimpleValidator {
-      pub_key: Some(PublicKey_Ed25519 { sum: v.pubkey }),
+      pub_key: PublicKey_Ed25519 { sum: v.pubkey },
       voting_power: v.voting_power,
     }
-  validator_pb.marshal_for_simple_validator(Some(pbv))
+  validator_pb.marshal_for_simple_validator(pbv).2nd
 }
 
 pub fn null_validator() -> Validator {

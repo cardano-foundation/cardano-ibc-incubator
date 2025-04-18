@@ -116,16 +116,23 @@ pub fn status(
   consensus_states: Pairs<Height, ConsensusState>,
 ) -> Status {
   if !height.is_zero(client_state.frozen_height) {
+    trace @"Client is frozen"
     Frozen
   } else {
     let latest_height = get_latest_height(client_state)
     let consensus_state = pairs.get_first(consensus_states, latest_height)
     when consensus_state is {
-      None -> Expired
+      None -> {
+        trace @"Client is expired: no consensus state found"
+        Expired
+      }
+
       Some(cons_state) ->
         if is_expired(client_state, cons_state.timestamp, now) {
+          trace @"Client is expired"
           Expired
         } else {
+          trace @"Client is active"
           Active
         }
     }

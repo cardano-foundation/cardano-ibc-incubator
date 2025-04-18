@@ -13,17 +13,13 @@ pub type HandlerDatum {
 pub fn is_initialized_valid(datum: HandlerDatum, auth_token: AuthToken) -> Bool {
   let HandlerDatum { state, token } = datum
 
-  expect state.next_client_sequence == 0
-
-  expect state.next_connection_sequence == 0
-
-  expect state.next_channel_sequence == 0
-
-  expect state.bound_port == []
-
-  expect token == auth_token
-
-  True
+  and {
+    state.next_client_sequence == 0,
+    state.next_connection_sequence == 0,
+    state.next_channel_sequence == 0,
+    state.bound_port == [],
+    token == auth_token,
+  }
 }
 
 pub fn validate_create_client(old: HandlerDatum, new: HandlerDatum) -> Bool {

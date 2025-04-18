@@ -71,26 +71,23 @@ pub fn verify_non_existence_proof(
       #[],
     )
   // If both proofs are missing, this is not a valid proof
-  expect !(bytearray.is_empty(left_key) && bytearray.is_empty(right_key))
-  expect
+  and {
+    !(bytearray.is_empty(left_key) && bytearray.is_empty(right_key)),
     !(!bytearray.is_empty(right_key) && !(bytearray.compare(
       key_for_comparison(spec, key),
       key_for_comparison(spec, right_key),
-    ) == Less))
-  expect
+    ) == Less)),
     !(!bytearray.is_empty(left_key) && !(bytearray.compare(
       key_for_comparison(spec, key),
       key_for_comparison(spec, left_key),
-    ) == Greater))
-  if bytearray.is_empty(left_key) {
-    expect is_left_most(spec.inner_spec, p.right.path)
-    True
-  } else if bytearray.is_empty(right_key) {
-    expect is_right_most(spec.inner_spec, p.left.path)
-    True
-  } else {
-    expect is_left_neighbor(spec.inner_spec, p.left.path, p.right.path)
-    True
+    ) == Greater)),
+    if bytearray.is_empty(left_key) {
+      is_left_most(spec.inner_spec, p.right.path)
+    } else if bytearray.is_empty(right_key) {
+      is_right_most(spec.inner_spec, p.left.path)
+    } else {
+      is_left_neighbor(spec.inner_spec, p.left.path, p.right.path)
+    },
   }
 }
 

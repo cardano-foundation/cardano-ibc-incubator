@@ -218,6 +218,15 @@ pub async fn start_local_cardano_network(
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
 
+    Ok(())
+}
+
+pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
     log_or_show_progress(
         &format!(
             "{} 🛠️ Building Aiken validators",
@@ -1076,6 +1085,7 @@ pub fn wait_and_start_mithril_genesis(
             "--profile",
             "mithril-genesis",
             "run",
+            "--rm",
             "mithril-aggregator-genesis",
         ],
         Some(vec![
@@ -1109,7 +1119,7 @@ pub fn wait_and_start_mithril_genesis(
 
     current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
-    let target_epoch = cardano_epoch_on_mithril_start + 5;
+    let target_epoch = cardano_epoch_on_mithril_start + 3;
     let target_slot = target_epoch * slots_per_epoch;
     slots_left = target_slot.saturating_sub(current_slot);
 

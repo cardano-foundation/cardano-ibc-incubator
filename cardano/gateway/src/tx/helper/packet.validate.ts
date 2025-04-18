@@ -37,6 +37,11 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     );
   const decodedProofCommitment: MerkleProof = decodeMerkleProof(data.proof_commitment);
   // Prepare the Recv packet operator object
+
+  if (typeof data.packet?.timeout_timestamp === 'undefined') {
+    throw new GrpcInvalidArgumentException('Invalid argument: "packet.timeout_timestamp" is required');
+  }
+
   const recvPacketOperator: RecvPacketOperator = {
     channelId: data.packet.destination_channel,
     packetSequence: BigInt(data.packet.sequence),
@@ -50,7 +55,7 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
       revisionHeight: BigInt(data.packet.timeout_height?.revision_height || 0),
       revisionNumber: BigInt(data.packet.timeout_height?.revision_number || 0),
     },
-    timeoutTimestamp: BigInt(data.packet?.timeout_timestamp || 0),
+    timeoutTimestamp: BigInt(data.packet?.timeout_timestamp),
   };
   return { constructedAddress, recvPacketOperator };
 }

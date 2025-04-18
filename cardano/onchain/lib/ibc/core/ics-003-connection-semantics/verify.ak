@@ -45,9 +45,7 @@ pub fn verify_connection_state(
     proof,
     merkle_path,
     connection_pb.marshal_for_connection_end(
-      Some(
-        connection_end.convert_to_connection_end_proto(counterparty_connection),
-      ),
+      connection_end.convert_to_connection_end_proto(counterparty_connection),
     ),
   )
 }
@@ -79,13 +77,11 @@ pub fn verify_client_state(
     proof,
     merkle_path,
     mithril_pb.marshal_for_any_client_state(
-      Some(
-        AnyMithrilClientState {
-          type_url: "/ibc.clients.mithril.v1.ClientState",
-          value: Some(counterparty_client_state),
-        },
-      ),
-    ),
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd,
   )
 }
 
@@ -115,9 +111,7 @@ pub fn verify_channel_state(
     0,
     proof,
     merkle_path,
-    channel_pb.marshal_for_channel(
-      Some(channel.convert_to_channel_proto(channel)),
-    ),
+    channel_pb.marshal_for_channel(channel.convert_to_channel_proto(channel)).2nd,
   )
 }
 

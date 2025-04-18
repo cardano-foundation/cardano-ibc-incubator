@@ -11,11 +11,10 @@ pub fn validate_on_chan_open_init(
   _counterparty: ChannelCounterparty,
   version: ByteArray,
 ) -> Bool {
-  expect order == Unordered
-
-  expect version == transfer_module_keys.version
-
-  True
+  and {
+    order == Unordered,
+    version == transfer_module_keys.version,
+  }
 }
 
 pub fn validate_on_chan_open_try(
@@ -27,13 +26,11 @@ pub fn validate_on_chan_open_try(
   version: ByteArray,
   counterparty_version: ByteArray,
 ) -> Bool {
-  expect order == Unordered
-
-  expect counterparty_version == transfer_module_keys.version
-
-  expect version == transfer_module_keys.version
-
-  True
+  and {
+    order == Unordered,
+    counterparty_version == transfer_module_keys.version,
+    version == transfer_module_keys.version,
+  }
 }
 
 pub fn validate_on_chan_open_ack(
@@ -42,9 +39,7 @@ pub fn validate_on_chan_open_ack(
   _counterparty_channel_id: ByteArray,
   counterparty_version: ByteArray,
 ) -> Bool {
-  expect counterparty_version == transfer_module_keys.version
-
-  True
+  counterparty_version == transfer_module_keys.version
 }
 
 pub fn validate_on_chan_open_confirm(
@@ -55,7 +50,5 @@ pub fn validate_on_chan_open_confirm(
 }
 
 pub fn validate_on_chan_recv_packet(acknowledgement: Acknowledgement) -> Bool {
-  expect acknowledgement == acknowledgement_mod.new_result_acknowledgement("AQ==")
-
-  True
+  acknowledgement == acknowledgement_mod.new_result_acknowledgement("AQ==")
 }

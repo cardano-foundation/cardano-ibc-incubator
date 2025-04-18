@@ -391,7 +391,7 @@ async function createReferenceUtxos(
     await Promise.all(
       deployLucids.map(async (inst) => {
         const address = await inst.wallet().address();
-        fundDeployAccTx.pay.ToAddress(address, { lovelace: 1000000000n });
+        fundDeployAccTx.pay.ToAddress(address, { lovelace: 100_000_000n });
       })
     );
     await submitTx(fundDeployAccTx, lucid, "Fund Deploy Account", false);
@@ -682,16 +682,24 @@ const deploySpendChannel = async (
     "chan_open_confirm.spend",
     "chan_close_init.spend",
     "chan_close_confirm.spend",
-    "recv_packet.spend",
+    "recv_packet.mint",
     "send_packet.spend",
     "timeout_packet.spend",
     "acknowledge_packet.spend",
   ] as const;
 
+  const moduleNamesToIgnore = [
+    "spending_channel_fixture.ak",
+  ];
+
   const referredValidatorsName = (
     await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
   )
     .filter((val) => val.isFile)
+    // Filtering out test modules
+    .filter((val) => !val.name.endsWith(".test.ak"))
+    // Filter out modules to ignore
+    .filter((val) => moduleNamesToIgnore.indexOf(val.name) == -1)
     .map((val) => {
       const name = val.name.split(".").slice(0, -1).join(".");
       // deno-lint-ignore no-explicit-any

@@ -47,7 +47,7 @@ pub fn canonicalize_vote(chain_id: ByteArray, vote: Vote) -> CanonicalVoteProto 
     v_type: vote.vote_type,
     height: vote.height,
     round: vote.round,
-    block_id: Some(canonical.canonicalize_block_id(vote.block_id)),
+    block_id: canonical.canonicalize_block_id(vote.block_id),
     timestamp: vote.timestamp,
     chain_id,
   }
@@ -55,7 +55,7 @@ pub fn canonicalize_vote(chain_id: ByteArray, vote: Vote) -> CanonicalVoteProto 
 
 pub fn vote_sign_bytes(chain_id: ByteArray, vote: Vote) -> ByteArray {
   let pb = canonicalize_vote(chain_id, vote)
-  canonical_pb.marshal_delimited_for_vote(Some(pb))
+  canonical_pb.marshal_delimited_for_vote(pb)
 }
 
 pub fn vote_sign_bytes_for_commit(

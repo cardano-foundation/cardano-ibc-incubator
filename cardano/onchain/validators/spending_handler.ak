@@ -48,72 +48,62 @@ validator spend_handler(
         |> list.filter(fn(output) { output.address == spent_output.address })
 
     // output contains handler token
-    expect updated_output |> auth.contain_auth_token(datum.token)
-
     // output datum is updated correctly
     expect updated_datum: HandlerDatum =
       validator_utils.get_inline_datum(updated_output)
-    when redeemer is {
-      CreateClient -> {
-        expect handler_datum.validate_create_client(datum, updated_datum)
-        expect
-          validate_create_client(
-            redeemers,
-            datum.token,
-            client_minting_policy_id,
-          )?
-        True
-      }
-      HandlerConnOpenInit -> {
-        expect handler_datum.validate_create_connection(datum, updated_datum)?
-        expect
-          validate_conn_open_init(
-            redeemers,
-            datum.token,
-            connection_minting_policy_id,
-          )?
-        True
-      }
-      HandlerConnOpenTry -> {
-        expect handler_datum.validate_create_connection(datum, updated_datum)?
-        expect
-          validate_conn_open_try(
-            redeemers,
-            datum.token,
-            connection_minting_policy_id,
-          )
+    let valid_redeemer =
+      when redeemer is {
+        CreateClient -> and {
+            handler_datum.validate_create_client(datum, updated_datum),
+            validate_create_client(
+              redeemers,
+              datum.token,
+              client_minting_policy_id,
+            )?,
+          }
+        HandlerConnOpenInit -> and {
+            handler_datum.validate_create_connection(datum, updated_datum)?,
+            validate_conn_open_init(
+              redeemers,
+              datum.token,
+              connection_minting_policy_id,
+            )?,
+          }
+        HandlerConnOpenTry -> and {
+            handler_datum.validate_create_connection(datum, updated_datum)?,
+            validate_conn_open_try(
+              redeemers,
+              datum.token,
+              connection_minting_policy_id,
+            ),
+          }
 
-        True
-      }
-      HandlerChanOpenInit -> {
-        expect handler_datum.validate_create_channel(datum, updated_datum)?
-        expect
-          validate_chan_open_init(
-            redeemers,
-            datum.token,
-            channel_minting_policy_id,
-          )?
-        True
-      }
-      HandlerChanOpenTry -> {
-        expect handler_datum.validate_create_channel(datum, updated_datum)?
-        expect
-          validate_chan_open_try(
-            redeemers,
-            datum.token,
-            channel_minting_policy_id,
-          )
-        True
-      }
-      HandlerBindPort -> {
-        expect Some(port_number) =
-          validate_bind_port(redeemers, datum.token, port_minting_policy_id)
+        HandlerChanOpenInit -> and {
+            handler_datum.validate_create_channel(datum, updated_datum)?,
+            validate_chan_open_init(
+              redeemers,
+              datum.token,
+              channel_minting_policy_id,
+            )?,
+          }
+        HandlerChanOpenTry -> and {
+            handler_datum.validate_create_channel(datum, updated_datum)?,
+            validate_chan_open_try(
+              redeemers,
+              datum.token,
+              channel_minting_policy_id,
+            ),
+          }
+        HandlerBindPort -> {
+          let port_number =
+            validate_bind_port(redeemers, datum.token, port_minting_policy_id)
 
-        expect
           handler_datum.validate_bind_port(datum, updated_datum, port_number)
-
-        True
+        }
       }
+    and {
+      valid_redeemer,
+      updated_output |> auth.contain_auth_token(datum.token),
     }
   }
 
@@ -131,8 +121,7 @@ fn validate_create_client(
   expect Some(mint_client_redeemer) =
     pairs.get_first(redeemers, Mint(client_minting_policy_id))
   expect mint_client_redeemer: MintClientRedeemer = mint_client_redeemer
-  expect mint_client_redeemer == MintClientRedeemer { handler_auth_token }
-  True
+  mint_client_redeemer == MintClientRedeemer { handler_auth_token }
 }
 
 fn validate_conn_open_init(
@@ -145,8 +134,7 @@ fn validate_conn_open_init(
     pairs.get_first(redeemers, Mint(connection_minting_policy_id))
   expect mint_connection_redeemer: MintConnectionRedeemer =
     mint_connection_redeemer
-  expect mint_connection_redeemer == ConnOpenInit { handler_auth_token }
-  True
+  mint_connection_redeemer == ConnOpenInit { handler_auth_token }
 }
 
 fn validate_conn_open_try(
@@ -162,9 +150,7 @@ fn validate_conn_open_try(
   expect ConnOpenTry { handler_auth_token: conn_handler_token, .. } =
     mint_connection_redeemer
 
-  expect handler_token == conn_handler_token
-
-  True
+  handler_token == conn_handler_token
 }
 
 fn validate_chan_open_init(
@@ -178,9 +164,7 @@ fn validate_chan_open_init(
 
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
 
-  expect mint_channel_redeemer == ChanOpenInit { handler_token }
-
-  True
+  mint_channel_redeemer == ChanOpenInit { handler_token }
 }
 
 fn validate_chan_open_try(
@@ -196,16 +180,14 @@ fn validate_chan_open_try(
 
   expect ChanOpenTry { handler_token: chan_handler_token, .. } =
     mint_channel_redeemer
-  expect chan_handler_token == handler_token
-
-  True
+  chan_handler_token == handler_token
 }
 
 fn validate_bind_port(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   handler_token: AuthToken,
   port_minting_policy_id: PolicyId,
-) -> Option<Int> {
+) -> Int {
   // valid mint port redeemer for bind port
   expect Some(mint_port_redeemer) =
     pairs.get_first(redeemers, Mint(port_minting_policy_id))
@@ -217,5 +199,5 @@ fn validate_bind_port(
 
   expect port_handler_token == handler_token
 
-  Some(port_number)
+  port_number
 }
