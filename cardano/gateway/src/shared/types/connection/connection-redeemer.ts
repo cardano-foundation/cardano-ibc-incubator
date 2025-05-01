@@ -105,15 +105,15 @@ export async function encodeMintConnectionRedeemer(
   const MithrilProtocolParametersSchema = Data.Object({
     k: Data.Integer(),
     m: Data.Integer(),
-    phi_f: Data.Nullable(FractionSchema),
+    phi_f: FractionSchema,
   });
   const MithrilClientStateSchema = Data.Object({
     chain_id: Data.Bytes(),
-    latest_height: Data.Nullable(MithrilHeightSchema),
-    frozen_height: Data.Nullable(MithrilHeightSchema),
+    latest_height: MithrilHeightSchema,
+    frozen_height: MithrilHeightSchema,
     current_epoch: Data.Integer(),
     trusting_period: Data.Integer(),
-    protocol_parameters: Data.Nullable(MithrilProtocolParametersSchema),
+    protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
   });
   const MintConnectionRedeemerSchema = Data.Enum([
@@ -156,15 +156,15 @@ export async function encodeSpendConnectionRedeemer(
   const MithrilProtocolParametersSchema = Data.Object({
     k: Data.Integer(),
     m: Data.Integer(),
-    phi_f: Data.Nullable(FractionSchema),
+    phi_f: FractionSchema,
   });
   const MithrilClientStateSchema = Data.Object({
     chain_id: Data.Bytes(),
-    latest_height: Data.Nullable(MithrilHeightSchema),
-    frozen_height: Data.Nullable(MithrilHeightSchema),
+    latest_height: MithrilHeightSchema,
+    frozen_height: MithrilHeightSchema,
     current_epoch: Data.Integer(),
     trusting_period: Data.Integer(),
-    protocol_parameters: Data.Nullable(MithrilProtocolParametersSchema),
+    protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
   });
   const LeafOpSchema = Data.Object({
@@ -299,15 +299,15 @@ export function decodeMintConnectionRedeemer(
   const MithrilProtocolParametersSchema = Data.Object({
     k: Data.Integer(),
     m: Data.Integer(),
-    phi_f: Data.Nullable(FractionSchema),
+    phi_f: FractionSchema,
   });
   const MithrilClientStateSchema = Data.Object({
     chain_id: Data.Bytes(),
-    latest_height: Data.Nullable(MithrilHeightSchema),
-    frozen_height: Data.Nullable(MithrilHeightSchema),
+    latest_height: MithrilHeightSchema,
+    frozen_height: MithrilHeightSchema,
     current_epoch: Data.Integer(),
     trusting_period: Data.Integer(),
-    protocol_parameters: Data.Nullable(MithrilProtocolParametersSchema),
+    protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
   });
   const HeightSchema = Data.Object({
@@ -355,15 +355,15 @@ export function decodeSpendConnectionRedeemer(
   const MithrilProtocolParametersSchema = Data.Object({
     k: Data.Integer(),
     m: Data.Integer(),
-    phi_f: Data.Nullable(FractionSchema),
+    phi_f: FractionSchema,
   });
   const MithrilClientStateSchema = Data.Object({
     chain_id: Data.Bytes(),
-    latest_height: Data.Nullable(MithrilHeightSchema),
-    frozen_height: Data.Nullable(MithrilHeightSchema),
+    latest_height: MithrilHeightSchema,
+    frozen_height: MithrilHeightSchema,
     current_epoch: Data.Integer(),
     trusting_period: Data.Integer(),
-    protocol_parameters: Data.Nullable(MithrilProtocolParametersSchema),
+    protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
   });
   const LeafOpSchema = Data.Object({
