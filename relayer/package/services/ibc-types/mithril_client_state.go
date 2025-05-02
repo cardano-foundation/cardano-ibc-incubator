@@ -10,7 +10,7 @@ type MithrilProtocolParametersSchema struct {
 	_    struct{} `cbor:",toarray"`
 	K    uint64
 	M    uint64
-	PhiF *[]FractionSchema
+	PhiF *FractionSchema
 }
 
 type FractionSchema struct {
@@ -20,18 +20,12 @@ type FractionSchema struct {
 }
 
 type MithrilClientStateSchema struct {
-	_            struct{} `cbor:",toarray"`
-	ChainId      []byte
-	LatestHeight *struct {
-		_     struct{} `cbor:",toarray"`
-		Value MithrilHeightSchema
-	}
-	FrozenHeight *struct {
-		_     struct{} `cbor:",toarray"`
-		Value MithrilHeightSchema
-	}
+	_                  struct{} `cbor:",toarray"`
+	ChainId            []byte
+	LatestHeight       *MithrilHeightSchema
+	FrozenHeight       *MithrilHeightSchema
 	CurrentEpoch       uint64
 	TrustingPeriod     uint64
-	ProtocolParameters *[]MithrilProtocolParametersSchema
+	ProtocolParameters *MithrilProtocolParametersSchema
 	UpgradePath        [][]byte
 }
