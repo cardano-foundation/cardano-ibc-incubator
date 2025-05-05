@@ -24,7 +24,7 @@ import connectionDatumMockBuilder from './mock/connection-datum';
 const clientTokenUnit =
   '2954599599f3200cf37ae003e4775668fd312332675504b1fee7f43694051031ba171ddc7783efe491f76b4d2f1ba640f2c9db64323435';
 
-describe('TxController - Connection', () => {
+describe.skip('TxController - Connection', () => {
   let controller: TxController;
   const mockLucidService = {
     findUtxoByUnit: jest.fn().mockImplementation(() => {

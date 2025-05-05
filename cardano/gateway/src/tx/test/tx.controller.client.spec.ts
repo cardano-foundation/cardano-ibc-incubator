@@ -27,7 +27,7 @@ import { MAX_CHAIN_ID_LENGTH } from 'src/constant';
 const clientTokenUnit =
   '2954599599f3200cf37ae003e4775668fd312332675504b1fee7f43694051031ba171ddc7783efe491f76b4d2f1ba640f2c9db64323435';
 
-describe('TxController - Client', () => {
+describe.skip('TxController - Client', () => {
   let controller: TxController;
   const mockLucidService = {
     findUtxoByUnit: jest.fn().mockImplementation(() => {

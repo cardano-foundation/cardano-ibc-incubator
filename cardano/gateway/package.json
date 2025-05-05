@@ -92,6 +92,7 @@
     "rootDir": "src",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/$1",
+      "^~@/(.*)$": "<rootDir>/$1",
       "^@shared/(.*)$": "<rootDir>/shared/$1",
       "^@cosmjs-types/(.*)$": "<rootDir>/../cosmjs-types/$1",
       "^cosmjs-types/(.*)$": "<rootDir>/../cosmjs-types/$1",

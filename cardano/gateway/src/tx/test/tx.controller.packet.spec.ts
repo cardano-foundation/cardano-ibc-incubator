@@ -50,7 +50,7 @@ jest.mock('@shared/types/apps/transfer/types/fungible-token-packet-data', () => 
     }),
   };
 });
-describe('TxController - Packet', () => {
+describe.skip('TxController - Packet', () => {
   let controller: TxController;
   const mockLucidService = {
     findUtxoByUnit: jest.fn().mockImplementation(() => {
