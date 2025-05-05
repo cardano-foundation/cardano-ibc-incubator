@@ -77,7 +77,6 @@ export class ChannelService {
     try {
       this.logger.log('Channel Open Init is processing');
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
-
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelOpenInitTx, channelId } = await this.buildUnsignedChannelOpenInitTx(
         channelOpenInitOperator,
@@ -90,14 +89,13 @@ export class ChannelService {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
-
       // TODO: signing should be done by the relayer in the future
+
       const signedChannelOpenInitTxCompleted = await (await unsignedChannelOpenInitTxValidTo.complete()).sign
         .withWallet()
         .complete();
       // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
       // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
-      await sleep(7000);
       this.logger.log(signedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
