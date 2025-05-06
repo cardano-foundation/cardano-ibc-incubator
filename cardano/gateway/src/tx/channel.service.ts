@@ -107,7 +107,8 @@ export class ChannelService {
       } as unknown as MsgChannelOpenInitResponse;
       return response;
     } catch (error) {
-      this.logger.error(`channelOpenInit: ${error}`);
+      let throwError: Error = error as Error;
+      this.logger.error(`channelOpenInit: ${throwError.name} - ${throwError.message}`, throwError.stack);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
