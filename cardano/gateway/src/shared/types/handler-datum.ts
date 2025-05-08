@@ -6,7 +6,7 @@ export type HandlerDatum = {
     next_client_sequence: bigint;
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
-    bound_port: Map<bigint, boolean>;
+    bound_port: bigint[];
   };
   token: AuthToken;
 };

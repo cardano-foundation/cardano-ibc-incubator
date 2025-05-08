@@ -69,7 +69,7 @@ import {
 } from './dtos/packet/ack-packet-succeed.dto';
 import { UnsignedConnectionOpenAckDto } from './dtos/connection/connection-open-ack.dto';
 import { UnsignedChannelCloseInitDto } from './dtos/channel/channle-close-init.dto';
-type CodecType =
+export type CodecType =
   | 'client'
   | 'connection'
   | 'handler'

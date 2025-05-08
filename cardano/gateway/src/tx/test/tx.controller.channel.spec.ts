@@ -6,7 +6,7 @@ import { PacketService } from '../packet.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LucidService } from '../../shared/modules/lucid/lucid.service';
+import { CodecType, LucidService } from '../../shared/modules/lucid/lucid.service';
 import handlerDatumMockBuilder from './mock/handler-datum';
 import handlerUtxoMockBuilder from './mock/handler-utxo';
 import { configHandler } from './mock/handler';
@@ -23,6 +23,14 @@ import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { convertString2Hex } from '@shared/helpers/hex';
 import msgChannelOpenAckBuilder from './mock/msg-channel-open-ack';
 import channelDatumMockBuilder from './mock/channel-datum';
+import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { Data } from '@lucid-evolution/lucid';
+import { decodeHandlerDatum, encodeHandlerDatum, HandlerDatum } from '~@/shared/types/handler-datum';
+import { decodeClientDatum } from '~@/shared/types/client-datum';
+import { decodeConnectionDatum } from '~@/shared/types/connection/connection-datum';
+import { decodeChannelDatum } from '~@/shared/types/channel/channel-datum';
+import { decodeMockModuleDatum } from '~@/shared/types/apps/mock/mock-module-datum';
+import { encodeMintChannelRedeemer, MintChannelRedeemer } from '~@/shared/types/channel/channel-redeemer';
 
 const clientTokenUnit =
   '2954599599f3200cf37ae003e4775668fd312332675504b1fee7f43694051031ba171ddc7783efe491f76b4d2f1ba640f2c9db64323435';
@@ -33,10 +41,21 @@ const generateRandomHex = (length = 64) => {
 
 describe('TxController - Client', () => {
   let controller: TxController;
+  const mockLucidImporter = {
+    Data: Data,
+  } as typeof import('@lucid-evolution/lucid');
   const mockLucidService = {
-    findUtxoByUnit: jest.fn().mockImplementation(() => {
-      return new Promise((resolve) => resolve(handlerUtxoMockBuilder.build()));
-    }),
+    findUtxoByUnit: (tokenUnit: string) => {
+      return new Promise((resolve) =>
+        resolve(
+          handlerUtxoMockBuilder
+            .withDatum(
+              'd8799fd8799f4c6962635f636c69656e742d309fd8799f41319f4d4f524445525f4f5244455245444f4f524445525f554e4f524445524544ffffffd87c80d8799f56323030302d63617264616e6f2d6d69746872696c2d304c636f6e6e656374696f6e2d31d8799f43696263ffff00ffd8799f581c076fcaa9fd53a61e201ec153fdddddf25a3c67ee3ff885058ed1edc7581939db5e79db50ec7a52602e7a965e710e2c935bcf19dd9b3030ffff',
+            )
+            .build(),
+        ),
+      );
+    },
     findUtxoAtHandlerAuthToken: jest.fn().mockImplementation(() => {
       return new Promise((resolve) => resolve(handlerUtxoMockBuilder.build()));
     }),
@@ -50,12 +69,26 @@ describe('TxController - Client', () => {
       }),
     },
     getClientAuthTokenUnit: jest.fn().mockImplementation(() => clientTokenUnit),
-    decodeDatum: jest.fn().mockImplementation((_, type) => {
-      if (type === 'handler') return handlerDatumMockBuilder.build();
-      if (type === 'client') return clientDatumMockBuilder.build();
-      if (type === 'connection') return connectionDatumMockBuilder.build();
-      if (type === 'channel') return channelDatumMockBuilder.build();
-    }),
+    decodeDatum: async <T>(encodedDatum: string, type: CodecType): Promise<T> => {
+      try {
+        switch (type) {
+          case 'client':
+            return (await decodeClientDatum(encodedDatum, mockLucidImporter)) as T;
+          case 'connection':
+            return (await decodeConnectionDatum(encodedDatum, mockLucidImporter)) as T;
+          case 'handler':
+            return (await decodeHandlerDatum(encodedDatum, mockLucidImporter)) as T;
+          case 'channel':
+            return (await decodeChannelDatum(encodedDatum, mockLucidImporter)) as T;
+          case 'mockModule':
+            return (await decodeMockModuleDatum(encodedDatum, mockLucidImporter)) as T;
+          default:
+            throw new Error(`Unknown datum type: ${type}`);
+        }
+      } catch (error) {
+        throw new GrpcInternalException(`An unexpected error occurred when trying to decode ${type}: ${error}`);
+      }
+    },
     encode: jest.fn().mockImplementation(async (object, type) => {
       switch (type) {
         case 'mintClientOperator':
@@ -63,16 +96,43 @@ describe('TxController - Client', () => {
         case 'handlerOperator':
           return 'd87980';
         case 'handler':
-          return 'd8799fd8799f070605a21863d87a801864d87a80ffd8799f581cb92d67b266fe85023e63d418329003e298783f487373a7f0adf59a4c4768616e646c6572ffff';
+          const handlerData = {
+            state: {
+              next_client_sequence: 1n,
+              next_connection_sequence: 1n,
+              next_channel_sequence: 1n,
+              bound_port: [100n],
+            },
+            token: {
+              policyId: '11d98f7566bb47cd0bd738390dd8fa748167206013059a26000334b1',
+              name: '68616e646c6572',
+            },
+          };
+          return await encodeHandlerDatum(handlerData as HandlerDatum, mockLucidImporter);
         case 'client':
           return 'd8799fd8799fd8799f4973696465636861696ed8799f0103ff1b00004e94914f00001b0006722feb7b00001b0000008bb2c97000d8799f0000ffd8799f001a00036d40ff9fd8799fd8799f010001014100ffd8799f9f0001ff1821040c4001ff0000d87980ffd8799fd8799f010001014100ffd8799f9f0001ff182001014001ff0000d87980ffffffa1d8799f001a00036d40ffd8799f1b17c0d2ad0913b05958202800ed0dcc0a263ab5e6ede7846ef368dd7e3218d0d749e0965fced0c5294667d8799f58207cddffb29294833fc977e362d42da7c329e5de8844d0e9cd4c28909cb0e7284cffffffd8799f581cd8eb6002f13ddcedc0eaea14c1de735ef8bcbd406994e92f8719a78e5819ce52cefc337632623d13194c25eb90c346d13c6cf2c9db6436ffff';
+        case 'mintChannelRedeemer':
+          const MintRedeemerData = {
+            ChanOpenInit: {
+              handler_token: {
+                policyId: '11d98f7566bb47cd0bd738390dd8fa748167206013059a26000334b1',
+                name: '68616e646c6572',
+              },
+            },
+          };
+          return await encodeMintChannelRedeemer(MintRedeemerData as MintChannelRedeemer, mockLucidImporter);
         default:
           return '';
       }
     }),
     getHandlerTokenUnit: jest.fn().mockImplementation(() => ''),
     getChannelTokenUnit: jest.fn().mockImplementation(() => ''),
-    getConnectionTokenUnit: jest.fn().mockImplementation(() => ''),
+    getConnectionTokenUnit: (connectionSequence: string) => {
+      return [
+        'ffd279f2b8bb524d317a1a4abcda69c5dc5979c0d10a4fd7b0a4a578',
+        '39db5e79db50ec7a52602e7a965e710e2c935bcf239b722030',
+      ];
+    },
     getClientPolicyId: jest.fn().mockImplementation(() => ''),
     getChannelPolicyId: jest.fn().mockImplementation(() => ''),
     getConnectionPolicyId: jest.fn().mockImplementation(() => ''),
@@ -162,7 +222,7 @@ describe('TxController - Client', () => {
     it('should call channel open init successfully', async () => {
       const data: MsgChannelOpenInitResponse = await controller.ChannelOpenInit(request);
       expect(data.unsigned_tx).toBeDefined;
-      expect(data.channel_id).toBe(convertString2Hex(CHANNEL_ID_PREFIX + '-' + '5'));
+      expect(data.channel_id).toBe(convertString2Hex(CHANNEL_ID_PREFIX + '-' + '0'));
       expect(data.version).toBeDefined;
     });
     it('should return error if signer is null', async () => {
