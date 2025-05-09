@@ -96,6 +96,8 @@ validator spend_transfer_module(
   }
 }
 
+// Verifies the expected amount is added/subtracted from the input,
+// preventing dust attack from happening
 fn validate_output_amount(
   locked_input: Input,
   output: Output,
