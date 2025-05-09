@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Spend, Transaction}
+use cardano/transaction.{Input, NoDatum, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
@@ -43,6 +43,7 @@ validator mint_port {
     expect [module_output] =
       outputs
         |> transaction.find_script_outputs(spend_module_script_hash)
+    expect NoDatum = module_output.datum
     and {
       valid_handler_operator,
       auth.mint_auth_token(mint, port_token),
