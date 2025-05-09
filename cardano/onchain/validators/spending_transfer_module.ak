@@ -5,7 +5,7 @@ use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/transaction.{
-  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
 }
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
@@ -64,6 +64,8 @@ validator spend_transfer_module(
         [port_token, module_token],
       )
     trace @"spend_transfer_module: token is remained"
+
+    expect NoDatum = updated_output.datum
 
     when redeemer is {
       Callback(cb) ->
