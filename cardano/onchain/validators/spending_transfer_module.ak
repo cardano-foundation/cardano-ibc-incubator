@@ -12,7 +12,6 @@ use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
-use ibc/apps/transfer/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
@@ -49,7 +48,7 @@ validator spend_transfer_module(
   voucher_minting_policy_id: PolicyId,
 ) {
   spend(
-    _datum: Option<TransferModuleDatum>,
+    _datum: Option<Data>,
     redeemer: IBCModuleRedeemer,
     spent_output_ref: OutputReference,
     transaction: Transaction,
