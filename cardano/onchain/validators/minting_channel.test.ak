@@ -707,7 +707,7 @@ test succeed_chan_open_try() {
   )
 }
 
-test fail_chan_open_try() fail {
+test fail_chan_open_try_invalid_datum() fail {
   let mock_data = setup()
 
   //========================arrange inputs=======================
