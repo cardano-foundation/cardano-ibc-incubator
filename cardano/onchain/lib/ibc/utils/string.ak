@@ -1,5 +1,4 @@
 use aiken/builtin
-use aiken/collection/list
 use aiken/primitive/bytearray
 use aiken/primitive/string
 
@@ -36,77 +35,100 @@ fn trim_right(str: ByteArray) -> ByteArray {
   }
 }
 
-/// split the string in ByteArray by a separator character
 pub fn split(str: ByteArray, sep: Int) -> List<ByteArray> {
   // valid 1 bytes utf-8 character
   expect 0 <= sep && sep <= 127
+  do_split(str, sep, bytearray.length(str), 0, identity)
+}
 
-  let str_len = bytearray.length(str)
-  if str_len == 0 {
-    [""]
+fn do_split(
+  str: ByteArray,
+  sep: Int,
+  len: Int,
+  i: Int,
+  return: fn(List<ByteArray>) -> a,
+) -> a {
+  if i >= len {
+    return([str])
   } else {
-    let res =
-      bytearray.reduce(
-        str,
-        ([], 0, 0),
-        fn(acc, cur_char) {
-          if cur_char == sep {
-            if acc.3rd == str_len - 1 {
-              (
-                ["", bytearray.slice(str, acc.2nd, acc.3rd - 1), ..acc.1st],
-                acc.3rd + 1,
-                acc.3rd + 1,
-              )
-            } else {
-              (
-                [bytearray.slice(str, acc.2nd, acc.3rd - 1), ..acc.1st],
-                acc.3rd + 1,
-                acc.3rd + 1,
-              )
-            }
-          } else if acc.3rd == str_len - 1 {
-            ([bytearray.slice(str, acc.2nd, acc.3rd), ..acc.1st], 0, 0)
-          } else {
-            (acc.1st, acc.2nd, acc.3rd + 1)
-          }
+    if bytearray.at(str, i) == sep {
+      do_split(
+        bytearray.drop(str, i + 1),
+        sep,
+        len - i - 1,
+        0,
+        fn(result) {
+          return(
+            [
+              if i > 0 {
+                bytearray.slice(str, 0, i - 1)
+              } else {
+                ""
+              },
+              ..result
+            ],
+          )
         },
       )
-
-    list.reverse(res.1st)
+    } else {
+      do_split(str, sep, len, i + 1, return)
+    }
   }
 }
 
 pub fn hex_string_to_bytes(str: ByteArray) -> Option<ByteArray> {
-  if bytearray.length(str) % 2 == 0 {
-    let res =
-      bytearray.foldr(
-        str,
-        Some((#"", None)),
-        fn(cur_char, acc) {
-          when acc is {
-            Some(acc_val) ->
-              when hex_char_to_dec(cur_char) is {
-                Some(char_val) ->
-                  when acc_val.2nd is {
-                    Some(prev_val) -> {
-                      let byte = char_val * 16 + prev_val
-                      Some((bytearray.push(acc_val.1st, byte), None))
-                    }
-                    None -> Some((acc_val.1st, Some(char_val)))
-                  }
-                None -> None
-              }
-            None -> None
-          }
-        },
-      )
-
-    when res is {
-      Some((bytes, _)) -> Some(bytes)
-      None -> None
-    }
+  let len = bytearray.length(str)
+  if len % 2 == 0 {
+    do_hex_string_to_bytes(Some, None, str, len, 0)
   } else {
     None
+  }
+}
+
+fn do_hex_string_to_bytes(
+  ok: fn(ByteArray) -> a,
+  ko: a,
+  str: ByteArray,
+  len: Int,
+  i: Int,
+) -> a {
+  if i >= len {
+    ok("")
+  } else {
+    let msb <-
+      decode_hex_digit(_, ko, bytearray.at(str, i))
+    let lsb <-
+      decode_hex_digit(_, ko, bytearray.at(str, i + 1))
+    let byte = msb * 16 + lsb
+    do_hex_string_to_bytes(
+      fn(accum) { ok(bytearray.push(accum, byte)) },
+      ko,
+      str,
+      len,
+      i + 2,
+    )
+  }
+}
+
+// NOTE: The constant is evaluated at compile-time, so constructing the lookup table is cheap.
+const hex_lookup_table =
+  "------------------------------------------------"
+    |> bytearray.concat(#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    |> bytearray.concat("-------")
+    |> bytearray.concat(#[10, 11, 12, 13, 14, 15])
+    |> bytearray.concat("--------------------------")
+    |> bytearray.concat(#[10, 11, 12, 13, 14, 15])
+
+fn decode_hex_digit(ok: fn(Int) -> a, ko: a, char: Int) -> a {
+  if char > 102 {
+    ko
+  } else {
+    let digit = bytearray.at(hex_lookup_table, char)
+    if digit == 0x2d {
+      ko
+    } else {
+      ok(digit)
+    }
   }
 }
 
@@ -129,18 +151,6 @@ pub fn is_uint_string(n: ByteArray) -> Bool {
       True,
       fn(byte, acc) { acc && byte >= 0x30 && byte <= 0x39 },
     )
-  }
-}
-
-fn hex_char_to_dec(char: Int) -> Option<Int> {
-  if 97 <= char && char <= 102 {
-    Some(char - 87)
-  } else if 65 <= char && char <= 70 {
-    Some(char - 55)
-  } else if 48 <= char && char <= 57 {
-    Some(char - 48)
-  } else {
-    None
   }
 }
 
