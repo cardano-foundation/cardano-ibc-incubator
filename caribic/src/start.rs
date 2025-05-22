@@ -216,25 +216,54 @@ pub async fn start_local_cardano_network(
     Ok(())
 }
 
-pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn deploy_contracts(
+    project_root_path: &Path,
+    clean: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
     };
 
-    log_or_show_progress(
-        &format!(
-            "{} 🛠️ Building Aiken validators",
-            style("Step 4/5").bold().dim()
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").join("onchain").as_path(),
-        "aiken",
-        Vec::from(["build", "--trace-filter", "all", "--trace-level", "verbose"]),
-        None,
-    )?;
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+
+    if !project_root_path
+        .join("cardano")
+        .join("plutus.json")
+        .as_path()
+        .exists()
+        || clean
+        || is_verbose
+    {
+        log_or_show_progress(
+            &format!(
+                "{} 🛠️ Building Aiken validators",
+                style("Step 4/5").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+
+        let build_args = if is_verbose {
+            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+        } else {
+            vec!["build"]
+        };
+
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            build_args,
+            None,
+        )?;
+    } else {
+        log_or_show_progress(
+            &format!(
+                "{} 🛠️ Aiken validators already built",
+                style("Step 4/5").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+    }
 
     log_or_show_progress(
         &format!(

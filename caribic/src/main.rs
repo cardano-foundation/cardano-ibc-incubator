@@ -78,6 +78,9 @@ enum Commands {
     Start {
         #[arg(value_enum, default_value_t = StartTarget::All)]
         target: StartTarget,
+        /// Cleans up the local environment before starting the services
+        #[arg(long, default_value_t = false)]
+        clean: bool,
     },
     /// Stops a specific bridge component. The component can be either the network, bridge, demo or all. Default is all
     Stop {
@@ -276,9 +279,11 @@ async fn main() {
                 );
             }
         }
-        Commands::Start { target } => {
+        Commands::Start { target, clean } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
+
+            let mut cardano_current_epoch = 0;
 
             if target == StartTarget::Network || target == StartTarget::All {
                 // Start the local Cardano network and its services
@@ -289,26 +294,26 @@ async fn main() {
                         error
                     )),
                 }
-
-                let mut cardano_current_epoch = 0;
                 // Start Mithril if needed
-                match start_mithril(&project_root_path).await {
-                    Ok(current_epoch) => {
-                        cardano_current_epoch = current_epoch;
-                        logger::log("✅ Mithril up and running")
+                if target == StartTarget::All {
+                    match start_mithril(&project_root_path).await {
+                        Ok(current_epoch) => {
+                            cardano_current_epoch = current_epoch;
+                            logger::log("✅ Mithril up and running")
+                        }
+                        Err(error) => network_down_with_error(&format!(
+                            "❌ Failed to start Mithril: {}",
+                            error
+                        )),
                     }
-                    Err(error) => {
-                        network_down_with_error(&format!("❌ Failed to start Mithril: {}", error))
-                    }
+                } else {
+                    // Wait for Mithril to start reading the immutable cardano node files
+                    match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                        Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
+                        Err(error) => {
+                            network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                    }}
                 }
-
-                // Wait for Mithril to start reading the immutable cardano node files
-                match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                    Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
-                    Err(error) => {
-                        network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
-                }}
-
                 logger::log("\n✅ Cardano Network started successfully");
             }
 
@@ -323,7 +328,7 @@ async fn main() {
                 ));
 
                 // Deploy Contracts
-                match deploy_contracts(&project_root_path).await {
+                match deploy_contracts(&project_root_path, clean).await {
                     Ok(_) => logger::log("✅ Cardano Scripts correcty deployed"),
                     Err(error) => bridge_down_with_error(&format!(
                         "❌ Failed to deploy Cardano Scripts: {}",
@@ -341,7 +346,7 @@ async fn main() {
                 ));
 
                 // Start gateway
-                match start_gateway(project_root_path.join("cardano/gateway").as_path()) {
+                match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
                     Ok(_) => logger::log("✅ Gateway started successfully"),
                     Err(error) => {
                         bridge_down_with_error(&format!("❌ Failed to start gateway: {}", error))
@@ -353,6 +358,14 @@ async fn main() {
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
                 logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
+                if target == StartTarget::All {
+                    match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                    Ok(_) => logger::log("✅ Immutable Cardano node files have been created, and Mithril is working as expected"),
+                    Err(error) => {
+                        network_down_with_error(&format!("❌ Mithril failed to read the immutable cardano node files: {}", error))
+                        }
+                    }
+                }
             }
         }
     }
