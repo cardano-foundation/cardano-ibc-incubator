@@ -28,7 +28,7 @@
     "@grpc/proto-loader": "^0.7.10",
     "@harmoniclabs/ouroboros-miniprotocols-ts": "0.0.3",
     "@harmoniclabs/uint8array-utils": "1.0.1",
-    "@lucid-evolution/lucid": "^0.4.18",
+    "@lucid-evolution/lucid": "^0.4.27",
     "@nestjs/axios": "^3.0.1",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^3.1.1",
