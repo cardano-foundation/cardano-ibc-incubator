@@ -19,7 +19,7 @@ import { MithrilModule } from './shared/modules/mithril/mithril.module';
       load: [
         configuration,
         () => ({
-          deployment: require('./deployment/handler.json'),
+          deployment: require(process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json'),
         }),
       ],
       isGlobal: true,

@@ -1,6 +1,6 @@
 services:
   cardano-node:
-    image: ghcr.io/blinklabs-io/cardano-node:10.1.4-1
+    image: ghcr.io/blinklabs-io/cardano-node:10.1.4-3
     container_name: cardano-node
     volumes:
       - ./devnet:/devnet
