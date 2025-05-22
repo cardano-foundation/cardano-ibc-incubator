@@ -53,7 +53,7 @@ export class ConnectionService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-  ) { }
+  ) {}
   /**
    * Processes the connection open init tx.
    * @param data The message containing connection open initiation data.
@@ -139,27 +139,18 @@ export class ConnectionService {
    */
   async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
     this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
-    this.logger.log(this.prettyPrint(data), 'connectionOpenAck');
     try {
-
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
-      this.logger.log(this.prettyPrint(connectionOpenAckOperator), 'connectionOpenAck - connectionOpenAckOperator:');
-      this.logger.log(this.prettyPrint(constructedAddress), 'connectionOpenAck - constructedAddress:');
-
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: TxBuilder = await this.buildUnsignedConnectionOpenAckTx(
         connectionOpenAckOperator,
         constructedAddress,
       );
-      this.logger.log(this.prettyPrint(unsignedConnectionOpenAckTx), unsignedConnectionOpenAckTx);
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
-
-      this.logger.log('post unsignedConnectionOpenAckTxValidTo', 'connectionOpenAck');
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
         .withWallet()
         .complete();
-      this.logger.log('post signedConnectionOpenAckTxCompleted', 'connectionOpenAck');
 
       this.logger.log(signedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
       const response: MsgConnectionOpenAckResponse = {
@@ -398,15 +389,12 @@ export class ConnectionService {
       },
     };
 
-    this.logger.log(this.prettyPrint(spendConnectionRedeemer), 'buildUnsignedConnectionOpenAckTx - spendConnectionRedeemer:')
-
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
       'connection',
     );
 
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
-    this.logger.log(this.prettyPrint(clientSequence), 'buildUnsignedConnectionOpenAckTx - clientSequence:')
     const updatedConnectionDatum: ConnectionDatum = {
       ...connectionDatum,
       state: {
@@ -418,7 +406,6 @@ export class ConnectionService {
         },
       },
     };
-    this.logger.log(this.prettyPrint(updatedConnectionDatum), 'buildUnsignedConnectionOpenAckTx - updatedConnectionDatum:')
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
@@ -458,17 +445,14 @@ export class ConnectionService {
       },
       delay_period: connectionDatum.state.delay_period,
     };
-    this.logger.log(this.prettyPrint(cardanoConnectionEnd), 'buildUnsignedConnectionOpenAckTx - cardanoConnectionEnd:')
 
     const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
       connectionOpenAckOperator.counterpartyClientState,
     );
-    this.logger.log(this.prettyPrint(mithrilClientState), 'buildUnsignedConnectionOpenAckTx - mithrilClientState:')
     const mithrilClientStateAny: Any = {
       type_url: '/ibc.clients.mithril.v1.ClientState',
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
-    this.logger.log(this.prettyPrint(mithrilClientStateAny), 'buildUnsignedConnectionOpenAckTx - mithrilClientStateAny:')
     const verifyProofRedeemer: VerifyProofRedeemer = {
       BatchVerifyMembership: [
         [
@@ -509,17 +493,11 @@ export class ConnectionService {
         ],
       ],
     };
-    this.logger.log(this.prettyPrint(verifyProofRedeemer), 'buildUnsignedConnectionOpenAckTx - verifyProofRedeemer:')
 
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
-    this.logger.log(this.prettyPrint(encodedVerifyProofRedeemer), 'buildUnsignedConnectionOpenAckTx - encodedVerifyProofRedeemer:')
-
-    console.log('verifyProofRedeemer', this.prettyPrint(verifyProofRedeemer));
-    console.log('spentConnectionRedeemer', this.prettyPrint(spendConnectionRedeemer));
-    console.log('updatedConnectionDatum', this.prettyPrint(updatedConnectionDatum));
 
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
       connectionUtxo,
@@ -533,7 +511,6 @@ export class ConnectionService {
       verifyProofRefUTxO,
       encodedVerifyProofRedeemer,
     };
-    console.log('unsignedConnectionOpenAckParams', this.prettyPrint(unsignedConnectionOpenAckParams));
     return this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
   }
   /* istanbul ignore next */
@@ -589,41 +566,4 @@ export class ConnectionService {
       constructedAddress,
     );
   }
-
-
-  private prettyPrint(obj: any, indent = 2): string {
-    const seen = new WeakSet();
-
-    function replacer(key: string, value: any): any {
-      // Handle circular references
-      if (typeof value === 'object' && value !== null) {
-        if (seen.has(value)) {
-          return '[Circular Reference]';
-        }
-        seen.add(value);
-      }
-
-      // Handle Map objects
-      if (value instanceof Map) {
-        const mapEntries: Record<string, any> = {};
-        value.forEach((v, k) => {
-          mapEntries[String(k)] = v;
-        });
-        return { __type: 'Map', entries: mapEntries };
-      }
-
-      // Handle BigInt values
-      if (typeof value === 'bigint') {
-        return { __type: 'BigInt', value: value.toString() };
-      }
-
-      // Handle other special types as needed
-      // ...
-
-      return value;
-    }
-
-    return JSON.stringify(obj, replacer, indent);
-  }
-
 }

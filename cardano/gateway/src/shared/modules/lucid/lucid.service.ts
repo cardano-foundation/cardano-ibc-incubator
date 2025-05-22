@@ -172,7 +172,7 @@ export class LucidService {
     });
   }
   public async decodeDatum<T>(encodedDatum: string, type: CodecType): Promise<T> {
-    console.log("decodeDatum encodedDatum: " + type + ": " + encodedDatum);
+    console.log('decodeDatum encodedDatum: ' + type + ': ' + encodedDatum);
     try {
       switch (type) {
         case 'client':
@@ -194,7 +194,7 @@ export class LucidService {
   }
   // The main encode function
   public async encode<T>(data: T, type: CodecType): Promise<string> {
-    console.log("encode data: " + type + ": " + this.prettyPrint(data));
+    console.log('encode data: ' + type + ': ' + this.prettyPrint(data));
     try {
       switch (type) {
         case 'client':
@@ -381,16 +381,6 @@ export class LucidService {
   public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
-
-    console.log('Building transaction for ConnectionOpenAck');
-    console.log('readFrom', [
-      deploymentConfig.validators.spendConnection.refUtxo,
-      dto.verifyProofRefUTxO,
-      dto.clientUtxo,
-    ]);
-    console.log('collectFrom', [dto.connectionUtxo]);
-    console.log('pay.ToContract', 'dto.connectionTokenUnit', dto.connectionTokenUnit);
-    console.log('mintAssets', 'dto.verifyProofPolicyId', dto.verifyProofPolicyId);
 
     tx.readFrom([deploymentConfig.validators.spendConnection.refUtxo, dto.verifyProofRefUTxO])
       .collectFrom([dto.connectionUtxo], dto.encodedSpendConnectionRedeemer)
@@ -1427,7 +1417,4 @@ export class LucidService {
 
     return JSON.stringify(obj, replacer, indent);
   }
-
-
-
 }
