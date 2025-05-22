@@ -2,7 +2,7 @@
 
 path=demo
 amount1=2000stake
-tokenName=$(cat ../../cardano/deployments/handler.json | jq -r .tokens.mock)
+tokenName=$(cat /root/.config/chain_handler.json | jq -r .tokens.mock)
 amount2=1000-$tokenName
 
 src_chain_name=ibc-0
@@ -14,7 +14,7 @@ dst_chain_name=ibc-1
 dst_port=transfer
 dst_address=cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
 
-alias rly=./bin/rly
+alias rly=/root/bin/rly
 
 src_conn_id=$(rly config show --json | jq -r --arg path "$path" '.paths[$path].src."connection-id"')
 dst_conn_id=$(rly config show --json | jq -r --arg path "$path" '.paths[$path].dst."connection-id"')

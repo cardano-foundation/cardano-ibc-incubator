@@ -138,8 +138,8 @@ export class ConnectionService {
    * @returns A promise resolving to a message response for connection open ack include the unsigned_tx.
    */
   async connectionOpenAck(data: MsgConnectionOpenAck): Promise<MsgConnectionOpenAckResponse> {
+    this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
     try {
-      this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedConnectionOpenAckTx: TxBuilder = await this.buildUnsignedConnectionOpenAckTx(
@@ -147,7 +147,6 @@ export class ConnectionService {
         constructedAddress,
       );
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
-
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
         .withWallet()
@@ -499,6 +498,7 @@ export class ConnectionService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
+
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
       connectionUtxo,
       encodedSpendConnectionRedeemer,

@@ -172,6 +172,7 @@ export class LucidService {
     });
   }
   public async decodeDatum<T>(encodedDatum: string, type: CodecType): Promise<T> {
+    console.log('decodeDatum encodedDatum: ' + type + ': ' + encodedDatum);
     try {
       switch (type) {
         case 'client':
@@ -193,6 +194,7 @@ export class LucidService {
   }
   // The main encode function
   public async encode<T>(data: T, type: CodecType): Promise<string> {
+    console.log('encode data: ' + type + ': ' + this.prettyPrint(data));
     try {
       switch (type) {
         case 'client':
@@ -1379,5 +1381,40 @@ export class LucidService {
       }
     }
     return this.lucid.newTx();
+  }
+
+  private prettyPrint(obj: any, indent = 2): string {
+    const seen = new WeakSet();
+
+    function replacer(key: string, value: any): any {
+      // Handle circular references
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular Reference]';
+        }
+        seen.add(value);
+      }
+
+      // Handle Map objects
+      if (value instanceof Map) {
+        const mapEntries: Record<string, any> = {};
+        value.forEach((v, k) => {
+          mapEntries[String(k)] = v;
+        });
+        return { __type: 'Map', entries: mapEntries };
+      }
+
+      // Handle BigInt values
+      if (typeof value === 'bigint') {
+        return { __type: 'BigInt', value: value.toString() };
+      }
+
+      // Handle other special types as needed
+      // ...
+
+      return value;
+    }
+
+    return JSON.stringify(obj, replacer, indent);
   }
 }

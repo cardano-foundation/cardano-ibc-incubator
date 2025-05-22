@@ -185,7 +185,7 @@ async fn main() {
                     project_root_path.join("relayer/.env.example").as_path(),
                     project_root_path.join("relayer/examples").as_path(),
                     project_root_path
-                        .join("cardano/deployments/handler.json")
+                        .join("cardano/offchain/deployments/handler.json")
                         .as_path(),
                 ) {
                     Ok(_) => logger::log("✅ Relayer started successfully"),
@@ -260,10 +260,12 @@ async fn main() {
                 logger::log("\n❎ Cardano Network successfully");
             } else if target == StopTarget::Demo {
                 stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_cosmos(project_root_path.join("cosmos").as_path());
                 stop_osmosis(osmosis_dir.as_path());
                 logger::log("\n❎ Demo services stopped successfully");
             } else if target == StopTarget::All {
                 stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_cosmos(project_root_path.join("cosmos").as_path());
                 stop_osmosis(osmosis_dir.as_path());
                 bridge_down();
                 network_down();

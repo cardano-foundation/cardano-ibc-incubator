@@ -148,11 +148,6 @@ pub async fn start_local_cardano_network(
     let target_slot: u64 =
         target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
 
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
     if current_epoch < target_epoch {
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.enable_steady_tick(Duration::from_millis(100));
@@ -237,7 +232,7 @@ pub async fn deploy_contracts(project_root_path: &Path) -> Result<(), Box<dyn st
     execute_script(
         project_root_path.join("cardano").join("onchain").as_path(),
         "aiken",
-        Vec::from(["build"]),
+        Vec::from(["build", "--trace-filter", "all", "--trace-level", "verbose"]),
         None,
     )?;
 

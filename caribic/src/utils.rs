@@ -8,7 +8,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
-use std::{collections::HashMap, fs};
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
@@ -18,6 +17,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
+use std::{collections::HashMap, fs};
 use std::{collections::VecDeque, thread};
 use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
@@ -505,6 +505,12 @@ pub fn get_osmosis_dir(project_root: &Path) -> PathBuf {
         .to_path_buf()
 }
 
+// return Some(
+//     String::from_utf8_lossy(&output.stdout)
+//         .split(' ')
+//         .collect::<Vec<_>>()[1]
+//         .to_string(),
+// );
 pub fn extract_tendermint_client_id(output: Output) -> Option<String> {
     if output.status.success() {
         let regex = Regex::new(r#"client_id:\s*ClientId\(\s*"([^"]+)""#).unwrap();
@@ -536,7 +542,7 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
-        
+
         // Get the source and destination paths
         let src_path = entry.path();
         let dst_path = dst.as_ref().join(entry.file_name());
@@ -552,7 +558,7 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
     Ok(())
 }
 
-pub fn query_balance(project_root_path: &Path, address: &str,) -> u64 {
+pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {
     let cardano_dir = project_root_path.join("chains/cardano");
 
     let cardano_cli_args = vec!["compose", "exec", "cardano-node", "cardano-cli"];
@@ -576,10 +582,7 @@ pub fn query_balance(project_root_path: &Path, address: &str,) -> u64 {
     let v: HashMap<String, Value> =
         serde_json::from_str(String::from_utf8(balance).unwrap().as_str()).unwrap();
 
-    v
-        .values()
+    v.values()
         .map(|k| k["value"]["lovelace"].as_u64().unwrap())
         .sum()
-
-    
 }

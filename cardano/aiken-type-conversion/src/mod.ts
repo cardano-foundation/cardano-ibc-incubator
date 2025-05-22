@@ -8,10 +8,16 @@ export function generateType(
   plutusDefinition: PlutusDefinition,
   typeDef: AikenType,
 ): GenType {
-  const path = typeDef.path;
+  const path = getType(typeDef.path);
+
+  let lastPath = "";
+  if (path != null) {
+    const path_parts = path.split("/");
+    lastPath = path_parts[path_parts.length - 1];
+  }
 
   if (path in builtInTypes) {
-    return builtInTypes[typeDef.path];
+    return builtInTypes[lastPath];
   }
 
   if ("dataType" in typeDef) {
@@ -366,6 +372,15 @@ export function generateType(
       };
     }
   }
-
   throw new Error("Type is not recognized");
+}
+
+function getType(path: string) {
+  if (path != null && path.indexOf('/') != -1) {
+    const path_parts = path.split("/");
+    const lastPath = path_parts[path_parts.length - 1];
+    return lastPath;
+  } else {
+    return path;
+  }
 }
