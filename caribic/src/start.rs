@@ -304,25 +304,13 @@ pub async fn deploy_contracts(
         },
     );
 
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
     if handler_json_exists.is_ok() {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-
-        verbose("✅ Successfully deployed the contracts");
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        std::fs::create_dir_all(project_root_path.join("cardano/gateway/src/deployment/"))?;
-        copy(
-            project_root_path.join("cardano/offchain/deployments/handler.json"),
-            project_root_path.join("cardano/gateway/src/deployment/handler.json"),
-            &options,
-        )?;
-
         Ok(())
     } else {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
         Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
     }
 }
@@ -1191,19 +1179,21 @@ pub fn wait_and_start_mithril_genesis(
     Ok(())
 }
 
-pub fn start_gateway(gateway_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
-    copy(
-        gateway_dir.join(".env.example"),
-        gateway_dir.join(".env"),
-        &options,
-    )?;
+pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
+    if (gateway_dir.join(".env").exists() && clean) || !gateway_dir.join(".env").exists() {
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        copy(
+            gateway_dir.join(".env.example"),
+            gateway_dir.join(".env"),
+            &options,
+        )?;
+    }
+
+    let mut script_args = vec!["compose", "up", "-d"];
+    if clean {
+        script_args.push("--build");
+    }
     execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-    execute_script(
-        &gateway_dir,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        None,
-    )?;
+    execute_script(&gateway_dir, "docker", script_args, None)?;
     Ok(())
 }
