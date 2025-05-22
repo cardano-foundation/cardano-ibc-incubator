@@ -317,11 +317,8 @@ export class ClientService {
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    
-    this.logger.log('handlerUtxo: ' + this.prettyPrint(handlerUtxo), "buildUnsignedCreateClientTx");
     // Decode the handler datum from the handler UTXO
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    this.logger.log('handlerDatum: ' + this.prettyPrint(handlerDatum), "buildUnsignedCreateClientTx");
     // Create an updated handler datum with an incremented client sequence
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
@@ -390,41 +387,4 @@ export class ClientService {
       },
     };
   }
-
-  private prettyPrint(obj: any, indent = 2): string {
-    const seen = new WeakSet();
-
-    function replacer(key: string, value: any): any {
-      // Handle circular references
-      if (typeof value === 'object' && value !== null) {
-        if (seen.has(value)) {
-          return '[Circular Reference]';
-        }
-        seen.add(value);
-      }
-
-      // Handle Map objects
-      if (value instanceof Map) {
-        const mapEntries: Record<string, any> = {};
-        value.forEach((v, k) => {
-          mapEntries[String(k)] = v;
-        });
-        return { __type: 'Map', entries: mapEntries };
-      }
-
-      // Handle BigInt values
-      if (typeof value === 'bigint') {
-        return { __type: 'BigInt', value: value.toString() };
-      }
-
-      // Handle other special types as needed
-      // ...
-
-      return value;
-    }
-
-    return JSON.stringify(obj, replacer, indent);
-  }
-
-
 }
