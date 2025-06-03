@@ -43,6 +43,8 @@ validator mint_port {
     expect [module_output] =
       outputs
         |> transaction.find_script_outputs(spend_module_script_hash)
+
+    trace @"mint_port: transfer module output datum": module_output.datum
     expect NoDatum = module_output.datum
     and {
       valid_handler_operator,

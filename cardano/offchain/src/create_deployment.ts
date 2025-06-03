@@ -644,10 +644,7 @@ const deployTransferModule = async (
     )
     .pay.ToContract(
       spendTransferModuleAddress,
-      {
-        kind: "inline",
-        value: Data.void(),
-      },
+      undefined,
       {
         [identifierTokenUnit]: 1n,
         [portTokenUnit]: 1n,
