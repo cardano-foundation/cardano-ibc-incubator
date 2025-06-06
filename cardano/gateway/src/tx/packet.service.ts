@@ -86,6 +86,42 @@ export class PacketService {
    * - yes => recv_unescrow
    * - no => recv_mint
    */
+
+  private prettyPrint(obj: any, indent = 2): string {
+    const seen = new WeakSet();
+
+    function replacer(key: string, value: any): any {
+      // Handle circular references
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular Reference]';
+        }
+        seen.add(value);
+      }
+
+      // Handle Map objects
+      if (value instanceof Map) {
+        const mapEntries: Record<string, any> = {};
+        value.forEach((v, k) => {
+          mapEntries[String(k)] = v;
+        });
+        return { __type: 'Map', entries: mapEntries };
+      }
+
+      // Handle BigInt values
+      if (typeof value === 'bigint') {
+        return { __type: 'BigInt', value: value.toString() };
+      }
+
+      // Handle other special types as needed
+      // ...
+
+      return value;
+    }
+
+    return JSON.stringify(obj, replacer, indent);
+  }
+
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
       this.logger.log('RecvPacket data: ', data);
@@ -1126,6 +1162,9 @@ export class PacketService {
           sendPacketRefUTxO,
           channelToken,
         };
+
+        this.prettyPrint(unsignedSendPacketParams);
+
         return this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
 
       case Order.Ordered:
