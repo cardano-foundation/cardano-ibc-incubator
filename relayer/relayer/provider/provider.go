@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"github.com/cometbft/cometbft/proto/tendermint/crypto"
+	ctypes "github.com/cometbft/cometbft/rpc/core/types"
 	"github.com/cometbft/cometbft/types"
+	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/gogoproto/proto"
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
@@ -14,10 +18,13 @@ import (
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tendermint "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
+	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type BroadcastMode string
@@ -180,9 +187,185 @@ type ICQProof struct {
 	Height   int64
 }
 
+// MsgCreateClient defines a message to create an IBC client
+type MsgMainCreateClient struct {
+	// light client state
+	ClientState any
+	// consensus state associated with the client that corresponds to a given
+	// height.
+	ConsensusState any
+	// signer address
+	Signer string `protobuf:"bytes,3,opt,name=signer,proto3" json:"signer,omitempty"`
+}
+
 // loggableEvents is an unexported wrapper type for a slice of RelayerEvent,
 // to satisfy the zapcore.ArrayMarshaler interface.
 type loggableEvents []RelayerEvent
+
+type MsgGetClientStateResponse struct {
+	ChainId             string
+	LatestHeight        clienttypes.Height
+	FrozenHeight        clienttypes.Height
+	ValidAfter          uint64
+	GenesisTime         time.Time
+	CurrentEpoch        uint64
+	CurrentValidatorSet []pbclientstruct.Validator
+	NextValidatorSet    []pbclientstruct.Validator
+	EpochLength         uint64
+	SlotPerKesPeriod    uint64
+	TrustingPeriod      uint64
+	UpgradePath         []string
+}
+
+func (m MsgGetClientStateResponse) Reset() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) String() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) ProtoMessage() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) ClientType() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) GetLatestHeight() ibcexported.Height {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) Validate() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) Status(ctx sdk.Context, clientStore sdk.KVStore, cdc codec.BinaryCodec) ibcexported.Status {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) ExportMetadata(clientStore sdk.KVStore) []ibcexported.GenesisMetadata {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) ZeroCustomFields() ibcexported.ClientState {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) GetTimestampAtHeight(ctx sdk.Context, clientStore sdk.KVStore, cdc codec.BinaryCodec, height ibcexported.Height) (uint64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, consensusState ibcexported.ConsensusState) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) VerifyMembership(ctx sdk.Context, clientStore sdk.KVStore, cdc codec.BinaryCodec, height ibcexported.Height, delayTimePeriod uint64, delayBlockPeriod uint64, proof []byte, path ibcexported.Path, value []byte) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) VerifyNonMembership(ctx sdk.Context, clientStore sdk.KVStore, cdc codec.BinaryCodec, height ibcexported.Height, delayTimePeriod uint64, delayBlockPeriod uint64, proof []byte, path ibcexported.Path) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) VerifyClientMessage(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg ibcexported.ClientMessage) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg ibcexported.ClientMessage) bool {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg ibcexported.ClientMessage) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) UpdateState(ctx sdk.Context, cdc codec.BinaryCodec, clientStore sdk.KVStore, clientMsg ibcexported.ClientMessage) []ibcexported.Height {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) CheckSubstituteAndUpdateState(ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore, substituteClientStore sdk.KVStore, substituteClient ibcexported.ClientState) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetClientStateResponse) VerifyUpgradeAndUpdateState(ctx sdk.Context, cdc codec.BinaryCodec, store sdk.KVStore, newClient ibcexported.ClientState, newConsState ibcexported.ConsensusState, proofUpgradeClient, proofUpgradeConsState []byte) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func toCommonAny(msg proto.Message) (*anypb.Any, error) {
+	protoData, err := proto.Marshal(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	return &anypb.Any{
+		Value: protoData,
+	}, nil
+}
+
+type MsgGetLastHeightResponse struct {
+	Height int64
+}
+
+type MsgGetConsensusStateResponse struct {
+	Slot uint64
+	Time time.Time
+}
+
+func (m MsgGetConsensusStateResponse) Reset() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetConsensusStateResponse) String() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetConsensusStateResponse) ProtoMessage() {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetConsensusStateResponse) ClientType() string {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetConsensusStateResponse) GetTimestamp() uint64 {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m MsgGetConsensusStateResponse) ValidateBasic() error {
+	//TODO implement me
+	panic("implement me")
+}
+
+type MSgCreateClientRespone struct {
+	client    MsgGetClientStateResponse
+	consensus MsgGetConsensusStateResponse
+}
 
 // MarshalLogObject satisfies the zapcore.ObjectMarshaler interface.
 func (e RelayerEvent) MarshalLogObject(enc zapcore.ObjectEncoder) error {
@@ -283,6 +466,8 @@ type ChainProvider interface {
 	// i.e. the chain where the MsgTransfer was committed.
 	MsgTimeout(msgTransfer PacketInfo, proofUnreceived PacketProof) (RelayerMessage, error)
 
+	MsgTimeoutRefresh(channelId string) (RelayerMessage, error)
+
 	// MsgTimeoutOnClose takes the packet information from a MsgTransfer along
 	// with the packet receipt to prove that the packet was never relayed,
 	// i.e. that the MsgRecvPacket was never written to the counterparty chain,
@@ -381,8 +566,8 @@ type ChainProvider interface {
 
 	// Query heavy relay methods. Only used for flushing old packets.
 
-	RelayPacketFromSequence(ctx context.Context, src ChainProvider, srch, dsth, seq uint64, srcChanID, srcPortID string, order chantypes.Order) (RelayerMessage, RelayerMessage, error)
-	AcknowledgementFromSequence(ctx context.Context, dst ChainProvider, dsth, seq uint64, dstChanID, dstPortID, srcChanID, srcPortID string) (RelayerMessage, error)
+	RelayPacketFromSequence(ctx context.Context, src ChainProvider, srch, dsth, seq uint64, srcChanID, srcPortID string, order chantypes.Order, srcClientId, dstClientId string) (RelayerMessage, RelayerMessage, error)
+	AcknowledgementFromSequence(ctx context.Context, dst ChainProvider, dsth, seq uint64, dstChanID, dstPortID, srcChanID, srcPortID string) (RelayerMessage, uint64, error)
 
 	SendMessage(ctx context.Context, msg RelayerMessage, memo string) (*RelayerTxResponse, bool, error)
 	SendMessages(ctx context.Context, msgs []RelayerMessage, memo string) (*RelayerTxResponse, bool, error)
@@ -407,8 +592,6 @@ type ChainProvider interface {
 	TrustingPeriod(ctx context.Context) (time.Duration, error)
 	WaitForNBlocks(ctx context.Context, n int64) error
 	Sprint(toPrint proto.Message) (string, error)
-
-	SetRpcAddr(rpcAddr string) error
 }
 
 // Do we need intermediate types? i.e. can we use the SDK types for both substrate and cosmos?
@@ -418,9 +601,18 @@ type QueryProvider interface {
 	QueryTx(ctx context.Context, hashHex string) (*RelayerTxResponse, error)
 	QueryTxs(ctx context.Context, page, limit int, events []string) ([]*RelayerTxResponse, error)
 	QueryLatestHeight(ctx context.Context) (int64, error)
+	QueryCardanoLatestHeight(ctx context.Context) (int64, error)
 
 	// QueryIBCHeader returns the IBC compatible block header at a specific height.
 	QueryIBCHeader(ctx context.Context, h int64) (IBCHeader, error)
+
+	// QueryIBCMithrilHeader return IBC compatible block header from mithril
+	QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (IBCHeader, error)
+
+	// QueryBlockData from cardano
+	QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error)
+	// Query block result from cardano
+	QueryBlockResults(ctx context.Context, h int64) (*ctypes.ResultBlockResults, error)
 
 	// query packet info for sequence
 	QuerySendPacket(ctx context.Context, srcChanID, srcPortID string, sequence uint64) (PacketInfo, error)
@@ -434,6 +626,7 @@ type QueryProvider interface {
 	QueryUnbondingPeriod(context.Context) (time.Duration, error)
 
 	// ics 02 - client
+	QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error)
 	QueryClientState(ctx context.Context, height int64, clientid string) (ibcexported.ClientState, error)
 	QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error)
 	QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error)
@@ -573,4 +766,26 @@ func (h TendermintIBCHeader) TMHeader() (*tendermint.Header, error) {
 type ExtensionOption struct {
 	Type  string `json:"type"`
 	Value string `json:"value"`
+}
+
+type CardanoIBCHeader struct {
+	CardanoBlockData *module.BlockData
+}
+
+func (h CardanoIBCHeader) Height() uint64 {
+	return uint64(h.CardanoBlockData.Height.RevisionHeight)
+}
+
+func (h CardanoIBCHeader) ConsensusState() ibcexported.ConsensusState {
+	return &tmclient.ConsensusState{
+		Timestamp: time.Unix(int64(h.CardanoBlockData.Timestamp), 0),
+		Root:      commitmenttypes.NewMerkleRoot([]byte(h.CardanoBlockData.Hash)),
+		// TODO: fill data
+		NextValidatorsHash: []byte(""),
+	}
+}
+
+func (h CardanoIBCHeader) NextValidatorsHash() []byte {
+	// TODO: fill data
+	return []byte("")
 }

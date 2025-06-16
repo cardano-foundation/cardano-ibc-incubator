@@ -4,7 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	//"github.com/cardano/relayer/v1/chains/cosmos"
 	"github.com/spf13/cobra"
 )
 

@@ -28,10 +28,10 @@ BUILD_FLAGS := -ldflags '$(ldflags)'
 build: go.sum
 ifeq ($(OS),Windows_NT)
 	@echo "building rly binary..."
-	@go build -mod=readonly $(BUILD_FLAGS) -o build/rly.exe main.go
+	@go build -mod=readonly $(BUILD_FLAGS) -o bin/rly.exe main.go
 else
 	@echo "building rly binary..."
-	@go build  $(BUILD_FLAGS) -o build/rly main.go
+	@go build  $(BUILD_FLAGS) -o bin/rly main.go
 endif
 
 build-zip: go.sum
@@ -53,6 +53,9 @@ build-akash-docker:
 
 build-osmosis-docker:
 	docker build -t osmosis-labs/osmosis:$(OSMOSIS_VERSION) --build-arg VERSION=$(OSMOSIS_VERSION) -f ./docker/osmosis/Dockerfile .
+
+build-binary-file:
+	go build -o bin/rly
 
 ###############################################################################
 # Tests / CI

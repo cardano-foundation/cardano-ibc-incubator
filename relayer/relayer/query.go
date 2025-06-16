@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -25,6 +25,17 @@ func QueryLatestHeights(ctx context.Context, src, dst *Chain) (srch, dsth int64,
 		srch, err = src.ChainProvider.QueryLatestHeight(egCtx)
 		return err
 	})
+	eg.Go(func() error {
+		var err error
+		dsth, err = dst.ChainProvider.QueryLatestHeight(egCtx)
+		return err
+	})
+	err = eg.Wait()
+	return
+}
+
+func QueryCosmosLatestHeight(ctx context.Context, dst *Chain) (dsth int64, err error) {
+	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
 		dsth, err = dst.ChainProvider.QueryLatestHeight(egCtx)
@@ -220,6 +231,17 @@ func QueryIBCHeaders(ctx context.Context, src, dst *Chain, srch, dsth int64) (sr
 		srcUpdateHeader, err = src.ChainProvider.QueryIBCHeader(egCtx, srch)
 		return err
 	})
+	eg.Go(func() error {
+		var err error
+		dstUpdateHeader, err = dst.ChainProvider.QueryIBCHeader(egCtx, dsth)
+		return err
+	})
+	err = eg.Wait()
+	return
+}
+
+func QueryIBCHeader(ctx context.Context, dst *Chain, dsth int64) (dstUpdateHeader provider.IBCHeader, err error) {
+	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		var err error
 		dstUpdateHeader, err = dst.ChainProvider.QueryIBCHeader(egCtx, dsth)

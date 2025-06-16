@@ -3,6 +3,7 @@ package cosmos
 import (
 	"errors"
 	"reflect"
+	"time"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -10,9 +11,9 @@ import (
 	feetypes "github.com/cosmos/ibc-go/v7/modules/apps/29-fee/types"
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -124,9 +125,10 @@ func (cc *CosmosProvider) LogSuccessTx(res *sdk.TxResponse, msgs []provider.Rela
 		zap.Int64("height", res.Height),
 		msgTypesField(msgs),
 		zap.String("tx_hash", res.TxHash),
+		zap.Time("time", time.Now()),
 	)
 
-	// Log the successful transaction with fields
+	// Log the succesful transaction with fields
 	cc.log.Info(
 		"Successful transaction",
 		fields...,

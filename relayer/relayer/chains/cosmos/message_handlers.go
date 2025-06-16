@@ -4,27 +4,26 @@ import (
 	"context"
 	"encoding/hex"
 
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/chains"
-	"github.com/cosmos/relayer/v2/relayer/processor"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-func (ccp *CosmosChainProcessor) handleMessage(ctx context.Context, m chains.IbcMessage, c processor.IBCMessagesCache) {
-	switch t := m.Info.(type) {
-	case *chains.PacketInfo:
-		ccp.handlePacketMessage(m.EventType, provider.PacketInfo(*t), c)
-	case *chains.ChannelInfo:
-		ccp.handleChannelMessage(m.EventType, provider.ChannelInfo(*t), c)
-	case *chains.ConnectionInfo:
-		ccp.handleConnectionMessage(m.EventType, provider.ConnectionInfo(*t), c)
-	case *chains.ClientInfo:
-		ccp.handleClientMessage(ctx, m.EventType, *t)
-	case *chains.ClientICQInfo:
-		ccp.handleClientICQMessage(m.EventType, provider.ClientICQInfo(*t), c)
+func (ccp *CosmosChainProcessor) handleMessage(ctx context.Context, m ibcMessage, c processor.IBCMessagesCache) {
+	switch t := m.info.(type) {
+	case *packetInfo:
+		ccp.handlePacketMessage(m.eventType, provider.PacketInfo(*t), c)
+	case *channelInfo:
+		ccp.handleChannelMessage(m.eventType, provider.ChannelInfo(*t), c)
+	case *connectionInfo:
+		ccp.handleConnectionMessage(m.eventType, provider.ConnectionInfo(*t), c)
+	case *clientInfo:
+		ccp.handleClientMessage(ctx, m.eventType, *t)
+	case *clientICQInfo:
+		ccp.handleClientICQMessage(m.eventType, provider.ClientICQInfo(*t), c)
 	}
 }
 
@@ -88,7 +87,7 @@ func (ccp *CosmosChainProcessor) handleChannelMessage(eventType string, ci provi
 		case chantypes.EventTypeChannelOpenAck, chantypes.EventTypeChannelOpenConfirm:
 			ccp.channelStateCache.SetOpen(channelKey, true, ci.Order)
 			ccp.logChannelOpenMessage(eventType, ci)
-		case chantypes.EventTypeChannelClosed, chantypes.EventTypeChannelCloseConfirm:
+		case chantypes.EventTypeChannelCloseConfirm:
 			for k := range ccp.channelStateCache {
 				if k.PortID == ci.PortID && k.ChannelID == ci.ChannelID {
 					ccp.channelStateCache.SetOpen(channelKey, false, ci.Order)
@@ -133,9 +132,9 @@ func (ccp *CosmosChainProcessor) handleConnectionMessage(eventType string, ci pr
 	ccp.logConnectionMessage(eventType, ci)
 }
 
-func (ccp *CosmosChainProcessor) handleClientMessage(ctx context.Context, eventType string, ci chains.ClientInfo) {
+func (ccp *CosmosChainProcessor) handleClientMessage(ctx context.Context, eventType string, ci clientInfo) {
 	ccp.latestClientState.update(ctx, ci, ccp)
-	ccp.logObservedIBCMessage(eventType, zap.String("client_id", ci.ClientID))
+	ccp.logObservedIBCMessage(eventType, zap.String("client_id", ci.clientID))
 }
 
 func (ccp *CosmosChainProcessor) handleClientICQMessage(

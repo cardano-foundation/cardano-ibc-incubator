@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cosmos/relayer/v2/cregistry"
-	"github.com/cosmos/relayer/v2/relayer"
-	"github.com/cosmos/relayer/v2/relayer/provider"
+	"github.com/cardano/relayer/v1/cregistry"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -40,31 +40,7 @@ func chainsCmd(a *appState) *cobra.Command {
 		chainsAddrCmd(a),
 		chainsAddDirCmd(a),
 		cmdChainsConfigure(a),
-		cmdChainsUseRpcAddr(a),
 	)
-
-	return cmd
-}
-
-func cmdChainsUseRpcAddr(a *appState) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:     "set-rpc-addr chain_name  valid_rpc_url",
-		Aliases: []string{"rpc"},
-		Short:   "Sets  chain's rpc address",
-		Args:    withUsage(cobra.ExactArgs(2)),
-		Example: strings.TrimSpace(fmt.Sprintf(`
-$ %s chains set-rpc-addr ibc-0 https://abc.xyz.com:443
-$ %s ch set-rpc-addr ibc-0 https://abc.xyz.com:443`, appName, appName)),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			chainName := args[0]
-			rpc_address := args[1]
-			if !isValidURL(rpc_address) {
-				return invalidRpcAddr(rpc_address)
-			}
-
-			return a.useRpcAddr(chainName, rpc_address)
-		},
-	}
 
 	return cmd
 }
@@ -536,9 +512,4 @@ func addChainsFromRegistry(ctx context.Context, a *appState, forceAdd, testnet b
 		zap.Any("already existed", existed),
 	)
 	return nil
-}
-
-func isValidURL(str string) bool {
-	u, err := url.Parse(str)
-	return err == nil && u.Scheme != "" && u.Host != ""
 }

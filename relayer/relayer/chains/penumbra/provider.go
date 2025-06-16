@@ -8,6 +8,12 @@ import (
 	"path"
 	"time"
 
+	pbclientstruct "github.com/cardano/proto-types/go/sidechain/x/clients/cardano"
+	module2 "github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+	coretypes "github.com/cometbft/cometbft/rpc/core/types"
+
+	"github.com/cardano/relayer/v1/relayer/codecs/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	provtypes "github.com/cometbft/cometbft/light/provider"
 	prov "github.com/cometbft/cometbft/light/provider/http"
 	rpcclient "github.com/cometbft/cometbft/rpc/client"
@@ -22,8 +28,6 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-	"github.com/cosmos/relayer/v2/relayer/codecs/ethermint"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/mod/semver"
 )
@@ -148,6 +152,46 @@ type PenumbraProvider struct {
 	cometLegacyEncoding bool
 }
 
+func (cc *PenumbraProvider) QueryBlockResults(ctx context.Context, h int64) (*coretypes.ResultBlockResults, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryBlockData(ctx context.Context, h int64) (*module2.BlockData, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryCardanoLatestHeight(ctx context.Context) (int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryCardanoState(ctx context.Context, height int64) (ibcexported.ClientState, ibcexported.ConsensusState, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryMainLatestHeight(ctx context.Context) (int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryMainClientState(ctx context.Context, height int64) (provider.MsgGetClientStateResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) QueryMainConsensusState(ctx context.Context, height int64) (provider.MsgGetConsensusStateResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *PenumbraProvider) MsgCreateMainClient(clientState *pbclientstruct.ClientState, consensusState *pbclientstruct.ConsensusState) (provider.RelayerMessage, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (cc *PenumbraProvider) ProviderConfig() provider.ProviderConfig {
 	return cc.PCfg
 }
@@ -225,13 +269,6 @@ func (cc *PenumbraProvider) Sprint(toPrint proto.Message) (string, error) {
 		return "", err
 	}
 	return string(out), nil
-}
-
-// SetPCAddr sets the rpc-addr for the chain.
-// It will fail if the rpcAddr is invalid(not a url).
-func (cc *PenumbraProvider) SetRpcAddr(rpcAddr string) error {
-	cc.PCfg.RPCAddr = rpcAddr
-	return nil
 }
 
 // Init initializes the keystore, RPC client, amd light client provider.

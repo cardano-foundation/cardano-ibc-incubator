@@ -30,10 +30,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cosmos/relayer/v2/relayer"
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
-	"github.com/cosmos/relayer/v2/relayer/chains/penumbra"
-	"github.com/cosmos/relayer/v2/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/chains/cardano"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/chains/penumbra"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -377,6 +378,7 @@ func (pcw *ProviderConfigWrapper) UnmarshalJSON(data []byte) error {
 	customTypes := map[string]reflect.Type{
 		"cosmos":   reflect.TypeOf(cosmos.CosmosProviderConfig{}),
 		"penumbra": reflect.TypeOf(penumbra.PenumbraProviderConfig{}),
+		"cardano":  reflect.TypeOf(cardano.CardanoProviderConfig{}),
 	}
 	val, err := UnmarshalJSONProviderConfig(data, customTypes)
 	if err != nil {
@@ -435,6 +437,8 @@ func (iw *ProviderConfigYAMLWrapper) UnmarshalYAML(n *yaml.Node) error {
 		iw.Value = new(cosmos.CosmosProviderConfig)
 	case "penumbra":
 		iw.Value = new(penumbra.PenumbraProviderConfig)
+	case "cardano":
+		iw.Value = new(cardano.CardanoProviderConfig)
 	default:
 		return fmt.Errorf("%s is an invalid chain type, check your config file", iw.Type)
 	}

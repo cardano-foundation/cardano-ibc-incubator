@@ -8,7 +8,7 @@ import (
 	types "github.com/cosmos/cosmos-sdk/codec/types"
 	proto "github.com/cosmos/gogoproto/proto"
 	types1 "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
-	v1alpha1 "github.com/cosmos/relayer/v2/relayer/chains/penumbra/core/crypto/v1alpha1"
+	v1alpha1 "github.com/cardano/relayer/v1/relayer/chains/penumbra/core/crypto/v1alpha1"
 	io "io"
 	math "math"
 	math_bits "math/bits"

@@ -8,16 +8,15 @@ import (
 	"time"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/processor"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 
 	ctypes "github.com/cometbft/cometbft/rpc/core/types"
-	"github.com/cosmos/relayer/v2/relayer/chains"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,11 +56,7 @@ type CosmosChainProcessor struct {
 	parsedGasPrices *sdk.DecCoins
 }
 
-func NewCosmosChainProcessor(
-	log *zap.Logger,
-	provider *CosmosProvider,
-	metrics *processor.PrometheusMetrics,
-) *CosmosChainProcessor {
+func NewCosmosChainProcessor(log *zap.Logger, provider *CosmosProvider, metrics *processor.PrometheusMetrics) *CosmosChainProcessor {
 	return &CosmosChainProcessor{
 		log:                  log.With(zap.String("chain_name", provider.ChainName()), zap.String("chain_id", provider.ChainId())),
 		chainProvider:        provider,
@@ -90,22 +85,22 @@ const (
 // latestClientState is a map of clientID to the latest clientInfo for that client.
 type latestClientState map[string]provider.ClientState
 
-func (l latestClientState) update(ctx context.Context, clientInfo chains.ClientInfo, ccp *CosmosChainProcessor) {
-	existingClientInfo, ok := l[clientInfo.ClientID]
+func (l latestClientState) update(ctx context.Context, clientInfo clientInfo, ccp *CosmosChainProcessor) {
+	existingClientInfo, ok := l[clientInfo.clientID]
 	var trustingPeriod time.Duration
 	if ok {
-		if clientInfo.ConsensusHeight.LT(existingClientInfo.ConsensusHeight) {
+		if clientInfo.consensusHeight.LT(existingClientInfo.ConsensusHeight) {
 			// height is less than latest, so no-op
 			return
 		}
 		trustingPeriod = existingClientInfo.TrustingPeriod
 	}
 	if trustingPeriod == 0 {
-		cs, err := ccp.chainProvider.queryTMClientState(ctx, 0, clientInfo.ClientID)
+		cs, err := ccp.chainProvider.queryTMClientState(ctx, 0, clientInfo.clientID)
 		if err != nil {
 			ccp.log.Error(
 				"Failed to query client state to get trusting period",
-				zap.String("client_id", clientInfo.ClientID),
+				zap.String("client_id", clientInfo.clientID),
 				zap.Error(err),
 			)
 			return
@@ -115,7 +110,7 @@ func (l latestClientState) update(ctx context.Context, clientInfo chains.ClientI
 	clientState := clientInfo.ClientState(trustingPeriod)
 
 	// update latest if no existing state or provided consensus height is newer
-	l[clientInfo.ClientID] = clientState
+	l[clientInfo.clientID] = clientState
 }
 
 // Provider returns the ChainProvider, which provides the methods for querying, assembling IBC messages, and sending transactions.
@@ -213,7 +208,7 @@ type queryCyclePersistence struct {
 // Run starts the query loop for the chain which will gather applicable ibc messages and push events out to the relevant PathProcessors.
 // The initialBlockHistory parameter determines how many historical blocks should be fetched and processed before continuing with current blocks.
 // ChainProcessors should obey the context and return upon context cancellation.
-func (ccp *CosmosChainProcessor) Run(ctx context.Context, initialBlockHistory uint64, stuckPacket *processor.StuckPacket) error {
+func (ccp *CosmosChainProcessor) Run(ctx context.Context, initialBlockHistory uint64) error {
 	minQueryLoopDuration := ccp.chainProvider.PCfg.MinLoopDuration
 	if minQueryLoopDuration == 0 {
 		minQueryLoopDuration = defaultMinQueryLoopDuration
@@ -252,10 +247,6 @@ func (ccp *CosmosChainProcessor) Run(ctx context.Context, initialBlockHistory ui
 		latestQueriedBlock = 0
 	}
 
-	if stuckPacket != nil && ccp.chainProvider.ChainId() == stuckPacket.ChainID {
-		latestQueriedBlock = int64(stuckPacket.StartHeight)
-	}
-
 	persistence.latestQueriedBlock = latestQueriedBlock
 
 	var eg errgroup.Group
@@ -275,7 +266,7 @@ func (ccp *CosmosChainProcessor) Run(ctx context.Context, initialBlockHistory ui
 	defer ticker.Stop()
 
 	for {
-		if err := ccp.queryCycle(ctx, &persistence, stuckPacket); err != nil {
+		if err := ccp.queryCycle(ctx, &persistence); err != nil {
 			return err
 		}
 		select {
@@ -336,7 +327,7 @@ func (ccp *CosmosChainProcessor) initializeChannelState(ctx context.Context) err
 	return nil
 }
 
-func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *queryCyclePersistence, stuckPacket *processor.StuckPacket) error {
+func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *queryCyclePersistence) error {
 	status, err := ccp.nodeStatusWithRetry(ctx)
 	if err != nil {
 		// don't want to cause CosmosChainProcessor to quit here, can retry again next cycle.
@@ -392,11 +383,11 @@ func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *qu
 		var eg errgroup.Group
 		var blockRes *ctypes.ResultBlockResults
 		var ibcHeader provider.IBCHeader
-		sI := i
+		i := i
 		eg.Go(func() (err error) {
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, blockResultsQueryTimeout)
 			defer cancelQueryCtx()
-			blockRes, err = ccp.chainProvider.RPCClient.BlockResults(queryCtx, &sI)
+			blockRes, err = ccp.chainProvider.RPCClient.BlockResults(queryCtx, &i)
 			if err != nil && ccp.metrics != nil {
 				ccp.metrics.IncBlockQueryFailure(chainID, "RPC Client")
 			}
@@ -405,7 +396,7 @@ func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *qu
 		eg.Go(func() (err error) {
 			queryCtx, cancelQueryCtx := context.WithTimeout(ctx, queryTimeout)
 			defer cancelQueryCtx()
-			ibcHeader, err = ccp.chainProvider.QueryIBCHeader(queryCtx, sI)
+			ibcHeader, err = ccp.chainProvider.QueryIBCHeader(queryCtx, i)
 			if err != nil && ccp.metrics != nil {
 				ccp.metrics.IncBlockQueryFailure(chainID, "IBC Header")
 			}
@@ -468,7 +459,7 @@ func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *qu
 				// tx was not successful
 				continue
 			}
-			messages := chains.IbcMessagesFromEvents(ccp.log, tx.Events, chainID, heightUint64, base64Encoded)
+			messages := ibcMessagesFromEvents(ccp.log, tx.Events, chainID, heightUint64, base64Encoded)
 
 			for _, m := range messages {
 				ccp.handleMessage(ctx, m, ibcMessagesCache)
@@ -476,13 +467,6 @@ func (ccp *CosmosChainProcessor) queryCycle(ctx context.Context, persistence *qu
 		}
 
 		newLatestQueriedBlock = i
-
-		if stuckPacket != nil &&
-			ccp.chainProvider.ChainId() == stuckPacket.ChainID &&
-			newLatestQueriedBlock == int64(stuckPacket.EndHeight) {
-			i = persistence.latestHeight
-			ccp.log.Debug("Parsed stuck packet height, skipping to current")
-		}
 	}
 
 	if newLatestQueriedBlock == persistence.latestQueriedBlock {

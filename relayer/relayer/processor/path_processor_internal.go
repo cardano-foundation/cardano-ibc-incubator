@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -28,7 +29,7 @@ const (
 func (pp *PathProcessor) getMessagesToSend(
 	ctx context.Context,
 	msgs []packetIBCMessage,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 ) (srcMsgs []packetIBCMessage, dstMsgs []packetIBCMessage) {
 	if len(msgs) == 0 {
 		return
@@ -55,7 +56,7 @@ func (pp *PathProcessor) getMessagesToSend(
 			switch m.eventType {
 			case chantypes.EventTypeRecvPacket:
 				dstChan, dstPort := m.info.DestChannel, m.info.DestPort
-				res, err := dst.chainProvider.QueryNextSeqRecv(ctx, 0, dstChan, dstPort)
+				res, err := dst.ChainProvider.QueryNextSeqRecv(ctx, 0, dstChan, dstPort)
 				if err != nil {
 					dst.log.Error("Failed to query next sequence recv",
 						zap.String("channel_id", dstChan),
@@ -67,7 +68,7 @@ func (pp *PathProcessor) getMessagesToSend(
 				lowestSeq[chantypes.EventTypeRecvPacket] = res.NextSequenceReceive
 			case chantypes.EventTypeAcknowledgePacket:
 				srcChan, srcPort := m.info.SourceChannel, m.info.SourcePort
-				res, err := src.chainProvider.QueryNextSeqAck(ctx, 0, srcChan, srcPort)
+				res, err := src.ChainProvider.QueryNextSeqAck(ctx, 0, srcChan, srcPort)
 				if err != nil {
 					src.log.Error("Failed to query next sequence ack",
 						zap.String("channel_id", srcChan),
@@ -288,7 +289,7 @@ func (pp *PathProcessor) unrelayedPacketFlowMessages(
 		deletePreInitIfMatches(info)
 
 		// Packet is not yet relayed! need to relay either MsgRecvPacket from src to dst, or MsgTimeout/MsgTimeoutOnClose from dst to src
-		if err := pathEndPacketFlowMessages.Dst.chainProvider.ValidatePacket(info, pathEndPacketFlowMessages.Dst.latestBlock); err != nil {
+		if err := pathEndPacketFlowMessages.Dst.ChainProvider.ValidatePacket(info, pathEndPacketFlowMessages.Dst.latestBlock); err != nil {
 			var timeoutHeightErr *provider.TimeoutHeightError
 			var timeoutTimestampErr *provider.TimeoutTimestampError
 			var timeoutOnCloseErr *provider.TimeoutOnCloseError
@@ -308,7 +309,7 @@ func (pp *PathProcessor) unrelayedPacketFlowMessages(
 				msgs = append(msgs, timeoutOnCloseMsg)
 			default:
 				pp.log.Error("Packet is invalid",
-					zap.String("chain_id", pathEndPacketFlowMessages.Src.info.ChainID),
+					zap.String("chain_id", pathEndPacketFlowMessages.Src.Info.ChainID),
 					zap.Error(err),
 				)
 			}
@@ -340,6 +341,12 @@ func (pp *PathProcessor) unrelayedPacketFlowMessages(
 
 	return res
 }
+
+var (
+	once             sync.Once
+	handshakeChecker map[string]bool
+	mutex            sync.Mutex
+)
 
 func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 	pathEndConnectionHandshakeMessages pathEndConnectionHandshakeMessages,
@@ -422,7 +429,13 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenAck, pathEndConnectionHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+			mutex.Lock()
+			if !handshakeChecker[conntypes.EventTypeConnectionOpenAck] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+				handshakeChecker[conntypes.EventTypeConnectionOpenAck] = true
+				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenAck)
+			}
+			mutex.Unlock()
 		}
 
 		counterpartyKey := connKey.Counterparty()
@@ -454,7 +467,7 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 
 	processRemovals()
 
-	for _, info := range pathEndConnectionHandshakeMessages.SrcMsgConnectionPreInit {
+	for connKey, info := range pathEndConnectionHandshakeMessages.SrcMsgConnectionPreInit {
 		// need to send an open init to src
 		msgOpenInit := connectionIBCMessage{
 			eventType: conntypes.EventTypeConnectionOpenInit,
@@ -463,13 +476,26 @@ func (pp *PathProcessor) unrelayedConnectionHandshakeMessages(
 		if pathEndConnectionHandshakeMessages.Src.shouldSendConnectionMessage(
 			msgOpenInit, pathEndConnectionHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+			mutex.Lock()
+			if !handshakeChecker[conntypes.EventTypeConnectionOpenInit] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+				handshakeChecker[conntypes.EventTypeConnectionOpenInit] = true
+				go enableHandshakeChecker(conntypes.EventTypeConnectionOpenInit)
+			}
+			mutex.Unlock()
 		}
+		toDeleteSrc[preInitKey] = append(toDeleteSrc[preInitKey], connKey.PreInitKey())
 	}
 
 	return res
 }
 
+func enableHandshakeChecker(name string) {
+	time.Sleep(6 * time.Minute)
+	mutex.Lock()
+	handshakeChecker[name] = false
+	mutex.Unlock()
+}
 func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 	pathEndChannelHandshakeMessages pathEndChannelHandshakeMessages,
 ) pathEndChannelHandshakeResponse {
@@ -550,7 +576,13 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenAck, pathEndChannelHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+			mutex.Lock()
+			if !handshakeChecker[chantypes.EventTypeChannelOpenAck] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenAck)
+				handshakeChecker[chantypes.EventTypeChannelOpenAck] = true
+				go enableHandshakeChecker(chantypes.EventTypeChannelOpenAck)
+			}
+			mutex.Unlock()
 		}
 
 		counterpartyKey := chanKey.Counterparty()
@@ -592,7 +624,13 @@ func (pp *PathProcessor) unrelayedChannelHandshakeMessages(
 		if pathEndChannelHandshakeMessages.Src.shouldSendChannelMessage(
 			msgOpenInit, pathEndChannelHandshakeMessages.Dst,
 		) {
-			res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+			mutex.Lock()
+			if !handshakeChecker[chantypes.EventTypeChannelOpenInit] {
+				res.SrcMessages = append(res.SrcMessages, msgOpenInit)
+				handshakeChecker[chantypes.EventTypeChannelOpenInit] = true
+				go enableHandshakeChecker(chantypes.EventTypeChannelOpenInit)
+			}
+			mutex.Unlock()
 		}
 	}
 
@@ -669,7 +707,7 @@ func (pp *PathProcessor) unrelayedChannelCloseMessages(
 	return res
 }
 
-func (pp *PathProcessor) getUnrelayedClientICQMessages(pathEnd *pathEndRuntime, queryMessages, responseMessages ClientICQMessageCache) (res []clientICQMessage) {
+func (pp *PathProcessor) getUnrelayedClientICQMessages(pathEnd *PathEndRuntime, queryMessages, responseMessages ClientICQMessageCache) (res []clientICQMessage) {
 ClientICQLoop:
 	for queryID, queryMsg := range queryMessages {
 		for resQueryID := range responseMessages {
@@ -698,33 +736,33 @@ ClientICQLoop:
 
 // updateClientTrustedState combines the counterparty chains trusted IBC header
 // with the latest client state, which will be used for constructing MsgUpdateClient messages.
-func (pp *PathProcessor) updateClientTrustedState(src *pathEndRuntime, dst *pathEndRuntime) {
-	if src.clientTrustedState.ClientState.ConsensusHeight.GTE(src.clientState.ConsensusHeight) {
+func (pp *PathProcessor) updateClientTrustedState(src *PathEndRuntime, dst *PathEndRuntime) {
+	if src.ClientTrustedState.ClientState.ConsensusHeight.GTE(src.ClientState.ConsensusHeight) {
 		// current height already trusted
 		return
 	}
 	// need to assemble new trusted state
-	ibcHeader, ok := dst.ibcHeaderCache[src.clientState.ConsensusHeight.RevisionHeight+1]
+	ibcHeader, ok := dst.ibcHeaderCache[src.ClientState.ConsensusHeight.RevisionHeight+1]
 	if !ok {
-		if ibcHeaderCurrent, ok := dst.ibcHeaderCache[src.clientState.ConsensusHeight.RevisionHeight]; ok &&
-			dst.clientTrustedState.IBCHeader != nil &&
-			bytes.Equal(dst.clientTrustedState.IBCHeader.NextValidatorsHash(), ibcHeaderCurrent.NextValidatorsHash()) {
-			src.clientTrustedState = provider.ClientTrustedState{
-				ClientState: src.clientState,
+		if ibcHeaderCurrent, ok := dst.ibcHeaderCache[src.ClientState.ConsensusHeight.RevisionHeight]; ok &&
+			dst.ClientTrustedState.IBCHeader != nil &&
+			bytes.Equal(dst.ClientTrustedState.IBCHeader.NextValidatorsHash(), ibcHeaderCurrent.NextValidatorsHash()) {
+			src.ClientTrustedState = provider.ClientTrustedState{
+				ClientState: src.ClientState,
 				IBCHeader:   ibcHeaderCurrent,
 			}
 			return
 		}
 		pp.log.Debug("No cached IBC header for client trusted height",
-			zap.String("chain_id", src.info.ChainID),
-			zap.String("client_id", src.info.ClientID),
-			zap.Uint64("height", src.clientState.ConsensusHeight.RevisionHeight+1),
+			zap.String("chain_id", src.Info.ChainID),
+			zap.String("client_id", src.Info.ClientID),
+			zap.Uint64("height", src.ClientState.ConsensusHeight.RevisionHeight+1),
 		)
 		return
 
 	}
-	src.clientTrustedState = provider.ClientTrustedState{
-		ClientState: src.clientState,
+	src.ClientTrustedState = provider.ClientTrustedState{
+		ClientState: src.ClientState,
 		IBCHeader:   ibcHeader,
 	}
 }
@@ -778,18 +816,18 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			cancel()
 			return
 		}
-		if m.Initial.ChainID == pp.pathEnd1.info.ChainID {
-			_, ok = pp.pathEnd1.messageCache.PacketFlow[channelKey][eventType]
+		if m.Initial.ChainID == pp.PathEnd1.Info.ChainID {
+			_, ok = pp.PathEnd1.messageCache.PacketFlow[channelKey][eventType]
 			if !ok {
-				pp.pathEnd1.messageCache.PacketFlow[channelKey][eventType] = make(PacketSequenceCache)
+				pp.PathEnd1.messageCache.PacketFlow[channelKey][eventType] = make(PacketSequenceCache)
 			}
-			pp.pathEnd1.messageCache.PacketFlow[channelKey][eventType][0] = m.Initial.Info
-		} else if m.Initial.ChainID == pp.pathEnd2.info.ChainID {
-			_, ok = pp.pathEnd2.messageCache.PacketFlow[channelKey][eventType]
+			pp.PathEnd1.messageCache.PacketFlow[channelKey][eventType][0] = m.Initial.Info
+		} else if m.Initial.ChainID == pp.PathEnd2.Info.ChainID {
+			_, ok = pp.PathEnd2.messageCache.PacketFlow[channelKey][eventType]
 			if !ok {
-				pp.pathEnd2.messageCache.PacketFlow[channelKey][eventType] = make(PacketSequenceCache)
+				pp.PathEnd2.messageCache.PacketFlow[channelKey][eventType] = make(PacketSequenceCache)
 			}
-			pp.pathEnd2.messageCache.PacketFlow[channelKey][eventType][0] = m.Initial.Info
+			pp.PathEnd2.messageCache.PacketFlow[channelKey][eventType][0] = m.Initial.Info
 		}
 	case *ConnectionMessageLifecycle:
 		pp.sentInitialMsg = true
@@ -809,18 +847,18 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			return
 		}
 		connKey := ConnectionInfoConnectionKey(m.Initial.Info)
-		if m.Initial.ChainID == pp.pathEnd1.info.ChainID {
-			_, ok = pp.pathEnd1.messageCache.ConnectionHandshake[eventType]
+		if m.Initial.ChainID == pp.PathEnd1.Info.ChainID {
+			_, ok = pp.PathEnd1.messageCache.ConnectionHandshake[eventType]
 			if !ok {
-				pp.pathEnd1.messageCache.ConnectionHandshake[eventType] = make(ConnectionMessageCache)
+				pp.PathEnd1.messageCache.ConnectionHandshake[eventType] = make(ConnectionMessageCache)
 			}
-			pp.pathEnd1.messageCache.ConnectionHandshake[eventType][connKey] = m.Initial.Info
-		} else if m.Initial.ChainID == pp.pathEnd2.info.ChainID {
-			_, ok = pp.pathEnd2.messageCache.ConnectionHandshake[eventType]
+			pp.PathEnd1.messageCache.ConnectionHandshake[eventType][connKey] = m.Initial.Info
+		} else if m.Initial.ChainID == pp.PathEnd2.Info.ChainID {
+			_, ok = pp.PathEnd2.messageCache.ConnectionHandshake[eventType]
 			if !ok {
-				pp.pathEnd2.messageCache.ConnectionHandshake[eventType] = make(ConnectionMessageCache)
+				pp.PathEnd2.messageCache.ConnectionHandshake[eventType] = make(ConnectionMessageCache)
 			}
-			pp.pathEnd2.messageCache.ConnectionHandshake[eventType][connKey] = m.Initial.Info
+			pp.PathEnd2.messageCache.ConnectionHandshake[eventType][connKey] = m.Initial.Info
 		}
 	case *ChannelMessageLifecycle:
 		pp.sentInitialMsg = true
@@ -840,42 +878,42 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			return
 		}
 		chanKey := ChannelInfoChannelKey(m.Initial.Info)
-		if m.Initial.ChainID == pp.pathEnd1.info.ChainID {
-			_, ok = pp.pathEnd1.messageCache.ChannelHandshake[eventType]
+		if m.Initial.ChainID == pp.PathEnd1.Info.ChainID {
+			_, ok = pp.PathEnd1.messageCache.ChannelHandshake[eventType]
 			if !ok {
-				pp.pathEnd1.messageCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
+				pp.PathEnd1.messageCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
 			}
-			pp.pathEnd1.messageCache.ChannelHandshake[eventType][chanKey] = m.Initial.Info
-		} else if m.Initial.ChainID == pp.pathEnd2.info.ChainID {
-			_, ok = pp.pathEnd2.messageCache.ChannelHandshake[eventType]
+			pp.PathEnd1.messageCache.ChannelHandshake[eventType][chanKey] = m.Initial.Info
+		} else if m.Initial.ChainID == pp.PathEnd2.Info.ChainID {
+			_, ok = pp.PathEnd2.messageCache.ChannelHandshake[eventType]
 			if !ok {
-				pp.pathEnd2.messageCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
+				pp.PathEnd2.messageCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
 			}
-			pp.pathEnd2.messageCache.ChannelHandshake[eventType][chanKey] = m.Initial.Info
+			pp.PathEnd2.messageCache.ChannelHandshake[eventType][chanKey] = m.Initial.Info
 		}
 	case *ChannelCloseLifecycle:
 		pp.sentInitialMsg = true
 
-		if !pp.IsRelevantConnection(pp.pathEnd1.info.ChainID, m.SrcConnID) {
+		if !pp.IsRelevantConnection(pp.PathEnd1.Info.ChainID, m.SrcConnID) {
 			return
 		}
 
-		for k, cs := range pp.pathEnd1.channelStateCache {
+		for k, _ := range pp.PathEnd1.channelStateCache {
 			if k.ChannelID == m.SrcChannelID && k.PortID == m.SrcPortID && k.CounterpartyChannelID != "" && k.CounterpartyPortID != "" {
-				if cs.Open {
-					// channel is still open on pathEnd1
-					break
-				}
-				if counterpartyState, ok := pp.pathEnd2.channelStateCache[k.Counterparty()]; ok && !counterpartyState.Open {
+				//if cs.Open {
+				//	// channel is still open on pathEnd1
+				//	break
+				//}
+				if counterpartyState, ok := pp.PathEnd2.channelStateCache[k.Counterparty()]; ok && !counterpartyState.Open {
 					pp.log.Info("Channel already closed on both sides")
 					cancel()
 					return
 				}
 				// queue channel close init on pathEnd1
-				if _, ok := pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit]; !ok {
-					pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit] = make(ChannelMessageCache)
+				if _, ok := pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey]; !ok {
+					pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey] = make(ChannelMessageCache)
 				}
-				pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit][k] = provider.ChannelInfo{
+				pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey][k] = provider.ChannelInfo{
 					PortID:                k.PortID,
 					ChannelID:             k.ChannelID,
 					CounterpartyPortID:    k.CounterpartyPortID,
@@ -886,22 +924,22 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 			}
 		}
 
-		for k, cs := range pp.pathEnd2.channelStateCache {
+		for k, _ := range pp.PathEnd2.channelStateCache {
 			if k.CounterpartyChannelID == m.SrcChannelID && k.CounterpartyPortID == m.SrcPortID && k.ChannelID != "" && k.PortID != "" {
-				if cs.Open {
-					// channel is still open on pathEnd2
-					break
-				}
-				if counterpartyChanState, ok := pp.pathEnd1.channelStateCache[k.Counterparty()]; ok && !counterpartyChanState.Open {
+				//if cs.Open {
+				//	// channel is still open on pathEnd2
+				//	break
+				//}
+				if counterpartyChanState, ok := pp.PathEnd1.channelStateCache[k.Counterparty()]; ok && !counterpartyChanState.Open {
 					pp.log.Info("Channel already closed on both sides")
 					cancel()
 					return
 				}
 				// queue channel close init on pathEnd2
-				if _, ok := pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit]; !ok {
-					pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit] = make(ChannelMessageCache)
+				if _, ok := pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit]; !ok {
+					pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit] = make(ChannelMessageCache)
 				}
-				pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit][k] = provider.ChannelInfo{
+				pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit][k] = provider.ChannelInfo{
 					PortID:                k.PortID,
 					ChannelID:             k.ChannelID,
 					CounterpartyPortID:    k.CounterpartyPortID,
@@ -922,51 +960,53 @@ func (pp *PathProcessor) queuePreInitMessages(cancel func()) {
 // messages from both pathEnds are needed in order to determine what needs to be relayed for a single pathEnd
 func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func()) error {
 	// Update trusted client state for both pathends
-	pp.updateClientTrustedState(pp.pathEnd1, pp.pathEnd2)
-	pp.updateClientTrustedState(pp.pathEnd2, pp.pathEnd1)
+	pp.updateClientTrustedState(pp.PathEnd1, pp.PathEnd2)
+	pp.updateClientTrustedState(pp.PathEnd2, pp.PathEnd1)
 
 	channelPairs := pp.channelPairs()
 
 	pp.queuePreInitMessages(cancel)
-
+	once.Do(func() {
+		handshakeChecker = make(map[string]bool)
+	})
 	pathEnd1ConnectionHandshakeMessages := pathEndConnectionHandshakeMessages{
-		Src:                         pp.pathEnd1,
-		Dst:                         pp.pathEnd2,
-		SrcMsgConnectionPreInit:     pp.pathEnd1.messageCache.ConnectionHandshake[preInitKey],
-		SrcMsgConnectionOpenInit:    pp.pathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenInit],
-		DstMsgConnectionOpenTry:     pp.pathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenTry],
-		SrcMsgConnectionOpenAck:     pp.pathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenAck],
-		DstMsgConnectionOpenConfirm: pp.pathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenConfirm],
+		Src:                         pp.PathEnd1,
+		Dst:                         pp.PathEnd2,
+		SrcMsgConnectionPreInit:     pp.PathEnd1.messageCache.ConnectionHandshake[preInitKey],
+		SrcMsgConnectionOpenInit:    pp.PathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenInit],
+		DstMsgConnectionOpenTry:     pp.PathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenTry],
+		SrcMsgConnectionOpenAck:     pp.PathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenAck],
+		DstMsgConnectionOpenConfirm: pp.PathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenConfirm],
 	}
 	pathEnd2ConnectionHandshakeMessages := pathEndConnectionHandshakeMessages{
-		Src:                         pp.pathEnd2,
-		Dst:                         pp.pathEnd1,
-		SrcMsgConnectionPreInit:     pp.pathEnd2.messageCache.ConnectionHandshake[preInitKey],
-		SrcMsgConnectionOpenInit:    pp.pathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenInit],
-		DstMsgConnectionOpenTry:     pp.pathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenTry],
-		SrcMsgConnectionOpenAck:     pp.pathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenAck],
-		DstMsgConnectionOpenConfirm: pp.pathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenConfirm],
+		Src:                         pp.PathEnd2,
+		Dst:                         pp.PathEnd1,
+		SrcMsgConnectionPreInit:     pp.PathEnd2.messageCache.ConnectionHandshake[preInitKey],
+		SrcMsgConnectionOpenInit:    pp.PathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenInit],
+		DstMsgConnectionOpenTry:     pp.PathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenTry],
+		SrcMsgConnectionOpenAck:     pp.PathEnd2.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenAck],
+		DstMsgConnectionOpenConfirm: pp.PathEnd1.messageCache.ConnectionHandshake[conntypes.EventTypeConnectionOpenConfirm],
 	}
 	pathEnd1ConnectionHandshakeRes := pp.unrelayedConnectionHandshakeMessages(pathEnd1ConnectionHandshakeMessages)
 	pathEnd2ConnectionHandshakeRes := pp.unrelayedConnectionHandshakeMessages(pathEnd2ConnectionHandshakeMessages)
 
 	pathEnd1ChannelHandshakeMessages := pathEndChannelHandshakeMessages{
-		Src:                      pp.pathEnd1,
-		Dst:                      pp.pathEnd2,
-		SrcMsgChannelPreInit:     pp.pathEnd1.messageCache.ChannelHandshake[preInitKey],
-		SrcMsgChannelOpenInit:    pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenInit],
-		DstMsgChannelOpenTry:     pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenTry],
-		SrcMsgChannelOpenAck:     pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenAck],
-		DstMsgChannelOpenConfirm: pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenConfirm],
+		Src:                      pp.PathEnd1,
+		Dst:                      pp.PathEnd2,
+		SrcMsgChannelPreInit:     pp.PathEnd1.messageCache.ChannelHandshake[preInitKey],
+		SrcMsgChannelOpenInit:    pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenInit],
+		DstMsgChannelOpenTry:     pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenTry],
+		SrcMsgChannelOpenAck:     pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenAck],
+		DstMsgChannelOpenConfirm: pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenConfirm],
 	}
 	pathEnd2ChannelHandshakeMessages := pathEndChannelHandshakeMessages{
-		Src:                      pp.pathEnd2,
-		Dst:                      pp.pathEnd1,
-		SrcMsgChannelPreInit:     pp.pathEnd2.messageCache.ChannelHandshake[preInitKey],
-		SrcMsgChannelOpenInit:    pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenInit],
-		DstMsgChannelOpenTry:     pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenTry],
-		SrcMsgChannelOpenAck:     pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenAck],
-		DstMsgChannelOpenConfirm: pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenConfirm],
+		Src:                      pp.PathEnd2,
+		Dst:                      pp.PathEnd1,
+		SrcMsgChannelPreInit:     pp.PathEnd2.messageCache.ChannelHandshake[preInitKey],
+		SrcMsgChannelOpenInit:    pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenInit],
+		DstMsgChannelOpenTry:     pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenTry],
+		SrcMsgChannelOpenAck:     pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenAck],
+		DstMsgChannelOpenConfirm: pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelOpenConfirm],
 	}
 	pathEnd1ChannelHandshakeRes := pp.unrelayedChannelHandshakeMessages(pathEnd1ChannelHandshakeMessages)
 	pathEnd2ChannelHandshakeRes := pp.unrelayedChannelHandshakeMessages(pathEnd2ChannelHandshakeMessages)
@@ -977,16 +1017,16 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 
 	for i, pair := range channelPairs {
 		// Append acks into recv packet info if present
-		pathEnd1DstMsgRecvPacket := pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeRecvPacket]
-		for seq, ackInfo := range pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeWriteAck] {
+		pathEnd1DstMsgRecvPacket := pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeRecvPacket]
+		for seq, ackInfo := range pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeWriteAck] {
 			if recvPacketInfo, ok := pathEnd1DstMsgRecvPacket[seq]; ok {
 				recvPacketInfo.Ack = ackInfo.Ack
 				pathEnd1DstMsgRecvPacket[seq] = recvPacketInfo
 			}
 		}
 
-		pathEnd2DstMsgRecvPacket := pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeRecvPacket]
-		for seq, ackInfo := range pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeWriteAck] {
+		pathEnd2DstMsgRecvPacket := pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeRecvPacket]
+		for seq, ackInfo := range pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeWriteAck] {
 			if recvPacketInfo, ok := pathEnd2DstMsgRecvPacket[seq]; ok {
 				recvPacketInfo.Ack = ackInfo.Ack
 				pathEnd2DstMsgRecvPacket[seq] = recvPacketInfo
@@ -994,26 +1034,26 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 		}
 
 		pathEnd1PacketFlowMessages := pathEndPacketFlowMessages{
-			Src:                   pp.pathEnd1,
-			Dst:                   pp.pathEnd2,
+			Src:                   pp.PathEnd1,
+			Dst:                   pp.PathEnd2,
 			ChannelKey:            pair.pathEnd1ChannelKey,
-			SrcPreTransfer:        pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][preInitKey],
-			SrcMsgTransfer:        pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeSendPacket],
+			SrcPreTransfer:        pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][preInitKey],
+			SrcMsgTransfer:        pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeSendPacket],
 			DstMsgRecvPacket:      pathEnd1DstMsgRecvPacket,
-			SrcMsgAcknowledgement: pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeAcknowledgePacket],
-			SrcMsgTimeout:         pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeTimeoutPacket],
-			SrcMsgTimeoutOnClose:  pp.pathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeTimeoutPacketOnClose],
+			SrcMsgAcknowledgement: pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeAcknowledgePacket],
+			SrcMsgTimeout:         pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeTimeoutPacket],
+			SrcMsgTimeoutOnClose:  pp.PathEnd1.messageCache.PacketFlow[pair.pathEnd1ChannelKey][chantypes.EventTypeTimeoutPacketOnClose],
 		}
 		pathEnd2PacketFlowMessages := pathEndPacketFlowMessages{
-			Src:                   pp.pathEnd2,
-			Dst:                   pp.pathEnd1,
+			Src:                   pp.PathEnd2,
+			Dst:                   pp.PathEnd1,
 			ChannelKey:            pair.pathEnd2ChannelKey,
-			SrcPreTransfer:        pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd1ChannelKey][preInitKey],
-			SrcMsgTransfer:        pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeSendPacket],
+			SrcPreTransfer:        pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd1ChannelKey][preInitKey],
+			SrcMsgTransfer:        pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeSendPacket],
 			DstMsgRecvPacket:      pathEnd2DstMsgRecvPacket,
-			SrcMsgAcknowledgement: pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeAcknowledgePacket],
-			SrcMsgTimeout:         pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeTimeoutPacket],
-			SrcMsgTimeoutOnClose:  pp.pathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeTimeoutPacketOnClose],
+			SrcMsgAcknowledgement: pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeAcknowledgePacket],
+			SrcMsgTimeout:         pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeTimeoutPacket],
+			SrcMsgTimeoutOnClose:  pp.PathEnd2.messageCache.PacketFlow[pair.pathEnd2ChannelKey][chantypes.EventTypeTimeoutPacketOnClose],
 		}
 
 		pathEnd1ProcessRes[i] = pp.unrelayedPacketFlowMessages(ctx, pathEnd1PacketFlowMessages)
@@ -1021,18 +1061,18 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	}
 
 	pathEnd1ChannelCloseMessages := pathEndChannelCloseMessages{
-		Src:                       pp.pathEnd1,
-		Dst:                       pp.pathEnd2,
-		SrcMsgChannelPreInit:      pp.pathEnd1.messageCache.ChannelHandshake[preCloseKey],
-		SrcMsgChannelCloseInit:    pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit],
-		DstMsgChannelCloseConfirm: pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseConfirm],
+		Src:                       pp.PathEnd1,
+		Dst:                       pp.PathEnd2,
+		SrcMsgChannelPreInit:      pp.PathEnd1.messageCache.ChannelHandshake[preCloseKey],
+		SrcMsgChannelCloseInit:    pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit],
+		DstMsgChannelCloseConfirm: pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseConfirm],
 	}
 	pathEnd2ChannelCloseMessages := pathEndChannelCloseMessages{
-		Src:                       pp.pathEnd2,
-		Dst:                       pp.pathEnd1,
-		SrcMsgChannelPreInit:      pp.pathEnd2.messageCache.ChannelHandshake[preCloseKey],
-		SrcMsgChannelCloseInit:    pp.pathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit],
-		DstMsgChannelCloseConfirm: pp.pathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseConfirm],
+		Src:                       pp.PathEnd2,
+		Dst:                       pp.PathEnd1,
+		SrcMsgChannelPreInit:      pp.PathEnd2.messageCache.ChannelHandshake[preCloseKey],
+		SrcMsgChannelCloseInit:    pp.PathEnd2.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseInit],
+		DstMsgChannelCloseConfirm: pp.PathEnd1.messageCache.ChannelHandshake[chantypes.EventTypeChannelCloseConfirm],
 	}
 	pathEnd1ChannelCloseRes := pp.unrelayedChannelCloseMessages(pathEnd1ChannelCloseMessages)
 	pathEnd2ChannelCloseRes := pp.unrelayedChannelCloseMessages(pathEnd2ChannelCloseMessages)
@@ -1049,14 +1089,14 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	pathEnd2ChannelMessages = append(pathEnd2ChannelMessages, pathEnd2ChanCloseMessages...)
 
 	pathEnd1ClientICQMessages := pp.getUnrelayedClientICQMessages(
-		pp.pathEnd1,
-		pp.pathEnd1.messageCache.ClientICQ[ClientICQTypeRequest],
-		pp.pathEnd1.messageCache.ClientICQ[ClientICQTypeResponse],
+		pp.PathEnd1,
+		pp.PathEnd1.messageCache.ClientICQ[ClientICQTypeRequest],
+		pp.PathEnd1.messageCache.ClientICQ[ClientICQTypeResponse],
 	)
 	pathEnd2ClientICQMessages := pp.getUnrelayedClientICQMessages(
-		pp.pathEnd2,
-		pp.pathEnd2.messageCache.ClientICQ[ClientICQTypeRequest],
-		pp.pathEnd2.messageCache.ClientICQ[ClientICQTypeResponse],
+		pp.PathEnd2,
+		pp.PathEnd2.messageCache.ClientICQ[ClientICQTypeRequest],
+		pp.PathEnd2.messageCache.ClientICQ[ClientICQTypeResponse],
 	)
 
 	pathEnd1Messages := pathEndMessages{
@@ -1078,11 +1118,11 @@ func (pp *PathProcessor) processLatestMessages(ctx context.Context, cancel func(
 	var eg errgroup.Group
 	eg.Go(func() error {
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
-		return mp.processMessages(ctx, pathEnd1Messages, pp.pathEnd2, pp.pathEnd1)
+		return mp.processMessages(ctx, pathEnd1Messages, pp.PathEnd2, pp.PathEnd1)
 	})
 	eg.Go(func() error {
 		mp := newMessageProcessor(pp.log, pp.metrics, pp.memo, pp.clientUpdateThresholdTime, pp.isLocalhost)
-		return mp.processMessages(ctx, pathEnd2Messages, pp.pathEnd1, pp.pathEnd2)
+		return mp.processMessages(ctx, pathEnd2Messages, pp.PathEnd1, pp.PathEnd2)
 	})
 	return eg.Wait()
 }
@@ -1174,7 +1214,7 @@ func (pp *PathProcessor) packetMessagesToSend(
 
 func queryPacketCommitments(
 	ctx context.Context,
-	pathEnd *pathEndRuntime,
+	pathEnd *PathEndRuntime,
 	k ChannelKey,
 	commitments map[ChannelKey][]uint64,
 	mu sync.Locker,
@@ -1182,7 +1222,7 @@ func queryPacketCommitments(
 	return func() error {
 		pathEnd.log.Debug("Flushing", zap.String("channel", k.ChannelID), zap.String("port", k.PortID))
 
-		c, err := pathEnd.chainProvider.QueryPacketCommitments(ctx, pathEnd.latestBlock.Height, k.ChannelID, k.PortID)
+		c, err := pathEnd.ChainProvider.QueryPacketCommitments(ctx, pathEnd.latestBlock.Height, k.ChannelID, k.PortID)
 		if err != nil {
 			return err
 		}
@@ -1208,7 +1248,7 @@ type skippedPackets struct {
 // queuePendingRecvAndAcks returns the number of packets skipped during a flush (nil if none).
 func (pp *PathProcessor) queuePendingRecvAndAcks(
 	ctx context.Context,
-	src, dst *pathEndRuntime,
+	src, dst *PathEndRuntime,
 	k ChannelKey,
 	seqs []uint64,
 	srcCache ChannelPacketMessagesCache,
@@ -1224,7 +1264,7 @@ func (pp *PathProcessor) queuePendingRecvAndAcks(
 
 	dstChan, dstPort := k.CounterpartyChannelID, k.CounterpartyPortID
 
-	unrecv, err := dst.chainProvider.QueryUnreceivedPackets(ctx, dst.latestBlock.Height, dstChan, dstPort, seqs)
+	unrecv, err := dst.ChainProvider.QueryUnreceivedPackets(ctx, dst.latestBlock.Height, dstChan, dstPort, seqs)
 	if err != nil {
 		return nil, err
 	}
@@ -1234,7 +1274,7 @@ func (pp *PathProcessor) queuePendingRecvAndAcks(
 	var order chantypes.Order
 
 	if len(unrecv) > 0 {
-		channel, err := dst.chainProvider.QueryChannel(ctx, dstHeight, dstChan, dstPort)
+		channel, err := dst.ChainProvider.QueryChannel(ctx, dstHeight, dstChan, dstPort)
 		if err != nil {
 			return nil, err
 		}
@@ -1242,7 +1282,7 @@ func (pp *PathProcessor) queuePendingRecvAndAcks(
 		order = channel.Channel.Ordering
 
 		if channel.Channel.Ordering == chantypes.ORDERED {
-			nextSeqRecv, err := dst.chainProvider.QueryNextSeqRecv(ctx, dstHeight, dstChan, dstPort)
+			nextSeqRecv, err := dst.ChainProvider.QueryNextSeqRecv(ctx, dstHeight, dstChan, dstPort)
 			if err != nil {
 				return nil, err
 			}
@@ -1291,7 +1331,7 @@ func (pp *PathProcessor) queuePendingRecvAndAcks(
 		seq := seq
 
 		eg.Go(func() error {
-			sendPacket, err := src.chainProvider.QuerySendPacket(ctx, k.ChannelID, k.PortID, seq)
+			sendPacket, err := src.ChainProvider.QuerySendPacket(ctx, k.ChannelID, k.PortID, seq)
 			if err != nil {
 				return err
 			}
@@ -1368,7 +1408,7 @@ SeqLoop:
 		)
 
 		eg.Go(func() error {
-			recvPacket, err := dst.chainProvider.QueryRecvPacket(ctx, k.CounterpartyChannelID, k.CounterpartyPortID, seq)
+			recvPacket, err := dst.ChainProvider.QueryRecvPacket(ctx, k.CounterpartyChannelID, k.CounterpartyPortID, seq)
 			if err != nil {
 				return err
 			}
@@ -1420,31 +1460,31 @@ func (pp *PathProcessor) flush(ctx context.Context) error {
 
 	// Query remaining packet commitments on both chains
 	var eg errgroup.Group
-	for k, cs := range pp.pathEnd1.channelStateCache {
+	for k, cs := range pp.PathEnd1.channelStateCache {
 		if !cs.Open {
 			continue
 		}
-		if !pp.pathEnd1.info.ShouldRelayChannel(ChainChannelKey{
-			ChainID:             pp.pathEnd1.info.ChainID,
-			CounterpartyChainID: pp.pathEnd2.info.ChainID,
+		if !pp.PathEnd1.Info.ShouldRelayChannel(ChainChannelKey{
+			ChainID:             pp.PathEnd1.Info.ChainID,
+			CounterpartyChainID: pp.PathEnd2.Info.ChainID,
 			ChannelKey:          k,
 		}) {
 			continue
 		}
-		eg.Go(queryPacketCommitments(ctx, pp.pathEnd1, k, commitments1, &commitments1Mu))
+		eg.Go(queryPacketCommitments(ctx, pp.PathEnd1, k, commitments1, &commitments1Mu))
 	}
-	for k, cs := range pp.pathEnd2.channelStateCache {
+	for k, cs := range pp.PathEnd2.channelStateCache {
 		if !cs.Open {
 			continue
 		}
-		if !pp.pathEnd2.info.ShouldRelayChannel(ChainChannelKey{
-			ChainID:             pp.pathEnd2.info.ChainID,
-			CounterpartyChainID: pp.pathEnd1.info.ChainID,
+		if !pp.PathEnd2.Info.ShouldRelayChannel(ChainChannelKey{
+			ChainID:             pp.PathEnd2.Info.ChainID,
+			CounterpartyChainID: pp.PathEnd1.Info.ChainID,
 			ChannelKey:          k,
 		}) {
 			continue
 		}
-		eg.Go(queryPacketCommitments(ctx, pp.pathEnd2, k, commitments2, &commitments2Mu))
+		eg.Go(queryPacketCommitments(ctx, pp.PathEnd2, k, commitments2, &commitments2Mu))
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -1460,15 +1500,15 @@ func (pp *PathProcessor) flush(ctx context.Context) error {
 		k := k
 		seqs := seqs
 		eg.Go(func() error {
-			s, err := pp.queuePendingRecvAndAcks(ctx, pp.pathEnd1, pp.pathEnd2, k, seqs, pathEnd1Cache.PacketFlow, pathEnd2Cache.PacketFlow, &pathEnd1CacheMu, &pathEnd2CacheMu)
+			s, err := pp.queuePendingRecvAndAcks(ctx, pp.PathEnd1, pp.PathEnd2, k, seqs, pathEnd1Cache.PacketFlow, pathEnd2Cache.PacketFlow, &pathEnd1CacheMu, &pathEnd2CacheMu)
 			if err != nil {
 				return err
 			}
 			if s != nil {
-				if _, ok := skipped[pp.pathEnd1.info.ChainID]; !ok {
-					skipped[pp.pathEnd1.info.ChainID] = make(map[ChannelKey]skippedPackets)
+				if _, ok := skipped[pp.PathEnd1.Info.ChainID]; !ok {
+					skipped[pp.PathEnd1.Info.ChainID] = make(map[ChannelKey]skippedPackets)
 				}
-				skipped[pp.pathEnd1.info.ChainID][k] = *s
+				skipped[pp.PathEnd1.Info.ChainID][k] = *s
 			}
 			return nil
 		})
@@ -1478,15 +1518,15 @@ func (pp *PathProcessor) flush(ctx context.Context) error {
 		k := k
 		seqs := seqs
 		eg.Go(func() error {
-			s, err := pp.queuePendingRecvAndAcks(ctx, pp.pathEnd2, pp.pathEnd1, k, seqs, pathEnd2Cache.PacketFlow, pathEnd1Cache.PacketFlow, &pathEnd2CacheMu, &pathEnd1CacheMu)
+			s, err := pp.queuePendingRecvAndAcks(ctx, pp.PathEnd2, pp.PathEnd1, k, seqs, pathEnd2Cache.PacketFlow, pathEnd1Cache.PacketFlow, &pathEnd2CacheMu, &pathEnd1CacheMu)
 			if err != nil {
 				return err
 			}
 			if s != nil {
-				if _, ok := skipped[pp.pathEnd2.info.ChainID]; !ok {
-					skipped[pp.pathEnd2.info.ChainID] = make(map[ChannelKey]skippedPackets)
+				if _, ok := skipped[pp.PathEnd2.Info.ChainID]; !ok {
+					skipped[pp.PathEnd2.Info.ChainID] = make(map[ChannelKey]skippedPackets)
 				}
-				skipped[pp.pathEnd2.info.ChainID][k] = *s
+				skipped[pp.PathEnd2.Info.ChainID][k] = *s
 			}
 			return nil
 		})
@@ -1496,8 +1536,8 @@ func (pp *PathProcessor) flush(ctx context.Context) error {
 		return fmt.Errorf("failed to enqueue pending messages for flush: %w", err)
 	}
 
-	pp.pathEnd1.mergeMessageCache(pathEnd1Cache, pp.pathEnd2.info.ChainID, pp.pathEnd2.inSync)
-	pp.pathEnd2.mergeMessageCache(pathEnd2Cache, pp.pathEnd1.info.ChainID, pp.pathEnd1.inSync)
+	pp.PathEnd1.mergeMessageCache(pathEnd1Cache, pp.PathEnd2.Info.ChainID, pp.PathEnd2.inSync)
+	pp.PathEnd2.mergeMessageCache(pathEnd2Cache, pp.PathEnd1.Info.ChainID, pp.PathEnd1.inSync)
 
 	if len(skipped) > 0 {
 		skippedPacketsString := ""
@@ -1524,8 +1564,8 @@ func (pp *PathProcessor) shouldTerminateForFlushComplete() bool {
 	if _, ok := pp.messageLifecycle.(*FlushLifecycle); !ok {
 		return false
 	}
-	for k, packetMessagesCache := range pp.pathEnd1.messageCache.PacketFlow {
-		if cs, ok := pp.pathEnd1.channelStateCache[k]; !ok || !cs.Open {
+	for k, packetMessagesCache := range pp.PathEnd1.messageCache.PacketFlow {
+		if cs, ok := pp.PathEnd1.channelStateCache[k]; !ok || !cs.Open {
 			continue
 		}
 		for _, c := range packetMessagesCache {
@@ -1534,22 +1574,22 @@ func (pp *PathProcessor) shouldTerminateForFlushComplete() bool {
 			}
 		}
 	}
-	for _, c := range pp.pathEnd1.messageCache.ChannelHandshake {
-		for k := range pp.pathEnd1.channelStateCache {
+	for _, c := range pp.PathEnd1.messageCache.ChannelHandshake {
+		for k := range pp.PathEnd1.channelStateCache {
 			if _, ok := c[k]; ok {
 				return false
 			}
 		}
 	}
-	for _, c := range pp.pathEnd1.messageCache.ConnectionHandshake {
-		for k := range pp.pathEnd1.connectionStateCache {
+	for _, c := range pp.PathEnd1.messageCache.ConnectionHandshake {
+		for k := range pp.PathEnd1.connectionStateCache {
 			if _, ok := c[k]; ok {
 				return false
 			}
 		}
 	}
-	for k, packetMessagesCache := range pp.pathEnd2.messageCache.PacketFlow {
-		if cs, ok := pp.pathEnd1.channelStateCache[k]; !ok || !cs.Open {
+	for k, packetMessagesCache := range pp.PathEnd2.messageCache.PacketFlow {
+		if cs, ok := pp.PathEnd1.channelStateCache[k]; !ok || !cs.Open {
 			continue
 		}
 		for _, c := range packetMessagesCache {
@@ -1558,15 +1598,15 @@ func (pp *PathProcessor) shouldTerminateForFlushComplete() bool {
 			}
 		}
 	}
-	for _, c := range pp.pathEnd2.messageCache.ChannelHandshake {
-		for k := range pp.pathEnd1.channelStateCache {
+	for _, c := range pp.PathEnd2.messageCache.ChannelHandshake {
+		for k := range pp.PathEnd1.channelStateCache {
 			if _, ok := c[k]; ok {
 				return false
 			}
 		}
 	}
-	for _, c := range pp.pathEnd2.messageCache.ConnectionHandshake {
-		for k := range pp.pathEnd1.connectionStateCache {
+	for _, c := range pp.PathEnd2.messageCache.ConnectionHandshake {
+		for k := range pp.PathEnd1.connectionStateCache {
 			if _, ok := c[k]; ok {
 				return false
 			}

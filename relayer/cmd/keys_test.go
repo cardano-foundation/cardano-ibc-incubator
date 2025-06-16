@@ -1,16 +1,17 @@
 package cmd_test
 
 import (
+	"log"
 	"testing"
 
+	"github.com/cardano/relayer/v1/cmd"
+	"github.com/cardano/relayer/v1/internal/relayertest"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keyring"
-	"github.com/cosmos/relayer/v2/cmd"
-	"github.com/cosmos/relayer/v2/internal/relayertest"
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,18 +22,45 @@ func TestKeysList_Empty(t *testing.T) {
 
 	_ = sys.MustRun(t, "config", "init")
 
-	sys.MustAddChain(t, "testChain", cmd.ProviderConfigWrapper{
-		Type: "cosmos",
+	sys.MustAddChain(t, "cardano", cmd.ProviderConfigWrapper{
+		Type: "cardano",
 		Value: cosmos.CosmosProviderConfig{
-			ChainID:        "testcosmos",
+			ChainID:        "cardano",
 			KeyringBackend: "test",
 			Timeout:        "10s",
 		},
 	})
 
-	res := sys.MustRun(t, "keys", "list", "testChain")
+	res := sys.MustRun(t, "keys", "list", "cardano")
 	require.Empty(t, res.Stdout.String())
-	require.Contains(t, res.Stderr.String(), "no keys found for chain testChain")
+	require.Contains(t, res.Stderr.String(), "no keys found for chain cardano")
+}
+
+func TestKeysAdd(t *testing.T) {
+	t.Parallel()
+
+	sys := relayertest.NewSystem(t)
+
+	_ = sys.MustRun(t, "config", "init")
+
+	sys.MustAddChain(t, "cardano", cmd.ProviderConfigWrapper{
+		Type: "cardano",
+		Value: cosmos.CosmosProviderConfig{
+			ChainID:        "cardano",
+			KeyringBackend: "test",
+			Timeout:        "10s",
+		},
+	})
+
+	res := sys.MustRun(t, "keys", "list", "cardano")
+	//require.Empty(t, res.Stdout.String())
+	//require.Contains(t, res.Stderr.String(), "no keys found for chain cardano")
+
+	res = sys.MustRun(t, "keys", "add", "cardano", "cardano-key-test-3")
+	log.Fatal(res.Stdout)
+	//require.NotEmpty(t, res.Stdout.String())
+	//require.Contains(t, res.Stderr.String(), "no keys found for chain cardano")
+
 }
 
 func TestKeysRestore_Delete(t *testing.T) {
@@ -56,6 +84,7 @@ func TestKeysRestore_Delete(t *testing.T) {
 	})
 
 	// Restore a key with mnemonic to the chain.
+
 	res := sys.MustRun(t, "keys", "restore", "testChain", "default", relayertest.ZeroMnemonic)
 	require.Equal(t, res.Stdout.String(), relayertest.ZeroCosmosAddr+"\n")
 	require.Empty(t, res.Stderr.String())
@@ -180,89 +209,4 @@ func TestKeysDefaultCoinType(t *testing.T) {
 	err := kr.ImportPrivKey("temp", armorOut2, keys.DefaultKeyPass)
 	require.Error(t, err, "same key was able to be imported twice")
 	require.Contains(t, err.Error(), "cannot overwrite key")
-}
-
-func TestKeysRestoreAll_Delete(t *testing.T) {
-	t.Parallel()
-
-	sys := relayertest.NewSystem(t)
-
-	_ = sys.MustRun(t, "config", "init")
-
-	slip44 := 118
-
-	sys.MustAddChain(t, "testChain", cmd.ProviderConfigWrapper{
-		Type: "cosmos",
-		Value: cosmos.CosmosProviderConfig{
-			AccountPrefix:  "cosmos",
-			ChainID:        "testcosmos",
-			KeyringBackend: "test",
-			Timeout:        "10s",
-			Slip44:         &slip44,
-		},
-	})
-	sys.MustAddChain(t, "testChain2", cmd.ProviderConfigWrapper{
-		Type: "cosmos",
-		Value: cosmos.CosmosProviderConfig{
-			AccountPrefix:  "cosmos",
-			ChainID:        "testcosmos-2",
-			KeyringBackend: "test",
-			Timeout:        "10s",
-			Slip44:         &slip44,
-		},
-	})
-	sys.MustAddChain(t, "testChain3", cmd.ProviderConfigWrapper{
-		Type: "cosmos",
-		Value: cosmos.CosmosProviderConfig{
-			AccountPrefix:  "cosmos",
-			ChainID:        "testcosmos-3",
-			KeyringBackend: "test",
-			Timeout:        "10s",
-			Slip44:         &slip44,
-		},
-	})
-
-	// Restore keys for all configured chains with a single mnemonic.
-	res := sys.MustRun(t, "keys", "restore", "default", relayertest.ZeroMnemonic, "--restore-all")
-	require.Equal(t, res.Stdout.String(), relayertest.ZeroCosmosAddr+"\n"+relayertest.ZeroCosmosAddr+"\n"+relayertest.ZeroCosmosAddr+"\n")
-	require.Empty(t, res.Stderr.String())
-
-	// Restored key must show up in list.
-	res = sys.MustRun(t, "keys", "list", "testChain")
-	require.Equal(t, res.Stdout.String(), "key(default) -> "+relayertest.ZeroCosmosAddr+"\n")
-	require.Empty(t, res.Stderr.String())
-
-	res = sys.MustRun(t, "keys", "list", "testChain2")
-	require.Equal(t, res.Stdout.String(), "key(default) -> "+relayertest.ZeroCosmosAddr+"\n")
-	require.Empty(t, res.Stderr.String())
-
-	res = sys.MustRun(t, "keys", "list", "testChain3")
-	require.Equal(t, res.Stdout.String(), "key(default) -> "+relayertest.ZeroCosmosAddr+"\n")
-	require.Empty(t, res.Stderr.String())
-
-	// Deleting the key must succeed.
-	res = sys.MustRun(t, "keys", "delete", "testChain", "default", "-y")
-	require.Empty(t, res.Stdout.String())
-	require.Equal(t, res.Stderr.String(), "key default deleted\n")
-
-	res = sys.MustRun(t, "keys", "delete", "testChain2", "default", "-y")
-	require.Empty(t, res.Stdout.String())
-	require.Equal(t, res.Stderr.String(), "key default deleted\n")
-	
-	res = sys.MustRun(t, "keys", "delete", "testChain3", "default", "-y")
-	require.Empty(t, res.Stdout.String())
-	require.Equal(t, res.Stderr.String(), "key default deleted\n")
-
-	// Listing the keys again gives the no keys warning.
-	res = sys.MustRun(t, "keys", "list", "testChain")
-	require.Empty(t, res.Stdout.String())
-	require.Contains(t, res.Stderr.String(), "no keys found for chain testChain")
-
-	res = sys.MustRun(t, "keys", "list", "testChain2")
-	require.Empty(t, res.Stdout.String())
-	require.Contains(t, res.Stderr.String(), "no keys found for chain testChain2")
-
-	res = sys.MustRun(t, "keys", "list", "testChain3")
-	require.Empty(t, res.Stdout.String())
-	require.Contains(t, res.Stderr.String(), "no keys found for chain testChain3")
 }

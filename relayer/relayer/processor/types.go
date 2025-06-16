@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -604,11 +604,4 @@ func ConnectionInfoConnectionKey(info provider.ConnectionInfo) ConnectionKey {
 		ConnectionID:         info.ConnID,
 		CounterpartyConnID:   info.CounterpartyConnID,
 	}
-}
-
-// StuckPacket is used for narrowing block queries on packets that are stuck on a channel for a specific chain.
-type StuckPacket struct {
-	ChainID     string
-	StartHeight uint64
-	EndHeight   uint64
 }

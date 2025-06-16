@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 )
 
@@ -19,7 +19,7 @@ const (
 	// Amount of time to wait when sending transactions before giving up
 	// and continuing on. Messages will be retried later if they are still
 	// relevant.
-	messageSendTimeout = 60 * time.Second
+	messageSendTimeout = 120 * time.Second
 
 	// Amount of time to wait for a proof to be queried before giving up.
 	// The proof query will be retried later if the message still needs
@@ -58,8 +58,8 @@ const (
 type PathProcessor struct {
 	log *zap.Logger
 
-	pathEnd1 *pathEndRuntime
-	pathEnd2 *pathEndRuntime
+	PathEnd1 *PathEndRuntime
+	PathEnd2 *PathEndRuntime
 
 	memo string
 
@@ -110,8 +110,8 @@ func NewPathProcessor(
 
 	pp := &PathProcessor{
 		log:                       log,
-		pathEnd1:                  newPathEndRuntime(log, pathEnd1, metrics),
-		pathEnd2:                  newPathEndRuntime(log, pathEnd2, metrics),
+		PathEnd1:                  newPathEndRuntime(log, pathEnd1, metrics),
+		PathEnd2:                  newPathEndRuntime(log, pathEnd2, metrics),
 		retryProcess:              make(chan struct{}, 2),
 		memo:                      memo,
 		clientUpdateThresholdTime: clientUpdateThresholdTime,
@@ -151,12 +151,12 @@ func (pp *PathProcessor) shouldFlush() bool {
 
 // TEST USE ONLY
 func (pp *PathProcessor) PathEnd1Messages(channelKey ChannelKey, message string) PacketSequenceCache {
-	return pp.pathEnd1.messageCache.PacketFlow[channelKey][message]
+	return pp.PathEnd1.messageCache.PacketFlow[channelKey][message]
 }
 
 // TEST USE ONLY
 func (pp *PathProcessor) PathEnd2Messages(channelKey ChannelKey, message string) PacketSequenceCache {
-	return pp.pathEnd2.messageCache.PacketFlow[channelKey][message]
+	return pp.PathEnd2.messageCache.PacketFlow[channelKey][message]
 }
 
 type channelPair struct {
@@ -166,31 +166,31 @@ type channelPair struct {
 
 // RelevantClientID returns the relevant client ID or panics
 func (pp *PathProcessor) RelevantClientID(chainID string) string {
-	if pp.pathEnd1.info.ChainID == chainID {
-		return pp.pathEnd1.info.ClientID
+	if pp.PathEnd1.Info.ChainID == chainID {
+		return pp.PathEnd1.Info.ClientID
 	}
-	if pp.pathEnd2.info.ChainID == chainID {
-		return pp.pathEnd2.info.ClientID
+	if pp.PathEnd2.Info.ChainID == chainID {
+		return pp.PathEnd2.Info.ClientID
 	}
 	panic(fmt.Errorf("no relevant client ID for chain ID: %s", chainID))
 }
 
 // OnConnectionMessage allows the caller to handle connection handshake messages with a callback.
 func (pp *PathProcessor) OnConnectionMessage(chainID string, eventType string, onMsg func(provider.ConnectionInfo)) {
-	if pp.pathEnd1.info.ChainID == chainID {
-		pp.pathEnd1.connSubscribers[eventType] = append(pp.pathEnd1.connSubscribers[eventType], onMsg)
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		pp.pathEnd2.connSubscribers[eventType] = append(pp.pathEnd2.connSubscribers[eventType], onMsg)
+	if pp.PathEnd1.Info.ChainID == chainID {
+		pp.PathEnd1.connSubscribers[eventType] = append(pp.PathEnd1.connSubscribers[eventType], onMsg)
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		pp.PathEnd2.connSubscribers[eventType] = append(pp.PathEnd2.connSubscribers[eventType], onMsg)
 	}
 }
 
 func (pp *PathProcessor) channelPairs() []channelPair {
 	// Channel keys are from pathEnd1's perspective
 	channels := make(map[ChannelKey]ChannelState)
-	for k, cs := range pp.pathEnd1.channelStateCache {
+	for k, cs := range pp.PathEnd1.channelStateCache {
 		channels[k] = cs
 	}
-	for k, cs := range pp.pathEnd2.channelStateCache {
+	for k, cs := range pp.PathEnd2.channelStateCache {
 		channels[k.Counterparty()] = cs
 	}
 	pairs := make([]channelPair, len(channels))
@@ -211,19 +211,19 @@ func (pp *PathProcessor) SetChainProviderIfApplicable(chainProvider provider.Cha
 	if chainProvider == nil {
 		return false
 	}
-	if pp.pathEnd1.info.ChainID == chainProvider.ChainId() {
-		pp.pathEnd1.chainProvider = chainProvider
+	if pp.PathEnd1.Info.ChainID == chainProvider.ChainId() {
+		pp.PathEnd1.ChainProvider = chainProvider
 
 		if pp.isLocalhost {
-			pp.pathEnd2.chainProvider = chainProvider
+			pp.PathEnd2.ChainProvider = chainProvider
 		}
 
 		return true
-	} else if pp.pathEnd2.info.ChainID == chainProvider.ChainId() {
-		pp.pathEnd2.chainProvider = chainProvider
+	} else if pp.PathEnd2.Info.ChainID == chainProvider.ChainId() {
+		pp.PathEnd2.ChainProvider = chainProvider
 
 		if pp.isLocalhost {
-			pp.pathEnd1.chainProvider = chainProvider
+			pp.PathEnd1.ChainProvider = chainProvider
 		}
 
 		return true
@@ -232,37 +232,37 @@ func (pp *PathProcessor) SetChainProviderIfApplicable(chainProvider provider.Cha
 }
 
 func (pp *PathProcessor) IsRelayedChannel(chainID string, channelKey ChannelKey) bool {
-	if pp.pathEnd1.info.ChainID == chainID {
-		return pp.pathEnd1.info.ShouldRelayChannel(ChainChannelKey{ChainID: chainID, CounterpartyChainID: pp.pathEnd2.info.ChainID, ChannelKey: channelKey})
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		return pp.pathEnd2.info.ShouldRelayChannel(ChainChannelKey{ChainID: chainID, CounterpartyChainID: pp.pathEnd1.info.ChainID, ChannelKey: channelKey})
+	if pp.PathEnd1.Info.ChainID == chainID {
+		return pp.PathEnd1.Info.ShouldRelayChannel(ChainChannelKey{ChainID: chainID, CounterpartyChainID: pp.PathEnd2.Info.ChainID, ChannelKey: channelKey})
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		return pp.PathEnd2.Info.ShouldRelayChannel(ChainChannelKey{ChainID: chainID, CounterpartyChainID: pp.PathEnd1.Info.ChainID, ChannelKey: channelKey})
 	}
 	return false
 }
 
 func (pp *PathProcessor) IsRelevantClient(chainID string, clientID string) bool {
-	if pp.pathEnd1.info.ChainID == chainID {
-		return pp.pathEnd1.info.ClientID == clientID
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		return pp.pathEnd2.info.ClientID == clientID
+	if pp.PathEnd1.Info.ChainID == chainID {
+		return pp.PathEnd1.Info.ClientID == clientID
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		return pp.PathEnd2.Info.ClientID == clientID
 	}
 	return false
 }
 
 func (pp *PathProcessor) IsRelevantConnection(chainID string, connectionID string) bool {
-	if pp.pathEnd1.info.ChainID == chainID {
-		return pp.pathEnd1.isRelevantConnection(connectionID)
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		return pp.pathEnd2.isRelevantConnection(connectionID)
+	if pp.PathEnd1.Info.ChainID == chainID {
+		return pp.PathEnd1.isRelevantConnection(connectionID)
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		return pp.PathEnd2.isRelevantConnection(connectionID)
 	}
 	return false
 }
 
 func (pp *PathProcessor) IsRelevantChannel(chainID string, channelID string) bool {
-	if pp.pathEnd1.info.ChainID == chainID {
-		return pp.pathEnd1.isRelevantChannel(channelID)
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		return pp.pathEnd2.isRelevantChannel(channelID)
+	if pp.PathEnd1.Info.ChainID == chainID {
+		return pp.PathEnd1.isRelevantChannel(channelID)
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		return pp.PathEnd2.isRelevantChannel(channelID)
 	}
 	return false
 }
@@ -287,10 +287,10 @@ func (pp *PathProcessor) HandleNewData(chainID string, cacheData ChainProcessorC
 		return
 	}
 
-	if pp.pathEnd1.info.ChainID == chainID {
-		pp.pathEnd1.incomingCacheData <- cacheData
-	} else if pp.pathEnd2.info.ChainID == chainID {
-		pp.pathEnd2.incomingCacheData <- cacheData
+	if pp.PathEnd1.Info.ChainID == chainID {
+		pp.PathEnd1.incomingCacheData <- cacheData
+	} else if pp.PathEnd2.Info.ChainID == chainID {
+		pp.PathEnd2.incomingCacheData <- cacheData
 	}
 }
 
@@ -310,20 +310,20 @@ func (pp *PathProcessor) processAvailableSignals(ctx context.Context, cancel fun
 	select {
 	case <-ctx.Done():
 		pp.log.Debug("Context done, quitting PathProcessor",
-			zap.String("chain_id_1", pp.pathEnd1.info.ChainID),
-			zap.String("chain_id_2", pp.pathEnd2.info.ChainID),
-			zap.String("client_id_1", pp.pathEnd1.info.ClientID),
-			zap.String("client_id_2", pp.pathEnd2.info.ClientID),
+			zap.String("chain_id_1", pp.PathEnd1.Info.ChainID),
+			zap.String("chain_id_2", pp.PathEnd2.Info.ChainID),
+			zap.String("client_id_1", pp.PathEnd1.Info.ClientID),
+			zap.String("client_id_2", pp.PathEnd2.Info.ClientID),
 			zap.Error(ctx.Err()),
 		)
 		return true
-	case d := <-pp.pathEnd1.incomingCacheData:
+	case d := <-pp.PathEnd1.incomingCacheData:
 		// we have new data from ChainProcessor for pathEnd1
-		pp.pathEnd1.mergeCacheData(ctx, cancel, d, pp.pathEnd2.info.ChainID, pp.pathEnd2.inSync, pp.messageLifecycle, pp.pathEnd2)
+		pp.PathEnd1.mergeCacheData(ctx, cancel, d, pp.PathEnd2.Info.ChainID, pp.PathEnd2.inSync, pp.messageLifecycle, pp.PathEnd2)
 
-	case d := <-pp.pathEnd2.incomingCacheData:
+	case d := <-pp.PathEnd2.incomingCacheData:
 		// we have new data from ChainProcessor for pathEnd2
-		pp.pathEnd2.mergeCacheData(ctx, cancel, d, pp.pathEnd1.info.ChainID, pp.pathEnd1.inSync, pp.messageLifecycle, pp.pathEnd1)
+		pp.PathEnd2.mergeCacheData(ctx, cancel, d, pp.PathEnd1.Info.ChainID, pp.PathEnd1.inSync, pp.messageLifecycle, pp.PathEnd1)
 
 	case <-pp.retryProcess:
 		// No new data to merge in, just retry handling.
@@ -346,24 +346,24 @@ func (pp *PathProcessor) Run(ctx context.Context, cancel func()) {
 			return
 		}
 
-		for len(pp.pathEnd1.incomingCacheData) > 0 || len(pp.pathEnd2.incomingCacheData) > 0 || len(pp.retryProcess) > 0 {
+		for len(pp.PathEnd1.incomingCacheData) > 0 || len(pp.PathEnd2.incomingCacheData) > 0 || len(pp.retryProcess) > 0 {
 			// signals are available, so this will not need to block.
 			if pp.processAvailableSignals(ctx, cancel) {
 				return
 			}
 		}
 
-		if !pp.pathEnd1.inSync || !pp.pathEnd2.inSync {
+		if !pp.PathEnd1.inSync || !pp.PathEnd2.inSync {
 			continue
 		}
 
-		if pp.shouldFlush() && !pp.initialFlushComplete {
-			pp.handleFlush(ctx)
-			pp.initialFlushComplete = true
-		} else if pp.shouldTerminateForFlushComplete() {
-			cancel()
-			return
-		}
+		//if pp.shouldFlush() && !pp.initialFlushComplete {
+		//	pp.handleFlush(ctx)
+		//	pp.initialFlushComplete = true
+		//} else if pp.shouldTerminateForFlushComplete() {
+		//	cancel()
+		//	return
+		//}
 
 		// process latest message cache state from both pathEnds
 		if err := pp.processLatestMessages(ctx, cancel); err != nil {
@@ -428,10 +428,10 @@ func (pp *PathProcessor) handleLocalhostData(cacheData ChainProcessorCacheData) 
 				if _, ok := pathEnd1Cache.IBCMessagesCache.ChannelHandshake[eventType]; !ok {
 					pathEnd1Cache.IBCMessagesCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
 				}
-				if order, ok := pp.pathEnd1.channelOrderCache[k.ChannelID]; ok {
+				if order, ok := pp.PathEnd1.channelOrderCache[k.ChannelID]; ok {
 					v.Order = order
 				}
-				if order, ok := pp.pathEnd2.channelOrderCache[k.CounterpartyChannelID]; ok {
+				if order, ok := pp.PathEnd2.channelOrderCache[k.CounterpartyChannelID]; ok {
 					v.Order = order
 				}
 				// TODO this is insanely hacky, need to figure out how to handle the ordering dilemma on ordered chans
@@ -443,10 +443,10 @@ func (pp *PathProcessor) handleLocalhostData(cacheData ChainProcessorCacheData) 
 				if _, ok := pathEnd2Cache.IBCMessagesCache.ChannelHandshake[eventType]; !ok {
 					pathEnd2Cache.IBCMessagesCache.ChannelHandshake[eventType] = make(ChannelMessageCache)
 				}
-				if order, ok := pp.pathEnd2.channelOrderCache[k.ChannelID]; ok {
+				if order, ok := pp.PathEnd2.channelOrderCache[k.ChannelID]; ok {
 					v.Order = order
 				}
-				if order, ok := pp.pathEnd1.channelOrderCache[k.CounterpartyChannelID]; ok {
+				if order, ok := pp.PathEnd1.channelOrderCache[k.CounterpartyChannelID]; ok {
 					v.Order = order
 				}
 
@@ -487,6 +487,6 @@ func (pp *PathProcessor) handleLocalhostData(cacheData ChainProcessorCacheData) 
 	pathEnd1Cache.ChannelStateCache = channelStateCache1
 	pathEnd2Cache.ChannelStateCache = channelStateCache2
 
-	pp.pathEnd1.incomingCacheData <- pathEnd1Cache
-	pp.pathEnd2.incomingCacheData <- pathEnd2Cache
+	pp.PathEnd1.incomingCacheData <- pathEnd1Cache
+	pp.PathEnd2.incomingCacheData <- pathEnd2Cache
 }

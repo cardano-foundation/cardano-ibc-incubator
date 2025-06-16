@@ -40,4 +40,4 @@ func (RelayerFactory) Capabilities() map[interchaintestrelayer.Capability]bool {
 	return interchaintestrelayer.FullCapabilities()
 }
 
-func (RelayerFactory) Name() string { return "github.com/cosmos/relayer" }
+func (RelayerFactory) Name() string { return "github.com/cardano/relayer/v1" }

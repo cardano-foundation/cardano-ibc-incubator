@@ -1,70 +1,45 @@
-FROM --platform=$BUILDPLATFORM golang:1.21-alpine3.17 AS build-env
+# Use the latest Go version as the builder stage
+FROM golang:latest as builder
+ARG MAIN_CONTEX=relayer
+# Set the working directory inside the builder stage
+WORKDIR /app
 
-RUN apk add --update --no-cache curl make git libc-dev bash gcc linux-headers eudev-dev
+# Copy the source code into the image
+COPY ${MAIN_CONTEX} .
+COPY ./proto-types ./../proto-types
 
-ARG TARGETARCH
-ARG BUILDARCH
+# Build the application binary using the provided Makefile
+RUN make build
 
-RUN if [ "${TARGETARCH}" = "arm64" ] && [ "${BUILDARCH}" != "arm64" ]; then \
-    wget -c https://musl.cc/aarch64-linux-musl-cross.tgz -O - | tar -xzvv --strip-components 1 -C /usr; \
-    elif [ "${TARGETARCH}" = "amd64" ] && [ "${BUILDARCH}" != "amd64" ]; then \
-    wget -c https://musl.cc/x86_64-linux-musl-cross.tgz -O - | tar -xzvv --strip-components 1 -C /usr; \
-    fi
+FROM alpine:latest
 
-ADD . .
+RUN apk add --no-cache libc6-compat
 
-RUN if [ "${TARGETARCH}" = "arm64" ] && [ "${BUILDARCH}" != "arm64" ]; then \
-    export CC=aarch64-linux-musl-gcc CXX=aarch64-linux-musl-g++;\
-    elif [ "${TARGETARCH}" = "amd64" ] && [ "${BUILDARCH}" != "amd64" ]; then \
-    export CC=x86_64-linux-musl-gcc CXX=x86_64-linux-musl-g++; \
-    fi; \
-    GOOS=linux GOARCH=$TARGETARCH CGO_ENABLED=1 LDFLAGS='-linkmode external -extldflags "-static"' make install
+# Install openssl, required for secure network communications
+RUN apk add --no-cache openssl
 
-RUN if [ -d "/go/bin/linux_${TARGETARCH}" ]; then mv /go/bin/linux_${TARGETARCH}/* /go/bin/; fi
+# Set the version for Dockerize, a utility to wait for services
+ENV DOCKERIZE_VERSION v0.6.1
 
-# Use minimal busybox from infra-toolkit image for final scratch image
-FROM ghcr.io/strangelove-ventures/infra-toolkit:v0.0.6 AS busybox-min
-RUN addgroup --gid 1000 -S relayer && adduser --uid 100 -S relayer -G relayer
+# Download and install Dockerize to facilitate service dependency waiting
+RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && tar -C /usr/local/bin -xzvf dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
+    && rm dockerize-alpine-linux-amd64-$DOCKERIZE_VERSION.tar.gz
 
-# Use ln and rm from full featured busybox for assembling final image
-FROM busybox:1.34.1-musl AS busybox-full
+# Install bash and jq for scripting and JSON processing
+RUN apk add --no-cache bash jq nano
 
-# Build final image from scratch
-FROM scratch
+# Set the working directory in the final image
+WORKDIR /root/
 
-LABEL org.opencontainers.image.source="https://github.com/cosmos/relayer"
+# Copy the built application binary and scripts from the builder stage
+COPY --from=builder /app/bin/rly ./bin/
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/.config ./.config
+COPY --from=builder /app/.env .env
 
-WORKDIR /bin
+# Use Dockerize to wait for the Node.js service to be ready before starting the application
+# CMD dockerize -wait tcp://0.0.0.0:26657 -wait tcp://0.0.0.0:4884 -timeout 120s ./scripts/relayer-start.sh
 
-# Install ln (for making hard links) and rm (for cleanup) from full busybox image (will be deleted, only needed for image assembly)
-COPY --from=busybox-full /bin/ln /bin/rm ./
-
-# Install minimal busybox image as shell binary (will create hardlinks for the rest of the binaries to this data)
-COPY --from=busybox-min /busybox/busybox /bin/sh
-
-# Add hard links for read-only utils, then remove ln and rm
-# Will then only have one copy of the busybox minimal binary file with all utils pointing to the same underlying inode
-RUN ln sh pwd && \
-    ln sh ls && \
-    ln sh cat && \
-    ln sh less && \
-    ln sh grep && \
-    ln sh sleep && \
-    ln sh env && \
-    ln sh tar && \
-    ln sh tee && \
-    ln sh du && \
-    rm ln rm
-
-# Install chain binaries
-COPY --from=build-env /bin/rly /bin
-
-# Install trusted CA certificates
-COPY --from=busybox-min /etc/ssl/cert.pem /etc/ssl/cert.pem
-
-# Install relayer user
-COPY --from=busybox-min /etc/passwd /etc/passwd
-COPY --from=busybox-min --chown=100:1000 /home/relayer /home/relayer
-
-WORKDIR /home/relayer
-USER relayer
+# CMD ["sleep", "infinity"]
+ENTRYPOINT ["./scripts/relayer-start.sh"]

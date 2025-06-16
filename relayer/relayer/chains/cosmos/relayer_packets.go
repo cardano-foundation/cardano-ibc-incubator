@@ -3,9 +3,9 @@ package cosmos
 import (
 	"fmt"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 )
 
 var (

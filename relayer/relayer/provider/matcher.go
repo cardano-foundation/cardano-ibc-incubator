@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
 	"reflect"
 	"time"
 
@@ -18,6 +19,10 @@ var tendermintClientCodec = tmClientCodec()
 func tmClientCodec() *sdkcodec.ProtoCodec {
 	interfaceRegistry := types.NewInterfaceRegistry()
 	tmclient.RegisterInterfaces(interfaceRegistry)
+	interfaceRegistry.RegisterImplementations(
+		(*ibcexported.ClientMessage)(nil),
+		&module.BlockData{},
+	)
 	return sdkcodec.NewProtoCodec(interfaceRegistry)
 }
 
@@ -57,7 +62,6 @@ func CheckForMisbehaviour(
 		misbehavior ibcexported.ClientMessage
 		err         error
 	)
-
 	clientMsg, err := clienttypes.UnmarshalClientMessage(tendermintClientCodec, proposedHeader)
 	if err != nil {
 		return nil, err
@@ -65,7 +69,15 @@ func CheckForMisbehaviour(
 
 	switch header := clientMsg.(type) {
 	case *tmclient.Header:
-		misbehavior, err = checkTendermintMisbehaviour(ctx, clientID, header, cachedHeader, counterparty)
+		misbehavior, err = CheckTendermintMisbehaviour(ctx, clientID, header, cachedHeader, counterparty)
+		if err != nil {
+			return nil, err
+		}
+		if misbehavior == nil && err == nil {
+			return nil, nil
+		}
+	case *module.BlockData:
+		misbehavior, err = CheckOuroborosMisbehavior(ctx, clientID, header, cachedHeader, counterparty)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +85,6 @@ func CheckForMisbehaviour(
 			return nil, nil
 		}
 	}
-
 	return misbehavior, nil
 }
 
@@ -167,7 +178,7 @@ func isMatchingTendermintConsensusState(a, b *tmclient.ConsensusState) bool {
 // matches the trusted consensus state from the counterparty chain. If there is no cached trusted header then
 // it will be queried from the counterparty. If the consensus states for the proposed header and the trusted header
 // match then both returned values will be nil.
-func checkTendermintMisbehaviour(
+func CheckTendermintMisbehaviour(
 	ctx context.Context,
 	clientID string,
 	proposedHeader *tmclient.Header,
@@ -175,7 +186,7 @@ func checkTendermintMisbehaviour(
 	counterparty ChainProvider,
 ) (ibcexported.ClientMessage, error) {
 	var (
-		trustedHeader *tmclient.Header
+		onChainHeader *tmclient.Header
 		err           error
 	)
 
@@ -184,24 +195,23 @@ func checkTendermintMisbehaviour(
 		if err != nil {
 			return nil, err
 		}
-
 		tmHeader, ok := header.(TendermintIBCHeader)
 		if !ok {
 			return nil, fmt.Errorf("failed to check for misbehaviour, expected %T, got %T", (*TendermintIBCHeader)(nil), header)
 		}
 
-		trustedHeader, err = tmHeader.TMHeader()
+		onChainHeader, err = tmHeader.TMHeader()
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		trustedHeader, err = cachedHeader.(TendermintIBCHeader).TMHeader()
+		onChainHeader, err = cachedHeader.(TendermintIBCHeader).TMHeader()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	if isMatchingTendermintConsensusState(proposedHeader.ConsensusState(), trustedHeader.ConsensusState()) {
+	if isMatchingTendermintConsensusState(proposedHeader.ConsensusState(), onChainHeader.ConsensusState()) {
 		return nil, nil
 	}
 
@@ -211,8 +221,37 @@ func checkTendermintMisbehaviour(
 	// The Trusted ConsensusState must be within the unbonding period of current time in order to correctly verify,
 	// and the TrustedValidators must hash to TrustedConsensusState.NextValidatorsHash since that is the last trusted
 	// validator set at the TrustedHeight.
-	trustedHeader.TrustedValidators = proposedHeader.TrustedValidators
-	trustedHeader.TrustedHeight = proposedHeader.TrustedHeight
+	onChainHeader.TrustedValidators = proposedHeader.TrustedValidators
+	onChainHeader.TrustedHeight = proposedHeader.TrustedHeight
 
-	return tmclient.NewMisbehaviour(clientID, proposedHeader, trustedHeader), nil
+	//return counterparty.MsgUpdateClientHeader(srcHeader, proposedHeader.TrustedHeight, srcHeader)
+	return tmclient.NewMisbehaviour(clientID, proposedHeader, onChainHeader), nil
+}
+
+func CheckOuroborosMisbehavior(ctx context.Context,
+	clientID string,
+	proposedHeader *module.BlockData,
+	cachedHeader IBCHeader,
+	counterparty ChainProvider,
+) (ibcexported.ClientMessage, error) {
+	var (
+		onChainBlockData *module.BlockData
+		err              error
+	)
+
+	if cachedHeader == nil {
+		header, err := counterparty.QueryBlockData(ctx, int64(proposedHeader.Height.RevisionHeight))
+		if err != nil {
+			return nil, err
+		}
+		onChainBlockData = header
+	} else {
+		onChainBlockData = cachedHeader.(CardanoIBCHeader).CardanoBlockData
+	}
+
+	if reflect.DeepEqual(proposedHeader, onChainBlockData) {
+		return nil, nil
+	}
+
+	return onChainBlockData, err
 }

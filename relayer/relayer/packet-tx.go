@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 )
 
@@ -18,12 +18,12 @@ const defaultTimeoutOffset = 1000
 // SendTransferMsg initiates an ics20 transfer from src to dst with the specified args
 //
 //nolint:lll
-func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain, amount sdk.Coin, dstAddr string, toHeightOffset uint64, toTimeOffset time.Duration, srcChannel *chantypes.IdentifiedChannel) error {
+func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain, amount sdk.Coin, dstAddr string, memo string, toHeightOffset uint64, toTimeOffset time.Duration, srcChannel *chantypes.IdentifiedChannel) error {
 	var (
 		timeoutHeight    uint64
 		timeoutTimestamp uint64
 	)
-
+	c.log.Info("Start SendTransferMsg", zap.Time("time", time.Now()))
 	// get header representing dst to check timeouts
 	srch, dsth, err := QueryLatestHeights(ctx, c, dst)
 	if err != nil {
@@ -92,6 +92,8 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 			RevisionHeight: timeoutHeight,
 		},
 		TimeoutTimestamp: timeoutTimestamp,
+		//todo: find better solution for this to include memo on cardano chain
+		DestChannel: memo,
 	}
 	msg, err := c.ChainProvider.MsgTransfer(dstAddr, amount, pi)
 	if err != nil {
@@ -102,7 +104,7 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 		Src: []provider.RelayerMessage{msg},
 	}
 
-	result := txs.Send(ctx, log, AsRelayMsgSender(c), AsRelayMsgSender(dst), "")
+	result := txs.Send(ctx, log, AsRelayMsgSender(c), AsRelayMsgSender(dst), memo)
 	if err := result.Error(); err != nil {
 		if result.PartiallySent() {
 			c.log.Info(
@@ -123,5 +125,7 @@ func (c *Chain) SendTransferMsg(ctx context.Context, log *zap.Logger, dst *Chain
 			)
 		}
 	}
+
+	c.log.Info("Finish SendTransferMsg", zap.Time("time", time.Now()))
 	return nil
 }

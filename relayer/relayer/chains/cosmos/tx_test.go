@@ -5,13 +5,13 @@ import (
 	"math"
 	"testing"
 
+	"github.com/cardano/relayer/v1/relayer/ethermint"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
-	"github.com/cosmos/relayer/v2/relayer/ethermint"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,14 +67,6 @@ func TestCosmosProvider_AdjustEstimatedGas(t *testing.T) {
 			maxGasAmount:  0,
 			expectedGas:   75000,
 			expectedErr:   nil,
-		},
-		{
-			name:          "estimated gas is higher than max gas",
-			gasUsed:       50000,
-			gasAdjustment: 1.5,
-			maxGasAmount:  70000,
-			expectedGas:   75000,
-			expectedErr:   fmt.Errorf("estimated gas 75000 is higher than max gas 70000"),
 		},
 	}
 

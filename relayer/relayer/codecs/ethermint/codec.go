@@ -1,11 +1,11 @@
 package ethermint
 
 import (
+	"github.com/cardano/relayer/v1/relayer/ethermint"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	"github.com/cosmos/relayer/v2/relayer/ethermint"
 )
 
 // RegisterInterfaces register the Ethermint key concrete types.

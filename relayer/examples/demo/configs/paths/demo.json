@@ -1,9 +1,9 @@
 {
   "src": {
-    "chain-id": "ibc-0"
+    "chain-id": "cardano"
   },
   "dst": {
-    "chain-id": "ibc-1"
+    "chain-id": "sidechain"
   },
   "src-channel-filter": {
     "rule": null,

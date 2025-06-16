@@ -4,15 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"cosmossdk.io/math"
+
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer"
+	"github.com/cardano/relayer/v1/relayer/processor"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer"
-	"github.com/cosmos/relayer/v2/relayer/processor"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -108,7 +111,6 @@ func createClientsCmd(a *appState) *cobra.Command {
 					return err
 				}
 			}
-
 			return nil
 		},
 	}
@@ -175,10 +177,21 @@ func createClientCmd(a *appState) *cobra.Command {
 			}
 
 			// Query the latest heights on src and dst and retry if the query fails
-			var srch, dsth int64
+			//var cardanoh, cosmosh int64
+			var srcHeight, dstHeight int64
+			//var mainConsensusState = provider.MsgGetConsensusStateResponse{}
+
 			if err = retry.Do(func() error {
-				srch, dsth, err = relayer.QueryLatestHeights(cmd.Context(), src, dst)
-				if srch == 0 || dsth == 0 || err != nil {
+
+				//cardanoh, err = src.ChainProvider.QueryCardanoLatestHeight(cmd.Context())
+				//cosmosh, err = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
+				srcHeight, err = src.ChainProvider.QueryLatestHeight(cmd.Context())
+				dstHeight, err = dst.ChainProvider.QueryLatestHeight(cmd.Context())
+
+				//if cosmosh == 0 || err != nil {
+				//	return fmt.Errorf("failed to query latest heights: %w", err)
+				//}
+				if dstHeight == 0 || err != nil {
 					return fmt.Errorf("failed to query latest heights: %w", err)
 				}
 				return err
@@ -187,9 +200,9 @@ func createClientCmd(a *appState) *cobra.Command {
 			}
 
 			// Query the light signed headers for src & dst at the heights srch & dsth, retry if the query fails
-			var srcUpdateHeader, dstUpdateHeader provider.IBCHeader
+			var dstUpdateHeader provider.IBCHeader
 			if err = retry.Do(func() error {
-				srcUpdateHeader, dstUpdateHeader, err = relayer.QueryIBCHeaders(cmd.Context(), src, dst, srch, dsth)
+				dstUpdateHeader, err = relayer.QueryIBCHeader(cmd.Context(), dst, dstHeight)
 				if err != nil {
 					return err
 				}
@@ -198,19 +211,24 @@ func createClientCmd(a *appState) *cobra.Command {
 				a.log.Info(
 					"Failed to get light signed header",
 					zap.String("src_chain_id", src.ChainID()),
-					zap.Int64("src_height", srch),
+					zap.Int64("src_height", srcHeight),
 					zap.String("dst_chain_id", dst.ChainID()),
-					zap.Int64("dst_height", dsth),
+					zap.Int64("dst_height", dstHeight),
 					zap.Uint("attempt", n+1),
 					zap.Uint("max_attempts", relayer.RtyAttNum),
 					zap.Error(err),
 				)
-				srch, dsth, _ = relayer.QueryLatestHeights(cmd.Context(), src, dst)
+				dstHeight, _ = relayer.QueryCosmosLatestHeight(cmd.Context(), src)
 			})); err != nil {
 				return err
 			}
 
-			clientID, err := relayer.CreateClient(cmd.Context(), src, dst, srcUpdateHeader, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, a.config.memo(cmd))
+			if err != nil {
+				return err
+			}
+			//_, cardanoConsensusState, err := src.ChainProvider.QueryCardanoState(cmd.Context(), cardanoh)
+			clientID, err := relayer.CreateClient(cmd.Context(), src, dst, dstUpdateHeader, allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, a.config.memo(cmd), true)
+
 			if err != nil {
 				return err
 			}
@@ -596,35 +614,35 @@ $ %s tx connect demo-path --src-port transfer --dst-port transfer --order unorde
 			c[src].PathEnd = pth.Src
 			c[dst].PathEnd = pth.Dst
 
-			srcPort, err := cmd.Flags().GetString(flagSrcPort)
-			if err != nil {
-				return err
-			}
-
-			dstPort, err := cmd.Flags().GetString(flagDstPort)
-			if err != nil {
-				return err
-			}
-
-			order, err := cmd.Flags().GetString(flagOrder)
-			if err != nil {
-				return err
-			}
-
-			version, err := cmd.Flags().GetString(flagVersion)
-			if err != nil {
-				return err
-			}
-
-			to, err := getTimeout(cmd)
-			if err != nil {
-				return err
-			}
-
-			retries, err := cmd.Flags().GetUint64(flagMaxRetries)
-			if err != nil {
-				return err
-			}
+			//srcPort, err := cmd.Flags().GetString(flagSrcPort)
+			//if err != nil {
+			//	return err
+			//}
+			//
+			//dstPort, err := cmd.Flags().GetString(flagDstPort)
+			//if err != nil {
+			//	return err
+			//}
+			//
+			//order, err := cmd.Flags().GetString(flagOrder)
+			//if err != nil {
+			//	return err
+			//}
+			//
+			//version, err := cmd.Flags().GetString(flagVersion)
+			//if err != nil {
+			//	return err
+			//}
+			//
+			//to, err := getTimeout(cmd)
+			//if err != nil {
+			//	return err
+			//}
+			//
+			//retries, err := cmd.Flags().GetUint64(flagMaxRetries)
+			//if err != nil {
+			//	return err
+			//}
 
 			override, err := cmd.Flags().GetBool(flagOverride)
 			if err != nil {
@@ -641,35 +659,51 @@ $ %s tx connect demo-path --src-port transfer --dst-port transfer --order unorde
 
 			memo := a.config.memo(cmd)
 
-			initialBlockHistory, err := cmd.Flags().GetUint64(flagInitialBlockHistory)
-			if err != nil {
-				return err
-			}
+			//initialBlockHistory, err := cmd.Flags().GetUint64(flagInitialBlockHistory)
+			//if err != nil {
+			//	return err
+			//}
 
 			// create clients if they aren't already created
 			clientSrc, clientDst, err := c[src].CreateClients(cmd.Context(), c[dst], allowUpdateAfterExpiry, allowUpdateAfterMisbehaviour, override, customClientTrustingPeriod, memo)
 			if err != nil {
 				return fmt.Errorf("error creating clients: %w", err)
 			}
-			if clientSrc != "" || clientDst != "" {
-				if err := a.updatePathConfig(cmd.Context(), pathName, clientSrc, clientDst, "", ""); err != nil {
+
+			// TODO: create connection and channel
+			if clientSrc != "" && clientDst != "" {
+				if len(clientSrc) <= 3 {
+					clientSrc = "07-tendermint-" + clientSrc
+				}
+				if len(clientDst) <= 3 {
+					clientDst = "07-tendermint-" + clientDst
+				}
+				if c[src].ChainProvider.Type() == "cardano" {
+					if err := a.updatePathConfig(cmd.Context(), pathName, clientSrc, clientDst, "", ""); err != nil {
+						return err
+					}
+					return nil
+
+				}
+				if err := a.updatePathConfig(cmd.Context(), pathName, clientDst, clientSrc, "", ""); err != nil {
 					return err
 				}
 			}
-
-			// create connection if it isn't already created
-			connectionSrc, connectionDst, err := c[src].CreateOpenConnections(cmd.Context(), c[dst], retries, to, memo, initialBlockHistory, pathName)
-			if err != nil {
-				return fmt.Errorf("error creating connections: %w", err)
-			}
-			if connectionSrc != "" || connectionDst != "" {
-				if err := a.updatePathConfig(cmd.Context(), pathName, "", "", connectionSrc, connectionDst); err != nil {
-					return err
-				}
-			}
-
-			// create channel if it isn't already created
-			return c[src].CreateOpenChannels(cmd.Context(), c[dst], retries, to, srcPort, dstPort, order, version, override, memo, pathName)
+			//
+			//// create connection if it isn't already created
+			//connectionSrc, connectionDst, err := c[src].CreateOpenConnections(cmd.Context(), c[dst], retries, to, memo, initialBlockHistory, pathName)
+			//if err != nil {
+			//	return fmt.Errorf("error creating connections: %w", err)
+			//}
+			//if connectionSrc != "" || connectionDst != "" {
+			//	if err := a.updatePathConfig(cmd.Context(), pathName, "", "", connectionSrc, connectionDst); err != nil {
+			//		return err
+			//	}
+			//}
+			//
+			//// create channel if it isn't already created
+			//return c[src].CreateOpenChannels(cmd.Context(), c[dst], retries, to, srcPort, dstPort, order, version, override, memo, pathName)
+			return nil
 		},
 	}
 	cmd = timeoutFlag(a.viper, cmd)
@@ -795,11 +829,6 @@ $ %s tx flush demo-path channel-0`,
 				}
 			}
 
-			stuckPacket, err := parseStuckPacketFromFlags(cmd)
-			if err != nil {
-				return err
-			}
-
 			ctx, cancel := context.WithTimeout(cmd.Context(), flushTimeout)
 			defer cancel()
 
@@ -812,11 +841,10 @@ $ %s tx flush demo-path channel-0`,
 				a.config.memo(cmd),
 				0,
 				0,
-				&processor.FlushLifecycle{},
+				nil, //&processor.FlushLifecycle{},
 				relayer.ProcessorEvents,
 				0,
 				nil,
-				stuckPacket,
 			)
 
 			// Block until the error channel sends a message.
@@ -836,8 +864,6 @@ $ %s tx flush demo-path channel-0`,
 
 	cmd = strategyFlag(a.viper, cmd)
 	cmd = memoFlag(a.viper, cmd)
-	cmd = stuckPacketFlags(a.viper, cmd)
-
 	return cmd
 }
 
@@ -912,15 +938,25 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 			if err != nil {
 				return err
 			}
-
 			var path *relayer.Path
 			if path, err = setPathsFromArgs(a, src, dst, pathString); err != nil {
 				return err
 			}
 
-			amount, err := sdk.ParseCoinNormalized(args[2])
-			if err != nil {
-				return err
+			var amount sdk.Coin
+			if src.ChainProvider.Type() == "cardano" {
+				coinString := strings.Split(args[2], "-")
+				number, err := strconv.ParseInt(coinString[0], 10, 64)
+				if err != nil {
+					return err
+				}
+				amount.Denom = coinString[1]
+				amount.Amount = math.NewInt(number)
+			} else {
+				amount, err = sdk.ParseCoinNormalized(args[2])
+				if err != nil {
+					return err
+				}
 			}
 
 			srch, err := src.ChainProvider.QueryLatestHeight(cmd.Context())
@@ -959,14 +995,16 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 					srcChannelID, src, pathConnectionID)
 			}
 
-			dts, err := src.ChainProvider.QueryDenomTraces(cmd.Context(), 0, 100, srch)
-			if err != nil {
-				return err
-			}
+			if src.ChainProvider.Type() == "cosmos" {
+				dts, err := src.ChainProvider.QueryDenomTraces(cmd.Context(), 0, 100, srch)
+				if err != nil {
+					return err
+				}
 
-			for _, d := range dts {
-				if amount.Denom == d.GetFullDenomPath() {
-					amount = sdk.NewCoin(d.IBCDenom(), amount.Amount)
+				for _, d := range dts {
+					if amount.Denom == d.GetFullDenomPath() {
+						amount = sdk.NewCoin(d.IBCDenom(), amount.Amount)
+					}
 				}
 			}
 
@@ -989,10 +1027,14 @@ $ %s tx raw send ibc-0 ibc-1 100000stake cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9
 				dstAddr = rawDstAddr
 			}
 
-			return src.SendTransferMsg(cmd.Context(), a.log, dst, amount, dstAddr, toHeightOffset, toTimeOffset, srcChannel)
+			memo, err := cmd.Flags().GetString(flagMemo)
+			if err != nil {
+				return err
+			}
+			return src.SendTransferMsg(cmd.Context(), a.log, dst, amount, dstAddr, memo, toHeightOffset, toTimeOffset, srcChannel)
 		},
 	}
-
+	cmd = memoFlag(a.viper, cmd)
 	return timeoutFlags(a.viper, pathFlag(a.viper, cmd))
 }
 
@@ -1071,12 +1113,12 @@ $ %s reg-cpt channel-1 cosmos1skjwj5whet0lpe65qaq4rpq03hjxlwd9nf39lk juno1g0ny48
 
 			relayerAddr := args[3]
 			counterpartyPayee := args[4]
-
+			memo := a.config.memo(cmd)
 			msg, err := chain.ChainProvider.MsgRegisterCounterpartyPayee(portID, channelID, relayerAddr, counterpartyPayee)
 			if err != nil {
 				return err
 			}
-			res, success, err := chain.ChainProvider.SendMessage(cmd.Context(), msg, "")
+			res, success, err := chain.ChainProvider.SendMessage(cmd.Context(), msg, memo)
 			fmt.Println(res, success, err)
 			return nil
 		},

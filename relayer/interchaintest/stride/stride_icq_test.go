@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
+	rlystride "github.com/cardano/relayer/v1/relayer/chains/cosmos/stride"
 	"github.com/cosmos/cosmos-sdk/types"
 	transfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	relayerinterchaintest "github.com/cosmos/relayer/v2/interchaintest"
-	rlystride "github.com/cosmos/relayer/v2/relayer/chains/cosmos/stride"
 	interchaintest "github.com/strangelove-ventures/interchaintest/v7"
 	"github.com/strangelove-ventures/interchaintest/v7/chain/cosmos"
 	"github.com/strangelove-ventures/interchaintest/v7/ibc"

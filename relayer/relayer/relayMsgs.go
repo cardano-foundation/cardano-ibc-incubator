@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cosmos/relayer/v2/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -64,6 +64,36 @@ func (r *RelayMsgs) PrependMsgUpdateClient(
 			return nil
 		})
 	}
+
+	return eg.Wait()
+}
+
+func (r *RelayMsgs) PrependMsgUpdateClientBeforeBuildMsg(
+	ctx context.Context,
+	src, dst *Chain,
+	srch, dsth int64,
+) error {
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		srcMsgUpdateClient, err := MsgUpdateClient(egCtx, dst, src, dsth, srch)
+		if err != nil {
+			return err
+		}
+		if srcMsgUpdateClient != nil {
+			r.Src = []provider.RelayerMessage{srcMsgUpdateClient}
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		dstMsgUpdateClient, err := MsgUpdateClient(egCtx, src, dst, srch, dsth)
+		if err != nil {
+			return err
+		}
+		if dstMsgUpdateClient != nil {
+			r.Dst = []provider.RelayerMessage{dstMsgUpdateClient}
+		}
+		return nil
+	})
 
 	return eg.Wait()
 }
@@ -151,11 +181,13 @@ func (r *RelayMsgs) Send(ctx context.Context, log *zap.Logger, src, dst RelayMsg
 		wg     sync.WaitGroup
 		result SendMsgsResult
 	)
-
 	if len(r.Src) > 0 {
-		wg.Add(1)
-		go r.send(ctx, log, &wg, src, r.Src, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
+		wg.Add(len(r.Src))
+		for _, msg := range r.Src {
+			go r.send(ctx, log, &wg, src, []provider.RelayerMessage{msg}, memo, &result.SuccessfulSrcBatches, &result.SrcSendError)
+		}
 	}
+
 	if len(r.Dst) > 0 {
 		wg.Add(1)
 		go r.send(ctx, log, &wg, dst, r.Dst, memo, &result.SuccessfulDstBatches, &result.DstSendError)

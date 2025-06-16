@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -25,10 +26,9 @@ import (
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v7/modules/core/23-commitment/types"
 	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-	"github.com/cosmos/relayer/v2/relayer/chains"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
@@ -902,7 +902,7 @@ func (cc *PenumbraProvider) QueryConsensusStateABCI(ctx context.Context, clientI
 }
 
 // queryIBCMessages returns an array of IBC messages given a tag
-func (cc *PenumbraProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, page, limit int, query string) ([]chains.IbcMessage, error) {
+func (cc *PenumbraProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, page, limit int, query string) ([]ibcMessage, error) {
 	if query == "" {
 		return nil, errors.New("query string must be provided")
 	}
@@ -919,10 +919,10 @@ func (cc *PenumbraProvider) queryIBCMessages(ctx context.Context, log *zap.Logge
 	if err != nil {
 		return nil, err
 	}
-	var ibcMsgs []chains.IbcMessage
+	var ibcMsgs []ibcMessage
 	chainID := cc.ChainId()
 	for _, tx := range res.Txs {
-		ibcMsgs = append(ibcMsgs, chains.IbcMessagesFromEvents(log, tx.TxResult.Events, chainID, 0, true)...)
+		ibcMsgs = append(ibcMsgs, ibcMessagesFromEvents(log, tx.TxResult.Events, chainID, 0, true)...)
 	}
 
 	return ibcMsgs, nil
@@ -949,10 +949,10 @@ func (cc *PenumbraProvider) QuerySendPacket(
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeSendPacket {
+		if msg.eventType != chantypes.EventTypeSendPacket {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.SourceChannel == srcChanID && pi.SourcePort == srcPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -982,10 +982,10 @@ func (cc *PenumbraProvider) QueryRecvPacket(
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeWriteAck {
+		if msg.eventType != chantypes.EventTypeWriteAck {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.DestChannel == dstChanID && pi.DestPort == dstPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -1004,6 +1004,12 @@ func (cc *PenumbraProvider) QueryStatus(ctx context.Context) (*coretypes.ResultS
 }
 
 func (cc *PenumbraProvider) QueryICQWithProof(ctx context.Context, msgType string, request []byte, height uint64) (provider.ICQProof, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *PenumbraProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
 	//TODO implement me
 	panic("implement me")
 }

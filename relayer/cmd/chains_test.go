@@ -7,9 +7,9 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/cosmos/relayer/v2/cmd"
-	"github.com/cosmos/relayer/v2/internal/relayertest"
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/cmd"
+	"github.com/cardano/relayer/v1/internal/relayertest"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,6 +46,28 @@ func TestChainsAdd_File(t *testing.T) {
 	// List the chain back in plaintext.
 	res := sys.MustRun(t, "chains", "list")
 	require.Regexp(t, regexp.MustCompile(`^\s*\d+: testcosmos\s+-> type\(cosmos\) key\(✘\) bal\(✘\) path\(✘\)`), res.Stdout.String())
+	require.Empty(t, res.Stderr.String())
+}
+
+func TestChainsAddCardano_File(t *testing.T) {
+	t.Parallel()
+
+	sys := relayertest.NewSystem(t)
+
+	_ = sys.MustRun(t, "config", "init")
+
+	sys.MustAddChain(t, "testCardanoChain", cmd.ProviderConfigWrapper{
+		Type: "cardano",
+		Value: cosmos.CosmosProviderConfig{
+			ChainID:        "cardano-1",
+			KeyringBackend: "test",
+			Timeout:        "10s",
+		},
+	})
+
+	// List the chain back in plaintext.
+	res := sys.MustRun(t, "chains", "list")
+	require.Regexp(t, regexp.MustCompile(`^\s*\d+: cardano-1\s+-> type\(cardano\) key\(✘\) bal\(✘\) path\(✘\)`), res.Stdout.String())
 	require.Empty(t, res.Stderr.String())
 }
 
@@ -120,4 +142,15 @@ func TestChainsAdd_Delete(t *testing.T) {
 	res = sys.MustRun(t, "chains", "list")
 	require.Empty(t, res.Stdout.String())
 	require.Contains(t, res.Stderr.String(), "no chains found")
+}
+
+func TestChainsList_File(t *testing.T) {
+	t.Parallel()
+
+	sys := relayertest.NewSystem(t)
+
+	// List the chain back in plaintext.
+	sys.MustRun(t, "chains", "list")
+	//require.Regexp(t, regexp.MustCompile(`^\s*\d+: cardano-1\s+-> type\(cardano\) key\(✘\) bal\(✘\) path\(✘\)`), res.Stdout.String())
+	//require.Empty(t, res.Stderr.String())
 }

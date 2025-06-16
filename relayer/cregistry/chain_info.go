@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
-	"github.com/cosmos/relayer/v2/relayer/provider"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	"github.com/cardano/relayer/v1/relayer/provider"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"

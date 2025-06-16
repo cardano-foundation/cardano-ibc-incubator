@@ -1,15 +1,16 @@
 package module
 
 import (
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/mithril"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
 	solomachine "github.com/cosmos/ibc-go/v7/modules/light-clients/06-solomachine"
+	tmlightclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 	localhost "github.com/cosmos/ibc-go/v7/modules/light-clients/09-localhost"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
-
-	tmlightclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
 )
 
 // AppModuleBasic defines the basic application module used by the module.
@@ -28,6 +29,34 @@ func (AppModuleBasic) RegisterInterfaces(registry codectypes.InterfaceRegistry) 
 	tmlightclient.RegisterInterfaces(registry)
 	solomachine.RegisterInterfaces(registry)
 	localhost.RegisterInterfaces(registry)
+	registry.RegisterImplementations(
+		(*exported.ClientState)(nil),
+		&ClientState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ConsensusState)(nil),
+		&ConsensusState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&BlockData{},
+	)
+	registry.RegisterImplementations(
+		(*exported.Height)(nil),
+		&Height{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientState)(nil),
+		&mithril.ClientState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ConsensusState)(nil),
+		&mithril.ConsensusState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&mithril.MithrilHeader{},
+	)
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the ibc module.

@@ -8,13 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/chains/cardano"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/avast/retry-go/v4"
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos"
+	penumbraprocessor "github.com/cardano/relayer/v1/relayer/chains/penumbra"
+	"github.com/cardano/relayer/v1/relayer/processor"
 	"github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
-	"github.com/cosmos/relayer/v2/relayer/chains/cosmos"
-	penumbraprocessor "github.com/cosmos/relayer/v2/relayer/chains/penumbra"
-	"github.com/cosmos/relayer/v2/relayer/processor"
 	"go.uber.org/zap"
 )
 
@@ -47,7 +49,6 @@ func StartRelayer(
 	processorType string,
 	initialBlockHistory uint64,
 	metrics *processor.PrometheusMetrics,
-	stuckPacket *processor.StuckPacket,
 ) chan error {
 	//prevent incorrect bech32 address prefixed addresses when calling AccAddress.String()
 	sdk.SetAddrCacheEnabled(false)
@@ -94,7 +95,6 @@ func StartRelayer(
 			flushInterval,
 			errorChan,
 			metrics,
-			stuckPacket,
 		)
 		return errorChan
 	case ProcessorLegacy:
@@ -120,16 +120,16 @@ type path struct {
 }
 
 // chainProcessor returns the corresponding ChainProcessor implementation instance for a pathChain.
-func (chain *Chain) chainProcessor(
-	log *zap.Logger,
-	metrics *processor.PrometheusMetrics,
-) processor.ChainProcessor {
+func (chain *Chain) chainProcessor(log *zap.Logger, metrics *processor.PrometheusMetrics) processor.ChainProcessor {
 	// Handle new ChainProcessor implementations as cases here
 	switch p := chain.ChainProvider.(type) {
 	case *penumbraprocessor.PenumbraProvider:
 		return penumbraprocessor.NewPenumbraChainProcessor(log, p)
 	case *cosmos.CosmosProvider:
 		return cosmos.NewCosmosChainProcessor(log, p, metrics)
+	case *cardano.CardanoProvider:
+		return cardano.NewCardanoChainProcessor(log, p, metrics)
+
 	default:
 		panic(fmt.Errorf("unsupported chain provider type: %T", chain.ChainProvider))
 	}
@@ -149,13 +149,10 @@ func relayerStartEventProcessor(
 	flushInterval time.Duration,
 	errCh chan<- error,
 	metrics *processor.PrometheusMetrics,
-	stuckPacket *processor.StuckPacket,
 ) {
 	defer close(errCh)
 
-	epb := processor.NewEventProcessor().
-		WithChainProcessors(chainProcessors...).
-		WithStuckPacket(stuckPacket)
+	epb := processor.NewEventProcessor().WithChainProcessors(chainProcessors...)
 
 	for _, p := range paths {
 		epb = epb.

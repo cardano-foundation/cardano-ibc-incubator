@@ -6,9 +6,9 @@ package chainv1alpha1
 import (
 	fmt "fmt"
 	proto "github.com/cosmos/gogoproto/proto"
-	v1alpha1 "github.com/cosmos/relayer/v2/relayer/chains/penumbra/core/crypto/v1alpha1"
-	v1alpha11 "github.com/cosmos/relayer/v2/relayer/chains/penumbra/core/dex/v1alpha1"
-	v1alpha12 "github.com/cosmos/relayer/v2/relayer/chains/penumbra/core/stake/v1alpha1"
+	v1alpha1 "github.com/cardano/relayer/v1/relayer/chains/penumbra/core/crypto/v1alpha1"
+	v1alpha11 "github.com/cardano/relayer/v1/relayer/chains/penumbra/core/dex/v1alpha1"
+	v1alpha12 "github.com/cardano/relayer/v1/relayer/chains/penumbra/core/stake/v1alpha1"
 	io "io"
 	math "math"
 	math_bits "math/bits"

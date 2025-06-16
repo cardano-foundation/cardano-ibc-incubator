@@ -9,7 +9,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/cosmos/relayer/v2/relayer"
+	"github.com/cardano/relayer/v1/relayer"
 	"github.com/gofrs/flock"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -279,19 +279,6 @@ func (a *appState) useKey(chainName, key string) error {
 	}
 	return a.performConfigLockingOperation(context.Background(), func() error {
 		a.config.Chains[chainName].ChainProvider.UseKey(key)
-		return nil
-	})
-}
-
-func (a *appState) useRpcAddr(chainName string, rpcAddr string) error {
-
-	_, exists := a.config.Chains[chainName]
-	if !exists {
-		return fmt.Errorf("chain %s not found in config", chainName)
-	}
-
-	return a.performConfigLockingOperation(context.Background(), func() error {
-		a.config.Chains[chainName].ChainProvider.SetRpcAddr(rpcAddr)
 		return nil
 	})
 }

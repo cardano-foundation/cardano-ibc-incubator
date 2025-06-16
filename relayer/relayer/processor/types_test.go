@@ -3,8 +3,8 @@ package processor_test
 import (
 	"testing"
 
+	"github.com/cardano/relayer/v1/relayer/processor"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/processor"
 	"github.com/stretchr/testify/require"
 )
 

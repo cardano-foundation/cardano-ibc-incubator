@@ -6,11 +6,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cosmos/ibc-go/v7/modules/core/exported"
+
+	"github.com/cardano/relayer/v1/relayer/chains/cosmos/module"
+
+	"github.com/cardano/relayer/v1/relayer/provider"
 	abci "github.com/cometbft/cometbft/abci/types"
 	coretypes "github.com/cometbft/cometbft/rpc/core/types"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -32,8 +38,6 @@ import (
 	host "github.com/cosmos/ibc-go/v7/modules/core/24-host"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	tmclient "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
-	"github.com/cosmos/relayer/v2/relayer/chains"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
@@ -44,7 +48,7 @@ const PaginationDelay = 10 * time.Millisecond
 var _ provider.QueryProvider = &CosmosProvider{}
 
 // queryIBCMessages returns an array of IBC messages given a tag
-func (cc *CosmosProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, page, limit int, query string, base64Encoded bool) ([]chains.IbcMessage, error) {
+func (cc *CosmosProvider) queryIBCMessages(ctx context.Context, log *zap.Logger, page, limit int, query string, base64Encoded bool) ([]ibcMessage, error) {
 	if query == "" {
 		return nil, errors.New("query string must be provided")
 	}
@@ -59,7 +63,7 @@ func (cc *CosmosProvider) queryIBCMessages(ctx context.Context, log *zap.Logger,
 
 	var eg errgroup.Group
 	chainID := cc.ChainId()
-	var ibcMsgs []chains.IbcMessage
+	var ibcMsgs []ibcMessage
 	var mu sync.Mutex
 
 	eg.Go(func() error {
@@ -80,8 +84,8 @@ func (cc *CosmosProvider) queryIBCMessages(ctx context.Context, log *zap.Logger,
 
 				mu.Lock()
 				defer mu.Unlock()
-				ibcMsgs = append(ibcMsgs, chains.IbcMessagesFromEvents(log, block.BeginBlockEvents, chainID, 0, base64Encoded)...)
-				ibcMsgs = append(ibcMsgs, chains.IbcMessagesFromEvents(log, block.EndBlockEvents, chainID, 0, base64Encoded)...)
+				ibcMsgs = append(ibcMsgs, ibcMessagesFromEvents(log, block.BeginBlockEvents, chainID, 0, base64Encoded)...)
+				ibcMsgs = append(ibcMsgs, ibcMessagesFromEvents(log, block.EndBlockEvents, chainID, 0, base64Encoded)...)
 
 				return nil
 			})
@@ -98,7 +102,7 @@ func (cc *CosmosProvider) queryIBCMessages(ctx context.Context, log *zap.Logger,
 		mu.Lock()
 		defer mu.Unlock()
 		for _, tx := range res.Txs {
-			ibcMsgs = append(ibcMsgs, chains.IbcMessagesFromEvents(log, tx.TxResult.Events, chainID, 0, base64Encoded)...)
+			ibcMsgs = append(ibcMsgs, ibcMessagesFromEvents(log, tx.TxResult.Events, chainID, 0, base64Encoded)...)
 		}
 
 		return nil
@@ -417,7 +421,6 @@ func (cc *CosmosProvider) QueryTendermintProof(ctx context.Context, height int64
 // QueryClientStateResponse retrieves the latest consensus state for a client in state at a given height
 func (cc *CosmosProvider) QueryClientStateResponse(ctx context.Context, height int64, srcClientId string) (*clienttypes.QueryClientStateResponse, error) {
 	key := host.FullClientStateKey(srcClientId)
-
 	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, height, key)
 	if err != nil {
 		return nil, err
@@ -465,7 +468,11 @@ func (cc *CosmosProvider) QueryClientState(ctx context.Context, height int64, cl
 
 // QueryClientConsensusState retrieves the latest consensus state for a client in state at a given height
 func (cc *CosmosProvider) QueryClientConsensusState(ctx context.Context, chainHeight int64, clientid string, clientHeight ibcexported.Height) (*clienttypes.QueryConsensusStateResponse, error) {
-	key := host.FullConsensusStateKey(clientid, clientHeight)
+	newClientHeight := types.Height{
+		RevisionNumber: 0,
+		RevisionHeight: clientHeight.GetRevisionHeight(),
+	}
+	key := host.FullConsensusStateKey(clientid, newClientHeight)
 
 	value, proofBz, proofHeight, err := cc.QueryTendermintProof(ctx, chainHeight, key)
 	if err != nil {
@@ -1026,10 +1033,10 @@ func (cc *CosmosProvider) QuerySendPacket(
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeSendPacket {
+		if msg.eventType != chantypes.EventTypeSendPacket {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.SourceChannel == srcChanID && pi.SourcePort == srcPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -1055,10 +1062,10 @@ func (cc *CosmosProvider) QueryRecvPacket(
 		return provider.PacketInfo{}, err
 	}
 	for _, msg := range ibcMsgs {
-		if msg.EventType != chantypes.EventTypeWriteAck {
+		if msg.eventType != chantypes.EventTypeWriteAck {
 			continue
 		}
-		if pi, ok := msg.Info.(*chains.PacketInfo); ok {
+		if pi, ok := msg.info.(*packetInfo); ok {
 			if pi.DestChannel == dstChanID && pi.DestPort == dstPortID && pi.Sequence == sequence {
 				return provider.PacketInfo(*pi), nil
 			}
@@ -1290,4 +1297,45 @@ func (cc *CosmosProvider) QueryConsensusStateABCI(ctx context.Context, clientID 
 		Proof:          proofBz,
 		ProofHeight:    proofHeight,
 	}, nil
+}
+
+func (cc *CosmosProvider) QueryBlockData(ctx context.Context, h int64) (*module.BlockData, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) QueryCardanoLatestHeight(ctx context.Context) (int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) QueryCardanoState(ctx context.Context, height int64) (exported.ClientState, exported.ConsensusState, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) QueryMainLatestHeight(ctx context.Context) (int64, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) QueryMainClientState(ctx context.Context, height int64) (provider.MsgGetClientStateResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) QueryMainConsensusState(ctx context.Context, height int64) (provider.MsgGetConsensusStateResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (cc *CosmosProvider) MsgCreateCosmosClient(clientState ibcexported.ClientState, consensusState ibcexported.ConsensusState) (provider.RelayerMessage, string, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+// QueryIBCHeader returns the IBC compatible block header (TendermintIBCHeader) at a specific height.
+func (cc *CosmosProvider) QueryIBCMithrilHeader(ctx context.Context, h int64, cs *exported.ClientState) (provider.IBCHeader, error) {
+	//TODO implement me
+	panic("implement me")
 }

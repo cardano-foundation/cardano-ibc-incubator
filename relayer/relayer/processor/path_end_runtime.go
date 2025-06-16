@@ -5,29 +5,29 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cardano/relayer/v1/relayer/provider"
 	clienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v7/modules/core/03-connection/types"
 	chantypes "github.com/cosmos/ibc-go/v7/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
-	"github.com/cosmos/relayer/v2/relayer/provider"
 	"go.uber.org/zap"
 )
 
-// pathEndRuntime is used at runtime for each chain involved in the path.
+// PathEndRuntime is used at runtime for each chain involved in the path.
 // It holds a channel for incoming messages from the ChainProcessors, which are
 // processed during Run(ctx).
-type pathEndRuntime struct {
+type PathEndRuntime struct {
 	log *zap.Logger
 
-	info PathEnd
+	Info PathEnd
 
-	chainProvider provider.ChainProvider
+	ChainProvider provider.ChainProvider
 
 	// cached data
 	latestBlock          provider.LatestBlock
 	messageCache         IBCMessagesCache
-	clientState          provider.ClientState
-	clientTrustedState   provider.ClientTrustedState
+	ClientState          provider.ClientState
+	ClientTrustedState   provider.ClientTrustedState
 	connectionStateCache ConnectionStateCache
 	channelStateCache    ChannelStateCache
 	channelOrderCache    map[string]chantypes.Order
@@ -56,14 +56,14 @@ type pathEndRuntime struct {
 	metrics *PrometheusMetrics
 }
 
-func newPathEndRuntime(log *zap.Logger, pathEnd PathEnd, metrics *PrometheusMetrics) *pathEndRuntime {
-	return &pathEndRuntime{
+func newPathEndRuntime(log *zap.Logger, pathEnd PathEnd, metrics *PrometheusMetrics) *PathEndRuntime {
+	return &PathEndRuntime{
 		log: log.With(
 			zap.String("path_name", pathEnd.PathName),
 			zap.String("chain_id", pathEnd.ChainID),
 			zap.String("client_id", pathEnd.ClientID),
 		),
-		info:                 pathEnd,
+		Info:                 pathEnd,
 		incomingCacheData:    make(chan ChainProcessorCacheData, 100),
 		connectionStateCache: make(ConnectionStateCache),
 		channelStateCache:    make(ChannelStateCache),
@@ -79,7 +79,7 @@ func newPathEndRuntime(log *zap.Logger, pathEnd PathEnd, metrics *PrometheusMetr
 	}
 }
 
-func (pathEnd *pathEndRuntime) isRelevantConnection(connectionID string) bool {
+func (pathEnd *PathEndRuntime) isRelevantConnection(connectionID string) bool {
 	for k := range pathEnd.connectionStateCache {
 		if k.ConnectionID == connectionID {
 			return true
@@ -88,7 +88,7 @@ func (pathEnd *pathEndRuntime) isRelevantConnection(connectionID string) bool {
 	return false
 }
 
-func (pathEnd *pathEndRuntime) isRelevantChannel(channelID string) bool {
+func (pathEnd *PathEndRuntime) isRelevantChannel(channelID string) bool {
 	for k := range pathEnd.channelStateCache {
 		if k.ChannelID == channelID {
 			return true
@@ -100,17 +100,17 @@ func (pathEnd *pathEndRuntime) isRelevantChannel(channelID string) bool {
 // mergeMessageCache merges relevant IBC messages for packet flows, connection handshakes, and channel handshakes.
 // inSync indicates whether both involved ChainProcessors are in sync or not. When true, the observed packets
 // metrics will be counted so that observed vs relayed packets can be compared.
-func (pathEnd *pathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, counterpartyChainID string, inSync bool) {
+func (pathEnd *PathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, counterpartyChainID string, inSync bool) {
 	packetMessages := make(ChannelPacketMessagesCache)
 	connectionHandshakeMessages := make(ConnectionMessagesCache)
 	channelHandshakeMessages := make(ChannelMessagesCache)
 	clientICQMessages := make(ClientICQMessagesCache)
 
 	for ch, pmc := range messageCache.PacketFlow {
-		if pathEnd.info.ShouldRelayChannel(ChainChannelKey{ChainID: pathEnd.info.ChainID, CounterpartyChainID: counterpartyChainID, ChannelKey: ch}) {
+		if pathEnd.Info.ShouldRelayChannel(ChainChannelKey{ChainID: pathEnd.Info.ChainID, CounterpartyChainID: counterpartyChainID, ChannelKey: ch}) {
 			if inSync && pathEnd.metrics != nil {
 				for eventType, pCache := range pmc {
-					pathEnd.metrics.AddPacketsObserved(pathEnd.info.PathName, pathEnd.info.ChainID, ch.ChannelID, ch.PortID, eventType, len(pCache))
+					pathEnd.metrics.AddPacketsObserved(pathEnd.Info.PathName, pathEnd.Info.ChainID, ch.ChannelID, ch.PortID, eventType, len(pCache))
 				}
 			}
 			packetMessages[ch] = pmc
@@ -126,6 +126,7 @@ func (pathEnd *pathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, 
 				// since PathProcessor holds reference to the counterparty chain pathEndRuntime.
 				newCmc[k] = ci
 			}
+			newCmc[k] = ci
 		}
 		if len(newCmc) == 0 {
 			continue
@@ -173,7 +174,7 @@ func (pathEnd *pathEndRuntime) mergeMessageCache(messageCache IBCMessagesCache, 
 	pathEnd.messageCache.ClientICQ.Merge(clientICQMessages)
 }
 
-func (pathEnd *pathEndRuntime) handleCallbacks(c IBCMessagesCache) {
+func (pathEnd *PathEndRuntime) handleCallbacks(c IBCMessagesCache) {
 	if len(pathEnd.connSubscribers) > 0 {
 		for eventType, m := range c.ConnectionHandshake {
 			subscribers, ok := pathEnd.connSubscribers[eventType]
@@ -189,13 +190,13 @@ func (pathEnd *pathEndRuntime) handleCallbacks(c IBCMessagesCache) {
 	}
 }
 
-func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache, messageLifecycle MessageLifecycle) bool {
+func (pathEnd *PathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache, messageLifecycle MessageLifecycle) bool {
 	if messageLifecycle == nil {
 		return false
 	}
 	switch m := messageLifecycle.(type) {
 	case *PacketMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		channelKey, err := PacketInfoChannelKey(m.Termination.EventType, m.Termination.Info)
@@ -223,7 +224,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 		pathEnd.log.Info("Found termination condition for packet flow")
 		return true
 	case *ChannelMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		cache, ok := ibcMessagesCache.ChannelHandshake[m.Termination.EventType]
@@ -274,7 +275,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 				zap.String("termination_channel_id", m.SrcChannelID),
 				zap.String("observed_channel_id", ci.ChannelID),
 			)
-			if pathEnd.info.ChainID == m.SrcChainID {
+			if pathEnd.Info.ChainID == m.SrcChainID {
 				if ci.ChannelID == m.SrcChannelID {
 					foundChannelID = true
 				}
@@ -295,7 +296,7 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 			return true
 		}
 	case *ConnectionMessageLifecycle:
-		if m.Termination == nil || m.Termination.ChainID != pathEnd.info.ChainID {
+		if m.Termination == nil || m.Termination.ChainID != pathEnd.Info.ChainID {
 			return false
 		}
 		cache, ok := ibcMessagesCache.ConnectionHandshake[m.Termination.EventType]
@@ -341,14 +342,14 @@ func (pathEnd *pathEndRuntime) shouldTerminate(ibcMessagesCache IBCMessagesCache
 // the call stack. If a deviation is found a MsgSubmitMisbehaviour will be composed and broadcasted to freeze the
 // light client. If misbehaviour is detected true will be returned and the pathEndRuntime should terminate.
 // If no misbehaviour is detected false will be returned along with a nil error.
-func (pathEnd *pathEndRuntime) checkForMisbehaviour(
+func (pathEnd *PathEndRuntime) checkForMisbehaviour(
 	ctx context.Context,
 	state provider.ClientState,
-	counterparty *pathEndRuntime,
+	counterparty *PathEndRuntime,
 ) (bool, error) {
 	cachedHeader := counterparty.ibcHeaderCache[state.ConsensusHeight.RevisionHeight]
 
-	misbehaviour, err := provider.CheckForMisbehaviour(ctx, counterparty.chainProvider, pathEnd.info.ClientID, state.Header, cachedHeader)
+	misbehaviour, err := provider.CheckForMisbehaviour(ctx, counterparty.ChainProvider, pathEnd.Info.ClientID, state.Header, cachedHeader)
 	if err != nil {
 		return false, err
 	}
@@ -356,12 +357,12 @@ func (pathEnd *pathEndRuntime) checkForMisbehaviour(
 		return false, nil
 	}
 
-	msgMisbehaviour, err := pathEnd.chainProvider.MsgSubmitMisbehaviour(pathEnd.info.ClientID, misbehaviour)
+	msgMisbehaviour, err := pathEnd.ChainProvider.MsgUpdateClient(pathEnd.Info.ClientID, misbehaviour)
 	if err != nil {
 		return true, err
 	}
 
-	_, _, err = pathEnd.chainProvider.SendMessage(ctx, msgMisbehaviour, "")
+	_, _, err = pathEnd.ChainProvider.SendMessage(ctx, msgMisbehaviour, "")
 	if err != nil {
 		return true, err
 	}
@@ -369,39 +370,43 @@ func (pathEnd *pathEndRuntime) checkForMisbehaviour(
 	return true, nil
 }
 
-func (pathEnd *pathEndRuntime) mergeCacheData(ctx context.Context, cancel func(), d ChainProcessorCacheData, counterpartyChainID string, counterpartyInSync bool, messageLifecycle MessageLifecycle, counterParty *pathEndRuntime) {
+func (pathEnd *PathEndRuntime) mergeCacheData(ctx context.Context, cancel func(), d ChainProcessorCacheData, counterpartyChainID string, counterpartyInSync bool, messageLifecycle MessageLifecycle, counterParty *PathEndRuntime) {
 	pathEnd.lastClientUpdateHeightMu.Lock()
 	pathEnd.latestBlock = d.LatestBlock
 	pathEnd.lastClientUpdateHeightMu.Unlock()
 
 	pathEnd.inSync = d.InSync
 	pathEnd.latestHeader = d.LatestHeader
-	pathEnd.clientState = d.ClientState
+	pathEnd.ClientState = d.ClientState
 
-	terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.clientState, counterParty)
-	if err != nil {
-		pathEnd.log.Error(
-			"Failed to check for misbehaviour",
-			zap.String("client_id", pathEnd.info.ClientID),
-			zap.Error(err),
-		)
-	}
+	//terminate, err := pathEnd.checkForMisbehaviour(ctx, pathEnd.ClientState, counterParty)
+	//if err != nil {
+	//	pathEnd.log.Error(
+	//		"Failed to check for misbehaviour",
+	//		zap.String("client_id", pathEnd.Info.ClientID),
+	//		zap.Error(err),
+	//	)
+	//}
 
-	if d.ClientState.ConsensusHeight != pathEnd.clientState.ConsensusHeight {
-		pathEnd.clientState = d.ClientState
+	if d.ClientState.ConsensusHeight != pathEnd.ClientState.ConsensusHeight {
+		pathEnd.ClientState = d.ClientState
 		ibcHeader, ok := counterParty.ibcHeaderCache[d.ClientState.ConsensusHeight.RevisionHeight]
 		if ok {
-			pathEnd.clientState.ConsensusTime = time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp()))
+			pathEnd.ClientState.ConsensusTime = time.Unix(0, int64(ibcHeader.ConsensusState().GetTimestamp()))
 		}
 	}
 
 	pathEnd.handleCallbacks(d.IBCMessagesCache)
 
-	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) || terminate {
+	//if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) || terminate {
+	//	cancel()
+	//	return
+	//}
+
+	if pathEnd.shouldTerminate(d.IBCMessagesCache, messageLifecycle) {
 		cancel()
 		return
 	}
-
 	pathEnd.connectionStateCache = d.ConnectionStateCache // Update latest connection open state for chain
 	pathEnd.channelStateCache = d.ChannelStateCache       // Update latest channel open state for chain
 
@@ -413,7 +418,7 @@ func (pathEnd *pathEndRuntime) mergeCacheData(ctx context.Context, cancel func()
 
 // shouldSendPacketMessage determines if the packet flow message should be sent now.
 // It will also determine if the message needs to be given up on entirely and remove retention if so.
-func (pathEnd *pathEndRuntime) shouldSendPacketMessage(message packetIBCMessage, counterparty *pathEndRuntime) bool {
+func (pathEnd *PathEndRuntime) shouldSendPacketMessage(message packetIBCMessage, counterparty *PathEndRuntime) bool {
 	eventType := message.eventType
 	sequence := message.info.Sequence
 	k, err := message.channelKey()
@@ -494,8 +499,8 @@ func (pathEnd *pathEndRuntime) shouldSendPacketMessage(message packetIBCMessage,
 }
 
 // removePacketRetention gives up on sending this packet flow message
-func (pathEnd *pathEndRuntime) removePacketRetention(
-	counterparty *pathEndRuntime,
+func (pathEnd *PathEndRuntime) removePacketRetention(
+	counterparty *PathEndRuntime,
 	eventType string,
 	k ChannelKey,
 	sequence uint64,
@@ -526,7 +531,7 @@ func (pathEnd *pathEndRuntime) removePacketRetention(
 
 // shouldSendConnectionMessage determines if the connection handshake message should be sent now.
 // It will also determine if the message needs to be given up on entirely and remove retention if so.
-func (pathEnd *pathEndRuntime) shouldSendConnectionMessage(message connectionIBCMessage, counterparty *pathEndRuntime) bool {
+func (pathEnd *PathEndRuntime) shouldSendConnectionMessage(message connectionIBCMessage, counterparty *PathEndRuntime) bool {
 	eventType := message.eventType
 	k := ConnectionInfoConnectionKey(message.info)
 	if eventType != conntypes.EventTypeConnectionOpenInit {
@@ -601,7 +606,7 @@ func (pathEnd *pathEndRuntime) shouldSendConnectionMessage(message connectionIBC
 
 // shouldSendChannelMessage determines if the channel handshake message should be sent now.
 // It will also determine if the message needs to be given up on entirely and remove retention if so.
-func (pathEnd *pathEndRuntime) shouldSendChannelMessage(message channelIBCMessage, counterparty *pathEndRuntime) bool {
+func (pathEnd *PathEndRuntime) shouldSendChannelMessage(message channelIBCMessage, counterparty *PathEndRuntime) bool {
 	eventType := message.eventType
 	channelKey := ChannelInfoChannelKey(message.info)
 	if eventType != chantypes.EventTypeChannelOpenInit {
@@ -609,7 +614,7 @@ func (pathEnd *pathEndRuntime) shouldSendChannelMessage(message channelIBCMessag
 	}
 
 	// For localhost cache the channel order on OpenInit so that we can access it during the other channel handshake steps
-	if pathEnd.info.ClientID == ibcexported.LocalhostClientID && eventType == chantypes.EventTypeChannelOpenInit {
+	if pathEnd.Info.ClientID == ibcexported.LocalhostClientID && eventType == chantypes.EventTypeChannelOpenInit {
 		pathEnd.channelOrderCache[channelKey.ChannelID] = message.info.Order
 		counterparty.channelOrderCache[channelKey.CounterpartyChannelID] = message.info.Order
 	}
@@ -718,7 +723,7 @@ func (pathEnd *pathEndRuntime) shouldSendChannelMessage(message channelIBCMessag
 
 // shouldSendClientICQMessage determines if the client ICQ message should be sent now.
 // It will also determine if the message needs to be given up on entirely and remove retention if so.
-func (pathEnd *pathEndRuntime) shouldSendClientICQMessage(message provider.ClientICQInfo) bool {
+func (pathEnd *PathEndRuntime) shouldSendClientICQMessage(message provider.ClientICQInfo) bool {
 	queryID := message.QueryID
 	inProgress, ok := pathEnd.clientICQProcessing[queryID]
 	if !ok {
@@ -755,7 +760,7 @@ func (pathEnd *pathEndRuntime) shouldSendClientICQMessage(message provider.Clien
 	return true
 }
 
-func (pathEnd *pathEndRuntime) trackProcessingMessage(tracker messageToTrack) uint64 {
+func (pathEnd *PathEndRuntime) trackProcessingMessage(tracker messageToTrack) uint64 {
 	retryCount := uint64(0)
 
 	switch t := tracker.(type) {
@@ -851,25 +856,25 @@ func (pathEnd *pathEndRuntime) trackProcessingMessage(tracker messageToTrack) ui
 	return retryCount
 }
 
-func (pathEnd *pathEndRuntime) localhostSentinelProofPacket(
+func (pathEnd *PathEndRuntime) localhostSentinelProofPacket(
 	_ context.Context,
 	_ provider.PacketInfo,
 	height uint64,
 ) (provider.PacketProof, error) {
 	return provider.PacketProof{
 		Proof:       []byte{0x01},
-		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.info.ChainID), height),
+		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.Info.ChainID), height),
 	}, nil
 }
 
-func (pathEnd *pathEndRuntime) localhostSentinelProofChannel(
+func (pathEnd *PathEndRuntime) localhostSentinelProofChannel(
 	_ context.Context,
 	info provider.ChannelInfo,
 	height uint64,
 ) (provider.ChannelProof, error) {
 	return provider.ChannelProof{
 		Proof:       []byte{0x01},
-		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.info.ChainID), height),
+		ProofHeight: clienttypes.NewHeight(clienttypes.ParseChainID(pathEnd.Info.ChainID), height),
 		Ordering:    info.Order,
 		Version:     info.Version,
 	}, nil
