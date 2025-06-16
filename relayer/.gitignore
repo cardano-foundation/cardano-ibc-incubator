@@ -18,12 +18,8 @@ _test/keys/
 .vscode/
 dist/
 .release-env
-bin/*
 
 # Don't commit the vendor directory if anyone runs 'go mod vendor'.
-/vendor
+vendor/
 
 go.work.sum
-
-test/ibctest/config
-test/ibctest/keys
