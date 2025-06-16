@@ -241,11 +241,8 @@ pub fn validate_send_packet(
   packet: Packet,
   commitment: ByteArray,
 ) -> Bool {
-  trace @"input_datum": input_datum
-  trace @"output_datum": output_datum
-  trace @"packet": packet
-  trace @"commitment": commitment
-
+  // WORKAROUND: cloned output_datum required to "replace" an "apparently" unbounded list to a bounded one, or it would fail
+  // to pass the equality check. This will make the validator to correctly pass
   let cloned_output_datum =
     ChannelDatum {
       ..output_datum,
@@ -272,14 +269,6 @@ pub fn validate_send_packet(
         ),
       },
     }
-  trace @"expected_datum": expected_datum
-
-  trace @"expected_datum equals": expected_datum.state == output_datum.state
-  trace @"expected_datum equals": expected_datum.port_id == output_datum.port_id
-  trace @"expected_datum equals": expected_datum.token == output_datum.token
-  trace @"cloned_output_datum equals": expected_datum.state == cloned_output_datum.state
-  trace @"cloned_output_datum equals": expected_datum.port_id == cloned_output_datum.port_id
-  trace @"cloned_output_datum equals": expected_datum.token == cloned_output_datum.token
 
   (expected_datum == cloned_output_datum)?
 }
