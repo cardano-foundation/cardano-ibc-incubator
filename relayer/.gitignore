@@ -20,6 +20,6 @@ dist/
 .release-env
 
 # Don't commit the vendor directory if anyone runs 'go mod vendor'.
-/vendor
+vendor/
 
 go.work.sum
