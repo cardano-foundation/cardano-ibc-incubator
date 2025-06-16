@@ -23,7 +23,7 @@ import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { convertString2Hex } from '@shared/helpers/hex';
 import msgChannelOpenAckBuilder from './mock/msg-channel-open-ack';
 import channelDatumMockBuilder from './mock/channel-datum';
-import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { Data } from '@lucid-evolution/lucid';
 import { decodeHandlerDatum, encodeHandlerDatum, HandlerDatum } from '~@/shared/types/handler-datum';
 import { decodeClientDatum } from '~@/shared/types/client-datum';

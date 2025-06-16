@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { CRYPTO_ADDRESS_SIZE } from '../../../constant';
 
 export type Validator = {

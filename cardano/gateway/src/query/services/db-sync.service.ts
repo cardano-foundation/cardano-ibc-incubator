@@ -1,20 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { InjectConnection, InjectEntityManager } from '@nestjs/typeorm';
+import { InjectEntityManager } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Connection, EntityManager } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { toHexString } from '../../shared/helpers/hex';
 import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { CLIENT_PREFIX } from '../../constant';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { BlockDto } from '../dtos/block.dto';
 import { EpochParamDto } from '../dtos/epoch-param.dto';
-import { MinimumActiveEpoch } from '../../config/constant.config';
-import { ValidatorDto } from '../dtos/validator.dto';
 import { RedeemerDto } from '../dtos/redeemer';
 import { TxDto } from '../dtos/tx.dto';
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 @Injectable()
 export class DbSyncService {
@@ -23,7 +21,6 @@ export class DbSyncService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @InjectEntityManager() private entityManager: EntityManager,
-    // @InjectConnection("cardano_transaction") private readonly secondConnection: Connection,
   ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {

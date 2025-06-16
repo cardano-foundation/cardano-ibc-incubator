@@ -2,7 +2,7 @@ import { fromHex, TxBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { RpcException } from '@nestjs/microservices';
 import {
   MsgChannelCloseInit,

@@ -1,6 +1,6 @@
 import { MsgCreateClient, MsgUpdateClient } from '@plus/proto-types/build/ibc/core/client/v1/tx';
 import { decodeClientState, decodeConsensusState } from './helper';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { initializeClientState, validateClientState } from '@shared/helpers/client-state';
 import { initializeConsensusState, validateConsensusState } from '@shared/helpers/consensus-state';
 import {

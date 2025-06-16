@@ -19,7 +19,7 @@ import {
   QueryBlockResultsRequest,
   QueryTransactionByHashRequest,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
-import { GrpcNotFoundException } from 'nestjs-grpc-exceptions';
+import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { HttpModule, HttpService } from '@nestjs/axios';
 import { AxiosResponse } from 'axios';
 import { of } from 'rxjs';

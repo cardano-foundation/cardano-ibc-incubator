@@ -8,14 +8,6 @@ import {
   QueryChannelsResponse,
   QueryConnectionChannelsRequest,
   QueryConnectionChannelsResponse,
-  QueryPacketAcknowledgementRequest,
-  QueryPacketAcknowledgementResponse,
-  QueryPacketAcknowledgementsRequest,
-  QueryPacketAcknowledgementsResponse,
-  QueryPacketCommitmentRequest,
-  QueryPacketCommitmentResponse,
-  QueryPacketCommitmentsRequest,
-  QueryPacketCommitmentsResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
@@ -31,14 +23,13 @@ import {
   stateFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '../../shared/helpers/channel';
+import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
-import { GrpcInternalException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
-import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 
 @Injectable()
 export class ChannelService {

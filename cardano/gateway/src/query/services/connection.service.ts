@@ -21,12 +21,11 @@ import {
 } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
 import { DbSyncService } from './db-sync.service';
-import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
-import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
 @Injectable()
 export class ConnectionService {
