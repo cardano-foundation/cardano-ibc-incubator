@@ -135,6 +135,7 @@ validator send_packet(
         datum.port_id,
       )
     expect Operator(_) = ibc_module_redeemer
+    trace @"send_packet: tx spends module utxo"
     and {
       (channel_token == datum.token)?,
       auth.contain_auth_token(updated_output, datum.token)?,
@@ -256,6 +257,7 @@ validator send_packet(
         datum.port_id,
       )
     expect Operator(_) = ibc_module_redeemer
+    trace @"send_packet: tx spends module utxo"
 
     and {
       (channel_token == datum.token)?,
