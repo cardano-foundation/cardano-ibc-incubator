@@ -136,19 +136,18 @@ validator send_packet(
       )
     expect Operator(_) = ibc_module_redeemer
     trace @"send_packet: tx spends module utxo"
-
     and {
-      channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
-      packet_mod.validate_basic(packet),
-      is_valid_packet,
-      packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp,
+      (channel_token == datum.token)?,
+      auth.contain_auth_token(updated_output, datum.token)?,
+      packet_mod.validate_basic(packet)?,
+      is_valid_packet?,
+      (packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp)?,
       channel_datum_mod.validate_send_packet(
         datum,
         updated_datum,
         packet,
         commitment,
-      ),
+      )?,
     }
   }
 
@@ -261,17 +260,17 @@ validator send_packet(
     trace @"send_packet: tx spends module utxo"
 
     and {
-      channel_token == datum.token,
-      auth.contain_auth_token(updated_output, datum.token),
-      packet_mod.validate_basic(packet),
-      is_valid_packet,
-      packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp,
+      (channel_token == datum.token)?,
+      auth.contain_auth_token(updated_output, datum.token)?,
+      packet_mod.validate_basic(packet)?,
+      is_valid_packet?,
+      (packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp)?,
       channel_datum_mod.validate_send_packet(
         datum,
         updated_datum,
         packet,
         commitment,
-      ),
+      )?,
     }
   }
 

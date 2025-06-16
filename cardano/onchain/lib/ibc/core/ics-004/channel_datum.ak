@@ -1,5 +1,6 @@
 use aiken/collection/list
 use aiken/collection/pairs
+use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -222,10 +223,12 @@ pub fn validate_recv_packet(
         ..input_datum.state,
         next_sequence_recv: expected_next_sequence_recv,
         packet_receipt: expected_packet_receipt,
-        packet_acknowledgement: [
-          Pair(packet.sequence, ack),
-          ..input_datum.state.packet_acknowledgement
-        ],
+        packet_acknowledgement: pairs.insert_by_ascending_key(
+          input_datum.state.packet_acknowledgement,
+          packet.sequence,
+          ack,
+          int.compare,
+        ),
       },
     }
 
@@ -238,20 +241,36 @@ pub fn validate_send_packet(
   packet: Packet,
   commitment: ByteArray,
 ) -> Bool {
+  // WORKAROUND: cloned output_datum required to "replace" an "apparently" unbounded list to a bounded one, or it would fail
+  // to pass the equality check. This will make the validator to correctly pass
+  let cloned_output_datum =
+    ChannelDatum {
+      ..output_datum,
+      state: ChannelDatumState {
+        ..output_datum.state,
+        packet_commitment: pairs.map(
+          output_datum.state.packet_commitment,
+          fn(_k, v) { v },
+        ),
+      },
+    }
+
   let expected_datum =
     ChannelDatum {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_send: input_datum.state.next_sequence_send + 1,
-        packet_commitment: [
-          Pair(packet.sequence, commitment),
-          ..input_datum.state.packet_commitment
-        ],
+        packet_commitment: pairs.insert_by_ascending_key(
+          input_datum.state.packet_commitment,
+          packet.sequence,
+          commitment,
+          int.compare,
+        ),
       },
     }
 
-  expected_datum == output_datum
+  (expected_datum == cloned_output_datum)?
 }
 
 pub fn validate_timeout_packet(
