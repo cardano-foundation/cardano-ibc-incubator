@@ -2,7 +2,6 @@ import {
   credentialToAddress,
   validatorToScriptHash,
   validatorToAddress,
-  mintingPolicyToId,
   generateSeedPhrase,
   Data,
   fromText,
@@ -15,7 +14,8 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
-} from "npm:@lucid-evolution/lucid@0.4.18";
+  LucidEvolution,
+} from "@lucid-evolution/lucid";
 import {
   formatTimestamp,
   generateIdentifierTokenName,
@@ -27,7 +27,6 @@ import {
 import {
   EMULATOR_ENV,
   HANDLER_TOKEN_NAME,
-  MOCK_MODULE_PORT,
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
@@ -37,14 +36,14 @@ import { submitTx } from "./utils.ts";
 import {
   AuthToken,
   AuthTokenSchema,
-} from "../../lucid-types/ibc/auth/AuthToken.ts";
-import { HandlerDatum } from "../../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
-import { HandlerOperator } from "../../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
+} from "../lucid-types/ibc/auth/AuthToken.ts";
+import { HandlerDatum } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
+import { HandlerOperator } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
 import {
   OutputReference,
   OutputReferenceSchema,
-} from "../../lucid-types/cardano/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+} from "../lucid-types/cardano/transaction/OutputReference.ts";
+import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -53,7 +52,7 @@ import { MintPortRedeemer } from "../../lucid-types/ibc/core/ics_005/port_redeem
 };
 
 export const createDeployment = async (
-  lucid: Lucid,
+  lucid: LucidEvolution,
   provider: Provider,
   mode?: string
 ) => {
@@ -341,7 +340,7 @@ export const createDeployment = async (
   return deploymentInfo;
 };
 
-async function mintMockToken(lucid: Lucid) {
+async function mintMockToken(lucid: LucidEvolution) {
   // load mint mock token validator
   const [mintMockTokenValidator, mintMockTokenPolicyId] = await readValidator(
     "minting_mock_token.mint_mock_token.mint",
@@ -374,13 +373,13 @@ async function mintMockToken(lucid: Lucid) {
 }
 
 async function createReferenceUtxos(
-  lucid: Lucid,
+  lucid: LucidEvolution,
   provider: Provider,
   referredValidators: Script[]
 ) {
   try {
     console.log("Create reference utxos starting ...");
-    const deployLucids: Lucid[] = [];
+    const deployLucids: LucidEvolution[] = [];
     for (const _ of referredValidators) {
       const newLucid = await Lucid(provider, "Preview");
       newLucid.selectWallet.fromSeed(generateSeedPhrase());
@@ -451,7 +450,7 @@ async function createReferenceUtxos(
 }
 
 const deployHandler = async (
-  lucid: Lucid,
+  lucid: LucidEvolution,
   spendHandlerScriptHash: ScriptHash
 ) => {
   console.log("Create Handler");
@@ -490,7 +489,7 @@ const deployHandler = async (
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
 
-  const spendHandlerAddress = credentialToAddress(lucid.config().network, {
+  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Preview', {
     type: "Script",
     hash: spendHandlerScriptHash,
   });
@@ -527,7 +526,7 @@ const deployHandler = async (
 };
 
 const deployTransferModule = async (
-  lucid: Lucid,
+  lucid: LucidEvolution,
   handlerToken: AuthToken,
   spendHandlerValidator: SpendingValidator,
   mintPortValidator: MintingPolicy,
@@ -633,7 +632,7 @@ const deployTransferModule = async (
       Data.to(outputReference, OutputReference)
     )
     .pay.ToContract(
-      validatorToAddress(lucid.config().network, spendHandlerValidator),
+      validatorToAddress(lucid.config().network || 'Preview', spendHandlerValidator),
       {
         kind: "inline",
         value: Data.to(updatedHandlerDatum, HandlerDatum),
@@ -668,7 +667,7 @@ const deployTransferModule = async (
 };
 
 const deploySpendChannel = async (
-  lucid: Lucid,
+  lucid: LucidEvolution,
   mintClientPolicyId: PolicyId,
   mintConnectionPolicyId: PolicyId,
   mintPortPolicyId: PolicyId,
@@ -745,112 +744,6 @@ const deploySpendChannel = async (
       address,
     },
     referredValidators,
-  };
-};
-
-const deployMockModule = async (
-  lucid: Lucid,
-  handlerToken: AuthToken,
-  spendHandlerValidator: SpendingValidator,
-  mintPortValidator: MintingPolicy,
-  mintIdentifierValidator: MintingPolicy,
-  mockModulePort: bigint
-) => {
-  console.log("Create Mock Module");
-
-  const [
-    spendMockModuleValidator,
-    spendMockModuleScriptHash,
-    spendMockModuleAddress,
-  ] = await readValidator("spending_mock_module.spend_mock_module.else", lucid);
-
-  const mintPortPolicyId = mintingPolicyToId(mintPortValidator);
-  const spendHandlerAddress = validatorToAddress(
-    lucid.config().network,
-    spendHandlerValidator
-  );
-
-  const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
-  const handlerUtxo = await lucid.utxoByUnit(handlerTokenUnit);
-  const currentHandlerDatum = Data.from(handlerUtxo.datum!, HandlerDatum);
-  const updatedHandlerPorts = [
-    ...currentHandlerDatum.state.bound_port,
-    mockModulePort,
-  ].sort((a, b) => Number(a - b));
-  const updatedHandlerDatum: HandlerDatum = {
-    ...currentHandlerDatum,
-    state: {
-      ...currentHandlerDatum.state,
-      bound_port: updatedHandlerPorts,
-    },
-  };
-  const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
-
-  const portTokenName = await generateTokenName(
-    handlerToken,
-    PORT_PREFIX,
-    mockModulePort
-  );
-  const portTokenUnit = mintPortPolicyId + portTokenName;
-  const mintPortRedeemer: MintPortRedeemer = {
-    handler_token: handlerToken,
-    spend_module_script_hash: spendMockModuleScriptHash,
-    port_number: mockModulePort,
-  };
-
-  // load nonce UTXO
-  const signerUtxos = await lucid.wallet().getUtxos();
-  if (signerUtxos.length < 1) throw new Error("No UTXO founded");
-  const NONCE_UTXO = signerUtxos[0];
-
-  const outputReference: OutputReference = {
-    transaction_id: NONCE_UTXO.txHash,
-    output_index: BigInt(NONCE_UTXO.outputIndex),
-  };
-
-  const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
-  const identifierTokenName = await generateIdentifierTokenName(outputReference);
-  const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
-
-  const mintModuleTx = lucid
-    .newTx()
-    .collectFrom([NONCE_UTXO], Data.void())
-    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator))
-    .attach.SpendingValidator(spendHandlerValidator)
-    .attach.MintingPolicy(mintPortValidator)
-    .mintAssets(
-      {
-        [portTokenUnit]: 1n,
-      },
-      Data.to(mintPortRedeemer, MintPortRedeemer)
-    )
-    .attach.MintingPolicy(mintIdentifierValidator)
-    .mintAssets(
-      {
-        [identifierTokenUnit]: 1n,
-      },
-      Data.to(outputReference, OutputReference)
-    )
-    .pay.ToContract(
-      spendHandlerAddress,
-      {
-        kind: "inline",
-        value: Data.to(updatedHandlerDatum, HandlerDatum),
-      },
-      {
-        [handlerTokenUnit]: 1n,
-      }
-    );
-
-  await submitTx(mintModuleTx, lucid, "Mint Mock Module");
-
-  return {
-    identifierTokenUnit,
-    spendMockModule: {
-      validator: spendMockModuleValidator,
-      scriptHash: spendMockModuleScriptHash,
-      address: spendHandlerAddress,
-    },
   };
 };
 

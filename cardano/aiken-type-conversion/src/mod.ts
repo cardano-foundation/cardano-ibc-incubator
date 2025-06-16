@@ -252,7 +252,7 @@ export function generateType(
       const dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "npm:@lucid-evolution/lucid@0.4.18",
+          path: "@lucid-evolution/lucid",
         }],
       ]);
 
@@ -312,7 +312,7 @@ export function generateType(
       let dependencies: ImportMap = new Map([
         ["Data", {
           content: "Data",
-          path: "npm:@lucid-evolution/lucid@0.4.18",
+          path: "@lucid-evolution/lucid",
         }],
       ]);
       const schema: string[] = [];

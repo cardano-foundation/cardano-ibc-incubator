@@ -1,4 +1,3 @@
-import * as cbor from "cbor-x";
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import {
   validatorToScriptHash,
@@ -21,24 +20,24 @@ import {
   toHex,
   TxBuilder,
   UTxO,
-} from "npm:@lucid-evolution/lucid@0.4.18";
+  LucidEvolution,
+} from "@lucid-evolution/lucid";
 import {
   BLOCKFROST_ENV,
   EMULATOR_ENV,
   KUPMIOS_ENV,
   LOCAL_ENV,
 } from "./constants.ts";
-import { createHash } from "https://deno.land/std@0.61.0/hash/mod.ts";
-import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
-import { OutputReference } from "../../lucid-types/cardano/transaction/OutputReference.ts";
+import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
+import { OutputReference } from "../lucid-types/cardano/transaction/OutputReference.ts";
 import { crypto } from "@std/crypto";
 
-export const readValidator = async <T extends unknown[] = Data[]>(
+export const readValidator = <T extends unknown[] = Data[]>(
   title: string,
-  lucid?: Lucid,
+  lucid: LucidEvolution,
   params?: Exact<[...T]>,
   type?: T
-): Promise<[Script, ScriptHash, Address]> => {
+): [Script, ScriptHash, Address] => {
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
@@ -57,18 +56,18 @@ export const readValidator = async <T extends unknown[] = Data[]>(
     };
   }
 
-  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network, validator)];
+  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network || 'Preview', validator)];
 };
 
 export const submitTx = async (
   tx: TxBuilder,
-  lucid: Lucid,
+  lucid: LucidEvolution,
   txName: string,
   logSize = true,
-  nativeUplc?: boolean
+  localUPLCEval?: boolean
 ) => {
   console.log("Submitting tx [", txName, "]");
-  const completedTx = await tx.complete({ nativeUplc });
+  const completedTx = await tx.complete({ localUPLCEval });
   if (logSize) {
     console.log("Submitting tx [", txName, "]: size in bytes", completedTx.toCBOR().length / 2);
   }
@@ -107,19 +106,19 @@ export type Signer = {
 
 export const setUp = async (
   mode: string
-): Promise<{ lucid: Lucid; signer: Signer; provider: Provider }> => {
+): Promise<{ lucid: LucidEvolution; signer: Signer; provider: Provider }> => {
   const signer = {
     sk: "ed25519_sk1rvgjxs8sddhl46uqtv862s53vu4jf6lnk63rcn7f0qwzyq85wnlqgrsx42",
     address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
   };
   let provider: Provider;
-  let lucid: Lucid;
+  let lucid: LucidEvolution;
   if (mode == EMULATOR_ENV) {
     console.log("Deploy in Emulator env");
     provider = new Emulator(
       [
-        { address: signer.address, assets: { lovelace: 3000000000000n } },
-        { address: signer.address, assets: { lovelace: 3000000000000n } },
+        { address: signer.address, assets: { lovelace: 3000000000000n }, privateKey: signer.sk, seedPhrase: '' },
+        { address: signer.address, assets: { lovelace: 3000000000000n }, privateKey: signer.sk, seedPhrase: '' },
       ],
       { ...PROTOCOL_PARAMETERS_DEFAULT, maxTxSize: 900000 }
     );
@@ -305,7 +304,7 @@ export const parseChannelSequence = (channelId: string): bigint => {
 };
 
 export const createReferenceScriptUtxo = async (
-  lucid: Lucid,
+  lucid: LucidEvolution,
   referredScript: Script
 ) => {
   const [, , referenceAddress] = readValidator(
@@ -313,16 +312,17 @@ export const createReferenceScriptUtxo = async (
     lucid
   );
 
-  const tx = lucid.newTx().payToContract(
+  const tx = lucid.newTx().pay.ToContract(
     referenceAddress,
     {
-      inline: Data.void(),
-      scriptRef: referredScript,
+      kind: 'inline',
+      value: Data.void(),
     },
-    {}
+    {},
+    referredScript,
   );
   const completedTx = await tx.complete();
-  const signedTx = await completedTx.sign().complete();
+  const signedTx = await completedTx.sign.withWallet().complete();
   const txHash = await signedTx.submit();
 
   await lucid.awaitTx(txHash, 2000);
@@ -334,7 +334,7 @@ export const createReferenceScriptUtxo = async (
   return referenceUtxo;
 };
 
-export const generateIdentifierTokenName = async (outRef: OutputReference) => {
+export const generateIdentifierTokenName = (outRef: OutputReference) => {
   const serializedData = Data.to(outRef, OutputReference);
   return hashSha3_256(serializedData);
 };
@@ -389,7 +389,7 @@ export const deleteSortMap = <K, V>(
 };
 
 export const getNonceOutRef = async (
-  lucid: Lucid
+  lucid: LucidEvolution
 ): Promise<[UTxO, OutputReference]> => {
   const signerUtxos = await lucid.wallet().getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");

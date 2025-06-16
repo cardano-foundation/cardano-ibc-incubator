@@ -2,7 +2,7 @@ import {
   Kupmios,
   Lucid,
   SLOT_CONFIG_NETWORK,
-} from "npm:@lucid-evolution/lucid@0.4.18";
+} from "@lucid-evolution/lucid";
 import { createDeployment } from "./src/create_deployment.ts";
 import { querySystemStart } from "./src/utils.ts";
 import { KUPMIOS_ENV } from "./src/constants.ts";
