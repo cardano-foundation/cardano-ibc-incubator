@@ -3,7 +3,7 @@ import { TxBuilder, TxSignBuilder, UTxO, fromHex } from '@lucid-evolution/lucid'
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,

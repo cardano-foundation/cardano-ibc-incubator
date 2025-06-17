@@ -5,7 +5,7 @@ import { Height } from './height';
 import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { fromHex, toHex } from '../helpers/hex';
 import { Rational } from './rational';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { TmHeader } from './cometbft/header';
 import { ConsensusState } from './consensus-state';
 import { ClientDatum } from './client-datum';

@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { Validator, validateBasic as validateValidatorBasic } from './validator';
 import { safeAddClip } from '../../helpers/number';
 

@@ -1,6 +1,6 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from '@nestjs/common';
 import { RpcException } from '@nestjs/microservices';
-import { Request, Response } from 'express';
+import { Response } from 'express';
 @Catch(RpcException)
 export class GrpcExceptionFilter implements ExceptionFilter {
   catch(exception: RpcException, host: ArgumentsHost) {

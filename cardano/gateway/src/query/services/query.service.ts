@@ -38,9 +38,12 @@ import { decodeHandlerDatum } from '@shared/types/handler-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { normalizeBlockDataFromOuroboros } from '@shared/helpers/block-data';
-import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import {
   QueryBlockResultsRequest,
   QueryBlockResultsResponse,

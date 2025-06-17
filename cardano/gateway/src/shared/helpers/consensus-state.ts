@@ -5,7 +5,7 @@ import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { ConsensusState } from '../types/consensus-state';
 import { Height } from '../types/height';
 import { toHex } from './hex';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 export function normalizeConsensusStateFromDatum(
   consensusStateDatum: Map<Height, ConsensusState>,

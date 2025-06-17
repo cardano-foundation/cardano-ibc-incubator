@@ -12,7 +12,7 @@ import {
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
-import { GrpcInternalException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
+import { GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { MintClientOperator, encodeMintClientOperator } from '../../types/mint-client-operator';
 import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-operator';
 import { ClientDatum, encodeClientDatum } from '../../types/client-datum';

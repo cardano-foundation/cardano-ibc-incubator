@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { QueryClientStateRequest, QueryConsensusStateRequest } from '@plus/proto-types/src/ibc/core/client/v1/query';
 import { CLIENT_ID_PREFIX } from '../../constant';
 

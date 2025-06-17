@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { CHANNEL_ID_PREFIX, PORT_ID_PREFIX, TRANSFER_MODULE_PORT, MOCK_MODULE_PORT } from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';

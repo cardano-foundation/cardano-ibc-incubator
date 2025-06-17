@@ -1,5 +1,5 @@
 import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
 export function validPagination(pagination: PageRequest): PageRequest {
   // if (pagination.offset == undefined && !pagination.key)

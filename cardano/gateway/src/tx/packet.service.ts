@@ -14,7 +14,7 @@ import {
   MsgTransferResponse,
   ResponseResultType,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
-import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+
 import { RecvPacketOperator } from './dto/packet/recv-packet-operator.dto';
 import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
@@ -70,6 +70,7 @@ import { getBlockDelay } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { Order } from '~@/shared/types/channel/order';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
 @Injectable()
 export class PacketService {

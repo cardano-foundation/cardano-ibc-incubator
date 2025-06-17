@@ -4,7 +4,7 @@ import { hashOpFromJSON, lengthOpFromJSON } from '@plus/proto-types/build/cosmos
 import { ClientState } from '../types/client-state-types';
 import { convertHex2String, convertString2Hex } from './hex';
 import { convertToProofType } from './proof_types';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { KEY_CLIENT_PREFIX, KEY_CLIENT_STATE } from '~@/constant';
 import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 

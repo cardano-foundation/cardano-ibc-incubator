@@ -1,26 +1,25 @@
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   BlockFetchBlock,
   BlockFetchNoBlocks,
   BlockFetchClient,
   RealPoint,
-  ChainSyncClient,
   MiniProtocol,
   Multiplexer,
-  N2NHandshakeVersion,
-  N2NMessageAcceptVersion,
-  N2NMessageProposeVersion,
-  n2nHandshakeMessageFromCbor,
+  HandshakeProposeVersion,
+  handshakeMessageFromCborObj,
+  VersionData,
+  HandshakeAcceptVersion,
 } from '@harmoniclabs/ouroboros-miniprotocols-ts';
 import { Block } from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { fromHex } from '@harmoniclabs/uint8array-utils';
 import cbor from 'cbor';
 
 import { BlockHeaderDto } from './dtos/block-header.dto';
-import { Socket, connect } from 'net';
-import { writeFileSync } from 'fs';
+import { connect } from 'net';
 import { toHex } from '../../helpers/hex';
+import { Cbor } from '@harmoniclabs/cbor';
 
 @Injectable()
 export class MiniProtocalsService {
@@ -128,9 +127,9 @@ export class MiniProtocalsService {
   async _performHandshake(mplexer: Multiplexer, networkMagic: number) {
     return new Promise<void>((resolve, reject) => {
       mplexer.on(MiniProtocol.Handshake, (chunk) => {
-        const msg = n2nHandshakeMessageFromCbor(chunk);
+        const msg = handshakeMessageFromCborObj(Cbor.parse(chunk));
 
-        if (msg instanceof N2NMessageAcceptVersion) {
+        if (msg instanceof HandshakeAcceptVersion) {
           mplexer.clearListeners(MiniProtocol.Handshake);
           resolve();
         } else {
@@ -140,18 +139,15 @@ export class MiniProtocalsService {
       });
 
       mplexer.send(
-        new N2NMessageProposeVersion({
-          versionTable: [
-            {
-              version: N2NHandshakeVersion.v10,
-              data: {
-                networkMagic,
-                initiatorAndResponderDiffusionMode: false,
-                peerSharing: 0,
-                query: false,
-              },
-            },
-          ],
+        new HandshakeProposeVersion({
+          versionTable: {
+            [10]: VersionData.testnet({
+              initiatorOnlyDiffusionMode: false,
+              peerSharing: false,
+              query: false,
+              networkMagic: networkMagic,
+            }),
+          },
         })
           .toCbor()
           .toBuffer(),
