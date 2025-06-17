@@ -1,24 +1,25 @@
 import {
+credentialToAddress,
   Data,
   fromText,
   Kupmios,
   Lucid,
-} from "npm:@lucid-evolution/lucid@0.4.18";
-import { load } from "https://deno.land/std@0.213.0/dotenv/mod.ts";
-import { Command } from "https://deno.land/x/cliffy@v1.0.0-rc.3/command/mod.ts";
+} from "@lucid-evolution/lucid";
+import { load } from "@std/dotenv";
+import { Command } from "@cliffy/command";
 import { DeploymentTemplate } from "./template.ts";
-import { AuthToken } from "../../lucid-types/ibc/auth/AuthToken.ts";
+import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
 import {
   generateTokenName,
   parseChannelSequence,
   parseClientSequence,
   parseConnectionSequence,
 } from "./utils.ts";
-import { ClientDatum } from "../../lucid-types/ibc/client/ics_007_tendermint_client/client_datum/ClientDatum.ts";
-import { ConnectionDatum } from "../../lucid-types/ibc/core/ics_003_connection_semantics/connection_datum/ConnectionDatum.ts";
-import { ChannelDatum } from "../../lucid-types/ibc/core/ics_004/channel_datum/ChannelDatum.ts";
+import { ClientDatum } from "../lucid-types/ibc/client/ics_007_tendermint_client/client_datum/ClientDatum.ts";
+import { ConnectionDatum } from "../lucid-types/ibc/core/ics_003_connection_semantics/connection_datum/ConnectionDatum.ts";
+import { ChannelDatum } from "../lucid-types/ibc/core/ics_004/channel_datum/ChannelDatum.ts";
 
-const env = await load({ allowEmptyValues: true });
+const env = await load();
 
 const kupoUrl = env["KUPO_URL"] ? env["KUPO_URL"] : "";
 const ogmiosUrl = env["OGMIOS_URL"] ? env["OGMIOS_URL"] : "";
@@ -139,7 +140,7 @@ await new Command()
   })
   .command("balance", "Query balance of an address or public key hash")
   .arguments("<address-or-pk-hash:string>")
-  .action(async ({ handler, kupo, ogmios }, id) => {
+  .action(async ({ kupo, ogmios }, id) => {
     const isAddress = id.startsWith("addr");
 
     console.log(
@@ -151,7 +152,7 @@ await new Command()
     try {
       const address = isAddress
         ? id
-        : lucid.utils.credentialToAddress({ hash: id, type: "Key" });
+        : credentialToAddress('Preview', { hash: id, type: "Key" });
 
       const utxos = await lucid.utxosAt(address);
 

@@ -16,7 +16,7 @@ async function main() {
       "-o, --out-dir <path:string>",
       "Output directory for generated files",
       {
-        default: "./lucid-types",
+        default: "./offchain/lucid-types",
       },
     )
     .action(({ inFile, outDir }) => {
