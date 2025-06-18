@@ -103,14 +103,26 @@ fn validate_output_amount(
   output: Output,
   additional_value: Value,
 ) -> Bool {
-  trace @"locked_input": locked_input
-  trace @"output": output
+  trace @"locked_input.output.values": locked_input.output.value
+  let lovelace_input = assets.lovelace_of(locked_input.output.value)
+  trace @"lovelace_input": lovelace_input
+
   trace @"additional_value": additional_value
+
+  trace @"output.value": output.value
+  let lovelace_output = assets.lovelace_of(output.value)
+  trace @"lovelace_output": lovelace_output
 
   let expected_output =
     locked_input.output.value
       |> assets.merge(additional_value)
-  output.value == expected_output
+  trace @"expected_output": expected_output
+  and {
+    (lovelace_output - lovelace_input >= 0)?,
+    (assets.without_lovelace(output.value) == assets.without_lovelace(
+      expected_output,
+    ))?,
+  }
 }
 
 fn handler_callback(
