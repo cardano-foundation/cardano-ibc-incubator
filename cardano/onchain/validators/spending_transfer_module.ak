@@ -103,6 +103,10 @@ fn validate_output_amount(
   output: Output,
   additional_value: Value,
 ) -> Bool {
+  trace @"locked_input": locked_input
+  trace @"output": output
+  trace @"additional_value": additional_value
+
   let expected_output =
     locked_input.output.value
       |> assets.merge(additional_value)
@@ -135,7 +139,7 @@ fn handler_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero),
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
         transfer_ibc_module.validate_on_chan_open_init(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -143,7 +147,7 @@ fn handler_callback(
           channel_id,
           output_channel.counterparty,
           output_channel.version,
-        ),
+        )?,
       }
     }
 
@@ -158,7 +162,7 @@ fn handler_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero),
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
         transfer_ibc_module.validate_on_chan_open_try(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -167,7 +171,7 @@ fn handler_callback(
           output_channel.counterparty,
           output_channel.version,
           counterparty_version,
-        ),
+        )?,
       }
     }
 
@@ -184,13 +188,13 @@ fn handler_callback(
         )
 
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero),
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
         transfer_ibc_module.validate_on_chan_open_ack(
           port_id,
           channel_id,
           output_channel.counterparty.channel_id,
           counterparty_version,
-        ),
+        )?,
       }
     }
 
@@ -206,8 +210,8 @@ fn handler_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero),
-        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id),
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
       }
     }
 
@@ -369,11 +373,11 @@ fn handler_callback(
         trace @"mint_voucher: tx mint voucher token"
 
         and {
-          validate_output_amount(spent_input, updated_output, assets.zero),
-          packet_source_port == packet.source_port,
-          packet_source_channel == packet.source_channel,
-          packet_dest_port == packet.destination_port,
-          packet_dest_channel == packet.destination_channel,
+          validate_output_amount(spent_input, updated_output, assets.zero)?,
+          (packet_source_port == packet.source_port)?,
+          (packet_source_channel == packet.source_channel)?,
+          (packet_dest_port == packet.destination_port)?,
+          (packet_dest_channel == packet.destination_channel)?,
         }
       }
     }
@@ -404,8 +408,8 @@ fn handler_callback(
           packet,
         )
       and {
-        valid_refund_packet,
-        fungible_token_packet_data.get_bytes(data) == packet.data,
+        valid_refund_packet?,
+        (fungible_token_packet_data.get_bytes(data) == packet.data)?,
       }
     }
     OnAcknowledgementPacket { channel_id, acknowledgement, data } -> {
@@ -440,9 +444,9 @@ fn handler_callback(
             ),
           }
         _ -> and {
-            validate_output_amount(spent_input, updated_output, assets.zero),
-            fungible_token_packet_data.get_bytes(tf_data) == packet.data,
-            acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
+            validate_output_amount(spent_input, updated_output, assets.zero)?,
+            (fungible_token_packet_data.get_bytes(tf_data) == packet.data)?,
+            (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
           }
       }
     }
@@ -527,8 +531,8 @@ fn handler_operator(
         expect BurnVoucher { packet_source_port, packet_source_channel } =
           mint_voucher_redeemer
         and {
-          packet_source_port == packet.source_port,
-          packet_source_channel == packet.source_channel,
+          (packet_source_port == packet.source_port)?,
+          (packet_source_channel == packet.source_channel)?,
         }
       }
     }
@@ -856,9 +860,9 @@ fn validate_refund_packet_token(
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
     and {
-      validate_output_amount(spent_input, updated_output, assets.zero),
-      packet_source_port == packet.source_port,
-      packet_source_channel == packet.source_channel,
+      validate_output_amount(spent_input, updated_output, assets.zero)?,
+      (packet_source_port == packet.source_port)?,
+      (packet_source_channel == packet.source_channel)?,
     }
   }
 }

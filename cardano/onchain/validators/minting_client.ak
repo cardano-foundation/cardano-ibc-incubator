@@ -81,10 +81,10 @@ validator mint_client(spend_client_script_hash: Hash<Blake2b_224, Script>) {
       ) == Active
 
     and {
-      mint |> auth.mint_auth_token(client_token),
-      client_output |> auth.contains_only_auth_tokens([client_token]),
-      valid_output_datum,
-      is_state_active,
+      (mint |> auth.mint_auth_token(client_token))?,
+      (client_output |> auth.contains_only_auth_tokens([client_token]))?,
+      valid_output_datum?,
+      is_state_active?,
     }
   }
 

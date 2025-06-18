@@ -18,6 +18,8 @@ pub fn contains_only_auth_tokens(
   output: Output,
   tokens: List<AuthToken>,
 ) -> Bool {
+  trace @"output": output
+  trace @"tokens": tokens
   let expected_value =
     list.foldl(
       tokens,

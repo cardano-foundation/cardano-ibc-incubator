@@ -80,14 +80,14 @@ validator mint_voucher(module_token: AuthToken) {
           )
 
         and {
-          valid_receiver,
-          valid_minted_tokens,
+          valid_receiver?,
+          valid_minted_tokens?,
           valid_voucher_output(
             payout_output,
             voucher_minting_policy_id,
             token_name,
             transfer_amount,
-          ),
+          )?,
         }
       }
       BurnVoucher { packet_source_port, packet_source_channel } -> {
@@ -245,7 +245,7 @@ fn valid_voucher_output(
   let voucher_output_value = assets.without_lovelace(voucher_output.value)
   expect [actual_policy_id] = assets.policies(voucher_output_value)
   and {
-    actual_policy_id == voucher_policy_id,
-    quantity_of(voucher_output_value, voucher_policy_id, asset_name) >= transfer_amount,
+    (actual_policy_id == voucher_policy_id)?,
+    (quantity_of(voucher_output_value, voucher_policy_id, asset_name) >= transfer_amount)?,
   }
 }

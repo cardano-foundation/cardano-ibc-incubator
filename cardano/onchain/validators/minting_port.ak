@@ -61,10 +61,10 @@ validator mint_port {
     trace @"mint_port: transfer module output datum": module_output.datum
     expect NoDatum = module_output.datum
     and {
-      valid_handler_operator,
-      auth.mint_auth_token(mint, port_token),
-      module_output |> auth.contain_auth_token(port_token),
-      valid_number_of_ports(module_output, port_minting_policy_id),
+      valid_handler_operator?,
+      auth.mint_auth_token(mint, port_token)?,
+      (module_output |> auth.contain_auth_token(port_token))?,
+      valid_number_of_ports(module_output, port_minting_policy_id)?,
     }
   }
 
