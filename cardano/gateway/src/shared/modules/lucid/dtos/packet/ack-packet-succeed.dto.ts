@@ -5,8 +5,6 @@ export type UnsignedAckPacketSucceedDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  spendChannelRefUtxo: UTxO;
-  spendTransferModuleRefUtxo: UTxO;
   transferModuleUtxo: UTxO;
 
   encodedSpendChannelRedeemer: string;
@@ -15,12 +13,10 @@ export type UnsignedAckPacketSucceedDto = {
   encodedUpdatedChannelDatum: string;
   constructedAddress: string;
 
-  ackPacketRefUTxO: UTxO;
   ackPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 
   verifyProofPolicyId: PolicyId;
-  verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
 };
 

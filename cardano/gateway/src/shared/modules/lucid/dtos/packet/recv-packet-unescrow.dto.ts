@@ -5,8 +5,6 @@ export type UnsignedRecvPacketUnescrowDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  spendChannelRefUtxo: UTxO;
-  spendTransferModuleRefUtxo: UTxO;
   transferModuleUtxo: UTxO;
 
   encodedSpendChannelRedeemer: string;
@@ -17,11 +15,9 @@ export type UnsignedRecvPacketUnescrowDto = {
   receiverAddress: string;
   constructedAddress: string;
 
-  recvPacketRefUTxO: UTxO;
   recvPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 
   verifyProofPolicyId: PolicyId;
-  verifyProofRefUTxO: UTxO;
   encodedVerifyProofRedeemer: string;
 };

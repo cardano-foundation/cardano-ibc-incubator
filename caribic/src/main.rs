@@ -287,7 +287,7 @@ async fn main() {
 
             if target == StartTarget::Network || target == StartTarget::All {
                 // Start the local Cardano network and its services
-                match start_local_cardano_network(&project_root_path).await {
+                match start_local_cardano_network(&project_root_path, clean).await {
                     Ok(_) => logger::log("✅ Local Cardano network has been started and prepared"),
                     Err(error) => network_down_with_error(&format!(
                         "❌ Failed to start local Cardano network: {}",

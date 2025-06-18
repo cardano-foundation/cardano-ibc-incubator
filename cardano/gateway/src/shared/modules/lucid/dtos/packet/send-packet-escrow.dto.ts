@@ -5,8 +5,6 @@ export type UnsignedSendPacketEscrowDto = {
   channelUTxO: UTxO;
   connectionUTxO: UTxO;
   clientUTxO: UTxO;
-  spendChannelRefUTxO: UTxO;
-  spendTransferModuleUTxO: UTxO;
   transferModuleUTxO: UTxO;
 
   encodedSpendChannelRedeemer: string;
@@ -24,7 +22,6 @@ export type UnsignedSendPacketEscrowDto = {
 
   constructedAddress: string;
 
-  sendPacketRefUTxO: UTxO;
   sendPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 };

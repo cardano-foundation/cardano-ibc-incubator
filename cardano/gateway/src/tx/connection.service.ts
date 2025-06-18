@@ -425,8 +425,6 @@ export class ConnectionService {
       'connection',
     );
 
-    const spendConnectionRefUtxo = this.configService.get('deployment').validators.mintConnection.refUtxo;
-    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
     const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === connectionOpenAckOperator.proofHeight.revisionHeight,
@@ -506,9 +504,7 @@ export class ConnectionService {
       clientUtxo,
       encodedUpdatedConnectionDatum,
       constructedAddress,
-      spendConnectionRefUtxo,
       verifyProofPolicyId,
-      verifyProofRefUTxO,
       encodedVerifyProofRedeemer,
     };
     return this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);

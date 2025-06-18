@@ -2,8 +2,6 @@ import { UTxO, PolicyId } from '@lucid-evolution/lucid';
 import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedTimeoutPacketUnescrowDto = {
-  spendChannelRefUtxo: UTxO;
-  spendTransferModuleUtxo: UTxO;
   channelUtxo: UTxO;
   transferModuleUtxo: UTxO;
   connectionUtxo: UTxO;
@@ -22,11 +20,9 @@ export type UnsignedTimeoutPacketUnescrowDto = {
   denomToken: string;
   constructedAddress: string;
 
-  timeoutPacketRefUTxO: UTxO;
   timeoutPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 
-  verifyProofRefUTxO: UTxO;
   verifyProofPolicyId: PolicyId;
   encodedVerifyProofRedeemer: string;
 };

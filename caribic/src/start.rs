@@ -1,8 +1,8 @@
 use crate::check::check_osmosisd;
 use crate::logger::{log_or_show_progress, verbose};
 use crate::setup::{
-    configure_local_cardano_devnet, copy_cardano_env_file, download_mithril, prepare_db_sync,
-    seed_cardano_devnet,
+    configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
+    prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
     copy_dir_all, download_file, execute_script, execute_script_with_progress,
@@ -78,6 +78,7 @@ pub fn start_relayer(
 
 pub async fn start_local_cardano_network(
     project_root_path: &Path,
+    clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -195,7 +196,7 @@ pub async fn start_local_cardano_network(
     );
 
     if config::get_config().cardano.services.db_sync {
-        prepare_db_sync(cardano_dir.as_path())?;
+        prepare_db_sync_and_gateway(cardano_dir.as_path(), clean)?;
         execute_script(
             &cardano_dir,
             "docker",
@@ -437,12 +438,7 @@ pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error:
     };
 
     if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.enable_steady_tick(Duration::from_millis(100));
-        progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
+        progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
         progress_bar.set_prefix("🥁‍ Starting Osmosis appchain ...".to_owned());
     } else {
         log("🥁‍ Starting Osmosis appchain ...");
@@ -539,12 +535,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     };
 
     if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.enable_steady_tick(Duration::from_millis(100));
-        progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
+        progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
         progress_bar.set_prefix("🏃‍ Asking Hermes to connect Osmosis and Cosmos ...".to_owned());
     } else {
         log("🏃‍ Asking Hermes to connect Osmosis and Cosmos ...");
@@ -1180,15 +1171,6 @@ pub fn wait_and_start_mithril_genesis(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
-    if (gateway_dir.join(".env").exists() && clean) || !gateway_dir.join(".env").exists() {
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        copy(
-            gateway_dir.join(".env.example"),
-            gateway_dir.join(".env"),
-            &options,
-        )?;
-    }
-
     let mut script_args = vec!["compose", "up", "-d"];
     if clean {
         script_args.push("--build");
