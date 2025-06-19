@@ -71,7 +71,7 @@ validator spend_connection(
       validator_utils.get_inline_datum(updated_output)
     trace @"spend_connection: found connection output"
 
-    expect auth.contain_auth_token(updated_output, datum.token)
+    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
     trace @"spend_connection: output contains connection token"
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
@@ -122,9 +122,9 @@ validator spend_connection(
           )
 
         and {
-          valid_connection,
-          connection_datum.is_connection_open_ack_valid(datum, updated_datum),
-          connection_state_active,
+          valid_connection?,
+          connection_datum.is_connection_open_ack_valid(datum, updated_datum)?,
+          connection_state_active?,
         }
       }
       ConnOpenConfirm { proof_ack, proof_height } -> {
@@ -166,9 +166,9 @@ validator spend_connection(
           )
 
         and {
-          is_status_active,
-          is_connection_open,
-          valid_connection,
+          is_status_active?,
+          is_connection_open?,
+          valid_connection?,
         }
       }
     }
@@ -275,8 +275,8 @@ fn validate_conn_open_ack_proof(
     )
 
   and {
-    valid_client_state,
-    valid_proof_redeemer,
+    valid_client_state?,
+    valid_proof_redeemer?,
   }
 }
 
@@ -328,7 +328,7 @@ fn validate_conn_open_confirm_proof(
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
-  verify_proof_redeemer == VerifyMembership {
+  (verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,
     cons_state: consensus_state,
     height: proof_height,
@@ -337,5 +337,5 @@ fn validate_conn_open_confirm_proof(
     proof: proof_ack,
     path: merkle_path,
     value: expected_connection_bz,
-  }
+  })?
 }

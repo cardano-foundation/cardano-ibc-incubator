@@ -224,3 +224,55 @@ test mint_auth_token_fail() fail {
 
   auth.mint_auth_token(mint, token)
 }
+
+test test_contains_only_auth_tokens() {
+  let hash_sample =
+    #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"
+
+  let auth_token_policy_id = #"786a02f742015903c6c6fd852552d272912f4740e1584761"
+  let auth_token_asset_name = "handler"
+
+  let dust_token_policy_id = #"22ebf077c0b2f5ac5a646f8ecacc66653dd9da77e75cbf67"
+  let dust_token_asset_name = "dust"
+
+  let auth_token =
+    AuthToken { policy_id: auth_token_policy_id, name: auth_token_asset_name }
+  let valid_output =
+    Output {
+      address: from_script(hash_sample),
+      value: assets.from_lovelace(3_000_000)
+        |> add(auth_token.policy_id, auth_token.name, 1),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let invalid_output_missing =
+    Output {
+      address: from_script(hash_sample),
+      value: assets.from_lovelace(3_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let invalid_output_dust =
+    Output {
+      address: from_script(hash_sample),
+      value: assets.from_lovelace(3_000_000)
+        |> add(auth_token.policy_id, auth_token.name, 1)
+        |> add(dust_token_policy_id, dust_token_asset_name, 1),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let test_cases: List<(Output, List<AuthToken>, Bool)> =
+    [
+      (valid_output, [auth_token], True),
+      (invalid_output_missing, [auth_token], False),
+      (invalid_output_dust, [auth_token], False),
+    ]
+
+  test_cases
+    |> list.all(
+        fn(case) {
+          auth.contains_only_auth_tokens(case.1st, case.2nd) == case.3rd
+        },
+      )
+}
