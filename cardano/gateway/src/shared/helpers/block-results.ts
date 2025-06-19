@@ -27,7 +27,7 @@ import { convertHeaderToTendermint } from '../types/header';
 import { Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 
-export function normalizeEventConnection(evtType: ConnectionState): string {
+function normalizeEventConnection(evtType: ConnectionState): string {
   switch (evtType) {
     case ConnectionState.Init:
       return EVENT_TYPE_CONNECTION.OPEN_INIT;
@@ -76,7 +76,7 @@ export function normalizeTxsResultFromConnDatum(connDatum: ConnectionDatum, conn
   } as unknown as ResponseDeliverTx;
 }
 
-export function normalizeEventChannel(evtType: ChannelState): string {
+function normalizeEventChannel(evtType: ChannelState): string {
   switch (evtType) {
     case ChannelState.Init:
       return EVENT_TYPE_CHANNEL.OPEN_INIT;

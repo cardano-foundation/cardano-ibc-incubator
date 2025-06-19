@@ -64,7 +64,6 @@ export const createDeployment = async (
     "minting_port.mint_port.mint",
     lucid
   );
-  referredValidators.push(mintPortValidator);
 
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
@@ -106,9 +105,10 @@ export const createDeployment = async (
     mintPortPolicyId,
     verifyProofPolicyId
   );
+
   referredValidators.push(
     spendingChannel.base.script,
-    ...Object.values(spendingChannel.referredValidators).map(
+    ...Object.values(spendingChannel.referredScripts).map(
       (val) => val.script
     )
   );
@@ -154,7 +154,6 @@ export const createDeployment = async (
     "minting_identifier.minting_identifier.mint",
     lucid
   );
-  referredValidators.push(mintIdentifierValidator);
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
@@ -179,7 +178,7 @@ export const createDeployment = async (
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
   const spendChannelRefValidator = Object.entries(
-    spendingChannel.referredValidators
+    spendingChannel.referredScripts
   ).reduce<
     Record<string, { script: string; scriptHash: string; refUtxo: UTxO }>
   >((acc, [name, val]) => {
@@ -626,59 +625,32 @@ const deploySpendChannel = async (
   mintPortPolicyId: PolicyId,
   verifyProofScriptHash: PolicyId
 ) => {
-  const knownReferredValidatorsName = [
-    "chan_open_ack.mint",
-    "chan_open_confirm.spend",
-    "chan_close_init.spend",
-    "chan_close_confirm.spend",
-    "recv_packet.mint",
-    "send_packet.spend",
-    "timeout_packet.spend",
-    "acknowledge_packet.spend",
-  ] as const;
+  const referredValidators = {
+    chan_open_ack: "chan_open_ack.mint",
+    chan_close_init: "chan_close_init.spend",
+    recv_packet: "recv_packet.mint",
+    send_packet: "send_packet.spend",
+    timeout_packet: "timeout_packet.spend",
+    acknowledge_packet: "acknowledge_packet.spend",
+  };
 
-  const moduleNamesToIgnore = [
-    "spending_channel_fixture.ak",
-  ];
-
-  const referredValidatorsName = (
-    await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
-  )
-    .filter((val) => val.isFile)
-    // Filtering out test modules
-    .filter((val) => !val.name.endsWith(".test.ak"))
-    // Filter out modules to ignore
-    .filter((val) => moduleNamesToIgnore.indexOf(val.name) == -1)
-    .map((val) => {
-      const name = val.name.split(".").slice(0, -1).join(".");
-      // deno-lint-ignore no-explicit-any
-      if (!knownReferredValidatorsName.map(name => name.split(".")[0]).includes(name as any)) {
-        throw new Error(
-          `Unknown referred validator of spending_channel, expected ${knownReferredValidatorsName}, found: ${name}`
-        );
-      }
-      return name;
-    });
-
-  const referredValidators: Record<string, { script: Script; hash: string }> =
+  const referredScripts: Record<string, { script: Script; hash: string }> =
     {};
 
-  for (const name of referredValidatorsName) {
+  for (const [name, validator] of Object.entries(referredValidators)) {
     const args = [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
 
     if (name !== "send_packet" && name !== "chan_close_init") {
       args.push(verifyProofScriptHash);
     }
 
-    const validator_name = knownReferredValidatorsName.find(fullName => fullName.split(".")[0] === name);
-
     const [script, hash] = await readValidator(
-      `spending_channel/${name}.${validator_name}`,
+      `spending_channel/${name}.${validator}`,
       lucid,
       args
     );
 
-    referredValidators[name] = {
+    referredScripts[name] = {
       script,
       hash,
     };
@@ -687,7 +659,7 @@ const deploySpendChannel = async (
   const [script, hash, address] = await readValidator(
     "spending_channel.spend_channel.spend",
     lucid,
-    knownReferredValidatorsName.map((name) => referredValidators[name.split(".")[0]].hash)
+    Object.keys(referredValidators).map((name) => referredScripts[name].hash)
   );
 
   return {
@@ -696,6 +668,6 @@ const deploySpendChannel = async (
       hash,
       address,
     },
-    referredValidators,
+    referredScripts,
   };
 };

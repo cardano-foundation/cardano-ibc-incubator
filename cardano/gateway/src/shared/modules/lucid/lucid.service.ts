@@ -38,35 +38,28 @@ import {
   decodeMockModuleDatum,
   encodeMockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
-import {
-  UnsignedSendPacketEscrowDto,
-  UnsignedSendPacketEscrowForOrderedChannelDto,
-} from './dtos/packet/send-packet-escrow.dto';
-import { UnsignedChannelOpenInitDto, UnsignedOrderedChannelOpenInitDto } from './dtos/channel/channel-open-init.dto';
-import { UnsignedChannelOpenAckDto, UnsignedOrderedChannelOpenAckDto } from './dtos/channel/channel-open-ack.dto';
 import { calculateTransferToken } from './helpers/send-packet.helper';
-import { UnsignedRecvPacketUnescrowDto } from './dtos/packet/recv-packet-unescrow.dto';
-import {
-  UnsignedRecvPacketDto,
-  UnsignedRecvPacketMintDto,
-  UnsignedRecvPacketMintForOrderedChannelDto,
-} from './dtos/packet/recv-packet-mint.dto';
 import {
   MintVoucherRedeemer,
   encodeMintVoucherRedeemer,
 } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
-import { UnsignedTimeoutPacketMintDto } from './dtos/packet/timeout-packet-mint.dto';
-import { UnsignedTimeoutPacketUnescrowDto } from './dtos/packet/timeout-packet-unescrow.dto';
-import { UnsignedAckPacketUnescrowDto } from './dtos/packet/ack-packet-unescrow.dto';
-import { UnsignedAckPacketMintDto } from './dtos/packet/ack-packet-mint.dto';
-import { UnsignedSendPacketBurnDto } from './dtos/packet/send-packet-burn.dto';
-import { UnsignedTimeoutRefreshDto } from './dtos/packet/timeout-refresh-dto';
 import {
+  UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
-  UnsignedAckPacketSucceedForOrderedChannelDto,
-} from './dtos/packet/ack-packet-succeed.dto';
-import { UnsignedConnectionOpenAckDto } from './dtos/connection/connection-open-ack.dto';
-import { UnsignedChannelCloseInitDto } from './dtos/channel/channle-close-init.dto';
+  UnsignedAckPacketUnescrowDto,
+  UnsignedChannelCloseInitDto,
+  UnsignedChannelOpenAckDto,
+  UnsignedChannelOpenInitDto,
+  UnsignedConnectionOpenAckDto,
+  UnsignedRecvPacketDto,
+  UnsignedRecvPacketMintDto,
+  UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketBurnDto,
+  UnsignedSendPacketEscrowDto,
+  UnsignedTimeoutPacketMintDto,
+  UnsignedTimeoutPacketUnescrowDto,
+  UnsignedTimeoutRefreshDto,
+} from './dtos';
 
 export type CodecType =
   | 'client'
@@ -91,6 +84,7 @@ type ReferenceScripts = {
   mintClient: UTxO;
   mintConnection: UTxO;
   spendConnection: UTxO;
+  spendClient: UTxO;
   spendMockModule: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
@@ -116,6 +110,7 @@ export class LucidService {
       spendHandler: deploymentConfig.validators.spendHandler.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
+      spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
       mintChannel: deploymentConfig.validators.mintChannel.refUtxo,
@@ -301,9 +296,9 @@ export class LucidService {
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
-    const clientRefUTxO: UTxO = deploymentConfig.validators.spendClient.refUtxo;
+
     tx.collectFrom([currentClientUtxo], encodedSpendClientRedeemer)
-      .readFrom([clientRefUTxO])
+      .readFrom([this.referenceScripts.spendClient])
       .pay.ToContract(
         deploymentConfig.validators.spendClient.address,
         { kind: 'inline', value: encodedNewClientDatum },
@@ -498,37 +493,7 @@ export class LucidService {
 
     return tx;
   }
-  public createUnsignedOrderedChannelOpenInitTransaction(dto: UnsignedOrderedChannelOpenInitDto): TxBuilder {
-    const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
-    tx.readFrom([
-      this.referenceScripts.spendHandler,
-      this.referenceScripts.mintChannel,
-      this.referenceScripts.spendMockModule,
-    ])
-      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
-      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
-      .mintAssets(
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
-        dto.encodedMintChannelRedeemer,
-      )
-      .readFrom([dto.connectionUtxo, dto.clientUtxo]);
 
-    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
-    };
-    addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
-      [this.getHandlerTokenUnit()]: 1n,
-    });
-    addPayToContract(deploymentConfig.validators.spendChannel.address, dto.encodedChannelDatum, {
-      [dto.channelTokenUnit]: 1n,
-    });
-    addPayToContract(deploymentConfig.modules.mock.address, dto.encodedNewMockModuleDatum, dto.mockModuleUtxo.assets);
-
-    return tx;
-  }
   public createUnsignedChannelOpenTryTransaction(
     handlerUtxo: UTxO,
     connectionUtxo: UTxO,
@@ -1251,7 +1216,6 @@ export class LucidService {
 
     return tx;
   }
-  // ========================== private functions ==========================
 
   private getMintConnectionScriptHash(): string {
     return this.configService.get('deployment').validators.mintConnection.scriptHash;

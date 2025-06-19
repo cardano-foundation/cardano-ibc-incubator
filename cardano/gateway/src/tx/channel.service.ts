@@ -16,11 +16,6 @@ import {
   MsgChannelOpenTry,
   MsgChannelOpenTryResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
-import { ChannelOpenInitOperator } from './dto/channel/channel-open-init-operator.dto';
-import { ChannelOpenConfirmOperator } from './dto/channel/channel-open-confirm-operator.dto';
-import { ChannelOpenAckOperator } from './dto/channel/channel-open-ack-operator.dto';
-import { ChannelOpenTryOperator } from './dto/channel/channel-open-try-operator.dto';
-import { ChannelCloseInitOperator } from './dto/channel/channel-close-init-operator.dto';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -36,15 +31,6 @@ import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
-import {
-  UnsignedChannelOpenInitDto,
-  UnsignedOrderedChannelOpenInitDto,
-} from '@shared/modules/lucid/dtos/channel/channel-open-init.dto';
-import {
-  UnsignedChannelOpenAckDto,
-  UnsignedOrderedChannelOpenAckDto,
-} from '@shared/modules/lucid/dtos/channel/channel-open-ack.dto';
-import { UnsignedChannelCloseInitDto } from '@shared/modules/lucid/dtos/channel/channle-close-init.dto';
 import { isValidProofHeight } from './helper/height.validate';
 import {
   validateAndFormatChannelOpenAckParams,
@@ -62,8 +48,19 @@ import {
   orderFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
-import { Order } from '~@/shared/types/channel/order';
 import { sleep } from '../shared/helpers/time';
+import {
+  ChannelCloseInitOperator,
+  ChannelOpenAckOperator,
+  ChannelOpenConfirmOperator,
+  ChannelOpenInitOperator,
+  ChannelOpenTryOperator,
+} from './dto';
+import {
+  UnsignedChannelCloseInitDto,
+  UnsignedChannelOpenAckDto,
+  UnsignedChannelOpenInitDto,
+} from '~@/shared/modules/lucid/dtos';
 
 @Injectable()
 export class ChannelService {

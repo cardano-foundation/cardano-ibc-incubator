@@ -29,7 +29,7 @@ import {
   verifyClientMessage,
 } from '../shared/types/msgs/client-message';
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
-import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto/client/update-client-operator.dto';
+import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
 
 @Injectable()

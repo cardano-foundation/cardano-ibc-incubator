@@ -13,7 +13,7 @@ import {
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { SendPacketOperator } from '../dto/packet/send-packet-operator.dto';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import { TimeoutPacketOperator } from '../dto/packet/time-out-packet-operator.dto';
+import { TimeoutPacketOperator } from '../dto/packet/timeout-packet-operator.dto';
 import { AckPacketOperator } from '../dto/packet/ack-packet-operator.dto';
 
 export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {

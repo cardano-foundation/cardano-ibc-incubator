@@ -1,9 +1,8 @@
 import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { TxBuilder, TxSignBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
-
+import { TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -15,11 +14,6 @@ import {
   MsgConnectionOpenTryResponse,
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
-import { ConnectionOpenInitOperator } from './dto/connection/connection-open-init-operator.dto';
-import { ConnectionOpenTryOperator } from './dto/connection/connection-open-try-operator.dto';
-import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
-import { ConnectionOpenAckOperator } from './dto/connection/connection-open-ack-operator.dto';
-import { ConnectionOpenConfirmOperator } from './dto/connection/connection-open-confirm-operator.dto';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { AuthToken } from 'src/shared/types/auth-token';
@@ -28,7 +22,7 @@ import { State } from 'src/shared/types/connection/state';
 import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
-import { convertHex2String, convertString2Hex, fromText, toHex, toHexString } from '@shared/helpers/hex';
+import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
@@ -37,16 +31,23 @@ import {
   validateAndFormatConnectionOpenInitParams,
   validateAndFormatConnectionOpenTryParams,
 } from './helper/connection.validate';
-import { UnsignedConnectionOpenAckDto } from '../shared/modules/lucid/dtos/connection/connection-open-ack.dto';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
 import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
-import { clientStatePath, getCardanoClientStateForVerifyProofRedeemer } from '~@/shared/helpers/client-state';
-import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
+import { clientStatePath } from '~@/shared/helpers/client-state';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
 import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import {
+  ConnectionOpenAckOperator,
+  ConnectionOpenConfirmOperator,
+  ConnectionOpenInitOperator,
+  ConnectionOpenTryOperator,
+} from './dto';
+import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from '~@/constant';
+import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
+
 @Injectable()
 export class ConnectionService {
   constructor(

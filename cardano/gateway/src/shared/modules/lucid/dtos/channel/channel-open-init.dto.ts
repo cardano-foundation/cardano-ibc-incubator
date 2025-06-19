@@ -14,18 +14,3 @@ export type UnsignedChannelOpenInitDto = {
   encodedChannelDatum: string;
   encodedNewTransferModuleDatum?: string;
 };
-
-export type UnsignedOrderedChannelOpenInitDto = {
-  handlerUtxo: UTxO;
-  connectionUtxo: UTxO;
-  clientUtxo: UTxO;
-  mockModuleUtxo: UTxO;
-  encodedSpendMockModuleRedeemer: string;
-  encodedSpendHandlerRedeemer: string;
-  encodedMintChannelRedeemer: string;
-  channelTokenUnit: string;
-  encodedUpdatedHandlerDatum: string;
-  encodedChannelDatum: string;
-  encodedNewMockModuleDatum?: string;
-  constructedAddress: string;
-};
