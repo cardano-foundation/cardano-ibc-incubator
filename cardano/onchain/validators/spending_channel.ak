@@ -109,7 +109,7 @@ validator spend_channel(
         let updated_datum = extract_output_datum(updated_output)
 
         and {
-          auth.contain_auth_token(updated_output, datum.token),
+          auth.contains_only_auth_tokens(updated_output, [datum.token]),
           channel_datum_mod.validate_refresh_utxo(datum, updated_datum),
         }
       }

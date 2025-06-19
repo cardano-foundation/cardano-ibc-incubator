@@ -3,7 +3,7 @@ use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, quantity_of}
+use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/transaction.{
   Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -96,6 +96,35 @@ validator spend_transfer_module(
   }
 }
 
+// Verifies the expected amount is added/subtracted from the input,
+// preventing dust attack from happening
+fn validate_output_amount(
+  locked_input: Input,
+  output: Output,
+  additional_value: Value,
+) -> Bool {
+  trace @"locked_input.output.values": locked_input.output.value
+  let lovelace_input = assets.lovelace_of(locked_input.output.value)
+  trace @"lovelace_input": lovelace_input
+
+  trace @"additional_value": additional_value
+
+  trace @"output.value": output.value
+  let lovelace_output = assets.lovelace_of(output.value)
+  trace @"lovelace_output": lovelace_output
+
+  let expected_output =
+    locked_input.output.value
+      |> assets.merge(additional_value)
+  trace @"expected_output": expected_output
+  and {
+    (lovelace_output - lovelace_input >= 0)?,
+    (assets.without_lovelace(output.value) == assets.without_lovelace(
+      expected_output,
+    ))?,
+  }
+}
+
 fn handler_callback(
   cb: IBCModuleCallback,
   handler_token: AuthToken,
@@ -109,7 +138,6 @@ fn handler_callback(
   let Transaction { outputs, redeemers, inputs, .. } = transaction
 
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-  let spent_output = spent_input.output
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
@@ -122,15 +150,17 @@ fn handler_callback(
           port_id,
           channel_id,
         )
-
-      transfer_ibc_module.validate_on_chan_open_init(
-        output_channel.ordering,
-        output_channel.connection_hops,
-        port_id,
-        channel_id,
-        output_channel.counterparty,
-        output_channel.version,
-      )
+      and {
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_ibc_module.validate_on_chan_open_init(
+          output_channel.ordering,
+          output_channel.connection_hops,
+          port_id,
+          channel_id,
+          output_channel.counterparty,
+          output_channel.version,
+        )?,
+      }
     }
 
     OnChanOpenTry { channel_id } -> {
@@ -143,16 +173,18 @@ fn handler_callback(
           port_id,
           channel_id,
         )
-
-      transfer_ibc_module.validate_on_chan_open_try(
-        output_channel.ordering,
-        output_channel.connection_hops,
-        port_id,
-        channel_id,
-        output_channel.counterparty,
-        output_channel.version,
-        counterparty_version,
-      )
+      and {
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_ibc_module.validate_on_chan_open_try(
+          output_channel.ordering,
+          output_channel.connection_hops,
+          port_id,
+          channel_id,
+          output_channel.counterparty,
+          output_channel.version,
+          counterparty_version,
+        )?,
+      }
     }
 
     OnChanOpenAck { channel_id } -> {
@@ -167,12 +199,15 @@ fn handler_callback(
           channel_id,
         )
 
-      transfer_ibc_module.validate_on_chan_open_ack(
-        port_id,
-        channel_id,
-        output_channel.counterparty.channel_id,
-        counterparty_version,
-      )
+      and {
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_ibc_module.validate_on_chan_open_ack(
+          port_id,
+          channel_id,
+          output_channel.counterparty.channel_id,
+          counterparty_version,
+        )?,
+      }
     }
 
     OnChanOpenConfirm { channel_id } -> {
@@ -186,8 +221,10 @@ fn handler_callback(
           port_id,
           channel_id,
         )
-
-      transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)
+      and {
+        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
+      }
     }
 
     OnChanCloseInit { .. } -> False
@@ -242,21 +279,20 @@ fn handler_callback(
         expect Some(transfer_amount) = int.from_utf8(data.amount)
         trace @"spend_transfer_module: transfer amount is valid"
 
-        let prev_escrowed_token =
-          quantity_of(
-            spent_output.value,
+        let expected_escrow_value_difference =
+          assets.from_asset(
             escrowed_token_policy_id,
             escrowed_token_name,
+            transfer_amount,
           )
-        let post_escrowed_token =
-          quantity_of(
-            updated_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          )
+            |> assets.negate()
+
         let valid_transfer_amount =
-          prev_escrowed_token - post_escrowed_token == transfer_amount
-        trace @"spend_transfer_module: unescrowed amount is valid"
+          validate_output_amount(
+            spent_input,
+            updated_output,
+            expected_escrow_value_difference,
+          )
 
         expect Some(receiver_public_key_hash) =
           string_utils.hex_string_to_bytes(data.receiver)
@@ -335,6 +371,7 @@ fn handler_callback(
           ) >= transfer_amount)?,
         }
       } else {
+        // TODO: (reminder) where is the voucher minted?
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
         expect mint_voucher_redeemer: MintVoucherRedeemer =
@@ -348,10 +385,11 @@ fn handler_callback(
         trace @"mint_voucher: tx mint voucher token"
 
         and {
-          packet_source_port == packet.source_port,
-          packet_source_channel == packet.source_channel,
-          packet_dest_port == packet.destination_port,
-          packet_dest_channel == packet.destination_channel,
+          validate_output_amount(spent_input, updated_output, assets.zero)?,
+          (packet_source_port == packet.source_port)?,
+          (packet_source_channel == packet.source_channel)?,
+          (packet_dest_port == packet.destination_port)?,
+          (packet_dest_channel == packet.destination_channel)?,
         }
       }
     }
@@ -376,14 +414,14 @@ fn handler_callback(
           inputs,
           outputs,
           redeemers,
-          spent_output,
+          spent_input,
           updated_output,
           data,
           packet,
         )
       and {
-        valid_refund_packet,
-        fungible_token_packet_data.get_bytes(data) == packet.data,
+        valid_refund_packet?,
+        (fungible_token_packet_data.get_bytes(data) == packet.data)?,
       }
     }
     OnAcknowledgementPacket { channel_id, acknowledgement, data } -> {
@@ -401,26 +439,27 @@ fn handler_callback(
         channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect TransferModuleData(data) = data
-      let valid_response =
-        when acknowledgement.response is {
-          AcknowledgementError { .. } ->
+      expect TransferModuleData(tf_data) = data
+      when acknowledgement.response is {
+        AcknowledgementError { .. } -> and {
+            fungible_token_packet_data.get_bytes(tf_data) == packet.data,
+            acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             validate_refund_packet_token(
               voucher_minting_policy_id,
               inputs,
               outputs,
               redeemers,
-              spent_output,
+              spent_input,
               updated_output,
-              data,
+              tf_data,
               packet,
-            )
-          _ -> True
-        }
-      and {
-        fungible_token_packet_data.get_bytes(data) == packet.data,
-        acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
-        valid_response,
+            ),
+          }
+        _ -> and {
+            validate_output_amount(spent_input, updated_output, assets.zero)?,
+            (fungible_token_packet_data.get_bytes(tf_data) == packet.data)?,
+            (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
+          }
       }
     }
   }
@@ -439,7 +478,6 @@ fn handler_operator(
   let Transaction { redeemers, inputs, .. } = transaction
 
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-  let spent_output = spent_input.output
 
   when op is {
     Transfer { channel_id, data } -> {
@@ -479,22 +517,24 @@ fn handler_operator(
           validator_utils.extract_token_unit(escrowed_token_unit)
         trace @"spend_transfer_module: extract escrowed token valid"
 
-        let prev_escrowed_token =
-          quantity_of(
-            spent_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          )
-        let post_escrowed_token =
-          quantity_of(
-            updated_output.value,
-            escrowed_token_policy_id,
-            escrowed_token_name,
-          )
         expect Some(transfer_amount) = int.from_utf8(data.amount)
         trace @"spend_transfer_module: transfer amount is valid"
 
-        post_escrowed_token - prev_escrowed_token == transfer_amount
+        let expected_escrow_value_difference =
+          assets.from_asset(
+            escrowed_token_policy_id,
+            escrowed_token_name,
+            transfer_amount,
+          )
+
+        let valid_transfer_amount =
+          validate_output_amount(
+            spent_input,
+            updated_output,
+            expected_escrow_value_difference,
+          )
+
+        valid_transfer_amount
       } else {
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
@@ -503,8 +543,8 @@ fn handler_operator(
         expect BurnVoucher { packet_source_port, packet_source_channel } =
           mint_voucher_redeemer
         and {
-          packet_source_port == packet.source_port,
-          packet_source_channel == packet.source_channel,
+          (packet_source_port == packet.source_port)?,
+          (packet_source_channel == packet.source_channel)?,
         }
       }
     }
@@ -736,7 +776,7 @@ fn validate_refund_packet_token(
   inputs: List<Input>,
   outputs: List<Output>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
-  spent_output: Output,
+  spent_input: Input,
   updated_output: Output,
   data: FungibleTokenPacketData,
   packet: Packet,
@@ -757,20 +797,25 @@ fn validate_refund_packet_token(
     expect Some(transfer_amount) = int.from_utf8(data.amount)
     trace @"spend_transfer_module: transfer amount is valid"
 
-    let prev_escrowed_token =
-      quantity_of(
-        spent_output.value,
+    trace @"escrowed_token_policy_id": escrowed_token_policy_id
+    trace @"escrowed_token_name": escrowed_token_name
+
+    let expected_escrow_value_difference =
+      assets.from_asset(
         escrowed_token_policy_id,
         escrowed_token_name,
+        transfer_amount,
       )
-    let post_escrowed_token =
-      quantity_of(
-        updated_output.value,
-        escrowed_token_policy_id,
-        escrowed_token_name,
-      )
+        |> assets.negate()
     let correct_transfer_amount =
-      prev_escrowed_token - post_escrowed_token == transfer_amount
+      validate_output_amount(
+        spent_input,
+        updated_output,
+        expected_escrow_value_difference,
+      )
+
+    // let correct_transfer_amount =
+    //   prev_escrowed_token - post_escrowed_token == transfer_amount
     trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
 
     expect Some(sender_public_key_hash) =
@@ -815,7 +860,7 @@ fn validate_refund_packet_token(
         },
       )
     and {
-      correct_transfer_amount,
+      correct_transfer_amount?,
       post_receiver_token - prev_receiver_token == transfer_amount,
     }
   } else {
@@ -827,8 +872,9 @@ fn validate_refund_packet_token(
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
     and {
-      packet_source_port == packet.source_port,
-      packet_source_channel == packet.source_channel,
+      validate_output_amount(spent_input, updated_output, assets.zero)?,
+      (packet_source_port == packet.source_port)?,
+      (packet_source_channel == packet.source_channel)?,
     }
   }
 }

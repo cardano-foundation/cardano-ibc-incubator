@@ -152,11 +152,11 @@ validator mint_channel(
           )
         expect Callback(ibc_module_callback) = ibc_module_redeemer
         and {
-          valid_feature,
-          is_status_active,
-          is_channel_open,
-          auth.contain_auth_token(channel_output, channel_token),
-          ibc_module_callback == OnChanOpenInit { channel_id },
+          valid_feature?,
+          is_status_active?,
+          is_channel_open?,
+          auth.contains_only_auth_tokens(channel_output, [channel_token])?,
+          (ibc_module_callback == OnChanOpenInit { channel_id })?,
         }
       }
 
@@ -254,12 +254,12 @@ validator mint_channel(
           )
         expect Callback(ibc_module_callback) = ibc_module_redeemer
         and {
-          connection_datum.state.state == connection_state.Open,
-          is_channel_active,
-          auth.contain_auth_token(channel_output, channel_token),
-          is_channel_open,
-          valid_channel,
-          ibc_module_callback == OnChanOpenTry { channel_id },
+          (connection_datum.state.state == connection_state.Open)?,
+          is_channel_active?,
+          auth.contains_only_auth_tokens(channel_output, [channel_token])?,
+          is_channel_open?,
+          valid_channel?,
+          (ibc_module_callback == OnChanOpenTry { channel_id })?,
         }
       }
     }

@@ -103,7 +103,7 @@ validator spend_handler(
       }
     and {
       valid_redeemer,
-      updated_output |> auth.contain_auth_token(datum.token),
+      updated_output |> auth.contains_only_auth_tokens([datum.token]),
     }
   }
 
