@@ -43,7 +43,7 @@ export const readValidator = <T extends unknown[] = Data[]>(
     };
   }
 
-  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network || 'Preview', validator)];
+  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network || 'Custom', validator)];
 };
 
 export const submitTx = async (

@@ -441,7 +441,7 @@ const deployHandler = async (
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
 
-  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Preview', {
+  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Custom', {
     type: "Script",
     hash: spendHandlerScriptHash,
   });
@@ -584,7 +584,7 @@ const deployTransferModule = async (
       Data.to(outputReference, OutputReference)
     )
     .pay.ToContract(
-      validatorToAddress(lucid.config().network || 'Preview', spendHandlerValidator),
+      validatorToAddress(lucid.config().network || 'Custom', spendHandlerValidator),
       {
         kind: "inline",
         value: Data.to(updatedHandlerDatum, HandlerDatum),

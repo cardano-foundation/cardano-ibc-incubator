@@ -1249,8 +1249,7 @@ export class LucidService {
           }
         */
 
-        const seed =
-          'direct language gravity into finger nurse rug rug spoon toddler music ability brisk wasp sound ball join guard pattern smooth lemon obscure raise royal';
+        const seed = this.configService.get('signerWalletSeed');
         this.lucid.selectWallet.fromSeed(seed, { addressType: 'Enterprise' });
         // this.lucid.selectWallet.fromAddress(signer, []);
         return this.lucid.newTx();

@@ -1,3 +1,4 @@
+import { Network } from '@lucid-evolution/lucid';
 import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConnectionOptions';
 
 type DeploymentConfig = {
@@ -65,26 +66,41 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
+  signerWalletSeed: string;
   database: PostgresConnectionOptions;
 
   cardanoChainHost: string;
   cardanoChainPort: number;
   cardanoChainNetworkMagic: number;
+  cardanoNetwork: Network;
   cardanoEpochNonceGenesis: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
 }
 
-export default (): Partial<Config> => ({
-  ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
-  kupoEndpoint: process.env.KUPO_ENDPOINT,
+export default (): Partial<Config> => {
+  let cardanoNetwork: Network = 'Custom';
+  if (process.env.CARDANO_NETWORK_MAGIC === '1') {
+    cardanoNetwork = 'Preprod';
+  } else if (process.env.CARDANO_NETWORK_MAGIC === '2') {
+    cardanoNetwork = 'Preview';
+  } else if (process.env.CARDANO_NETWORK_MAGIC === '764824073') {
+    cardanoNetwork = 'Mainnet';
+  }
 
-  cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
-  cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
-  cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
-  cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
+  return {
+    ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
+    kupoEndpoint: process.env.KUPO_ENDPOINT,
+    signerWalletSeed: process.env.SIGNER_WALLET_SEED,
 
-  mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
-  mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,
-});
+    cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
+    cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
+    cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
+    cardanoNetwork: cardanoNetwork,
+    cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
+
+    mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
+    mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,
+  };
+};
