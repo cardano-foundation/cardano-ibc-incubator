@@ -12,8 +12,6 @@ import { MithrilModule } from './shared/modules/mithril/mithril.module';
 
 @Module({
   imports: [
-    // IBCEventWatcherModule,
-    // ScheduleModule.forRoot(),
     TypeOrmModule.forRoot(DatabaseConfig),
     ConfigModule.forRoot({
       load: [

@@ -5,10 +5,7 @@ export type UnsignedSendPacketBurnDto = {
   channelUTxO: UTxO;
   connectionUTxO: UTxO;
   clientUTxO: UTxO;
-  spendChannelRefUTxO: UTxO;
-  spendTransferModuleUTxO: UTxO;
   transferModuleUTxO: UTxO;
-  mintVoucherRefUtxo: UTxO;
   senderVoucherTokenUtxo: UTxO;
 
   encodedSpendChannelRedeemer: string;
@@ -26,7 +23,6 @@ export type UnsignedSendPacketBurnDto = {
 
   constructedAddress: string;
 
-  sendPacketRefUTxO: UTxO;
   sendPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 };
