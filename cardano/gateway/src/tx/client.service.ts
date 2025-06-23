@@ -58,6 +58,9 @@ export class ClientService {
       const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
+
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
+
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException(
           `create client failed: tx time invalid consesusState.timestamp ${consensusState.timestamp} validToTime ${validToTime} validToSlot ${validToSlot} currentSlot ${currentSlot}`,
@@ -167,6 +170,19 @@ export class ClientService {
 
       const validFrom = Number(validFromTime);
       const validTo = new Date().valueOf() + 100 * 1e3;
+
+      this.logger.log(
+        'validFromTime: ',
+        validFromTime,
+        'validToTime: ',
+        validToTime,
+        'validFromSlot: ',
+        validFromSlot,
+        'validToSlot: ',
+        validToSlot,
+        'currentSlot: ',
+        currentSlot,
+      );
 
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
 

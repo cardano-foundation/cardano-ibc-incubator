@@ -162,6 +162,8 @@ export class ChannelService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
+
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future

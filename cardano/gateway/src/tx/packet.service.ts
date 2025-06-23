@@ -132,11 +132,7 @@ export class PacketService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
-      console.log({
-        validToTime,
-        validToSlot,
-        currentSlot,
-      });
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
 
       if (
         recvPacketOperator.timeoutTimestamp > 0 &&
@@ -180,6 +176,8 @@ export class PacketService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
+
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
@@ -277,11 +275,8 @@ export class PacketService {
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
 
       const currentSlot = this.lucidService.lucid.currentSlot();
-      console.log({
-        validToTime,
-        validToSlot,
-        currentSlot,
-      });
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
+
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }

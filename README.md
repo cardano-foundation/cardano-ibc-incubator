@@ -27,6 +27,7 @@ The following components are required to run the project:
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Aiken](https://aiken-lang.org/installation-instructions)
+- [Node.js](https://nodejs.org/en/download/) `>= v20.0.0`
 - [deno](https://docs.deno.com/runtime/manual/getting_started/installation)
 - [golang](https://golang.org/doc/install)
 - [Rust & Cargo](https://www.rust-lang.org/tools/install)
