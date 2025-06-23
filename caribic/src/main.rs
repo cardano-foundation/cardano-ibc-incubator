@@ -322,7 +322,7 @@ async fn main() {
                     project_root_path,
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
-                logger::log(&format!(
+                logger::info(&format!(
                     "Initial balance {}",
                     &balance.to_string().as_str()
                 ));
@@ -340,7 +340,7 @@ async fn main() {
                     project_root_path,
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
-                logger::log(&format!(
+                logger::info(&format!(
                     "Post deploy contract balance {}",
                     &balance.to_string().as_str()
                 ));

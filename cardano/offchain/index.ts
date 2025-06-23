@@ -4,7 +4,7 @@ import {
   Network,
   SLOT_CONFIG_NETWORK,
 } from "@lucid-evolution/lucid";
-import { createDeployment } from "./src/create_deployment.ts";
+import { createDeployment } from "./src/deployment.ts";
 import { querySystemStart } from "./src/utils.ts";
 import { KUPMIOS_ENV } from "./src/constants.ts";
 

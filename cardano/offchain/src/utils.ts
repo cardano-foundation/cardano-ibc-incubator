@@ -1,4 +1,5 @@
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
+import { crypto } from "@std/crypto";
 import {
   validatorToScriptHash,
   validatorToAddress,
@@ -15,9 +16,7 @@ import {
   UTxO,
   LucidEvolution,
 } from "@lucid-evolution/lucid";
-import { AuthToken } from "../lucid-types/ibc/auth/AuthToken.ts";
-import { OutputReference } from "../lucid-types/cardano/transaction/OutputReference.ts";
-import { crypto } from "@std/crypto";
+import { AuthToken, OutputReference } from "../types/index.ts";
 
 export const readValidator = <T extends unknown[] = Data[]>(
   title: string,
@@ -382,4 +381,3 @@ export type DeploymentTemplate = {
   >;
   tokens: Record<Tokens, string>;
 };
-

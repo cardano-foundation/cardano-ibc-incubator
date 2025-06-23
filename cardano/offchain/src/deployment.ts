@@ -28,17 +28,7 @@ import {
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
 import { submitTx } from "./utils.ts";
-import {
-  AuthToken,
-  AuthTokenSchema,
-} from "../lucid-types/ibc/auth/AuthToken.ts";
-import { HandlerDatum } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
-import { HandlerOperator } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
-import {
-  OutputReference,
-  OutputReferenceSchema,
-} from "../lucid-types/cardano/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
