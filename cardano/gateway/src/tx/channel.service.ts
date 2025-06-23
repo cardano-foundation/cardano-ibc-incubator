@@ -73,6 +73,7 @@ export class ChannelService {
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     try {
       this.logger.log('Channel Open Init is processing');
+      console.dir(data);
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelOpenInitTx, channelId } = await this.buildUnsignedChannelOpenInitTx(
@@ -150,6 +151,7 @@ export class ChannelService {
   async channelOpenAck(data: MsgChannelOpenAck): Promise<MsgChannelOpenAckResponse> {
     try {
       this.logger.log('Channel Open Ack is processing');
+      console.dir(data);
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedChannelOpenAckTx: TxBuilder = await this.buildUnsignedChannelOpenAckTx(
@@ -335,6 +337,9 @@ export class ChannelService {
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
     };
+
+    console.dir(channelDatum);
+
     const encodedMintChannelRedeemer: string = await this.lucidService.encode<MintChannelRedeemer>(
       mintChannelRedeemer,
       'mintChannelRedeemer',
@@ -587,6 +592,9 @@ export class ChannelService {
     const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
     );
+
+    console.log('channelDatum.state.channel.ordering', channelDatum.state.channel.ordering);
+    console.log('orderFromJSON', orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]));
 
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_TRYOPEN,
