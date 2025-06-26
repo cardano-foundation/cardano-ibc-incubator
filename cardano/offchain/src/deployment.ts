@@ -54,6 +54,7 @@ export const createDeployment = async (
     "minting_port.mint_port.mint",
     lucid
   );
+  referredValidators.push(mintPortValidator);
 
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
@@ -617,7 +618,9 @@ const deploySpendChannel = async (
 ) => {
   const referredValidators = {
     chan_open_ack: "chan_open_ack.mint",
+    chan_open_confirm: "chan_open_confirm.spend",
     chan_close_init: "chan_close_init.spend",
+    chan_close_confirm: "chan_close_confirm.spend",
     recv_packet: "recv_packet.mint",
     send_packet: "send_packet.spend",
     timeout_packet: "timeout_packet.spend",
