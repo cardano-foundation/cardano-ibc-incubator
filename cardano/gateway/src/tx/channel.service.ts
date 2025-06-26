@@ -1,4 +1,4 @@
-import { fromHex, TxBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -62,6 +62,8 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 
+const FIVE_MINUTES = 5 * 60 * 1000;
+
 @Injectable()
 export class ChannelService {
   constructor(
@@ -80,8 +82,8 @@ export class ChannelService {
         channelOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validToTime = Date.now() + FIVE_MINUTES;
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
@@ -114,7 +116,7 @@ export class ChannelService {
       }
     }
   }
-  /* istanbul ignore next */
+
   async channelOpenTry(data: MsgChannelOpenTry): Promise<MsgChannelOpenTryResponse> {
     try {
       this.logger.log('Channel Open Try is processing');
@@ -124,7 +126,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
+      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + FIVE_MINUTES);
       // TODO: signing should be done by the relayer in the future
       const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
         .withWallet()
@@ -148,6 +150,7 @@ export class ChannelService {
       }
     }
   }
+
   async channelOpenAck(data: MsgChannelOpenAck): Promise<MsgChannelOpenAckResponse> {
     try {
       this.logger.log('Channel Open Ack is processing');
@@ -158,8 +161,8 @@ export class ChannelService {
         channelOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validToTime = Date.now() + FIVE_MINUTES;
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
@@ -543,6 +546,8 @@ export class ChannelService {
 
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    console.log('heightsArray', heightsArray);
+    console.log('clientDatum.state.consensusStates', clientDatum.state.consensusStates);
 
     if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight.revisionHeight)) {
       throw new GrpcInternalException(`Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionHeight}`);

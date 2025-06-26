@@ -47,7 +47,6 @@ func (c *Chain) CreateOpenChannels(
 	}
 
 	// Timeout is per message. Four channel handshake messages, allowing maxRetries for each.
-	timeout = 4 * time.Minute
 	processorTimeout := timeout * 4 * time.Duration(maxRetries)
 
 	ctx, cancel := context.WithTimeout(ctx, processorTimeout)

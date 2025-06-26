@@ -51,11 +51,11 @@ import (
 var (
 	rtyAttNum                   = uint(5)
 	rtyAtt                      = retry.Attempts(rtyAttNum)
-	rtyDel                      = retry.Delay(time.Millisecond * 400)
-	rtyDelMax                   = retry.Delay(time.Minute * 2)
+	rtyDel                      = retry.Delay(time.Millisecond * 200)
+	rtyDelMax                   = retry.Delay(time.Minute * 1)
 	rtyErr                      = retry.LastErrorOnly(true)
 	accountSeqRegex             = regexp.MustCompile("account sequence mismatch, expected ([0-9]+), got ([0-9]+)")
-	defaultBroadcastWaitTimeout = 10 * time.Minute
+	defaultBroadcastWaitTimeout = 5 * time.Minute
 	errUnknown                  = "unknown"
 )
 
