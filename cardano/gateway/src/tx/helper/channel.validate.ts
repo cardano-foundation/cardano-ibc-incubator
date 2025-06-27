@@ -46,8 +46,6 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
       break;
   }
 
-  console.log('orderingChannel', orderingChannel);
-
   const channelOpenInitOperator: ChannelOpenInitOperator = {
     //TODO: check in channel.connection_hops
     connectionId: data.channel.connection_hops[0],

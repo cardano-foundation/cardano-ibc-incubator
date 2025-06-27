@@ -20,6 +20,7 @@ import {
   getNonceOutRef,
   readValidator,
   DeploymentTemplate,
+  submitTx
 } from "./utils.ts";
 import {
   EMULATOR_ENV,
@@ -27,7 +28,6 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-import { submitTx } from "./utils.ts";
 import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any

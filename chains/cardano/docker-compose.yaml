@@ -37,7 +37,7 @@ services:
       ]
 
   cardano-node-ogmios:
-    image: cardanosolutions/ogmios:v6.13.0
+    image: cardanosolutions/ogmios:v6.10.0
     logging:
       driver: "json-file"
       options:
@@ -62,7 +62,7 @@ services:
       ]
 
   kupo:
-    image: cardanosolutions/kupo:v2.11.0
+    image: cardanosolutions/kupo:v2.9.0
     logging:
       driver: "json-file"
       options:

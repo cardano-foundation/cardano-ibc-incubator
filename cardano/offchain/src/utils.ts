@@ -85,11 +85,6 @@ export const formatTimestamp = (timestampInMilliseconds: number): string => {
   return formattedDate;
 };
 
-export type Signer = {
-  sk: string;
-  address: string;
-};
-
 export const generateTokenName = async (
   baseToken: AuthToken,
   prefix: string,
@@ -175,150 +170,9 @@ export const querySystemStart = async (ogmiosUrl: string) => {
   return parsedSystemTime;
 };
 
-export const delay = (duration: number) => {
-  let elapsedSeconds = 1;
-
-  const logElapsedTime = () => {
-    Deno.stdout.writeSync(
-      new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`)
-    );
-    elapsedSeconds++;
-  };
-
-  const intervalId = setInterval(logElapsedTime, 1000);
-
-  console.log(`Delay ${duration}s`);
-
-  return new Promise<void>((resolve) => {
-    setTimeout(() => {
-      clearInterval(intervalId);
-      Deno.stdout.writeSync(
-        new TextEncoder().encode(`\rElapsed time: ${elapsedSeconds}s`)
-      );
-      Deno.stdout.writeSync(new TextEncoder().encode(`\r`));
-      resolve();
-    }, duration * 1000);
-  });
-};
-
-export const parseClientSequence = (clientId: string): bigint => {
-  const fragments = clientId.split("-");
-
-  if (fragments.length < 2) throw new Error("Invalid client id format");
-
-  if (!(fragments.slice(0, -1).join("") === "ibc_client")) {
-    throw new Error("Invalid client id format");
-  }
-
-  return BigInt(fragments.pop()!);
-};
-
-export const parseConnectionSequence = (connectionId: string): bigint => {
-  const fragments = connectionId.split("-");
-
-  if (fragments.length != 2) throw new Error("Invalid connection id format");
-
-  if (!(fragments.slice(0, -1).join("") === "connection")) {
-    throw new Error("Invalid connection id format");
-  }
-
-  return BigInt(fragments.pop()!);
-};
-export const parseChannelSequence = (channelId: string): bigint => {
-  const fragments = channelId.split("-");
-
-  if (fragments.length != 2) throw new Error("Invalid channel id format");
-
-  if (!(fragments.slice(0, -1).join("") === "channel")) {
-    throw new Error("Invalid channel id format");
-  }
-
-  return BigInt(fragments.pop()!);
-};
-
-export const createReferenceScriptUtxo = async (
-  lucid: LucidEvolution,
-  referredScript: Script
-) => {
-  const [, , referenceAddress] = readValidator(
-    "reference_validator.refer_only.else",
-    lucid
-  );
-
-  const tx = lucid.newTx().pay.ToContract(
-    referenceAddress,
-    {
-      kind: 'inline',
-      value: Data.void(),
-    },
-    {},
-    referredScript,
-  );
-  const completedTx = await tx.complete();
-  const signedTx = await completedTx.sign.withWallet().complete();
-  const txHash = await signedTx.submit();
-
-  await lucid.awaitTx(txHash, 2000);
-
-  const referenceUtxo = (
-    await lucid.utxosByOutRef([{ txHash, outputIndex: 0 }])
-  )[0];
-
-  return referenceUtxo;
-};
-
 export const generateIdentifierTokenName = (outRef: OutputReference) => {
   const serializedData = Data.to(outRef, OutputReference);
   return hashSha3_256(serializedData);
-};
-
-export const insertSortMap = <K, V>(
-  inputMap: Map<K, V>,
-  newKey: K,
-  newValue: V,
-  keyComparator?: (a: K, b: K) => number
-): Map<K, V> => {
-  // Convert the Map to an array of key-value pairs
-  const entriesArray: [K, V][] = Array.from(inputMap.entries());
-
-  // Add the new key-value pair to the array
-  entriesArray.push([newKey, newValue]);
-
-  // Sort the array based on the keys using the provided comparator function
-  entriesArray.sort((entry1, entry2) =>
-    keyComparator
-      ? keyComparator(entry1[0], entry2[0])
-      : Number(entry1[0]) - Number(entry2[0])
-  );
-
-  // Create a new Map from the sorted array
-  const sortedMap = new Map<K, V>(entriesArray);
-
-  return sortedMap;
-};
-
-export const deleteSortMap = <K, V>(
-  sortedMap: Map<K, V>,
-  keyToDelete: K,
-  keyComparator?: (a: K, b: K) => number
-): Map<K, V> => {
-  // Convert the sorted map to an array of key-value pairs
-  const entriesArray: [K, V][] = Array.from(sortedMap.entries());
-
-  // Find the index of the key to delete
-  const indexToDelete = entriesArray.findIndex(([key]) =>
-    keyComparator ? keyComparator(key, keyToDelete) === 0 : key === keyToDelete
-  );
-
-  // If the key is found, remove it from the array
-  if (indexToDelete !== -1) {
-    entriesArray.splice(indexToDelete, 1);
-  }
-
-  // Create a new Map from the modified array
-  const updatedMap = new Map<K, V>(entriesArray);
-
-  return updatedMap;
 };
 
 export const getNonceOutRef = async (

@@ -94,8 +94,7 @@ export class ChannelService {
       const signedChannelOpenInitTxCompleted = await (await unsignedChannelOpenInitTxValidTo.complete()).sign
         .withWallet()
         .complete();
-      // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
-      // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
+
       this.logger.log(signedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
@@ -232,13 +231,6 @@ export class ChannelService {
   }
 
   async channelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
-    console.log('dataMsgChannelCloseInit');
-    console.dir(
-      {
-        ...data,
-      },
-      { depth: 10 },
-    );
     try {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
@@ -546,8 +538,6 @@ export class ChannelService {
 
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
-    console.log('heightsArray', heightsArray);
-    console.log('clientDatum.state.consensusStates', clientDatum.state.consensusStates);
 
     if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight.revisionHeight)) {
       throw new GrpcInternalException(`Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionHeight}`);
@@ -597,9 +587,6 @@ export class ChannelService {
     const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
     );
-
-    console.log('channelDatum.state.channel.ordering', channelDatum.state.channel.ordering);
-    console.log('orderFromJSON', orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]));
 
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_TRYOPEN,
