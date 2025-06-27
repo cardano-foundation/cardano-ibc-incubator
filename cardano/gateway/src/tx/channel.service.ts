@@ -1,4 +1,4 @@
-import { fromHex, TxBuilder, unixTimeToSlot, UTxO } from '@lucid-evolution/lucid';
+import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -62,6 +62,8 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 
+const FIVE_MINUTES = 5 * 60 * 1000;
+
 @Injectable()
 export class ChannelService {
   constructor(
@@ -73,14 +75,15 @@ export class ChannelService {
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     try {
       this.logger.log('Channel Open Init is processing');
+      console.dir(data);
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelOpenInitTx, channelId } = await this.buildUnsignedChannelOpenInitTx(
         channelOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validToTime = Date.now() + FIVE_MINUTES;
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
@@ -91,8 +94,7 @@ export class ChannelService {
       const signedChannelOpenInitTxCompleted = await (await unsignedChannelOpenInitTxValidTo.complete()).sign
         .withWallet()
         .complete();
-      // unsignedChannelOpenInitTxCompleted.txComplete.to_js_value()
-      // console.log('channelOpenInit: ', unsignedChannelOpenInitTxCompleted.txComplete.to_json());
+
       this.logger.log(signedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
@@ -113,7 +115,7 @@ export class ChannelService {
       }
     }
   }
-  /* istanbul ignore next */
+
   async channelOpenTry(data: MsgChannelOpenTry): Promise<MsgChannelOpenTryResponse> {
     try {
       this.logger.log('Channel Open Try is processing');
@@ -123,7 +125,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
+      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + FIVE_MINUTES);
       // TODO: signing should be done by the relayer in the future
       const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
         .withWallet()
@@ -147,21 +149,25 @@ export class ChannelService {
       }
     }
   }
+
   async channelOpenAck(data: MsgChannelOpenAck): Promise<MsgChannelOpenAckResponse> {
     try {
       this.logger.log('Channel Open Ack is processing');
+      console.dir(data);
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       // Build and complete the unsigned transaction
       const unsignedChannelOpenAckTx: TxBuilder = await this.buildUnsignedChannelOpenAckTx(
         channelOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
-      const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
+      const validToTime = Date.now() + FIVE_MINUTES;
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
+
+      this.logger.log('validToTime: ', validToTime, 'validToSlot: ', validToSlot, 'currentSlot: ', currentSlot);
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future
@@ -225,13 +231,6 @@ export class ChannelService {
   }
 
   async channelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
-    console.log('dataMsgChannelCloseInit');
-    console.dir(
-      {
-        ...data,
-      },
-      { depth: 10 },
-    );
     try {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
@@ -333,6 +332,9 @@ export class ChannelService {
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
     };
+
+    console.dir(channelDatum);
+
     const encodedMintChannelRedeemer: string = await this.lucidService.encode<MintChannelRedeemer>(
       mintChannelRedeemer,
       'mintChannelRedeemer',

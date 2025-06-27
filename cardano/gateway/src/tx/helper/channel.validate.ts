@@ -45,6 +45,7 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
       orderingChannel = Order.Ordered;
       break;
   }
+
   const channelOpenInitOperator: ChannelOpenInitOperator = {
     //TODO: check in channel.connection_hops
     connectionId: data.channel.connection_hops[0],

@@ -20,6 +20,7 @@ import {
   getNonceOutRef,
   readValidator,
   DeploymentTemplate,
+  submitTx
 } from "./utils.ts";
 import {
   EMULATOR_ENV,
@@ -27,18 +28,7 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-import { submitTx } from "./utils.ts";
-import {
-  AuthToken,
-  AuthTokenSchema,
-} from "../lucid-types/ibc/auth/AuthToken.ts";
-import { HandlerDatum } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
-import { HandlerOperator } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
-import {
-  OutputReference,
-  OutputReferenceSchema,
-} from "../lucid-types/cardano/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -64,6 +54,7 @@ export const createDeployment = async (
     "minting_port.mint_port.mint",
     lucid
   );
+  referredValidators.push(mintPortValidator);
 
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
@@ -441,7 +432,7 @@ const deployHandler = async (
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
 
-  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Preview', {
+  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Custom', {
     type: "Script",
     hash: spendHandlerScriptHash,
   });
@@ -584,7 +575,7 @@ const deployTransferModule = async (
       Data.to(outputReference, OutputReference)
     )
     .pay.ToContract(
-      validatorToAddress(lucid.config().network || 'Preview', spendHandlerValidator),
+      validatorToAddress(lucid.config().network || 'Custom', spendHandlerValidator),
       {
         kind: "inline",
         value: Data.to(updatedHandlerDatum, HandlerDatum),
@@ -627,7 +618,9 @@ const deploySpendChannel = async (
 ) => {
   const referredValidators = {
     chan_open_ack: "chan_open_ack.mint",
+    chan_open_confirm: "chan_open_confirm.spend",
     chan_close_init: "chan_close_init.spend",
+    chan_close_confirm: "chan_close_confirm.spend",
     recv_packet: "recv_packet.mint",
     send_packet: "send_packet.spend",
     timeout_packet: "timeout_packet.spend",

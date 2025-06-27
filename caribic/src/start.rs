@@ -101,7 +101,7 @@ pub async fn start_local_cardano_network(
     log_or_show_progress(
         &format!(
             "{} 🛠️ Configuring local Cardano devnet",
-            style("Step 1/5").bold().dim(),
+            style("Step 1/3").bold().dim(),
         ),
         &optional_progress_bar,
     );
@@ -109,7 +109,7 @@ pub async fn start_local_cardano_network(
     log_or_show_progress(
         &format!(
             "{} 🚀 Starting Cardano services",
-            style("Step 2/5").bold().dim(),
+            style("Step 2/3").bold().dim(),
         ),
         &optional_progress_bar,
     );
@@ -208,7 +208,7 @@ pub async fn start_local_cardano_network(
     log_or_show_progress(
         &format!(
             "{} 📝 Copying Cardano environment file",
-            style("Step 3/5").bold().dim(),
+            style("Step 3/3").bold().dim(),
         ),
         &optional_progress_bar,
     );
@@ -227,6 +227,7 @@ pub async fn deploy_contracts(
     };
 
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let mut validators_rebuild = false;
 
     if !project_root_path
         .join("cardano")
@@ -239,7 +240,7 @@ pub async fn deploy_contracts(
         log_or_show_progress(
             &format!(
                 "{} 🛠️ Building Aiken validators",
-                style("Step 4/5").bold().dim()
+                style("Step 1/2").bold().dim()
             ),
             &optional_progress_bar,
         );
@@ -256,63 +257,64 @@ pub async fn deploy_contracts(
             build_args,
             None,
         )?;
+        validators_rebuild = true;
     } else {
         log_or_show_progress(
             &format!(
                 "{} 🛠️ Aiken validators already built",
-                style("Step 4/5").bold().dim()
+                style("Step 1/2").bold().dim()
             ),
             &optional_progress_bar,
         );
     }
 
-    log_or_show_progress(
-        &format!(
-            "{} 🤖 Generating validator off-chain types",
-            style("Step 5/5").bold().dim(),
-        ),
-        &optional_progress_bar,
-    );
-    execute_script(
-        project_root_path.join("cardano").as_path(),
-        "deno",
-        Vec::from(["run", "-A", "./aiken-type-conversion/main.ts"]),
-        None,
-    )?;
+    if validators_rebuild {
+        let _ = execute_script(
+            project_root_path.join("cardano").join("offchain").as_path(),
+            "deno",
+            Vec::from(["task", "clean"]),
+            None,
+        );
+    }
 
     // Remove the old handler file
-    if project_root_path
+    if !project_root_path
         .join("cardano/offchain/deployments/handler.json")
         .exists()
     {
-        fs::remove_file(project_root_path.join("cardano/offchain/deployments/handler.json"))
-            .expect("Failed to cleanup cardano/offchain/deployments/handler.json");
-    }
+        let handler_json_exists = wait_until_file_exists(
+            project_root_path
+                .join("cardano/offchain/deployments/handler.json")
+                .as_path(),
+            20,
+            5000,
+            || {
+                let _ = execute_script(
+                    project_root_path.join("cardano").join("offchain").as_path(),
+                    "deno",
+                    Vec::from(["task", "start"]),
+                    None,
+                );
+            },
+        );
 
-    let handler_json_exists = wait_until_file_exists(
-        project_root_path
-            .join("cardano/offchain/deployments/handler.json")
-            .as_path(),
-        20,
-        5000,
-        || {
-            let _ = execute_script(
-                project_root_path.join("cardano").join("offchain").as_path(),
-                "deno",
-                Vec::from(["task", "start"]),
-                None,
-            );
-        },
-    );
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
-
-    if handler_json_exists.is_ok() {
-        Ok(())
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        if handler_json_exists.is_ok() {
+            Ok(())
+        } else {
+            Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+        }
     } else {
-        Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+        log_or_show_progress(
+            "✅ The handler.json file already exists. Skipping the deployment.",
+            &optional_progress_bar,
+        );
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        Ok(())
     }
 }
 

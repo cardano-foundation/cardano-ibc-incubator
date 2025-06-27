@@ -478,7 +478,6 @@ function verifyAdjacent(
   maxClockDrift: bigint,
   trustedLevel: Rational,
 ): boolean {
-  console.log('verifyAdjacent');
   if (untrustedHeader.header.height !== trustedHeader.header.height + 1n) {
     throw new GrpcInvalidArgumentException('headers must be adjacent in height');
   }

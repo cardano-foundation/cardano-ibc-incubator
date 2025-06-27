@@ -4,5 +4,4 @@ plutus.json
 deployments
 .vscode
 .env
-lucid-types/
 deno.lock
