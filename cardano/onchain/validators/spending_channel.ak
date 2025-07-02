@@ -122,8 +122,12 @@ validator spend_channel(
 }
 
 fn find_updated_output(address: Address, outputs: List<Output>) -> Output {
-  expect [updated_output] =
+  trace @"address": address
+  trace @"outputs.size": list.length(outputs)
+  let filtered_outputs =
     list.filter(outputs, fn(output) { output.address == address })
+  trace @"filtered_outputs.size": list.length(filtered_outputs)
+  expect [updated_output] = filtered_outputs
   updated_output
 }
 

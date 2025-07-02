@@ -139,7 +139,7 @@ fn setup() -> MockData {
   let connection_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        transaction_id: "connection input tx hash",
         output_index: 0,
       },
       output: Output {
@@ -247,7 +247,7 @@ fn setup() -> MockData {
   let client_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        transaction_id: "client input tx hash",
         output_index: 0,
       },
       output: Output {
@@ -280,7 +280,7 @@ fn setup() -> MockData {
   let module_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        transaction_id: "module input tx hash",
         output_index: 0,
       },
       output: Output {
@@ -341,7 +341,7 @@ fn build_channel_input(
   let channel_input =
     Input {
       output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        transaction_id: "channel input tx hash",
         output_index: 0,
       },
       output: channel_output,
@@ -441,6 +441,9 @@ test chan_open_ack_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
+  trace @"mock_data.module_input": mock_data.module_input
+  trace @"channel_input": channel_input
+  trace @"channel_input": channel_input.output
   let inputs = [mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
@@ -490,6 +493,8 @@ test chan_open_ack_succeed() {
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
+
+  trace @"channel_output": channel_output
 
   let outputs = [channel_output]
 
