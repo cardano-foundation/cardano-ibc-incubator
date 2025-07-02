@@ -117,8 +117,11 @@ fn validate_output_amount(
     locked_input.output.value
       |> assets.merge(additional_value)
   trace @"expected_output": expected_output
+
+  let expected_lovelace_output = assets.lovelace_of(expected_output)
+  trace @"expected_lovelace_output": expected_lovelace_output
   and {
-    (lovelace_output - lovelace_input >= 0)?,
+    (lovelace_output - expected_lovelace_output >= 0)?,
     (assets.without_lovelace(output.value) == assets.without_lovelace(
       expected_output,
     ))?,
