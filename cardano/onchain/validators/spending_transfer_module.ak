@@ -5,14 +5,13 @@ use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/transaction.{
-  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Input, Mint, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
 }
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
-use ibc/apps/transfer/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
@@ -49,7 +48,7 @@ validator spend_transfer_module(
   voucher_minting_policy_id: PolicyId,
 ) {
   spend(
-    _datum: Option<TransferModuleDatum>,
+    _datum: Option<Data>,
     redeemer: IBCModuleRedeemer,
     spent_output_ref: OutputReference,
     transaction: Transaction,
@@ -65,6 +64,10 @@ validator spend_transfer_module(
         [port_token, module_token],
       )
     trace @"spend_transfer_module: token is remained"
+
+    trace @"spent_output.datum": spent_output.datum
+    trace @"updated_output.datum": updated_output.datum
+    expect NoDatum = updated_output.datum
 
     when redeemer is {
       Callback(cb) ->
