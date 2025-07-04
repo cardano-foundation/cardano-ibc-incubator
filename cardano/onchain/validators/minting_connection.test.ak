@@ -3,8 +3,8 @@ use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, ValidityRange,
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
+  ScriptPurpose, Spend, Transaction, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -253,6 +253,82 @@ test conn_open_init_succeed() {
       address: from_script(mock.spend_connection_script_hash),
       value: from_asset(conn_token.policy_id, conn_token.name, 1),
       datum: InlineDatum(conn_datum),
+      reference_script: None,
+    }
+
+  let outputs = [conn_output]
+
+  //========================arrange mint=======================
+  let mint = from_asset(conn_token.policy_id, conn_token.name, 1)
+
+  //========================arrange validity_range=======================
+  let validity_range = mock.validity_range
+
+  //========================arrange redeemers=======================
+  let handler_redeemer: Redeemer = HandlerConnOpenInit
+
+  let mint_conn_redeemer: Redeemer =
+    ConnOpenInit { handler_auth_token: mock.handler_token }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock.connection_minting_policy_id), mint_conn_redeemer),
+    ]
+
+  let mint_conn_redeemer =
+    ConnOpenInit { handler_auth_token: mock.handler_token }
+
+  //==========================arrange context=========================
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: validity_range,
+    }
+
+  minting_connection.mint_connection.mint(
+    mock.client_minting_policy_id,
+    mock.verify_proof_policy_id,
+    mock.spend_connection_script_hash,
+    mint_conn_redeemer,
+    mock.connection_minting_policy_id,
+    transaction,
+  )
+}
+
+test fail_conn_open_init_invalid_datum() fail {
+  let mock = setup()
+
+  //====================arrange inputs==============================
+  let inputs: List<Input> = [mock.handler_input]
+
+  //====================arrange reference_inputs==============================
+  let reference_inputs: List<Input> = [mock.client_input]
+
+  //====================arrange outputs==================================
+  let conn_token_name =
+    string_utils.int_to_string(mock.connection_sequence)
+      |> auth.generate_token_name(
+          mock.handler_token,
+          conn_keys.connection_prefix,
+          _,
+        )
+  let conn_token =
+    AuthToken {
+      policy_id: mock.connection_minting_policy_id,
+      name: conn_token_name,
+    }
+
+  let conn_output =
+    Output {
+      address: from_script(mock.spend_connection_script_hash),
+      value: from_asset(conn_token.policy_id, conn_token.name, 1),
+      datum: NoDatum,
       reference_script: None,
     }
 

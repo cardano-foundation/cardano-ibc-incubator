@@ -93,7 +93,7 @@ fn setup() -> MockData {
       value: from_asset(module_token.policy_id, module_token.name, 1)
         |> add(port_token.policy_id, port_token.name, 1)
         |> add(ada_policy_id, ada_asset_name, 99999999999),
-      datum: InlineDatum(Void),
+      datum: NoDatum,
       reference_script: None,
     }
 
