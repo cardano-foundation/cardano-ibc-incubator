@@ -473,23 +473,19 @@ export class LucidService {
         },
         dto.encodedMintChannelRedeemer,
       )
-      .readFrom([dto.connectionUtxo, dto.clientUtxo]);
-
-    const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
-      tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
-    };
-
-    addPayToContract(deploymentConfig.validators.spendHandler.address, dto.encodedUpdatedHandlerDatum, {
-      [this.getHandlerTokenUnit()]: 1n,
-    });
-    addPayToContract(deploymentConfig.validators.spendChannel.address, dto.encodedChannelDatum, {
-      [dto.channelTokenUnit]: 1n,
-    });
-    addPayToContract(
-      deploymentConfig.modules.transfer.address,
-      this.LucidImporter.Data.void(),
-      dto.transferModuleUtxo.assets,
-    );
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(deploymentConfig.validators.spendHandler.address,
+        { kind: 'inline', value: dto.encodedUpdatedHandlerDatum },
+        { [this.getHandlerTokenUnit()]: 1n, }
+      )
+      .pay.ToContract(deploymentConfig.validators.spendChannel.address,
+        { kind: 'inline', value: dto.encodedChannelDatum },
+        { [dto.channelTokenUnit]: 1n, }
+      )
+      .pay.ToContract(deploymentConfig.modules.transfer.address,
+        undefined,
+        dto.transferModuleUtxo.assets
+      );
 
     return tx;
   }
@@ -563,10 +559,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         dto.transferModuleUtxo.assets,
       )
       .mintAssets(
@@ -690,10 +683,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
           lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
@@ -787,10 +777,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
         },
@@ -839,10 +826,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
         },
@@ -888,10 +872,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
           [dto.denomToken]: calculateTransferToken(
@@ -952,10 +933,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
           [dto.denomToken]: calculateTransferToken(
@@ -1006,10 +984,7 @@ export class LucidService {
       )
       .pay.ToContract(
         dto.transferModuleAddress,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUTxO.assets,
           [dto.denomToken]: calculateTransferToken(
@@ -1061,10 +1036,7 @@ export class LucidService {
       )
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUTxO.assets,
           [dto.voucherTokenUnit]: calculateTransferToken(
@@ -1114,10 +1086,7 @@ export class LucidService {
       )
       .pay.ToContract(
         dto.transferModuleAddress,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
           lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
@@ -1165,10 +1134,7 @@ export class LucidService {
       )
       .pay.ToContract(
         dto.transferModuleAddress,
-        {
-          kind: 'inline',
-          value: this.LucidImporter.Data.void(),
-        },
+        undefined,
         {
           ...dto.transferModuleUtxo.assets,
           [dto.denomToken]: calculateTransferToken(
