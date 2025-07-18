@@ -59,8 +59,10 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(chan_close_init_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        expect _ = validate_output_datum(spent_output.address, outputs)
-        redeemer == datum.token
+        and {
+          no_output_for_address(spent_output.address, outputs),
+          redeemer == datum.token,
+        }
       }
       ChanCloseConfirm { .. } -> {
         expect Some(redeemer) =
@@ -125,6 +127,10 @@ fn find_updated_output(address: Address, outputs: List<Output>) -> Output {
   expect [updated_output] =
     list.filter(outputs, fn(output) { output.address == address })
   updated_output
+}
+
+fn no_output_for_address(address: Address, outputs: List<Output>) -> Bool {
+  [] == list.filter(outputs, fn(output) { output.address == address })
 }
 
 fn extract_output_datum(output: Output) -> ChannelDatum {

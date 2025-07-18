@@ -281,7 +281,7 @@ fn setup() -> MockData {
     Input {
       output_reference: OutputReference {
         transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
+        output_index: 10,
       },
       output: Output {
         address: from_script("mock module script hash"),
@@ -440,7 +440,6 @@ test chan_open_ack_succeed() {
 
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
-
   let inputs = [mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
@@ -490,7 +489,6 @@ test chan_open_ack_succeed() {
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
-
   let outputs = [channel_output]
 
   //========================arrange validity_range=======================

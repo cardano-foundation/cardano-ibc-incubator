@@ -51,7 +51,7 @@ validator mint_voucher(module_token: AuthToken) {
             packet_source_channel,
             data.denom,
           )
-        trace @"mint_voucher: receiver chain is not source"
+        trace @"mint_voucher: valid receiver?": valid_receiver
 
         let source_prefix =
           transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
@@ -73,8 +73,9 @@ validator mint_voucher(module_token: AuthToken) {
         trace @"mint_voucher: converted receiver to public key hash"
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        expect Some(payout_output) =
-          list.find(
+        // There should be just one output with the receiver address
+        expect [payout_output] =
+          list.filter(
             transaction.outputs,
             fn(output) { output.address == receiver_address },
           )
@@ -246,6 +247,6 @@ fn valid_voucher_output(
   expect [actual_policy_id] = assets.policies(voucher_output_value)
   and {
     (actual_policy_id == voucher_policy_id)?,
-    (quantity_of(voucher_output_value, voucher_policy_id, asset_name) >= transfer_amount)?,
+    (quantity_of(voucher_output_value, voucher_policy_id, asset_name) == transfer_amount)?,
   }
 }
