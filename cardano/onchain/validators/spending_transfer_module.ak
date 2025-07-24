@@ -428,7 +428,6 @@ fn handler_callback(
 
       and {
         valid_refund_packet?,
-        validate_output_amount(spent_input, updated_output, assets.zero)?,
         (fungible_token_packet_data.get_bytes(data) == packet.data)?,
       }
     }
