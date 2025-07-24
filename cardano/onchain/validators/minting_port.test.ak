@@ -2,8 +2,8 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction,
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
+  ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
@@ -96,7 +96,7 @@ test mint_port_succeed() {
     Output {
       address: from_script(mock.spend_module_script_hash),
       value: from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
-      datum: InlineDatum(Void),
+      datum: NoDatum,
       reference_script: None,
     }
   let outputs = [module_output]
