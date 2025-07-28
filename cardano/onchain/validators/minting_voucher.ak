@@ -73,11 +73,18 @@ validator mint_voucher(module_token: AuthToken) {
         trace @"mint_voucher: converted receiver to public key hash"
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        // There should be just one output with the receiver address
+        // There should be just one output with the receiver address AND tokens of the voucher minting policy
         expect [payout_output] =
           list.filter(
             transaction.outputs,
-            fn(output) { output.address == receiver_address },
+            fn(output) {
+              and {
+                output.address == receiver_address,
+                output.value
+                  |> assets.without_lovelace
+                  |> assets.policies == [voucher_minting_policy_id],
+              }
+            },
           )
 
         and {
