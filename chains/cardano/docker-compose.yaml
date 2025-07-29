@@ -149,6 +149,7 @@ services:
       - ./devnet:/opt/cardano/config/devnet
       - ./db-sync-data:/var/lib/cexplorer
       - ./db-sync-configuration:/configuration
+      - ./db-sync-log-dir:/log-dir
     command:
       [
         "--config",
