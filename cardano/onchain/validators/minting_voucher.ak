@@ -80,9 +80,11 @@ validator mint_voucher(module_token: AuthToken) {
             fn(output) {
               and {
                 output.address == receiver_address,
-                output.value
-                  |> assets.without_lovelace
-                  |> assets.policies == [voucher_minting_policy_id],
+                (
+                  output.value
+                    |> assets.without_lovelace
+                    |> assets.policies
+                ) == [voucher_minting_policy_id],
               }
             },
           )
