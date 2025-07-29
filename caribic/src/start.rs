@@ -424,7 +424,7 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
     script_stop_args.append(&mut services.clone());
     execute_script(cardano_dir, "docker", script_stop_args, None)?;
 
-    let mut script_start_args = vec!["compose", "up", "-d"];
+    let mut script_start_args = vec!["compose", "up", "-u", "1000:1000", "-d"];
     script_start_args.append(&mut services);
     execute_script(cardano_dir, "docker", script_start_args, None)?;
     Ok(())
