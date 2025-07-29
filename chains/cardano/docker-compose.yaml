@@ -148,6 +148,7 @@ services:
     volumes:
       - ./devnet:/opt/cardano/config/devnet
       - ./db-sync-data:/var/lib/cexplorer
+      - ./db-sync-configuration:/configuration
     command:
       [
         "--config",

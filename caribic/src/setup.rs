@@ -136,7 +136,7 @@ pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
-    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "postgres", "baseinfo"];
+    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "db-sync-configuration", "postgres", "baseinfo"];
 
     for service_folder in &service_folders {
         let serivce_folder_path = cardano_dir.join(service_folder);
