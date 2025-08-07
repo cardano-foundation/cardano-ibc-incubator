@@ -121,9 +121,10 @@ export class ClientService {
 
         const unsignedUpdateClientTx: TxBuilder =
           await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
+        const validToTime = Date.now() + 2e4;
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
-          .validTo(new Date().valueOf());
+          .validTo(validToTime);
         // Todo: signing should be done by the relayer in the future
         const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
@@ -145,7 +146,7 @@ export class ClientService {
           BigInt(currentClientDatum.state.clientState.maxClockDrift || 0)) /
           10n ** 6n +
         100n * 10n ** 3n;
-      const validToTime = new Date().valueOf() + 100 * 1e3;
+      const validToTime = Date.now() + 2e4;
       const updateClientHeaderOperator: UpdateClientOperatorDto = {
         clientId,
         header,

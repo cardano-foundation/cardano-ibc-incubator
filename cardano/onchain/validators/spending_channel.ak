@@ -130,7 +130,7 @@ fn find_updated_output(address: Address, outputs: List<Output>) -> Output {
 }
 
 fn no_output_for_address(address: Address, outputs: List<Output>) -> Bool {
-  [] == list.filter(outputs, fn(output) { output.address == address })
+  list.is_empty(list.filter(outputs, fn(output) { output.address == address }))
 }
 
 fn extract_output_datum(output: Output) -> ChannelDatum {

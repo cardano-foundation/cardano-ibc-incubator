@@ -68,9 +68,8 @@ export class ConnectionService {
         connectionOpenInitOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(
-        Date.now() + 100 * 1e3,
-      );
+      const validToTime = Date.now() + 2e4;
+      const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenInitTxCompleted = await (await unsignedConnectionOpenInitTxValidTo.complete()).sign
@@ -108,7 +107,8 @@ export class ConnectionService {
         connectionOpenTryOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(Date.now() + 100 * 1e3);
+      const validToTime = Date.now() + 2e4;
+      const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenTryTxCompleted = await (await unsignedConnectionOpenTryTxValidTo.complete()).sign
@@ -146,7 +146,8 @@ export class ConnectionService {
         connectionOpenAckOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(Date.now() + 100 * 1e3);
+      const validToTime = Date.now() + 2e4;
+      const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
         .withWallet()
@@ -187,9 +188,8 @@ export class ConnectionService {
         connectionOpenConfirmOperator,
         constructedAddress,
       );
-      const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(
-        Date.now() + 150 * 1e3,
-      );
+      const validToTime = Date.now() + 2e4;
+      const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenConfirmTxCompleted = await (

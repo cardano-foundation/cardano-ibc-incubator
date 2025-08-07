@@ -82,7 +82,7 @@ export class ChannelService {
         channelOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
+      const validToTime = Date.now() + 2e4;
       const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -126,7 +126,8 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(Date.now() + 300 * 1e3);
+      const validToTime = Date.now() + 2e4;
+      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       // TODO: signing should be done by the relayer in the future
       const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
         .withWallet()
@@ -159,7 +160,7 @@ export class ChannelService {
         channelOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
+      const validToTime = Date.now() + 2e4;
       const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -200,9 +201,8 @@ export class ChannelService {
         channelOpenConfirmOperator,
         constructedAddress,
       );
-      const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(
-        Date.now() + 600 * 1e3,
-      );
+      const validToTime = Date.now() + 2e4;
+      const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future
       const signedChannelConfirmInitTxCompleted = await (await unsignedChannelConfirmInitTxValidTo.complete()).sign
@@ -243,7 +243,8 @@ export class ChannelService {
         channelCloseInitOperator,
         constructedAddress,
       );
-      const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(Date.now() + 300 * 1e3);
+      const validToTime = Date.now() + 2e4;
+      const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future
       const signedChannelCloseInitTxCompleted = await (await unsignedChannelCloseInitTxValidTo.complete()).sign
