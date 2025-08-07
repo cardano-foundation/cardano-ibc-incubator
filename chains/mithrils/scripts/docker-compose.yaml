@@ -46,7 +46,7 @@ services:
 
   mithril-aggregator-genesis:
     image: ${MITHRIL_AGGREGATOR_IMAGE}
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     profiles:
       - mithril-genesis
     volumes:
