@@ -16,6 +16,7 @@ use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
+use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnRecvPacket,
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
@@ -139,7 +140,11 @@ validator mint_voucher(module_token: AuthToken) {
         let data =
           when ibc_module_callback is {
             OnTimeoutPacket { data, .. } -> data
-            OnAcknowledgementPacket { data, .. } -> data
+            OnAcknowledgementPacket { acknowledgement, data, .. } ->
+              when acknowledgement.response is {
+                AcknowledgementError { .. } -> data
+                _ -> fail
+              }
             _ -> fail
           }
         expect TransferModuleData(data) = data
