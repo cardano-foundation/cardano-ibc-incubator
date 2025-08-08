@@ -136,9 +136,9 @@ pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
-    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "postgres", "baseinfo"];
+    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "db-sync-configuration", "db-sync-log-dir", "postgres", "baseinfo"];
 
-    for service_folder in service_folders {
+    for service_folder in &service_folders {
         let serivce_folder_path = cardano_dir.join(service_folder);
         if serivce_folder_path.exists() && serivce_folder_path.is_dir() {
             fs::remove_dir_all(&serivce_folder_path).map_err(|error| {
@@ -148,6 +148,18 @@ pub fn configure_local_cardano_devnet(
                 )
             })?;
         }
+    }
+
+    // Recreate the deleted folders as empty directories
+    for service_folder in &service_folders {
+        let serivce_folder_path = cardano_dir.join(service_folder);
+        fs::create_dir_all(&serivce_folder_path).map_err(|error| {
+            format!(
+                "Failed to create service folder {}: {}",
+                service_folder,
+                error.to_string()
+            )
+        })?;
     }
 
     let devnet_dir = cardano_dir.join("devnet");

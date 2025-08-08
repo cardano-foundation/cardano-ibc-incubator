@@ -299,7 +299,7 @@ fn setup() -> MockData {
     Input {
       output_reference: OutputReference {
         transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
+        output_index: 1,
       },
       output: Output {
         address: from_script("mock module script hash"),

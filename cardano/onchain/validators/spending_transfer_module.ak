@@ -425,6 +425,7 @@ fn handler_callback(
           data,
           packet,
         )
+
       and {
         valid_refund_packet?,
         (fungible_token_packet_data.get_bytes(data) == packet.data)?,
@@ -542,6 +543,7 @@ fn handler_operator(
 
         valid_transfer_amount
       } else {
+        // Check here for voucher minting logic
         expect Some(mint_voucher_redeemer) =
           pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
         expect mint_voucher_redeemer: MintVoucherRedeemer =
