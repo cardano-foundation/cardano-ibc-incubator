@@ -47,6 +47,7 @@ import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/l
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
 import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -68,7 +69,7 @@ export class ConnectionService {
         connectionOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future
@@ -107,7 +108,7 @@ export class ConnectionService {
         connectionOpenTryOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future
@@ -146,7 +147,7 @@ export class ConnectionService {
         connectionOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
       // Todo: signing should be done by the relayer in the future
       const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
@@ -188,7 +189,7 @@ export class ConnectionService {
         connectionOpenConfirmOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
       // Todo: signing should be done by the relayer in the future

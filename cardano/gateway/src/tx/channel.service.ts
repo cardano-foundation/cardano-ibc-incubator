@@ -64,6 +64,7 @@ import {
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 import { Order } from '~@/shared/types/channel/order';
 import { sleep } from '../shared/helpers/time';
+import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 
 @Injectable()
 export class ChannelService {
@@ -82,7 +83,7 @@ export class ChannelService {
         channelOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -126,7 +127,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       // TODO: signing should be done by the relayer in the future
       const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
@@ -160,7 +161,7 @@ export class ChannelService {
         channelOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = unixTimeToSlot(this.lucidService.lucid.config().network, Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -201,7 +202,7 @@ export class ChannelService {
         channelOpenConfirmOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future
@@ -243,7 +244,7 @@ export class ChannelService {
         channelCloseInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // TODO: signing should be done by the relayer in the future

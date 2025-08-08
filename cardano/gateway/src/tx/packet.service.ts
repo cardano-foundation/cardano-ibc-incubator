@@ -71,6 +71,7 @@ import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } fr
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { Order } from '~@/shared/types/channel/order';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 
 @Injectable()
 export class PacketService {
@@ -133,7 +134,7 @@ export class PacketService {
         constructedAddress,
       );
 
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -181,7 +182,7 @@ export class PacketService {
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
 
       const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedSendPacketTx(sendPacketOperator);
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -227,7 +228,7 @@ export class PacketService {
         timeoutPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
       // Todo: signing should be done in the relayer in the future
@@ -281,7 +282,7 @@ export class PacketService {
         timeoutRefreshOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
 
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -330,7 +331,7 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 2e4;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
       // Todo: signing should be done in the relayer in the future
