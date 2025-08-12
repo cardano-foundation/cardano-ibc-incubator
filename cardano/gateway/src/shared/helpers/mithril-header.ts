@@ -7,7 +7,7 @@ import {
 } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 import { getNanoseconds } from './time';
 import { doubleToFraction } from './number';
-import { convertHex2String, convertString2Hex, fromHex } from './hex';
+import { convertHex2String } from './hex';
 
 export function normalizeMithrilStakeDistribution(
   stakeDistribution: any,

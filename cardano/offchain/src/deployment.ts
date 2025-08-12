@@ -1,15 +1,12 @@
+import { ensureDir } from "@std/fs";
 import {
   credentialToAddress,
   validatorToScriptHash,
   validatorToAddress,
-  generateSeedPhrase,
   Data,
   fromText,
-  Lucid,
   type MintingPolicy,
-  OutRef,
   PolicyId,
-  Provider,
   type Script,
   ScriptHash,
   type SpendingValidator,
@@ -22,7 +19,8 @@ import {
   generateTokenName,
   getNonceOutRef,
   readValidator,
-  setUp,
+  DeploymentTemplate,
+  submitTx
 } from "./utils.ts";
 import {
   EMULATOR_ENV,
@@ -30,20 +28,7 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-import { DeploymentTemplate } from "./template.ts";
-import { ensureDir } from "@std/fs";
-import { submitTx } from "./utils.ts";
-import {
-  AuthToken,
-  AuthTokenSchema,
-} from "../lucid-types/ibc/auth/AuthToken.ts";
-import { HandlerDatum } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_datum/HandlerDatum.ts";
-import { HandlerOperator } from "../lucid-types/ibc/core/ics_025_handler_interface/handler_redeemer/HandlerOperator.ts";
-import {
-  OutputReference,
-  OutputReferenceSchema,
-} from "../lucid-types/cardano/transaction/OutputReference.ts";
-import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/MintPortRedeemer.ts";
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -53,7 +38,6 @@ import { MintPortRedeemer } from "../lucid-types/ibc/core/ics_005/port_redeemer/
 
 export const createDeployment = async (
   lucid: LucidEvolution,
-  provider: Provider,
   mode?: string
 ) => {
   console.log("Create deployment info");
@@ -112,9 +96,10 @@ export const createDeployment = async (
     mintPortPolicyId,
     verifyProofPolicyId
   );
+
   referredValidators.push(
     spendingChannel.base.script,
-    ...Object.values(spendingChannel.referredValidators).map(
+    ...Object.values(spendingChannel.referredScripts).map(
       (val) => val.script
     )
   );
@@ -160,7 +145,6 @@ export const createDeployment = async (
     "minting_identifier.minting_identifier.mint",
     lucid
   );
-  referredValidators.push(mintIdentifierValidator);
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
@@ -177,27 +161,15 @@ export const createDeployment = async (
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
-  // const { identifierTokenUnit: mockModuleIdentifier, spendMockModule } =
-  //   await deployMockModule(
-  //     lucid,
-  //     handlerToken,
-  //     spendHandlerValidator,
-  //     mintPortValidator,
-  //     mintIdentifierValidator,
-  //     MOCK_MODULE_PORT
-  //   );
-  // referredValidators.push(spendMockModule.validator);
-
   const refUtxosInfo = await createReferenceUtxos(
     lucid,
-    provider,
     referredValidators
   );
 
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
   const spendChannelRefValidator = Object.entries(
-    spendingChannel.referredValidators
+    spendingChannel.referredScripts
   ).reduce<
     Record<string, { script: string; scriptHash: string; refUtxo: UTxO }>
   >((acc, [name, val]) => {
@@ -211,10 +183,6 @@ export const createDeployment = async (
   }, {});
 
   console.log("Deployment info created!");
-
-  console.log('refUtxos', refUtxosInfo)
-  console.log('spendHandlerScriptHash', spendHandlerScriptHash)
-
 
   const deploymentInfo: DeploymentTemplate = {
     validators: {
@@ -374,26 +342,10 @@ async function mintMockToken(lucid: LucidEvolution) {
 
 async function createReferenceUtxos(
   lucid: LucidEvolution,
-  provider: Provider,
   referredValidators: Script[]
 ) {
   try {
     console.log("Create reference utxos starting ...");
-    const deployLucids: LucidEvolution[] = [];
-    for (const _ of referredValidators) {
-      const newLucid = await Lucid(provider, "Preview");
-      newLucid.selectWallet.fromSeed(generateSeedPhrase());
-      deployLucids.push(newLucid);
-    }
-
-    const fundDeployAccTx = lucid.newTx();
-    await Promise.all(
-      deployLucids.map(async (inst) => {
-        const address = await inst.wallet().address();
-        fundDeployAccTx.pay.ToAddress(address, { lovelace: 500_000_000n });
-      })
-    );
-    await submitTx(fundDeployAccTx, lucid, "Fund Deploy Account", false);
 
     const [, , referenceAddress] = await readValidator(
       "reference_validator.refer_only.else",
@@ -403,44 +355,35 @@ async function createReferenceUtxos(
     console.log(
       "Submitting transactions for",
       referredValidators.length,
-      "validators. This might take a while."
+      "validators ..."
     );
 
-    const createRefUtxoTxs: string[] = [];
-    let index = 0;
+    const result: { [x: string]: UTxO } = {};
+
     for (const validator of referredValidators) {
-      const curLucid = deployLucids[index];
-      const tx = curLucid.newTx().pay.ToContract(
+      const tx = lucid.newTx().pay.ToContract(
         referenceAddress,
         {
           kind: "inline",
           value: Data.void(),
         },
-        {},
+        { lovelace: 1_000_000n },
         validator
       );
 
-      const txHash = await submitTx(
-        tx,
-        curLucid,
-        validatorToScriptHash(validator),
-        true
-      );
-      createRefUtxoTxs.push(txHash);
-      index++;
-    }
+      const [newWalletUTxOs, derivedOutputs, txSignBuilder] = await tx.chain();
+      const signedTx = await txSignBuilder.sign.withWallet().complete();
+      await signedTx.submit();
 
-    const txHash = createRefUtxoTxs;
-    const outRef: OutRef[] = txHash.map((hash) => ({
-      txHash: hash,
-      outputIndex: 0,
-    }));
-    const refUtxos = await lucid.utxosByOutRef(outRef);
-    const result: { [x: string]: UTxO } = {};
-    refUtxos.forEach((utxo) => {
-      const scriptHash = validatorToScriptHash(utxo.scriptRef!);
-      result[scriptHash] = { ...utxo, datumHash: "" };
-    });
+      lucid.overrideUTxOs(newWalletUTxOs);
+
+      for (const output of derivedOutputs) {
+        if (output.scriptRef) {
+          const scriptHash = validatorToScriptHash(output.scriptRef);
+          result[scriptHash] = output;
+        }
+      }
+    }
 
     return result;
   } catch (error) {
@@ -489,7 +432,7 @@ const deployHandler = async (
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
 
-  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Preview', {
+  const spendHandlerAddress = credentialToAddress(lucid.config().network || 'Custom', {
     type: "Script",
     hash: spendHandlerScriptHash,
   });
@@ -632,7 +575,7 @@ const deployTransferModule = async (
       Data.to(outputReference, OutputReference)
     )
     .pay.ToContract(
-      validatorToAddress(lucid.config().network || 'Preview', spendHandlerValidator),
+      validatorToAddress(lucid.config().network || 'Custom', spendHandlerValidator),
       {
         kind: "inline",
         value: Data.to(updatedHandlerDatum, HandlerDatum),
@@ -673,59 +616,34 @@ const deploySpendChannel = async (
   mintPortPolicyId: PolicyId,
   verifyProofScriptHash: PolicyId
 ) => {
-  const knownReferredValidatorsName = [
-    "chan_open_ack.mint",
-    "chan_open_confirm.spend",
-    "chan_close_init.spend",
-    "chan_close_confirm.spend",
-    "recv_packet.mint",
-    "send_packet.spend",
-    "timeout_packet.spend",
-    "acknowledge_packet.spend",
-  ] as const;
+  const referredValidators = {
+    chan_open_ack: "chan_open_ack.mint",
+    chan_open_confirm: "chan_open_confirm.spend",
+    chan_close_init: "chan_close_init.spend",
+    chan_close_confirm: "chan_close_confirm.spend",
+    recv_packet: "recv_packet.mint",
+    send_packet: "send_packet.spend",
+    timeout_packet: "timeout_packet.spend",
+    acknowledge_packet: "acknowledge_packet.spend",
+  };
 
-  const moduleNamesToIgnore = [
-    "spending_channel_fixture.ak",
-  ];
-
-  const referredValidatorsName = (
-    await Array.fromAsync(Deno.readDir("../onchain/validators/spending_channel"))
-  )
-    .filter((val) => val.isFile)
-    // Filtering out test modules
-    .filter((val) => !val.name.endsWith(".test.ak"))
-    // Filter out modules to ignore
-    .filter((val) => moduleNamesToIgnore.indexOf(val.name) == -1)
-    .map((val) => {
-      const name = val.name.split(".").slice(0, -1).join(".");
-      // deno-lint-ignore no-explicit-any
-      if (!knownReferredValidatorsName.map(name => name.split(".")[0]).includes(name as any)) {
-        throw new Error(
-          `Unknown referred validator of spending_channel, expected ${knownReferredValidatorsName}, found: ${name}`
-        );
-      }
-      return name;
-    });
-
-  const referredValidators: Record<string, { script: Script; hash: string }> =
+  const referredScripts: Record<string, { script: Script; hash: string }> =
     {};
 
-  for (const name of referredValidatorsName) {
+  for (const [name, validator] of Object.entries(referredValidators)) {
     const args = [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
 
     if (name !== "send_packet" && name !== "chan_close_init") {
       args.push(verifyProofScriptHash);
     }
 
-    const validator_name = knownReferredValidatorsName.find(fullName => fullName.split(".")[0] === name);
-
     const [script, hash] = await readValidator(
-      `spending_channel/${name}.${validator_name}`,
+      `spending_channel/${name}.${validator}`,
       lucid,
       args
     );
 
-    referredValidators[name] = {
+    referredScripts[name] = {
       script,
       hash,
     };
@@ -734,7 +652,7 @@ const deploySpendChannel = async (
   const [script, hash, address] = await readValidator(
     "spending_channel.spend_channel.spend",
     lucid,
-    knownReferredValidatorsName.map((name) => referredValidators[name.split(".")[0]].hash)
+    Object.keys(referredValidators).map((name) => referredScripts[name].hash)
   );
 
   return {
@@ -743,22 +661,6 @@ const deploySpendChannel = async (
       hash,
       address,
     },
-    referredValidators,
+    referredScripts,
   };
 };
-
-const main = async () => {
-  if (Deno.args.length < 1) throw new Error("Missing script params");
-
-  const MODE = Deno.args[0];
-
-  const { lucid, provider } = await setUp(MODE);
-
-  const deploymentInfo = await createDeployment(lucid, provider, MODE);
-
-  console.log(deploymentInfo);
-};
-
-if (import.meta.main) {
-  main();
-}

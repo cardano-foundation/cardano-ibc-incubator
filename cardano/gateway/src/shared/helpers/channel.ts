@@ -1,6 +1,6 @@
 import { KEY_CHANNEL_END_PREFIX, KEY_CHANNEL_PREFIX, KEY_PORT_PREFIX } from '../../constant';
 import { AuthToken } from '../types/auth-token';
-import { convertString2Hex, hashSha3_256, hexToBytes } from './hex';
+import { hashSha3_256, hexToBytes } from './hex';
 
 export function getChannelIdByTokenName(tokenName: string, baseToken: AuthToken, prefix: string): string {
   const baseTokenPart = hashSha3_256(baseToken.policyId + baseToken.name).slice(0, 40);

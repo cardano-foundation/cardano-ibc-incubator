@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Packet } from '../types/channel/packet';
-import { convertHex2String, fromHex, hashSHA256, toHex } from './hex';
+import { fromHex, hashSHA256, toHex } from './hex';
 
 // CommitPacket calculates the packet commitment bytes
 export function commitPacket(packet: Packet): string {

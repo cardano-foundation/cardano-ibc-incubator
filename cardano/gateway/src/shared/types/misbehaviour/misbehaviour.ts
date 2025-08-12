@@ -1,8 +1,5 @@
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import {
-  Misbehaviour as MisbehaviourMsg,
-  Header as HeaderMsg,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Misbehaviour as MisbehaviourMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { ClientDatum } from '../client-datum';
 
 import { Header, checkTrustedHeader, decodeHeader, initializeHeader } from '../header';
