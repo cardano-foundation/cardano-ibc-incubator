@@ -264,7 +264,10 @@ fn handler_callback(
         packet.source_channel,
         data.denom,
       ) {
-        // TODO: check no minting voucher here
+        // check no minting voucher here
+        expect None =
+          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
+
         let voucher_prefix_len =
           transfer_coin.get_denom_prefix(
             packet.source_port,
@@ -795,7 +798,9 @@ fn validate_refund_packet_token(
     packet.source_channel,
     data.denom,
   ) {
-    // TODO: check no minting voucher here
+    // check no minting voucher here
+    expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
+
     expect Some(escrowed_token_unit) =
       string_utils.hex_string_to_bytes(data.denom)
     trace @"spend_transfer_module: demon convert to token unit valid"

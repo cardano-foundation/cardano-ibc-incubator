@@ -15,7 +15,6 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/acknowledgement
-use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementResult}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnAcknowledgementPacket, OnRecvPacket, OnTimeoutPacket, Operator,
   TransferModuleData, TransferModuleOperator,
