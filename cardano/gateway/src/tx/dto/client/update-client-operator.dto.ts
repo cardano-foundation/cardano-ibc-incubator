@@ -1,6 +1,5 @@
 import { UTxO } from '@lucid-evolution/lucid';
 import { ClientDatum } from '../../../shared/types/client-datum';
-import { Misbehaviour } from '../../../shared/types/misbehaviour/misbehaviour';
 import { Header } from '../../../shared/types/header';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 

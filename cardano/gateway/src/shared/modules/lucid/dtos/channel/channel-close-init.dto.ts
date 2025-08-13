@@ -5,9 +5,6 @@ export type UnsignedChannelCloseInitDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  spendChannelRefUtxo: UTxO;
-  spendMockModuleRefUtxo: UTxO;
-  channelCloseInitRefUtxO: UTxO;
   mockModuleUtxo: UTxO;
 
   channelCloseInitPolicyId: string;

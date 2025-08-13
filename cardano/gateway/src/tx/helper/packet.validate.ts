@@ -2,7 +2,6 @@ import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { CHANNEL_ID_PREFIX, PORT_ID_PREFIX, TRANSFER_MODULE_PORT, MOCK_MODULE_PORT } from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
-import { RecvPacketOperator } from '../dto/packet/recv-packet-operator.dto';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import {
@@ -11,10 +10,8 @@ import {
   MsgTimeout,
   MsgTransfer,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
-import { SendPacketOperator } from '../dto/packet/send-packet-operator.dto';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import { TimeoutPacketOperator } from '../dto/packet/time-out-packet-operator.dto';
-import { AckPacketOperator } from '../dto/packet/ack-packet-operator.dto';
+import { AckPacketOperator, RecvPacketOperator, SendPacketOperator, TimeoutPacketOperator } from '../dto';
 
 export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
   constructedAddress: string;
