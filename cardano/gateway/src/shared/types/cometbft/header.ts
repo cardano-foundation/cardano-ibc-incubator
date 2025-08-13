@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { ConsensusState } from '../consensus-state';
 import { MAX_CHAIN_ID_LENGTH, TM_HASH_SIZE } from '../../../constant';
 import { BlockID } from './commit';

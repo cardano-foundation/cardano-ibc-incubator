@@ -136,9 +136,17 @@ pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
-    let service_folders = vec!["devnet", "kupo-db", "db-sync-data", "postgres", "baseinfo"];
+    let service_folders = vec![
+        "devnet",
+        "kupo-db",
+        "db-sync-data",
+        "db-sync-configuration",
+        "db-sync-log-dir",
+        "postgres",
+        "baseinfo",
+    ];
 
-    for service_folder in service_folders {
+    for service_folder in &service_folders {
         let serivce_folder_path = cardano_dir.join(service_folder);
         if serivce_folder_path.exists() && serivce_folder_path.is_dir() {
             fs::remove_dir_all(&serivce_folder_path).map_err(|error| {
@@ -148,6 +156,18 @@ pub fn configure_local_cardano_devnet(
                 )
             })?;
         }
+    }
+
+    // Recreate the deleted folders as empty directories
+    for service_folder in &service_folders {
+        let serivce_folder_path = cardano_dir.join(service_folder);
+        fs::create_dir_all(&serivce_folder_path).map_err(|error| {
+            format!(
+                "Failed to create service folder {}: {}",
+                service_folder,
+                error.to_string()
+            )
+        })?;
     }
 
     let devnet_dir = cardano_dir.join("devnet");
@@ -479,7 +499,10 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
     Ok(hash)
 }
 
-pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn prepare_db_sync_and_gateway(
+    cardano_dir: &Path,
+    clean: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let devnet_dir = cardano_dir.join("devnet");
     let cardano_node_db = devnet_dir.join("cardano-node-db.json");
 
@@ -562,7 +585,12 @@ pub fn prepare_db_sync(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Err
 
     let cardano_source_dir = cardano_dir.join("../../cardano");
     let gateway_dir = cardano_source_dir.join("gateway");
-    let gateway_env = gateway_dir.join(".env.example");
+    let gateway_env = gateway_dir.join(".env");
+
+    if clean || !gateway_env.exists() {
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        copy(gateway_dir.join(".env.example"), &gateway_env, &options)?;
+    }
 
     replace_text_in_file(
         &gateway_env,

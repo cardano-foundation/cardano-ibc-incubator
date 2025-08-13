@@ -1,4 +1,3 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
 import { CHANNEL_ID_PREFIX, CONNECTION_ID_PREFIX } from '../../constant';
 import {
   QueryChannelRequest,
@@ -14,6 +13,7 @@ import {
   QueryNextSequenceReceiveRequest,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { validPagination } from './helper';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
 export function validQueryChannelParam(request: QueryChannelRequest): QueryChannelRequest {
   if (!request.channel_id) throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');

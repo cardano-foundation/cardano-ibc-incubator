@@ -5,7 +5,7 @@ use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, quantity_of, tokens}
+use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
   Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -16,6 +16,7 @@ use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
+use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnRecvPacket,
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
@@ -51,7 +52,7 @@ validator mint_voucher(module_token: AuthToken) {
             packet_source_channel,
             data.denom,
           )
-        trace @"mint_voucher: receiver chain is not source"
+        trace @"mint_voucher: valid receiver?": valid_receiver
 
         let source_prefix =
           transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
@@ -73,20 +74,31 @@ validator mint_voucher(module_token: AuthToken) {
         trace @"mint_voucher: converted receiver to public key hash"
         let receiver_address = from_verification_key(receiver_public_key_hash)
 
-        expect Some(payout_output) =
-          list.find(
+        // There should be just one output with the receiver address AND tokens of the voucher minting policy
+        expect [payout_output] =
+          list.filter(
             transaction.outputs,
-            fn(output) { output.address == receiver_address },
+            fn(output) {
+              and {
+                output.address == receiver_address,
+                (
+                  output.value
+                    |> assets.without_lovelace
+                    |> assets.policies
+                ) == [voucher_minting_policy_id],
+              }
+            },
           )
 
         and {
-          valid_receiver,
-          valid_minted_tokens,
-          quantity_of(
-            payout_output.value,
+          valid_receiver?,
+          valid_minted_tokens?,
+          valid_voucher_output(
+            payout_output,
             voucher_minting_policy_id,
             token_name,
-          ) >= transfer_amount,
+            transfer_amount,
+          )?,
         }
       }
       BurnVoucher { packet_source_port, packet_source_channel } -> {
@@ -128,7 +140,11 @@ validator mint_voucher(module_token: AuthToken) {
         let data =
           when ibc_module_callback is {
             OnTimeoutPacket { data, .. } -> data
-            OnAcknowledgementPacket { data, .. } -> data
+            OnAcknowledgementPacket { acknowledgement, data, .. } ->
+              when acknowledgement.response is {
+                AcknowledgementError { .. } -> data
+                _ -> fail
+              }
             _ -> fail
           }
         expect TransferModuleData(data) = data
@@ -231,4 +247,20 @@ fn extract_module_redeemer(
   expect spend_module_redeemer: IBCModuleRedeemer = spend_module_redeemer
 
   spend_module_redeemer
+}
+
+// Checks transfer amount is valid gte than the expected one
+// And that there is no token dust injection.
+fn valid_voucher_output(
+  voucher_output: Output,
+  voucher_policy_id: PolicyId,
+  asset_name: AssetName,
+  transfer_amount: Int,
+) -> Bool {
+  let voucher_output_value = assets.without_lovelace(voucher_output.value)
+  expect [actual_policy_id] = assets.policies(voucher_output_value)
+  and {
+    (actual_policy_id == voucher_policy_id)?,
+    (quantity_of(voucher_output_value, voucher_policy_id, asset_name) == transfer_amount)?,
+  }
 }

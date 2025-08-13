@@ -1,6 +1,6 @@
 import { ClientState, ConsensusState, Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { LOVELACE } from '../../constant';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 import {
   ClientState as ClientStateOuroboros,

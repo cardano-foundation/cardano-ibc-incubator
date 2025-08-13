@@ -4,8 +4,8 @@ use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction, ValidityRange,
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
+  ScriptPurpose, Spend, Transaction, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -299,7 +299,7 @@ fn setup() -> MockData {
     Input {
       output_reference: OutputReference {
         transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
+        output_index: 1,
       },
       output: Output {
         address: from_script("mock module script hash"),
@@ -491,6 +491,277 @@ test succeed_chan_open_try() {
       address: from_script(mock_data.spend_channel_script_hash),
       value: from_asset(channel_token.policy_id, channel_token.name, 1),
       datum: InlineDatum(channel_datum),
+      reference_script: None,
+    }
+
+  let outputs = [channel_output]
+
+  //========================arrange mint=======================
+  let mint = from_asset(channel_token.policy_id, channel_token.name, 1)
+
+  //========================arrange validity_range=======================
+  let validity_range = mock_data.validity_range
+
+  //========================arrange redeemers=======================
+  let proof_init =
+    MerkleProof {
+      proofs: [
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              // key: #"6368616e6e656c456e64732f706f7274732f706f72742d312f6368616e6e656c732f6368616e6e656c2d30",
+              key: #"6368616e6e656c456e64732f706f7274732f706f72742d312f6368616e6e656c732f6368616e6e656c2d30",
+              value: #"080110021a080a06706f72742d31220c636f6e6e656374696f6e2d302a0c6d6f636b2d76657273696f6e",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"000218",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"02041820",
+                  suffix: #"20072452876773f4e9b67456f4fd55fe48c9492aa788251556eab0975eb57ac2ca",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"04061820",
+                  suffix: #"20bdf12b6f8b72754e6ca2a9c2645fd67b10ad95c6d79a9184302258e536a099e8",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"060e1820",
+                  suffix: #"200846a49224ccac13ab6f251559f01f44154ecb8a794b06e916f05d786c667c52",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"08161820",
+                  suffix: #"20743795f032d4499fa6462afc8be2844445937d12ffd3cc769d886836a45b7d9b",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0c341820",
+                  suffix: #"2075cb5e96a2dd7f63c4e0d53d3dbf4eee1ff8af0a0c9c5a4299c0c5e3d757a3fe",
+                },
+              ],
+            },
+          },
+        },
+        CommitmentProof {
+          proof: CommitmentProof_Exist {
+            exist: ExistenceProof {
+              key: #"696263",
+              value: #"5655858529b3c87b76dff17cb82a28df52ce2e9c184a33289dfb896c0c92f4f5",
+              leaf: LeafOp {
+                hash: 1,
+                prehash_value: 1,
+                length: 1,
+                prefix: #"00",
+                prehash_key: 0,
+              },
+              path: [
+                InnerOp {
+                  hash: 1,
+                  prefix: #"0106b99c0d8119ff1edbcbe165d0f19337dbbc080e677c88e57aa2ae767ebf0f0f",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"102be2509e02c885c7493d6e0fa2792b08de6bcc7157707f39f39163f6e68efd",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01168116e3f4be1a4955b203aa979d29f890ccc0e6d2214f7125aa1f61e826b77b",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01fa5634ae3d864ecb98d30b5118c981ecc5bd08b7e9de40e8c0fb04f6b88ac806",
+                  suffix: #"",
+                },
+                InnerOp {
+                  hash: 1,
+                  prefix: #"01",
+                  suffix: #"8bff9e2cd715424c7dcd5e4b01f27da63f77dd32ce31f463fa6e71540c2a587d",
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }
+  let counterparty_version = "mock-version"
+
+  let mint_channel_redeemer: Redeemer =
+    ChanOpenTry {
+      handler_token: mock_data.handler_token,
+      counterparty_version,
+      proof_init,
+      proof_height: mock_data.proof_height,
+    }
+
+  let handler_redeemer: Redeemer = HandlerChanOpenTry
+
+  let channel_id =
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> channel_keys.format_channel_identifier()
+  let module_redeemer: Redeemer = Callback(OnChanOpenTry { channel_id })
+
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(mock_data.client_input.output)
+  expect connection_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(mock_data.connection_input.output)
+
+  let connection = connection_datum.state
+
+  let time_delay = connection.delay_period
+  let block_delay = verify.get_block_delay(connection)
+
+  let merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [
+          host_chan_keys.channel_path(
+            channel_datum.state.channel.counterparty.port_id,
+            channel_datum.state.channel.counterparty.channel_id,
+          ),
+        ],
+      ),
+    )
+
+  let counterparty_hops = [connection.counterparty.connection_id]
+
+  let expected_counterparty =
+    ChannelCounterparty { port_id: channel_datum.port_id, channel_id: "" }
+
+  expect Some(cons_state) =
+    pairs.get_first(client_datum.state.consensus_states, mock_data.proof_height)
+
+  let expected_channel =
+    Channel {
+      state: channel_state.Init,
+      ordering: channel_datum.state.channel.ordering,
+      counterparty: expected_counterparty,
+      connection_hops: counterparty_hops,
+      version: counterparty_version,
+    }
+
+  let channel_bz =
+    channel_pb.marshal_for_channel(
+      channel.convert_to_channel_proto(expected_channel),
+    ).2nd
+
+  let verify_proof_redeemer: Redeemer =
+    VerifyMembership {
+      cs: client_datum.state.client_state,
+      cons_state,
+      height: mock_data.proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_init,
+      path: merkle_path,
+      value: channel_bz,
+    }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.handler_input.output_reference), handler_redeemer),
+      Pair(Mint(mock_data.channel_minting_policy_id), mint_channel_redeemer),
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+
+  let mint_channel_redeemer =
+    ChanOpenTry {
+      handler_token: mock_data.handler_token,
+      counterparty_version,
+      proof_init,
+      proof_height: mock_data.proof_height,
+    }
+
+  //==========================arrange context=========================
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      reference_inputs: reference_inputs,
+      outputs: outputs,
+      mint: mint,
+      redeemers: redeemers,
+      validity_range: validity_range,
+    }
+
+  minting_channel.mint_channel.mint(
+    mock_data.client_minting_policy_id,
+    mock_data.connection_minting_policy_id,
+    mock_data.port_minting_policy_id,
+    mock_data.verify_proof_policy_id,
+    mock_data.spend_channel_script_hash,
+    mint_channel_redeemer,
+    mock_data.channel_minting_policy_id,
+    transaction,
+  )
+}
+
+test fail_chan_open_try_invalid_datum() fail {
+  let mock_data = setup()
+
+  //========================arrange inputs=======================
+  let inputs = [mock_data.handler_input, mock_data.module_input]
+
+  //========================arrange reference_inputs=======================
+  let reference_inputs = [mock_data.connection_input, mock_data.client_input]
+
+  //========================arrange outputs=======================
+  let channel_token_name =
+    string_utils.int_to_string(mock_data.channel_sequence)
+      |> auth.generate_token_name(
+          mock_data.handler_token,
+          channel_keys.channel_prefix,
+          _,
+        )
+  let channel_token =
+    AuthToken {
+      policy_id: mock_data.channel_minting_policy_id,
+      name: channel_token_name,
+    }
+
+  let channel =
+    Channel {
+      state: channel_state.TryOpen,
+      ordering: Ordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
+      connection_hops: [mock_data.connection_id],
+      version: "mock-version",
+    }
+
+  let channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: mock_data.port_id,
+      token: channel_token,
+    }
+
+  let channel_output =
+    Output {
+      address: from_script(mock_data.spend_channel_script_hash),
+      value: from_asset(channel_token.policy_id, channel_token.name, 1),
+      datum: NoDatum,
       reference_script: None,
     }
 

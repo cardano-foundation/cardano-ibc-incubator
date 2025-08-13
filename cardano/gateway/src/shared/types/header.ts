@@ -5,7 +5,7 @@ import { Height } from './height';
 import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { fromHex, toHex } from '../helpers/hex';
 import { Rational } from './rational';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { TmHeader } from './cometbft/header';
 import { ConsensusState } from './consensus-state';
 import { ClientDatum } from './client-datum';
@@ -478,7 +478,6 @@ function verifyAdjacent(
   maxClockDrift: bigint,
   trustedLevel: Rational,
 ): boolean {
-  console.log('verifyAdjacent');
   if (untrustedHeader.header.height !== trustedHeader.header.height + 1n) {
     throw new GrpcInvalidArgumentException('headers must be adjacent in height');
   }

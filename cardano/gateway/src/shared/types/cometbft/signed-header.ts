@@ -1,4 +1,4 @@
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { Commit, validateBasic as validateCommitBasic } from './commit';
 import { TmHeader, validateBasic as validateTmHeaderBasic } from './header';
 

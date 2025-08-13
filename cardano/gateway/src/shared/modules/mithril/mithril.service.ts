@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { Method } from 'axios';
-import { catchError, firstValueFrom, lastValueFrom, map } from 'rxjs';
+import { lastValueFrom, map } from 'rxjs';
 import { CurrentEpochSettingsResponseDTO } from './dtos/get-current-epoch-settings.dto';
 import { CertificateDTO } from './dtos/get-most-recent-certificates.dto';
 import { RegisterdSignersResponseDTO } from './dtos/get-registerd-signers-for-epoch.dto';
@@ -22,7 +22,7 @@ export class MithrilService {
   ) {
     this.mithrilClient = new MithrilClient(
       this.configService.get('mithrilEndpoint'),
-      this.configService.get('mtithrilGenesisVerificationKey')
+      this.configService.get('mtithrilGenesisVerificationKey'),
     );
   }
 

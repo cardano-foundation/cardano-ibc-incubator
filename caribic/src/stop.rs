@@ -41,13 +41,16 @@ pub fn stop_cardano_network(project_root_path: &Path) {
 }
 
 pub fn stop_cosmos(cosmos_path: &Path) {
-    let cosmos_result = execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
-    match cosmos_result {
-        Ok(_) => {
-            log("❎ Cosmos stopped successfully");
-        }
-        Err(e) => {
-            error(&format!("❌ Failed to stop Cosmos: {}", e));
+    if cosmos_path.exists() {
+        let cosmos_result =
+            execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
+        match cosmos_result {
+            Ok(_) => {
+                log("❎ Cosmos stopped successfully");
+            }
+            Err(e) => {
+                error(&format!("❌ Failed to stop Cosmos: {}", e));
+            }
         }
     }
 }

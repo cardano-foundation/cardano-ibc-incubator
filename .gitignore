@@ -46,3 +46,5 @@ cardano-node
 
 chains/summit-demo/
 relayer/.config
+
+run_token_swap.sh

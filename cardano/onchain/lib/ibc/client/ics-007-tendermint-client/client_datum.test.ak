@@ -238,8 +238,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
       mock_latest_height,
       [],
     )
-  let mock_consensus_states =
-    []
+  let mock_consensus_states = []
   let mock_auth_token =
     AuthToken {
       policy_id: mock_auth_token_policy_id,

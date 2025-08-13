@@ -1,6 +1,5 @@
-import { ClientState as ClientStateOuroboros } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { MithrilClientState } from '../types/mithril';
-import { convertHex2String, convertString2Hex, fromText } from './hex';
+import { convertHex2String, fromText } from './hex';
 import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 
 export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {

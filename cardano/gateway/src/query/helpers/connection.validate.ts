@@ -1,5 +1,5 @@
 import { QueryConnectionRequest } from '@plus/proto-types/build/ibc/core/connection/v1/query';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { CONNECTION_ID_PREFIX } from '../../constant';
 
 export function validQueryConnectionParam(request: QueryConnectionRequest): QueryConnectionRequest {

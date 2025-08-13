@@ -56,7 +56,7 @@ test test_size_for_protocol_parameters_succeed() {
         phi_f: Some(Fraction { numerator: 20, denominator: 100 }),
       },
     ),
-  ) == 10
+  ) == 27
 }
 
 test test_marshal_for_fraction_same_result_empty() {

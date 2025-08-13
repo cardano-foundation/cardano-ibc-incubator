@@ -42,7 +42,7 @@ import {
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
+import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 
 @Injectable()

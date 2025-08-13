@@ -15,9 +15,10 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/acknowledgement
+use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementResult}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, OnRecvPacket, OnTimeoutPacket, Operator, TransferModuleData,
-  TransferModuleOperator,
+  Callback, OnAcknowledgementPacket, OnRecvPacket, OnTimeoutPacket, Operator,
+  TransferModuleData, TransferModuleOperator,
 }
 use ibc/utils/string as string_utils
 use minting_voucher
@@ -268,6 +269,95 @@ test test_refund_voucher() {
   let spend_module_redeemer =
     Callback(
       OnTimeoutPacket { channel_id: packet_source_channel, data: packet_data },
+    )
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(purpose, mint_voucher_redeemer_in_data),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
+    ]
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input],
+      outputs: outputs,
+      redeemers: redeemers,
+      mint: mint,
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+// ID-503-Not possible to refund voucher if transfer suceeds
+test test_refund_voucher_fail() fail {
+  let mock_data = prepare_mock_data()
+
+  //=========================arrange packet data===============================
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let packet_dest_channel = "channel-99"
+
+  let transfer_amount = 100
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, "ibc/usdt")
+
+  //525f6e2b0f8a15a3c95d82c8113b99dfebfe40f124cb2bc71ee99e22
+  let sender =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender,
+      receiver: "cosmos address",
+      memo: "",
+    }
+
+  //==================================arrange output============================
+  let token_name = crypto.sha3_256(ftpd.denom)
+
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+
+  let sender_output =
+    Output {
+      address: from_verification_key(sender_public_key_hash),
+      value: mint,
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let outputs = [sender_output]
+
+  //==================================arrange redeemers============================
+  let mint_voucher_redeemer =
+    RefundVoucher { packet_source_port, packet_source_channel }
+  let purpose = Mint(mock_data.voucher_minting_policy_id)
+
+  let packet_data = TransferModuleData(ftpd)
+
+  let spend_module_redeemer =
+    Callback(
+      OnAcknowledgementPacket {
+        channel_id: packet_dest_channel,
+        acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
+        data: packet_data,
+      },
     )
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer

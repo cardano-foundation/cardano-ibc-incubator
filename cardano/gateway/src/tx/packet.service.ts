@@ -14,8 +14,7 @@ import {
   MsgTransferResponse,
   ResponseResultType,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
-import { GrpcInternalException, GrpcInvalidArgumentException } from 'nestjs-grpc-exceptions';
-import { RecvPacketOperator } from './dto/packet/recv-packet-operator.dto';
+
 import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
@@ -26,39 +25,15 @@ import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from '
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { deleteKeySortMap, deleteSortMap, getDenomPrefix, prependToMap, sortedStringify } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
-import { SendPacketOperator } from './dto/packet/send-packet-operator.dto';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import {
-  UnsignedSendPacketEscrowDto,
-  UnsignedSendPacketEscrowForOrderedChannelDto,
-} from '../shared/modules/lucid/dtos/packet/send-packet-escrow.dto';
 import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
 import { normalizeDenomTokenTransfer } from './helper/helper';
 import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '../shared/helpers/hex';
-import { UnsignedRecvPacketUnescrowDto } from '@shared/modules/lucid/dtos/packet/recv-packet-unescrow.dto';
-import {
-  UnsignedRecvPacketDto,
-  UnsignedRecvPacketMintDto,
-  UnsignedRecvPacketMintForOrderedChannelDto,
-} from '@shared/modules/lucid/dtos/packet/recv-packet-mint.dto';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
-import { UnsignedAckPacketUnescrowDto } from '../shared/modules/lucid/dtos/packet/ack-packet-unescrow.dto';
-import { AckPacketOperator } from './dto/packet/ack-packet-operator.dto';
-import { UnsignedAckPacketMintDto } from '../shared/modules/lucid/dtos/packet/ack-packet-mint.dto';
-import { UnsignedSendPacketBurnDto } from '../shared/modules/lucid/dtos/packet/send-packet-burn.dto';
 import { ClientDatum } from '@shared/types/client-datum';
-import { TimeoutPacketOperator } from './dto/packet/time-out-packet-operator.dto';
-import { UnsignedTimeoutPacketMintDto } from '@shared/modules/lucid/dtos/packet/timeout-packet-mint.dto';
-import { UnsignedTimeoutPacketUnescrowDto } from '@shared/modules/lucid/dtos/packet/timeout-packet-unescrow.dto';
 import { isValidProofHeight } from './helper/height.validate';
-import { TimeoutRefreshOperator } from './dto/packet/timeout-resfresh-operator.dto';
-import { UnsignedTimeoutRefreshDto } from '@shared/modules/lucid/dtos/packet/timeout-refresh-dto';
 import { AcknowledgementResponse } from '@shared/types/channel/acknowledgement_response';
-import {
-  UnsignedAckPacketSucceedDto,
-  UnsignedAckPacketSucceedForOrderedChannelDto,
-} from '@shared/modules/lucid/dtos/packet/ack-packet-succeed.dto';
 import {
   validateAndFormatAcknowledgementPacketParams,
   validateAndFormatRecvPacketParams,
@@ -69,7 +44,28 @@ import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/
 import { getBlockDelay } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { Order } from '~@/shared/types/channel/order';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import {
+  AckPacketOperator,
+  RecvPacketOperator,
+  SendPacketOperator,
+  TimeoutPacketOperator,
+  TimeoutRefreshOperator,
+} from './dto';
+import {
+  UnsignedAckPacketMintDto,
+  UnsignedAckPacketSucceedDto,
+  UnsignedAckPacketUnescrowDto,
+  UnsignedRecvPacketDto,
+  UnsignedRecvPacketMintDto,
+  UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketBurnDto,
+  UnsignedSendPacketEscrowDto,
+  UnsignedTimeoutPacketMintDto,
+  UnsignedTimeoutPacketUnescrowDto,
+  UnsignedTimeoutRefreshDto,
+} from '~@/shared/modules/lucid/dtos';
 
 @Injectable()
 export class PacketService {
@@ -132,17 +128,12 @@ export class PacketService {
         constructedAddress,
       );
 
-      const validToTime = Date.now() + 3 * 1e5;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
-      console.log({
-        validToTime,
-        validToSlot,
-        currentSlot,
-      });
 
       if (
         recvPacketOperator.timeoutTimestamp > 0 &&
@@ -180,7 +171,7 @@ export class PacketService {
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
 
       const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedSendPacketTx(sendPacketOperator);
-      const validToTime = Date.now() + 3 * 1e5;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -226,7 +217,8 @@ export class PacketService {
         timeoutPacketOperator,
         constructedAddress,
       );
-      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(Date.now() + 3 * 1e5);
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
       // Todo: signing should be done in the relayer in the future
       const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
@@ -279,15 +271,11 @@ export class PacketService {
         timeoutRefreshOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + 3 * 1e5;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
 
       const currentSlot = this.lucidService.lucid.currentSlot();
-      console.log({
-        validToTime,
-        validToSlot,
-        currentSlot,
-      });
+
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
@@ -328,7 +316,8 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(Date.now() + 300 * 1e3);
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
       // Todo: signing should be done in the relayer in the future
       const signedAckPacketCompleted = await (await unsignedAckPacketTxValidTo.complete()).sign.withWallet().complete();
@@ -371,10 +360,8 @@ export class PacketService {
       spendChannelRedeemer,
       'spendChannelRedeemer',
     );
-    const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
     const unsignedTimeoutRefreshParams: UnsignedTimeoutRefreshDto = {
       channelUtxo,
-      spendChannelRefUTxO: spendChannelRefUtxo,
       encodedSpendChannelRedeemer,
       encodedChannelDatum,
       channelTokenUnit,
@@ -440,8 +427,6 @@ export class PacketService {
     const transferModuleIdentifier = this.getTransferModuleIdentifier();
     // Get mock module utxo
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
-    const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
     // channel id
     const channelId = convertString2Hex(recvPacketOperator.channelId);
     // Init packet
@@ -471,12 +456,10 @@ export class PacketService {
 
     const deploymentConfig = this.configService.get('deployment');
     const recvPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.recv_packet.scriptHash;
-    const recvPacketRefUTxO = deploymentConfig.validators.spendChannel.refValidator.recv_packet.refUtxo;
     const channelToken = {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
     };
-    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
     const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === recvPacketOperator.proofHeight.revisionHeight,
@@ -583,8 +566,6 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              spendChannelRefUtxo,
-              spendTransferModuleRefUtxo,
               transferModuleUtxo,
 
               encodedSpendChannelRedeemer,
@@ -596,11 +577,9 @@ export class PacketService {
               constructedAddress,
 
               recvPacketPolicyId,
-              recvPacketRefUTxO,
               channelToken,
 
               verifyProofPolicyId,
-              verifyProofRefUTxO,
               encodedVerifyProofRedeemer,
             };
             return this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
@@ -651,10 +630,7 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              spendChannelRefUtxo,
-              spendTransferModuleRefUtxo,
               transferModuleUtxo,
-              mintVoucherRefUtxo: this.getMintVoucherRefUtxo(),
 
               encodedSpendChannelRedeemer,
               encodedSpendTransferModuleRedeemer,
@@ -668,11 +644,9 @@ export class PacketService {
               constructedAddress,
 
               recvPacketPolicyId,
-              recvPacketRefUTxO,
               channelToken,
 
               verifyProofPolicyId,
-              verifyProofRefUTxO,
               encodedVerifyProofRedeemer,
             };
 
@@ -706,7 +680,6 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      spendChannelRefUtxo,
 
       encodedSpendChannelRedeemer,
       encodedUpdatedChannelDatum,
@@ -715,11 +688,9 @@ export class PacketService {
       constructedAddress,
 
       recvPacketPolicyId,
-      recvPacketRefUTxO,
       channelToken,
 
       verifyProofPolicyId,
-      verifyProofRefUTxO,
       encodedVerifyProofRedeemer,
     };
 
@@ -780,9 +751,8 @@ export class PacketService {
         next_sequence_recv: timeoutPacketOperator.nextSequenceRecv,
       },
     };
-    // const deploymentConfig = this.configService.get('deployment');
+
     const { transferModuleUtxo, transferModuleAddress, spendChannelAddress } = await this.getTransferModuleDetails();
-    const { spendChannelRefUtxo, spendTransferModuleUtxo } = this.getSpendUtxos();
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
     const denom =
@@ -830,9 +800,7 @@ export class PacketService {
 
     const deploymentConfig = this.configService.get('deployment');
     const timeoutPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.timeout_packet.scriptHash;
-    const timeoutPacketRefUTxO = deploymentConfig.validators.spendChannel.refValidator.timeout_packet.refUtxo;
     const verifyProofPolicyId = deploymentConfig.validators.verifyProof.scriptHash;
-    const verifyProofRefUTxO = deploymentConfig.validators.verifyProof.refUtxo;
     const channelToken = {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
@@ -873,12 +841,10 @@ export class PacketService {
       this.logger.log(denom, 'unescrow timeout processing');
 
       const unsignedSendPacketParams: UnsignedTimeoutPacketUnescrowDto = {
-        spendChannelRefUtxo: spendChannelRefUtxo,
         channelUtxo: channelUtxo,
         transferModuleUtxo: transferModuleUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
-        spendTransferModuleUtxo: spendTransferModuleUtxo,
 
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
@@ -894,10 +860,8 @@ export class PacketService {
         constructedAddress: constructedAddress,
 
         timeoutPacketPolicyId,
-        timeoutPacketRefUTxO,
         channelToken,
 
-        verifyProofRefUTxO,
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
       };
@@ -906,7 +870,6 @@ export class PacketService {
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
     // const prefixedDenom = convertString2Hex(sourcePrefix + denom);
     const prefixedDenom = convertString2Hex(denom);
-    const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
     const mintVoucherRedeemer: MintVoucherRedeemer = {
       RefundVoucher: {
         packet_source_port: packet.source_port,
@@ -916,15 +879,11 @@ export class PacketService {
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
 
-    const mintVoucherRefUtxo = this.getMintVoucherRefUtxo();
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
       'mintVoucherRedeemer',
     );
     const unsignedTimeoutPacketMintDto: UnsignedTimeoutPacketMintDto = {
-      spendChannelRefUtxo: spendChannelRefUtxo,
-      spendTransferModuleRefUtxo: spendTransferModuleRefUtxo,
-      mintVoucherRefUtxo: mintVoucherRefUtxo,
       channelUtxo: channelUtxo,
       transferModuleUtxo: transferModuleUtxo,
       connectionUtxo: connectionUtxo,
@@ -945,15 +904,14 @@ export class PacketService {
       constructedAddress: constructedAddress,
 
       timeoutPacketPolicyId,
-      timeoutPacketRefUTxO,
       channelToken,
 
-      verifyProofRefUTxO,
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
     };
     return this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
   }
+
   async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<TxBuilder> {
     const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
@@ -983,8 +941,6 @@ export class PacketService {
     const transferModuleIdentifier = this.getTransferModuleIdentifier();
     // Get transfer module utxo
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
-    const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
     // channel id
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
@@ -1001,7 +957,6 @@ export class PacketService {
       receiver: sendPacketOperator.receiver,
       memo: sendPacketOperator.memo,
     };
-    console.dir(sendPacketOperator, { depth: 100 });
 
     // Init packet
     const packet: Packet = {
@@ -1067,7 +1022,6 @@ export class PacketService {
     const deploymentConfig = this.configService.get('deployment');
 
     const sendPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash;
-    const sendPacketRefUTxO = deploymentConfig.validators.spendChannel.refValidator.send_packet.refUtxo;
     const channelToken = {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
@@ -1081,7 +1035,6 @@ export class PacketService {
       )
     ) {
       this.logger.log('send burn');
-      const mintVoucherRefUtxo = deploymentConfig.validators.mintVoucher.refUtxo;
       const mintVoucherRedeemer: MintVoucherRedeemer = {
         BurnVoucher: {
           packet_source_port: packet.source_port,
@@ -1103,11 +1056,8 @@ export class PacketService {
         channelUTxO: channelUtxo,
         connectionUTxO: connectionUtxo,
         clientUTxO: clientUtxo,
-        spendChannelRefUTxO: spendChannelRefUtxo,
-        spendTransferModuleUTxO: spendTransferModuleRefUtxo,
         transferModuleUTxO: transferModuleUtxo,
         senderVoucherTokenUtxo,
-        mintVoucherRefUtxo,
 
         encodedMintVoucherRedeemer,
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
@@ -1125,7 +1075,6 @@ export class PacketService {
         denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
 
         sendPacketPolicyId,
-        sendPacketRefUTxO,
         channelToken,
       };
 
@@ -1133,84 +1082,32 @@ export class PacketService {
     }
     // escrow
     this.logger.log('send escrow');
-    switch (channelDatum.state.channel.ordering) {
-      case Order.Unordered:
-        const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
-          channelUTxO: channelUtxo,
-          connectionUTxO: connectionUtxo,
-          clientUTxO: clientUtxo,
-          spendChannelRefUTxO: spendChannelRefUtxo,
-          spendTransferModuleUTxO: spendTransferModuleRefUtxo,
-          transferModuleUTxO: transferModuleUtxo,
+    const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
+      channelUTxO: channelUtxo,
+      connectionUTxO: connectionUtxo,
+      clientUTxO: clientUtxo,
+      transferModuleUTxO: transferModuleUtxo,
 
-          encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-          encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
-          encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
+      encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
+      encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
+      encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
-          transferAmount: BigInt(sendPacketOperator.token.amount),
-          senderAddress: sendPacketOperator.sender,
-          receiverAddress: sendPacketOperator.receiver,
+      transferAmount: BigInt(sendPacketOperator.token.amount),
+      senderAddress: sendPacketOperator.sender,
+      receiverAddress: sendPacketOperator.receiver,
 
-          constructedAddress: sendPacketOperator.signer,
+      constructedAddress: sendPacketOperator.signer,
 
-          spendChannelAddress: deploymentConfig.validators.spendChannel.address,
-          channelTokenUnit: channelTokenUnit,
-          transferModuleAddress: deploymentConfig.modules.transfer.address,
-          denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
+      spendChannelAddress: deploymentConfig.validators.spendChannel.address,
+      channelTokenUnit: channelTokenUnit,
+      transferModuleAddress: deploymentConfig.modules.transfer.address,
+      denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
 
-          sendPacketPolicyId,
-          sendPacketRefUTxO,
-          channelToken,
-        };
+      sendPacketPolicyId,
+      channelToken,
+    };
 
-        this.prettyPrint(unsignedSendPacketParams);
-
-        return this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
-
-      case Order.Ordered:
-        const mockModuleIdentifier = this.getMockModuleIdentifier();
-        const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
-        const spendMockModuleRefUtxo: UTxO = this.getSpendMockModuleRefUtxo();
-        const spendMockModuleRedeemer: IBCModuleRedeemer = {
-          Operator: ['OtherModuleOperator'],
-        };
-
-        const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
-          spendMockModuleRedeemer,
-          'iBCModuleRedeemer',
-        );
-
-        const unsignedSendPacketChannelOrderedParams: UnsignedSendPacketEscrowForOrderedChannelDto = {
-          channelUTxO: channelUtxo,
-          connectionUTxO: connectionUtxo,
-          clientUTxO: clientUtxo,
-          spendChannelRefUTxO: spendChannelRefUtxo,
-          spendMockModuleUTxO: spendMockModuleRefUtxo,
-          mockModuleUTxO: mockModuleUtxo,
-
-          encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-          encodedSpendModuleRedeemer: encodedSpendMockModuleRedeemer,
-          encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
-
-          transferAmount: BigInt(sendPacketOperator.token.amount),
-          senderAddress: sendPacketOperator.sender,
-          receiverAddress: sendPacketOperator.receiver,
-
-          constructedAddress: sendPacketOperator.signer,
-
-          spendChannelAddress: deploymentConfig.validators.spendChannel.address,
-          channelTokenUnit: channelTokenUnit,
-          mockModuleAddress: deploymentConfig.modules.mock.address,
-          denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
-
-          sendPacketPolicyId,
-          sendPacketRefUTxO,
-          channelToken,
-        };
-        return this.lucidService.createUnsignedSendPacketEscrowTxForOrderedChannel(
-          unsignedSendPacketChannelOrderedParams,
-        );
-    }
+    return this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
   }
 
   async buildUnsignedAcknowlegementPacketTx(
@@ -1270,8 +1167,6 @@ export class PacketService {
     // Get mock module utxo
 
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    const spendChannelRefUtxo: UTxO = this.getSpendChannelRefUtxo();
-    const spendTransferModuleRefUtxo: UTxO = this.getSpendTransferModuleRefUtxo();
     // channel id
     const channelId = convertString2Hex(ackPacketOperator.channelId);
     // Init packet
@@ -1344,13 +1239,11 @@ export class PacketService {
 
     const deploymentConfig = this.configService.get('deployment');
     const ackPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.acknowledge_packet.scriptHash;
-    const ackPacketRefUTxO = deploymentConfig.validators.spendChannel.refValidator.acknowledge_packet.refUtxo;
     const channelToken = {
       policyId: mintChannelPolicyId,
       name: channelTokenName,
     };
 
-    const verifyProofRefUTxO = this.configService.get('deployment').validators.verifyProof.refUtxo;
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
     const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) => key.revisionHeight === ackPacketOperator.proofHeight.revisionHeight,
@@ -1384,125 +1277,43 @@ export class PacketService {
     );
     // Check the type of acknowledgementResponse using discriminant property pattern
     if ('result' in acknowledgementResponse) {
-      switch (channelDatum.state.channel.ordering) {
-        case Order.Unordered:
-          // build update channel datum
-          const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-            createIBCModuleRedeemer(channelId, fTokenPacketData, {
-              AcknowledgementResult: {
-                result: convertString2Hex(acknowledgementResponse.result as string),
-              },
-            }),
-            'iBCModuleRedeemer',
-          );
-          const updatedChannelDatum: ChannelDatum = {
-            ...channelDatum,
-            state: {
-              ...channelDatum.state,
-              packet_commitment: deleteKeySortMap(
-                channelDatum.state.packet_commitment,
-                ackPacketOperator.packetSequence,
-              ),
-            },
-          };
-          const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-            updatedChannelDatum,
-            'channel',
-          );
-          const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
-            channelUtxo,
-            connectionUtxo,
-            clientUtxo,
-            spendChannelRefUtxo,
-            spendTransferModuleRefUtxo,
-            transferModuleUtxo,
-            encodedSpendChannelRedeemer,
-            encodedSpendTransferModuleRedeemer,
-            channelTokenUnit,
-            encodedUpdatedChannelDatum,
-            constructedAddress,
-            ackPacketPolicyId,
-            ackPacketRefUTxO,
-            channelToken,
+      // build update channel datum
+      const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+        createIBCModuleRedeemer(channelId, fTokenPacketData, {
+          AcknowledgementResult: {
+            result: convertString2Hex(acknowledgementResponse.result as string),
+          },
+        }),
+        'iBCModuleRedeemer',
+      );
+      const updatedChannelDatum: ChannelDatum = {
+        ...channelDatum,
+        state: {
+          ...channelDatum.state,
+          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
+        },
+      };
+      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+        updatedChannelDatum,
+        'channel',
+      );
+      const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
+        channelUtxo,
+        connectionUtxo,
+        clientUtxo,
+        transferModuleUtxo,
+        encodedSpendChannelRedeemer,
+        encodedSpendTransferModuleRedeemer,
+        channelTokenUnit,
+        encodedUpdatedChannelDatum,
+        constructedAddress,
+        ackPacketPolicyId,
+        channelToken,
 
-            verifyProofPolicyId,
-            verifyProofRefUTxO,
-            encodedVerifyProofRedeemer,
-          };
-          return this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
-
-        case Order.Ordered:
-          const mockModuleIdentifier = this.getMockModuleIdentifier();
-          const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
-          const spendMockModuleRefUtxo: UTxO = this.getSpendMockModuleRefUtxo();
-          const createIBCMockModuleRedeemer = (
-            channelId: string,
-            fTokenPacketData: any,
-            acknowledgementResponse: AcknowledgementResponse,
-          ) => ({
-            Callback: [
-              {
-                OnAcknowledgementPacket: {
-                  channel_id: channelId,
-                  data: 'OtherModuleData',
-                  acknowledgement: { response: acknowledgementResponse },
-                },
-              },
-            ],
-          });
-
-          const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
-            createIBCMockModuleRedeemer(channelId, fTokenPacketData, {
-              AcknowledgementResult: {
-                result: '01',
-              },
-            }),
-            'iBCModuleRedeemer',
-          );
-          const updatedChannelOrderedDatum: ChannelDatum = {
-            ...channelDatum,
-            state: {
-              ...channelDatum.state,
-              next_sequence_ack: channelDatum.state.next_sequence_ack + 1n,
-              packet_commitment: deleteKeySortMap(
-                channelDatum.state.packet_commitment,
-                ackPacketOperator.packetSequence,
-              ),
-            },
-          };
-          const encodedUpdatedChannelOrderedDatum: string = await this.lucidService.encode<ChannelDatum>(
-            updatedChannelOrderedDatum,
-            'channel',
-          );
-          const unsignedAckPacketChannelOrdredMintParams: UnsignedAckPacketSucceedForOrderedChannelDto = {
-            channelUtxo,
-            connectionUtxo,
-            clientUtxo,
-            spendChannelRefUtxo,
-            spendMockModuleRefUtxo,
-            mockModuleUtxo,
-
-            encodedSpendChannelRedeemer,
-            encodedSpendMockModuleRedeemer: encodedSpendMockModuleRedeemer,
-            encodedUpdatedChannelOrderedDatum,
-            channelTokenUnit,
-
-            constructedAddress,
-
-            ackPacketPolicyId,
-            ackPacketRefUTxO,
-            channelToken,
-
-            verifyProofPolicyId,
-            verifyProofRefUTxO,
-            encodedVerifyProofRedeemer,
-          };
-
-          // handle recv packet mint
-          return this.lucidService.createUnsignedAckPacketSucceedTxForOrderedChannel(
-            unsignedAckPacketChannelOrdredMintParams,
-          );
-      }
+        verifyProofPolicyId,
+        encodedVerifyProofRedeemer,
+      };
+      return this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
     }
     if (!('err' in acknowledgementResponse)) {
       throw new GrpcInternalException('Acknowledgement Response invalid: unknown result');
@@ -1540,8 +1351,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        spendChannelRefUtxo,
-        spendTransferModuleRefUtxo,
         transferModuleUtxo,
 
         encodedSpendChannelRedeemer,
@@ -1555,11 +1364,9 @@ export class PacketService {
         constructedAddress,
 
         ackPacketPolicyId,
-        ackPacketRefUTxO,
         channelToken,
 
         verifyProofPolicyId,
-        verifyProofRefUTxO,
         encodedVerifyProofRedeemer,
       };
       return this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
@@ -1602,10 +1409,7 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      spendChannelRefUtxo,
-      spendTransferModuleRefUtxo,
       transferModuleUtxo,
-      mintVoucherRefUtxo: this.getMintVoucherRefUtxo(),
 
       encodedSpendChannelRedeemer,
       encodedSpendTransferModuleRedeemer,
@@ -1622,11 +1426,9 @@ export class PacketService {
       constructedAddress,
 
       ackPacketPolicyId,
-      ackPacketRefUTxO,
       channelToken,
 
       verifyProofPolicyId,
-      verifyProofRefUTxO,
       encodedVerifyProofRedeemer,
     };
 
@@ -1636,12 +1438,6 @@ export class PacketService {
   private _hasVoucherPrefix(denom: string, portId: string, channelId: string): boolean {
     const voucherPrefix = getDenomPrefix(portId, channelId);
     return denom.startsWith(voucherPrefix);
-  }
-  private getSpendChannelRefUtxo(): UTxO {
-    return this.configService.get('deployment').validators.spendChannel.refUtxo;
-  }
-  private getSpendTransferModuleUtxo(): UTxO {
-    return this.configService.get('deployment').validators.spendTransferModule.refUtxo;
   }
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;
@@ -1655,23 +1451,11 @@ export class PacketService {
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;
   }
-  private getSpendTransferModuleRefUtxo(): UTxO {
-    return this.configService.get('deployment').validators.spendTransferModule.refUtxo;
-  }
-  private getMintVoucherRefUtxo(): UTxO {
-    return this.configService.get('deployment').validators.mintVoucher.refUtxo;
-  }
-  private getSpendMockModuleUtxo(): UTxO {
-    return this.configService.get('deployment').validators.spendMockModule.refUtxo;
-  }
   private getMockModuleAddress(): string {
     return this.configService.get('deployment').modules.mock.address;
   }
   private getMockModuleIdentifier(): string {
     return this.configService.get('deployment').modules.mock.identifier;
-  }
-  private getSpendMockModuleRefUtxo(): UTxO {
-    return this.configService.get('deployment').validators.spendMockModule.refUtxo;
   }
   private async getTransferModuleDetails(): Promise<{
     transferModuleUtxo: UTxO;
@@ -1683,13 +1467,5 @@ export class PacketService {
     const transferModuleAddress = this.getTransferModuleAddress();
     const spendChannelAddress = this.getSpendChannelAddress();
     return { transferModuleUtxo, transferModuleAddress, spendChannelAddress };
-  }
-  private getSpendUtxos(): {
-    spendChannelRefUtxo: UTxO;
-    spendTransferModuleUtxo: UTxO;
-  } {
-    const spendChannelRefUtxo = this.getSpendChannelRefUtxo();
-    const spendTransferModuleUtxo = this.getSpendTransferModuleUtxo();
-    return { spendChannelRefUtxo, spendTransferModuleUtxo };
   }
 }

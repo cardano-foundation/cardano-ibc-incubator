@@ -2,9 +2,6 @@ import { UTxO, PolicyId } from '@lucid-evolution/lucid';
 import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedTimeoutPacketMintDto = {
-  spendChannelRefUtxo: UTxO;
-  spendTransferModuleRefUtxo: UTxO;
-  mintVoucherRefUtxo: UTxO;
   channelUtxo: UTxO;
   transferModuleUtxo: UTxO;
   connectionUtxo: UTxO;
@@ -24,11 +21,9 @@ export type UnsignedTimeoutPacketMintDto = {
   voucherTokenUnit: string;
   constructedAddress: string;
 
-  timeoutPacketRefUTxO: UTxO;
   timeoutPacketPolicyId: PolicyId;
   channelToken: AuthToken;
 
-  verifyProofRefUTxO: UTxO;
   verifyProofPolicyId: PolicyId;
 
   encodedVerifyProofRedeemer: string;

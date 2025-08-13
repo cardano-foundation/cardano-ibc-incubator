@@ -10,7 +10,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
 import { ClientState } from '../shared/types/client-state-types';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
 import { RpcException } from '@nestjs/microservices';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
@@ -29,8 +29,9 @@ import {
   verifyClientMessage,
 } from '../shared/types/msgs/client-message';
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
-import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto/client/update-client-operator.dto';
+import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 
 @Injectable()
 export class ClientService {
@@ -121,9 +122,10 @@ export class ClientService {
 
         const unsignedUpdateClientTx: TxBuilder =
           await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
+        const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
-          .validTo(new Date().valueOf());
+          .validTo(validToTime);
         // Todo: signing should be done by the relayer in the future
         const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
 
@@ -145,7 +147,7 @@ export class ClientService {
           BigInt(currentClientDatum.state.clientState.maxClockDrift || 0)) /
           10n ** 6n +
         100n * 10n ** 3n;
-      const validToTime = new Date().valueOf() + 100 * 1e3;
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const updateClientHeaderOperator: UpdateClientOperatorDto = {
         clientId,
         header,
@@ -166,7 +168,7 @@ export class ClientService {
       }
 
       const validFrom = Number(validFromTime);
-      const validTo = new Date().valueOf() + 100 * 1e3;
+      const validTo = Date.now() + TRANSACTION_TIME_TO_LIVE;
 
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
 

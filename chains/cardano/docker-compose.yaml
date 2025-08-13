@@ -2,6 +2,7 @@ services:
   cardano-node:
     image: ghcr.io/blinklabs-io/cardano-node:10.1.4-3
     container_name: cardano-node
+    # user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./devnet:/devnet
     environment:
@@ -38,6 +39,7 @@ services:
 
   cardano-node-ogmios:
     image: cardanosolutions/ogmios:v6.10.0
+    # user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
       options:
@@ -63,6 +65,7 @@ services:
 
   kupo:
     image: cardanosolutions/kupo:v2.9.0
+    # user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
       options:
@@ -95,6 +98,7 @@ services:
 
   postgres:
     image: postgres:14.10-alpine
+    # user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_LOGGING=true
       - POSTGRES_DB_FILE=/run/secrets/postgres_db
@@ -127,6 +131,7 @@ services:
 
   cardano-db-sync:
     image: ghcr.io/blinklabs-io/cardano-db-sync:main
+    # user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
@@ -143,6 +148,8 @@ services:
     volumes:
       - ./devnet:/opt/cardano/config/devnet
       - ./db-sync-data:/var/lib/cexplorer
+      - ./db-sync-configuration:/configuration
+      - ./db-sync-log-dir:/log-dir
     command:
       [
         "--config",

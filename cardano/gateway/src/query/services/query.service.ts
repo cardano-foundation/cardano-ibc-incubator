@@ -12,7 +12,7 @@ import {
   QueryNewClientRequest,
   QueryNewClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { BlockData, ClientState, ConsensusState } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
+import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
@@ -22,15 +22,7 @@ import {
   ConsensusState as ConsensusStateMithril,
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
-import {
-  InteractionContext,
-  WebSocketCloseHandler,
-  WebSocketErrorHandler,
-  createInteractionContext,
-} from '@cardano-ogmios/client';
-import { LedgerStateQueryClient, createLedgerStateQueryClient } from '@cardano-ogmios/client/dist/LedgerStateQuery';
 import { BlockDto } from '../dtos/block.dto';
-import { connectionConfig } from '@config/kupmios.config';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
@@ -38,9 +30,12 @@ import { decodeHandlerDatum } from '@shared/types/handler-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
-import { GrpcInvalidArgumentException, GrpcNotFoundException } from 'nestjs-grpc-exceptions';
 import { normalizeBlockDataFromOuroboros } from '@shared/helpers/block-data';
-import { GrpcInternalException } from 'nestjs-grpc-exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import {
   QueryBlockResultsRequest,
   QueryBlockResultsResponse,
@@ -87,10 +82,8 @@ import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
-  MintConnectionRedeemer,
   decodeMintConnectionRedeemer,
   decodeSpendConnectionRedeemer,
-  encodeMintConnectionRedeemer,
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
@@ -104,12 +97,6 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
-import { convertString2Hex } from '../../shared/helpers/hex';
-import {
-  blockHeight as queryBlockHeight,
-  genesisConfiguration,
-  systemStart as querySystemStart,
-} from '../../shared/helpers/ogmios';
 
 @Injectable()
 export class QueryService {
