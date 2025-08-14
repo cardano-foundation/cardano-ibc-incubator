@@ -26,7 +26,9 @@ use std::process::Command;
 use std::time::Duration;
 use std::u64;
 
-/// Get environment variables for Docker Compose, including UID/GID on Unix systems
+/// Get environment variables for Docker Compose, including UID/GID
+/// - macOS: Uses 0:0 (root) for compatibility
+/// - Linux: Uses actual user UID/GID
 fn get_docker_env_vars() -> Vec<(&'static str, String)> {
     let (uid, gid) = get_user_ids();
     vec![

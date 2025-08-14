@@ -23,7 +23,7 @@ use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use nix::unistd::{Uid, Gid};
 
 pub fn print_header() {
@@ -590,19 +590,28 @@ pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {
         .sum()
 }
 
-/// Get current user's UID and GID for Docker containers (Unix only)
-/// Returns (UID, GID) or default (1000, 1000) on non-Unix systems
+/// Get current user's UID and GID for Docker containers
+/// - macOS: Returns 0:0 (root) for compatibility
+/// - Linux: Returns actual user UID/GID
+/// - Windows: Returns default 1000:1000
 pub fn get_user_ids() -> (String, String) {
-    #[cfg(unix)]
+    #[cfg(target_os = "macos")]
     {
+        // Use root permissions on macOS
+        ("0".to_string(), "0".to_string())
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        // Use actual user UID/GID on Linux
         let uid = Uid::current().as_raw();
         let gid = Gid::current().as_raw();
         (uid.to_string(), gid.to_string())
     }
     
-    #[cfg(not(unix))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        // Default UID/GID for non-Unix systems (Windows)
+        // Default UID/GID for other systems (Windows, etc.)
         ("1000".to_string(), "1000".to_string())
     }
 }

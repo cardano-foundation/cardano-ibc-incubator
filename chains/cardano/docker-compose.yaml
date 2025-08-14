@@ -97,7 +97,7 @@ services:
       - ./kupo-db:/db
 
   postgres:
-    image: postgres:14.10-alpine
+    image: postgres:15
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_LOGGING=true
