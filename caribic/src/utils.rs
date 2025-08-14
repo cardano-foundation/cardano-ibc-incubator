@@ -23,6 +23,9 @@ use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
+#[cfg(unix)]
+use nix::unistd::{Uid, Gid};
+
 pub fn print_header() {
     println!(
         r#"
@@ -585,4 +588,21 @@ pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {
     v.values()
         .map(|k| k["value"]["lovelace"].as_u64().unwrap())
         .sum()
+}
+
+/// Get current user's UID and GID for Docker containers (Unix only)
+/// Returns (UID, GID) or default (1000, 1000) on non-Unix systems
+pub fn get_user_ids() -> (String, String) {
+    #[cfg(unix)]
+    {
+        let uid = Uid::current().as_raw();
+        let gid = Gid::current().as_raw();
+        (uid.to_string(), gid.to_string())
+    }
+    
+    #[cfg(not(unix))]
+    {
+        // Default UID/GID for non-Unix systems (Windows)
+        ("1000".to_string(), "1000".to_string())
+    }
 }
