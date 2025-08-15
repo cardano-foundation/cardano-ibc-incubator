@@ -1,6 +1,7 @@
 services:
   mithril-aggregator:
     image: ${MITHRIL_AGGREGATOR_IMAGE}
+    user: "${UID:-1000}:${GID:-1000}"
     restart: always
     profiles:
       - mithril
@@ -92,6 +93,7 @@ services:
       ]
   mithril-signer-1:
     image: ${MITHRIL_SIGNER_IMAGE}
+    user: "${UID:-1000}:${GID:-1000}"
     restart: always
     profiles:
       - mithril
@@ -120,6 +122,7 @@ services:
 
   mithril-signer-2:
     image: ${MITHRIL_SIGNER_IMAGE}
+    user: "${UID:-1000}:${GID:-1000}"
     restart: always
     profiles:
       - mithril
