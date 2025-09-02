@@ -82,7 +82,7 @@ pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::er
 }
 
 pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";
+    let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v25.2.0.zip";
     download_repository(url, osmosis_path, "osmosis").await
 }
 
