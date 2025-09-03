@@ -550,7 +550,8 @@ pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::erro
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("✅ Osmosis configuration files copied successfully");
-            remove_previous_chain_data()?;
+            // This should not be required as each time it's restarted it wipes the .osmosisd-local data
+            // remove_previous_chain_data()?;
             init_local_network(osmosis_dir)?;
             Ok(())
         }
