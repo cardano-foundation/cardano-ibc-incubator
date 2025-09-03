@@ -804,7 +804,7 @@ fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {
             remove_dir_all(&osmosis_data_dir)?;
         }
         fs::create_dir_all(&osmosis_data_dir)
-            .map_err(|e| fs_extra::error::Error::Io(e))?;
+            .map_err(|e| fs_extra::error::Error::new(fs_extra::error::ErrorKind::Io(e), "Failed to create .osmosisd-local directory"))?;
         Ok(())
     } else {
         Ok(())
