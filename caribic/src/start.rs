@@ -801,11 +801,11 @@ fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {
     if let Some(home_path) = home_dir() {
         let osmosis_data_dir = home_path.join(".osmosisd-local");
         if osmosis_data_dir.exists() {
-            remove_dir_all(osmosis_data_dir)?;
-            Ok(())
-        } else {
-            Ok(())
+            remove_dir_all(&osmosis_data_dir)?;
         }
+        fs::create_dir_all(&osmosis_data_dir)
+            .map_err(|e| fs_extra::error::Error::Io(e))?;
+        Ok(())
     } else {
         Ok(())
     }
