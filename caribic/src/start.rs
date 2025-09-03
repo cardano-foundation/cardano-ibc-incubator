@@ -588,6 +588,9 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     let script_dir = osmosis_dir.join("scripts");
     if let Some(home_path) = home_dir() {
         let hermes_dir = home_path.join(".hermes");
+        if !hermes_dir.exists() {
+            fs::create_dir_all(&hermes_dir)?;
+        }
         let options = fs_extra::file::CopyOptions::new().overwrite(true);
         verbose(&format!(
             "Copying Hermes configuration files from {} to {}",
