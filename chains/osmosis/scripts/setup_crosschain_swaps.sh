@@ -43,7 +43,7 @@ HERMES_SIDECHAIN_NAME="sidechain"
 cardano_sidechain_conn_id=$($rly config show --json | jq -r --arg path "$RELAYER_PATH" '.paths[$path].src."connection-id"')
 check_string_empty "$cardano_sidechain_conn_id" "Cardano<->Sidechain connection not found. Exiting..."
 
-cardano_sidechain_chann_id=$($rly query connection-channels "$CARDANO_CHAIN_NAME" "$cardano_sidechain_conn_id" --reverse --limit 1 | jq -r '.channel_id')
+cardano_sidechain_chann_id=$($rly query connection-channels "$CARDANO_CHAIN_NAME" "$cardano_sidechain_conn_id" --reverse --limit 1 | jq -r '.[0].channel_id')
 check_string_empty "$cardano_sidechain_chann_id" "Cardano->Sidechain channel not found. Exiting..."
 echo "Cardano->Sidechain channel id: $cardano_sidechain_chann_id"
 
