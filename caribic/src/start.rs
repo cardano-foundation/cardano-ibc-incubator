@@ -870,31 +870,31 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
         &options,
     )?;
 
-    // verbose(&format!(
-    //     "Copying docker-compose.yml from {} to {}",
-    //     osmosis_dir
-    //         .join("../configuration/docker-compose.yml")
-    //         .display(),
-    //     osmosis_dir
-    //         .join("tests/localosmosis/docker-compose.yml")
-    //         .display()
-    // ));
-    // copy(
-    //     osmosis_dir.join("../configuration/docker-compose.yml"),
-    //     osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
-    //     &options,
-    // )?;
+    verbose(&format!(
+        "Copying docker-compose.yml from {} to {}",
+        osmosis_dir
+            .join("../configuration/docker-compose.yml")
+            .display(),
+        osmosis_dir
+            .join("tests/localosmosis/docker-compose.yml")
+            .display()
+    ));
+    copy(
+        osmosis_dir.join("../configuration/docker-compose.yml"),
+        osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
+        &options,
+    )?;
 
-    // verbose(&format!(
-    //     "Copying Dockerfile from {} to {}",
-    //     osmosis_dir.join("../configuration/Dockerfile").display(),
-    //     osmosis_dir.join("Dockerfile").display()
-    // ));
-    // copy(
-    //     osmosis_dir.join("../configuration/Dockerfile"),
-    //     osmosis_dir.join("Dockerfile"),
-    //     &options,
-    // )?;
+    verbose(&format!(
+        "Copying Dockerfile from {} to {}",
+        osmosis_dir.join("../configuration/Dockerfile").display(),
+        osmosis_dir.join("Dockerfile").display()
+    ));
+    copy(
+        osmosis_dir.join("../configuration/Dockerfile"),
+        osmosis_dir.join("Dockerfile"),
+        &options,
+    )?;
 
     Ok(())
 }
