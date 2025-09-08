@@ -5,7 +5,7 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, download_file, execute_script, execute_script_with_progress,
+    copy_dir_all, download_file, execute_script,
     extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids, unzip_file,
     wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
 };
@@ -20,7 +20,7 @@ use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
-use std::fs::{self, remove_dir_all};
+use std::fs::{self};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -819,19 +819,7 @@ fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Erro
     }
 }
 
-fn remove_previous_chain_data() -> Result<(), fs_extra::error::Error> {
-    if let Some(home_path) = home_dir() {
-        let osmosis_data_dir = home_path.join(".osmosisd-local");
-        if osmosis_data_dir.exists() {
-            remove_dir_all(&osmosis_data_dir)?;
-        }
-        fs::create_dir_all(&osmosis_data_dir)
-            .map_err(|e| fs_extra::error::Error::new(fs_extra::error::ErrorKind::Io(e), "Failed to create .osmosisd-local directory"))?;
-        Ok(())
-    } else {
-        Ok(())
-    }
-}
+
 
 fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {
     verbose(&format!(

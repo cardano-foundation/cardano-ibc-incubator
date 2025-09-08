@@ -1,10 +1,7 @@
-use crate::logger::{
-    self, verbose,
-    Verbosity::{Info, Standard, Verbose},
-};
+use crate::logger::{self, verbose};
 use console::style;
 use dirs::home_dir;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
@@ -16,15 +13,15 @@ use std::io::{self, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 use std::time::Duration;
 use std::{collections::HashMap, fs};
-use std::{collections::VecDeque, thread};
 use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
 #[cfg(target_os = "linux")]
-use nix::unistd::{Uid, Gid};
+use nix::unistd::{Gid, Uid};
 
 pub fn print_header() {
     println!(
@@ -350,95 +347,96 @@ pub fn execute_script(
     Ok(output)
 }
 
-pub fn execute_script_with_progress(
-    script_dir: &Path,
-    script_name: &str,
-    script_args: Vec<&str>,
-    start_message: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let progress_bar = ProgressBar::new_spinner();
-    progress_bar.enable_steady_tick(Duration::from_millis(100));
-    progress_bar.set_style(
-        ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
-            .unwrap()
-            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-    );
+// commented out as there's no code calling it but could be usefule to have it around for the future
+// pub fn execute_script_with_progress(
+//     script_dir: &Path,
+//     script_name: &str,
+//     script_args: Vec<&str>,
+//     start_message: &str,
+// ) -> Result<(), Box<dyn std::error::Error>> {
+//     let progress_bar = ProgressBar::new_spinner();
+//     progress_bar.enable_steady_tick(Duration::from_millis(100));
+//     progress_bar.set_style(
+//         ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+//             .unwrap()
+//             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+//     );
 
-    progress_bar.set_prefix(start_message.to_owned());
+//     progress_bar.set_prefix(start_message.to_owned());
 
-    let mut command = Command::new(script_name)
-        .current_dir(script_dir)
-        .args(script_args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
+//     let mut command = Command::new(script_name)
+//         .current_dir(script_dir)
+//         .args(script_args)
+//         .stdout(Stdio::piped())
+//         .stderr(Stdio::piped())
+//         .spawn()
+//         .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
 
-    match logger::get_verbosity() {
-        Verbose => {
-            let stdout = command.stdout.as_mut().expect("Failed to open stdout");
-            let reader = BufReader::new(stdout);
+//     match logger::get_verbosity() {
+//         Verbose => {
+//             let stdout = command.stdout.as_mut().expect("Failed to open stdout");
+//             let reader = BufReader::new(stdout);
 
-            for line in reader.lines() {
-                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                progress_bar.set_message(format!("{}", line.trim()));
-            }
-        }
-        Info => {
-            let mut last_lines = VecDeque::with_capacity(5);
+//             for line in reader.lines() {
+//                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+//                 progress_bar.set_message(format!("{}", line.trim()));
+//             }
+//         }
+//         Info => {
+//             let mut last_lines = VecDeque::with_capacity(5);
 
-            if let Some(stdout) = command.stdout.take() {
-                let reader = BufReader::new(stdout);
+//             if let Some(stdout) = command.stdout.take() {
+//                 let reader = BufReader::new(stdout);
 
-                for line in reader.lines() {
-                    let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                    if last_lines.len() == 5 {
-                        last_lines.pop_front();
-                    }
-                    last_lines.push_back(line);
-                    let output = last_lines
-                        .iter()
-                        .cloned()
-                        .collect::<Vec<String>>()
-                        .join("\n");
+//                 for line in reader.lines() {
+//                     let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+//                     if last_lines.len() == 5 {
+//                         last_lines.pop_front();
+//                     }
+//                     last_lines.push_back(line);
+//                     let output = last_lines
+//                         .iter()
+//                         .cloned()
+//                         .collect::<Vec<String>>()
+//                         .join("\n");
 
-                    progress_bar.set_message(format!("{}", output));
-                }
-            }
-        }
-        Standard => {
-            if let Some(stdout) = command.stdout.take() {
-                let reader = BufReader::new(stdout);
+//                     progress_bar.set_message(format!("{}", output));
+//                 }
+//             }
+//         }
+//         Standard => {
+//             if let Some(stdout) = command.stdout.take() {
+//                 let reader = BufReader::new(stdout);
 
-                for line in reader.lines() {
-                    let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                    progress_bar.set_message(format!("{}", last_line.trim()));
-                }
-            }
-        }
-        _ => {}
-    }
+//                 for line in reader.lines() {
+//                     let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+//                     progress_bar.set_message(format!("{}", last_line.trim()));
+//                 }
+//             }
+//         }
+//         _ => {}
+//     }
 
-    let status = command
-        .wait()
-        .map_err(|error| format!("Command wasn't running: {}", error))?;
-    progress_bar.finish_and_clear();
-    if status.success() {
-        Ok(())
-    } else {
-        let mut error_output = String::new();
-        if let Some(stderr) = command.stderr.take() {
-            let reader = BufReader::new(stderr);
-            for line in reader.lines() {
-                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                error_output.push_str(&line);
-            }
-            Err(error_output.into())
-        } else {
-            Err("Failed to execute script".into())
-        }
-    }
-}
+//     let status = command
+//         .wait()
+//         .map_err(|error| format!("Command wasn't running: {}", error))?;
+//     progress_bar.finish_and_clear();
+//     if status.success() {
+//         Ok(())
+//     } else {
+//         let mut error_output = String::new();
+//         if let Some(stderr) = command.stderr.take() {
+//             let reader = BufReader::new(stderr);
+//             for line in reader.lines() {
+//                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+//                 error_output.push_str(&line);
+//             }
+//             Err(error_output.into())
+//         } else {
+//             Err("Failed to execute script".into())
+//         }
+//     }
+// }
 
 pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Open the ZIP file
@@ -600,7 +598,7 @@ pub fn get_user_ids() -> (String, String) {
         // Use root permissions on macOS
         ("0".to_string(), "0".to_string())
     }
-    
+
     #[cfg(target_os = "linux")]
     {
         // Use actual user UID/GID on Linux
@@ -608,7 +606,7 @@ pub fn get_user_ids() -> (String, String) {
         let gid = Gid::current().as_raw();
         (uid.to_string(), gid.to_string())
     }
-    
+
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         // Default UID/GID for other systems (Windows, etc.)
