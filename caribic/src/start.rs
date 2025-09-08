@@ -787,15 +787,22 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 }
 
 fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let docker_env = get_docker_env_vars();
+    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
     if logger::is_quite() {
-        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None)?;
+        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), Some(docker_env_refs))?;
         Ok(())
     } else {
-        execute_script_with_progress(
+        // Note: execute_script_with_progress doesn't support environment variables
+        // Using regular execute_script for localnet-init with UID/GID support
+        execute_script(
             osmosis_dir,
             "make",
             Vec::from(["localnet-init"]),
-            "Initialize local Osmosis network",
+            Some(docker_env_refs),
         )?;
         Ok(())
     }
