@@ -1,6 +1,7 @@
 services:
   sidechain-node-prod:
     container_name: sidechain-node-prod
+    user: "${UID:-1000}:${GID:-1000}"
     build:
       context: .
       dockerfile: Dockerfile
