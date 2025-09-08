@@ -55,7 +55,7 @@ localnet-stop:
 	@STATE="" docker compose -f tests/localosmosis/docker-compose.yml down
 
 localnet-clean:
-	@sudo rm -rfI $(HOME)/.osmosisd-local/
+	sudo rm -rf $(HOME)/.osmosisd-local/
 
 # create 100 concentrated-liquidity positions in localosmosis at pool id 1
 localnet-cl-create-positions:
