@@ -547,6 +547,17 @@ pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error:
 
 pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_osmosisd(osmosis_dir).await;
+    
+    // Ensure .osmosisd-local directory exists
+    if let Some(home_path) = home_dir() {
+        let osmosis_data_dir = home_path.join(".osmosisd-local");
+        if !osmosis_data_dir.exists() {
+            fs::create_dir_all(&osmosis_data_dir)
+                .map_err(|e| format!("Failed to create .osmosisd-local directory: {}", e))?;
+            verbose("✅ Created .osmosisd-local directory");
+        }
+    }
+    
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("✅ Osmosis configuration files copied successfully");
