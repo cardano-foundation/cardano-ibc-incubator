@@ -874,6 +874,22 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
     )?;
 
     verbose(&format!(
+        "Copying localnet.mk from {} to {}",
+        osmosis_dir
+            .join("../scripts/localnet.mk")
+            .display(),
+        osmosis_dir
+            .join("scripts/makefiles/localnet.mk")
+            .display()
+    ));
+    copy(
+        osmosis_dir.join("../scripts/localnet.mk"),
+        osmosis_dir.join("scripts/makefiles/localnet.mk"),
+        &options,
+    )?;
+
+
+    verbose(&format!(
         "Copying setup_osmosis_local.sh from {} to {}",
         osmosis_dir
             .join("../scripts/setup_osmosis_local.sh")
