@@ -2,9 +2,11 @@ use crate::logger::{self, verbose};
 use console::style;
 use dirs::home_dir;
 use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
@@ -347,96 +349,95 @@ pub fn execute_script(
     Ok(output)
 }
 
-// commented out as there's no code calling it but could be usefule to have it around for the future
-// pub fn execute_script_with_progress(
-//     script_dir: &Path,
-//     script_name: &str,
-//     script_args: Vec<&str>,
-//     start_message: &str,
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let progress_bar = ProgressBar::new_spinner();
-//     progress_bar.enable_steady_tick(Duration::from_millis(100));
-//     progress_bar.set_style(
-//         ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
-//             .unwrap()
-//             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-//     );
+pub fn execute_script_with_progress(
+    script_dir: &Path,
+    script_name: &str,
+    script_args: Vec<&str>,
+    start_message: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let progress_bar = ProgressBar::new_spinner();
+    progress_bar.enable_steady_tick(Duration::from_millis(100));
+    progress_bar.set_style(
+        ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+            .unwrap()
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+    );
 
-//     progress_bar.set_prefix(start_message.to_owned());
+    progress_bar.set_prefix(start_message.to_owned());
 
-//     let mut command = Command::new(script_name)
-//         .current_dir(script_dir)
-//         .args(script_args)
-//         .stdout(Stdio::piped())
-//         .stderr(Stdio::piped())
-//         .spawn()
-//         .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
+    let mut command = Command::new(script_name)
+        .current_dir(script_dir)
+        .args(script_args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
 
-//     match logger::get_verbosity() {
-//         Verbose => {
-//             let stdout = command.stdout.as_mut().expect("Failed to open stdout");
-//             let reader = BufReader::new(stdout);
+    match logger::get_verbosity() {
+        logger::Verbosity::Verbose => {
+            let stdout = command.stdout.as_mut().expect("Failed to open stdout");
+            let reader = BufReader::new(stdout);
 
-//             for line in reader.lines() {
-//                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-//                 progress_bar.set_message(format!("{}", line.trim()));
-//             }
-//         }
-//         Info => {
-//             let mut last_lines = VecDeque::with_capacity(5);
+            for line in reader.lines() {
+                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                progress_bar.set_message(format!("{}", line.trim()));
+            }
+        }
+        logger::Verbosity::Info => {
+            let mut last_lines = VecDeque::with_capacity(5);
 
-//             if let Some(stdout) = command.stdout.take() {
-//                 let reader = BufReader::new(stdout);
+            if let Some(stdout) = command.stdout.take() {
+                let reader = BufReader::new(stdout);
 
-//                 for line in reader.lines() {
-//                     let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-//                     if last_lines.len() == 5 {
-//                         last_lines.pop_front();
-//                     }
-//                     last_lines.push_back(line);
-//                     let output = last_lines
-//                         .iter()
-//                         .cloned()
-//                         .collect::<Vec<String>>()
-//                         .join("\n");
+                for line in reader.lines() {
+                    let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                    if last_lines.len() == 5 {
+                        last_lines.pop_front();
+                    }
+                    last_lines.push_back(line);
+                    let output = last_lines
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .join("\n");
 
-//                     progress_bar.set_message(format!("{}", output));
-//                 }
-//             }
-//         }
-//         Standard => {
-//             if let Some(stdout) = command.stdout.take() {
-//                 let reader = BufReader::new(stdout);
+                    progress_bar.set_message(format!("{}", output));
+                }
+            }
+        }
+        logger::Verbosity::Standard => {
+            if let Some(stdout) = command.stdout.take() {
+                let reader = BufReader::new(stdout);
 
-//                 for line in reader.lines() {
-//                     let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-//                     progress_bar.set_message(format!("{}", last_line.trim()));
-//                 }
-//             }
-//         }
-//         _ => {}
-//     }
+                for line in reader.lines() {
+                    let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                    progress_bar.set_message(format!("{}", last_line.trim()));
+                }
+            }
+        }
+        _ => {}
+    }
 
-//     let status = command
-//         .wait()
-//         .map_err(|error| format!("Command wasn't running: {}", error))?;
-//     progress_bar.finish_and_clear();
-//     if status.success() {
-//         Ok(())
-//     } else {
-//         let mut error_output = String::new();
-//         if let Some(stderr) = command.stderr.take() {
-//             let reader = BufReader::new(stderr);
-//             for line in reader.lines() {
-//                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-//                 error_output.push_str(&line);
-//             }
-//             Err(error_output.into())
-//         } else {
-//             Err("Failed to execute script".into())
-//         }
-//     }
-// }
+    let status = command
+        .wait()
+        .map_err(|error| format!("Command wasn't running: {}", error))?;
+    progress_bar.finish_and_clear();
+    if status.success() {
+        Ok(())
+    } else {
+        let mut error_output = String::new();
+        if let Some(stderr) = command.stderr.take() {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines() {
+                let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
+                error_output.push_str(&line);
+            }
+            Err(error_output.into())
+        } else {
+            Err("Failed to execute script".into())
+        }
+    }
+}
 
 pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn std::error::Error>> {
     // Open the ZIP file

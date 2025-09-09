@@ -5,9 +5,7 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, download_file, execute_script,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids, unzip_file,
-    wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
+    copy_dir_all, download_file, execute_script, execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -31,10 +29,7 @@ use std::u64;
 /// - Linux: Uses actual user UID/GID
 fn get_docker_env_vars() -> Vec<(&'static str, String)> {
     let (uid, gid) = get_user_ids();
-    vec![
-        ("UID", uid),
-        ("GID", gid),
-    ]
+    vec![("UID", uid), ("GID", gid)]
 }
 
 pub fn start_relayer(
@@ -80,13 +75,12 @@ pub fn start_relayer(
     // Note: execute_script_with_progress doesn't support environment variables
     // Using regular execute_script for relayer with UID/GID support
     let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let docker_env_refs: Vec<(&str, &str)> =
+        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     execute_script(
         relayer_path,
-        "docker", 
+        "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
         Some(docker_env_refs),
     )?;
@@ -216,9 +210,8 @@ pub async fn start_local_cardano_network(
     if config::get_config().cardano.services.db_sync {
         prepare_db_sync_and_gateway(cardano_dir.as_path(), clean)?;
         let docker_env = get_docker_env_vars();
-        let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-            .map(|(k, v)| (*k, v.as_str()))
-            .collect();
+        let docker_env_refs: Vec<(&str, &str)> =
+            docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
         execute_script(
             &cardano_dir,
             "docker",
@@ -387,17 +380,12 @@ pub async fn start_cosmos_sidechain_from_repository(
 
 pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-    
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
-    
+
     execute_script(
         cosmos_dir,
         "docker",
         Vec::from(["compose", "up", "-d", "--build"]),
-        Some(docker_env_refs),
+        None,
     )?;
 
     let optional_progress_bar = match logger::get_verbosity() {
@@ -457,13 +445,17 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
     execute_script(cardano_dir, "docker", script_stop_args, None)?;
 
     let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
+    let docker_env_refs: Vec<(&str, &str)> =
+        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     let mut script_start_args = vec!["compose", "up", "-d"];
     script_start_args.append(&mut services);
-    execute_script(cardano_dir, "docker", script_start_args, Some(docker_env_refs))?;
+    execute_script(
+        cardano_dir,
+        "docker",
+        script_start_args,
+        Some(docker_env_refs),
+    )?;
     Ok(())
 }
 
@@ -547,22 +539,10 @@ pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error:
 
 pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     check_osmosisd(osmosis_dir).await;
-    
-    // Ensure .osmosisd-local directory exists
-    if let Some(home_path) = home_dir() {
-        let osmosis_data_dir = home_path.join(".osmosisd-local");
-        if !osmosis_data_dir.exists() {
-            fs::create_dir_all(&osmosis_data_dir)
-                .map_err(|e| format!("Failed to create .osmosisd-local directory: {}", e))?;
-            verbose("✅ Created .osmosisd-local directory");
-        }
-    }
-    
+
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("✅ Osmosis configuration files copied successfully");
-            // This should not be required as each time it's restarted it wipes the .osmosisd-local data
-            // remove_previous_chain_data()?;
             init_local_network(osmosis_dir)?;
             Ok(())
         }
@@ -798,28 +778,25 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 }
 
 fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
-
+    
     if logger::is_quite() {
-        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), Some(docker_env_refs))?;
-        Ok(())
-    } else {
-        // Note: execute_script_with_progress doesn't support environment variables
-        // Using regular execute_script for localnet-init with UID/GID support
         execute_script(
             osmosis_dir,
             "make",
             Vec::from(["localnet-init"]),
-            Some(docker_env_refs),
+            None,
+        )?;
+        Ok(())
+    } else {
+        execute_script_with_progress(
+            osmosis_dir,
+            "make",
+            Vec::from(["localnet-init"]),
+            "Initialize local Osmosis network",
         )?;
         Ok(())
     }
 }
-
-
 
 fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {
     verbose(&format!(
@@ -863,19 +840,14 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
 
     verbose(&format!(
         "Copying localnet.mk from {} to {}",
-        osmosis_dir
-            .join("../scripts/localnet.mk")
-            .display(),
-        osmosis_dir
-            .join("scripts/makefiles/localnet.mk")
-            .display()
+        osmosis_dir.join("../scripts/localnet.mk").display(),
+        osmosis_dir.join("scripts/makefiles/localnet.mk").display()
     ));
     copy(
         osmosis_dir.join("../scripts/localnet.mk"),
         osmosis_dir.join("scripts/makefiles/localnet.mk"),
         &options,
     )?;
-
 
     verbose(&format!(
         "Copying setup_osmosis_local.sh from {} to {}",
@@ -1007,7 +979,7 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
         ),
         ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
     ];
-    
+
     // Add UID/GID to environment
     for (key, value) in &docker_env {
         mithril_env.push((key, value.as_str()));
@@ -1122,7 +1094,7 @@ pub fn wait_and_start_mithril_genesis(
 
     let mithril_config = config::get_config().mithril;
 
-    // Reuse the same environment variables with UID/GID  
+    // Reuse the same environment variables with UID/GID
     let docker_env = get_docker_env_vars();
     let mut mithril_genesis_env = vec![
         (
@@ -1151,7 +1123,7 @@ pub fn wait_and_start_mithril_genesis(
         ),
         ("MITHRIL_SIGNER_IMAGE", mithril_config.signer_image.as_str()),
     ];
-    
+
     // Add UID/GID to environment
     for (key, value) in &docker_env {
         mithril_genesis_env.push((key, value.as_str()));
@@ -1229,12 +1201,11 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         script_args.push("--build");
     }
     execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-    
+
     let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> = docker_env.iter()
-        .map(|(k, v)| (*k, v.as_str()))
-        .collect();
-    
+    let docker_env_refs: Vec<(&str, &str)> =
+        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
     execute_script(&gateway_dir, "docker", script_args, Some(docker_env_refs))?;
     Ok(())
 }
