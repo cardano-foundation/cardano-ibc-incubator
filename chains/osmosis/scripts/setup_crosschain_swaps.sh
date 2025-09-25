@@ -130,7 +130,7 @@ sleep 6
 echo "swaprouter set_route executed!"
 
 #==================================Setup crosschain_swaps contract=======================================
-osmosisd tx wasm store $script_dir/../cosmwasm/wasm/crosschain_swaps.wasm $TX_FLAGS | log_tx || exit 1
+osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/crosschain_swaps.wasm $TX_FLAGS | log_tx || exit 1
 sleep 6
 crosschain_swaps_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
 check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
