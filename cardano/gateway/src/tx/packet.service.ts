@@ -166,6 +166,7 @@ export class PacketService {
     }
   }
   async sendPacket(data: MsgTransfer): Promise<MsgTransferResponse> {
+    // used in the funding osmosis step
     try {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);

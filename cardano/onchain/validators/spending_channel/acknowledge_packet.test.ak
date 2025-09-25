@@ -307,14 +307,13 @@ test succeed_acknowledge_packet() {
       validity_range: validity_range,
     }
 
-  acknowledge_packet.acknowledge_packet.spend(
+  acknowledge_packet.acknowledge_packet.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
-    None,
     mock_data.channel_token,
-    channel_input.output_reference,
+    #"",
     transaction,
   )
 }
