@@ -97,7 +97,7 @@ echo "Created Pool ID: $pool_id"
 script_dir=$(dirname $(realpath $0))
 
 # Store the swaprouter contract
-osmosisd tx wasm store $script_dir/../cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
+osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
 sleep 6
 swaprouter_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
 check_string_empty "$swaprouter_code_id" "swaprouter code id on Osmosis not found. Exiting..."
