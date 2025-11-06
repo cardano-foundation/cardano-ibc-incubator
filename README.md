@@ -291,6 +291,14 @@ After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you curre
 - [IBC-Go Documentation](https://ibc.cosmos.network/v8/)
 - [ICS 20: The Transfer Module](https://ibc.cosmos.network/v8/apps/transfer/overview/)
 
+## Troubleshooting
+
+### Cardano Node DiffusionError: Network.Socket.bind permission denied
+
+If you encounter an error like `DiffusionError Network.Socket.bind: permission denied (Operation not permitted)` when starting the Cardano node, see the [Cardano Forum thread on this issue](https://forum.cardano.org/t/first-time-starting-a-node-diffusionerrored/63585).
+
+If this doesn't resolve the issue, this is typically related to Docker runtime configuration. If using Colima on macOS, ensure you're using VirtioFS mount type by recreating Colima with `colima delete` followed by `colima start --vm-type=vz --mount-type=virtiofs --network-address`, and verify the cardano-node is configured to bind to `0.0.0.0` rather than a specific IP address.
+
 ## 🫂 Kudos to the Developers in the Cardano Ecosystem
 
 This project stands on the shoulders of some incredible frameworks and tools developed by the Cardano community. Huge thanks to the developers behind these services—projects like this wouldn’t be possible without their hard work and innovation:

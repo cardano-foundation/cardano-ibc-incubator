@@ -5,9 +5,10 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, download_file, execute_script, execute_script_with_progress,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, unzip_file,
-    wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
+    copy_dir_all, diagnose_container_failure, download_file, execute_script,
+    execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
+    get_cardano_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
+    IndicatorMessage,
 };
 use crate::{
     config,
@@ -126,17 +127,59 @@ pub async fn start_local_cardano_network(
         wait_for_health_check(ogmios_url, 20, 5000, None::<fn(&String) -> bool>).await;
 
     if ogmios_connected.is_ok() {
-        verbose("✅ Cardano services started successfully");
+        verbose("Cardano services started successfully");
     } else {
-        return Err("❌ Failed to start Cardano services".into());
+        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1", "cardano-postgres-1"];
+        let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+        return Err(format!(
+            "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
+            diagnostics
+        )
+        .into());
     }
 
-    // wait until network is running
+    // wait until network is running (with timeout)
     let mut slot_querried = u64::MAX;
+    let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
+    let mut retry_count = 0;
+    
     while slot_querried == u64::MAX {
         match get_cardano_state(project_root_path, CardanoQuery::Slot) {
             Ok(value) => slot_querried = value,
             Err(_e) => {
+                retry_count += 1;
+                
+                // Check container health every 3 retries (15 seconds) to fail fast on unrecoverable errors.
+                // We should NOT continue retrying if we detect issues that require developer intervention:
+                // - Permission errors (requires fixing volume/socket permissions)
+                // - Port conflicts (requires stopping conflicting services)
+                // - Disk space errors (requires freeing up disk space)
+                // However, we DO continue retrying for transient failures:
+                // - Container crashes with restart policies (Docker may be restarting the container)
+                // - Temporary network issues
+                // This approach fails fast for fixable issues while allowing recovery for transient ones.
+                if retry_count % 3 == 0 {
+                    let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
+                    let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
+                    if should_fail_fast {
+                        return Err(format!(
+                            "Cardano node has unrecoverable errors that require developer intervention:{}",
+                            diagnostics
+                        )
+                        .into());
+                    }
+                }
+                
+                if retry_count >= max_retries {
+                    let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
+                    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+                    return Err(format!(
+                        "Failed to query cardano-node state after {} seconds. The node may have crashed or is not responding.{}",
+                        max_retries * 5,
+                        diagnostics
+                    )
+                    .into());
+                }
                 log("Waiting for node to start up ...");
                 std::thread::sleep(Duration::from_secs(5))
             }
