@@ -628,10 +628,12 @@ pub fn get_container_exit_code(container_name: &str) -> Result<Option<i32>, Box<
 
 /// Check if container logs contain errors that require immediate intervention
 fn has_unrecoverable_error(logs: &str) -> bool {
-    logs.contains("permission denied") 
+    logs.contains("permission denied")
         || logs.contains("Permission denied")
         || logs.contains("bind: address already in use")
         || logs.contains("no space left on device")
+        || logs.contains("command not found")
+        || logs.contains("No such file or directory")
 }
 
 /// Diagnose why Docker containers failed to start
@@ -667,13 +669,15 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                             should_fail_fast = true;
                         }
                         
-                        // If container is restarting, Docker may be handling recovery
-                        if status == "restarting" && !has_unrecoverable_error(&logs) {
+                        // Determine if we should fail fast based on container state and error type
+                        if has_unrecoverable_error(&logs) {
+                            // Unrecoverable errors should always fail fast, regardless of container state
+                            diagnostics.push_str("\n   UNRECOVERABLE ERROR detected - requires developer intervention");
+                            should_fail_fast = true;
+                        } else if status == "restarting" {
+                            // Container is restarting with transient errors, Docker may recover
                             diagnostics.push_str("\n   Container is restarting, Docker may recover automatically");
                             should_fail_fast = false;
-                        } else if status == "exited" && has_unrecoverable_error(&logs) {
-                            diagnostics.push_str("\n   Container crashed with unrecoverable error");
-                            should_fail_fast = true;
                         }
                         
                         diagnostics.push_str(&format!("\n   Last log entries:\n{}", 

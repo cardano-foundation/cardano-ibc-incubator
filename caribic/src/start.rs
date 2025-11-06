@@ -434,20 +434,80 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
         log("🕦 Waiting for the Cosmos sidechain to start ...");
     }
 
-    // TODO: make the url configurable
-    wait_for_health_check(
-        "http://127.0.0.1:4500/",
-        60,
-        10000,
-        None::<fn(&String) -> bool>,
-    )
-    .await?;
+    // Wait for health check with fail-fast error detection
+    // Check container health periodically (every 5 retries ~50 seconds) to detect unrecoverable errors early.
+    // Similar to Cardano network startup, we should fail fast for issues that require developer intervention:
+    // - Command not found errors (missing dependencies like 'ignite')
+    // - Permission errors (requires fixing volume/socket permissions)
+    // - Port conflicts (requires stopping conflicting services)
+    // - Disk space errors (requires freeing up disk space)
+    let url = "http://127.0.0.1:4500/";
+    let max_retries = 60;
+    let interval_ms = 10000; // 10 seconds
+    let client = reqwest::Client::new();
+    
+    for retry in 0..max_retries {
+        let response = client.get(url).send().await;
+        
+        match response {
+            Ok(resp) if resp.status().is_success() => {
+                if let Some(progress_bar) = &optional_progress_bar {
+                    progress_bar.finish_and_clear();
+                }
+                return Ok(());
+            }
+            Ok(resp) => {
+                verbose(&format!(
+                    "Health check {} failed with status: {} on retry {}",
+                    url,
+                    resp.status(),
+                    retry + 1
+                ));
+            }
+            Err(e) => {
+                verbose(&format!(
+                    "Failed to send request to {} on retry {}: {}",
+                    url,
+                    retry + 1,
+                    e
+                ));
+            }
+        }
 
+        // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
+        if retry > 0 && retry % 5 == 0 {
+            let container_names = ["sidechain-node-prod"];
+            let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
+            if should_fail_fast {
+                if let Some(progress_bar) = &optional_progress_bar {
+                    progress_bar.finish_and_clear();
+                }
+                return Err(format!(
+                    "Cosmos sidechain has unrecoverable errors that require developer intervention:{}",
+                    diagnostics
+                )
+                .into());
+            }
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
+    }
+
+    // Final diagnostic check after timeout
+    let container_names = ["sidechain-node-prod"];
+    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+    
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
-
-    Ok(())
+    
+    Err(format!(
+        "Health check on {} failed after {} attempts. The Cosmos sidechain may have crashed or is not responding.{}",
+        url,
+        max_retries,
+        diagnostics
+    )
+    .into())
 }
 
 pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
