@@ -10,6 +10,8 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
+// VerifyUpgradeAndUpdateState verifies an upgraded ClientState and ConsensusState with their respective proofs,
+// then updates the client state accordingly. Used to upgrade clients given an upgraded ClientState and ConsensusState.
 func (cs ClientState) VerifyUpgradeAndUpdateState(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
 	upgradedClient exported.ClientState, upgradedConsState exported.ConsensusState,

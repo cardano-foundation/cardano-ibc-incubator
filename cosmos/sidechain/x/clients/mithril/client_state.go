@@ -50,7 +50,8 @@ func (ClientState) ClientType() string {
 	return ModuleName
 }
 
-// GetTimestampAtHeight returns the timestamp in seconds of the consensus state at the given height.
+// GetTimestampAtHeight returns the timestamp for the consensus state associated with the provided height.
+// This value is used to facilitate timeouts by checking the packet timeout timestamp against the returned value.
 func (ClientState) GetTimestampAtHeight(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -65,14 +66,12 @@ func (ClientState) GetTimestampAtHeight(
 	return consState.GetTimestamp(), nil
 }
 
-// Status returns the status of the mithril client.
-// The client may be:
-// - Active: FrozenHeight is zero and client is not expired
-// - Frozen: Frozen Height is not zero
-// - Expired: the latest consensus state timestamp + trusting period <= current time
+// Status returns the status of the mithril client. Possible statuses:
+// - Active: clients are allowed to process packets
+// - Frozen: misbehaviour was detected and client is not allowed to be used
+// - Expired: client was not updated for longer than the trusting period
 //
-// A frozen client will become expired, so the Frozen status
-// has higher precedence.
+// A frozen client will become expired, so the Frozen status has higher precedence.
 func (cs ClientState) Status(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -175,8 +174,8 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	}
 }
 
-// Initialize checks that the initial consensus state is an  consensus state and
-// sets the client state, consensus state and associated metadata in the provided client store.
+// Initialize validates the initial consensus state and sets the initial client state,
+// consensus state, and client-specific metadata in the provided client store.
 func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {
 	consensusState, ok := consState.(*ConsensusState)
 	if !ok {
@@ -194,7 +193,7 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	return nil
 }
 
-// GetLatestHeight returns latest block height.
+// GetLatestHeight returns the latest block height that the client state represents.
 func (cs ClientState) GetLatestHeight() exported.Height {
 	return cs.LatestHeight
 }

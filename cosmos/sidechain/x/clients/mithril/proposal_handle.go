@@ -11,6 +11,8 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
+// CheckSubstituteAndUpdateState is used to recover an expired or frozen client by updating with a substitute client.
+// It verifies that the substitute may be used to update the subject client.
 func (cs ClientState) CheckSubstituteAndUpdateState(
 	ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore,
 	substituteClientStore storetypes.KVStore, substituteClient exported.ClientState,
