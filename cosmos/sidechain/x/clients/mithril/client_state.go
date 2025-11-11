@@ -1,4 +1,52 @@
+// as per IBC spec, ClientState encapsulates the light client implementation and its semantics.
+
 package mithril
+
+// Mithril Light Client for IBC Architecture:
+//
+// This client bridges Mithril's certificate-based snapshot verification with IBC's ICS-23 proof requirements.
+//
+// KEY COMPONENTS:
+//
+// 1. ClientState (this file):
+//    - latest_height: Cardano block height/slot that the latest certified snapshot corresponds to
+//    - trusting_period, max_clock_drift: IBC timing parameters
+//    - Mithril params: protocol version, threshold params (k, m, φ_f, τ), aggregator identity/endpoint(s)
+//    - trust_anchor: hash of the trusted certificate (or genesis/stored checkpoint)
+//    - signer_set_commitment: commitment to registered signer VKeys (or rolling commitment via cert chain)
+//
+// 2. ConsensusState (at Height H):
+//    - timestamp: from the certified block/certificate time
+//    - root: the ICS-23 Merkle root for verifying membership/non-membership proofs (see CRITICAL POINT below)
+//    - certificate_digest: hash of the Mithril certificate that attests the snapshot at H
+//    - snapshot_digest: hash(manifest) of the snapshot bundle at H
+//    - cardano_block_hash/slot: optional, for anchoring
+//
+// 3. Header/ClientMessage:
+//    - new Mithril certificate (with parent hash) + its signed snapshot identifier
+//    - minimal snapshot manifest header (height, block hash, snapshot_digest)
+//    - optional batch update (multiple certs to fast forward)
+//
+// How ICS-23 Proofs Work with Mithril:
+//
+// The certificate attests to the snapshot, and ConsensusState.root must be a commitment inside that snapshot.
+//
+// IBC's VerifyMembership/VerifyNonMembership expects ICS-23 Merkle proofs against a commitment root at a given height.
+// Mithril by itself certifies a snapshot blob (manifest hash) at height H, but does NOT natively provide per-key
+// Merkle proofs for arbitrary IBC paths (e.g., "clients/07-tendermint-0/clientState").
+//
+// The solution which maintains all important state on-chain is the Host-State Root UTXO:
+//
+// The Cardano IBC host maintains a single ICS-23 Merkle root (covering clients/, connections/, channels/, packets/, etc.)
+// in a well-known reference UTXO datum. Each block/step that mutates host state updates this root deterministically.
+//
+// The snapshot taken at height H contains that UTXO and its datum, thus:
+//   snapshot_digest -> certificate -> UTXO -> datum -> ICS-23 root
+//
+// On Cosmos: ConsensusState(H).root = <that ICS-23 root from the UTXO datum>
+//
+// Then VerifyMembership/VerifyNonMembership validate ICS-23 proofs against this root, exactly as IBC expects.
+// All important state remains on-chain (in the UTXO), while Mithril provides efficient certification of that state.
 
 import (
 	"strings"
@@ -203,11 +251,15 @@ func (cs ClientState) GetLatestHeight() exported.Height {
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
 //
 // NOTE: VerifyMembership must verify the existence of a value at a given commitment path at the specified height.
-// TODO: This method currently returns nil without verification. For Mithril-based verification, this would require:
-//   1. Extracting the transaction containing the UTXO with the relevant IBC datum from Mithril-certified transactions
-//   2. Parsing the UTXO datum to retrieve the IBC state (client state, connection, channel, packet, etc.)
-//   3. Verifying the extracted state matches the expected value at the given path
-//   4. Ensuring the transaction is included in the Mithril certificate for the specified height
+//
+// TODO: This method currently returns nil without verification. Proper implementation requires:
+//   1. Retrieve ConsensusState(height).root - this is the ICS-23 Merkle root from the Host-state root UTXO
+//   2. The root was committed by: snapshot_digest -> Mithril certificate -> UTXO datum -> ICS-23 root
+//   3. Verify the ICS-23 Merkle proof (in 'proof' parameter) against this root for the given path
+//   4. Confirm the value at the path matches the expected value
+//
+// The ICS-23 root is maintained on-chain in a well-known Cardano UTXO datum and updated with each state change.
+// Mithril certifies the snapshot containing this UTXO, thus providing trustless verification of the root.
 func (cs ClientState) VerifyMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -228,11 +280,15 @@ func (cs ClientState) VerifyMembership(
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
 //
 // NOTE: VerifyNonMembership must verify the absence of a value at a given commitment path at a specified height.
-// TODO: This method currently returns nil without verification. For Mithril-based verification, this would require:
-//   1. Querying all Mithril-certified transactions for the specified height
-//   2. Extracting and parsing all UTXO datums that could contain IBC state for the given path
-//   3. Verifying that no UTXO exists with a datum matching the commitment path
-//   4. Ensuring the absence proof is based on the complete set of Mithril-certified transactions
+//
+// TODO: This method currently returns nil without verification. Proper implementation requires:
+//   1. Retrieve ConsensusState(height).root - this is the ICS-23 Merkle root from the Host-state root UTXO
+//   2. The root was committed by: snapshot_digest -> Mithril certificate -> UTXO datum -> ICS-23 root
+//   3. Verify the ICS-23 non-membership proof (in 'proof' parameter) against this root for the given path
+//   4. Confirm that the path does not exist in the commitment tree
+//
+// The ICS-23 root is maintained on-chain in a well-known Cardano UTXO datum and updated with each state change.
+// Mithril certifies the snapshot containing this UTXO, thus providing trustless verification of the root.
 func (cs ClientState) VerifyNonMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,

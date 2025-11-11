@@ -1,3 +1,6 @@
+// as per IBC spec, ConsensusState tracks consensus data used for verification of client updates, 
+// misbehaviour detection, and proof verification of counterparty state
+
 package mithril
 
 import (
