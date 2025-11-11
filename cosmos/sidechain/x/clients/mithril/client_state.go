@@ -202,6 +202,13 @@ func (cs ClientState) GetLatestHeight() exported.Height {
 // VerifyMembership is a generic proof verification method which verifies a proof of the existence of a value at a given CommitmentPath at the specified height.
 // The caller is expected to construct the full CommitmentPath from a CommitmentPrefix and a standardized path (as defined in ICS 24).
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
+//
+// NOTE: VerifyMembership must verify the existence of a value at a given commitment path at the specified height.
+// TODO: This method currently returns nil without verification. For Mithril-based verification, this would require:
+//   1. Extracting the transaction containing the UTXO with the relevant IBC datum from Mithril-certified transactions
+//   2. Parsing the UTXO datum to retrieve the IBC state (client state, connection, channel, packet, etc.)
+//   3. Verifying the extracted state matches the expected value at the given path
+//   4. Ensuring the transaction is included in the Mithril certificate for the specified height
 func (cs ClientState) VerifyMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -220,6 +227,13 @@ func (cs ClientState) VerifyMembership(
 // VerifyNonMembership is a generic proof verification method which verifies the absence of a given CommitmentPath at a specified height.
 // The caller is expected to construct the full CommitmentPath from a CommitmentPrefix and a standardized path (as defined in ICS 24).
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
+//
+// NOTE: VerifyNonMembership must verify the absence of a value at a given commitment path at a specified height.
+// TODO: This method currently returns nil without verification. For Mithril-based verification, this would require:
+//   1. Querying all Mithril-certified transactions for the specified height
+//   2. Extracting and parsing all UTXO datums that could contain IBC state for the given path
+//   3. Verifying that no UTXO exists with a datum matching the commitment path
+//   4. Ensuring the absence proof is based on the complete set of Mithril-certified transactions
 func (cs ClientState) VerifyNonMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
