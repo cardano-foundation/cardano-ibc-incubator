@@ -190,34 +190,55 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
     
     // Find UTXO with handler token
-    let mut handler_datum_hash: Option<String> = None;
+    let mut handler_datum: Option<&serde_json::Value> = None;
     
     for (_utxo_ref, utxo_data) in utxos.as_object().ok_or("Invalid UTXO JSON")? {
         if let Some(value) = utxo_data.get("value") {
             if let Some(tokens) = value.as_object() {
                 if tokens.contains_key(handler_token_policy) {
-                    // Found the Handler UTXO
-                    handler_datum_hash = utxo_data["inlineDatum"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| utxo_data["datum"].as_str().map(|s| s.to_string()));
-                    break;
+                    // Found the Handler UTXO - get the inlineDatum object
+                    if utxo_data.get("inlineDatum").is_some() {
+                        handler_datum = Some(utxo_data);
+                        break;
+                    }
                 }
             }
         }
     }
 
-    let datum_cbor = handler_datum_hash.ok_or("Handler UTXO not found or has no datum")?;
-    verbose(&format!("   Handler datum CBOR: {}...", &datum_cbor[..32]));
-
-    // TODO: Parse CBOR datum to extract ibc_state_root field
-    // For now, we'll use a placeholder that indicates the feature needs CBOR parsing
-    // This would require using a CBOR library to decode the datum structure
-
-    // Placeholder: return a mock root for testing the framework
-    // In production, this should actually parse the CBOR datum
-    logger::verbose("   WARNING: CBOR datum parsing not yet implemented - using mock root");
-    Ok("0000000000000000000000000000000000000000000000000000000000000000".to_string())
+    let handler_utxo = handler_datum.ok_or("Handler UTXO not found or has no datum")?;
+    
+    // Extract the ibc_state_root from the inline datum
+    // Structure: {constructor: 0, fields: [{constructor: 0, fields: [seq, seq, seq, ports, ibc_state_root]}, token]}
+    let inline_datum = handler_utxo["inlineDatum"]
+        .as_object()
+        .ok_or("Invalid inlineDatum structure")?;
+    
+    let outer_fields = inline_datum["fields"]
+        .as_array()
+        .ok_or("Missing fields in inlineDatum")?;
+    
+    if outer_fields.len() < 1 {
+        return Err("Invalid Handler datum structure: missing state field".into());
+    }
+    
+    let state_obj = &outer_fields[0];
+    let state_fields = state_obj["fields"]
+        .as_array()
+        .ok_or("Missing fields in HandlerState")?;
+    
+    if state_fields.len() < 5 {
+        return Err("Invalid HandlerState: missing ibc_state_root field".into());
+    }
+    
+    // Field 4 (index 4) is ibc_state_root
+    let root_bytes = state_fields[4]["bytes"]
+        .as_str()
+        .ok_or("ibc_state_root not found or invalid")?;
+    
+    verbose(&format!("   Found ibc_state_root: {}...", &root_bytes[..16]));
+    
+    Ok(root_bytes.to_string())
 }
 
 /// Create a test client via the relayer
