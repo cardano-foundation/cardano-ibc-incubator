@@ -1,93 +1,105 @@
-import { createHash } from 'crypto';
+// IBC State Root Computation
+// 
+// This module is responsible for computing the ICS-23 Merkle root commitment over all IBC host state.
+// The root covers: clients/, connections/, channels/, packets/, etc.
+//
+// Architecture:
+// - The root is stored in the Handler UTXO datum
+// - It's updated atomically with each IBC state change
+// - Mithril certifies it via snapshot inclusion
+// - Enables VerifyMembership/VerifyNonMembership on Cosmos side
 
 /**
- * ICS-23 Merkle Tree utilities for computing the IBC host state root.
+ * Computes the new IBC state root after adding/updating client state
  * 
- * The IBC state root is an ICS-23 compliant Merkle tree commitment that covers:
- * - clients/{client-id}/clientState
- * - clients/{client-id}/consensusStates/{height}
- * - connections/{connection-id}
- * - channels/{port-id}/channels/{channel-id}
- * - channelEnds/ports/{port-id}/channels/{channel-id}/sequences/{sequence}
- * - commitments/ports/{port-id}/channels/{channel-id}/sequences/{sequence}
- * - receipts/ports/{port-id}/channels/{channel-id}/sequences/{sequence}
- * - acks/ports/{port-id}/channels/{channel-id}/sequences/{sequence}
+ * TODO: Implement actual ICS-23 Merkle tree computation
+ * Currently returns the old root unchanged (placeholder implementation)
  * 
- * This root is stored in the Handler UTXO datum and is certified by Mithril snapshots,
- * enabling light clients on counterparty chains to verify IBC state proofs.
+ * @param oldRoot - Current IBC state root (32-byte hex string)
+ * @param clientId - Client identifier being created/updated
+ * @param clientState - New client state value
+ * @returns New IBC state root (32-byte hex string)
  */
-
-/**
- * Represents a key-value pair in the IBC state tree
- */
-export interface IBCStateEntry {
-  path: string;  // IBC path (e.g., "clients/07-tendermint-0/clientState")
-  value: string; // Hex-encoded value
+export function computeRootWithClientUpdate(
+  oldRoot: string,
+  clientId: string,
+  clientState: any,
+): string {
+  // TODO: Implement ICS-23 Merkle tree update
+  // 1. Parse oldRoot into tree structure
+  // 2. Update tree at path: "clients/{clientId}/clientState"
+  // 3. Recompute hashes up to root
+  // 4. Return new root hash
+  return oldRoot; // Placeholder: return unchanged root
 }
 
 /**
- * Computes the ICS-23 Merkle root for a set of IBC state entries.
+ * Computes the new IBC state root after adding/updating connection state
  * 
- * TODO: This is a placeholder implementation. A full implementation requires:
- * 1. Building a proper ICS-23 compliant Merkle tree (using IAVL or similar)
- * 2. Handling leaf node hashing according to ICS-23 spec
- * 3. Handling inner node hashing according to ICS-23 spec
- * 4. Generating proofs for VerifyMembership/VerifyNonMembership
+ * TODO: Implement actual ICS-23 Merkle tree computation
+ * Currently returns the old root unchanged (placeholder implementation)
  * 
- * For now, this returns a simple hash of all entries (NOT ICS-23 compliant).
- * 
- * @param entries Array of IBC state entries
- * @returns 32-byte hex string representing the Merkle root
+ * @param oldRoot - Current IBC state root (32-byte hex string)
+ * @param connectionId - Connection identifier being created/updated
+ * @param connectionState - New connection state value
+ * @returns New IBC state root (32-byte hex string)
  */
-export function computeIBCStateRoot(entries: IBCStateEntry[]): string {
-  // Sort entries by path for determinism
-  const sortedEntries = [...entries].sort((a, b) => a.path.localeCompare(b.path));
-  
-  // TODO: Replace with proper ICS-23 Merkle tree construction
-  // For now, hash all entries together (PLACEHOLDER ONLY)
-  const hash = createHash('sha256');
-  for (const entry of sortedEntries) {
-    hash.update(entry.path);
-    hash.update(entry.value);
-  }
-  
-  return hash.digest('hex');
+export function computeRootWithConnectionUpdate(
+  oldRoot: string,
+  connectionId: string,
+  connectionState: any,
+): string {
+  // TODO: Implement ICS-23 Merkle tree update
+  // 1. Parse oldRoot into tree structure
+  // 2. Update tree at path: "connections/{connectionId}"
+  // 3. Recompute hashes up to root
+  // 4. Return new root hash
+  return oldRoot; // Placeholder: return unchanged root
 }
 
 /**
- * Gets the empty tree root (used for initialization)
+ * Computes the new IBC state root after adding/updating channel state
+ * 
+ * TODO: Implement actual ICS-23 Merkle tree computation
+ * Currently returns the old root unchanged (placeholder implementation)
+ * 
+ * @param oldRoot - Current IBC state root (32-byte hex string)
+ * @param channelId - Channel identifier being created/updated
+ * @param channelState - New channel state value
+ * @returns New IBC state root (32-byte hex string)
  */
-export function getEmptyTreeRoot(): string {
-  return '0000000000000000000000000000000000000000000000000000000000000000';
+export function computeRootWithChannelUpdate(
+  oldRoot: string,
+  channelId: string,
+  channelState: any,
+): string {
+  // TODO: Implement ICS-23 Merkle tree update
+  // 1. Parse oldRoot into tree structure
+  // 2. Update tree at path: "channelEnds/ports/{portId}/channels/{channelId}"
+  // 3. Recompute hashes up to root
+  // 4. Return new root hash
+  return oldRoot; // Placeholder: return unchanged root
 }
 
 /**
- * Collects all current IBC state from the blockchain to compute the root.
+ * Computes the new IBC state root after binding a port
  * 
- * TODO: Implement this to query:
- * - All client states and consensus states
- * - All connections
- * - All channels
- * - All packet commitments, receipts, and acknowledgements
+ * TODO: Implement actual ICS-23 Merkle tree computation
+ * Currently returns the old root unchanged (placeholder implementation)
  * 
- * @returns Array of IBC state entries
+ * @param oldRoot - Current IBC state root (32-byte hex string)
+ * @param portNumber - Port number being bound
+ * @returns New IBC state root (32-byte hex string)
  */
-export async function collectIBCState(): Promise<IBCStateEntry[]> {
-  // TODO: Implement actual state collection
-  // This should query db-sync or UTXOs to get all IBC state
-  
-  return [];
-}
-
-/**
- * Convenience function to compute the current IBC state root.
- * Collects all state and computes the root.
- */
-export async function computeCurrentStateRoot(): Promise<string> {
-  const entries = await collectIBCState();
-  if (entries.length === 0) {
-    return getEmptyTreeRoot();
-  }
-  return computeIBCStateRoot(entries);
+export function computeRootWithPortBind(
+  oldRoot: string,
+  portNumber: number,
+): string {
+  // TODO: Implement ICS-23 Merkle tree update
+  // 1. Parse oldRoot into tree structure
+  // 2. Update tree at path: "ports/{portNumber}"
+  // 3. Recompute hashes up to root
+  // 4. Return new root hash
+  return oldRoot; // Placeholder: return unchanged root
 }
 

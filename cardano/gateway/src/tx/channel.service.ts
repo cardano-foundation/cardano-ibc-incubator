@@ -62,6 +62,7 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { computeRootWithChannelUpdate as computeRootWithChannelUpdateHelper } from '../shared/helpers/ibc-state-root';
 
 @Injectable()
 export class ChannelService {
@@ -70,6 +71,14 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after channel update
+   * Delegates to the ibc-state-root helper
+   */
+  private computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): string {
+    return computeRootWithChannelUpdateHelper(oldRoot, channelId, channelState);
+  }
 
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     try {
@@ -285,16 +294,17 @@ export class ChannelService {
       'handlerOperator',
     );
     
-    // TODO: Compute new IBC state root after adding this channel
-    // For now, preserve the existing root (will implement proper computation later)
-    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    // Compute new IBC state root with channel update
+    const channelSequence = handlerDatum.state.next_channel_sequence;
+    const channelId = `channel-${channelSequence}`;
+    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenInitOperator);
     
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newIBCStateRoot,
+        ibc_state_root: newRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {
@@ -302,8 +312,7 @@ export class ChannelService {
         handler_token: this.configService.get('deployment').handlerAuthToken,
       },
     };
-    const channelSequence = handlerDatum.state.next_channel_sequence;
-    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
+    const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
 
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(channelSequence);
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
@@ -348,7 +357,7 @@ export class ChannelService {
       Callback: [
         {
           OnChanOpenInit: {
-            channel_id: channelId,
+            channel_id: channelIdHex,
           },
         },
       ],
@@ -372,7 +381,7 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
-    return { unsignedTx: unsignedUnorderedChannelTx, channelId: channelId.toString() };
+    return { unsignedTx: unsignedUnorderedChannelTx, channelId };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
@@ -401,16 +410,17 @@ export class ChannelService {
       'handlerOperator',
     );
     
-    // TODO: Compute new IBC state root after adding this channel
-    // For now, preserve the existing root (will implement proper computation later)
-    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    // Compute new IBC state root with channel update
+    const channelSequence = handlerDatum.state.next_channel_sequence;
+    const channelId = `channel-${channelSequence}`;
+    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenTryOperator);
     
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newIBCStateRoot,
+        ibc_state_root: newRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {
@@ -465,12 +475,12 @@ export class ChannelService {
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
     // Get mock module utxo
     const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
-    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + handlerDatum.state.next_channel_sequence.toString());
+    const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence.toString());
     const spendMockModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
           OnChanOpenTry: {
-            channel_id: channelId,
+            channel_id: channelIdHex,
           },
         },
       ],

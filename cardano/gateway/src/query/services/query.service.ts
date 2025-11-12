@@ -788,4 +788,32 @@ export class QueryService {
     };
     return response;
   }
+
+  /**
+   * Query the IBC state root at a specific height
+   * This is used by the Mithril light client on Cosmos to retrieve the ICS-23 Merkle root
+   * that has been certified by Mithril snapshot inclusion
+   * 
+   * @param height - The Cardano block height to query
+   * @returns The IBC state root (32-byte hex string) at the specified height
+   */
+  async queryIBCStateRoot(height: number): Promise<{ root: string, height: number }> {
+    this.logger.log(`Querying IBC state root at height ${height}`);
+    
+    try {
+      // Get handler UTXO at the specified height
+      // TODO: Implement queryHandlerUtxoAtHeight method in DbSyncService
+      // For now, get the current handler UTXO
+      const handlerUtxo = await this.lucidService.findUtxoAtHandlerAuthToken();
+      const handlerDatum = await this.lucidService.decodeDatum(handlerUtxo.datum!, 'handler');
+      
+      return {
+        root: handlerDatum.state.ibc_state_root,
+        height: height, // TODO: Return actual height from UTXO once historical queries are implemented
+      };
+    } catch (error) {
+      this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
+      throw new GrpcInternalException(`Failed to query IBC state root: ${error.message}`);
+    }
+  }
 }

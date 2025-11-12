@@ -32,6 +32,7 @@ import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { computeRootWithClientUpdate as computeRootWithClientUpdateHelper } from '../shared/helpers/ibc-state-root';
 
 @Injectable()
 export class ClientService {
@@ -40,6 +41,14 @@ export class ClientService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after client update
+   * Delegates to the ibc-state-root helper
+   */
+  private computeRootWithClientUpdate(oldRoot: string, clientId: string, clientState: any): string {
+    return computeRootWithClientUpdateHelper(oldRoot, clientId, clientState);
+  }
   /**
    * Processes the creation of a client tx.
    * @param data The message containing client creation data.
@@ -322,9 +331,9 @@ export class ClientService {
     // Decode the handler datum from the handler UTXO
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     
-    // TODO: Compute new IBC state root after adding this client
-    // For now, preserve the existing root (will implement proper computation later)
-    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    // Compute new IBC state root with client update
+    const clientId = `07-tendermint-${handlerDatum.state.next_client_sequence}`;
+    const newRoot = this.computeRootWithClientUpdate(handlerDatum.state.ibc_state_root, clientId, clientState);
     
     // Create an updated handler datum with an incremented client sequence and updated root
     const updatedHandlerDatum: HandlerDatum = {
@@ -332,7 +341,7 @@ export class ClientService {
       state: {
         ...handlerDatum.state,
         next_client_sequence: handlerDatum.state.next_client_sequence + 1n,
-        ibc_state_root: newIBCStateRoot,
+        ibc_state_root: newRoot,
       },
     };
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;

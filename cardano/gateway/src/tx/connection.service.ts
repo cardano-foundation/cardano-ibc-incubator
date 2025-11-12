@@ -36,6 +36,7 @@ import {
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
+import { computeRootWithConnectionUpdate as computeRootWithConnectionUpdateHelper } from '../shared/helpers/ibc-state-root';
 import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { clientStatePath } from '~@/shared/helpers/client-state';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
@@ -56,6 +57,14 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after connection update
+   * Delegates to the ibc-state-root helper
+   */
+  private computeRootWithConnectionUpdate(oldRoot: string, connectionId: string, connectionState: any): string {
+    return computeRootWithConnectionUpdateHelper(oldRoot, connectionId, connectionState);
+  }
   /**
    * Processes the connection open init tx.
    * @param data The message containing connection open initiation data.
@@ -236,9 +245,9 @@ export class ConnectionService {
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     
-    // TODO: Compute new IBC state root after adding this connection
-    // For now, preserve the existing root (will implement proper computation later)
-    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    // Compute new IBC state root with connection update
+    const connectionId = `connection-${handlerDatum.state.next_connection_sequence}`;
+    const newRoot = this.computeRootWithConnectionUpdate(handlerDatum.state.ibc_state_root, connectionId, connectionOpenInitOperator);
     
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
@@ -246,7 +255,7 @@ export class ConnectionService {
       state: {
         ...handlerDatum.state,
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newIBCStateRoot,
+        ibc_state_root: newRoot,
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
@@ -314,9 +323,9 @@ export class ConnectionService {
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     
-    // TODO: Compute new IBC state root after adding this connection
-    // For now, preserve the existing root (will implement proper computation later)
-    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    // Compute new IBC state root with connection update
+    const connectionId = `connection-${handlerDatum.state.next_connection_sequence}`;
+    const newRoot = this.computeRootWithConnectionUpdate(handlerDatum.state.ibc_state_root, connectionId, connectionOpenTryOperator);
     
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
@@ -324,7 +333,7 @@ export class ConnectionService {
       state: {
         ...handlerDatum.state,
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newIBCStateRoot,
+        ibc_state_root: newRoot,
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';

@@ -7,7 +7,6 @@ export type HandlerDatum = {
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
     bound_port: bigint[];
-    ibc_state_root: string; // 32-byte hex string (ICS-23 Merkle root)
   };
   token: AuthToken;
 };
@@ -19,7 +18,6 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
     bound_port: Data.Array(Data.Integer()),
-    ibc_state_root: Data.Bytes(),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
@@ -41,7 +39,6 @@ export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof imp
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
     bound_port: Data.Array(Data.Integer()),
-    ibc_state_root: Data.Bytes(),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
