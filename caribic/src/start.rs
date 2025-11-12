@@ -117,7 +117,7 @@ pub async fn start_local_cardano_network(
     start_local_cardano_services(cardano_dir.as_path())?;
 
     log_or_show_progress(
-        "🕦 Waiting for the Cardano services to start ...",
+        "Waiting for the Cardano services to start ...",
         &optional_progress_bar,
     );
 
@@ -348,11 +348,11 @@ pub async fn deploy_contracts(
         if handler_json_exists.is_ok() {
             Ok(())
         } else {
-            Err("❌ Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+            Err("ERROR: Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
         }
     } else {
         log_or_show_progress(
-            "✅ The handler.json file already exists. Skipping the deployment.",
+            "PASS: The handler.json file already exists. Skipping the deployment.",
             &optional_progress_bar,
         );
         if let Some(progress_bar) = &optional_progress_bar {
@@ -428,10 +428,10 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
         progress_bar.set_prefix(
-            "🕦 Waiting for the Cosmos sidechain to start (this may take a while) ...".to_owned(),
+            "Waiting for the Cosmos sidechain to start (this may take a while) ...".to_owned(),
         );
     } else {
-        log("🕦 Waiting for the Cosmos sidechain to start ...");
+        log("Waiting for the Cosmos sidechain to start ...");
     }
 
     // Wait for health check with fail-fast error detection
@@ -619,14 +619,14 @@ pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::erro
     check_osmosisd(osmosis_dir).await;
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
-            verbose("✅ Osmosis configuration files copied successfully");
+            verbose("PASS: Osmosis configuration files copied successfully");
             remove_previous_chain_data()?;
             init_local_network(osmosis_dir)?;
             Ok(())
         }
         Err(e) => {
             error(&format!(
-                "❌ Failed to copy Osmosis configuration files: {}",
+                "ERROR: Failed to copy Osmosis configuration files: {}",
                 e
             ));
             Err(e.into())

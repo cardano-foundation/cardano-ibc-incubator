@@ -111,7 +111,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
             .output()
             .expect("Failed to install osmosisd");
 
-        println!("✅ osmosisd installed successfully");
+        println!("PASS: osmosisd installed successfully");
     }
 }
 
