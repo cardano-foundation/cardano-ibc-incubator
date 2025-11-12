@@ -16,7 +16,9 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{
   HandlerDatum, handler_token_name,
 }
@@ -55,6 +57,7 @@ test test_create_valid_client() {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: mock_handler_auth_token,
     }
@@ -173,6 +176,7 @@ test fail_create_valid_client() fail {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: mock_handler_auth_token,
     }

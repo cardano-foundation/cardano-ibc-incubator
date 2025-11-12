@@ -1,5 +1,7 @@
 use ibc/auth.{AuthToken}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 
 const policy_id_sample =
@@ -22,6 +24,7 @@ test validate_create_client_succeed() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let new_handler_state =
     HandlerState {
@@ -29,6 +32,7 @@ test validate_create_client_succeed() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let auth_token = AuthToken { policy_id: policy_id_sample, name: name_sample }
   let old = HandlerDatum { state: old_handler_state, token: auth_token }
@@ -46,6 +50,7 @@ test validate_create_client_fail_with_invalid_token_name() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let new_handler_state =
     HandlerState {
@@ -53,6 +58,7 @@ test validate_create_client_fail_with_invalid_token_name() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let old_auth_token =
     AuthToken { policy_id: policy_id_sample, name: name_sample }
@@ -74,6 +80,7 @@ test validate_create_client_fail_with_invalid_policy_id() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let new_handler_state =
     HandlerState {
@@ -81,6 +88,7 @@ test validate_create_client_fail_with_invalid_policy_id() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let old_auth_token =
     AuthToken { policy_id: policy_id_sample, name: name_sample }
@@ -99,6 +107,7 @@ test validate_create_client_fail_with_invalid_state() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let new_handler_state =
     HandlerState {
@@ -106,6 +115,7 @@ test validate_create_client_fail_with_invalid_state() {
       next_connection_sequence,
       next_channel_sequence,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
   let auth_token = AuthToken { policy_id: policy_id_sample, name: name_sample }
   let old = HandlerDatum { state: old_handler_state, token: auth_token }
@@ -122,6 +132,7 @@ fn setup_validate_create_connection() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -133,6 +144,7 @@ fn setup_validate_create_connection() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence: old_datum.state.next_connection_sequence + 1,
         next_channel_sequence,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -170,6 +182,7 @@ fn setup_validate_create_channel() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -181,6 +194,7 @@ fn setup_validate_create_channel() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence: old_datum.state.next_channel_sequence + 1,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -220,6 +234,7 @@ test is_initialized_valid_succeed() {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token,
     }
