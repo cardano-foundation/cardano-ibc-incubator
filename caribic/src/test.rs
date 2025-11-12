@@ -241,17 +241,40 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     Ok(root_bytes.to_string())
 }
 
-/// Create a test client via the relayer
+/// Create a test client to verify root changes
+/// 
+/// This function is a placeholder for actual client creation via the relayer.
+/// For now, it documents what needs to be tested manually.
 fn create_test_client(_project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    logger::verbose("   Creating test client via relayer...");
+    logger::verbose("   Client creation via relayer...");
     
-    // TODO: Implement client creation via relayer
-    // This would use the relayer CLI to create a client on Cardano
-    // For now, return an error indicating this needs implementation
-    
-    Err("Client creation via relayer not yet implemented. This requires:\n\
-         1. Configuring the relayer with test chain info\n\
-         2. Calling 'rly tx client cardano test-chain'\n\
-         3. Waiting for transaction confirmation".into())
+    Err(format!(
+        "Client creation not yet automated. To manually test:\n\
+         \n\
+         1. Use the relayer to create a client on Cardano:\n\
+         \t$ rly tx client cardano <counterparty-chain-id>\n\
+         \n\
+         2. Or use the Gateway's gRPC API directly:\n\
+         \t- Call Msg.CreateClient at localhost:5001\n\
+         \t- Use a minimal Tendermint client state:\n\
+         \t  * chain_id: \"test-chain-1\"\n\
+         \t  * trust_level: {{numerator: 1, denominator: 3}}\n\
+         \t  * trusting_period: 14 days\n\
+         \t  * unbonding_period: 21 days\n\
+         \t- Include a minimal consensus state with current timestamp\n\
+         \t- Use the handler address from deployments/handler.json as signer\n\
+         \n\
+         3. After client creation, re-run this test to verify the root changed:\n\
+         \t$ caribic test --skip-setup\n\
+         \n\
+         The test will automatically detect if the root has changed from the initial\n\
+         empty root (0000...) to a new value, confirming the IBC state root update\n\
+         mechanism is working correctly.\n\
+         \n\
+         To fully automate this test, we need to:\n\
+         - Implement a relayer CLI wrapper in caribic\n\
+         - Or create a gRPC client helper script\n\
+         - Or integrate with the existing Go relayer"
+    ).into())
 }
 
