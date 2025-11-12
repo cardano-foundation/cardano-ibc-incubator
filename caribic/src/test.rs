@@ -79,9 +79,9 @@ pub async fn run_integration_tests(
 }
 
 /// Verify that all required services are running
-fn verify_services_running(_project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    // Check Cardano node
-    let cardano_running = check_service_health("http://127.0.0.1:3000/health");
+fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    // Check Cardano node using cardano-cli query tip
+    let cardano_running = check_cardano_node_running(project_root);
     if !cardano_running {
         return Err("Cardano node is not running. Please run 'caribic start network' first.".into());
     }
@@ -105,6 +105,28 @@ fn verify_services_running(_project_root: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+/// Check if Cardano node is running using cardano-cli query tip
+fn check_cardano_node_running(project_root: &Path) -> bool {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .arg("compose")
+        .arg("exec")
+        .arg("-T")
+        .arg("cardano-node")
+        .arg("cardano-cli")
+        .arg("query")
+        .arg("tip")
+        .arg("--testnet-magic")
+        .arg("42")
+        .current_dir(&cardano_dir)
+        .output();
+    
+    match output {
+        Ok(result) => result.status.success(),
+        Err(_) => false,
+    }
+}
+
 /// Check if a service is healthy by querying its health endpoint
 fn check_service_health(url: &str) -> bool {
     match reqwest::blocking::get(url) {
@@ -125,30 +147,29 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     let deployment_json = std::fs::read_to_string(&deployment_path)?;
     let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
     
-    let handler_token_policy = deployment["mintHandlerPolicyId"]
+    let handler_token_policy = deployment["handlerAuthToken"]["policyId"]
         .as_str()
-        .ok_or("mintHandlerPolicyId not found in deployment")?;
+        .ok_or("handlerAuthToken.policyId not found in deployment")?;
     
     verbose(&format!("   Handler token policy: {}", handler_token_policy));
 
-    // Query the Handler UTXO using cardano-cli
+    // Query the Handler UTXO using cardano-cli inside the Docker container
     let cardano_dir = project_root.join("chains/cardano");
-    let socket_path = cardano_dir.join("devnet/node.socket");
     
     // Get handler address from deployment
-    let handler_address = deployment["handlerScriptAddress"]
+    let handler_address = deployment["modules"]["handler"]["address"]
         .as_str()
-        .ok_or("handlerScriptAddress not found in deployment")?;
+        .ok_or("modules.handler.address not found in deployment")?;
     
     verbose(&format!("   Handler address: {}", handler_address));
 
-    // Query UTXOs at handler address
-    let output = Command::new("cardano-cli")
+    // Query UTXOs at handler address using docker compose exec
+    let output = Command::new("docker")
         .args(&[
-            "query", "utxo",
+            "compose", "exec", "-T", "cardano-node",
+            "cardano-cli", "query", "utxo",
             "--address", handler_address,
             "--testnet-magic", "42",
-            "--socket-path", socket_path.to_str().unwrap(),
             "--out-file", "/dev/stdout",
         ])
         .current_dir(&cardano_dir)
