@@ -428,6 +428,9 @@ const deployHandler = async (
       next_connection_sequence: 0n,
       next_channel_sequence: 0n,
       bound_port: [],
+      // Initialize IBC state root to empty tree (32 bytes of zeros)
+      // This root will be updated by the Gateway as IBC state changes
+      ibc_state_root: "0000000000000000000000000000000000000000000000000000000000000000",
     },
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };

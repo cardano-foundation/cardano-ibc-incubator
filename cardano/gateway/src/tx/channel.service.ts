@@ -284,11 +284,17 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
+    
+    // TODO: Compute new IBC state root after adding this channel
+    // For now, preserve the existing root (will implement proper computation later)
+    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newIBCStateRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {
@@ -394,11 +400,17 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
+    
+    // TODO: Compute new IBC state root after adding this channel
+    // For now, preserve the existing root (will implement proper computation later)
+    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newIBCStateRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {

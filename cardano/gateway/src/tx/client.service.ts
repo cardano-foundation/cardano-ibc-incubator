@@ -321,12 +321,18 @@ export class ClientService {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     // Decode the handler datum from the handler UTXO
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    // Create an updated handler datum with an incremented client sequence
+    
+    // TODO: Compute new IBC state root after adding this client
+    // For now, preserve the existing root (will implement proper computation later)
+    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    
+    // Create an updated handler datum with an incremented client sequence and updated root
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_client_sequence: handlerDatum.state.next_client_sequence + 1n,
+        ibc_state_root: newIBCStateRoot,
       },
     };
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;

@@ -235,12 +235,18 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    
+    // TODO: Compute new IBC state root after adding this connection
+    // For now, preserve the existing root (will implement proper computation later)
+    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newIBCStateRoot,
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
@@ -307,12 +313,18 @@ export class ConnectionService {
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    
+    // TODO: Compute new IBC state root after adding this connection
+    // For now, preserve the existing root (will implement proper computation later)
+    const newIBCStateRoot = handlerDatum.state.ibc_state_root || '0000000000000000000000000000000000000000000000000000000000000000';
+    
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newIBCStateRoot,
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';
