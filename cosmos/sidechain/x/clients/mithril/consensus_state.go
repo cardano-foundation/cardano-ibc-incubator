@@ -1,4 +1,4 @@
-// as per IBC spec, ConsensusState tracks consensus data used for verification of client updates, 
+// as per IBC spec, ConsensusState tracks consensus data used for verification of client updates,
 // misbehaviour detection, and proof verification of counterparty state
 
 package mithril
@@ -24,11 +24,13 @@ func NewConsensusState(
 	timestamp uint64,
 	firstCertHashLatestEpoch *MithrilCertificate,
 	latestCertHashTxSnapshot string,
+	ibcStateRoot []byte,
 ) *ConsensusState {
 	return &ConsensusState{
 		Timestamp:                timestamp,
 		FirstCertHashLatestEpoch: firstCertHashLatestEpoch,
 		LatestCertHashTxSnapshot: latestCertHashTxSnapshot,
+		IbcStateRoot:             ibcStateRoot,
 	}
 }
 
@@ -57,6 +59,10 @@ func (cs ConsensusState) ValidateBasic() error {
 	}
 	if cs.Timestamp <= 0 {
 		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "timestamp must be a positive Unix time")
+	}
+	// IbcStateRoot must be 32 bytes (ICS-23 Merkle root)
+	if len(cs.IbcStateRoot) != 32 {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "ibc_state_root must be exactly 32 bytes")
 	}
 
 	return nil

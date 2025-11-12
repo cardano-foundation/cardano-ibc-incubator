@@ -422,12 +422,17 @@ const deployHandler = async (
   const handlerTokenUnit = mintHandlerPolicyId + HANDLER_TOKEN_NAME;
 
   // create handler datum
+  // ibc_state_root initialized to empty tree root (32 bytes of 0x00)
+  // This root will be updated with each IBC state change to reflect the current ICS-23 Merkle commitment
+  const EMPTY_TREE_ROOT = "0000000000000000000000000000000000000000000000000000000000000000";
+  
   const initHandlerDatum: HandlerDatum = {
     state: {
       next_client_sequence: 0n,
       next_connection_sequence: 0n,
       next_channel_sequence: 0n,
       bound_port: [],
+      ibc_state_root: EMPTY_TREE_ROOT,
     },
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
