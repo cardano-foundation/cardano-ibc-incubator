@@ -220,6 +220,137 @@ export function computeRootWithPortBind(
 }
 
 /**
+ * Rebuild the IBC state tree from on-chain UTXOs
+ * 
+ * CRITICAL FOR PRODUCTION: This function makes the Gateway resilient to restarts
+ * 
+ * Architecture:
+ * - Queries all IBC UTXOs (clients, connections, channels) via Kupo
+ * - Rebuilds the Merkle tree from scratch
+ * - Verifies computed root matches the on-chain Handler UTXO root
+ * - Updates currentTree to reflect on-chain state
+ * 
+ * When to call:
+ * - On Gateway startup (before processing any transactions)
+ * - After any period where Gateway was offline
+ * 
+ * Why this matters:
+ * - currentTree is in-memory and lost on restart
+ * - Without rebuild, Gateway would compute wrong roots
+ * - Wrong roots break IBC proof verification
+ * 
+ * @param kupoService - Service for querying Kupo indexer
+ * @param lucidService - Service for decoding datums
+ * @returns The rebuilt tree and its root
+ */
+export async function rebuildTreeFromChain(
+  kupoService: any,  // KupoService type
+  lucidService: any, // LucidService type
+): Promise<{ tree: ICS23MerkleTree; root: string }> {
+  console.log('Rebuilding IBC state tree from on-chain UTXOs...');
+  
+  try {
+    // 1. Query Handler UTXO to get expected root
+    const handlerUtxo = await lucidService.findUtxoAtHandlerAuthToken();
+    if (!handlerUtxo.datum) {
+      throw new Error('Handler UTXO has no datum');
+    }
+    
+    const handlerDatum = await lucidService.decodeDatum(handlerUtxo.datum, 'handler');
+    const expectedRoot = handlerDatum.state.ibc_state_root;
+    
+    console.log(`Expected root from Handler UTXO: ${expectedRoot.substring(0, 16)}...`);
+    
+    // 2. Create new tree
+    const tree = new ICS23MerkleTree();
+    
+    // 3. Query and add all Client UTXOs
+    const clientUtxos = await kupoService.queryAllClientUtxos();
+    console.log(`Found ${clientUtxos.length} client UTXOs`);
+    
+    for (const clientUtxo of clientUtxos) {
+      if (!clientUtxo.datum) continue;
+      
+      const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
+      const clientSequence = clientDatum.state.client_sequence;
+      const clientId = `07-tendermint-${clientSequence}`;
+      
+      // Serialize client state and add to tree
+      const value = serializeValue(clientDatum.state);
+      tree.set(`clients/${clientId}/clientState`, value);
+      
+      console.log(`  Added client: ${clientId}`);
+    }
+    
+    // 4. Query and add all Connection UTXOs
+    const connectionUtxos = await kupoService.queryAllConnectionUtxos();
+    console.log(`Found ${connectionUtxos.length} connection UTXOs`);
+    
+    for (const connectionUtxo of connectionUtxos) {
+      if (!connectionUtxo.datum) continue;
+      
+      const connectionDatum = await lucidService.decodeDatum(connectionUtxo.datum, 'connection');
+      const connectionSequence = connectionDatum.state.connection_sequence;
+      const connectionId = `connection-${connectionSequence}`;
+      
+      // Serialize connection state and add to tree
+      const value = serializeValue(connectionDatum.state);
+      tree.set(`connections/${connectionId}`, value);
+      
+      console.log(`  Added connection: ${connectionId}`);
+    }
+    
+    // 5. Query and add all Channel UTXOs
+    const channelUtxos = await kupoService.queryAllChannelUtxos();
+    console.log(`Found ${channelUtxos.length} channel UTXOs`);
+    
+    for (const channelUtxo of channelUtxos) {
+      if (!channelUtxo.datum) continue;
+      
+      const channelDatum = await lucidService.decodeDatum(channelUtxo.datum, 'channel');
+      const channelSequence = channelDatum.state.channel_sequence;
+      const channelId = `channel-${channelSequence}`;
+      const portId = channelDatum.state.port_id || 'transfer';
+      
+      // Serialize channel state and add to tree
+      const value = serializeValue(channelDatum.state);
+      tree.set(`channelEnds/ports/${portId}/channels/${channelId}`, value);
+      
+      console.log(`  Added channel: ${portId}/${channelId}`);
+    }
+    
+    // 6. Compute root and verify
+    const computedRoot = tree.getRoot();
+    console.log(`Computed root from UTXOs: ${computedRoot.substring(0, 16)}...`);
+    
+    if (computedRoot !== expectedRoot) {
+      throw new Error(
+        `Tree rebuild FAILED: Root mismatch!\n` +
+        `  Expected: ${expectedRoot}\n` +
+        `  Computed: ${computedRoot}\n` +
+        `This indicates either:\n` +
+        `  - Kupo has stale/inconsistent data\n` +
+        `  - UTXO datum decoding is incorrect\n` +
+        `  - Tree computation logic has changed\n` +
+        `Please verify on-chain state and Kupo indexing.`
+      );
+    }
+    
+    // 7. Update global current tree
+    currentTree = tree;
+    
+    console.log('✅ Tree rebuilt successfully and verified against on-chain root');
+    console.log(`   Clients: ${clientUtxos.length}, Connections: ${connectionUtxos.length}, Channels: ${channelUtxos.length}`);
+    
+    return { tree, root: computedRoot };
+    
+  } catch (error) {
+    console.error('❌ Failed to rebuild tree from chain:', error.message);
+    throw new Error(`Tree rebuild failed: ${error.message}`);
+  }
+}
+
+/**
  * Get the current working tree instance (for debugging/testing)
  * @returns The current Merkle tree
  */
