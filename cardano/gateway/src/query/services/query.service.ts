@@ -25,6 +25,7 @@ import {
 import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
+import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
 import { decodeHandlerDatum } from '@shared/types/handler-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
@@ -104,6 +105,7 @@ export class QueryService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    @Inject(KupoService) private kupoService: KupoService,
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
@@ -794,6 +796,11 @@ export class QueryService {
    * This is used by the Mithril light client on Cosmos to retrieve the ICS-23 Merkle root
    * that has been certified by Mithril snapshot inclusion
    * 
+   * Architecture:
+   * - Queries Kupo indexer for Handler UTXO at the specified height
+   * - Extracts ibc_state_root from the UTXO datum
+   * - Kupo must have indexed from at least the Handler UTXO deployment block
+   * 
    * @param height - The Cardano block height to query
    * @returns The IBC state root (32-byte hex string) at the specified height
    */
@@ -801,15 +808,12 @@ export class QueryService {
     this.logger.log(`Querying IBC state root at height ${height}`);
     
     try {
-      // Get handler UTXO at the specified height
-      // TODO: Implement queryHandlerUtxoAtHeight method in DbSyncService
-      // For now, get the current handler UTXO
-      const handlerUtxo = await this.lucidService.findUtxoAtHandlerAuthToken();
-      const handlerDatum = await this.lucidService.decodeDatum(handlerUtxo.datum!, 'handler');
+      // Query Kupo for the root at the specified height
+      const root = await this.kupoService.queryIBCStateRootAtHeight(height);
       
       return {
-        root: handlerDatum.state.ibc_state_root,
-        height: height, // TODO: Return actual height from UTXO once historical queries are implemented
+        root: root,
+        height: height,
       };
     } catch (error) {
       this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
