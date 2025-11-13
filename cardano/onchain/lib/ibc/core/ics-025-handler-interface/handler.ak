@@ -1,3 +1,6 @@
+// Empty ICS-23 Merkle tree root (32 bytes of zeros)
+pub const empty_ibc_state_root = #"0000000000000000000000000000000000000000000000000000000000000000"
+
 pub type HandlerState {
   next_client_sequence: Int,
   next_connection_sequence: Int,

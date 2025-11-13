@@ -31,7 +31,9 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient, HandlerConnOpenInit, HandlerOperator,
@@ -522,6 +524,7 @@ fn setup_validate_handler_redeemer() -> (
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: handler_token,
     }

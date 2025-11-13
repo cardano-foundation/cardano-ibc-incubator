@@ -4,7 +4,9 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/auth.{AuthToken}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{
   HandlerDatum, handler_token_name,
 }
@@ -32,6 +34,7 @@ test mint_handler() {
       next_connection_sequence: 0,
       next_channel_sequence: 0,
       bound_port: [],
+      ibc_state_root: empty_ibc_state_root,
     }
 
   let handler_token = AuthToken { policy_id, name: handler_token_name }

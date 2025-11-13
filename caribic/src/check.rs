@@ -39,15 +39,15 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
             if output.status.success() {
                 let version = String::from_utf8_lossy(&output.stdout);
                 if version.lines().count() == 1 {
-                    logger::log(&format!("✅ {}", version));
+                    logger::log(&format!("PASS: {}", version));
                 } else {
                     if let Some(version_info) = version.lines().next() {
-                        logger::log(&format!("✅ {}", version_info));
+                        logger::log(&format!("PASS: {}", version_info));
                     }
                 }
             } else {
                 logger::log(&format!(
-                    "❌ {} is not installed or not available in the PATH.",
+                    "ERROR: {} is not installed or not available in the PATH.",
                     tool
                 ));
                 logger::log(&format!("{}", install_instructions));
@@ -55,7 +55,7 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
         }
         Err(_e) => {
             logger::log(&format!(
-                "❌ {} is not installed or not available in the PATH.",
+                "ERROR: {} is not installed or not available in the PATH.",
                 tool
             ));
             logger::log(&format!("{}", install_instructions));
@@ -71,7 +71,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
         let result = download_osmosis(osmosis_dir).await;
         if result.is_err() {
             logger::error(&format!(
-                "❌ Failed to download Osmosis: {}",
+                "ERROR: Failed to download Osmosis: {}",
                 result.err().unwrap()
             ));
         }
@@ -82,18 +82,18 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
             if output.status.success() {
                 let version = String::from_utf8_lossy(&output.stderr);
                 if let Some(osmosisd_version) = version.lines().next() {
-                    logger::verbose(&format!("✅ osmosisd {}", osmosisd_version));
+                    logger::verbose(&format!("PASS: osmosisd {}", osmosisd_version));
                 }
             } else {
                 logger::log(&format!(
-                    "❌ osomsisd is not installed or not available in the PATH."
+                    "ERROR: osomsisd is not installed or not available in the PATH."
                 ));
                 install_osmosisd(osmosis_dir).await;
             }
         }
         Err(_) => {
             logger::log(&format!(
-                "❌ osomsisd is not installed or not available in the PATH."
+                "ERROR: osomsisd is not installed or not available in the PATH."
             ));
             install_osmosisd(osmosis_dir).await;
         }

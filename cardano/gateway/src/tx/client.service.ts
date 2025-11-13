@@ -75,7 +75,14 @@ export class ClientService {
       }
 
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
-      // Todo: signing should be done by the relayer in the future
+      
+      // DEPRECATED: Internal transaction signing (for testing only)
+      // TODO: Remove this signing logic once Hermes integration is complete
+      // 
+      // Current (test mode): Gateway signs and submits transactions
+      // Future (production): Gateway returns unsigned tx, Hermes signs and submits
+      // 
+      // This signing capability exists only for integration testing and will be removed.
       const signedCreateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
       this.logger.log(signedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
       this.logger.log(clientId, 'create client - clientId');

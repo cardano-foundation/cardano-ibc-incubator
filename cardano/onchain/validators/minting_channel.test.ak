@@ -45,7 +45,9 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/channel_keys as host_chan_keys
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerChanOpenInit, HandlerChanOpenTry,
@@ -91,6 +93,7 @@ fn setup() -> MockData {
         next_connection_sequence: 0,
         next_channel_sequence: channel_sequence,
         bound_port: [],
+        ibc_state_root: empty_ibc_state_root,
       },
       token: handler_token,
     }
