@@ -98,6 +98,8 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
+import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 
 @Injectable()
 export class QueryService {
@@ -242,9 +244,24 @@ export class QueryService {
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),
     };
 
+    // Generate ICS-23 proof from the IBC state tree
+    const ibcPath = `clients/${clientId}/clientState`;
+    const tree = getCurrentTree();
+    
+    let clientProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      clientProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for client ${clientId}, proof size: ${clientProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response = {
       client_state: clientStateAny,
-      proof: bytesFromBase64(btoa(`0-${proofHeight}/client/${spendClientUTXO.txHash}/${spendClientUTXO.outputIndex}`)),
+      proof: clientProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
         revision_height: proofHeight,
@@ -273,11 +290,25 @@ export class QueryService {
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
     const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
+    
+    // Generate ICS-23 proof from the IBC state tree
+    const ibcPath = `clients/${clientId}/consensusStates/${heightReq}`;
+    const tree = getCurrentTree();
+    
+    let consensusProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      consensusProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for consensus state ${clientId}@${heightReq}, proof size: ${consensusProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+    
     const response = {
       consensus_state: consensusStateAny,
-      proof: bytesFromBase64(
-        btoa(`0-${proofHeight}/consensus/${spendClientUTXO.txHash}/${spendClientUTXO.outputIndex}`),
-      ),
+      proof: consensusProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
         revision_height: proofHeight,
