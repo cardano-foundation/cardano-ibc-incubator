@@ -172,6 +172,7 @@ type ConsensusState struct {
 	Timestamp                uint64              `protobuf:"varint,1,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	FirstCertHashLatestEpoch *MithrilCertificate `protobuf:"bytes,2,opt,name=first_cert_hash_latest_epoch,json=firstCertHashLatestEpoch,proto3" json:"first_cert_hash_latest_epoch,omitempty"`
 	LatestCertHashTxSnapshot string              `protobuf:"bytes,3,opt,name=latest_cert_hash_tx_snapshot,json=latestCertHashTxSnapshot,proto3" json:"latest_cert_hash_tx_snapshot,omitempty"`
+	IbcStateRoot             []byte              `protobuf:"bytes,4,opt,name=ibc_state_root,json=ibcStateRoot,proto3" json:"ibc_state_root,omitempty"`
 }
 
 func (m *ConsensusState) Reset()         { *m = ConsensusState{} }

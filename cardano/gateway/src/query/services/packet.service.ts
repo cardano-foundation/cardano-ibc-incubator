@@ -42,8 +42,10 @@ import {
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { GrpcInvalidArgumentException, GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 
 @Injectable()
 export class PacketService {
@@ -87,12 +89,28 @@ export class PacketService {
       channelDatumDecoded.state.channel.state,
     );
 
+    // Generate ICS-23 proof from the IBC state tree
+    // Path: acks/ports/{portId}/channels/{channelId}/sequences/{sequence}
+    const ibcPath = `acks/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
+    const tree = getCurrentTree();
+    
+    let ackProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      ackProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for packet ack ${channelId}/${sequence}, proof size: ${ackProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response: QueryPacketAcknowledgementResponse = {
       acknowledgement: toHex(Acknowledgement.encode(ackData).finish()),
-      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/acks/${proof.txHash}/${proof.index}`)),
+      proof: ackProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo, // TODO
+        revision_height: proof.blockNo,
       },
     } as unknown as QueryPacketAcknowledgementResponse;
     return response;
@@ -197,12 +215,28 @@ export class PacketService {
       channelDatumDecoded.state.channel.state,
     );
 
+    // Generate ICS-23 proof from the IBC state tree
+    // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
+    const ibcPath = `commitments/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
+    const tree = getCurrentTree();
+    
+    let commitmentProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      commitmentProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for packet commitment ${channelId}/${sequence}, proof size: ${commitmentProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response: QueryPacketCommitmentResponse = {
       commitment: packetCommitment,
-      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/commitments/${proof.txHash}/${proof.index}`)),
+      proof: commitmentProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo, // TODO
+        revision_height: proof.blockNo,
       },
     } as unknown as QueryPacketCommitmentResponse;
     return response;
@@ -304,12 +338,35 @@ export class PacketService {
       channelDatumDecoded.state.channel.state,
     );
 
+    // Generate ICS-23 proof from the IBC state tree
+    // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
+    // If received=true: ExistenceProof showing receipt marker exists
+    // If received=false: NonExistenceProof showing receipt marker doesn't exist
+    const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
+    const tree = getCurrentTree();
+    
+    let receiptProof: Buffer;
+    try {
+      if (packetReceipt) {
+        const existenceProof = tree.generateProof(ibcPath);
+        receiptProof = serializeExistenceProof(existenceProof);
+        this.logger.log(`Generated ICS-23 existence proof for packet receipt ${channelId}/${sequence}, proof size: ${receiptProof.length} bytes`);
+      } else {
+        const nonExistenceProof = tree.generateNonExistenceProof(ibcPath);
+        receiptProof = serializeNonExistenceProof(nonExistenceProof);
+        this.logger.log(`Generated ICS-23 non-existence proof for packet receipt ${channelId}/${sequence}, proof size: ${receiptProof.length} bytes`);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response: QueryPacketReceiptResponse = {
       received: !!packetReceipt,
-      proof: bytesFromBase64(btoa(`0-${proof.blockNo}/receipts/${proof.txHash}/${proof.index}`)),
+      proof: receiptProof, // ICS-23 Merkle proof (existence or non-existence)
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo, // TODO
+        revision_height: proof.blockNo,
       },
     } as unknown as QueryPacketReceiptResponse;
     return response;
@@ -438,15 +495,29 @@ export class PacketService {
     //     `Invalid proof height, revision height ${revisionHeight} not match with proof height ${proof.blockNo}`,
     //   );
     // }
-    const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
-    const connectionProof = cardanoTxProof?.certified_transactions[0]?.proof;
-    // const immutableFiles = await this.dbService.queryListImmutableFileNoByBlockNos([Number(proof.blockNo)]);
+
+    // Generate ICS-23 non-existence proof from the IBC state tree
+    // This proves that the receipt does NOT exist (packet is unreceived)
+    // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
+    const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
+    const tree = getCurrentTree();
+    
+    let unreceivedProof: Buffer;
+    try {
+      const nonExistenceProof = tree.generateNonExistenceProof(ibcPath);
+      unreceivedProof = serializeNonExistenceProof(nonExistenceProof);
+      
+      this.logger.log(`Generated ICS-23 non-existence proof for unreceived packet ${channelId}/${sequence}, proof size: ${unreceivedProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
 
     const response: QueryPacketAcknowledgementResponse = {
-      proof: fromHex(connectionProof),
+      proof: unreceivedProof, // ICS-23 non-existence proof
       proof_height: {
         revision_number: 0,
-        revision_height: Number(cardanoTxProof.latest_block_number),
+        revision_height: proof.blockNo,
       },
     } as unknown as QueryPacketAcknowledgementResponse;
     return response;
@@ -464,12 +535,28 @@ export class PacketService {
 
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
 
+    // Generate ICS-23 proof from the IBC state tree
+    // Path: nextSequenceRecv/ports/{portId}/channels/{channelId}
+    const ibcPath = `nextSequenceRecv/ports/${portId}/channels/channel-${channelId}`;
+    const tree = getCurrentTree();
+    
+    let nextSeqProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      nextSeqProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for next sequence receive ${channelId}, proof size: ${nextSeqProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response: QueryNextSequenceReceiveResponse = {
       next_sequence_receive: nextSequenceRecv.toString(),
-      proof: bytesFromBase64(btoa(`0-0/nextsequencerecv//0`)),
+      proof: nextSeqProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: 0,
+        revision_height: 0, // TODO: Get actual block height
       },
     } as unknown as QueryNextSequenceReceiveResponse;
     return response;
@@ -484,12 +571,28 @@ export class PacketService {
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const nextSequenceAck = channelDatum.state.next_sequence_ack;
 
+    // Generate ICS-23 proof from the IBC state tree
+    // Path: nextSequenceAck/ports/{portId}/channels/{channelId}
+    const ibcPath = `nextSequenceAck/ports/${portId}/channels/channel-${channelId}`;
+    const tree = getCurrentTree();
+    
+    let nextAckProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      nextAckProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for next sequence ack ${channelId}, proof size: ${nextAckProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response: QueryNextSequenceReceiveResponse = {
       next_sequence_receive: nextSequenceAck.toString(),
-      proof: bytesFromBase64(btoa(`0-0/nextsequenceack//0`)),
+      proof: nextAckProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: 0,
+        revision_height: 0, // TODO: Get actual block height
       },
     } as unknown as QueryNextSequenceReceiveResponse;
     return response;
