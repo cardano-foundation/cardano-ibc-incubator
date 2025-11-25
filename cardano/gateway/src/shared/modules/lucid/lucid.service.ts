@@ -345,20 +345,24 @@ export class LucidService {
   }
 
   public createUnsignedCreateClientTransaction(
-    handlerUtxo: any,
-    encodedHandlerOperator: string,
+    hostStateUtxo: any,
+    encodedHostStateRedeemer: string,
     clientAuthTokenUnit: string,
     encodedMintClientOperator: string,
-    encodedUpdatedHandlerDatum: string,
+    encodedUpdatedHostStateDatum: string,
     encodedClientDatum: string,
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
-    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintClient])
-      .collectFrom([handlerUtxo], encodedHandlerOperator)
+    // STT Transaction Structure:
+    // 1. Spend the old HostState UTXO (with NFT)
+    // 2. Create a new HostState UTXO (with same NFT, updated datum)
+    // 3. Mint and create the new Client UTXO
+    tx.readFrom([this.referenceScripts.hostStateStt, this.referenceScripts.mintClient])
+      .collectFrom([hostStateUtxo], encodedHostStateRedeemer)
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
@@ -369,13 +373,17 @@ export class LucidService {
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
-    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
-      [handlerAuthToken]: 1n,
+    
+    // Recreate HostState UTXO with updated datum and same NFT
+    addPayToContract(deploymentConfig.validators.hostStateStt.address, encodedUpdatedHostStateDatum, {
+      [hostStateNFT]: 1n,
     });
+    
+    // Create new Client UTXO
     addPayToContract(deploymentConfig.validators.spendClient.address, encodedClientDatum, {
       [clientAuthTokenUnit]: 1n,
     });
-    // Optional: call validTo method if needed
+    
     return tx;
   }
   public createUnsignedConnectionOpenInitTransaction(
