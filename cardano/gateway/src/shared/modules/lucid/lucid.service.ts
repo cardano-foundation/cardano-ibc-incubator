@@ -156,6 +156,40 @@ export class LucidService {
     if (!handlerUtxo) throw new GrpcNotFoundException(`Unable to find Handler UTxO at ${handlerAuthToken}`);
     return handlerUtxo;
   }
+
+  /**
+   * Find the HostState UTXO by its unique NFT (STT Architecture)
+   * 
+   * The IBC Host State NFT uniquely identifies the canonical host state UTXO.
+   * This provides:
+   * - Guaranteed uniqueness (exactly one UTXO with this NFT exists)
+   * - Simple querying (no ambiguous UTXOs)
+   * - Complete state history (follow the NFT through transactions)
+   * 
+   * @returns The HostState UTXO containing the NFT
+   * @throws GrpcNotFoundException if NFT or UTXO not found
+   */
+  public async findUtxoAtHostStateNFT(): Promise<UTxO> {
+    const { address: addressOrCredential } = this.configService.get('deployment').validators.hostStateStt;
+    const hostStateNFTConfig = this.configService.get('deployment').hostStateNFT;
+    const hostStateNFT = hostStateNFTConfig.policyId + hostStateNFTConfig.name;
+    
+    const hostStateUtxos = await this.lucid.utxosAt(addressOrCredential);
+    if (hostStateUtxos.length === 0) {
+      throw new GrpcNotFoundException(`Unable to find UTxOs at HostState STT address: ${addressOrCredential}`);
+    }
+    
+    const hostStateUtxo = hostStateUtxos.find((utxo) => utxo.assets.hasOwnProperty(hostStateNFT));
+    if (!hostStateUtxo) {
+      throw new GrpcNotFoundException(
+        `Unable to find HostState UTXO with NFT: ${hostStateNFT}. ` +
+        `This indicates the IBC Host State has not been initialized or the NFT was not minted correctly.`
+      );
+    }
+    
+    return hostStateUtxo;
+  }
+
   public async getPublicKeyHash(address: string): Promise<string> {
     return getAddressDetails(address).paymentCredential?.hash;
   }

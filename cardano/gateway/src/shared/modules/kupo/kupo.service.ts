@@ -4,16 +4,22 @@ import { ConfigService } from '@nestjs/config';
 import { UTxO } from '@lucid-evolution/lucid';
 
 /**
- * KupoService - Provides IBC-specific queries to Kupo indexer
+ * KupoService - Provides IBC-specific queries to Kupo indexer (STT Architecture)
  * 
  * Purpose:
  * - Query all IBC-related UTXOs (clients, connections, channels)
+ * - Query HostState UTXO via unique NFT
  * - Support historical UTXO queries at specific heights
  * - Enable tree rebuilding from on-chain state
  * 
+ * STT Architecture Benefits:
+ * - Simplified queries: Follow the NFT to find canonical state
+ * - No ambiguity: Exactly one HostState UTXO exists
+ * - Complete history: NFT traces all state updates
+ * 
  * Architecture:
  * - Builds on top of LucidService (which uses Kupmios)
- * - Kupo must be indexing from at least the Handler UTXO deployment block
+ * - Kupo must be indexing from at least the HostState NFT mint block
  * - Used by QueryService and tree rebuild logic
  */
 @Injectable()
@@ -114,44 +120,62 @@ export class KupoService {
   }
 
   /**
-   * Query Handler UTXO at a specific height (for historical queries)
+   * Query HostState UTXO at a specific height (STT Architecture)
    * 
-   * NOTE: This requires Kupo to have indexed from the deployment block.
-   * Currently returns current Handler UTXO as Lucid doesn't expose
+   * STT Benefits:
+   * - NFT provides unique identifier (no ambiguous UTXOs)
+   * - Can trace complete state history by following NFT
+   * - Historical queries simplified (find NFT at height)
+   * 
+   * NOTE: This requires Kupo to have indexed from the NFT mint block.
+   * Currently returns current HostState UTXO as Lucid doesn't expose
    * historical query APIs directly.
    * 
    * TODO: Implement actual historical queries when Kupo API is integrated
    * This may require direct HTTP calls to Kupo's REST API:
-   * GET /matches/{pattern}?spent&created_before={slot}
+   * GET /matches/{nft_policy}/{nft_name}?spent&created_before={slot}
    * 
    * @param height - The block height to query
-   * @returns Handler UTXO at that height
+   * @returns HostState UTXO at that height
    */
-  async queryHandlerUtxoAtHeight(height: number): Promise<UTxO> {
+  async queryHostStateUtxoAtHeight(height: number): Promise<UTxO> {
     // TODO: Convert height to slot number
     // TODO: Make direct Kupo API call for historical UTXO
     // For now, return current UTXO
     
-    return await this.lucidService.findUtxoAtHandlerAuthToken();
+    return await this.lucidService.findUtxoAtHostStateNFT();
   }
 
   /**
-   * Query the IBC state root at a specific height
-   * Convenience method that combines querying Handler UTXO + extracting root
+   * Query the current HostState UTXO (STT Architecture)
+   * 
+   * Convenience wrapper around LucidService.findUtxoAtHostStateNFT()
+   * Provided for consistency with other query methods
+   * 
+   * @returns The current HostState UTXO
+   */
+  async queryCurrentHostStateUtxo(): Promise<UTxO> {
+    return await this.lucidService.findUtxoAtHostStateNFT();
+  }
+
+  /**
+   * Query the IBC state root at a specific height (STT Architecture)
+   * 
+   * Convenience method that combines querying HostState UTXO + extracting root
    * 
    * @param height - The block height to query
    * @returns The IBC state root (32-byte hex string)
    */
   async queryIBCStateRootAtHeight(height: number): Promise<string> {
-    const handlerUtxo = await this.queryHandlerUtxoAtHeight(height);
+    const hostStateUtxo = await this.queryHostStateUtxoAtHeight(height);
     
-    if (!handlerUtxo.datum) {
-      throw new Error('Handler UTXO has no datum');
+    if (!hostStateUtxo.datum) {
+      throw new Error('HostState UTXO has no datum');
     }
     
-    const handlerDatum = await this.lucidService.decodeDatum(handlerUtxo.datum, 'handler');
+    const hostStateDatum = await this.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
     
-    return handlerDatum.state.ibc_state_root;
+    return hostStateDatum.state.ibc_state_root;
   }
 }
 
