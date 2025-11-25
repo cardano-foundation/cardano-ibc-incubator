@@ -1,10 +1,17 @@
 // ICS-23 Compatible Merkle Tree Implementation
 //
-// This module implements a Simple Merkle Tree (SMT) compatible with ICS-23 specification
-// for IBC state proofs. The tree uses:
-// - SHA-256 hashing
-// - Lexicographic ordering of keys
-// - Length-prefixed encoding for keys and values
+// This module implements a Merkle tree for generating cryptographic proofs of IBC state.
+// 
+// Architecture:
+// - Only the 32-byte root hash is stored on-chain (in Handler UTXO datum)
+// - Gateway maintains the full tree in memory and generates proofs on-demand
+// - Proofs are compact (~log₂N sibling hashes) and cryptographically unforgeable
+// - Cosmos verifies proofs by reconstructing the root and comparing to certified root
+//
+// Tree structure:
+// - SHA-256 hashing with length-prefix encoding
+// - Lexicographic key ordering for determinism
+// - Binary tree built bottom-up from sorted leaves
 //
 // Reference: https://github.com/cosmos/ibc/tree/main/spec/core/ics-023-vector-commitments
 
@@ -231,5 +238,254 @@ export class ICS23MerkleTree {
     });
     return newTree;
   }
+
+  /**
+   * Generate an ICS-23 ExistenceProof for a given key
+   * 
+   * Proof generation walks the tree collecting sibling hashes at each level.
+   * These siblings let the verifier reconstruct the root via repeated hashing:
+   * 
+   *   leafHash = hash(key || value)
+   *   level1 = hash(prefix || leafHash || sibling₁)
+   *   level2 = hash(prefix || level1 || sibling₂)
+   *   ... until root
+   * 
+   * Security: Proofs are unforgeable because they require the exact sibling hashes
+   * from the real tree. Faking data breaks the hash chain (unless you break SHA-256).
+   * 
+   * @param key - The IBC path key (e.g., "clients/07-tendermint-0/clientState")
+   * @returns ExistenceProof object containing key, value, leaf spec, and inner path
+   * @throws Error if the key doesn't exist in the tree
+   */
+  generateProof(key: string): ICS23ExistenceProof {
+    // 1. Verify key exists
+    const value = this.leaves.get(key);
+    if (!value) {
+      throw new Error(`Cannot generate proof: key '${key}' not found in tree`);
+    }
+
+    if (this.leaves.size === 0) {
+      throw new Error(`Cannot generate proof: tree is empty`);
+    }
+
+    // 2. Build sorted leaf array (same as getRoot())
+    const sortedKeys = Array.from(this.leaves.keys()).sort();
+    
+    // Find the index of our key
+    const keyIndex = sortedKeys.indexOf(key);
+    if (keyIndex === -1) {
+      throw new Error(`Key '${key}' not found in sorted leaves`);
+    }
+
+    // 3. Build leaf nodes
+    const leafNodes: MerkleNode[] = sortedKeys.map((k) => ({
+      key: k,
+      value: this.leaves.get(k)!,
+      hash: this.hashLeaf(k, this.leaves.get(k)!),
+    }));
+
+    // Special case: single leaf tree
+    if (leafNodes.length === 1) {
+      return {
+        key: Buffer.from(key, 'utf8'),
+        value: value,
+        leaf: {
+          hash: 1, // HashOp.SHA256
+          prehash_key: 0, // HashOp.NO_HASH
+          prehash_value: 0, // HashOp.NO_HASH
+          length: 1, // LengthOp.VAR_PROTO
+          prefix: Buffer.alloc(0), // No prefix for leaf nodes
+        },
+        path: [], // No inner nodes for single leaf
+      };
+    }
+
+    // 4. Build tree level by level, tracking our key's path
+    let currentLevel = leafNodes.map((node) => node.hash);
+    let currentIndex = keyIndex;
+    const innerOps: ICS23InnerOp[] = [];
+
+    while (currentLevel.length > 1) {
+      const nextLevel: Buffer[] = [];
+      const nextIndex = Math.floor(currentIndex / 2);
+
+      for (let i = 0; i < currentLevel.length; i += 2) {
+        if (i + 1 < currentLevel.length) {
+          // Pair exists - create inner node
+          const left = currentLevel[i];
+          const right = currentLevel[i + 1];
+          nextLevel.push(this.hashInner(left, right));
+
+          // If this pair contains our node, record the sibling
+          if (i === currentIndex || i + 1 === currentIndex) {
+            const isLeftChild = (currentIndex % 2 === 0);
+            
+            if (isLeftChild) {
+              // Our node is the left child, sibling is on the right
+              innerOps.push({
+                hash: 1, // HashOp.SHA256
+                prefix: Buffer.from([0x01]), // Inner node prefix
+                suffix: right, // Right sibling hash
+              });
+            } else {
+              // Our node is the right child, sibling is on the left
+              innerOps.push({
+                hash: 1, // HashOp.SHA256
+                prefix: Buffer.concat([Buffer.from([0x01]), left]), // Prefix includes left sibling
+                suffix: Buffer.alloc(0), // No suffix
+              });
+            }
+          }
+        } else {
+          // Odd node out - promote to next level
+          nextLevel.push(currentLevel[i]);
+          
+          // If this is our node being promoted, no sibling at this level
+          if (i === currentIndex) {
+            // Node promoted without pairing - this is handled implicitly
+            // The next level index calculation will work correctly
+          }
+        }
+      }
+
+      currentLevel = nextLevel;
+      currentIndex = nextIndex;
+    }
+
+    // 5. Return the ExistenceProof
+    return {
+      key: Buffer.from(key, 'utf8'),
+      value: value,
+      leaf: {
+        hash: 1, // HashOp.SHA256
+        prehash_key: 0, // HashOp.NO_HASH
+        prehash_value: 0, // HashOp.NO_HASH
+        length: 1, // LengthOp.VAR_PROTO
+        prefix: Buffer.alloc(0), // No prefix for leaf nodes in our spec
+      },
+      path: innerOps,
+    };
+  }
+
+  /**
+   * Generate an ICS-23 NonExistenceProof for a key that doesn't exist
+   * 
+   * A non-existence proof demonstrates that a key is not present in the tree
+   * by providing existence proofs for the closest left and right neighbors.
+   * If both neighbors are valid and adjacent, the absence of the key is proven.
+   * 
+   * @param key - The key to prove non-existence for
+   * @returns NonExistenceProof with left and right neighbor proofs
+   * @throws Error if the key exists, or if neighbors can't be found
+   */
+  generateNonExistenceProof(key: string): ICS23NonExistenceProof {
+    // 1. Verify key doesn't exist
+    if (this.leaves.has(key)) {
+      throw new Error(`Cannot generate non-existence proof: key '${key}' exists in tree`);
+    }
+
+    if (this.leaves.size === 0) {
+      throw new Error(`Cannot generate non-existence proof: tree is empty`);
+    }
+
+    // 2. Find left and right neighbors
+    const sortedKeys = Array.from(this.leaves.keys()).sort();
+    
+    let leftKey: string | null = null;
+    let rightKey: string | null = null;
+
+    for (let i = 0; i < sortedKeys.length; i++) {
+      if (sortedKeys[i] < key) {
+        leftKey = sortedKeys[i];
+      } else if (sortedKeys[i] > key && rightKey === null) {
+        rightKey = sortedKeys[i];
+        break;
+      }
+    }
+
+    // 3. Verify we have both neighbors (or handle edge cases)
+    if (!leftKey && !rightKey) {
+      throw new Error(`Cannot generate non-existence proof: no neighbors found for key '${key}'`);
+    }
+
+    // 4. Generate existence proofs for neighbors
+    const leftProof = leftKey ? this.generateProof(leftKey) : null;
+    const rightProof = rightKey ? this.generateProof(rightKey) : null;
+
+    return {
+      key: Buffer.from(key, 'utf8'),
+      left: leftProof,
+      right: rightProof,
+    };
+  }
+
+  /**
+   * Verify a proof against this tree's root
+   * 
+   * This is primarily for testing - reconstructs the root from the proof
+   * and compares it to this tree's computed root.
+   * 
+   * @param proof - The ExistenceProof to verify
+   * @returns true if proof is valid for this tree
+   */
+  verifyProof(proof: ICS23ExistenceProof): boolean {
+    // 1. Start with leaf hash
+    const keyBuffer = proof.key;
+    const valueBuffer = proof.value;
+    
+    const keyLength = this.encodeVarint(keyBuffer.length);
+    const valueLength = this.encodeVarint(valueBuffer.length);
+    const leafData = Buffer.concat([keyLength, keyBuffer, valueLength, valueBuffer]);
+    let currentHash = Buffer.from(sha256.array(leafData));
+
+    // 2. Apply each InnerOp to reconstruct the root
+    for (const innerOp of proof.path) {
+      if (innerOp.suffix.length > 0) {
+        // Suffix is the sibling - we are the left child
+        const data = Buffer.concat([innerOp.prefix, currentHash, innerOp.suffix]);
+        currentHash = Buffer.from(sha256.array(data));
+      } else {
+        // Prefix contains sibling - we are the right child
+        // Prefix format: 0x01 || leftSiblingHash
+        const data = Buffer.concat([innerOp.prefix, currentHash]);
+        currentHash = Buffer.from(sha256.array(data));
+      }
+    }
+
+    // 3. Compare reconstructed root with tree root
+    const expectedRoot = this.getRoot();
+    return currentHash.toString('hex') === expectedRoot;
+  }
+}
+
+/**
+ * ICS-23 proof type definitions
+ */
+
+export interface ICS23LeafOp {
+  hash: number; // HashOp enum value
+  prehash_key: number; // HashOp enum value
+  prehash_value: number; // HashOp enum value
+  length: number; // LengthOp enum value
+  prefix: Buffer;
+}
+
+export interface ICS23InnerOp {
+  hash: number; // HashOp enum value
+  prefix: Buffer;
+  suffix: Buffer;
+}
+
+export interface ICS23ExistenceProof {
+  key: Buffer;
+  value: Buffer;
+  leaf: ICS23LeafOp;
+  path: ICS23InnerOp[];
+}
+
+export interface ICS23NonExistenceProof {
+  key: Buffer;
+  left: ICS23ExistenceProof | null;
+  right: ICS23ExistenceProof | null;
 }
 

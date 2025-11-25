@@ -47,6 +47,27 @@ package mithril
 //
 // Then VerifyMembership/VerifyNonMembership validate ICS-23 proofs against this root, exactly as IBC expects.
 // All important state remains on-chain (in the UTXO), while Mithril provides efficient certification of that state.
+//
+// TRUST MODEL AND LIMITATIONS:
+//
+// Mithril certifies a Merkle root that commits to the entire UTXO set, but currently does NOT expose
+// individual UTXO-level Merkle branches/proofs. This means:
+//
+// 1. UpdateState() must trust the Gateway to provide the correct ibc_state_root from the Handler UTXO
+//    - We cannot cryptographically verify this extraction via Mithril proof
+//    - If Mithril exposed UTXO-level Merkle branches in the future, this could become trustless
+//
+// 2. VerifyMembership() cryptographically verifies ICS-23 proofs against the ibc_state_root
+//    - These proofs ARE unforgeable (given the root)
+//    - Gateway cannot lie about IBC state once the root is established
+//
+// Security implications:
+// - Malicious Gateway can cause denial-of-service (wrong root → proofs fail)
+// - Malicious Gateway can cause state confusion (providing old but valid root)
+// - Gateway CANNOT forge proofs that verify against a given root (crypto prevents this)
+//
+// This is a practical trade-off: we trust Gateway for data availability and root extraction,
+// but maintain cryptographic integrity for all IBC state verification via ICS-23 proofs.
 
 import (
 	"strings"

@@ -26,6 +26,8 @@ import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 
 @Injectable()
 export class ConnectionService {
@@ -160,8 +162,24 @@ export class ConnectionService {
         connDatumDecoded.state.state,
       );
 
-      const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
-      const connectionProof = cardanoTxProof?.certified_transactions[0]?.proof;
+      // Generate ICS-23 proof from the IBC state tree
+      // 
+      // The proof contains sibling hashes that let Cosmos verify this connection state
+      // is authentic by reconstructing the Merkle root (which is certified by Mithril).
+      // Even if Gateway is compromised, it cannot forge valid proofs.
+      const ibcPath = `connections/${connectionId}`;
+      const tree = getCurrentTree();
+      
+      let connectionProof: Buffer;
+      try {
+        const existenceProof = tree.generateProof(ibcPath);
+        connectionProof = serializeExistenceProof(existenceProof);
+        
+        this.logger.log(`Generated ICS-23 proof for connection ${connectionId}, proof size: ${connectionProof.length} bytes`);
+      } catch (error) {
+        this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+        throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+      }
 
       const response: QueryConnectionResponse = {
         connection: {
@@ -182,11 +200,10 @@ export class ConnectionService {
           },
           delay_period: connDatumDecoded.state.delay_period,
         } as unknown as ConnectionEnd,
-        // proof: bytesFromBase64(btoa(`0-${proof.blockNo}/connection/${proof.txHash}/${proof.index}`)), // TODO
-        proof: fromHex(connectionProof), // TODO
+        proof: connectionProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proof.blockNo, // TODO
+          revision_height: proof.blockNo,
         },
       } as unknown as QueryConnectionResponse;
       return response;
