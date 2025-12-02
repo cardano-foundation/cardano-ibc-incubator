@@ -20,6 +20,11 @@ use crate::generated::ibc::core::channel::v1::{
     QueryChannelRequest, QueryChannelsRequest,
     QueryChannelClientStateRequest, QueryNextSequenceReceiveRequest,
     QueryConnectionChannelsRequest,
+    // Packet queries
+    QueryPacketCommitmentRequest, QueryPacketCommitmentsRequest,
+    QueryPacketReceiptRequest, QueryPacketAcknowledgementRequest,
+    QueryPacketAcknowledgementsRequest, QueryUnreceivedPacketsRequest,
+    QueryUnreceivedAcksRequest,
 };
 
 /// GatewayClient handles gRPC communication with the Cardano Gateway
@@ -390,6 +395,197 @@ impl GatewayClient {
             .map_err(|e| Error::Gateway(format!("QueryNextSequenceReceive failed: {}", e)))?;
         
         Ok(response.into_inner().next_sequence_receive)
+    }
+
+    //
+    // ============================================================================
+    // Category 10: Packet Commitment Queries
+    // ============================================================================
+    //
+
+    /// Query a single packet commitment
+    pub async fn query_packet_commitment(
+        &self,
+        port_id: String,
+        channel_id: String,
+        sequence: u64,
+    ) -> Result<Vec<u8>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryPacketCommitmentRequest {
+            port_id,
+            channel_id,
+            sequence,
+        });
+        
+        let response = client
+            .packet_commitment(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryPacketCommitment failed: {}", e)))?;
+        
+        Ok(response.into_inner().commitment)
+    }
+
+    /// Query all packet commitments for a channel
+    pub async fn query_packet_commitments(
+        &self,
+        port_id: String,
+        channel_id: String,
+    ) -> Result<Vec<u64>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryPacketCommitmentsRequest {
+            port_id,
+            channel_id,
+            pagination: None,
+        });
+        
+        let response = client
+            .packet_commitments(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryPacketCommitments failed: {}", e)))?;
+        
+        // Extract sequence numbers from packet states
+        let sequences = response.into_inner().commitments
+            .into_iter()
+            .map(|ps| ps.sequence)
+            .collect();
+        
+        Ok(sequences)
+    }
+
+    /// Query which packets the destination hasn't received yet
+    pub async fn query_unreceived_packets(
+        &self,
+        port_id: String,
+        channel_id: String,
+        sequences: Vec<u64>,
+    ) -> Result<Vec<u64>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryUnreceivedPacketsRequest {
+            port_id,
+            channel_id,
+            packet_commitment_sequences: sequences,
+        });
+        
+        let response = client
+            .unreceived_packets(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryUnreceivedPackets failed: {}", e)))?;
+        
+        Ok(response.into_inner().sequences)
+    }
+
+    /// Query packet receipt (whether a packet was received)
+    pub async fn query_packet_receipt(
+        &self,
+        port_id: String,
+        channel_id: String,
+        sequence: u64,
+    ) -> Result<bool> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryPacketReceiptRequest {
+            port_id,
+            channel_id,
+            sequence,
+        });
+        
+        let response = client
+            .packet_receipt(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryPacketReceipt failed: {}", e)))?;
+        
+        Ok(response.into_inner().received)
+    }
+
+    //
+    // ============================================================================
+    // Category 11: Packet Acknowledgement Queries
+    // ============================================================================
+    //
+
+    /// Query a single packet acknowledgement
+    pub async fn query_packet_acknowledgement(
+        &self,
+        port_id: String,
+        channel_id: String,
+        sequence: u64,
+    ) -> Result<Vec<u8>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryPacketAcknowledgementRequest {
+            port_id,
+            channel_id,
+            sequence,
+        });
+        
+        let response = client
+            .packet_acknowledgement(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryPacketAcknowledgement failed: {}", e)))?;
+        
+        Ok(response.into_inner().acknowledgement)
+    }
+
+    /// Query all packet acknowledgements for a channel
+    pub async fn query_packet_acknowledgements(
+        &self,
+        port_id: String,
+        channel_id: String,
+    ) -> Result<Vec<u64>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryPacketAcknowledgementsRequest {
+            port_id,
+            channel_id,
+            pagination: None,
+            packet_commitment_sequences: vec![], // Query all
+        });
+        
+        let response = client
+            .packet_acknowledgements(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryPacketAcknowledgements failed: {}", e)))?;
+        
+        // Extract sequence numbers from acknowledgements
+        let sequences = response.into_inner().acknowledgements
+            .into_iter()
+            .map(|ps| ps.sequence)
+            .collect();
+        
+        Ok(sequences)
+    }
+
+    /// Query which acknowledgements the source hasn't received yet
+    pub async fn query_unreceived_acknowledgements(
+        &self,
+        port_id: String,
+        channel_id: String,
+        sequences: Vec<u64>,
+    ) -> Result<Vec<u64>> {
+        let channel = self.connect().await?;
+        let mut client = ChannelQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryUnreceivedAcksRequest {
+            port_id,
+            channel_id,
+            packet_ack_sequences: sequences,
+        });
+        
+        let response = client
+            .unreceived_acks(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("QueryUnreceivedAcks failed: {}", e)))?;
+        
+        Ok(response.into_inner().sequences)
     }
 
     /// Wait for transaction events
