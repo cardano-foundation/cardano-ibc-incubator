@@ -12,6 +12,11 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 >
 > While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
 
+## Trust Model & Security Considerations
+
+> [!WARNING]
+> **This IBC bridge currently requires trust in Gateway infrastructure for UTxO queries.** While Mithril certificates and transaction inclusion are cryptographically verifiable, UTxO inclusion proofs are not yet possible because Mithril signers cannot guarantee identical UTxO set views due to network propagation delays. Full trustless verification awaits [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083), which will enable Cardano nodes to compute canonical ledger state hashes analogous to Tendermint's `AppHash`. Full parity with Tendermint light client security model—no trust assumptions may not be feasible under current conditions.
+
 ## :eyes: Overview
 This repository is divided into four main directories:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
