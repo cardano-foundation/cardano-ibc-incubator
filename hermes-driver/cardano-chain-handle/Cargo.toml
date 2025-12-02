@@ -8,7 +8,7 @@ license = "Apache-2.0"
 
 [dependencies]
 # Hermes dependencies (will need to match Hermes version)
-ibc-relayer = { version = "0.27", features = ["cardano"] }
+ibc-relayer = "0.27"
 ibc-relayer-types = "0.27"
 
 # Async runtime
@@ -25,8 +25,13 @@ serde_json = "1.0"
 
 # Cryptography for Cardano signing
 ed25519-dalek = "2.1"
-bip39 = "2.0"
-blake2 = "0.10"
+tiny-bip39 = { version = "1.0", package = "tiny-bip39" }  # BIP39 mnemonic handling
+digest = "0.10"  # For Blake2b hashing
+blake2 = { version = "0.10", features = ["std"] }
+slip10 = "0.4"  # Ed25519 key derivation for CIP-1852
+pallas-primitives = "0.30"  # Cardano CBOR parsing and transaction serialization
+pallas-codec = "0.30"  # CBOR codec for Cardano
+hex = "0.4"  # Hex encoding/decoding utilities
 
 # Error handling
 thiserror = "1.0"
@@ -41,10 +46,6 @@ mockall = "0.12"
 
 [build-dependencies]
 tonic-build = "0.11"
-
-[[bin]]
-name = "cardano-chain-handle"
-path = "src/main.rs"
 
 [lib]
 name = "cardano_chain_handle"

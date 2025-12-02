@@ -1,4 +1,3 @@
-use ibc_relayer::chain::requests::*;
 use ibc_relayer::chain::tracking::TrackedMsgs;
 use ibc_relayer_types::core::ics02_client::height::Height;
 use ibc_relayer_types::events::IbcEvent;
@@ -52,10 +51,8 @@ impl GatewayClient {
     }
 
     /// Query client state from Cardano
-    pub async fn query_client_state(
-        &self,
-        request: QueryClientStateRequest,
-    ) -> Result<QueryClientStateResponse> {
+    /// TODO: Add proper return type once we define Gateway protobuf types
+    pub async fn query_client_state(&self, _client_id: String) -> Result<Vec<u8>> {
         // TODO: Implement gRPC call to Gateway's QueryClientState
         Err(Error::Gateway("query_client_state not yet implemented".to_string()))
     }

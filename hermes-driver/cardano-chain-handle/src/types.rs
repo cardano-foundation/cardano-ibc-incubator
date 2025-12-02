@@ -4,6 +4,7 @@
 // Gateway uses custom protobuf definitions
 // This module bridges the two
 
+use std::str::FromStr;
 use ibc_relayer_types::core::ics02_client::height::Height as IbcHeight;
 use ibc_relayer_types::core::ics24_host::identifier::{ChannelId, ClientId, ConnectionId, PortId};
 
@@ -95,6 +96,7 @@ pub use ibc_relayer_types::core::ics24_host::identifier::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
 
     #[test]
     fn test_client_id_conversion() {
