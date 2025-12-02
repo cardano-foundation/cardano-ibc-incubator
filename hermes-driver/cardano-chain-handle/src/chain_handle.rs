@@ -212,8 +212,7 @@ impl CardanoChainHandle {
 
     /// Query all IBC light clients on Cardano
     pub async fn query_clients(&self) -> Result<Vec<String>> {
-        // TODO: Implement via Gateway gRPC QueryClients
-        Err(Error::Gateway("Query clients not yet implemented".to_string()))
+        self.gateway_client.query_clients().await
     }
 
     /// Query specific client state
@@ -226,25 +225,36 @@ impl CardanoChainHandle {
     }
 
     /// Query connections for a client
-    pub async fn query_client_connections(&self, _client_id: String) -> Result<Vec<String>> {
-        // TODO: Implement via Gateway gRPC
-        Err(Error::Gateway("Query client connections not yet implemented".to_string()))
+    pub async fn query_client_connections(&self, client_id: String) -> Result<Vec<String>> {
+        self.gateway_client.query_client_connections(client_id).await
     }
 
     /// Query consensus state at specific height
     pub async fn query_consensus_state(
         &self,
-        _client_id: String,
-        _height: Height,
+        client_id: String,
+        height: Height,
     ) -> Result<Vec<u8>> {
-        // TODO: Implement via Gateway gRPC QueryConsensusState
-        Err(Error::Gateway("Query consensus state not yet implemented".to_string()))
+        // For Cardano, we only use revision_height (block number)
+        // since Cardano doesn't have revisions
+        self.gateway_client
+            .query_consensus_state(client_id, height.revision_height())
+            .await
     }
 
     /// Query all consensus state heights for a client
-    pub async fn query_consensus_state_heights(&self, _client_id: String) -> Result<Vec<Height>> {
-        // TODO: Implement via Gateway gRPC
-        Err(Error::Gateway("Query consensus state heights not yet implemented".to_string()))
+    pub async fn query_consensus_state_heights(&self, client_id: String) -> Result<Vec<Height>> {
+        let heights = self.gateway_client
+            .query_consensus_state_heights(client_id)
+            .await?;
+        
+        heights
+            .into_iter()
+            .map(|(rev_num, rev_height)| {
+                Height::new(rev_num, rev_height)
+                    .map_err(|e| Error::Gateway(format!("Invalid height: {}", e)))
+            })
+            .collect()
     }
 
     /// Query upgraded client state (for client upgrades)
@@ -280,23 +290,20 @@ impl CardanoChainHandle {
     /// Query specific connection state
     pub async fn query_connection(
         &self,
-        _connection_id: String,
+        connection_id: String,
         _height: u64,
     ) -> Result<Vec<u8>> {
-        // TODO: Implement via Gateway gRPC QueryConnection
-        Err(Error::Gateway("Query connection not yet implemented".to_string()))
+        self.gateway_client.query_connection(connection_id).await
     }
 
     /// Query all connections
     pub async fn query_connections(&self) -> Result<Vec<String>> {
-        // TODO: Implement via Gateway gRPC QueryConnections
-        Err(Error::Gateway("Query connections not yet implemented".to_string()))
+        self.gateway_client.query_connections().await
     }
 
     /// Query channels for a connection
-    pub async fn query_connection_channels(&self, _connection_id: String) -> Result<Vec<String>> {
-        // TODO: Implement via Gateway gRPC
-        Err(Error::Gateway("Query connection channels not yet implemented".to_string()))
+    pub async fn query_connection_channels(&self, connection_id: String) -> Result<Vec<String>> {
+        self.gateway_client.query_connection_channels(connection_id).await
     }
 
     //
@@ -307,40 +314,36 @@ impl CardanoChainHandle {
 
     /// Query all channels
     pub async fn query_channels(&self) -> Result<Vec<String>> {
-        // TODO: Implement via Gateway gRPC QueryChannels
-        Err(Error::Gateway("Query channels not yet implemented".to_string()))
+        self.gateway_client.query_channels().await
     }
 
     /// Query specific channel state
     pub async fn query_channel(
         &self,
-        _port_id: String,
-        _channel_id: String,
+        port_id: String,
+        channel_id: String,
         _height: u64,
     ) -> Result<Vec<u8>> {
-        // TODO: Implement via Gateway gRPC QueryChannel
-        Err(Error::Gateway("Query channel not yet implemented".to_string()))
+        self.gateway_client.query_channel(port_id, channel_id).await
     }
 
     /// Query the client associated with a channel
     pub async fn query_channel_client_state(
         &self,
-        _port_id: String,
-        _channel_id: String,
+        port_id: String,
+        channel_id: String,
     ) -> Result<String> {
-        // TODO: Implement via Gateway gRPC
-        Err(Error::Gateway("Query channel client state not yet implemented".to_string()))
+        self.gateway_client.query_channel_client_state(port_id, channel_id).await
     }
 
     /// Query the next sequence number for packet receive
     pub async fn query_next_sequence_receive(
         &self,
-        _port_id: String,
-        _channel_id: String,
+        port_id: String,
+        channel_id: String,
         _height: u64,
     ) -> Result<u64> {
-        // TODO: Implement via Gateway gRPC QueryNextSequenceReceive
-        Err(Error::Gateway("Query next sequence receive not yet implemented".to_string()))
+        self.gateway_client.query_next_sequence_receive(port_id, channel_id).await
     }
 
     //
