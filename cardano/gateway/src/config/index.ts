@@ -66,7 +66,11 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
+  
+  // DEPRECATED: Only for testing/backwards compatibility
+  // Production uses Hermes relayer signing, not Gateway wallet
   signerWalletSeed: string;
+  
   database: PostgresConnectionOptions;
 
   cardanoChainHost: string;

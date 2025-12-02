@@ -588,10 +588,63 @@ impl GatewayClient {
         Ok(response.into_inner().sequences)
     }
 
+    //
+    // ============================================================================
+    // Category 9: Transaction Submission
+    // ============================================================================
+    //
+
+    /// Submit a signed Cardano transaction to the Gateway
+    /// 
+    /// This is called after Hermes signs the unsigned transaction using CIP-1852 keys.
+    /// The Gateway then submits the signed transaction to Cardano via Ogmios.
+    /// 
+    /// Flow:
+    /// 1. Gateway returns unsigned CBOR
+    /// 2. Hermes signs with CardanoSigner (Ed25519)
+    /// 3. Hermes calls this method with signed CBOR
+    /// 4. Gateway submits to Cardano and returns tx_hash + events
+    pub async fn submit_signed_transaction(
+        &self,
+        signed_tx_cbor: String,
+        description: Option<String>,
+    ) -> Result<(String, Vec<IbcEvent>)> {
+        use crate::generated::ibc::cardano::v1::cardano_msg_client::CardanoMsgClient;
+        use crate::generated::ibc::cardano::v1::SubmitSignedTxRequest;
+
+        let channel = self.connect().await?;
+        let mut client = CardanoMsgClient::new(channel);
+        
+        let request = tonic::Request::new(SubmitSignedTxRequest {
+            signed_tx_cbor,
+            description: description.unwrap_or_else(|| "Hermes-submitted transaction".to_string()),
+        });
+        
+        let response = client
+            .submit_signed_tx(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("SubmitSignedTx failed: {}", e)))?;
+        
+        let response_inner = response.into_inner();
+        let tx_hash = response_inner.tx_hash;
+        
+        // Parse IBC events from transaction (if any)
+        let events: Vec<IbcEvent> = response_inner.events
+            .into_iter()
+            .filter_map(|event| {
+                // TODO: Implement proper event parsing from Cardano transaction events
+                // For now, return empty vec as Gateway doesn't yet populate this field
+                None
+            })
+            .collect();
+        
+        Ok((tx_hash, events))
+    }
+
     /// Wait for transaction events
     /// 
     /// Polls the Gateway for transaction confirmation and IBC events
-    pub async fn wait_for_tx_events(&self, tx_hash: &str) -> Result<Vec<IbcEvent>> {
+    pub async fn wait_for_tx_events(&self, _tx_hash: &str) -> Result<Vec<IbcEvent>> {
         // TODO: Implement polling for tx confirmation and event extraction
         Err(Error::Gateway("wait_for_tx_events not yet implemented".to_string()))
     }

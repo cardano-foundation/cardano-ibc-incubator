@@ -33,6 +33,12 @@ pub mod ibc {
             }
         }
     }
+    // Cardano-specific modules
+    pub mod cardano {
+        pub mod v1 {
+            include!("ibc.cardano.v1.rs");
+        }
+    }
 }
 
 // Cosmos modules

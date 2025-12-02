@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "ibc/core/channel/v1/query.proto",
         "ibc/core/channel/v1/tx.proto",
         "ibc/core/types/v1/query.proto",
+        "ibc/cardano/v1/tx.proto",
     ];
     
     // Convert to absolute paths

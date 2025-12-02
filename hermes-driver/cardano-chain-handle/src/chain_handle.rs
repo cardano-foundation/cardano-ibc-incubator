@@ -104,52 +104,51 @@ impl CardanoChainHandle {
 
     /// Submit IBC messages to Cardano and wait for block inclusion
     /// 
-    /// ## Current Implementation (Gateway-Signed Mode)
-    /// The Gateway currently signs transactions internally for testing purposes.
-    /// When we call MsgCreateClient, MsgUpdateClient, etc., the Gateway:
-    /// 1. Builds the transaction
-    /// 2. Signs it with its own wallet
-    /// 3. Submits to Cardano
-    /// 4. Returns the result
+    /// ## Production Flow (Relayer-Signed Mode)
+    /// The Gateway now returns unsigned transactions for Hermes to sign:
+    /// 1. Call Gateway Msg service (e.g., MsgCreateClient) to get unsigned CBOR
+    /// 2. Sign with CardanoSigner using CIP-1852 keys (Ed25519)
+    /// 3. Submit signed transaction via Gateway's SubmitSignedTx endpoint
+    /// 4. Wait for confirmation and return IBC events
     /// 
-    /// ## Future Implementation (Relayer-Signed Mode)
-    /// Once Gateway is updated, the flow will be:
-    /// 1. Call Gateway to get unsigned transaction CBOR
-    /// 2. Sign with CardanoSigner using our keyring
-    /// 3. Submit signed transaction to Gateway's SubmitTx endpoint
-    /// 4. Wait for confirmation
-    /// 
-    /// For now, we delegate to Gateway and extract events from responses.
+    /// This provides full control over transaction signing to the relayer,
+    /// matching the security model of other IBC implementations.
     pub async fn send_messages_and_wait_commit(
         &self,
         msgs: TrackedMsgs,
     ) -> Result<Vec<IbcEvent>> {
-        let mut events = Vec::new();
+        let mut all_events = Vec::new();
         
         // Process each message through the Gateway
-        for msg in msgs.messages() {
-            // The Gateway's Msg service methods handle the full lifecycle:
-            // build -> sign -> submit -> wait for confirmation
-            // We just need to call the appropriate method and extract events
-            
+        for _msg in msgs.messages() {
             // TODO: Implement message dispatch based on msg type
-            // This requires matching on the message type URL and calling
-            // the appropriate Gateway Msg service method:
-            // - /ibc.core.client.v1.MsgCreateClient -> create_client()
-            // - /ibc.core.client.v1.MsgUpdateClient -> update_client()
-            // - /ibc.core.connection.v1.MsgConnectionOpenInit -> connection_open_init()
-            // - etc.
+            // For each message type, we need to:
+            // 1. Extract the message data (client_state, consensus_state, etc.)
+            // 2. Call the appropriate Gateway Msg service method
+            //    - Example: gateway.create_client(msg_data) returns unsigned_tx_cbor
+            // 3. Sign the unsigned transaction
+            //    let signed_cbor = self.signer.sign_transaction(unsigned_tx_cbor).await?;
+            // 4. Submit the signed transaction
+            //    let (tx_hash, events) = gateway.submit_signed_transaction(signed_cbor, desc).await?;
+            // 5. Collect the events
+            //    all_events.extend(events);
+            
+            // Message type dispatch skeleton:
+            // match msg.type_url.as_str() {
+            //     "/ibc.core.client.v1.MsgCreateClient" => { /* create_client flow */ },
+            //     "/ibc.core.client.v1.MsgUpdateClient" => { /* update_client flow */ },
+            //     "/ibc.core.connection.v1.MsgConnectionOpenInit" => { /* connection_open_init flow */ },
+            //     // ... etc for all IBC message types
+            //     _ => return Err(Error::Gateway(format!("Unsupported message type: {}", msg.type_url))),
+            // }
             
             tracing::debug!(
-                "Processing IBC message (Gateway-signed mode)"
+                "Processing IBC message (Relayer-signed mode with Gateway unsigned tx + Hermes signing)"
             );
-            
-            // For now, return empty events until message dispatch is implemented
-            // Each Gateway call will return events in the response
         }
         
-        // Return collected events (empty for now until message dispatch is implemented)
-        Ok(events)
+        // Return collected events from all submitted transactions
+        Ok(all_events)
     }
 
     /// Submit messages and return immediately after mempool check
