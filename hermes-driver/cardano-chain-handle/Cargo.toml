@@ -22,6 +22,7 @@ prost = "0.12"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+prost-types = "0.12"
 
 # Cryptography for Cardano signing
 ed25519-dalek = "2.1"

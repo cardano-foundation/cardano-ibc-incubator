@@ -1,9 +1,13 @@
 use ibc_relayer::chain::tracking::TrackedMsgs;
 use ibc_relayer_types::core::ics02_client::height::Height;
 use ibc_relayer_types::events::IbcEvent;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Endpoint};
 
 use crate::error::{Error, Result};
+use crate::generated::ibc::core::client::v1::{
+    query_client::QueryClient as ClientQueryClient,
+    QueryLatestHeightRequest, QueryClientStateRequest,
+};
 
 /// GatewayClient handles gRPC communication with the Cardano Gateway
 /// The Gateway is responsible for:
@@ -11,78 +15,106 @@ use crate::error::{Error, Result};
 /// - Submitting signed transactions to Cardano
 /// - Querying Cardano state
 /// - Providing IBC events
+#[derive(Clone)]
 pub struct GatewayClient {
     /// gRPC endpoint URL
     endpoint: String,
-    
-    /// gRPC channel (created lazily)
-    channel: Option<Channel>,
 }
 
 impl GatewayClient {
     /// Create a new GatewayClient
     pub fn new(endpoint: String) -> Result<Self> {
-        Ok(Self {
-            endpoint,
-            channel: None,  // Lazy init: connect on first use to avoid blocking constructor
-        })
+        Ok(Self { endpoint })
     }
 
-    /// Ensure we have a gRPC channel, creating it if necessary
-    async fn get_channel(&mut self) -> Result<&Channel> {
-        if self.channel.is_none() {  // Lazy connection: only connect when needed
-            let channel = Channel::from_shared(self.endpoint.clone())
-                .map_err(|e| Error::Gateway(format!("Invalid endpoint: {}", e)))?
-                .connect()
-                .await
-                .map_err(|e| Error::Gateway(format!("Connection failed: {}", e)))?;
-            
-            self.channel = Some(channel);
-        }
-
-        Ok(self.channel.as_ref().unwrap())
+    /// Get a gRPC channel to the Gateway
+    async fn connect(&self) -> Result<Channel> {
+        let endpoint = Endpoint::from_shared(self.endpoint.clone())
+            .map_err(|e| Error::Gateway(format!("Invalid endpoint: {}", e)))?;
+        
+        endpoint
+            .connect()
+            .await
+            .map_err(|e| Error::Gateway(format!("Connection failed: {}", e)))
     }
 
     /// Query the latest height from Cardano
     pub async fn query_latest_height(&self) -> Result<Height> {
-        // TODO: Implement gRPC call to Gateway's QueryLatestHeight
-        // For now, return a stub
-        Err(Error::Gateway("query_latest_height not yet implemented".to_string()))
+        let channel = self.connect().await?;
+        let mut client = ClientQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryLatestHeightRequest {});
+        
+        let response = client
+            .latest_height(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("LatestHeight query failed: {}", e)))?;
+        
+        let height_value = response.into_inner().height;
+        
+        // Cardano doesn't have revision numbers, so use revision 0
+        // The height is the Cardano block number
+        Height::new(0, height_value)
+            .map_err(|e| Error::Gateway(format!("Invalid height: {}", e)))
     }
 
     /// Query client state from Cardano
-    /// TODO: Add proper return type once we define Gateway protobuf types
-    pub async fn query_client_state(&self, _client_id: String) -> Result<Vec<u8>> {
-        // TODO: Implement gRPC call to Gateway's QueryClientState
-        Err(Error::Gateway("query_client_state not yet implemented".to_string()))
+    /// The height parameter specifies the block height to query at (0 for latest)
+    pub async fn query_client_state(&self, client_id: String, height: u64) -> Result<Vec<u8>> {
+        let channel = self.connect().await?;
+        let mut client = ClientQueryClient::new(channel);
+        
+        let request = tonic::Request::new(QueryClientStateRequest {
+            client_id,
+            height,
+        });
+        
+        let response = client
+            .client_state(request)
+            .await
+            .map_err(|e| Error::Gateway(format!("ClientState query failed: {}", e)))?;
+        
+        let client_state = response.into_inner().client_state
+            .ok_or_else(|| Error::Gateway("No client state in response".to_string()))?;
+        
+        // Return serialized protobuf Any
+        use prost::Message;
+        Ok(client_state.encode_to_vec())
     }
 
     /// Build an unsigned transaction via the Gateway
     /// 
-    /// The Gateway will:
-    /// 1. Query required UTXOs from Cardano
-    /// 2. Build the transaction using Lucid
-    /// 3. Calculate fees and change
-    /// 4. Return unsigned CBOR
-    pub async fn build_transaction(&self, msgs: &TrackedMsgs) -> Result<Vec<u8>> {
-        // TODO: Implement gRPC call to Gateway's BuildTransaction
-        // This needs to:
-        // 1. Convert TrackedMsgs to protobuf format
-        // 2. Call Gateway gRPC endpoint
-        // 3. Return unsigned transaction CBOR
-        Err(Error::TxBuilder("build_transaction not yet implemented".to_string()))
+    /// The Gateway's gRPC interface returns unsigned transactions directly from
+    /// each IBC message RPC call (e.g., MsgCreateClient -> MsgCreateClientResponse
+    /// contains the unsigned_tx field).
+    /// 
+    /// This method is a placeholder - in practice, ChainHandle will call specific
+    /// message methods (create_client_tx, update_client_tx, etc.) that return the
+    /// unsigned transaction directly.
+    pub async fn build_transaction(&self, _msgs: &TrackedMsgs) -> Result<Vec<u8>> {
+        // Not directly implemented - Gateway returns unsigned tx from message-specific RPCs
+        // Each message type (CreateClient, UpdateClient, etc.) has its own gRPC method
+        // that returns an unsigned transaction in the response.
+        Err(Error::TxBuilder(
+            "Use message-specific methods (create_client_tx, etc.) instead".to_string()
+        ))
     }
 
-    /// Submit a signed transaction to Cardano
+    /// Submit a signed transaction to Cardano via the Gateway
     /// 
     /// The Gateway will:
-    /// 1. Receive signed CBOR transaction
-    /// 2. Submit via Ogmios to Cardano
+    /// 1. Receive signed CBOR transaction bytes
+    /// 2. Submit to Cardano via Ogmios/direct node connection
     /// 3. Wait for confirmation
     /// 4. Return transaction hash
-    pub async fn submit_transaction(&self, signed_tx: Vec<u8>) -> Result<String> {
-        // TODO: Implement gRPC call to Gateway's SubmitTransaction
-        Err(Error::Gateway("submit_transaction not yet implemented".to_string()))
+    /// 
+    /// This is a generic submission endpoint that works for all transaction types.
+    pub async fn submit_transaction(&self, _signed_tx: Vec<u8>) -> Result<String> {
+        // TODO: Implement once Gateway adds a generic SubmitTransaction RPC endpoint
+        // For now, this needs to be called via the Gateway's HTTP API or a custom RPC
+        Err(Error::Gateway(
+            "Transaction submission endpoint not yet implemented in Gateway gRPC".to_string()
+        ))
     }
 
     /// Wait for transaction events
@@ -110,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_gateway_client_creation() {
-        let client = GatewayClient::new("http://localhost:3000".to_string());
+        let client = GatewayClient::new("http://localhost:5001".to_string());
         assert!(client.is_ok());
     }
 
@@ -120,5 +152,27 @@ mod tests {
         // Should still create successfully (connection happens lazily)
         assert!(client.is_ok());
     }
+    
+    // Integration tests (require running Gateway)
+    // These are commented out as they need a live Gateway instance
+    
+    // #[tokio::test]
+    // async fn test_query_latest_height() {
+    //     let client = GatewayClient::new("http://localhost:5001".to_string()).unwrap();
+    //     let height = client.query_latest_height().await;
+    //     assert!(height.is_ok());
+    //     let h = height.unwrap();
+    //     assert_eq!(h.revision_number(), 0); // Cardano doesn't use revisions
+    //     assert!(h.revision_height() > 0);
+    // }
+    
+    // #[tokio::test]
+    // async fn test_query_client_state() {
+    //     let client = GatewayClient::new("http://localhost:5001".to_string()).unwrap();
+    //     let client_state = client.query_client_state("07-tendermint-0".to_string(), 0).await;
+    //     assert!(client_state.is_ok());
+    //     let state_bytes = client_state.unwrap();
+    //     assert!(!state_bytes.is_empty());
+    // }
 }
 

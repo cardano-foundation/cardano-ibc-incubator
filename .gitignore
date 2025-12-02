@@ -16,6 +16,12 @@
 
 .env
 
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
 cardano/gateway/deployment
 chains/osmosis/osmosis/
 chains/osmosis/osmosis.zip

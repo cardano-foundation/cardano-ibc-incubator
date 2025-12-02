@@ -1,5 +1,4 @@
 use ed25519_dalek::{Signature, Signer as Ed25519Signer, SigningKey};
-use pallas_codec::minicbor;
 use digest::Digest;
 use blake2::Blake2b512;
 

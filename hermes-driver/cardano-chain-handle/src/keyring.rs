@@ -2,7 +2,6 @@ use tiny_bip39::{Mnemonic, Language, Seed};
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::str::FromStr;
 use slip10::{BIP32Path, derive_key_from_path};
 use digest::Digest;
 use blake2::Blake2b512;

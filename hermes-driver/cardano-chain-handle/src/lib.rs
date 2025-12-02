@@ -8,6 +8,9 @@ pub mod keyring;
 pub mod signer;
 pub mod types;
 
+// Generated protobuf code
+pub mod generated;
+
 // Re-exports for convenience
 pub use chain_handle::CardanoChainHandle;
 pub use error::{Error, Result};
