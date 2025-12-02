@@ -16,6 +16,9 @@ pub enum Error {
     #[error("Key derivation error: {0}")]
     KeyDerivation(String),
 
+    #[error("Keyring error: {0}")]
+    Keyring(String),
+
     #[error("Serialization error: {0}")]
     Serialization(String),
 
