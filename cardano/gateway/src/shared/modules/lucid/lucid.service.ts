@@ -156,6 +156,40 @@ export class LucidService {
     if (!handlerUtxo) throw new GrpcNotFoundException(`Unable to find Handler UTxO at ${handlerAuthToken}`);
     return handlerUtxo;
   }
+
+  /**
+   * Find the HostState UTXO by its unique NFT (STT Architecture)
+   * 
+   * The IBC Host State NFT uniquely identifies the canonical host state UTXO.
+   * This provides:
+   * - Guaranteed uniqueness (exactly one UTXO with this NFT exists)
+   * - Simple querying (no ambiguous UTXOs)
+   * - Complete state history (follow the NFT through transactions)
+   * 
+   * @returns The HostState UTXO containing the NFT
+   * @throws GrpcNotFoundException if NFT or UTXO not found
+   */
+  public async findUtxoAtHostStateNFT(): Promise<UTxO> {
+    const { address: addressOrCredential } = this.configService.get('deployment').validators.hostStateStt;
+    const hostStateNFTConfig = this.configService.get('deployment').hostStateNFT;
+    const hostStateNFT = hostStateNFTConfig.policyId + hostStateNFTConfig.name;
+    
+    const hostStateUtxos = await this.lucid.utxosAt(addressOrCredential);
+    if (hostStateUtxos.length === 0) {
+      throw new GrpcNotFoundException(`Unable to find UTxOs at HostState STT address: ${addressOrCredential}`);
+    }
+    
+    const hostStateUtxo = hostStateUtxos.find((utxo) => utxo.assets.hasOwnProperty(hostStateNFT));
+    if (!hostStateUtxo) {
+      throw new GrpcNotFoundException(
+        `Unable to find HostState UTXO with NFT: ${hostStateNFT}. ` +
+        `This indicates the IBC Host State has not been initialized or the NFT was not minted correctly.`
+      );
+    }
+    
+    return hostStateUtxo;
+  }
+
   public async getPublicKeyHash(address: string): Promise<string> {
     return getAddressDetails(address).paymentCredential?.hash;
   }
@@ -311,20 +345,24 @@ export class LucidService {
   }
 
   public createUnsignedCreateClientTransaction(
-    handlerUtxo: any,
-    encodedHandlerOperator: string,
+    hostStateUtxo: any,
+    encodedHostStateRedeemer: string,
     clientAuthTokenUnit: string,
     encodedMintClientOperator: string,
-    encodedUpdatedHandlerDatum: string,
+    encodedUpdatedHostStateDatum: string,
     encodedClientDatum: string,
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
-    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintClient])
-      .collectFrom([handlerUtxo], encodedHandlerOperator)
+    // STT Transaction Structure:
+    // 1. Spend the old HostState UTXO (with NFT)
+    // 2. Create a new HostState UTXO (with same NFT, updated datum)
+    // 3. Mint and create the new Client UTXO
+    tx.readFrom([this.referenceScripts.hostStateStt, this.referenceScripts.mintClient])
+      .collectFrom([hostStateUtxo], encodedHostStateRedeemer)
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
@@ -335,13 +373,17 @@ export class LucidService {
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
-    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
-      [handlerAuthToken]: 1n,
+    
+    // Recreate HostState UTXO with updated datum and same NFT
+    addPayToContract(deploymentConfig.validators.hostStateStt.address, encodedUpdatedHostStateDatum, {
+      [hostStateNFT]: 1n,
     });
+    
+    // Create new Client UTXO
     addPayToContract(deploymentConfig.validators.spendClient.address, encodedClientDatum, {
       [clientAuthTokenUnit]: 1n,
     });
-    // Optional: call validTo method if needed
+    
     return tx;
   }
   public createUnsignedConnectionOpenInitTransaction(

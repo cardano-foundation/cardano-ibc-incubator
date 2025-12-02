@@ -334,21 +334,33 @@ export class ClientService {
     consensusState: ConsensusState,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    // Decode the handler datum from the handler UTXO
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    // STT Architecture: Query the HostState UTXO via its unique NFT
+    // the NFT serves as a linear threading token -
+    // the UTXO set can only contain exactly one unspent output with this NFT at any given slot,
+    // which eliminates race conditions and indexing ambiguities that would otherwise require
+    // sophisticated conflict resolution when multiple Handler UTXOs could theoretically coexist.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    
+    // Decode the HostState datum from the UTXO
+    const hostStateDatum = await this.lucidService.decodeDatum(hostStateUtxo.datum!, 'host_state');
     
     // Compute new IBC state root with client update
-    const clientId = `07-tendermint-${handlerDatum.state.next_client_sequence}`;
-    const newRoot = this.computeRootWithClientUpdate(handlerDatum.state.ibc_state_root, clientId, clientState);
+    const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;
+    const newRoot = this.computeRootWithClientUpdate(hostStateDatum.state.ibc_state_root, clientId, clientState);
     
-    // Create an updated handler datum with an incremented client sequence and updated root
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
+    // Create an updated HostState datum with:
+    // - Incremented version (STT monotonicity requirement)
+    // - Incremented client sequence
+    // - Updated ibc_state_root
+    // - Current timestamp
+    const updatedHostStateDatum = {
+      ...hostStateDatum,
       state: {
-        ...handlerDatum.state,
-        next_client_sequence: handlerDatum.state.next_client_sequence + 1n,
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_client_sequence: hostStateDatum.state.next_client_sequence + 1n,
         ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
     };
     const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
@@ -358,7 +370,7 @@ export class ClientService {
       consensusStates: new Map([[clientState.latestHeight, consensusState]]),
     };
 
-    const clientTokenName = this.generateClientTokenName(handlerDatum);
+    const clientTokenName = this.generateClientTokenName(hostStateDatum);
 
     const clientDatum: ClientDatum = {
       state: clientDatumState,
@@ -369,35 +381,46 @@ export class ClientService {
     };
     const mintClientOperator: MintClientOperator = this.createMintClientOperator();
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
-    const handlerOperator: HandlerOperator = 'CreateClient';
-    // Encode encoded data for created transaction
+    
+    // STT redeemer: Explicitly specify the operation type
+    // The reason I'm doing it this way is because the validator needs type-specific invariants -
+    // CreateClient requires incrementing next_client_sequence while preserving connection/channel
+    // sequences, whereas other operations have different field constraints. The redeemer acts as
+    // a dispatch mechanism so the validator can branch to operation-specific validation logic.
+    const hostStateRedeemer = 'CreateClient';
+    
+    // Encode all data for the transaction
     const encodedMintClientOperator: string = await this.lucidService.encode(mintClientOperator, 'mintClientOperator');
-    const encodedHandlerOperator: string = await this.lucidService.encode(handlerOperator, 'handlerOperator');
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(
+      updatedHostStateDatum,
+      'host_state',
     );
     const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
+    
     // Create and return the unsigned transaction for creating new client
+    // This will spend the old HostState UTXO and create a new one with the same NFT
     return {
       unsignedTx: this.lucidService.createUnsignedCreateClientTransaction(
-        handlerUtxo,
-        encodedHandlerOperator,
+        hostStateUtxo,
+        encodedHostStateRedeemer,
         clientAuthTokenUnit,
         encodedMintClientOperator,
-        encodedUpdatedHandlerDatum,
+        encodedUpdatedHostStateDatum,
         encodedClientDatum,
         constructedAddress,
       ),
-      clientId: handlerDatum.state.next_client_sequence,
+      clientId: hostStateDatum.state.next_client_sequence,
     };
   }
-  private generateClientTokenName(handlerDatum: HandlerDatum): string {
-    // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence);
+  
+  private generateClientTokenName(hostStateDatum: any): string {
+    // Generate client token name from HostState NFT policy
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
     return this.lucidService.generateTokenName(
-      handlerDatum.token,
+      hostStateNFT,
       CLIENT_PREFIX,
-      handlerDatum.state.next_client_sequence,
+      hostStateDatum.state.next_client_sequence,
     );
   }
 

@@ -1,11 +1,12 @@
-// IBC State Root Computation
+// IBC State Root Computation - STT Architecture
 // 
 // This module is responsible for computing the ICS-23 Merkle root commitment over all IBC host state.
 // The root covers: clients/, connections/, channels/, packets/, etc.
 //
-// Architecture:
-// - The root is stored in the Handler UTXO datum
+// STT Architecture:
+// - The root is stored in the HostState UTXO datum (identified by unique NFT)
 // - It's updated atomically with each IBC state change
+// - The NFT ensures exactly one canonical state exists at any time
 // - Mithril certifies it via snapshot inclusion
 // - Enables VerifyMembership/VerifyNonMembership on Cosmos side
 
@@ -220,14 +221,21 @@ export function computeRootWithPortBind(
 }
 
 /**
- * Rebuild the IBC state tree from on-chain UTXOs
+ * Rebuild the IBC state tree from on-chain UTXOs (STT Architecture)
  * 
  * CRITICAL FOR PRODUCTION: This function makes the Gateway resilient to restarts
  * 
- * Architecture:
- * - Queries all IBC UTXOs (clients, connections, channels) via Kupo
+ * STT Architecture Benefits:
+ * - Queries the unique HostState UTXO via NFT (no ambiguity)
+ * - NFT provides complete state history for auditing
+ * - Canonical state guarantee (exactly one valid state)
+ * - Simpler indexing (follow the NFT)
+ * 
+ * Process:
+ * - Queries HostState UTXO via IBC Host State NFT
+ * - Queries all IBC object UTXOs (clients, connections, channels)
  * - Rebuilds the Merkle tree from scratch
- * - Verifies computed root matches the on-chain Handler UTXO root
+ * - Verifies computed root matches the on-chain HostState root
  * - Updates currentTree to reflect on-chain state
  * 
  * When to call:
@@ -247,19 +255,21 @@ export async function rebuildTreeFromChain(
   kupoService: any,  // KupoService type
   lucidService: any, // LucidService type
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
-  console.log('Rebuilding IBC state tree from on-chain UTXOs...');
+  console.log('Rebuilding IBC state tree from on-chain UTXOs (STT architecture)...');
   
   try {
-    // 1. Query Handler UTXO to get expected root
-    const handlerUtxo = await lucidService.findUtxoAtHandlerAuthToken();
-    if (!handlerUtxo.datum) {
-      throw new Error('Handler UTXO has no datum');
+    // 1. Query HostState UTXO to get expected root
+    // NOTE: Uses NFT for guaranteed uniqueness (no ambiguous UTXOs)
+    const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new Error('HostState UTXO has no datum');
     }
     
-    const handlerDatum = await lucidService.decodeDatum(handlerUtxo.datum, 'handler');
-    const expectedRoot = handlerDatum.state.ibc_state_root;
+    const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
+    const expectedRoot = hostStateDatum.state.ibc_state_root;
+    const version = hostStateDatum.state.version;
     
-    console.log(`Expected root from Handler UTXO: ${expectedRoot.substring(0, 16)}...`);
+    console.log(`Expected root from HostState UTXO (v${version}): ${expectedRoot.substring(0, 16)}...`);
     
     // 2. Create new tree
     const tree = new ICS23MerkleTree();
