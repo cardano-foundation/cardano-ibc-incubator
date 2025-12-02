@@ -142,17 +142,17 @@ export class PacketService {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 < packet.timeout_timestamp');
       }
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
-      // Todo: signing should be done in the relayer in the future
-      const signedRecvPacketCompleted = await (await unsignedRecvPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedRecvPacketCompleted.toHash(), 'recv packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for recv packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedRecvPacketCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -180,17 +180,16 @@ export class PacketService {
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedSendPacketTxCompleted.toHash(), 'send packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for send packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -220,17 +219,16 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedSendPacketTxCompleted.toHash(), 'timeout packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for timeout packet');
       const response: MsgTimeoutResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgTimeoutResponse;
       return response;
@@ -281,16 +279,15 @@ export class PacketService {
       }
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedTimeoutRefreshCompleted = await (await unsignedTimeoutRefreshTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedTimeoutRefreshCompleted.toHash(), 'TimeoutRefresh - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for timeout refresh');
       const response: MsgTimeoutRefreshResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedTimeoutRefreshCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgTimeoutRefreshResponse;
       return response;
@@ -319,15 +316,16 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedAckPacketCompleted = await (await unsignedAckPacketTxValidTo.complete()).sign.withWallet().complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedAckPacketCompleted.toHash(), 'ack packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for ack packet');
       const response: MsgAcknowledgementResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedAckPacketCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgAcknowledgementResponse;
       return response;

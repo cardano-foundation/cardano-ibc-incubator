@@ -82,16 +82,15 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenInitTxCompleted = await (await unsignedConnectionOpenInitTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open init');
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenInitTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgUpdateClientResponse;
       return response;
@@ -121,16 +120,15 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenTryTxCompleted = await (await unsignedConnectionOpenTryTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open try');
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenTryTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenTryResponse;
       return response;
@@ -159,16 +157,16 @@ export class ConnectionService {
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open ack');
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenAckTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
@@ -202,18 +200,15 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenConfirmTxCompleted = await (
-        await unsignedConnectionOpenConfirmTxValidTo.complete()
-      ).sign
-        .withWallet()
-        .complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open confirm');
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenConfirmTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
       return response;

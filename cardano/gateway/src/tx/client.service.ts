@@ -76,20 +76,17 @@ export class ClientService {
 
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
       
-      // DEPRECATED: Internal transaction signing (for testing only)
-      // TODO: Remove this signing logic once Hermes integration is complete
-      // 
-      // Current (test mode): Gateway signs and submits transactions
-      // Future (production): Gateway returns unsigned tx, Hermes signs and submits
-      // 
-      // This signing capability exists only for integration testing and will be removed.
-      const signedCreateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
-      this.logger.log(signedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
-      this.logger.log(clientId, 'create client - clientId');
+      // Return truly unsigned transaction for Hermes to sign
+      // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
+      const completedUnsignedTx = await unSignedTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      
+      this.logger.log(`Returning unsigned tx for client creation (client_id: ${CLIENT_ID_PREFIX}-${clientId.toString()})`);
+      
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedCreateClientTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
         client_id: `${CLIENT_ID_PREFIX}-${clientId.toString()}`,
       } as unknown as MsgCreateClientResponse;
@@ -142,15 +139,17 @@ export class ClientService {
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
           .validTo(validToTime);
-        // Todo: signing should be done by the relayer in the future
-        const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
+        
+        // Return truly unsigned transaction for Hermes to sign
+        const completedUnsignedTx = await unSignedTxValidTo.complete();
+        const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-        this.logger.log(clientId, 'update client - client Id');
-        this.logger.log(signedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
+        this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
+        
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
+            value: fromHex(unsignedTxCbor),
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -188,14 +187,16 @@ export class ClientService {
 
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
+      // Return truly unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unSignedTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      
+      this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 
-      // Build and complete the unsigned transaction
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;
