@@ -23,6 +23,7 @@ prost = "0.12"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 prost-types = "0.12"
+toml = "0.8"
 
 # Cryptography for Cardano signing
 ed25519-dalek = "2.1"
@@ -40,6 +41,10 @@ anyhow = "1.0"
 
 # Logging
 tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# CLI
+clap = { version = "4.4", features = ["derive"] }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -51,4 +56,8 @@ tonic-build = "0.11"
 [lib]
 name = "cardano_chain_handle"
 path = "src/lib.rs"
+
+[[bin]]
+name = "cardano-ibc"
+path = "src/main.rs"
 

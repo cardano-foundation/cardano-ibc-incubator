@@ -2,6 +2,7 @@
 // This crate provides the bridge between Hermes and the Cardano Gateway
 
 pub mod chain_handle;
+pub mod config;
 pub mod error;
 pub mod gateway_client;
 pub mod keyring;
