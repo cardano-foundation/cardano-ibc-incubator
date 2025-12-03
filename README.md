@@ -8,7 +8,7 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 >
 > Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
 >
->  :heavy_exclamation_mark: The software withing this repository is provided to you on an "as is" and "as available" basis.
+> The software withing this repository is provided to you on an "as is" and "as available" basis.
 >
 > While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
 
@@ -17,16 +17,32 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 > [!WARNING]
 > **This IBC bridge currently requires trust in Gateway infrastructure for UTxO queries.** While Mithril certificates and transaction inclusion are cryptographically verifiable, UTxO inclusion proofs are not yet possible because Mithril signers cannot guarantee identical UTxO set views due to network propagation delays. Full trustless verification awaits [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083), which will enable Cardano nodes to compute canonical ledger state hashes analogous to Tendermint's `AppHash`. Full parity with Tendermint light client security model—no trust assumptions may not be feasible under current conditions.
 
-## :eyes: Overview
+## Overview
 This repository is divided into four main directories:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
 - `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
 - `relayer`: Contains all relayer related source code. Forked from https://github.com/cosmos/relayer
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
 
-## :rocket: Getting Started
+## Architecture & Design Decisions
 
-### 🧰 Prerequisites
+### Hermes Driver Transaction Signing
+
+The Hermes relayer driver (`hermes-driver/cardano-chain-handle`) implements transaction signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. We specifically chose **not** to use [`cardano_tx_builder`](https://cardano-lightning.github.io/konduit/rust/cardano_tx_builder/) because our architecture separates concerns:
+
+- **Gateway (NestJS/TypeScript)** builds unsigned transactions using [Lucid Evolution](https://github.com/Anastasia-Labs/lucid-evolution) and handles all Cardano-specific domain logic (UTxO querying, fee calculation, Mithril proof generation)
+- **Hermes Driver (Rust)** only signs pre-built transactions using CIP-1852 key derivation and Ed25519 signatures
+
+This separation provides:
+- Clean boundaries between chain-specific logic (Gateway) and generic IBC relaying (Hermes)
+- Flexibility to swap relayer implementations without touching chain logic
+- Easier testing and maintenance of cryptographic signing separate from transaction construction
+
+Future architectural changes could consolidate transaction building into Rust, at which point `cardano_tx_builder` would become relevant.
+
+## Getting Started
+
+### Prerequisites
 
 The following components are required to run the project:
 
@@ -46,7 +62,7 @@ cd caribic
 cargo run check
 ```
 
-### ⛓ Running a local Cardano network
+### Running a local Cardano network
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
 
@@ -57,7 +73,7 @@ cargo run start network
 # will start network and bridge components
 ```
 
-### 🌉 Deploying the bridge components
+### Deploying the bridge components
 
 To start the gateway, relayer and to deploy the light client contracts run:
 
@@ -67,7 +83,7 @@ cargo run start bridge
 # will start network and bridge components
 ```
 
-### ⛓️‍💥 Stopping the services
+### Stopping the services
 
 To stop the services:
 
@@ -75,7 +91,7 @@ To stop the services:
 cargo run stop # network|bridge|demo|all (default: all)
 ```
 
-### 🎉 Demo: Sending a demo message from Cosmos to Cardano
+### Demo: Sending a demo message from Cosmos to Cardano
 
 Make sure you have the bridge and network components running. Then, run the following command:
 
@@ -107,10 +123,10 @@ go run . transmit -channelid $CHANNEL_ID -ts $CONSOLIDATION_TIMESTAMP
 
 - Check in the relayer or gateway if the message has been picked up and delivered to Cardano. Usually it should invoke the recvPacket function. This function would also be able to handle business logic.
 
-## 🎉 Demo: Transfering tokens from Cosmos to Cardano and vice versa
+## Demo: Transfering tokens from Cosmos to Cardano and vice versa
 
 > [!CAUTION]  
-> 🪡 Use case under construction:  
+> Use case under construction:  
 > We are currently refactoring the code, so this use case might not work properly.
 
 Make sure you have the bridge and network components running. Then, run the following command:
@@ -180,10 +196,10 @@ Example:
 ]
 ```
 
-### 🎉 Demo: Crosschain Swap
+### Demo: Crosschain Swap
 
 > [!CAUTION]  
-> 🪡 Use case under construction:  
+> Use case under construction:  
 > We are currently refactoring the code, so this use case might not work properly.
 
 1. Run:
@@ -201,7 +217,7 @@ Example:
   This command will send mock token in Cardano to Osmosis via IBC Packet Forward Middleware, swap this token to `uosmo` on created pool and send swapped token back to Cardano via Packet Forward Middleware again.
 
 
-## 💡 Useful commands for local networks
+## Useful commands for local networks
 
 #### Using the faucet to create and fund accounts in the test environment
 
@@ -304,7 +320,7 @@ If you encounter an error like `DiffusionError Network.Socket.bind: permission d
 
 If this doesn't resolve the issue, this is typically related to Docker runtime configuration. If using Colima on macOS, ensure you're using VirtioFS mount type by recreating Colima with `colima delete` followed by `colima start --vm-type=vz --mount-type=virtiofs --network-address`, and verify the cardano-node is configured to bind to `0.0.0.0` rather than a specific IP address.
 
-## 🫂 Kudos to the Developers in the Cardano Ecosystem
+## Kudos to the Developers in the Cardano Ecosystem
 
 This project stands on the shoulders of some incredible frameworks and tools developed by the Cardano community. Huge thanks to the developers behind these services—projects like this wouldn’t be possible without their hard work and innovation:
 
@@ -315,11 +331,11 @@ This project stands on the shoulders of some incredible frameworks and tools dev
 - [gOuroboros](https://github.com/blinklabs-io/gouroboros)
 - [Mithril](https://github.com/input-output-hk/mithril)
 
-## :blue_heart: Contributing
+## Contributing
 All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.
 
 Please read [Contributing](CONTRIBUTING.md) in advance. Thank you for contributing!
 
-## :books: Additional Documents
+## Additional Documents
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md)
