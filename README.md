@@ -21,8 +21,21 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 This repository is divided into four main directories:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
 - `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
-- `relayer`: Contains all relayer related source code. Forked from https://github.com/cosmos/relayer
+- `relayer`: **DEPRECATED** - The Go relayer is being replaced by Hermes (Rust). See the [Hermes Cardano integration](https://github.com/webisoftSoftware/hermes/tree/feat/cardano-integration) for active development.
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
+
+### Hermes Integration
+
+The project is migrating from a Go-based relayer to the [Hermes](https://hermes.informal.systems/) Rust relayer for better performance and maintainability. Cardano-specific integration is being developed in a separate fork:
+
+**Hermes Fork:** https://github.com/webisoftSoftware/hermes/tree/feat/cardano-integration
+
+This fork implements:
+- `ChainEndpoint` trait for Cardano
+- CIP-1852 key derivation and Ed25519 signing
+- Gateway gRPC client for Cardano blockchain interaction
+- Cardano-specific IBC types (Header, ClientState, ConsensusState)
+- Transaction building and submission pipeline
 
 ## Architecture & Design Decisions
 
