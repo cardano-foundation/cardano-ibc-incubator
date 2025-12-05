@@ -295,7 +295,7 @@ async fn main() {
             if target == StartTarget::Network || target == StartTarget::All {
                 // Start the local Cardano network and its services
                 match start_local_cardano_network(&project_root_path, clean).await {
-                    Ok(_) => logger::log("PASS: Local Cardano network has been started and prepared"),
+                    Ok(_) => logger::log("PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)"),
                     Err(error) => network_down_with_error(&format!(
                         "ERROR: Failed to start local Cardano network: {}",
                         error
@@ -306,7 +306,7 @@ async fn main() {
                     match start_mithril(&project_root_path).await {
                         Ok(current_epoch) => {
                             cardano_current_epoch = current_epoch;
-                            logger::log("PASS: Mithril up and running")
+                            logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
                         }
                         Err(error) => network_down_with_error(&format!(
                             "ERROR: Failed to start Mithril: {}",
@@ -336,7 +336,7 @@ async fn main() {
 
                 // Deploy Contracts
                 match deploy_contracts(&project_root_path, clean).await {
-                    Ok(_) => logger::log("PASS: Cardano Scripts correcty deployed"),
+                    Ok(_) => logger::log("PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)"),
                     Err(error) => bridge_down_with_error(&format!(
                         "ERROR: Failed to deploy Cardano Scripts: {}",
                         error
@@ -354,7 +354,7 @@ async fn main() {
 
                 // Start gateway
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-                    Ok(_) => logger::log("PASS: Gateway started successfully"),
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
                     Err(error) => {
                         bridge_down_with_error(&format!("ERROR: Failed to start gateway: {}", error))
                     }
