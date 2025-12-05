@@ -51,8 +51,8 @@ impl GatewayClient {
             .map_err(|e| Error::Gateway(format!("Invalid endpoint: {}", e)))?;
         
         endpoint
-            .connect()
-            .await
+                .connect()
+                .await
             .map_err(|e| Error::Gateway(format!("Connection failed: {}", e)))
     }
 
