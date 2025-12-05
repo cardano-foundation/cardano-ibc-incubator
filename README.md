@@ -18,24 +18,25 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 > **This IBC bridge currently requires trust in Gateway infrastructure for UTxO queries.** While Mithril certificates and transaction inclusion are cryptographically verifiable, UTxO inclusion proofs are not yet possible because Mithril signers cannot guarantee identical UTxO set views due to network propagation delays. Full trustless verification awaits [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083), which will enable Cardano nodes to compute canonical ledger state hashes analogous to Tendermint's `AppHash`. Full parity with Tendermint light client security model—no trust assumptions may not be feasible under current conditions.
 
 ## Overview
-This repository is divided into four main directories:
+This repository is divided into five main directories:
 - `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
 - `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
-- `relayer`: **DEPRECATED** - The Go relayer is being replaced by Hermes (Rust). See the [Hermes Cardano integration](https://github.com/webisoftSoftware/hermes/tree/feat/cardano-integration) for active development.
+- `relayer`: A fork of [Hermes](https://hermes.informal.systems/) (Rust IBC relayer) with Cardano integration. This replaces the deprecated Go relayer and provides native `ChainEndpoint` implementation for Cardano chains.
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
+- `hermes-driver`: Legacy driver code for Hermes integration (now superseded by direct Hermes fork integration in `relayer/`).
 
-### Hermes Integration
+### Relayer Implementation (Hermes)
 
-The project is migrating from a Go-based relayer to the [Hermes](https://hermes.informal.systems/) Rust relayer for better performance and maintainability. Cardano-specific integration is being developed in a separate fork:
+This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support integrated directly into the codebase. The implementation resides in `relayer/crates/relayer/src/chain/cardano/` and includes:
 
-**Hermes Fork:** https://github.com/webisoftSoftware/hermes/tree/feat/cardano-integration
-
-This fork implements:
-- `ChainEndpoint` trait for Cardano
-- CIP-1852 key derivation and Ed25519 signing
-- Gateway gRPC client for Cardano blockchain interaction
+- `ChainEndpoint` trait implementation for Cardano
+- CIP-1852 hierarchical deterministic key derivation
+- Ed25519 transaction signing using Pallas primitives
+- Gateway gRPC client for blockchain interaction
 - Cardano-specific IBC types (Header, ClientState, ConsensusState)
-- Transaction building and submission pipeline
+- Full async runtime integration with Hermes's message-passing architecture
+
+The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem. Changes are maintained in the `feat/cardano-integration` branch and synced with the upstream Hermes fork at https://github.com/webisoftSoftware/hermes.
 
 ## Architecture & Design Decisions
 
