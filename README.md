@@ -27,7 +27,12 @@ This repository is divided into five main directories:
 
 ### Relayer Implementation (Hermes)
 
-This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support integrated directly into the codebase. The implementation resides in `relayer/crates/relayer/src/chain/cardano/` and includes:
+This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support. The relayer is integrated as a **git submodule** pointing to:
+
+**Fork Repository:** https://github.com/webisoftSoftware/hermes  
+**Branch:** `feat/cardano-integration`
+
+The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/` and includes:
 
 - `ChainEndpoint` trait implementation for Cardano
 - CIP-1852 hierarchical deterministic key derivation
@@ -35,8 +40,37 @@ This project uses a fork of the [Hermes IBC relayer](https://github.com/informal
 - Gateway gRPC client for blockchain interaction
 - Cardano-specific IBC types (Header, ClientState, ConsensusState)
 - Full async runtime integration with Hermes's message-passing architecture
+- Complete protobuf generation for Gateway Query and Msg services
 
-The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem. Changes are maintained in the `feat/cardano-integration` branch and synced with the upstream Hermes fork at https://github.com/webisoftSoftware/hermes.
+The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem.
+
+#### Working with the Hermes Submodule
+
+```bash
+# Initial clone (includes submodule)
+git clone --recurse-submodules https://github.com/webisoftSoftware/cardano-ibc-official.git
+
+# Or if already cloned, initialize the submodule
+git submodule update --init --recursive
+
+# Update submodule to latest
+cd relayer
+git pull origin feat/cardano-integration
+
+# Make changes to Hermes
+cd relayer
+# ... make changes ...
+git add -A
+git commit -m "feat: your changes"
+git push origin feat/cardano-integration
+
+# Update main repo to point to new submodule commit
+cd ..
+git add relayer
+git commit -m "chore: update Hermes submodule to latest"
+```
+
+This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
 
 ## Architecture & Design Decisions
 
