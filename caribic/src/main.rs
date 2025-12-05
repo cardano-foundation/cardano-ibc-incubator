@@ -82,6 +82,9 @@ enum Commands {
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
+        /// Start Mithril services for light client testing (adds 5-10 minute startup time)
+        #[arg(long, default_value_t = false)]
+        with_mithril: bool,
     },
     /// Stops a specific bridge component. The component can be either the network, bridge, demo or all. Default is all
     Stop {
@@ -286,7 +289,7 @@ async fn main() {
                 );
             }
         }
-        Commands::Start { target, clean } => {
+        Commands::Start { target, clean, with_mithril } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
@@ -301,25 +304,29 @@ async fn main() {
                         error
                     )),
                 }
-                // Start Mithril if needed
-                if target == StartTarget::All {
-                    match start_mithril(&project_root_path).await {
-                        Ok(current_epoch) => {
-                            cardano_current_epoch = current_epoch;
-                            logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+                // Start Mithril if requested
+                if with_mithril {
+                    if target == StartTarget::All {
+                        match start_mithril(&project_root_path).await {
+                            Ok(current_epoch) => {
+                                cardano_current_epoch = current_epoch;
+                                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+                            }
+                            Err(error) => network_down_with_error(&format!(
+                                "ERROR: Failed to start Mithril: {}",
+                                error
+                            )),
                         }
-                        Err(error) => network_down_with_error(&format!(
-                            "ERROR: Failed to start Mithril: {}",
-                            error
-                        )),
+                    } else {
+                        // Wait for Mithril to start reading the immutable cardano node files
+                        match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
+                            Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
+                            Err(error) => {
+                                network_down_with_error(&format!("ERROR: Mithril failed to read the immutable cardano node files: {}", error))
+                        }}
                     }
                 } else {
-                    // Wait for Mithril to start reading the immutable cardano node files
-                    match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                        Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
-                        Err(error) => {
-                            network_down_with_error(&format!("ERROR: Mithril failed to read the immutable cardano node files: {}", error))
-                    }}
+                    logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
                 }
                 logger::log("\nPASS: Cardano Network started successfully");
             }
@@ -365,7 +372,7 @@ async fn main() {
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
                 logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-                if target == StartTarget::All {
+                if with_mithril && target == StartTarget::All {
                     match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
