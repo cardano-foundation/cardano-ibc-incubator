@@ -29,51 +29,58 @@ use std::u64;
 
 pub fn start_relayer(
     relayer_path: &Path,
-    relayer_env_template_path: &Path,
-    relayer_config_source_path: &Path,
-    chain_handler_path: &Path,
+    _relayer_env_template_path: &Path,
+    _relayer_config_source_path: &Path,
+    _chain_handler_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    copy(
-        relayer_env_template_path,
-        relayer_path.join(".env"),
-        &fs_extra::file::CopyOptions::new().overwrite(true),
-    )
-    .map_err(|error| format!("Error copying template .env file {}", error.to_string()))?;
-
-    let relayer_config_dest_path = relayer_path.join(".config");
-    if relayer_config_dest_path.as_path().exists() {
-        fs::remove_dir_all(relayer_config_dest_path.as_path())
-            .expect("failed to cleanup target folder");
+    // Build Hermes with Cardano support if needed
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        log("🔨 Building Hermes with Cardano support (this may take a few minutes)...");
+        execute_script_with_progress(
+            relayer_path,
+            "cargo",
+            Vec::from(["build", "--release", "--bin", "hermes"]),
+            "Building Hermes relayer...",
+        )?;
+    } else {
+        verbose("Hermes binary already built, skipping compilation");
     }
-    copy_dir_all(
-        relayer_config_source_path,
-        relayer_config_dest_path.as_path(),
-    )
-    .map_err(|error| {
-        format!(
-            "Error copying relayer config directory {}",
-            error.to_string()
-        )
-    })?;
-
+    
+    // Set up Hermes configuration directory
+    let home_path = home_dir().ok_or("Could not determine home directory")?;
+    let hermes_dir = home_path.join(".hermes");
+    let hermes_keys_dir = hermes_dir.join("keys");
+    
+    fs::create_dir_all(&hermes_keys_dir)
+        .map_err(|e| format!("Failed to create Hermes keys directory: {}", e))?;
+    
+    // Copy config.example.toml to ~/.hermes/config.toml
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
     copy(
-        chain_handler_path,
-        relayer_config_dest_path
-            .as_path()
-            .join("chain_handler.json"),
+        relayer_path.join("config.example.toml"),
+        hermes_dir.join("config.toml"),
         &options,
-    )?;
-
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
-
-    execute_script_with_progress(
-        relayer_path,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        "⚡ Starting relayer...",
-    )?;
-
+    )
+    .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
+    
+    verbose(&format!(
+        "Copied Hermes configuration to {}",
+        hermes_dir.join("config.toml").display()
+    ));
+    
+    // Note: Key management is handled separately via caribic or hermes CLI
+    // Users should run:
+    //   caribic setup-keys  (or)
+    //   hermes keys add --chain cardano-testnet --mnemonic-file ~/cardano-mnemonic.txt
+    //   hermes keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd-mnemonic.txt
+    
+    log("✅ Hermes configuration prepared. You can now:");
+    log("   1. Add keys: hermes keys add --chain <chain-id> --mnemonic-file <file>");
+    log("   2. Start relayer: hermes start");
+    log("   Or use: caribic start-hermes (if implemented)");
+    
     Ok(())
 }
 
@@ -1283,5 +1290,194 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
     execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     execute_script(&gateway_dir, "docker", script_args, None)?;
+    Ok(())
+}
+
+/// Start Hermes daemon in the background
+pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    let home_path = home_dir().ok_or("Could not determine home directory")?;
+    let hermes_log = home_path.join(".hermes/hermes.log");
+    
+    log("🚀 Starting Hermes daemon...");
+    
+    // Start Hermes in background
+    let status = Command::new(&hermes_binary)
+        .arg("start")
+        .stdout(std::fs::File::create(&hermes_log)?)
+        .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
+        .spawn()
+        .map_err(|e| format!("Failed to start Hermes: {}", e))?;
+    
+    log(&format!("✅ Hermes started (PID: {})", status.id()));
+    log(&format!("   Logs: {}", hermes_log.display()));
+    log("   Monitor: tail -f ~/.hermes/hermes.log");
+    
+    Ok(())
+}
+
+/// Configure Hermes for Cardano <> Cheqd bridge
+pub fn configure_hermes_cardano_cheqd(
+    relayer_path: &Path,
+    cardano_mnemonic: Option<&str>,
+    cheqd_mnemonic: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    log("🔑 Configuring Hermes keys...");
+    
+    // Add Cardano key
+    if let Some(mnemonic) = cardano_mnemonic {
+        let mnemonic_file = std::env::temp_dir().join("cardano-mnemonic.txt");
+        fs::write(&mnemonic_file, mnemonic)?;
+        
+        let output = Command::new(&hermes_binary)
+            .args(&[
+                "keys",
+                "add",
+                "--chain",
+                "cardano-testnet",
+                "--mnemonic-file",
+                mnemonic_file.to_str().unwrap(),
+            ])
+            .output()?;
+        
+        fs::remove_file(&mnemonic_file)?;
+        
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to add Cardano key: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ).into());
+        }
+        
+        log("✅ Cardano key added");
+    }
+    
+    // Add Cheqd key
+    if let Some(mnemonic) = cheqd_mnemonic {
+        let mnemonic_file = std::env::temp_dir().join("cheqd-mnemonic.txt");
+        fs::write(&mnemonic_file, mnemonic)?;
+        
+        let output = Command::new(&hermes_binary)
+            .args(&[
+                "keys",
+                "add",
+                "--chain",
+                "cheqd-testnet-6",
+                "--mnemonic-file",
+                mnemonic_file.to_str().unwrap(),
+            ])
+            .output()?;
+        
+        fs::remove_file(&mnemonic_file)?;
+        
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to add Cheqd key: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ).into());
+        }
+        
+        log("✅ Cheqd key added");
+    }
+    
+    // Create clients on both chains
+    log("🔗 Creating IBC clients...");
+    
+    let create_cardano_client = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "client",
+            "--host-chain",
+            "cardano-testnet",
+            "--reference-chain",
+            "cheqd-testnet-6",
+        ])
+        .output()?;
+    
+    if !create_cardano_client.status.success() {
+        return Err(format!(
+            "Failed to create Cardano client: {}",
+            String::from_utf8_lossy(&create_cardano_client.stderr)
+        ).into());
+    }
+    
+    let create_cheqd_client = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "client",
+            "--host-chain",
+            "cheqd-testnet-6",
+            "--reference-chain",
+            "cardano-testnet",
+        ])
+        .output()?;
+    
+    if !create_cheqd_client.status.success() {
+        return Err(format!(
+            "Failed to create Cheqd client: {}",
+            String::from_utf8_lossy(&create_cheqd_client.stderr)
+        ).into());
+    }
+    
+    log("✅ IBC clients created on both chains");
+    
+    // Create connection
+    log("🔗 Creating IBC connection...");
+    
+    let create_connection = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "connection",
+            "--a-chain",
+            "cardano-testnet",
+            "--b-chain",
+            "cheqd-testnet-6",
+        ])
+        .output()?;
+    
+    if !create_connection.status.success() {
+        return Err(format!(
+            "Failed to create connection: {}",
+            String::from_utf8_lossy(&create_connection.stderr)
+        ).into());
+    }
+    
+    log("✅ IBC connection established");
+    
+    // Create channel
+    log("🔗 Creating IBC channel...");
+    
+    let create_channel = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "channel",
+            "--a-chain",
+            "cardano-testnet",
+            "--a-connection",
+            "connection-0",
+            "--a-port",
+            "transfer",
+            "--b-port",
+            "transfer",
+        ])
+        .output()?;
+    
+    if !create_channel.status.success() {
+        return Err(format!(
+            "Failed to create channel: {}",
+            String::from_utf8_lossy(&create_channel.stderr)
+        ).into());
+    }
+    
+    log("✅ IBC channel created");
+    log("🎉 Hermes configured successfully!");
+    
     Ok(())
 }
