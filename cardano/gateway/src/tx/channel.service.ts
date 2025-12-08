@@ -97,7 +97,7 @@ export class ChannelService {
       }
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -134,7 +134,7 @@ export class ChannelService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -173,7 +173,7 @@ export class ChannelService {
       }
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -208,7 +208,7 @@ export class ChannelService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -242,7 +242,7 @@ export class ChannelService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 

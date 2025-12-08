@@ -76,7 +76,7 @@ export class ClientService {
 
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
       
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
       const completedUnsignedTx = await unSignedTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
@@ -140,7 +140,7 @@ export class ClientService {
           .validFrom(new Date().valueOf())
           .validTo(validToTime);
         
-        // Return truly unsigned transaction for Hermes to sign
+        // Return unsigned transaction for Hermes to sign
         const completedUnsignedTx = await unSignedTxValidTo.complete();
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -187,7 +187,7 @@ export class ClientService {
 
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unSignedTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       

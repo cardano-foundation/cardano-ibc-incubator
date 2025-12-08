@@ -73,7 +73,7 @@ pub fn start_relayer(
     // Note: Key management is handled separately via caribic or hermes CLI
     // Users should run:
     //   caribic setup-keys  (or)
-    //   hermes keys add --chain cardano-testnet --mnemonic-file ~/cardano-mnemonic.txt
+    //   hermes keys add --chain cardano-devnet --mnemonic-file ~/cardano-mnemonic.txt
     //   hermes keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd-mnemonic.txt
     
     log("✅ Hermes configuration prepared. You can now:");
@@ -1341,7 +1341,7 @@ pub fn configure_hermes_cardano_cheqd(
                 "keys",
                 "add",
                 "--chain",
-                "cardano-testnet",
+                "cardano-devnet",
                 "--mnemonic-file",
                 mnemonic_file.to_str().unwrap(),
             ])
@@ -1480,4 +1480,294 @@ pub fn configure_hermes_cardano_cheqd(
     log("🎉 Hermes configured successfully!");
     
     Ok(())
+}
+
+/// Add a key to Hermes keyring via caribic
+pub fn hermes_keys_add(
+    relayer_path: &Path,
+    chain: &str,
+    mnemonic_file: &Path,
+    key_name: Option<&str>,
+    overwrite: bool,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    if !mnemonic_file.exists() {
+        return Err(format!("Mnemonic file not found: {}", mnemonic_file.display()).into());
+    }
+    
+    log(&format!("🔑 Adding key for chain '{}'...", chain));
+    
+    let mut args = vec!["keys", "add", "--chain", chain, "--mnemonic-file"];
+    args.push(mnemonic_file.to_str().unwrap());
+    
+    if let Some(name) = key_name {
+        args.push("--key-name");
+        args.push(name);
+    }
+    
+    if overwrite {
+        args.push("--overwrite");
+    }
+    
+    let output = Command::new(&hermes_binary)
+        .args(&args)
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to add key: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(format!("Key added for chain '{}'\n{}", chain, stdout))
+}
+
+/// List keys in Hermes keyring via caribic
+pub fn hermes_keys_list(
+    relayer_path: &Path,
+    chain: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    if let Some(chain_id) = chain {
+        log(&format!("🔍 Listing keys for chain '{}'...", chain_id));
+        
+        let output = Command::new(&hermes_binary)
+            .args(&["keys", "list", "--chain", chain_id])
+            .output()?;
+        
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to list keys: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ).into());
+        }
+        
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        // List keys for all configured chains
+        log("🔍 Listing keys for all chains...");
+        
+        let mut result = String::new();
+        
+        // List for cardano-devnet
+        let cardano_output = Command::new(&hermes_binary)
+            .args(&["keys", "list", "--chain", "cardano-devnet"])
+            .output()?;
+        
+        if cardano_output.status.success() {
+            result.push_str("cardano-devnet:\n");
+            result.push_str(&String::from_utf8_lossy(&cardano_output.stdout));
+            result.push('\n');
+        }
+        
+        // List for cheqd-testnet-6
+        let cheqd_output = Command::new(&hermes_binary)
+            .args(&["keys", "list", "--chain", "cheqd-testnet-6"])
+            .output()?;
+        
+        if cheqd_output.status.success() {
+            result.push_str("cheqd-testnet-6:\n");
+            result.push_str(&String::from_utf8_lossy(&cheqd_output.stdout));
+        }
+        
+        Ok(result)
+    }
+}
+
+/// Delete a key from Hermes keyring via caribic
+pub fn hermes_keys_delete(
+    relayer_path: &Path,
+    chain: &str,
+    key_name: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    log(&format!("🗑️  Deleting key for chain '{}'...", chain));
+    
+    let mut args = vec!["keys", "delete", "--chain", chain];
+    
+    if let Some(name) = key_name {
+        args.push("--key-name");
+        args.push(name);
+    }
+    
+    args.push("--yes"); // Auto-confirm deletion
+    
+    let output = Command::new(&hermes_binary)
+        .args(&args)
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to delete key: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    Ok(format!("Key deleted for chain '{}'", chain))
+}
+
+/// Run Hermes health check via caribic
+pub fn hermes_health_check(
+    relayer_path: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    log("🏥 Running Hermes health check...");
+    
+    let output = Command::new(&hermes_binary)
+        .args(&["health-check"])
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Health check failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+/// Create IBC client via caribic
+pub fn hermes_create_client(
+    relayer_path: &Path,
+    host_chain: &str,
+    reference_chain: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    log(&format!(
+        "🔗 Creating IBC client for '{}' on '{}'...",
+        reference_chain, host_chain
+    ));
+    
+    let output = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "client",
+            "--host-chain",
+            host_chain,
+            "--reference-chain",
+            reference_chain,
+        ])
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to create client: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(format!("IBC client created\n{}", stdout))
+}
+
+/// Create IBC connection via caribic
+pub fn hermes_create_connection(
+    relayer_path: &Path,
+    a_chain: &str,
+    b_chain: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    log(&format!(
+        "🔗 Creating IBC connection between '{}' and '{}'...",
+        a_chain, b_chain
+    ));
+    
+    let output = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "connection",
+            "--a-chain",
+            a_chain,
+            "--b-chain",
+            b_chain,
+        ])
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to create connection: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(format!("IBC connection created\n{}", stdout))
+}
+
+/// Create IBC channel via caribic
+pub fn hermes_create_channel(
+    relayer_path: &Path,
+    a_chain: &str,
+    b_chain: &str,
+    a_port: &str,
+    b_port: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+    }
+    
+    log(&format!(
+        "🔗 Creating IBC channel between '{}:{}' and '{}:{}'...",
+        a_chain, a_port, b_chain, b_port
+    ));
+    
+    let output = Command::new(&hermes_binary)
+        .args(&[
+            "create",
+            "channel",
+            "--a-chain",
+            a_chain,
+            "--a-port",
+            a_port,
+            "--b-port",
+            b_port,
+            "--b-chain",
+            b_chain,
+        ])
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to create channel: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ).into());
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(format!("IBC channel created\n{}", stdout))
 }

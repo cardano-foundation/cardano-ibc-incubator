@@ -91,6 +91,46 @@ enum Commands {
         #[arg(value_enum, default_value_t = StopTarget::All)]
         target: StopTarget,
     },
+    /// Manage Hermes keyring (add, list, delete keys)
+    Keys {
+        #[command(subcommand)]
+        command: KeysCommand,
+    },
+    /// Check health of configured chains
+    HealthCheck,
+    /// Create IBC client on target chain
+    CreateClient {
+        /// Source chain identifier
+        #[arg(long)]
+        host_chain: String,
+        /// Target chain identifier (creates light client for this chain on host)
+        #[arg(long)]
+        reference_chain: String,
+    },
+    /// Create IBC connection between two chains
+    CreateConnection {
+        /// First chain identifier
+        #[arg(long)]
+        a_chain: String,
+        /// Second chain identifier
+        #[arg(long)]
+        b_chain: String,
+    },
+    /// Create IBC channel between two chains
+    CreateChannel {
+        /// First chain identifier
+        #[arg(long)]
+        a_chain: String,
+        /// Second chain identifier  
+        #[arg(long)]
+        b_chain: String,
+        /// Port identifier on chain A
+        #[arg(long)]
+        a_port: String,
+        /// Port identifier on chain B
+        #[arg(long)]
+        b_port: String,
+    },
     /// Starts a demo use case. The use case can be either a token swap or a message exchange.
     Demo {
         #[arg(value_enum)]
@@ -101,6 +141,40 @@ enum Commands {
         /// Skip starting services (assumes they're already running)
         #[arg(long, default_value_t = false)]
         skip_setup: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum KeysCommand {
+    /// Add a key from mnemonic for a chain
+    Add {
+        /// Chain identifier (cardano-devnet or cheqd-testnet-6)
+        #[arg(long)]
+        chain: String,
+        /// Path to file containing mnemonic phrase
+        #[arg(long)]
+        mnemonic_file: PathBuf,
+        /// Key name (optional, defaults to chain's configured key_name)
+        #[arg(long)]
+        key_name: Option<String>,
+        /// Overwrite existing key if it exists
+        #[arg(long, default_value_t = false)]
+        overwrite: bool,
+    },
+    /// List all stored keys
+    List {
+        /// Optional: filter by chain identifier
+        #[arg(long)]
+        chain: Option<String>,
+    },
+    /// Delete a key
+    Delete {
+        /// Chain identifier
+        #[arg(long)]
+        chain: String,
+        /// Key name to delete
+        #[arg(long)]
+        key_name: Option<String>,
     },
 }
 
@@ -367,6 +441,29 @@ async fn main() {
                     }
                 }
 
+                // Build and configure Hermes relayer
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    project_root_path.join("relayer/.env.example").as_path(),
+                    project_root_path.join("relayer/examples").as_path(),
+                    project_root_path.join("cardano/offchain/deployments/handler.json").as_path(),
+                ) {
+                    Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
+                    Err(error) => bridge_down_with_error(&format!(
+                        "ERROR: Failed to configure Hermes relayer: {}",
+                        error
+                    )),
+                }
+
+                // Start Hermes daemon
+                match start::start_hermes_daemon(project_root_path.join("relayer").as_path()) {
+                    Ok(_) => logger::log("PASS: Hermes relayer started (check logs at ~/.hermes/hermes.log)"),
+                    Err(error) => bridge_down_with_error(&format!(
+                        "ERROR: Failed to start Hermes daemon: {}",
+                        error
+                    )),
+                }
+
                 let balance = query_balance(
                     project_root_path,
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
@@ -379,6 +476,117 @@ async fn main() {
                         network_down_with_error(&format!("ERROR: Mithril failed to read the immutable cardano node files: {}", error))
                         }
                     }
+                }
+                
+                logger::log("\nBridge started successfully!");
+                logger::log("Next steps:");
+                logger::log("   1. Add keys: caribic keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt");
+                logger::log("   2. Add keys: caribic keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt");
+                logger::log("   3. Check health: caribic health-check");
+                logger::log("   4. Monitor relayer: tail -f ~/.hermes/hermes.log");
+            }
+        }
+        Commands::Keys { command } => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let relayer_path = project_root_path.join("relayer");
+
+            match command {
+                KeysCommand::Add {
+                    chain,
+                    mnemonic_file,
+                    key_name,
+                    overwrite,
+                } => match start::hermes_keys_add(
+                    &relayer_path,
+                    &chain,
+                    &mnemonic_file,
+                    key_name.as_deref(),
+                    overwrite,
+                ) {
+                    Ok(msg) => logger::log(&msg),
+                    Err(e) => {
+                        logger::error(&format!("Failed to add key: {}", e));
+                        std::process::exit(1);
+                    }
+                },
+                KeysCommand::List { chain } => {
+                    match start::hermes_keys_list(&relayer_path, chain.as_deref()) {
+                        Ok(output) => logger::log(&output),
+                        Err(e) => {
+                            logger::error(&format!("Failed to list keys: {}", e));
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                KeysCommand::Delete { chain, key_name } => {
+                    match start::hermes_keys_delete(&relayer_path, &chain, key_name.as_deref()) {
+                        Ok(msg) => logger::log(&msg),
+                        Err(e) => {
+                            logger::error(&format!("Failed to delete key: {}", e));
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+        }
+        Commands::HealthCheck => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let relayer_path = project_root_path.join("relayer");
+
+            match start::hermes_health_check(&relayer_path) {
+                Ok(output) => logger::log(&output),
+                Err(e) => {
+                    logger::error(&format!("Health check failed: {}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::CreateClient {
+            host_chain,
+            reference_chain,
+        } => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let relayer_path = project_root_path.join("relayer");
+
+            match start::hermes_create_client(&relayer_path, &host_chain, &reference_chain) {
+                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Err(e) => {
+                    logger::error(&format!("Failed to create client: {}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::CreateConnection { a_chain, b_chain } => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let relayer_path = project_root_path.join("relayer");
+
+            match start::hermes_create_connection(&relayer_path, &a_chain, &b_chain) {
+                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Err(e) => {
+                    logger::error(&format!("Failed to create connection: {}", e));
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::CreateChannel {
+            a_chain,
+            b_chain,
+            a_port,
+            b_port,
+        } => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let relayer_path = project_root_path.join("relayer");
+
+            match start::hermes_create_channel(&relayer_path, &a_chain, &b_chain, &a_port, &b_port) {
+                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Err(e) => {
+                    logger::error(&format!("Failed to create channel: {}", e));
+                    std::process::exit(1);
                 }
             }
         }

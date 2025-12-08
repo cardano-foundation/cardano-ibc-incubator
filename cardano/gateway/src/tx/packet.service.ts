@@ -143,7 +143,7 @@ export class PacketService {
       }
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
       
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -180,7 +180,7 @@ export class PacketService {
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -219,7 +219,7 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -279,7 +279,7 @@ export class PacketService {
       }
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -316,7 +316,7 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 

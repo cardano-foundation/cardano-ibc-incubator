@@ -82,7 +82,7 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -120,7 +120,7 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -158,7 +158,7 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
       
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
@@ -200,7 +200,7 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
-      // Return truly unsigned transaction for Hermes to sign
+      // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
 

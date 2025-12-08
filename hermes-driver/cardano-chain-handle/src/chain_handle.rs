@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn test_cardano_chain_handle_creation() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_chain_id() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn test_clone() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
@@ -554,7 +554,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shutdown() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
@@ -568,7 +568,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_commitment_prefix() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
@@ -583,7 +583,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_query_compatible_versions() {
-        let chain_id = ChainId::new("cardano-testnet".to_string(), 0);
+        let chain_id = ChainId::new("cardano-devnet".to_string(), 0);
         let keyring = CardanoKeyring::new_for_testing();
         
         let handle = CardanoChainHandle::new(
