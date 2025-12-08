@@ -72,6 +72,18 @@ git commit -m "chore: update Hermes submodule to latest"
 
 This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
 
+#### Hermes Configuration
+
+> [!CAUTION]
+> When configuring Hermes, ensure your `~/.hermes/config.toml` has the correct `key_store_folder` path. **Use absolute paths, not tilde (`~`) notation**, as tilde expansion may not work correctly:
+>
+> ```toml
+> [[chains]]
+> type = 'Cardano'
+> id = 'cardano-devnet'
+> key_store_folder = '/Users/yourusername/.hermes/keys'  # Absolute path required
+> ```
+
 ## Architecture & Design Decisions
 
 ### Hermes Driver Transaction Signing
