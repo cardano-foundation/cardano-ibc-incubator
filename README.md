@@ -23,7 +23,6 @@ This repository is divided into five main directories:
 - `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
 - `relayer`: A fork of [Hermes](https://hermes.informal.systems/) (Rust IBC relayer) with Cardano integration. This replaces the deprecated Go relayer and provides native `ChainEndpoint` implementation for Cardano chains.
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
-- `hermes-driver`: Legacy driver code for Hermes integration (now superseded by direct Hermes fork integration in `relayer/`).
 
 ### Relayer Implementation (Hermes)
 
@@ -86,19 +85,19 @@ This submodule approach maintains a clean separation between the Hermes fork (wh
 
 ## Architecture & Design Decisions
 
-### Hermes Driver Transaction Signing
+### Transaction Signing Architecture
 
-The Hermes relayer driver (`hermes-driver/cardano-chain-handle`) implements transaction signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. We specifically chose **not** to use [`cardano_tx_builder`](https://cardano-lightning.github.io/konduit/rust/cardano_tx_builder/) because our architecture separates concerns:
+The Hermes relayer implements Cardano transaction signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. The architecture separates concerns between transaction building and signing:
 
 - **Gateway (NestJS/TypeScript)** builds unsigned transactions using [Lucid Evolution](https://github.com/Anastasia-Labs/lucid-evolution) and handles all Cardano-specific domain logic (UTxO querying, fee calculation, Mithril proof generation)
-- **Hermes Driver (Rust)** only signs pre-built transactions using CIP-1852 key derivation and Ed25519 signatures
+- **Hermes Relayer (Rust)** signs pre-built transactions using CIP-1852 key derivation and Ed25519 signatures via the native `CardanoSigningKeyPair` implementation
 
 This separation provides:
 - Clean boundaries between chain-specific logic (Gateway) and generic IBC relaying (Hermes)
-- Flexibility to swap relayer implementations without touching chain logic
+- Native integration with Hermes's keyring system following the same pattern as Cosmos SDK chains
 - Easier testing and maintenance of cryptographic signing separate from transaction construction
 
-Future architectural changes could consolidate transaction building into Rust, at which point `cardano_tx_builder` would become relevant.
+The Cardano chain implementation in Hermes (`relayer/crates/relayer/src/chain/cardano/`) follows the same architectural patterns as other supported chains, ensuring consistent behavior across the IBC ecosystem.
 
 ## Getting Started
 
