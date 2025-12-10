@@ -483,7 +483,7 @@ async fn main() {
                 logger::log("   1. Add keys: caribic keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt");
                 logger::log("   2. Add keys: caribic keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt");
                 logger::log("   3. Check health: caribic health-check");
-                logger::log("   4. Monitor relayer: tail -f ~/.hermes/hermes.log");
+                logger::log("   4. View keys: caribic keys list");
             }
         }
         Commands::Keys { command } => {
@@ -552,7 +552,7 @@ async fn main() {
             let relayer_path = project_root_path.join("relayer");
 
             match start::hermes_create_client(&relayer_path, &host_chain, &reference_chain) {
-                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Ok(msg) => logger::log(&msg),
                 Err(e) => {
                     logger::error(&format!("Failed to create client: {}", e));
                     std::process::exit(1);
@@ -565,7 +565,7 @@ async fn main() {
             let relayer_path = project_root_path.join("relayer");
 
             match start::hermes_create_connection(&relayer_path, &a_chain, &b_chain) {
-                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Ok(msg) => logger::log(&msg),
                 Err(e) => {
                     logger::error(&format!("Failed to create connection: {}", e));
                     std::process::exit(1);
@@ -583,7 +583,7 @@ async fn main() {
             let relayer_path = project_root_path.join("relayer");
 
             match start::hermes_create_channel(&relayer_path, &a_chain, &b_chain, &a_port, &b_port) {
-                Ok(msg) => logger::log(&format!("✅ {}", msg)),
+                Ok(msg) => logger::log(&msg),
                 Err(e) => {
                     logger::error(&format!("Failed to create channel: {}", e));
                     std::process::exit(1);

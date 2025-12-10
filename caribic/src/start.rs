@@ -37,7 +37,7 @@ pub fn start_relayer(
     let hermes_binary = relayer_path.join("target/release/hermes");
     
     if !hermes_binary.exists() {
-        log("🔨 Building Hermes with Cardano support (this may take a few minutes)...");
+        log("Building Hermes with Cardano support (this may take a few minutes)...");
         execute_script_with_progress(
             relayer_path,
             "cargo",
@@ -70,17 +70,6 @@ pub fn start_relayer(
         hermes_dir.join("config.toml").display()
     ));
     
-    // Note: Key management is handled separately via caribic or hermes CLI
-    // Users should run:
-    //   caribic setup-keys  (or)
-    //   hermes keys add --chain cardano-devnet --mnemonic-file ~/cardano-mnemonic.txt
-    //   hermes keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd-mnemonic.txt
-    
-    log("✅ Hermes configuration prepared. You can now:");
-    log("   1. Add keys: hermes keys add --chain <chain-id> --mnemonic-file <file>");
-    log("   2. Start relayer: hermes start");
-    log("   Or use: caribic start-hermes (if implemented)");
-    
     Ok(())
 }
 
@@ -100,15 +89,15 @@ pub async fn start_local_cardano_network(
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("🏗 Creating local Cardano network ...".to_owned());
+        progress_bar.set_prefix("Creating local Cardano network ...".to_owned());
     } else {
-        log("🏗 Creating local Cardano network ...");
+        log("Creating local Cardano network ...");
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
     log_or_show_progress(
         &format!(
-            "{} 🛠️ Configuring local Cardano devnet",
+            "{} Configuring local Cardano devnet",
             style("Step 1/3").bold().dim(),
         ),
         &optional_progress_bar,
@@ -116,7 +105,7 @@ pub async fn start_local_cardano_network(
     configure_local_cardano_devnet(cardano_dir.as_path())?;
     log_or_show_progress(
         &format!(
-            "{} 🚀 Starting Cardano services",
+            "{} Starting Cardano services",
             style("Step 2/3").bold().dim(),
         ),
         &optional_progress_bar,
@@ -209,14 +198,14 @@ pub async fn start_local_cardano_network(
                 .progress_chars("#>-")
         );
             progress_bar.set_prefix(
-            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
+            "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
                 .to_owned(),
         );
             progress_bar.set_length(target_slot);
             progress_bar.set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
         } else {
             log(
-            "🍵 seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
+            "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
         );
         }
     }
@@ -241,7 +230,7 @@ pub async fn start_local_cardano_network(
 
     seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
     log_or_show_progress(
-        "📄 Deploying the client, channel and connection contracts",
+        "Deploying the client, channel and connection contracts",
         &optional_progress_bar,
     );
 
@@ -257,7 +246,7 @@ pub async fn start_local_cardano_network(
 
     log_or_show_progress(
         &format!(
-            "{} 📝 Copying Cardano environment file",
+            "{} Copying Cardano environment file",
             style("Step 3/3").bold().dim(),
         ),
         &optional_progress_bar,
@@ -289,7 +278,7 @@ pub async fn deploy_contracts(
     {
         log_or_show_progress(
             &format!(
-                "{} 🛠️ Building Aiken validators",
+                "{} Building Aiken validators",
                 style("Step 1/2").bold().dim()
             ),
             &optional_progress_bar,
@@ -375,7 +364,7 @@ pub async fn start_cosmos_sidechain_from_repository(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if chain_root_path.exists() {
         log(&format!(
-            "{} 📝 Demo chain already downloaded. Cleaning up to get the most recent version...",
+            "{} Demo chain already downloaded. Cleaning up to get the most recent version...",
             style("Step 0/2").bold().dim()
         ));
         fs::remove_dir_all(&chain_root_path).expect("Failed to cleanup demo chain folder.");
@@ -389,14 +378,14 @@ pub async fn start_cosmos_sidechain_from_repository(
         Some(IndicatorMessage {
             message: "Downloading cardano-ibc-summit-demo project".to_string(),
             step: "Step 1/2".to_string(),
-            emoji: "📥 ".to_string(),
+            emoji: "".to_string(),
         }),
     )
     .await
     .expect("Failed to download cardano-ibc-summit-demo project");
 
     log(&format!(
-        "{} 📦 Extracting cardano-ibc-summit-demo project...",
+        "{} Extracting cardano-ibc-summit-demo project...",
         style("Step 2/2").bold().dim()
     ));
 
@@ -552,9 +541,9 @@ pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error:
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix("🥁‍ Starting Osmosis appchain ...".to_owned());
+        progress_bar.set_prefix("Starting Osmosis appchain ...".to_owned());
     } else {
-        log("🥁‍ Starting Osmosis appchain ...");
+        log("Starting Osmosis appchain ...");
     }
 
     let status = execute_script(
@@ -649,9 +638,9 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix("🏃‍ Asking Hermes to connect Osmosis and Cosmos ...".to_owned());
+        progress_bar.set_prefix("Asking Hermes to connect Osmosis and Cosmos ...".to_owned());
     } else {
-        log("🏃‍ Asking Hermes to connect Osmosis and Cosmos ...");
+        log("Asking Hermes to connect Osmosis and Cosmos ...");
     }
 
     log_or_show_progress(
@@ -1016,16 +1005,16 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("🔌 Power up Mithril to get started ...".to_owned());
+        progress_bar.set_prefix("Power up Mithril to get started ...".to_owned());
     } else {
-        log("🔌 Power up Mithril to get started ...");
+        log("Power up Mithril to get started ...");
     }
 
     let mithril_config = config::get_config().mithril;
 
     log_or_show_progress(
         &format!(
-            "{} 🏗️ Configuring Mithril services",
+            "{} Configuring Mithril services",
             style("Step 1/2").bold().dim()
         ),
         &optional_progress_bar,
@@ -1066,7 +1055,7 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
 
     log_or_show_progress(
         &format!(
-            "{} 🚀 Starting Mithril services",
+            "{} Starting Mithril services",
             style("Step 2/2").bold().dim()
         ),
         &optional_progress_bar,
@@ -1162,14 +1151,14 @@ pub fn wait_and_start_mithril_genesis(
                 .progress_chars("#>-")
         );
             progress_bar.set_prefix(
-            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created .."
+            "Mithril needs to wait at least two epochs for the immutable files to be created .."
                 .to_owned(),
         );
             progress_bar.set_length(target_slot);
             progress_bar.set_position(current_slot);
         } else {
             log(
-            "🍵 Mithril needs to wait at least two epochs for the immutable files to be created ..",
+            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
         );
         }
     }
@@ -1249,14 +1238,14 @@ pub fn wait_and_start_mithril_genesis(
                 .progress_chars("#>-")
         );
             progress_bar.set_prefix(
-            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
+            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
                 .to_owned(),
         );
             progress_bar.set_length(target_slot);
             progress_bar.set_position(current_slot);
         } else {
             log(
-            "🍵 Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
+            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
         );
         }
     }
@@ -1304,7 +1293,7 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_log = home_path.join(".hermes/hermes.log");
     
-    log("🚀 Starting Hermes daemon...");
+    log("Starting Hermes daemon...");
     
     // Start Hermes in background
     let status = Command::new(&hermes_binary)
@@ -1314,7 +1303,7 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
         .spawn()
         .map_err(|e| format!("Failed to start Hermes: {}", e))?;
     
-    log(&format!("✅ Hermes started (PID: {})", status.id()));
+    log(&format!("Hermes started (PID: {})", status.id()));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
     
@@ -1329,7 +1318,7 @@ pub fn configure_hermes_cardano_cheqd(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
     
-    log("🔑 Configuring Hermes keys...");
+    log("Configuring Hermes keys...");
     
     // Add Cardano key
     if let Some(mnemonic) = cardano_mnemonic {
@@ -1356,7 +1345,7 @@ pub fn configure_hermes_cardano_cheqd(
             ).into());
         }
         
-        log("✅ Cardano key added");
+        log("Cardano key added");
     }
     
     // Add Cheqd key
@@ -1384,11 +1373,11 @@ pub fn configure_hermes_cardano_cheqd(
             ).into());
         }
         
-        log("✅ Cheqd key added");
+        log("Cheqd key added");
     }
     
     // Create clients on both chains
-    log("🔗 Creating IBC clients...");
+    log("Creating IBC clients...");
     
     let create_cardano_client = Command::new(&hermes_binary)
         .args(&[
@@ -1426,10 +1415,10 @@ pub fn configure_hermes_cardano_cheqd(
         ).into());
     }
     
-    log("✅ IBC clients created on both chains");
+    log("IBC clients created on both chains");
     
     // Create connection
-    log("🔗 Creating IBC connection...");
+    log("Creating IBC connection...");
     
     let create_connection = Command::new(&hermes_binary)
         .args(&[
@@ -1449,10 +1438,10 @@ pub fn configure_hermes_cardano_cheqd(
         ).into());
     }
     
-    log("✅ IBC connection established");
+    log("IBC connection established");
     
     // Create channel
-    log("🔗 Creating IBC channel...");
+    log("Creating IBC channel...");
     
     let create_channel = Command::new(&hermes_binary)
         .args(&[
@@ -1476,8 +1465,8 @@ pub fn configure_hermes_cardano_cheqd(
         ).into());
     }
     
-    log("✅ IBC channel created");
-    log("🎉 Hermes configured successfully!");
+    log("IBC channel created");
+    log("Hermes configured successfully!");
     
     Ok(())
 }
@@ -1500,7 +1489,7 @@ pub fn hermes_keys_add(
         return Err(format!("Mnemonic file not found: {}", mnemonic_file.display()).into());
     }
     
-    log(&format!("🔑 Adding key for chain '{}'...", chain));
+    log(&format!("Adding key for chain '{}'...", chain));
     
     let mut args = vec!["keys", "add", "--chain", chain, "--mnemonic-file"];
     args.push(mnemonic_file.to_str().unwrap());
@@ -1541,7 +1530,7 @@ pub fn hermes_keys_list(
     }
     
     if let Some(chain_id) = chain {
-        log(&format!("🔍 Listing keys for chain '{}'...", chain_id));
+        log(&format!("Listing keys for chain '{}'...", chain_id));
         
         let output = Command::new(&hermes_binary)
             .args(&["keys", "list", "--chain", chain_id])
@@ -1557,7 +1546,7 @@ pub fn hermes_keys_list(
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
         // List keys for all configured chains
-        log("🔍 Listing keys for all chains...");
+        log("Listing keys for all chains...");
         
         let mut result = String::new();
         
@@ -1598,7 +1587,7 @@ pub fn hermes_keys_delete(
         return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
     }
     
-    log(&format!("🗑️  Deleting key for chain '{}'...", chain));
+    log(&format!("Deleting key for chain '{}'...", chain));
     
     let mut args = vec!["keys", "delete", "--chain", chain];
     
@@ -1633,7 +1622,7 @@ pub fn hermes_health_check(
         return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
     }
     
-    log("🏥 Running Hermes health check...");
+    log("Running Hermes health check...");
     
     let output = Command::new(&hermes_binary)
         .args(&["health-check"])
@@ -1662,7 +1651,7 @@ pub fn hermes_create_client(
     }
     
     log(&format!(
-        "🔗 Creating IBC client for '{}' on '{}'...",
+        "Creating IBC client for '{}' on '{}'...",
         reference_chain, host_chain
     ));
     
@@ -1701,7 +1690,7 @@ pub fn hermes_create_connection(
     }
     
     log(&format!(
-        "🔗 Creating IBC connection between '{}' and '{}'...",
+        "Creating IBC connection between '{}' and '{}'...",
         a_chain, b_chain
     ));
     
@@ -1742,7 +1731,7 @@ pub fn hermes_create_channel(
     }
     
     log(&format!(
-        "🔗 Creating IBC channel between '{}:{}' and '{}:{}'...",
+        "Creating IBC channel between '{}:{}' and '{}:{}'...",
         a_chain, a_port, b_chain, b_port
     ));
     
