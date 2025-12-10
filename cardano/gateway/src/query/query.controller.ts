@@ -55,6 +55,10 @@ import {
   QueryIBCHeaderRequest,
   QueryIBCHeaderResponse,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
+import {
+  QueryEventsRequest,
+  QueryEventsResponse,
+} from '@plus/proto-types/build/ibc/cardano/v1/query';
 import { QueryService } from './services/query.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
@@ -211,5 +215,11 @@ export class QueryController {
   async queryNextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
     const response: QueryNextSequenceReceiveResponse = await this.packetService.QueryNextSequenceAck(request);
     return response as unknown as QueryNextSequenceReceiveResponse;
+  }
+
+  @GrpcMethod('Query', 'Events')
+  async queryEvents(request: QueryEventsRequest): Promise<QueryEventsResponse> {
+    const response: QueryEventsResponse = await this.queryService.queryEvents(request);
+    return response as unknown as QueryEventsResponse;
   }
 }
