@@ -73,6 +73,7 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    @Inject('DenomTraceService') private denomTraceService: any,
   ) {}
   /**
    * @param data
@@ -606,6 +607,26 @@ export class PacketService {
             const voucherTokenName = hashSha3_256(prefixedDenom);
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
+            
+            // Track denom trace mapping
+            try {
+              const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+              const pathParts = fullDenomPath.split('/');
+              const baseDenom = pathParts[pathParts.length - 1];
+              const path = pathParts.slice(0, -1).join('/');
+              
+              await this.denomTraceService.saveDenomTrace({
+                hash: voucherTokenName,
+                path: path,
+                base_denom: baseDenom,
+                voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+                tx_hash: null, // Will be filled when tx is submitted
+              });
+            } catch (error) {
+              this.logger.warn(`Failed to save denom trace: ${error.message}`);
+              // Don't fail the transaction if denom trace saving fails
+            }
+
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
               state: {
@@ -876,6 +897,24 @@ export class PacketService {
     };
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
+
+    // Track denom trace mapping for timeout refund voucher
+    try {
+      const fullDenomPath = convertHex2String(prefixedDenom);
+      const pathParts = fullDenomPath.split('/');
+      const baseDenom = pathParts[pathParts.length - 1];
+      const path = pathParts.slice(0, -1).join('/');
+      
+      await this.denomTraceService.saveDenomTrace({
+        hash: voucherTokenName,
+        path: path,
+        base_denom: baseDenom,
+        voucher_policy_id: this.getMintVoucherScriptHash(),
+        tx_hash: null,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to save denom trace for timeout: ${error.message}`);
+    }
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -1391,6 +1430,25 @@ export class PacketService {
     const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
+    
+    // Track denom trace mapping for acknowledgement refund voucher
+    try {
+      const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+      const pathParts = fullDenomPath.split('/');
+      const baseDenom = pathParts[pathParts.length - 1];
+      const path = pathParts.slice(0, -1).join('/');
+      
+      await this.denomTraceService.saveDenomTrace({
+        hash: voucherTokenName,
+        path: path,
+        base_denom: baseDenom,
+        voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+        tx_hash: null,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to save denom trace for ack: ${error.message}`);
+    }
+
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,

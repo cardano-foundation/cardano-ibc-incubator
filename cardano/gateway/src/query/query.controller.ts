@@ -59,10 +59,17 @@ import {
   QueryEventsRequest,
   QueryEventsResponse,
 } from '@plus/proto-types/build/ibc/cardano/v1/query';
+import {
+  QueryDenomTraceRequest,
+  QueryDenomTraceResponse,
+  QueryDenomTracesRequest,
+  QueryDenomTracesResponse,
+} from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
 import { QueryService } from './services/query.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
 import { PacketService } from './services/packet.service';
+import { DenomTraceService } from './services/denom-trace.service';
 
 @Controller()
 export class QueryController {
@@ -71,6 +78,7 @@ export class QueryController {
     private readonly connectionService: ConnectionService,
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
+    private readonly denomTraceService: DenomTraceService,
   ) {}
 
   @GrpcMethod('Query', 'ClientState')
@@ -221,5 +229,17 @@ export class QueryController {
   async queryEvents(request: QueryEventsRequest): Promise<QueryEventsResponse> {
     const response: QueryEventsResponse = await this.queryService.queryEvents(request);
     return response as unknown as QueryEventsResponse;
+  }
+
+  @GrpcMethod('Query', 'DenomTrace')
+  async denomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
+    const response: QueryDenomTraceResponse = await this.queryService.queryDenomTrace(request);
+    return response;
+  }
+
+  @GrpcMethod('Query', 'DenomTraces')
+  async denomTraces(request: QueryDenomTracesRequest): Promise<QueryDenomTracesResponse> {
+    const response: QueryDenomTracesResponse = await this.queryService.queryDenomTraces(request);
+    return response;
   }
 }

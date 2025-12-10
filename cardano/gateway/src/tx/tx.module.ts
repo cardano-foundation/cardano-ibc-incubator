@@ -6,9 +6,10 @@ import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
 import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
+import { QueryModule } from '../query/query.module';
 
 @Module({
-  imports: [LucidModule],
+  imports: [LucidModule, QueryModule],
   controllers: [TxController],
   providers: [ClientService, ConnectionService, ChannelService, PacketService, SubmissionService, Logger],
 })
