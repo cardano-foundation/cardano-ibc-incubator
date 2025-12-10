@@ -42,6 +42,8 @@ import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';
 import { PacketService } from './packet.service';
+import { SubmissionService } from './submission.service';
+import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
 
 @Controller()
 export class TxController {
@@ -50,6 +52,7 @@ export class TxController {
     private readonly connectionService: ConnectionService,
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
+    private readonly submissionService: SubmissionService,
   ) {}
 
   @GrpcMethod('Msg', 'CreateClient')
@@ -134,6 +137,16 @@ export class TxController {
   @GrpcMethod('Msg', 'ChannelCloseInit')
   async ChannelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
     const response: MsgChannelCloseInitResponse = await this.channelService.channelCloseInit(data);
+    return response;
+  }
+
+  /**
+   * Submits a signed Cardano transaction.
+   * Called by Hermes relayer after signing the unsigned transaction.
+   */
+  @GrpcMethod('CardanoMsg', 'SubmitSignedTx')
+  async SubmitSignedTx(data: SubmitSignedTxRequest): Promise<SubmitSignedTxResponse> {
+    const response: SubmitSignedTxResponse = await this.submissionService.submitSignedTransaction(data);
     return response;
   }
 }

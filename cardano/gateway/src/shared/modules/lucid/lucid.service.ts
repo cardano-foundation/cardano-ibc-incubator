@@ -1204,7 +1204,20 @@ export class LucidService {
       try {
         let signer = constructedAddress;
         /*
-          TODO: signing should be done by relayer in the future
+          DEPRECATED: Gateway wallet signing (for testing only)
+          
+          Production Flow:
+          - Gateway returns unsigned transactions
+          - Hermes signs with CIP-1852 keys
+          - Hermes submits via SubmitSignedTx endpoint
+          
+          This wallet seed is maintained only for:
+          1. Local integration testing
+          2. Backwards compatibility during migration
+          3. Emergency fallback (not recommended)
+          
+          The SIGNER_WALLET_SEED environment variable will be removed
+          once Hermes integration is fully validated in production.
 
           if (!constructedAddress.startsWith('addr_')) {
             signer = credentialToAddress(this.lucid.config().network, {
@@ -1214,8 +1227,12 @@ export class LucidService {
           }
         */
 
+        // DEPRECATED: This wallet selection is only for test mode
+        // In production, transactions are unsigned and signed by Hermes
         const seed = this.configService.get('signerWalletSeed');
-        this.lucid.selectWallet.fromSeed(seed, { addressType: 'Enterprise' });
+        if (seed) {
+          this.lucid.selectWallet.fromSeed(seed, { addressType: 'Enterprise' });
+        }
         // this.lucid.selectWallet.fromAddress(signer, []);
         return this.lucid.newTx();
       } catch (err) {
