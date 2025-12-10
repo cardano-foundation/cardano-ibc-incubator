@@ -56,10 +56,11 @@ pub fn start_relayer(
     fs::create_dir_all(&hermes_keys_dir)
         .map_err(|e| format!("Failed to create Hermes keys directory: {}", e))?;
     
-    // Copy config.example.toml to ~/.hermes/config.toml
+    // Copy hermes-config.example.toml to ~/.hermes/config.toml
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
+    let caribic_dir = relayer_path.parent().unwrap().join("caribic");
     copy(
-        relayer_path.join("config.example.toml"),
+        caribic_dir.join("config/hermes-config.example.toml"),
         hermes_dir.join("config.toml"),
         &options,
     )
