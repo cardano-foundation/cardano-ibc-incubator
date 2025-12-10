@@ -129,12 +129,15 @@ export interface QueryFeeEnabledChannelResponse {
 function createBaseQueryIncentivizedPacketsRequest(): QueryIncentivizedPacketsRequest {
   return {
     pagination: undefined,
-    query_height: BigInt(0)
+    query_height: BigInt(0),
   };
 }
 export const QueryIncentivizedPacketsRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsRequest",
-  encode(message: QueryIncentivizedPacketsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketsRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.pagination !== undefined) {
       PageRequest.encode(message.pagination, writer.uint32(10).fork()).ldelim();
     }
@@ -171,11 +174,14 @@ export const QueryIncentivizedPacketsRequest = {
   },
   toJSON(message: QueryIncentivizedPacketsRequest): unknown {
     const obj: any = {};
-    message.pagination !== undefined && (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined &&
+      (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
     message.query_height !== undefined && (obj.query_height = (message.query_height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsRequest>, I>>(object: I): QueryIncentivizedPacketsRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsRequest>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketsRequest {
     const message = createBaseQueryIncentivizedPacketsRequest();
     if (object.pagination !== undefined && object.pagination !== null) {
       message.pagination = PageRequest.fromPartial(object.pagination);
@@ -184,16 +190,19 @@ export const QueryIncentivizedPacketsRequest = {
       message.query_height = BigInt(object.query_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryIncentivizedPacketsResponse(): QueryIncentivizedPacketsResponse {
   return {
-    incentivized_packets: []
+    incentivized_packets: [],
   };
 }
 export const QueryIncentivizedPacketsResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsResponse",
-  encode(message: QueryIncentivizedPacketsResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketsResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     for (const v of message.incentivized_packets) {
       IdentifiedPacketFees.encode(v!, writer.uint32(10).fork()).ldelim();
     }
@@ -218,33 +227,44 @@ export const QueryIncentivizedPacketsResponse = {
   },
   fromJSON(object: any): QueryIncentivizedPacketsResponse {
     const obj = createBaseQueryIncentivizedPacketsResponse();
-    if (Array.isArray(object?.incentivized_packets)) obj.incentivized_packets = object.incentivized_packets.map((e: any) => IdentifiedPacketFees.fromJSON(e));
+    if (Array.isArray(object?.incentivized_packets))
+      obj.incentivized_packets = object.incentivized_packets.map((e: any) =>
+        IdentifiedPacketFees.fromJSON(e),
+      );
     return obj;
   },
   toJSON(message: QueryIncentivizedPacketsResponse): unknown {
     const obj: any = {};
     if (message.incentivized_packets) {
-      obj.incentivized_packets = message.incentivized_packets.map(e => e ? IdentifiedPacketFees.toJSON(e) : undefined);
+      obj.incentivized_packets = message.incentivized_packets.map((e) =>
+        e ? IdentifiedPacketFees.toJSON(e) : undefined,
+      );
     } else {
       obj.incentivized_packets = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsResponse>, I>>(object: I): QueryIncentivizedPacketsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsResponse>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketsResponse {
     const message = createBaseQueryIncentivizedPacketsResponse();
-    message.incentivized_packets = object.incentivized_packets?.map(e => IdentifiedPacketFees.fromPartial(e)) || [];
+    message.incentivized_packets =
+      object.incentivized_packets?.map((e) => IdentifiedPacketFees.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryIncentivizedPacketRequest(): QueryIncentivizedPacketRequest {
   return {
     packet_id: PacketId.fromPartial({}),
-    query_height: BigInt(0)
+    query_height: BigInt(0),
   };
 }
 export const QueryIncentivizedPacketRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketRequest",
-  encode(message: QueryIncentivizedPacketRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.packet_id !== undefined) {
       PacketId.encode(message.packet_id, writer.uint32(10).fork()).ldelim();
     }
@@ -281,11 +301,14 @@ export const QueryIncentivizedPacketRequest = {
   },
   toJSON(message: QueryIncentivizedPacketRequest): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     message.query_height !== undefined && (obj.query_height = (message.query_height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketRequest>, I>>(object: I): QueryIncentivizedPacketRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketRequest>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketRequest {
     const message = createBaseQueryIncentivizedPacketRequest();
     if (object.packet_id !== undefined && object.packet_id !== null) {
       message.packet_id = PacketId.fromPartial(object.packet_id);
@@ -294,16 +317,19 @@ export const QueryIncentivizedPacketRequest = {
       message.query_height = BigInt(object.query_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryIncentivizedPacketResponse(): QueryIncentivizedPacketResponse {
   return {
-    incentivized_packet: IdentifiedPacketFees.fromPartial({})
+    incentivized_packet: IdentifiedPacketFees.fromPartial({}),
   };
 }
 export const QueryIncentivizedPacketResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketResponse",
-  encode(message: QueryIncentivizedPacketResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.incentivized_packet !== undefined) {
       IdentifiedPacketFees.encode(message.incentivized_packet, writer.uint32(10).fork()).ldelim();
     }
@@ -328,33 +354,42 @@ export const QueryIncentivizedPacketResponse = {
   },
   fromJSON(object: any): QueryIncentivizedPacketResponse {
     const obj = createBaseQueryIncentivizedPacketResponse();
-    if (isSet(object.incentivized_packet)) obj.incentivized_packet = IdentifiedPacketFees.fromJSON(object.incentivized_packet);
+    if (isSet(object.incentivized_packet))
+      obj.incentivized_packet = IdentifiedPacketFees.fromJSON(object.incentivized_packet);
     return obj;
   },
   toJSON(message: QueryIncentivizedPacketResponse): unknown {
     const obj: any = {};
-    message.incentivized_packet !== undefined && (obj.incentivized_packet = message.incentivized_packet ? IdentifiedPacketFees.toJSON(message.incentivized_packet) : undefined);
+    message.incentivized_packet !== undefined &&
+      (obj.incentivized_packet = message.incentivized_packet
+        ? IdentifiedPacketFees.toJSON(message.incentivized_packet)
+        : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketResponse>, I>>(object: I): QueryIncentivizedPacketResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketResponse>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketResponse {
     const message = createBaseQueryIncentivizedPacketResponse();
     if (object.incentivized_packet !== undefined && object.incentivized_packet !== null) {
       message.incentivized_packet = IdentifiedPacketFees.fromPartial(object.incentivized_packet);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryIncentivizedPacketsForChannelRequest(): QueryIncentivizedPacketsForChannelRequest {
   return {
     pagination: undefined,
     port_id: "",
     channel_id: "",
-    query_height: BigInt(0)
+    query_height: BigInt(0),
   };
 }
 export const QueryIncentivizedPacketsForChannelRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelRequest",
-  encode(message: QueryIncentivizedPacketsForChannelRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketsForChannelRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.pagination !== undefined) {
       PageRequest.encode(message.pagination, writer.uint32(10).fork()).ldelim();
     }
@@ -405,13 +440,16 @@ export const QueryIncentivizedPacketsForChannelRequest = {
   },
   toJSON(message: QueryIncentivizedPacketsForChannelRequest): unknown {
     const obj: any = {};
-    message.pagination !== undefined && (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined &&
+      (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
     message.port_id !== undefined && (obj.port_id = message.port_id);
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     message.query_height !== undefined && (obj.query_height = (message.query_height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsForChannelRequest>, I>>(object: I): QueryIncentivizedPacketsForChannelRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsForChannelRequest>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketsForChannelRequest {
     const message = createBaseQueryIncentivizedPacketsForChannelRequest();
     if (object.pagination !== undefined && object.pagination !== null) {
       message.pagination = PageRequest.fromPartial(object.pagination);
@@ -422,16 +460,19 @@ export const QueryIncentivizedPacketsForChannelRequest = {
       message.query_height = BigInt(object.query_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryIncentivizedPacketsForChannelResponse(): QueryIncentivizedPacketsForChannelResponse {
   return {
-    incentivized_packets: []
+    incentivized_packets: [],
   };
 }
 export const QueryIncentivizedPacketsForChannelResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelResponse",
-  encode(message: QueryIncentivizedPacketsForChannelResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryIncentivizedPacketsForChannelResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     for (const v of message.incentivized_packets) {
       IdentifiedPacketFees.encode(v!, writer.uint32(10).fork()).ldelim();
     }
@@ -456,27 +497,35 @@ export const QueryIncentivizedPacketsForChannelResponse = {
   },
   fromJSON(object: any): QueryIncentivizedPacketsForChannelResponse {
     const obj = createBaseQueryIncentivizedPacketsForChannelResponse();
-    if (Array.isArray(object?.incentivized_packets)) obj.incentivized_packets = object.incentivized_packets.map((e: any) => IdentifiedPacketFees.fromJSON(e));
+    if (Array.isArray(object?.incentivized_packets))
+      obj.incentivized_packets = object.incentivized_packets.map((e: any) =>
+        IdentifiedPacketFees.fromJSON(e),
+      );
     return obj;
   },
   toJSON(message: QueryIncentivizedPacketsForChannelResponse): unknown {
     const obj: any = {};
     if (message.incentivized_packets) {
-      obj.incentivized_packets = message.incentivized_packets.map(e => e ? IdentifiedPacketFees.toJSON(e) : undefined);
+      obj.incentivized_packets = message.incentivized_packets.map((e) =>
+        e ? IdentifiedPacketFees.toJSON(e) : undefined,
+      );
     } else {
       obj.incentivized_packets = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsForChannelResponse>, I>>(object: I): QueryIncentivizedPacketsForChannelResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryIncentivizedPacketsForChannelResponse>, I>>(
+    object: I,
+  ): QueryIncentivizedPacketsForChannelResponse {
     const message = createBaseQueryIncentivizedPacketsForChannelResponse();
-    message.incentivized_packets = object.incentivized_packets?.map(e => IdentifiedPacketFees.fromPartial(e)) || [];
+    message.incentivized_packets =
+      object.incentivized_packets?.map((e) => IdentifiedPacketFees.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryTotalRecvFeesRequest(): QueryTotalRecvFeesRequest {
   return {
-    packet_id: PacketId.fromPartial({})
+    packet_id: PacketId.fromPartial({}),
   };
 }
 export const QueryTotalRecvFeesRequest = {
@@ -511,20 +560,23 @@ export const QueryTotalRecvFeesRequest = {
   },
   toJSON(message: QueryTotalRecvFeesRequest): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalRecvFeesRequest>, I>>(object: I): QueryTotalRecvFeesRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalRecvFeesRequest>, I>>(
+    object: I,
+  ): QueryTotalRecvFeesRequest {
     const message = createBaseQueryTotalRecvFeesRequest();
     if (object.packet_id !== undefined && object.packet_id !== null) {
       message.packet_id = PacketId.fromPartial(object.packet_id);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryTotalRecvFeesResponse(): QueryTotalRecvFeesResponse {
   return {
-    recv_fees: []
+    recv_fees: [],
   };
 }
 export const QueryTotalRecvFeesResponse = {
@@ -560,21 +612,23 @@ export const QueryTotalRecvFeesResponse = {
   toJSON(message: QueryTotalRecvFeesResponse): unknown {
     const obj: any = {};
     if (message.recv_fees) {
-      obj.recv_fees = message.recv_fees.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.recv_fees = message.recv_fees.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.recv_fees = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalRecvFeesResponse>, I>>(object: I): QueryTotalRecvFeesResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalRecvFeesResponse>, I>>(
+    object: I,
+  ): QueryTotalRecvFeesResponse {
     const message = createBaseQueryTotalRecvFeesResponse();
-    message.recv_fees = object.recv_fees?.map(e => Coin.fromPartial(e)) || [];
+    message.recv_fees = object.recv_fees?.map((e) => Coin.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryTotalAckFeesRequest(): QueryTotalAckFeesRequest {
   return {
-    packet_id: PacketId.fromPartial({})
+    packet_id: PacketId.fromPartial({}),
   };
 }
 export const QueryTotalAckFeesRequest = {
@@ -609,20 +663,23 @@ export const QueryTotalAckFeesRequest = {
   },
   toJSON(message: QueryTotalAckFeesRequest): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalAckFeesRequest>, I>>(object: I): QueryTotalAckFeesRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalAckFeesRequest>, I>>(
+    object: I,
+  ): QueryTotalAckFeesRequest {
     const message = createBaseQueryTotalAckFeesRequest();
     if (object.packet_id !== undefined && object.packet_id !== null) {
       message.packet_id = PacketId.fromPartial(object.packet_id);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryTotalAckFeesResponse(): QueryTotalAckFeesResponse {
   return {
-    ack_fees: []
+    ack_fees: [],
   };
 }
 export const QueryTotalAckFeesResponse = {
@@ -658,21 +715,23 @@ export const QueryTotalAckFeesResponse = {
   toJSON(message: QueryTotalAckFeesResponse): unknown {
     const obj: any = {};
     if (message.ack_fees) {
-      obj.ack_fees = message.ack_fees.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.ack_fees = message.ack_fees.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.ack_fees = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalAckFeesResponse>, I>>(object: I): QueryTotalAckFeesResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalAckFeesResponse>, I>>(
+    object: I,
+  ): QueryTotalAckFeesResponse {
     const message = createBaseQueryTotalAckFeesResponse();
-    message.ack_fees = object.ack_fees?.map(e => Coin.fromPartial(e)) || [];
+    message.ack_fees = object.ack_fees?.map((e) => Coin.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryTotalTimeoutFeesRequest(): QueryTotalTimeoutFeesRequest {
   return {
-    packet_id: PacketId.fromPartial({})
+    packet_id: PacketId.fromPartial({}),
   };
 }
 export const QueryTotalTimeoutFeesRequest = {
@@ -707,20 +766,23 @@ export const QueryTotalTimeoutFeesRequest = {
   },
   toJSON(message: QueryTotalTimeoutFeesRequest): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalTimeoutFeesRequest>, I>>(object: I): QueryTotalTimeoutFeesRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalTimeoutFeesRequest>, I>>(
+    object: I,
+  ): QueryTotalTimeoutFeesRequest {
     const message = createBaseQueryTotalTimeoutFeesRequest();
     if (object.packet_id !== undefined && object.packet_id !== null) {
       message.packet_id = PacketId.fromPartial(object.packet_id);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryTotalTimeoutFeesResponse(): QueryTotalTimeoutFeesResponse {
   return {
-    timeout_fees: []
+    timeout_fees: [],
   };
 }
 export const QueryTotalTimeoutFeesResponse = {
@@ -750,28 +812,31 @@ export const QueryTotalTimeoutFeesResponse = {
   },
   fromJSON(object: any): QueryTotalTimeoutFeesResponse {
     const obj = createBaseQueryTotalTimeoutFeesResponse();
-    if (Array.isArray(object?.timeout_fees)) obj.timeout_fees = object.timeout_fees.map((e: any) => Coin.fromJSON(e));
+    if (Array.isArray(object?.timeout_fees))
+      obj.timeout_fees = object.timeout_fees.map((e: any) => Coin.fromJSON(e));
     return obj;
   },
   toJSON(message: QueryTotalTimeoutFeesResponse): unknown {
     const obj: any = {};
     if (message.timeout_fees) {
-      obj.timeout_fees = message.timeout_fees.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.timeout_fees = message.timeout_fees.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.timeout_fees = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTotalTimeoutFeesResponse>, I>>(object: I): QueryTotalTimeoutFeesResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryTotalTimeoutFeesResponse>, I>>(
+    object: I,
+  ): QueryTotalTimeoutFeesResponse {
     const message = createBaseQueryTotalTimeoutFeesResponse();
-    message.timeout_fees = object.timeout_fees?.map(e => Coin.fromPartial(e)) || [];
+    message.timeout_fees = object.timeout_fees?.map((e) => Coin.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryPayeeRequest(): QueryPayeeRequest {
   return {
     channel_id: "",
-    relayer: ""
+    relayer: "",
   };
 }
 export const QueryPayeeRequest = {
@@ -822,11 +887,11 @@ export const QueryPayeeRequest = {
     message.channel_id = object.channel_id ?? "";
     message.relayer = object.relayer ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryPayeeResponse(): QueryPayeeResponse {
   return {
-    payee_address: ""
+    payee_address: "",
   };
 }
 export const QueryPayeeResponse = {
@@ -868,12 +933,12 @@ export const QueryPayeeResponse = {
     const message = createBaseQueryPayeeResponse();
     message.payee_address = object.payee_address ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryCounterpartyPayeeRequest(): QueryCounterpartyPayeeRequest {
   return {
     channel_id: "",
-    relayer: ""
+    relayer: "",
   };
 }
 export const QueryCounterpartyPayeeRequest = {
@@ -919,21 +984,26 @@ export const QueryCounterpartyPayeeRequest = {
     message.relayer !== undefined && (obj.relayer = message.relayer);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryCounterpartyPayeeRequest>, I>>(object: I): QueryCounterpartyPayeeRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryCounterpartyPayeeRequest>, I>>(
+    object: I,
+  ): QueryCounterpartyPayeeRequest {
     const message = createBaseQueryCounterpartyPayeeRequest();
     message.channel_id = object.channel_id ?? "";
     message.relayer = object.relayer ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryCounterpartyPayeeResponse(): QueryCounterpartyPayeeResponse {
   return {
-    counterparty_payee: ""
+    counterparty_payee: "",
   };
 }
 export const QueryCounterpartyPayeeResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryCounterpartyPayeeResponse",
-  encode(message: QueryCounterpartyPayeeResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryCounterpartyPayeeResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.counterparty_payee !== "") {
       writer.uint32(10).string(message.counterparty_payee);
     }
@@ -966,21 +1036,26 @@ export const QueryCounterpartyPayeeResponse = {
     message.counterparty_payee !== undefined && (obj.counterparty_payee = message.counterparty_payee);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryCounterpartyPayeeResponse>, I>>(object: I): QueryCounterpartyPayeeResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryCounterpartyPayeeResponse>, I>>(
+    object: I,
+  ): QueryCounterpartyPayeeResponse {
     const message = createBaseQueryCounterpartyPayeeResponse();
     message.counterparty_payee = object.counterparty_payee ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryFeeEnabledChannelsRequest(): QueryFeeEnabledChannelsRequest {
   return {
     pagination: undefined,
-    query_height: BigInt(0)
+    query_height: BigInt(0),
   };
 }
 export const QueryFeeEnabledChannelsRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelsRequest",
-  encode(message: QueryFeeEnabledChannelsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryFeeEnabledChannelsRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.pagination !== undefined) {
       PageRequest.encode(message.pagination, writer.uint32(10).fork()).ldelim();
     }
@@ -1017,11 +1092,14 @@ export const QueryFeeEnabledChannelsRequest = {
   },
   toJSON(message: QueryFeeEnabledChannelsRequest): unknown {
     const obj: any = {};
-    message.pagination !== undefined && (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined &&
+      (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
     message.query_height !== undefined && (obj.query_height = (message.query_height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelsRequest>, I>>(object: I): QueryFeeEnabledChannelsRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelsRequest>, I>>(
+    object: I,
+  ): QueryFeeEnabledChannelsRequest {
     const message = createBaseQueryFeeEnabledChannelsRequest();
     if (object.pagination !== undefined && object.pagination !== null) {
       message.pagination = PageRequest.fromPartial(object.pagination);
@@ -1030,16 +1108,19 @@ export const QueryFeeEnabledChannelsRequest = {
       message.query_height = BigInt(object.query_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryFeeEnabledChannelsResponse(): QueryFeeEnabledChannelsResponse {
   return {
-    fee_enabled_channels: []
+    fee_enabled_channels: [],
   };
 }
 export const QueryFeeEnabledChannelsResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelsResponse",
-  encode(message: QueryFeeEnabledChannelsResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryFeeEnabledChannelsResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     for (const v of message.fee_enabled_channels) {
       FeeEnabledChannel.encode(v!, writer.uint32(10).fork()).ldelim();
     }
@@ -1064,28 +1145,34 @@ export const QueryFeeEnabledChannelsResponse = {
   },
   fromJSON(object: any): QueryFeeEnabledChannelsResponse {
     const obj = createBaseQueryFeeEnabledChannelsResponse();
-    if (Array.isArray(object?.fee_enabled_channels)) obj.fee_enabled_channels = object.fee_enabled_channels.map((e: any) => FeeEnabledChannel.fromJSON(e));
+    if (Array.isArray(object?.fee_enabled_channels))
+      obj.fee_enabled_channels = object.fee_enabled_channels.map((e: any) => FeeEnabledChannel.fromJSON(e));
     return obj;
   },
   toJSON(message: QueryFeeEnabledChannelsResponse): unknown {
     const obj: any = {};
     if (message.fee_enabled_channels) {
-      obj.fee_enabled_channels = message.fee_enabled_channels.map(e => e ? FeeEnabledChannel.toJSON(e) : undefined);
+      obj.fee_enabled_channels = message.fee_enabled_channels.map((e) =>
+        e ? FeeEnabledChannel.toJSON(e) : undefined,
+      );
     } else {
       obj.fee_enabled_channels = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelsResponse>, I>>(object: I): QueryFeeEnabledChannelsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelsResponse>, I>>(
+    object: I,
+  ): QueryFeeEnabledChannelsResponse {
     const message = createBaseQueryFeeEnabledChannelsResponse();
-    message.fee_enabled_channels = object.fee_enabled_channels?.map(e => FeeEnabledChannel.fromPartial(e)) || [];
+    message.fee_enabled_channels =
+      object.fee_enabled_channels?.map((e) => FeeEnabledChannel.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryFeeEnabledChannelRequest(): QueryFeeEnabledChannelRequest {
   return {
     port_id: "",
-    channel_id: ""
+    channel_id: "",
   };
 }
 export const QueryFeeEnabledChannelRequest = {
@@ -1131,21 +1218,26 @@ export const QueryFeeEnabledChannelRequest = {
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelRequest>, I>>(object: I): QueryFeeEnabledChannelRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelRequest>, I>>(
+    object: I,
+  ): QueryFeeEnabledChannelRequest {
     const message = createBaseQueryFeeEnabledChannelRequest();
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryFeeEnabledChannelResponse(): QueryFeeEnabledChannelResponse {
   return {
-    fee_enabled: false
+    fee_enabled: false,
   };
 }
 export const QueryFeeEnabledChannelResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelResponse",
-  encode(message: QueryFeeEnabledChannelResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryFeeEnabledChannelResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.fee_enabled === true) {
       writer.uint32(8).bool(message.fee_enabled);
     }
@@ -1178,11 +1270,13 @@ export const QueryFeeEnabledChannelResponse = {
     message.fee_enabled !== undefined && (obj.fee_enabled = message.fee_enabled);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelResponse>, I>>(object: I): QueryFeeEnabledChannelResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryFeeEnabledChannelResponse>, I>>(
+    object: I,
+  ): QueryFeeEnabledChannelResponse {
     const message = createBaseQueryFeeEnabledChannelResponse();
     message.fee_enabled = object.fee_enabled ?? false;
     return message;
-  }
+  },
 };
 /** Query defines the ICS29 gRPC querier service. */
 export interface Query {
@@ -1191,7 +1285,9 @@ export interface Query {
   /** IncentivizedPacket returns all packet fees for a packet given its identifier */
   IncentivizedPacket(request: QueryIncentivizedPacketRequest): Promise<QueryIncentivizedPacketResponse>;
   /** Gets all incentivized packets for a specific channel */
-  IncentivizedPacketsForChannel(request: QueryIncentivizedPacketsForChannelRequest): Promise<QueryIncentivizedPacketsForChannelResponse>;
+  IncentivizedPacketsForChannel(
+    request: QueryIncentivizedPacketsForChannelRequest,
+  ): Promise<QueryIncentivizedPacketsForChannelResponse>;
   /** TotalRecvFees returns the total receive fees for a packet given its identifier */
   TotalRecvFees(request: QueryTotalRecvFeesRequest): Promise<QueryTotalRecvFeesResponse>;
   /** TotalAckFees returns the total acknowledgement fees for a packet given its identifier */
@@ -1225,51 +1321,53 @@ export class QueryClientImpl implements Query {
   IncentivizedPackets(request: QueryIncentivizedPacketsRequest): Promise<QueryIncentivizedPacketsResponse> {
     const data = QueryIncentivizedPacketsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "IncentivizedPackets", data);
-    return promise.then(data => QueryIncentivizedPacketsResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryIncentivizedPacketsResponse.decode(new BinaryReader(data)));
   }
   IncentivizedPacket(request: QueryIncentivizedPacketRequest): Promise<QueryIncentivizedPacketResponse> {
     const data = QueryIncentivizedPacketRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "IncentivizedPacket", data);
-    return promise.then(data => QueryIncentivizedPacketResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryIncentivizedPacketResponse.decode(new BinaryReader(data)));
   }
-  IncentivizedPacketsForChannel(request: QueryIncentivizedPacketsForChannelRequest): Promise<QueryIncentivizedPacketsForChannelResponse> {
+  IncentivizedPacketsForChannel(
+    request: QueryIncentivizedPacketsForChannelRequest,
+  ): Promise<QueryIncentivizedPacketsForChannelResponse> {
     const data = QueryIncentivizedPacketsForChannelRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "IncentivizedPacketsForChannel", data);
-    return promise.then(data => QueryIncentivizedPacketsForChannelResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryIncentivizedPacketsForChannelResponse.decode(new BinaryReader(data)));
   }
   TotalRecvFees(request: QueryTotalRecvFeesRequest): Promise<QueryTotalRecvFeesResponse> {
     const data = QueryTotalRecvFeesRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "TotalRecvFees", data);
-    return promise.then(data => QueryTotalRecvFeesResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryTotalRecvFeesResponse.decode(new BinaryReader(data)));
   }
   TotalAckFees(request: QueryTotalAckFeesRequest): Promise<QueryTotalAckFeesResponse> {
     const data = QueryTotalAckFeesRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "TotalAckFees", data);
-    return promise.then(data => QueryTotalAckFeesResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryTotalAckFeesResponse.decode(new BinaryReader(data)));
   }
   TotalTimeoutFees(request: QueryTotalTimeoutFeesRequest): Promise<QueryTotalTimeoutFeesResponse> {
     const data = QueryTotalTimeoutFeesRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "TotalTimeoutFees", data);
-    return promise.then(data => QueryTotalTimeoutFeesResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryTotalTimeoutFeesResponse.decode(new BinaryReader(data)));
   }
   Payee(request: QueryPayeeRequest): Promise<QueryPayeeResponse> {
     const data = QueryPayeeRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "Payee", data);
-    return promise.then(data => QueryPayeeResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryPayeeResponse.decode(new BinaryReader(data)));
   }
   CounterpartyPayee(request: QueryCounterpartyPayeeRequest): Promise<QueryCounterpartyPayeeResponse> {
     const data = QueryCounterpartyPayeeRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "CounterpartyPayee", data);
-    return promise.then(data => QueryCounterpartyPayeeResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryCounterpartyPayeeResponse.decode(new BinaryReader(data)));
   }
   FeeEnabledChannels(request: QueryFeeEnabledChannelsRequest): Promise<QueryFeeEnabledChannelsResponse> {
     const data = QueryFeeEnabledChannelsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "FeeEnabledChannels", data);
-    return promise.then(data => QueryFeeEnabledChannelsResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryFeeEnabledChannelsResponse.decode(new BinaryReader(data)));
   }
   FeeEnabledChannel(request: QueryFeeEnabledChannelRequest): Promise<QueryFeeEnabledChannelResponse> {
     const data = QueryFeeEnabledChannelRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Query", "FeeEnabledChannel", data);
-    return promise.then(data => QueryFeeEnabledChannelResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryFeeEnabledChannelResponse.decode(new BinaryReader(data)));
   }
 }

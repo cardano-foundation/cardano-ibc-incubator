@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package ibc.cardano.v1;
+
+option go_package = "github.com/cosmos/ibc-go/v7/modules/cardano/types";
+
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "ibc/core/types/v1/block.proto";
+
+// Query provides defines the gRPC querier service for Cardano-specific queries
+service Query {
+  // Events queries IBC events from Cardano blocks since a given height
+  rpc Events(QueryEventsRequest) returns (QueryEventsResponse) {
+    option (google.api.http).get = "/ibc/cardano/v1/events";
+  }
+}
+
+// QueryEventsRequest is the request type for the Query/Events RPC method.
+message QueryEventsRequest {
+  // Height from which to query events (exclusive - returns events after this height)
+  uint64 since_height = 1;
+}
+
+// QueryEventsResponse is the response type for the Query/Events RPC method.
+message QueryEventsResponse {
+  // Current chain height at the time of the query
+  uint64 current_height = 1;
+  
+  // Events grouped by block height
+  repeated BlockEvents events = 2;
+}
+
+// BlockEvents contains all IBC events for a specific block
+message BlockEvents {
+  option (gogoproto.goproto_getters) = false;
+  
+  // Block height
+  uint64 height = 1;
+  
+  // IBC events that occurred in this block
+  repeated ibc.core.types.v1.ResponseDeliverTx events = 2;
+}

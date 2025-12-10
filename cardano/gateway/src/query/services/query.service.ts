@@ -428,6 +428,64 @@ export class QueryService {
     }
   }
 
+  async queryEvents(request: { since_height: bigint }): Promise<{
+    current_height: bigint;
+    events: Array<{ height: bigint; events: ResponseDeliverTx[] }>;
+  }> {
+    const { since_height } = request;
+
+    if (since_height === undefined || since_height === null) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "since_height" must be provided');
+    }
+
+    try {
+      // Get current height
+      const latestHeight = await this.latestHeight({});
+      const currentHeight = Number(latestHeight.height.revision_height);
+
+      // If since_height >= current, return empty
+      if (Number(since_height) >= currentHeight) {
+        return {
+          current_height: BigInt(currentHeight),
+          events: [],
+        };
+      }
+
+      // Query events for each block from since_height+1 to current
+      const blockEvents: Array<{ height: bigint; events: ResponseDeliverTx[] }> = [];
+      const startHeight = Number(since_height) + 1;
+
+      // Limit to reasonable range (e.g., 100 blocks at a time)
+      const endHeight = Math.min(currentHeight, startHeight + 100);
+
+      for (let height = startHeight; height <= endHeight; height++) {
+        try {
+          // Reuse existing queryBlockResults logic
+          const blockResult = await this.queryBlockResults({ height: BigInt(height) });
+
+          if (blockResult.block_results.txs_results.length > 0) {
+            blockEvents.push({
+              height: BigInt(height),
+              events: blockResult.block_results.txs_results,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to query events at height ${height}: ${err.message}`);
+          // Continue with next block
+        }
+      }
+
+      return {
+        current_height: BigInt(currentHeight),
+        events: blockEvents,
+      };
+    } catch (err) {
+      this.logger.error(err);
+      this.logger.error(err.message, 'queryEvents');
+      throw new GrpcInternalException(err.message);
+    }
+  }
+
   private async _querySpoEvents(height: BigInt): Promise<ResponseDeliverTx[]> {
     const txsResults: ResponseDeliverTx[] = [];
     const hasEventRegister = await this.dbService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));

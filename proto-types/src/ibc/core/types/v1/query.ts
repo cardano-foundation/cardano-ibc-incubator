@@ -48,7 +48,7 @@ export interface QueryIBCHeaderResponse {
 }
 function createBaseQueryBlockResultsRequest(): QueryBlockResultsRequest {
   return {
-    height: BigInt(0)
+    height: BigInt(0),
   };
 }
 export const QueryBlockResultsRequest = {
@@ -86,17 +86,19 @@ export const QueryBlockResultsRequest = {
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryBlockResultsRequest>, I>>(object: I): QueryBlockResultsRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryBlockResultsRequest>, I>>(
+    object: I,
+  ): QueryBlockResultsRequest {
     const message = createBaseQueryBlockResultsRequest();
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryBlockResultsResponse(): QueryBlockResultsResponse {
   return {
-    block_results: undefined
+    block_results: undefined,
   };
 }
 export const QueryBlockResultsResponse = {
@@ -131,16 +133,21 @@ export const QueryBlockResultsResponse = {
   },
   toJSON(message: QueryBlockResultsResponse): unknown {
     const obj: any = {};
-    message.block_results !== undefined && (obj.block_results = message.block_results ? ResultBlockResults.toJSON(message.block_results) : undefined);
+    message.block_results !== undefined &&
+      (obj.block_results = message.block_results
+        ? ResultBlockResults.toJSON(message.block_results)
+        : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryBlockResultsResponse>, I>>(object: I): QueryBlockResultsResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryBlockResultsResponse>, I>>(
+    object: I,
+  ): QueryBlockResultsResponse {
     const message = createBaseQueryBlockResultsResponse();
     if (object.block_results !== undefined && object.block_results !== null) {
       message.block_results = ResultBlockResults.fromPartial(object.block_results);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryBlockSearchRequest(): QueryBlockSearchRequest {
   return {
@@ -148,7 +155,7 @@ function createBaseQueryBlockSearchRequest(): QueryBlockSearchRequest {
     packet_dst_channel: undefined,
     packet_sequence: "",
     limit: BigInt(0),
-    page: BigInt(0)
+    page: BigInt(0),
   };
 }
 export const QueryBlockSearchRequest = {
@@ -230,12 +237,12 @@ export const QueryBlockSearchRequest = {
       message.page = BigInt(object.page.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryBlockSearchResponse(): QueryBlockSearchResponse {
   return {
     blocks: [],
-    total_count: BigInt(0)
+    total_count: BigInt(0),
   };
 }
 export const QueryBlockSearchResponse = {
@@ -271,32 +278,35 @@ export const QueryBlockSearchResponse = {
   },
   fromJSON(object: any): QueryBlockSearchResponse {
     const obj = createBaseQueryBlockSearchResponse();
-    if (Array.isArray(object?.blocks)) obj.blocks = object.blocks.map((e: any) => ResultBlockSearch.fromJSON(e));
+    if (Array.isArray(object?.blocks))
+      obj.blocks = object.blocks.map((e: any) => ResultBlockSearch.fromJSON(e));
     if (isSet(object.total_count)) obj.total_count = BigInt(object.total_count.toString());
     return obj;
   },
   toJSON(message: QueryBlockSearchResponse): unknown {
     const obj: any = {};
     if (message.blocks) {
-      obj.blocks = message.blocks.map(e => e ? ResultBlockSearch.toJSON(e) : undefined);
+      obj.blocks = message.blocks.map((e) => (e ? ResultBlockSearch.toJSON(e) : undefined));
     } else {
       obj.blocks = [];
     }
     message.total_count !== undefined && (obj.total_count = (message.total_count || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryBlockSearchResponse>, I>>(object: I): QueryBlockSearchResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryBlockSearchResponse>, I>>(
+    object: I,
+  ): QueryBlockSearchResponse {
     const message = createBaseQueryBlockSearchResponse();
-    message.blocks = object.blocks?.map(e => ResultBlockSearch.fromPartial(e)) || [];
+    message.blocks = object.blocks?.map((e) => ResultBlockSearch.fromPartial(e)) || [];
     if (object.total_count !== undefined && object.total_count !== null) {
       message.total_count = BigInt(object.total_count.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryTransactionByHashRequest(): QueryTransactionByHashRequest {
   return {
-    hash: ""
+    hash: "",
   };
 }
 export const QueryTransactionByHashRequest = {
@@ -334,11 +344,13 @@ export const QueryTransactionByHashRequest = {
     message.hash !== undefined && (obj.hash = message.hash);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTransactionByHashRequest>, I>>(object: I): QueryTransactionByHashRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryTransactionByHashRequest>, I>>(
+    object: I,
+  ): QueryTransactionByHashRequest {
     const message = createBaseQueryTransactionByHashRequest();
     message.hash = object.hash ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryTransactionByHashResponse(): QueryTransactionByHashResponse {
   return {
@@ -346,12 +358,15 @@ function createBaseQueryTransactionByHashResponse(): QueryTransactionByHashRespo
     height: BigInt(0),
     gas_fee: BigInt(0),
     tx_size: BigInt(0),
-    events: []
+    events: [],
   };
 }
 export const QueryTransactionByHashResponse = {
   typeUrl: "/ibc.core.types.v1.QueryTransactionByHashResponse",
-  encode(message: QueryTransactionByHashResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: QueryTransactionByHashResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.hash !== "") {
       writer.uint32(10).string(message.hash);
     }
@@ -414,13 +429,15 @@ export const QueryTransactionByHashResponse = {
     message.gas_fee !== undefined && (obj.gas_fee = (message.gas_fee || BigInt(0)).toString());
     message.tx_size !== undefined && (obj.tx_size = (message.tx_size || BigInt(0)).toString());
     if (message.events) {
-      obj.events = message.events.map(e => e ? Event.toJSON(e) : undefined);
+      obj.events = message.events.map((e) => (e ? Event.toJSON(e) : undefined));
     } else {
       obj.events = [];
     }
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryTransactionByHashResponse>, I>>(object: I): QueryTransactionByHashResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryTransactionByHashResponse>, I>>(
+    object: I,
+  ): QueryTransactionByHashResponse {
     const message = createBaseQueryTransactionByHashResponse();
     message.hash = object.hash ?? "";
     if (object.height !== undefined && object.height !== null) {
@@ -432,13 +449,13 @@ export const QueryTransactionByHashResponse = {
     if (object.tx_size !== undefined && object.tx_size !== null) {
       message.tx_size = BigInt(object.tx_size.toString());
     }
-    message.events = object.events?.map(e => Event.fromPartial(e)) || [];
+    message.events = object.events?.map((e) => Event.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
   return {
-    height: BigInt(0)
+    height: BigInt(0),
   };
 }
 export const QueryIBCHeaderRequest = {
@@ -482,11 +499,11 @@ export const QueryIBCHeaderRequest = {
       message.height = BigInt(object.height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseQueryIBCHeaderResponse(): QueryIBCHeaderResponse {
   return {
-    header: undefined
+    header: undefined,
   };
 }
 export const QueryIBCHeaderResponse = {
@@ -530,7 +547,7 @@ export const QueryIBCHeaderResponse = {
       message.header = Any.fromPartial(object.header);
     }
     return message;
-  }
+  },
 };
 /** Query provides defines the gRPC querier service */
 export interface Query {
@@ -551,21 +568,21 @@ export class QueryClientImpl implements Query {
   BlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const data = QueryBlockResultsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "BlockResults", data);
-    return promise.then(data => QueryBlockResultsResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryBlockResultsResponse.decode(new BinaryReader(data)));
   }
   BlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
     const data = QueryBlockSearchRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "BlockSearch", data);
-    return promise.then(data => QueryBlockSearchResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryBlockSearchResponse.decode(new BinaryReader(data)));
   }
   TransactionByHash(request: QueryTransactionByHashRequest): Promise<QueryTransactionByHashResponse> {
     const data = QueryTransactionByHashRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "TransactionByHash", data);
-    return promise.then(data => QueryTransactionByHashResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryTransactionByHashResponse.decode(new BinaryReader(data)));
   }
   IBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
     const data = QueryIBCHeaderRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.types.v1.Query", "IBCHeader", data);
-    return promise.then(data => QueryIBCHeaderResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryIBCHeaderResponse.decode(new BinaryReader(data)));
   }
 }

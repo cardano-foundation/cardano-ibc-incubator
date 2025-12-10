@@ -25,7 +25,7 @@ function createBaseFungibleTokenPacketData(): FungibleTokenPacketData {
     amount: "",
     sender: "",
     receiver: "",
-    memo: ""
+    memo: "",
   };
 }
 export const FungibleTokenPacketData = {
@@ -103,5 +103,5 @@ export const FungibleTokenPacketData = {
     message.receiver = object.receiver ?? "";
     message.memo = object.memo ?? "";
     return message;
-  }
+  },
 };
