@@ -16,7 +16,7 @@ import { DenomTrace } from '../shared/entities/denom-trace.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([DenomTrace]),
+    TypeOrmModule.forFeature([DenomTrace], 'gateway'),
     LucidModule,
     KupoModule,
     HttpModule,

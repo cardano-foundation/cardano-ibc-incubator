@@ -8,7 +8,7 @@ import { PaginationKeyDto } from '../dtos/pagination.dto';
 export class DenomTraceService {
   constructor(
     private readonly logger: Logger,
-    @InjectRepository(DenomTrace)
+    @InjectRepository(DenomTrace, 'gateway')
     private denomTraceRepository: Repository<DenomTrace>,
   ) {}
 
