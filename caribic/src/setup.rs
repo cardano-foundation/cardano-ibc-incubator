@@ -598,5 +598,82 @@ pub fn prepare_db_sync_and_gateway(
         &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
     )?;
 
+    // Wait for postgres to be ready before creating gateway database
+    let mut postgres_ready = false;
+    for attempt in 1..=30 {
+        let health_check = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&["compose", "exec", "-T", "postgres", "pg_isready", "-U", "postgres"])
+            .output();
+
+        if health_check.is_ok() && health_check.unwrap().status.success() {
+            postgres_ready = true;
+            break;
+        }
+
+        if attempt < 30 {
+            verbose(&format!(
+                "Waiting for postgres to be ready (attempt {}/30)...",
+                attempt
+            ));
+            thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    if !postgres_ready {
+        return Err("Postgres failed to become ready after 60 seconds".into());
+    }
+
+    // Create the gateway application database if it doesn't exist
+    let db_check = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(&[
+            "compose",
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "postgres",
+            "-tc",
+            "SELECT 1 FROM pg_database WHERE datname = 'gateway_app'",
+        ])
+        .output();
+
+    let db_exists = db_check
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|result| result.trim().contains("1"))
+        .unwrap_or(false);
+
+    if !db_exists {
+        log("Creating gateway_app database...");
+        let create_result = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&[
+                "compose",
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "postgres",
+                "-c",
+                "CREATE DATABASE gateway_app",
+            ])
+            .output()
+            .map_err(|error| {
+                format!("Failed to create gateway_app database: {}", error.to_string())
+            })?;
+
+        if !create_result.status.success() {
+            let error_msg = String::from_utf8_lossy(&create_result.stderr);
+            return Err(format!("Failed to create gateway_app database: {}", error_msg).into());
+        }
+        log("Gateway application database created successfully");
+    } else {
+        verbose("Gateway application database already exists");
+    }
+
     Ok(())
 }
