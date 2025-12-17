@@ -1,7 +1,8 @@
 import { Logger, Module } from '@nestjs/common';
 import { TxModule } from './tx/tx.module';
 import { QueryModule } from './query/query.module';
-import DatabaseConfig from './config/database.config';
+import { DbSyncDatabaseConfig } from './config/db-sync-database.config';
+import { GatewayDatabaseConfig } from './config/gateway-database.config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import configuration from './config';
@@ -11,10 +12,12 @@ import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protoc
 import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forRoot(DatabaseConfig),
+    TypeOrmModule.forRoot(DbSyncDatabaseConfig),
+    TypeOrmModule.forRoot(GatewayDatabaseConfig),
     ConfigModule.forRoot({
       load: [
         configuration,
@@ -24,6 +27,7 @@ import { TreeInitService } from './shared/services/tree-init.service';
       ],
       isGlobal: true,
     }),
+    HealthModule,
     QueryModule,
     TxModule,
     LucidModule,

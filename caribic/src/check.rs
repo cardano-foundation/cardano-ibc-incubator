@@ -9,24 +9,24 @@ pub async fn check_prerequisites() {
     check_tool_availability(
         "Docker",
         "--version",
-        "👉 Go to https://www.docker.com/ and install Docker.",
+        "Go to https://www.docker.com/ and install Docker.",
     );
     check_tool_availability(
         "Aiken",
         "--version",
-        "👉 Please visit https://aiken-lang.org/installation-instructions to install Aiken.",
+        "Please visit https://aiken-lang.org/installation-instructions to install Aiken.",
     );
     check_tool_availability(
         "Deno",
         "--version",
-        "👉 Please visit https://deno.com/ to install Deno.",
+        "Please visit https://deno.com/ to install Deno.",
     );
     check_tool_availability(
         "Go",
         "version",
-        "👉 Install Go by following the instructions at https://go.dev/doc/install.",
+        "Install Go by following the instructions at https://go.dev/doc/install.",
     );
-    check_tool_availability("Hermes", "version", "👉 Install Hermes by following the instructions at https://hermes.informal.systems/quick-start/installation.html#install-by-downloading");
+    check_tool_availability("Hermes", "version", "Install Hermes by following the instructions at https://hermes.informal.systems/quick-start/installation.html#install-by-downloading");
 }
 
 fn check_tool_availability(tool: &str, version_flag: &str, install_instructions: &str) {
@@ -66,7 +66,7 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
 pub async fn check_osmosisd(osmosis_dir: &Path) {
     let osmosisd_check = Command::new("osmosisd").arg("version").output();
     if osmosis_dir.exists() {
-        logger::verbose(&format!("👀 Osmosis directory already exists"));
+        logger::verbose(&format!("Osmosis directory already exists"));
     } else {
         let result = download_osmosis(osmosis_dir).await;
         if result.is_err() {

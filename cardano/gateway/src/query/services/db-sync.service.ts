@@ -20,7 +20,7 @@ export class DbSyncService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @InjectEntityManager() private entityManager: EntityManager,
+    @InjectEntityManager('dbsync') private entityManager: EntityManager,
   ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {

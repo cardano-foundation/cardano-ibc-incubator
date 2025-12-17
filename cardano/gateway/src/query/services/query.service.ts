@@ -100,6 +100,14 @@ import {
 } from '../../shared/helpers/mithril-header';
 import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import {
+  QueryDenomTraceRequest,
+  QueryDenomTraceResponse,
+  QueryDenomTracesRequest,
+  QueryDenomTracesResponse,
+} from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
+import { DenomTrace } from '@plus/proto-types/build/ibc/applications/transfer/v1/transfer';
+import { DenomTraceService } from './denom-trace.service';
 
 @Injectable()
 export class QueryService {
@@ -111,6 +119,7 @@ export class QueryService {
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
+    @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
   ) {}
 
   async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -907,6 +916,68 @@ export class QueryService {
     } catch (error) {
       this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
       throw new GrpcInternalException(`Failed to query IBC state root: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query a denom trace by its hash
+   */
+  async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
+    this.logger.log(`Querying denom trace for hash: ${request.hash}`);
+    
+    try {
+      if (!request.hash) {
+        throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+      }
+
+      const denomTrace = await this.denomTraceService.findByHash(request.hash);
+      
+      if (!denomTrace) {
+        throw new GrpcNotFoundException(`Denom trace not found for hash: ${request.hash}`);
+      }
+
+      const response: QueryDenomTraceResponse = {
+        denom_trace: {
+          path: denomTrace.path,
+          base_denom: denomTrace.base_denom,
+        },
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Failed to query denom trace: ${error.message}`);
+      if (error instanceof GrpcNotFoundException || error instanceof GrpcInvalidArgumentException) {
+        throw error;
+      }
+      throw new GrpcInternalException(`Failed to query denom trace: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query all denom traces with optional pagination
+   */
+  async queryDenomTraces(request: QueryDenomTracesRequest): Promise<QueryDenomTracesResponse> {
+    this.logger.log('Querying all denom traces');
+    
+    try {
+      const pagination = request.pagination ? { offset: Number(request.pagination.offset || 0) } : undefined;
+      const denomTraces = await this.denomTraceService.findAll(pagination);
+      
+      const response: QueryDenomTracesResponse = {
+        denom_traces: denomTraces.map(trace => ({
+          path: trace.path,
+          base_denom: trace.base_denom,
+        })),
+        pagination: {
+          next_key: new Uint8Array(),
+          total: BigInt(await this.denomTraceService.getCount()),
+        },
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Failed to query denom traces: ${error.message}`);
+      throw new GrpcInternalException(`Failed to query denom traces: ${error.message}`);
     }
   }
 }

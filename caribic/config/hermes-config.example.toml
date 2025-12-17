@@ -109,6 +109,7 @@ clock_drift = '5s'
 max_block_time = '30s'
 trusting_period = '14days'
 trust_threshold = { numerator = '2', denominator = '3' }
+event_source = { mode = 'push', url = 'wss://rpc.cheqd.network:443/websocket', batch_delay = '500ms' }
 
 [chains.packet_filter]
 policy = 'allow'
