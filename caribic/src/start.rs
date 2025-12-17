@@ -1544,12 +1544,18 @@ pub fn hermes_keys_list(
             ).into());
         }
         
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+        if output_str.trim().is_empty() {
+            Ok(format!("No keys found for chain '{}'.\n\nTo add a key, use:\n  caribic keys add --chain {} --mnemonic-file <path>\n", chain_id, chain_id))
+        } else {
+            Ok(output_str)
+        }
     } else {
         // List keys for all configured chains
         log("Listing keys for all chains...");
         
         let mut result = String::new();
+        let mut found_any_keys = false;
         
         // List for cardano-devnet
         let cardano_output = Command::new(&hermes_binary)
@@ -1557,8 +1563,14 @@ pub fn hermes_keys_list(
             .output()?;
         
         if cardano_output.status.success() {
+            let output_str = String::from_utf8_lossy(&cardano_output.stdout);
             result.push_str("cardano-devnet:\n");
-            result.push_str(&String::from_utf8_lossy(&cardano_output.stdout));
+            if output_str.trim().is_empty() {
+                result.push_str("  No keys found\n");
+            } else {
+                result.push_str(&output_str);
+                found_any_keys = true;
+            }
             result.push('\n');
         }
         
@@ -1568,8 +1580,19 @@ pub fn hermes_keys_list(
             .output()?;
         
         if cheqd_output.status.success() {
+            let output_str = String::from_utf8_lossy(&cheqd_output.stdout);
             result.push_str("cheqd-testnet-6:\n");
-            result.push_str(&String::from_utf8_lossy(&cheqd_output.stdout));
+            if output_str.trim().is_empty() {
+                result.push_str("  No keys found\n");
+            } else {
+                result.push_str(&output_str);
+                found_any_keys = true;
+            }
+        }
+        
+        if !found_any_keys {
+            result.push_str("\nTo add keys, use:\n");
+            result.push_str("  caribic keys add --chain <chain-id> --mnemonic-file <path>\n");
         }
         
         Ok(result)
