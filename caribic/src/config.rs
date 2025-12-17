@@ -132,14 +132,14 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         Some(IndicatorMessage {
                             message: "Downloading cardano-ibc-incubator project".to_string(),
                             step: "Step 1/2".to_string(),
-                            emoji: "📥 ".to_string(),
+                            emoji: "".to_string(),
                         }),
                     )
                     .await
                     .expect("Failed to download cardano-ibc-incubator project");
 
                     log(&format!(
-                        "{} 📦 Extracting cardano-ibc-incubator project...",
+                        "{} Extracting cardano-ibc-incubator project...",
                         style("Step 2/2").bold().dim()
                     ));
 

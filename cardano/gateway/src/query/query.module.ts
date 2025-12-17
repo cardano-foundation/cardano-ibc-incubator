@@ -13,6 +13,7 @@ import { MiniProtocalsModule } from '../shared/modules/mini-protocals/mini-proto
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { DenomTraceService } from './services/denom-trace.service';
 import { DenomTrace } from '../shared/entities/denom-trace.entity';
+import { HealthModule } from '../health/health.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { DenomTrace } from '../shared/entities/denom-trace.entity';
     HttpModule,
     MiniProtocalsModule,
     MithrilModule,
+    HealthModule,
   ],
   controllers: [QueryController],
   providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService, DenomTraceService],

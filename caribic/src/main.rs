@@ -96,8 +96,12 @@ enum Commands {
         #[command(subcommand)]
         command: KeysCommand,
     },
-    /// Check health of configured chains
-    HealthCheck,
+    /// Check health of bridge services
+    HealthCheck {
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, hermes)
+        #[arg(long)]
+        service: Option<String>,
+    },
     /// Create IBC client on target chain
     CreateClient {
         /// Source chain identifier
@@ -222,7 +226,12 @@ fn exit_osmosis_demo_with_error(osmosis_dir: &PathBuf, message: &str) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    utils::print_header();
+    
+    // Only print banner for start commands
+    if matches!(args.command, Commands::Start { .. }) {
+        utils::print_header();
+    }
+    
     logger::init(args.verbose);
     config::init(args.config.to_str().unwrap_or_else(|| {
         logger::error("Failed to get configuration file path");
@@ -530,12 +539,11 @@ async fn main() {
                 }
             }
         }
-        Commands::HealthCheck => {
+        Commands::HealthCheck { service } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
-            let relayer_path = project_root_path.join("relayer");
 
-            match start::hermes_health_check(&relayer_path) {
+            match start::comprehensive_health_check(project_root_path, service.as_deref()) {
                 Ok(output) => logger::log(&output),
                 Err(e) => {
                     logger::error(&format!("Health check failed: {}", e));

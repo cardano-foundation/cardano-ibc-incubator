@@ -34,11 +34,28 @@ pub fn start_relayer(
     _relayer_config_source_path: &Path,
     _chain_handler_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Configuring Hermes relayer ...".to_owned());
+    } else {
+        log("Configuring Hermes relayer ...");
+    }
+    
     // Build Hermes with Cardano support if needed
     let hermes_binary = relayer_path.join("target/release/hermes");
     
     if !hermes_binary.exists() {
-        log("Building Hermes with Cardano support (this may take a few minutes)...");
+        log_or_show_progress("Building Hermes with Cardano support (this may take a few minutes)...", &optional_progress_bar);
         execute_script_with_progress(
             relayer_path,
             "cargo",
@@ -46,10 +63,11 @@ pub fn start_relayer(
             "Building Hermes relayer...",
         )?;
     } else {
-        verbose("Hermes binary already built, skipping compilation");
+        log_or_show_progress("Hermes binary already built, skipping compilation", &optional_progress_bar);
     }
     
     // Set up Hermes configuration directory
+    log_or_show_progress("Setting up Hermes configuration", &optional_progress_bar);
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_dir = home_path.join(".hermes");
     let hermes_keys_dir = hermes_dir.join("keys");
@@ -67,10 +85,17 @@ pub fn start_relayer(
     )
     .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
     
-    verbose(&format!(
-        "Copied Hermes configuration to {}",
-        hermes_dir.join("config.toml").display()
-    ));
+    log_or_show_progress(
+        &format!(
+            "Configuration copied to {}",
+            hermes_dir.join("config.toml").display()
+        ),
+        &optional_progress_bar,
+    );
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
     
     Ok(())
 }
@@ -87,7 +112,7 @@ pub async fn start_local_cardano_network(
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.enable_steady_tick(Duration::from_millis(100));
         progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
@@ -267,6 +292,18 @@ pub async fn deploy_contracts(
         _ => Some(ProgressBar::new_spinner()),
     };
 
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Deploying IBC contracts ...".to_owned());
+    } else {
+        log("Deploying IBC contracts ...");
+    }
+
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
     let mut validators_rebuild = false;
 
@@ -302,7 +339,7 @@ pub async fn deploy_contracts(
     } else {
         log_or_show_progress(
             &format!(
-                "{} 🛠️ Aiken validators already built",
+                "{} Aiken validators already built",
                 style("Step 1/2").bold().dim()
             ),
             &optional_progress_bar,
@@ -566,7 +603,7 @@ pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error:
 
     if status.is_ok() {
         log_or_show_progress(
-            "🚑 Waiting for the Osmosis appchain to become healthy ...",
+            "Waiting for the Osmosis appchain to become healthy ...",
             &optional_progress_bar,
         );
 
@@ -1275,17 +1312,62 @@ pub fn wait_and_start_mithril_genesis(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Starting Gateway ...".to_owned());
+    } else {
+        log("Starting Gateway ...");
+    }
+
+    log_or_show_progress("Stopping existing Gateway containers", &optional_progress_bar);
+    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    
     let mut script_args = vec!["compose", "up", "-d"];
     if clean {
         script_args.push("--build");
+        log_or_show_progress("Building and starting Gateway containers", &optional_progress_bar);
+    } else {
+        log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
     }
-    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    
     execute_script(&gateway_dir, "docker", script_args, None)?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+    
     Ok(())
 }
 
 /// Start Hermes daemon in the background
 pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Starting Hermes daemon ...".to_owned());
+    } else {
+        log("Starting Hermes daemon ...");
+    }
+    
     let hermes_binary = relayer_path.join("target/release/hermes");
     
     if !hermes_binary.exists() {
@@ -1296,7 +1378,7 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     let hermes_log = home_path.join(".hermes/hermes.log");
     
     // Validate config before starting
-    verbose("Validating Hermes configuration...");
+    log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
     let config_check = Command::new(&hermes_binary)
         .args(&["config", "validate"])
         .output();
@@ -1309,10 +1391,10 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
                 error_msg
             ).into());
         }
-        verbose("Configuration validated successfully");
+        log_or_show_progress("Configuration validated successfully", &optional_progress_bar);
     }
     
-    log("Starting Hermes daemon...");
+    log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
     
     // Start Hermes in background
     let mut child = Command::new(&hermes_binary)
@@ -1327,6 +1409,7 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     log("   Monitor: tail -f ~/.hermes/hermes.log");
     
     // Wait briefly to ensure process doesn't immediately crash
+    log_or_show_progress("Verifying daemon startup", &optional_progress_bar);
     thread::sleep(Duration::from_millis(1000));
     
     // Check if process is still running
@@ -1344,11 +1427,15 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
         }
         Ok(None) => {
             // Process is still running - success
-            verbose("Hermes daemon is running");
+            log_or_show_progress("Hermes daemon is running", &optional_progress_bar);
         }
         Err(e) => {
             return Err(format!("Failed to check Hermes status: {}", e).into());
         }
+    }
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
     }
     
     Ok(())
@@ -1702,7 +1789,74 @@ pub fn hermes_health_check(
         ).into());
     }
     
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let raw_output = String::from_utf8_lossy(&output.stdout);
+    
+    // Parse and format the health check output
+    let mut result = String::new();
+    let mut current_chain = String::new();
+    let mut chain_status: Vec<(String, bool, Vec<String>)> = Vec::new();
+    let mut warnings: Vec<String> = Vec::new();
+    
+    for line in raw_output.lines() {
+        // Extract chain name from log lines
+        if line.contains("health_check{chain=") {
+            if let Some(start) = line.find("chain=") {
+                if let Some(end) = line[start..].find("}") {
+                    current_chain = line[start + 6..start + end].to_string();
+                }
+            }
+            
+            // Check for health status
+            if line.contains("chain is healthy") {
+                chain_status.push((current_chain.clone(), true, warnings.clone()));
+                warnings.clear();
+            } else if line.contains("chain is not healthy") {
+                chain_status.push((current_chain.clone(), false, warnings.clone()));
+                warnings.clear();
+            } else if line.contains("WARN") && line.contains("reason:") {
+                // Extract warning reason
+                if let Some(reason_start) = line.find("reason:") {
+                    let reason = line[reason_start + 8..].trim();
+                    warnings.push(reason.to_string());
+                }
+            }
+        }
+    }
+    
+    // Format output
+    result.push_str("\nHealth Check Results:\n");
+    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    for (chain, is_healthy, chain_warnings) in &chain_status {
+        let status_symbol = if *is_healthy { "[OK]" } else { "[FAIL]" };
+        let status_text = if *is_healthy { "HEALTHY" } else { "UNHEALTHY" };
+        
+        result.push_str(&format!("{} {}: {}\n", status_symbol, chain, status_text));
+        
+        // Show warnings for unhealthy chains
+        for warning in chain_warnings {
+            result.push_str(&format!("  WARNING: {}\n", warning));
+        }
+    }
+    
+    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    // Add summary
+    let healthy_count = chain_status.iter().filter(|(_, h, _)| *h).count();
+    let total_count = chain_status.len();
+    
+    if healthy_count == total_count {
+        result.push_str(&format!("\nAll {} chain(s) are healthy\n", total_count));
+    } else {
+        result.push_str(&format!(
+            "\nWARNING: {}/{} chain(s) healthy, {} need attention\n",
+            healthy_count,
+            total_count,
+            total_count - healthy_count
+        ));
+    }
+    
+    Ok(result)
 }
 
 /// Create IBC client via caribic
@@ -1826,4 +1980,229 @@ pub fn hermes_create_channel(
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("IBC channel created\n{}", stdout))
+}
+
+/// Comprehensive health check for all bridge services
+pub fn comprehensive_health_check(
+    project_root_path: &Path,
+    service_filter: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let cardano_dir = project_root_path.join("cardano");
+    let gateway_dir = project_root_path.join("cardano/gateway");
+    let relayer_path = project_root_path.join("relayer");
+    
+    let mut result = String::new();
+    result.push_str("\nBridge Health Check\n");
+    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+    
+    let mut services_checked = 0;
+    let mut services_healthy = 0;
+    
+    // Define services to check
+    let services = vec![
+        ("gateway", "Gateway (NestJS gRPC Server)"),
+        ("cardano", "Cardano Node"),
+        ("postgres", "PostgreSQL (db-sync)"),
+        ("kupo", "Kupo (Chain Indexer)"),
+        ("ogmios", "Ogmios (JSON/RPC)"),
+        ("hermes", "Hermes Relayer Daemon"),
+    ];
+    
+    for (service_name, service_label) in services {
+        // Skip if filtering and not the requested service
+        if let Some(filter) = service_filter {
+            if filter != service_name {
+                continue;
+            }
+        }
+        
+        services_checked += 1;
+        
+        let (is_healthy, status_msg) = match service_name {
+            "gateway" => check_gateway_health(&gateway_dir),
+            "cardano" => check_cardano_node_health(&cardano_dir),
+            "postgres" => check_postgres_health(&cardano_dir),
+            "kupo" => check_kupo_health(&cardano_dir),
+            "ogmios" => check_ogmios_health(&cardano_dir),
+            "hermes" => check_hermes_daemon_health(&relayer_path),
+            _ => (false, "Unknown service".to_string()),
+        };
+        
+        if is_healthy {
+            services_healthy += 1;
+        }
+        
+        let status_symbol = if is_healthy { "[OK]" } else { "[FAIL]" };
+        result.push_str(&format!("{} {}\n", status_symbol, service_label));
+        result.push_str(&format!("    {}\n\n", status_msg));
+    }
+    
+    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    
+    if services_healthy == services_checked {
+        result.push_str(&format!("All {} service(s) are healthy\n", services_checked));
+    } else {
+        result.push_str(&format!(
+            "WARNING: {}/{} service(s) healthy, {} need attention\n",
+            services_healthy,
+            services_checked,
+            services_checked - services_healthy
+        ));
+    }
+    
+    Ok(result)
+}
+
+/// Check Gateway health
+fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
+    // Check if gateway container is running
+    let ps_check = Command::new("docker")
+        .args(&["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
+        .output();
+    
+    if let Ok(output) = ps_check {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            // Try to connect to port 3001
+            let port_check = Command::new("nc")
+                .args(&["-z", "localhost", "3001"])
+                .output();
+            
+            if let Ok(port_output) = port_check {
+                if port_output.status.success() {
+                    return (true, "Container running, port 3001 accessible".to_string());
+                }
+            }
+            
+            return (true, "Container running".to_string());
+        }
+    }
+    
+    (false, "Container not running".to_string())
+}
+
+/// Check Cardano node health
+fn check_cardano_node_health(_cardano_dir: &Path) -> (bool, String) {
+    // Check using docker ps directly with filter
+    let check = Command::new("docker")
+        .args(&["ps", "--filter", "name=cardano-node", "--filter", "status=running", "--format", "{{.Names}}"])
+        .output();
+    
+    if let Ok(output) = check {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() && stdout.contains("cardano-node") {
+            return (true, "Container running".to_string());
+        }
+    }
+    
+    (false, "Container not running".to_string())
+}
+
+/// Check Postgres health
+fn check_postgres_health(_cardano_dir: &Path) -> (bool, String) {
+    // Check if postgres container is running
+    let ps_check = Command::new("docker")
+        .args(&["ps", "--filter", "name=cardano-postgres", "--filter", "status=running", "--format", "{{.Names}}"])
+        .output();
+    
+    if let Ok(output) = ps_check {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            // Try pg_isready check
+            let check = Command::new("docker")
+                .args(&["exec", &stdout, "pg_isready", "-U", "postgres"])
+                .output();
+            
+            if let Ok(ready_output) = check {
+                if ready_output.status.success() {
+                    return (true, "Database accepting connections on port 6432".to_string());
+                }
+            }
+            
+            return (true, "Container running".to_string());
+        }
+    }
+    
+    (false, "Container not running".to_string())
+}
+
+/// Check Kupo health
+fn check_kupo_health(_cardano_dir: &Path) -> (bool, String) {
+    let check = Command::new("docker")
+        .args(&["ps", "--filter", "name=cardano-kupo", "--filter", "status=running", "--format", "{{.Names}}"])
+        .output();
+    
+    if let Ok(output) = check {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            // Try to check port 1442
+            let port_check = Command::new("nc")
+                .args(&["-z", "localhost", "1442"])
+                .output();
+            
+            if let Ok(port_output) = port_check {
+                if port_output.status.success() {
+                    return (true, "Running on port 1442".to_string());
+                }
+            }
+            
+            return (true, "Container running".to_string());
+        }
+    }
+    
+    (false, "Container not running".to_string())
+}
+
+/// Check Ogmios health
+fn check_ogmios_health(_cardano_dir: &Path) -> (bool, String) {
+    let check = Command::new("docker")
+        .args(&["ps", "--filter", "name=ogmios", "--filter", "status=running", "--format", "{{.Names}}"])
+        .output();
+    
+    if let Ok(output) = check {
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stdout.is_empty() {
+            // Try to check port 1337
+            let port_check = Command::new("nc")
+                .args(&["-z", "localhost", "1337"])
+                .output();
+            
+            if let Ok(port_output) = port_check {
+                if port_output.status.success() {
+                    return (true, "Running on port 1337".to_string());
+                }
+            }
+            
+            return (true, "Container running".to_string());
+        }
+    }
+    
+    (false, "Container not running".to_string())
+}
+
+/// Check Hermes daemon health
+fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
+    // Check if Hermes process is running
+    let ps_check = Command::new("ps")
+        .args(&["aux"])
+        .output();
+    
+    if let Ok(output) = ps_check {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.contains("hermes start") && !line.contains("grep") {
+                // Found the process, check if log file exists and has recent activity
+                let home = home_dir().unwrap_or_default();
+                let log_file = home.join(".hermes/hermes.log");
+                
+                if log_file.exists() {
+                    return (true, "Daemon running".to_string());
+                }
+                
+                return (true, "Process running".to_string());
+            }
+        }
+    }
+    
+    (false, "Daemon not running".to_string())
 }

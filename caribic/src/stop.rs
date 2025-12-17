@@ -78,7 +78,7 @@ pub fn stop_relayer(_relayer_path: &Path) {
     match pkill_result {
         Ok(output) => {
             if output.status.success() {
-                log("✅ Hermes relayer stopped successfully");
+                log("Hermes relayer stopped successfully");
             } else {
                 log("Hermes relayer was not running");
             }

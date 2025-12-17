@@ -41,7 +41,7 @@ pub async fn download_repository(
             Some(IndicatorMessage {
                 message: format!("Downloading {} source code", name),
                 step: "Step 1/2".to_string(),
-                emoji: "📥 ".to_string(),
+                emoji: "".to_string(),
             }),
         )
         .await
@@ -54,7 +54,7 @@ pub async fn download_repository(
         })?;
 
         log(&format!(
-            "{} 📦 Extracting {} source code...",
+            "{} Extracting {} source code...",
             style("Step 2/2").bold().dim(),
             name
         ));
@@ -101,7 +101,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
 
     if input == "yes" || input == "y" {
         println!(
-            "{} 🛠️ Installing osmosisd...",
+            "{} Installing osmosisd...",
             style("Step 1/1").bold().dim()
         );
 
@@ -255,13 +255,13 @@ pub fn configure_local_cardano_devnet(
 }
 
 pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
-    log_or_show_progress("💸 Seeding Cardano Devnet", &optional_progress_bar);
+    log_or_show_progress("Seeding Cardano Devnet", &optional_progress_bar);
     let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
 
     for bootstrap_address in bootstrap_addresses {
         log_or_show_progress(
             &format!(
-                "🚀 Sending {} ADA to {}",
+                "Sending {} ADA to {}",
                 style(bootstrap_address.amount).bold().dim(),
                 style(&bootstrap_address.address).bold().dim()
             ),

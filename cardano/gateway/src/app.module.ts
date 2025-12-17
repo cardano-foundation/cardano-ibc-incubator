@@ -12,6 +12,7 @@ import { MiniProtocalsModule } from './shared/modules/mini-protocals/mini-protoc
 import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TreeInitService } from './shared/services/tree-init.service';
       ],
       isGlobal: true,
     }),
+    HealthModule,
     QueryModule,
     TxModule,
     LucidModule,
