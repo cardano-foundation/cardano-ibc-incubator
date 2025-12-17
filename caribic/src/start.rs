@@ -24,6 +24,7 @@ use std::cmp::min;
 use std::fs::{self, remove_dir_all};
 use std::path::Path;
 use std::process::Command;
+use std::thread;
 use std::time::Duration;
 use std::u64;
 
@@ -1294,19 +1295,61 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_log = home_path.join(".hermes/hermes.log");
     
+    // Validate config before starting
+    verbose("Validating Hermes configuration...");
+    let config_check = Command::new(&hermes_binary)
+        .args(&["config", "validate"])
+        .output();
+    
+    if let Ok(output) = config_check {
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "Hermes configuration is invalid:\n{}",
+                error_msg
+            ).into());
+        }
+        verbose("Configuration validated successfully");
+    }
+    
     log("Starting Hermes daemon...");
     
     // Start Hermes in background
-    let status = Command::new(&hermes_binary)
+    let mut child = Command::new(&hermes_binary)
         .arg("start")
         .stdout(std::fs::File::create(&hermes_log)?)
         .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
         .spawn()
         .map_err(|e| format!("Failed to start Hermes: {}", e))?;
     
-    log(&format!("Hermes started (PID: {})", status.id()));
+    log(&format!("Hermes started (PID: {})", child.id()));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
+    
+    // Wait briefly to ensure process doesn't immediately crash
+    thread::sleep(Duration::from_millis(1000));
+    
+    // Check if process is still running
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            // Process exited immediately - read error log
+            let error_log = hermes_log.with_extension("err");
+            let error_content = std::fs::read_to_string(&error_log)
+                .unwrap_or_else(|_| "Could not read error log".to_string());
+            return Err(format!(
+                "Hermes daemon exited immediately with status {}:\n{}",
+                status,
+                error_content.lines().take(10).collect::<Vec<_>>().join("\n")
+            ).into());
+        }
+        Ok(None) => {
+            // Process is still running - success
+            verbose("Hermes daemon is running");
+        }
+        Err(e) => {
+            return Err(format!("Failed to check Hermes status: {}", e).into());
+        }
+    }
     
     Ok(())
 }
