@@ -1,0 +1,122 @@
+# Hermes Configuration Example with Cardano Integration
+# Place this file at ~/.hermes/config.toml
+
+[global]
+log_level = 'info'
+
+# Telemetry configuration
+[telemetry]
+enabled = true
+host = '127.0.0.1'
+port = 3002
+
+[telemetry.buckets.latency_submitted]
+start = 500
+end = 20000
+buckets = 10
+
+[telemetry.buckets.latency_confirmed]
+start = 1000
+end = 30000
+buckets = 10
+
+# REST API configuration
+[rest]
+enabled = true
+host = '127.0.0.1'
+port = 3000
+
+# Mode configuration - which relaying features to enable
+[mode]
+
+# Whether to enable client worker
+[mode.clients]
+enabled = true
+refresh = true
+misbehaviour = true
+
+# Whether to enable connection worker
+[mode.connections]
+enabled = true
+
+# Whether to enable channel worker
+[mode.channels]
+enabled = true
+
+# Whether to enable packet worker (the main relayer)
+[mode.packets]
+enabled = true
+clear_interval = 100
+clear_on_start = true
+tx_confirmation = true
+
+
+#
+# CARDANO CHAIN CONFIGURATION
+#
+[[chains]]
+type = 'Cardano'
+id = 'cardano-devnet'
+
+# Gateway gRPC endpoint - this is your NestJS Gateway
+gateway_url = 'http://localhost:3001'
+
+# Cardano network ID (1 = mainnet, 0 = testnet)
+network_id = 0
+
+# Key configuration
+key_name = 'cardano-relayer'
+key_store_type = 'Test'  # or 'Memory' for production
+# Note: Use absolute path, tilde expansion may not work
+# key_store_folder = '/Users/yourusername/.hermes/keys'
+
+# Account index for CIP-1852 key derivation (m/1852'/1815'/account'/2'/0')
+account = 0
+
+# Maximum time per block for this chain (in milliseconds)
+max_block_time = '20000ms'
+
+# Trust threshold for client updates (2/3 = 0.66)
+trust_threshold = { numerator = '2', denominator = '3' }
+
+# Packet filter configuration
+[chains.packet_filter]
+policy = 'allow'
+list = [
+  ['transfer', 'channel-0'],  # Allow transfers on channel-0
+]
+
+
+#
+# CHEQD CHAIN CONFIGURATION
+#
+[[chains]]
+id = 'cheqd-testnet-6'
+type = 'CosmosSdk'
+rpc_addr = 'https://rpc.cheqd.network:443'
+grpc_addr = 'https://grpc.cheqd.network:443'
+rpc_timeout = '10s'
+account_prefix = 'cheqd'
+key_name = 'cheqd-relayer'
+store_prefix = 'ibc'
+default_gas = 100000
+max_gas = 400000
+gas_price = { price = 25, denom = 'ncheq' }
+gas_multiplier = 1.1
+max_msg_num = 30
+max_tx_size = 2097152
+clock_drift = '5s'
+max_block_time = '30s'
+trusting_period = '14days'
+trust_threshold = { numerator = '2', denominator = '3' }
+event_source = { mode = 'push', url = 'wss://rpc.cheqd.network:443/websocket', batch_delay = '500ms' }
+
+[chains.packet_filter]
+policy = 'allow'
+list = [
+  ['transfer', '*'],
+]
+
+# Optional: Address type for this chain
+address_type = { derivation = 'cosmos' }
+
