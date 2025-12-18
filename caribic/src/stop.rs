@@ -15,10 +15,10 @@ pub fn stop_gateway(project_root_path: &Path) {
     );
     match gateway_result {
         Ok(_) => {
-            log("❎ Gateway stopped successfully");
+            log("Gateway stopped successfully");
         }
         Err(e) => {
-            error(&format!("❌ Failed to stop gateway: {}", e));
+            error(&format!("ERROR: Failed to stop gateway: {}", e));
         }
     }
 }
@@ -32,10 +32,10 @@ pub fn stop_cardano_network(project_root_path: &Path) {
     );
     match cardano_result {
         Ok(_) => {
-            log("❎ Cardano network stopped");
+            log("Cardano network stopped");
         }
         Err(e) => {
-            error(&format!("❌ Failed to stop Cardano network: {}", e));
+            error(&format!("ERROR: Failed to stop Cardano network: {}", e));
         }
     }
 }
@@ -46,10 +46,10 @@ pub fn stop_cosmos(cosmos_path: &Path) {
             execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
         match cosmos_result {
             Ok(_) => {
-                log("❎ Cosmos stopped successfully");
+                log("Cosmos stopped successfully");
             }
             Err(e) => {
-                error(&format!("❌ Failed to stop Cosmos: {}", e));
+                error(&format!("ERROR: Failed to stop Cosmos: {}", e));
             }
         }
     }
@@ -59,23 +59,32 @@ pub fn stop_osmosis(osmosis_path: &Path) {
     let osmosis_result = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
     match osmosis_result {
         Ok(_) => {
-            log("❎ Osmosis stopped successfully");
+            log("Osmosis stopped successfully");
         }
         Err(e) => {
-            error(&format!("❌ Failed to stop Osmosis: {}", e));
+            error(&format!("ERROR: Failed to stop Osmosis: {}", e));
         }
     }
 }
 
-pub fn stop_relayer(relayer_path: &Path) {
-    let relayer_result =
-        execute_script(relayer_path, "docker", Vec::from(["compose", "down"]), None);
-    match relayer_result {
-        Ok(_) => {
-            log("❎ Relayer stopped successfully");
+pub fn stop_relayer(_relayer_path: &Path) {
+    use std::process::Command;
+    
+    // Stop Hermes daemon by finding and killing the process
+    let pkill_result = Command::new("pkill")
+        .args(&["-f", "hermes start"])
+        .output();
+    
+    match pkill_result {
+        Ok(output) => {
+            if output.status.success() {
+                log("Hermes relayer stopped successfully");
+            } else {
+                log("Hermes relayer was not running");
+            }
         }
         Err(e) => {
-            error(&format!("❌ Failed to stop Relayer: {}", e));
+            error(&format!("ERROR: Failed to stop Hermes relayer: {}", e));
         }
     }
 }
@@ -125,10 +134,10 @@ pub fn stop_mithril(mithril_path: &Path) {
     );
     match mithril_result {
         Ok(_) => {
-            log("❎ Mithril stopped successfully");
+            log("Mithril stopped successfully");
         }
         Err(e) => {
-            error(&format!("❌ Failed to stop Mithril: {}", e));
+            error(&format!("ERROR: Failed to stop Mithril: {}", e));
         }
     }
 }

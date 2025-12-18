@@ -41,7 +41,7 @@ pub async fn download_repository(
             Some(IndicatorMessage {
                 message: format!("Downloading {} source code", name),
                 step: "Step 1/2".to_string(),
-                emoji: "📥 ".to_string(),
+                emoji: "".to_string(),
             }),
         )
         .await
@@ -54,7 +54,7 @@ pub async fn download_repository(
         })?;
 
         log(&format!(
-            "{} 📦 Extracting {} source code...",
+            "{} Extracting {} source code...",
             style("Step 2/2").bold().dim(),
             name
         ));
@@ -101,7 +101,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
 
     if input == "yes" || input == "y" {
         println!(
-            "{} 🛠️ Installing osmosisd...",
+            "{} Installing osmosisd...",
             style("Step 1/1").bold().dim()
         );
 
@@ -111,7 +111,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
             .output()
             .expect("Failed to install osmosisd");
 
-        println!("✅ osmosisd installed successfully");
+        println!("PASS: osmosisd installed successfully");
     }
 }
 
@@ -255,13 +255,13 @@ pub fn configure_local_cardano_devnet(
 }
 
 pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
-    log_or_show_progress("💸 Seeding Cardano Devnet", &optional_progress_bar);
+    log_or_show_progress("Seeding Cardano Devnet", &optional_progress_bar);
     let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
 
     for bootstrap_address in bootstrap_addresses {
         log_or_show_progress(
             &format!(
-                "🚀 Sending {} ADA to {}",
+                "Sending {} ADA to {}",
                 style(bootstrap_address.amount).bold().dim(),
                 style(&bootstrap_address.address).bold().dim()
             ),
@@ -597,6 +597,83 @@ pub fn prepare_db_sync_and_gateway(
         r#"CARDANO_EPOCH_NONCE_GENESIS=.*"#,
         &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
     )?;
+
+    // Wait for postgres to be ready before creating gateway database
+    let mut postgres_ready = false;
+    for attempt in 1..=30 {
+        let health_check = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&["compose", "exec", "-T", "postgres", "pg_isready", "-U", "postgres"])
+            .output();
+
+        if health_check.is_ok() && health_check.unwrap().status.success() {
+            postgres_ready = true;
+            break;
+        }
+
+        if attempt < 30 {
+            verbose(&format!(
+                "Waiting for postgres to be ready (attempt {}/30)...",
+                attempt
+            ));
+            thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    if !postgres_ready {
+        return Err("Postgres failed to become ready after 60 seconds".into());
+    }
+
+    // Create the gateway application database if it doesn't exist
+    let db_check = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(&[
+            "compose",
+            "exec",
+            "-T",
+            "postgres",
+            "psql",
+            "-U",
+            "postgres",
+            "-tc",
+            "SELECT 1 FROM pg_database WHERE datname = 'gateway_app'",
+        ])
+        .output();
+
+    let db_exists = db_check
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|result| result.trim().contains("1"))
+        .unwrap_or(false);
+
+    if !db_exists {
+        log("Creating gateway_app database...");
+        let create_result = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&[
+                "compose",
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "postgres",
+                "-c",
+                "CREATE DATABASE gateway_app",
+            ])
+            .output()
+            .map_err(|error| {
+                format!("Failed to create gateway_app database: {}", error.to_string())
+            })?;
+
+        if !create_result.status.success() {
+            let error_msg = String::from_utf8_lossy(&create_result.stderr);
+            return Err(format!("Failed to create gateway_app database: {}", error_msg).into());
+        }
+        log("Gateway application database created successfully");
+    } else {
+        verbose("Gateway application database already exists");
+    }
 
     Ok(())
 }
