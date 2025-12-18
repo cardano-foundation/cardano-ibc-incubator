@@ -1,13 +1,12 @@
-use crate::logger::{
-    self, verbose,
-    Verbosity::{Info, Standard, Verbose},
-};
+use crate::logger::{self, verbose};
 use console::style;
 use dirs::home_dir;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
+use indicatif::ProgressStyle;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
+use std::collections::VecDeque;
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
@@ -16,12 +15,15 @@ use std::io::{self, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 use std::time::Duration;
 use std::{collections::HashMap, fs};
-use std::{collections::VecDeque, thread};
 use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
+
+#[cfg(target_os = "linux")]
+use nix::unistd::{Gid, Uid};
 
 pub fn print_header() {
     println!(
@@ -372,7 +374,7 @@ pub fn execute_script_with_progress(
         .map_err(|error| format!("Failed to initialize localnet: {}", error))?;
 
     match logger::get_verbosity() {
-        Verbose => {
+        logger::Verbosity::Verbose => {
             let stdout = command.stdout.as_mut().expect("Failed to open stdout");
             let reader = BufReader::new(stdout);
 
@@ -381,7 +383,7 @@ pub fn execute_script_with_progress(
                 progress_bar.set_message(format!("{}", line.trim()));
             }
         }
-        Info => {
+        logger::Verbosity::Info => {
             let mut last_lines = VecDeque::with_capacity(5);
 
             if let Some(stdout) = command.stdout.take() {
@@ -403,7 +405,7 @@ pub fn execute_script_with_progress(
                 }
             }
         }
-        Standard => {
+        logger::Verbosity::Standard => {
             if let Some(stdout) = command.stdout.take() {
                 let reader = BufReader::new(stdout);
 
@@ -585,4 +587,30 @@ pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {
     v.values()
         .map(|k| k["value"]["lovelace"].as_u64().unwrap())
         .sum()
+}
+
+/// Get current user's UID and GID for Docker containers
+/// - macOS: Returns 0:0 (root) for compatibility
+/// - Linux: Returns actual user UID/GID
+/// - Windows: Returns default 1000:1000
+pub fn get_user_ids() -> (String, String) {
+    #[cfg(target_os = "macos")]
+    {
+        // Use root permissions on macOS
+        ("0".to_string(), "0".to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Use actual user UID/GID on Linux
+        let uid = Uid::current().as_raw();
+        let gid = Gid::current().as_raw();
+        (uid.to_string(), gid.to_string())
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        // Default UID/GID for other systems (Windows, etc.)
+        ("1000".to_string(), "1000".to_string())
+    }
 }

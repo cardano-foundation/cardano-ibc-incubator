@@ -34,7 +34,7 @@ rly='docker exec -it relayer bin/rly'
 RELAYER_PATH="demo"
 CARDANO_CHAIN_NAME="ibc-0"
 SIDECHAIN_CHAIN_NAME="ibc-1"
-SENT_AMOUNT="12345678-9fc33a6ffaa8d1f600c161aa383739d5af37807ed83347cc133521c96d6f636b"
+SENT_AMOUNT="12345678-465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b"
 SIDECHAIN_RECEIVER="pfm"
 HERMES_OSMOSIS_NAME="localosmosis"
 HERMES_SIDECHAIN_NAME="sidechain"
@@ -97,7 +97,7 @@ echo "Created Pool ID: $pool_id"
 script_dir=$(dirname $(realpath $0))
 
 # Store the swaprouter contract
-osmosisd tx wasm store $script_dir/../cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
+osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
 sleep 6
 swaprouter_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
 check_string_empty "$swaprouter_code_id" "swaprouter code id on Osmosis not found. Exiting..."
@@ -130,7 +130,7 @@ sleep 6
 echo "swaprouter set_route executed!"
 
 #==================================Setup crosschain_swaps contract=======================================
-osmosisd tx wasm store $script_dir/../cosmwasm/wasm/crosschain_swaps.wasm $TX_FLAGS | log_tx || exit 1
+osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/crosschain_swaps.wasm $TX_FLAGS | log_tx || exit 1
 sleep 6
 crosschain_swaps_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
 check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."

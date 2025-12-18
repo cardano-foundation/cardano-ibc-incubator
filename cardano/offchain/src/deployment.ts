@@ -624,7 +624,7 @@ const deploySpendChannel = async (
     recv_packet: "recv_packet.mint",
     send_packet: "send_packet.spend",
     timeout_packet: "timeout_packet.spend",
-    acknowledge_packet: "acknowledge_packet.spend",
+    acknowledge_packet: "acknowledge_packet.mint",
   };
 
   const referredScripts: Record<string, { script: Script; hash: string }> =
