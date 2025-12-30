@@ -14,8 +14,9 @@
 
 use aiken/collection/list
 use aiken/primitive/bytearray
-use aiken/transaction.{InlineDatum, Input, Output, ScriptContext, Transaction}
-use aiken/transaction/value.{AssetName, PolicyId}
+use cardano/assets.{AssetName, PolicyId, quantity_of}
+use cardano/script_context.{ScriptContext}
+use cardano/transaction.{InlineDatum, Input, Output, Transaction}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, host_state_token_name, validate_bind_port,
   validate_create_channel, validate_create_client, validate_create_connection,
@@ -53,7 +54,7 @@ fn find_host_state_input(
     inputs,
     fn(input) {
       let quantity =
-        value.quantity_of(
+        quantity_of(
           input.output.value,
           nft_policy,
           host_state_token_name,
@@ -73,9 +74,9 @@ fn find_host_state_output(
   list.find(
     outputs,
     fn(output) {
-      let quantity =
-        value.quantity_of(output.value, nft_policy, host_state_token_name)
-      quantity == 1
+          let quantity =
+            quantity_of(output.value, nft_policy, host_state_token_name)
+          quantity == 1
     },
   )
 }
@@ -124,7 +125,7 @@ validator host_state_stt(nft_policy: PolicyId) {
         outputs,
         fn(output) {
           let quantity =
-            value.quantity_of(output.value, nft_policy, host_state_token_name)
+            quantity_of(output.value, nft_policy, host_state_token_name)
           quantity == 1
         },
       )

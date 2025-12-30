@@ -12,11 +12,12 @@
 // 2. Continuity proof across state updates
 // 3. Indexing key for querying history
 
+use aiken/collection/dict
 use aiken/collection/list
-use aiken/transaction.{
-  Input, Mint, OutputReference, ScriptContext, Transaction, find_input,
+use cardano/assets.{AssetName, PolicyId, tokens}
+use cardano/transaction.{
+  Input, OutputReference, Transaction, find_input,
 }
-use aiken/transaction/value.{AssetName}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 /// Redeemer for NFT minting
@@ -43,10 +44,7 @@ fn validate_utxo_consumed(
 /// 2. Exactly 1 token minted with correct name
 /// 3. No burning allowed
 validator host_state_nft(utxo_ref: OutputReference) {
-  mint(redeemer: NFTRedeemer, _policy_id: Data, ctx: ScriptContext) {
-    let ScriptContext { transaction, purpose } = ctx
-    
-    expect Mint(own_policy) = purpose
+  mint(redeemer: NFTRedeemer, policy_id: PolicyId, transaction: Transaction) {
     let Transaction { inputs, mint, .. } = transaction
     
     when redeemer is {
@@ -55,17 +53,13 @@ validator host_state_nft(utxo_ref: OutputReference) {
         expect validate_utxo_consumed(inputs, utxo_ref)
         
         // 2. Get minted assets for this policy
-        let minted_assets = value.from_minted_value(mint)
-        let own_minted = value.tokens(minted_assets, own_policy)
+        let own_minted = tokens(mint, policy_id)
         
         // 3. Verify exactly 1 token minted with correct name
         expect
-          list.length(own_minted) == 1 && {
-            expect Some((token_name, quantity)) = list.head(own_minted)
-            and {
-              token_name == host_state_token_name,
-              quantity == 1,
-            }
+          dict.size(own_minted) == 1 && {
+            expect Some(quantity) = dict.get(own_minted, host_state_token_name)
+            quantity == 1
           }
         
         True
