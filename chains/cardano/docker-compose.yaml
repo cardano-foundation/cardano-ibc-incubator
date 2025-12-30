@@ -65,6 +65,7 @@ services:
 
   kupo:
     image: cardanosolutions/kupo:v2.9.0
+    platform: linux/arm64
     # user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
@@ -75,6 +76,12 @@ services:
       - cardano-node
     ports:
       - ${KUPO_PORT:-1442}:1442
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
     command:
       [
         "--node-socket",
@@ -82,15 +89,16 @@ services:
         "--node-config",
         "/devnet/cardano-node.json",
         "--since",
-        "${KUPO_SINCE:-origin}",
+        "origin",
         "--match",
-        "${KUPO_MATCH:-*}",
+        "*",
         "--workdir",
         "/db",
         "--host",
         "0.0.0.0",
         "--port",
-        "1442"
+        "1442",
+        "--prune-utxo"
       ]
     volumes:
       - ./devnet:/devnet
