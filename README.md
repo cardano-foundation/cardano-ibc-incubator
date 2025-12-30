@@ -121,6 +121,17 @@ cd caribic
 cargo run check
 ```
 
+#### OS and Architecture Considerations
+
+This project uses Docker containers that require platform-specific images depending on your operating system and CPU architecture. Some Docker images (such as Kupo) support multiple architectures (AMD64/x86_64 and ARM64), but Docker may not automatically select the correct one.
+
+**If you encounter issues with containers crashing immediately or OOM (Out-Of-Memory) errors**, you may need to explicitly specify the platform in the Docker Compose configuration:
+
+- **ARM64 (Apple Silicon, M1/M2/M3 Macs)**: Ensure images specify `platform: linux/arm64`
+- **AMD64/x86_64 (Intel/AMD processors)**: Use `platform: linux/amd64` or omit the platform (defaults to AMD64)
+
+The `chains/cardano/docker-compose.yaml` file includes platform specifications where needed. If you're running on a different architecture or encounter compatibility issues, you may need to adjust these platform settings accordingly.
+
 ### Running a local Cardano network
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
