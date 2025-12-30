@@ -141,11 +141,9 @@ enum Commands {
         use_case: DemoType,
     },
     /// Runs end-to-end integration tests to verify IBC functionality
-    Test {
-        /// Skip starting services (assumes they're already running)
-        #[arg(long, default_value_t = false)]
-        skip_setup: bool,
-    },
+    /// 
+    /// Note: Services must be started manually using 'caribic start all' before running tests
+    Test,
 }
 
 #[derive(Subcommand)]
@@ -598,11 +596,11 @@ async fn main() {
                 }
             }
         }
-        Commands::Test { skip_setup } => {
+        Commands::Test => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
-            match test::run_integration_tests(project_root_path, skip_setup).await {
+            match test::run_integration_tests(project_root_path).await {
                 Ok(_) => logger::log("\nAll integration tests passed!"),
                 Err(error) => {
                     logger::error(&format!("Integration tests failed: {}", error));
