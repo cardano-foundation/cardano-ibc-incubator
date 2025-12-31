@@ -21,7 +21,7 @@ COPY ${MAIN_CONTEXT} .
 COPY --from=protos /usr/src/proto-types /usr/proto-types
 
 # Install app dependencies
-RUN npm ci
+RUN npm install --legacy-peer-deps
 
 # Creates a "dist" folder with the production build
 RUN npm run build

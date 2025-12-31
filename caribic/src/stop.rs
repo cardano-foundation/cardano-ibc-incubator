@@ -96,9 +96,9 @@ pub fn stop_cardano_network(project_root_path: &Path) {
     }
 }
 
-pub fn stop_cosmos(cosmos_path: &Path) {
+pub fn stop_cosmos(cosmos_path: &Path, label: &str) {
     if !cosmos_path.exists() {
-        log("Cosmos was not running");
+        log(&format!("{} was not running", label));
         return;
     }
     
@@ -123,7 +123,7 @@ pub fn stop_cosmos(cosmos_path: &Path) {
     };
     
     if !containers_running {
-        log("Cosmos was not running");
+        log(&format!("{} was not running", label));
         return;
     }
     
@@ -132,10 +132,10 @@ pub fn stop_cosmos(cosmos_path: &Path) {
         execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
     match cosmos_result {
         Ok(_) => {
-            log("Cosmos stopped successfully");
+            log(&format!("{} stopped successfully", label));
         }
         Err(e) => {
-            error(&format!("ERROR: Failed to stop Cosmos: {}", e));
+            error(&format!("ERROR: Failed to stop {}: {}", label, e));
         }
     }
 }

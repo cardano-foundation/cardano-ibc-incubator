@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LucidService } from '../lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { UTxO } from '@lucid-evolution/lucid';
+import { HostStateDatum } from '../../types/host-state-datum';
 
 /**
  * KupoService - Provides IBC-specific queries to Kupo indexer (STT Architecture)
@@ -173,8 +174,8 @@ export class KupoService {
       throw new Error('HostState UTXO has no datum');
     }
     
-    const hostStateDatum = await this.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-    
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+
     return hostStateDatum.state.ibc_state_root;
   }
 }

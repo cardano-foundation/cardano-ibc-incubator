@@ -169,8 +169,11 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
     }
     verbose("   Cardano node is running");
 
-    // Check Gateway - use HTTP port 8000, not gRPC port 5001
-    let gateway_running = check_service_health("http://127.0.0.1:8000/health");
+    // Check Gateway - derive port from .env file (single source of truth)
+    let gateway_dir = project_root.join("cardano/gateway");
+    let gateway_port = get_gateway_port(&gateway_dir);
+    let gateway_url = format!("http://127.0.0.1:{}/health", gateway_port);
+    let gateway_running = check_service_health(&gateway_url);
     if !gateway_running {
         return Err("Gateway is not running. Please run 'caribic start bridge' first.".into());
     }
@@ -215,6 +218,32 @@ fn check_service_health(url: &str) -> bool {
         Ok(response) => response.status().is_success(),
         Err(_) => false,
     }
+}
+
+/// Get Gateway HTTP port from .env file, falling back to default 8000
+fn get_gateway_port(gateway_dir: &Path) -> u16 {
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    
+    let env_file = gateway_dir.join(".env");
+    
+    if let Ok(file) = fs::File::open(&env_file) {
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Look for PORT=xxxx pattern
+                if line.starts_with("PORT=") {
+                    let port_str = line.trim_start_matches("PORT=").trim();
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        return port;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Default port (matches Gateway's main.ts fallback value)
+    8000
 }
 
 /// Query the current ibc_state_root from the Handler UTXO

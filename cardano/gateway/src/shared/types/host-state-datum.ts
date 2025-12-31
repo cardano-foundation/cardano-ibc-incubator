@@ -1,8 +1,9 @@
 import { AuthToken } from './auth-token';
 import { type Data } from '@lucid-evolution/lucid';
 
-export type HandlerDatum = {
+export type HostStateDatum = {
   state: {
+    version: bigint;
     next_client_sequence: bigint;
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
@@ -11,10 +12,12 @@ export type HandlerDatum = {
   };
   token: AuthToken;
 };
-export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
+
+export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 
-  const HandlerStateSchema = Data.Object({
+  const HostStateStateSchema = Data.Object({
+    version: Data.Integer(),
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
@@ -25,18 +28,20 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
     policyId: Data.Bytes(),
     name: Data.Bytes(),
   });
-  const HandlerDatumSchema = Data.Object({
-    state: HandlerStateSchema,
+  const HostStateDatumSchema = Data.Object({
+    state: HostStateStateSchema,
     token: AuthTokenSchema,
   });
-  type THandlerDatum = Data.Static<typeof HandlerDatumSchema>;
-  const THandlerDatum = HandlerDatumSchema as unknown as HandlerDatum;
+  type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
+  const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
 
-  return Data.to(handlerDatum, THandlerDatum);
+  return Data.to(hostStateDatum, THostStateDatum);
 }
-export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
+
+export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
-  const HandlerStateSchema = Data.Object({
+  const HostStateStateSchema = Data.Object({
+    version: Data.Integer(),
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
@@ -47,12 +52,11 @@ export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof imp
     policyId: Data.Bytes(),
     name: Data.Bytes(),
   });
-  const HandlerDatumSchema = Data.Object({
-    state: HandlerStateSchema,
+  const HostStateDatumSchema = Data.Object({
+    state: HostStateStateSchema,
     token: AuthTokenSchema,
   });
-  type THandlerDatum = Data.Static<typeof HandlerDatumSchema>;
-  const THandlerDatum = HandlerDatumSchema as unknown as HandlerDatum;
-  Data.from(handlerDatum, THandlerDatum);
-  return Data.from(handlerDatum, THandlerDatum);
+  type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
+  const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
+  return Data.from(hostStateDatum, THostStateDatum);
 }

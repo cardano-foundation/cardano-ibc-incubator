@@ -42,6 +42,12 @@ enum StartTarget {
     Bridge,
     /// Starts the local Cardano network, Mithril, gateway and relayer
     All,
+    /// Starts only the Gateway service
+    Gateway,
+    /// Starts only the Hermes relayer
+    Relayer,
+    /// Starts only the Mithril services
+    Mithril,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -54,6 +60,12 @@ enum StopTarget {
     Demo,
     /// Stops the local Cardano network, Mithril, gateway and relayer and demo services
     All,
+    /// Stops only the Gateway service
+    Gateway,
+    /// Stops only the Hermes relayer
+    Relayer,
+    /// Stops only the Mithril services
+    Mithril,
 }
 
 #[derive(Parser)]
@@ -353,20 +365,29 @@ async fn main() {
                 network_down();
                 logger::log("\nCardano Network successfully");
             } else if target == StopTarget::Demo {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-                stop_cosmos(project_root_path.join("cosmos").as_path());
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path(), "Summit demo Cosmos");
+                stop_cosmos(project_root_path.join("cosmos").as_path(), "Cosmos");
                 stop_osmosis(osmosis_dir.as_path());
                 logger::log("\nDemo services stopped successfully");
             } else if target == StopTarget::All {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-                stop_cosmos(project_root_path.join("cosmos").as_path());
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path(), "Summit demo Cosmos");
+                stop_cosmos(project_root_path.join("cosmos").as_path(), "Cosmos");
                 stop_osmosis(osmosis_dir.as_path());
                 bridge_down();
                 network_down();
                 logger::log("\nAll services stopped successfully");
+            } else if target == StopTarget::Gateway {
+                stop_gateway(project_root_path);
+                logger::log("\nGateway stopped successfully");
+            } else if target == StopTarget::Relayer {
+                stop_relayer(project_root_path.join("relayer").as_path());
+                logger::log("\nRelayer stopped successfully");
+            } else if target == StopTarget::Mithril {
+                stop_mithril(project_root_path.join("chains/mithrils").as_path());
+                logger::log("\nMithril stopped successfully");
             } else {
                 logger::error(
-                    "ERROR: Invalid target to stop must be either 'bridge', 'network', 'demo' or 'all'",
+                    "ERROR: Invalid target to stop must be either 'bridge', 'network', 'demo', 'all', 'gateway', 'relayer', or 'mithril'",
                 );
             }
         }
@@ -491,6 +512,53 @@ async fn main() {
                 logger::log("   2. Add keys: caribic keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt");
                 logger::log("   3. Check health: caribic health-check");
                 logger::log("   4. View keys: caribic keys list");
+            }
+
+            if target == StartTarget::Gateway {
+                // Start only the Gateway service
+                match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start gateway: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == StartTarget::Relayer {
+                // Build and configure Hermes relayer
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    project_root_path.join("relayer/.env.example").as_path(),
+                    project_root_path.join("relayer/examples").as_path(),
+                    project_root_path.join("cardano/offchain/deployments/handler.json").as_path(),
+                ) {
+                    Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to configure Hermes relayer: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+
+                // Start Hermes daemon
+                match start::start_hermes_daemon(project_root_path.join("relayer").as_path()) {
+                    Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Hermes daemon: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == StartTarget::Mithril {
+                // Start only Mithril services
+                match start_mithril(&project_root_path).await {
+                    Ok(_) => logger::log("PASS: Mithril services started (1 aggregator, 2 signers)"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Mithril: {}", error));
+                        std::process::exit(1);
+                    }
+                }
             }
         }
         Commands::Keys { command } => {

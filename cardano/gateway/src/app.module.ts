@@ -21,9 +21,12 @@ import { HealthModule } from './health/health.module';
     ConfigModule.forRoot({
       load: [
         configuration,
-        () => ({
-          deployment: require(process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json'),
-        }),
+        () => {
+          const fs = require('fs');
+          const handlerPath = process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json';
+          const handlerJson = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
+          return { deployment: handlerJson };
+        },
       ],
       isGlobal: true,
     }),

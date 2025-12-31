@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
+import { DenomTraceService } from 'src/query/services/denom-trace.service';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -73,7 +74,7 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @Inject('DenomTraceService') private denomTraceService: any,
+    private denomTraceService: DenomTraceService,
   ) {}
   /**
    * @param data

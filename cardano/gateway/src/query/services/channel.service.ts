@@ -160,7 +160,7 @@ export class ChannelService {
 
       // Generate ICS-23 proof from the IBC state tree
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
-      const portId = convertHex2String(channelDatumDecoded.state.port_id || 'transfer');
+      const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
       const tree = getCurrentTree();
       

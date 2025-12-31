@@ -1312,6 +1312,10 @@ pub fn wait_and_start_mithril_genesis(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::Command;
+    use std::thread;
+    use std::time::Duration as StdDuration;
+    
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -1341,6 +1345,63 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
     
     execute_script(&gateway_dir, "docker", script_args, None)?;
+
+    // Wait a moment for the container to start
+    thread::sleep(StdDuration::from_secs(2));
+    
+    // Verify the container is actually running
+    let ps_check = Command::new("docker")
+        .args(&["ps", "--filter", "name=gateway-app", "--filter", "status=running", "--format", "{{.Names}}"])
+        .output();
+    
+    let container_running = match ps_check {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            !stdout.is_empty()
+        }
+        Err(_) => false,
+    };
+    
+    if !container_running {
+        // Container is not running, check if it exited
+        let ps_all = Command::new("docker")
+            .args(&["ps", "-a", "--filter", "name=gateway-app", "--format", "{{.Names}}\t{{.Status}}"])
+            .output();
+        
+        if let Ok(output) = ps_all {
+            let status = String::from_utf8_lossy(&output.stdout);
+            if status.contains("Exited") {
+                // Get logs to show what went wrong
+                let logs = Command::new("docker")
+                    .args(&["logs", "--tail", "30", "gateway-app-1"])
+                    .output();
+                
+                if let Ok(log_output) = logs {
+                    let error_logs = String::from_utf8_lossy(&log_output.stderr);
+                    let stdout_logs = String::from_utf8_lossy(&log_output.stdout);
+                    
+                    if let Some(progress_bar) = &optional_progress_bar {
+                        progress_bar.finish_and_clear();
+                    }
+                    
+                    logger::error("ERROR: Gateway container started but crashed immediately");
+                    logger::error("Container logs:");
+                    if !stdout_logs.is_empty() {
+                        logger::error(&stdout_logs);
+                    }
+                    if !error_logs.is_empty() {
+                        logger::error(&error_logs);
+                    }
+                    return Err("Gateway container failed to start - check logs above for details".into());
+                }
+            }
+        }
+        
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err("Gateway container is not running after start command".into());
+    }
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
@@ -2054,31 +2115,68 @@ pub fn comprehensive_health_check(
 }
 
 /// Check Gateway health
-fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
+fn check_gateway_health(gateway_dir: &Path) -> (bool, String) {
+    use std::process::Command;
+    use std::fs;
+    
     // Check if gateway container is running
     let ps_check = Command::new("docker")
         .args(&["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
         .output();
     
-    if let Ok(output) = ps_check {
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if !stdout.is_empty() {
-            // Try to connect to port 3001
-            let port_check = Command::new("nc")
-                .args(&["-z", "localhost", "3001"])
-                .output();
-            
-            if let Ok(port_output) = port_check {
-                if port_output.status.success() {
-                    return (true, "Container running, port 3001 accessible".to_string());
-                }
-            }
-            
-            return (true, "Container running".to_string());
+    let container_running = match ps_check {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            !stdout.is_empty()
+        }
+        Err(_) => false,
+    };
+    
+    if !container_running {
+        return (false, "Container not running".to_string());
+    }
+    
+    // Derive the port from Gateway's .env file (single source of truth)
+    let gateway_port = get_gateway_port(gateway_dir);
+    
+    // Container is running, check if health endpoint responds
+    let health_url = format!("http://127.0.0.1:{}/health", gateway_port);
+    let response = reqwest::blocking::get(&health_url);
+    
+    if let Ok(resp) = response {
+        if resp.status().is_success() {
+            return (true, format!("Container running, health endpoint responding on port {}", gateway_port));
         }
     }
     
-    (false, "Container not running".to_string())
+    // Container is running but health endpoint not responding
+    (true, format!("Container running, but health endpoint not accessible on port {}", gateway_port))
+}
+
+/// Get Gateway HTTP port from .env file, falling back to default 8000
+fn get_gateway_port(gateway_dir: &Path) -> u16 {
+    use std::fs;
+    use std::io::{BufRead, BufReader};
+    
+    let env_file = gateway_dir.join(".env");
+    
+    if let Ok(file) = fs::File::open(&env_file) {
+        let reader = BufReader::new(file);
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                // Look for PORT=xxxx pattern
+                if line.starts_with("PORT=") {
+                    let port_str = line.trim_start_matches("PORT=").trim();
+                    if let Ok(port) = port_str.parse::<u16>() {
+                        return port;
+                    }
+                }
+            }
+        }
+    }
+    
+    // Default port (matches Gateway's main.ts hardcoded value)
+    8000
 }
 
 /// Check Cardano node health

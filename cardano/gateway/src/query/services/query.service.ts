@@ -450,7 +450,7 @@ export class QueryService {
     try {
       // Get current height
       const latestHeight = await this.latestHeight({});
-      const currentHeight = Number(latestHeight.height.revision_height);
+      const currentHeight = Number(latestHeight.height);
 
       // If since_height >= current, return empty
       if (Number(since_height) >= currentHeight) {

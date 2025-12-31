@@ -63,8 +63,8 @@ export class SubmissionService {
    */
   private async submitToCardano(signedTxCbor: string): Promise<string> {
     try {
-      // Lucid's provider.submitTx expects a hex-encoded signed transaction
-      const txHash = await this.lucidService.lucid.provider.submitTx(signedTxCbor);
+      // Submit the signed transaction directly using Lucid Evolution's wallet submitTx
+      const txHash = await this.lucidService.lucid.wallet().submitTx(signedTxCbor);
       return txHash;
     } catch (error) {
       this.logger.error(`Failed to submit to Cardano: ${error.message}`);

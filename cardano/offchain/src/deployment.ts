@@ -28,7 +28,7 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum, HostStateDatumSchema } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -139,6 +139,14 @@ export const createDeployment = async (
     name: handlerTokenName,
   };
   const handlerTokenUnit = mintHandlerPolicyId + handlerTokenName;
+
+  // Deploy HostState (STT Architecture)
+  const {
+    mintHostStateNFT,
+    hostStateStt,
+    hostStateNFT,
+  } = await deployHostState(lucid);
+  referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
 
   // load mint identifier validator
   const [mintIdentifierValidator, mintIdentifierPolicyId] = await readValidator(
@@ -271,10 +279,28 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[verifyProofPolicyId],
       },
+      mintHostStateNFT: {
+        title: "host_state_nft.host_state_nft.mint",
+        script: mintHostStateNFT.validator.script,
+        scriptHash: mintHostStateNFT.policyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintHostStateNFT.policyId],
+      },
+      hostStateStt: {
+        title: "host_state_stt.host_state_stt.spend",
+        script: hostStateStt.validator.script,
+        scriptHash: hostStateStt.scriptHash,
+        address: hostStateStt.address,
+        refUtxo: refUtxosInfo[hostStateStt.scriptHash],
+      },
     },
     handlerAuthToken: {
       policyId: handlerToken.policy_id,
       name: handlerToken.name,
+    },
+    hostStateNFT: {
+      policyId: hostStateNFT.policy_id,
+      name: hostStateNFT.name,
     },
     modules: {
       handler: {
@@ -610,6 +636,101 @@ const deployTransferModule = async (
       validator: spendTransferModuleValidator,
       scriptHash: spendTransferModuleScriptHash,
       address: spendTransferModuleAddress,
+    },
+  };
+};
+
+const deployHostState = async (lucid: LucidEvolution) => {
+  console.log("Deploy HostState (STT Architecture)");
+  
+  // Get nonce UTXO for one-time mint
+  const signerUtxos = await lucid.wallet().getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO found.");
+  const NONCE_UTXO = signerUtxos[0];
+  
+  const outputReference: OutputReference = {
+    transaction_id: NONCE_UTXO.txHash,
+    output_index: BigInt(NONCE_UTXO.outputIndex),
+  };
+  
+  // Load mint hostStateNFT validator (parameterized by UTXO ref)
+  const [mintHostStateNFTValidator, mintHostStateNFTPolicyId] = await readValidator(
+    "host_state_nft.host_state_nft.mint",
+    lucid,
+    [outputReference],
+    Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference]
+  );
+  
+  // Load hostStateStt spending validator (no parameters)
+  const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] = await readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid
+  );
+  
+  const HOST_STATE_TOKEN_NAME = fromText("ibc_host_state");
+  const hostStateNFTUnit = mintHostStateNFTPolicyId + HOST_STATE_TOKEN_NAME;
+  
+  // Create initial HostState datum
+  // ibc_state_root initialized to empty tree root (32 bytes of 0x00)
+  const EMPTY_TREE_ROOT = "0000000000000000000000000000000000000000000000000000000000000000";
+  const currentTime = Date.now();
+  
+  const initHostStateDatum: HostStateDatum = {
+    state: {
+      version: 0n,
+      ibc_state_root: EMPTY_TREE_ROOT,
+      next_client_sequence: 0n,
+      next_connection_sequence: 0n,
+      next_channel_sequence: 0n,
+      bound_port: [],
+      last_update_time: BigInt(currentTime),
+    },
+    nft_policy: mintHostStateNFTPolicyId,
+  };
+  
+  // Create and send tx to mint NFT and create HostState UTXO
+  // NFTRedeemer has only one variant (MintInitial) with no fields
+  // Use Data.void() as the redeemer (same as other simple mints)
+  const encodedRedeemer = Data.void();
+  
+  const mintHostStateTx = lucid
+    .newTx()
+    .collectFrom([NONCE_UTXO])
+    .attach.MintingPolicy(mintHostStateNFTValidator)
+    .mintAssets(
+      {
+        [hostStateNFTUnit]: 1n,
+      },
+      encodedRedeemer
+    )
+    .pay.ToContract(
+      hostStateSttAddress,
+      {
+        kind: "inline",
+        value: Data.to(initHostStateDatum, HostStateDatum),
+      },
+      {
+        [hostStateNFTUnit]: 1n,
+      }
+    );
+  
+  await submitTx(mintHostStateTx, lucid, "MintHostStateNFT");
+  
+  console.log("HostState NFT minted and HostState UTXO created");
+  
+  return {
+    mintHostStateNFT: {
+      validator: mintHostStateNFTValidator,
+      policyId: mintHostStateNFTPolicyId,
+    },
+    hostStateStt: {
+      validator: hostStateSttValidator,
+      scriptHash: hostStateSttScriptHash,
+      address: hostStateSttAddress,
+    },
+    hostStateNFT: {
+      policy_id: mintHostStateNFTPolicyId,
+      name: HOST_STATE_TOKEN_NAME,
     },
   };
 };

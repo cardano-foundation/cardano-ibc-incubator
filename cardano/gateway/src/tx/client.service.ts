@@ -14,6 +14,7 @@ import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
 import { RpcException } from '@nestjs/microservices';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { ConfigService } from '@nestjs/config';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
 import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
@@ -343,7 +344,7 @@ export class ClientService {
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     
     // Decode the HostState datum from the UTXO
-    const hostStateDatum = await this.lucidService.decodeDatum(hostStateUtxo.datum!, 'host_state');
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum!, 'host_state');
     
     // Compute new IBC state root with client update
     const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;

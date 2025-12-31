@@ -108,7 +108,8 @@ export const generateTokenName = async (
 };
 
 export const hashSha3_256 = async (data: string) => {
-  const digest = await crypto.subtle.digest('SHA3-256', fromHex(data));
+  const hexData = fromHex(data);
+  const digest = await crypto.subtle.digest('SHA3-256', new Uint8Array(hexData));
   return toHex(new Uint8Array(digest));
 };
 
@@ -201,7 +202,9 @@ type Validator =
   | "mintIdentifier"
   | "spendTransferModule"
   | "mintVoucher"
-  | "verifyProof";
+  | "verifyProof"
+  | "hostStateStt"
+  | "mintHostStateNFT";
 
 type Module = "handler" | "transfer";
 
@@ -223,6 +226,10 @@ export type DeploymentTemplate = {
     }
   >;
   handlerAuthToken: {
+    policyId: string;
+    name: string;
+  };
+  hostStateNFT?: {
     policyId: string;
     name: string;
   };

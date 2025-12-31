@@ -10,6 +10,7 @@ import {
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
+import { HostStateDatum, decodeHostStateDatum, encodeHostStateDatum } from '../../types/host-state-datum';
 import { GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { MintClientOperator, encodeMintClientOperator } from '../../types/mint-client-operator';
 import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-operator';
@@ -67,6 +68,8 @@ export type CodecType =
   | 'handler'
   | 'channel'
   | 'mockModule'
+  | 'host_state'
+  | 'host_state_redeemer'
   | 'spendClientRedeemer'
   | 'mintClientOperator'
   | 'handlerOperator'
@@ -88,6 +91,7 @@ type ReferenceScripts = {
   spendMockModule: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
+  hostStateStt: UTxO;
   channelOpenAck: UTxO;
   channelCloseInit: UTxO;
   receivePacket: UTxO;
@@ -118,6 +122,7 @@ export class LucidService {
       mintConnection: deploymentConfig.validators.mintConnection.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
+      hostStateStt: deploymentConfig.validators.hostStateStt?.refUtxo,
       channelOpenAck: deploymentConfig.validators.spendChannel.refValidator.chan_open_ack.refUtxo,
       channelCloseInit: deploymentConfig.validators.spendChannel.refValidator.chan_close_init.refUtxo,
       receivePacket: deploymentConfig.validators.spendChannel.refValidator.recv_packet.refUtxo,
@@ -253,6 +258,8 @@ export class LucidService {
           return (await decodeChannelDatum(encodedDatum, this.LucidImporter)) as T;
         case 'mockModule':
           return (await decodeMockModuleDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'host_state':
+          return (await decodeHostStateDatum(encodedDatum, this.LucidImporter)) as T;
         default:
           throw new Error(`Unknown datum type: ${type}`);
       }
@@ -274,6 +281,17 @@ export class LucidService {
           return await encodeChannelDatum(data as ChannelDatum, this.LucidImporter);
         case 'mockModule':
           return await encodeMockModuleDatum(data as MockModuleDatum, this.LucidImporter);
+        case 'host_state':
+          return await encodeHostStateDatum(data as HostStateDatum, this.LucidImporter);
+        case 'host_state_redeemer': {
+          const { Data: LucidData } = this.LucidImporter;
+          const HostStateRedeemerSchema = LucidData.Enum([
+            LucidData.Literal('CreateClient'),
+            LucidData.Literal('UpdateClient'),
+            LucidData.Literal('BindPort'),
+          ]);
+          return LucidData.to(data as string, HostStateRedeemerSchema as any);
+        }
         case 'spendClientRedeemer':
           return await encodeSpendClientRedeemer(data as SpendClientRedeemer, this.LucidImporter);
         case 'mintClientOperator':

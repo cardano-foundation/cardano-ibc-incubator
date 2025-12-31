@@ -23,7 +23,7 @@ import { ICS23MerkleTree } from './ics23-merkle-tree';
  * 1. Querying all IBC-related UTXOs from the chain (clients, connections, channels)
  * 2. Rebuilding the tree by inserting each state at its IBC path
  * 3. Verifying the computed root matches the Handler UTXO's ibc_state_root
- * 
+ */
 
 let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
 
@@ -255,21 +255,44 @@ export async function rebuildTreeFromChain(
   kupoService: any,  // KupoService type
   lucidService: any, // LucidService type
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
-  console.log('Rebuilding IBC state tree from on-chain UTXOs (STT architecture)...');
+  let expectedRoot: string;
+  let version: bigint | undefined;
+  let architecture: 'STT' | 'Handler' = 'STT';
   
   try {
-    // 1. Query HostState UTXO to get expected root
-    // NOTE: Uses NFT for guaranteed uniqueness (no ambiguous UTXOs)
+    // Try STT architecture first (HostState NFT)
+    console.log('Rebuilding IBC state tree from on-chain UTXOs (attempting STT architecture)...');
     const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
       throw new Error('HostState UTXO has no datum');
     }
     
     const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-    const expectedRoot = hostStateDatum.state.ibc_state_root;
-    const version = hostStateDatum.state.version;
+    expectedRoot = hostStateDatum.state.ibc_state_root;
+    version = hostStateDatum.state.version;
     
-    console.log(`Expected root from HostState UTXO (v${version}): ${expectedRoot.substring(0, 16)}...`);
+    console.log(`Using STT architecture - Expected root from HostState UTXO (v${version}): ${expectedRoot.substring(0, 16)}...`);
+  } catch (sttError) {
+    // Fall back to Handler architecture
+    console.log('STT architecture not available, falling back to Handler architecture...');
+    architecture = 'Handler';
+    
+    try {
+      const handlerUtxo = await lucidService.findUtxoAtHandlerAuthToken();
+      if (!handlerUtxo.datum) {
+        throw new Error('Handler UTXO has no datum');
+      }
+      
+      const handlerDatum = await lucidService.decodeDatum(handlerUtxo.datum, 'handler');
+      expectedRoot = handlerDatum.state.ibc_state_root;
+      
+      console.log(`Using Handler architecture - Expected root from Handler UTXO: ${expectedRoot.substring(0, 16)}...`);
+    } catch (handlerError) {
+      throw new Error(`Failed to query both STT and Handler architectures: STT error: ${sttError.message}, Handler error: ${handlerError.message}`);
+    }
+  }
+  
+  try {
     
     // 2. Create new tree
     const tree = new ICS23MerkleTree();
