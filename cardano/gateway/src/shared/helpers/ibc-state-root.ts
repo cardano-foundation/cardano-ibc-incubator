@@ -255,42 +255,24 @@ export async function rebuildTreeFromChain(
   kupoService: any,  // KupoService type
   lucidService: any, // LucidService type
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
-  let expectedRoot: string;
-  let version: bigint | undefined;
-  let architecture: 'STT' | 'Handler' = 'STT';
+  console.log('Rebuilding IBC state tree from on-chain UTXOs (STT architecture)...');
   
-  try {
-    // Try STT architecture first (HostState NFT)
-    console.log('Rebuilding IBC state tree from on-chain UTXOs (attempting STT architecture)...');
-    const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
-    if (!hostStateUtxo.datum) {
-      throw new Error('HostState UTXO has no datum');
-    }
-    
-    const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-    expectedRoot = hostStateDatum.state.ibc_state_root;
-    version = hostStateDatum.state.version;
-    
-    console.log(`Using STT architecture - Expected root from HostState UTXO (v${version}): ${expectedRoot.substring(0, 16)}...`);
-  } catch (sttError) {
-    // Fall back to Handler architecture
-    console.log('STT architecture not available, falling back to Handler architecture...');
-    architecture = 'Handler';
-    
-    try {
-      const handlerUtxo = await lucidService.findUtxoAtHandlerAuthToken();
-      if (!handlerUtxo.datum) {
-        throw new Error('Handler UTXO has no datum');
-      }
-      
-      const handlerDatum = await lucidService.decodeDatum(handlerUtxo.datum, 'handler');
-      expectedRoot = handlerDatum.state.ibc_state_root;
-      
-      console.log(`Using Handler architecture - Expected root from Handler UTXO: ${expectedRoot.substring(0, 16)}...`);
-    } catch (handlerError) {
-      throw new Error(`Failed to query both STT and Handler architectures: STT error: ${sttError.message}, Handler error: ${handlerError.message}`);
-    }
+  // Query HostState UTXO via NFT (STT Architecture)
+  // CRITICAL: No fallback - if STT is unavailable, the Gateway must not start
+  // STT provides essential cryptographic guarantees:
+  // - Canonical state (exactly one valid state via unique NFT)
+  // - Version monotonicity (prevents rollback attacks)
+  // - Complete audit trail (NFT traces full history)
+  const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  if (!hostStateUtxo.datum) {
+    throw new Error('HostState UTXO has no datum - STT architecture integrity compromised');
   }
+  
+  const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
+  const expectedRoot = hostStateDatum.state.ibc_state_root;
+  const version = hostStateDatum.state.version;
+  
+  console.log(`STT Architecture initialized - HostState UTXO v${version}, root: ${expectedRoot.substring(0, 16)}...`);
   
   try {
     
