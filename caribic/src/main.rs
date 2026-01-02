@@ -370,13 +370,13 @@ async fn main() {
                 network_down();
                 logger::log("\nCardano Network successfully");
             } else if target == StopTarget::Demo {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path(), "Summit demo Cosmos");
-                stop_cosmos(project_root_path.join("cosmos").as_path(), "Cosmos");
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_cosmos(project_root_path.join("cosmos").as_path());
                 stop_osmosis(osmosis_dir.as_path());
                 logger::log("\nDemo services stopped successfully");
             } else if target == StopTarget::All {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path(), "Summit demo Cosmos");
-                stop_cosmos(project_root_path.join("cosmos").as_path(), "Cosmos");
+                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                stop_cosmos(project_root_path.join("cosmos").as_path());
                 stop_osmosis(osmosis_dir.as_path());
                 bridge_down();
                 network_down();

@@ -1,6 +1,25 @@
 #!/usr/bin/env node
 
 /**
+ * DEPRECATED: This test helper is no longer used
+ * 
+ * Integration tests now use Hermes CLI directly for IBC operations.
+ * See caribic/src/test.rs for the current implementation.
+ * 
+ * This script was previously used to test the Gateway's CreateClient endpoint,
+ * but it did not handle transaction signing, so transactions were never submitted
+ * to the blockchain.
+ * 
+ * Current testing architecture:
+ * - Tests invoke Hermes CLI (e.g., `hermes create client`)
+ * - Hermes calls Gateway to build unsigned transactions
+ * - Hermes signs transactions with its keyring
+ * - Hermes submits signed transactions to Cardano
+ * 
+ * This file is kept for reference only.
+ * 
+ * ===== ORIGINAL DOCUMENTATION (for reference) =====
+ * 
  * Test helper: Create an IBC client via the Gateway for integration testing
  * 
  * STATUS: Work in Progress - Requires proper protobuf encoding
@@ -146,8 +165,8 @@ console.log('Calling Gateway CreateClient endpoint...');
 console.log('Client state encoded:', clientStateEncoded.length, 'bytes');
 console.log('Consensus state encoded:', consensusStateEncoded.length, 'bytes');
 
-// Call CreateClient - Gateway will sign and submit internally (test mode only!)
-client.CreateClient(request, (error, response) => {
+// Call CreateClient - Gateway returns unsigned transaction that we need to sign and submit
+client.CreateClient(request, async (error, response) => {
   if (error) {
     console.error('ERROR: Failed to create client');
     console.error('Code:', error.code);
@@ -165,8 +184,14 @@ client.CreateClient(request, (error, response) => {
   console.log('✓ Client created successfully!');
   console.log('Client ID:', response.client_id);
   
-  // Note: The Gateway signs and submits the transaction internally
-  // In production with Hermes, this would not happen
+  // Check if we got an unsigned transaction
+  if (response.unsigned_tx && response.unsigned_tx.value) {
+    console.log('Received unsigned transaction (' + response.unsigned_tx.value.length + ' bytes)');
+    console.log('Note: Transaction signing and submission not yet implemented in test helper');
+    console.log('To complete integration testing, use Hermes or implement local signing');
+  } else {
+    console.log('Note: No unsigned_tx in response - Gateway may have signed internally');
+  }
   
   process.exit(0);
 });

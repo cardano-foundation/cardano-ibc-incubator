@@ -704,6 +704,8 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
     }
     
     (diagnostics, should_fail_fast)
+}
+
 /// Get current user's UID and GID for Docker containers
 /// - macOS: Returns 0:0 (root) for compatibility
 /// - Linux: Returns actual user UID/GID

@@ -49,6 +49,7 @@ cardano-cli
 cardano-node
 
 .vscode/
+.cursor/
 
 chains/summit-demo/
 relayer/.config

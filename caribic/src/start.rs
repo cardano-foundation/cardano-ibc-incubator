@@ -7,9 +7,8 @@ use crate::setup::{
 use crate::utils::{
     copy_dir_all, diagnose_container_failure, download_file, execute_script,
     execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
-    get_cardano_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
+    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
     IndicatorMessage,
-    copy_dir_all, download_file, execute_script, execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -101,7 +100,6 @@ pub fn start_relayer(
         ),
         &optional_progress_bar,
     );
-    )?;
 
     execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
@@ -694,7 +692,6 @@ pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::erro
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("PASS: Osmosis configuration files copied successfully");
-            remove_previous_chain_data()?;
             verbose("✅ Osmosis configuration files copied successfully");
             init_local_network(osmosis_dir)?;
             Ok(())
@@ -1636,13 +1633,6 @@ pub fn configure_hermes_cardano_cheqd(
     log("IBC channel created");
     log("Hermes configured successfully!");
     
-    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> =
-        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
-    execute_script(&gateway_dir, "docker", script_args, Some(docker_env_refs))?;
     Ok(())
 }
 
