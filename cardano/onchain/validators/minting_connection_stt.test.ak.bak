@@ -1,7 +1,0 @@
-use validators/minting_connection_stt.{mint_connection_stt}
-
-test minting_connection_stt_compiles() {
-  // This test exists purely to ensure minting_connection_stt is included in the build
-  True
-}
-

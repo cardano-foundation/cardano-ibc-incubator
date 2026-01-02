@@ -1,7 +1,0 @@
-use validators/minting_client_stt.{mint_client_stt}
-
-test minting_client_stt_compiles() {
-  // This test exists purely to ensure minting_client_stt is included in the build
-  True
-}
-
