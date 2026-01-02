@@ -868,7 +868,9 @@ export class LucidService {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      // minting 1
       this.referenceScripts.ackPacket,
+      // minting 2 
       this.referenceScripts.verifyProof,
     ])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)

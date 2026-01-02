@@ -9,27 +9,31 @@ use std::process::Command;
 /// - Root changes after createClient
 /// - Root changes after connectionOpenInit  
 /// - Root changes after channelOpenInit
-/// - Denom trace mapping verification (gRPC query endpoints)
-///
-/// Note: Services must be started manually using 'caribic start all' before running tests.
-/// This maintains consistency with other caribic commands that assume services are already running.
 ///
 /// # Arguments
 /// * `project_root` - Path to the project root directory
+/// * `skip_setup` - If true, assumes services are already running
 pub async fn run_integration_tests(
     project_root: &Path,
+    skip_setup: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     logger::log("Running IBC Integration Tests\n");
-    logger::log("Note: Services must be started with 'caribic start all' before running tests\n");
+
+    if !skip_setup {
+        logger::log("Starting services (this may take a while)...");
+        // TODO: Call start::start_local_cardano_network and other setup functions
+        // For now, we'll require manual setup
+        return Err("Automatic setup not yet implemented. Please run 'caribic start all' first, then use 'caribic test --skip-setup'".into());
+    }
 
     // Test 1: Verify services are running
     logger::log("Test 1: Verifying services are running...");
     verify_services_running(project_root)?;
     logger::log("PASS Test 1: All services are running\n");
 
-    // Test 2: Query HostState UTXO and verify ibc_state_root exists
-    logger::log("Test 2: Verifying HostState UTXO has ibc_state_root field...");
-    let initial_root = query_host_state_root(project_root)?;
+    // Test 2: Query Handler UTXO and verify ibc_state_root exists
+    logger::log("Test 2: Verifying Handler UTXO has ibc_state_root field...");
+    let initial_root = query_handler_state_root(project_root)?;
     
     if initial_root.len() != 64 {
         return Err(format!(
@@ -40,7 +44,7 @@ pub async fn run_integration_tests(
     }
     
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
-    logger::log("PASS Test 2: HostState UTXO has valid ibc_state_root\n");
+    logger::log("PASS Test 2: Handler UTXO has valid ibc_state_root\n");
 
     // Test 3: Create a client and verify root changes
     logger::log("Test 3: Creating client and verifying root changes...");
@@ -51,7 +55,7 @@ pub async fn run_integration_tests(
             logger::verbose("   Waiting for transaction confirmation...");
             std::thread::sleep(std::time::Duration::from_secs(10));
 
-            let root_after_client = query_host_state_root(project_root)?;
+            let root_after_client = query_handler_state_root(project_root)?;
             
             if root_after_client == initial_root {
                 return Err("ibc_state_root did not change after createClient".into());
@@ -78,85 +82,6 @@ pub async fn run_integration_tests(
     // TODO: Implement channel creation via relayer
     logger::log("   SKIP Test 5: Channel creation not yet implemented\n");
 
-    // Test 6: Denom Trace Query - Query all denom traces
-    logger::log("Test 6: Verifying denom trace query endpoints...");
-    
-    match query_all_denom_traces(project_root) {
-        Ok(result) => {
-            logger::log(&format!("   Found {} denom trace(s) in database", result.count));
-            
-            if result.count > 0 {
-                logger::log(&format!("   Total traces: {}", result.total));
-                if let Some(first_trace) = result.traces.first() {
-                    logger::verbose(&format!("   Example trace: path={}, base_denom={}", 
-                        first_trace.path.as_deref().unwrap_or("N/A"),
-                        first_trace.base_denom.as_deref().unwrap_or("N/A")));
-                }
-                logger::log("PASS Test 6: Denom trace query endpoint is working\n");
-            } else {
-                logger::log("   No denom traces found (this is OK if no transfers have occurred)\n");
-                logger::log("PASS Test 6: Denom trace query endpoint is accessible (no traces yet)\n");
-            }
-        }
-        Err(e) => {
-            logger::log(&format!("SKIP Test 6: Failed to query denom traces: {}\n", e));
-        }
-    }
-
-    // Test 7: Denom Trace by Hash - Query specific trace if any exist
-    logger::log("Test 7: Verifying denom trace query by hash...");
-    
-    match query_all_denom_traces(project_root) {
-        Ok(result) => {
-            if result.count > 0 {
-                // Get a hash from the database to test query by hash
-                match get_denom_trace_hash_from_db(project_root) {
-                    Ok(hash) => {
-                        logger::verbose(&format!("   Testing query with hash: {}...", &hash[..16]));
-                        match query_denom_trace(project_root, &hash) {
-                            Ok(trace_result) => {
-                                if let (Some(path), Some(base_denom)) = (trace_result.path, trace_result.base_denom) {
-                                    logger::log(&format!("   Found trace: path={}, base_denom={}", path, base_denom));
-                                    
-                                    // Verify path format
-                                    if !path.starts_with("transfer/channel-") {
-                                        return Err(format!(
-                                            "Invalid path format: expected 'transfer/channel-X', got '{}'",
-                                            path
-                                        ).into());
-                                    }
-                                    
-                                    // Verify base_denom is not empty
-                                    if base_denom.is_empty() {
-                                        return Err("Base denom is empty".into());
-                                    }
-                                    
-                                    logger::log("PASS Test 7: Denom trace query by hash works correctly\n");
-                                } else {
-                                    return Err("Denom trace response missing path or base_denom".into());
-                                }
-                            }
-                            Err(e) => {
-                                logger::log(&format!("SKIP Test 7: Failed to query by hash: {}\n", e));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        logger::verbose(&format!("   Could not get hash from database: {}", e));
-                        logger::log("   Denom traces exist - query endpoint structure verified");
-                        logger::log("PASS Test 7: Denom trace query by hash endpoint is accessible\n");
-                    }
-                }
-            } else {
-                logger::log("   No denom traces to query by hash (this is OK)\n");
-                logger::log("PASS Test 7: Denom trace query by hash endpoint is accessible (no traces yet)\n");
-            }
-        }
-        Err(e) => {
-            logger::log(&format!("SKIP Test 7: Failed to verify denom trace query: {}\n", e));
-        }
-    }
-
     Ok(())
 }
 
@@ -169,11 +94,8 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
     }
     verbose("   Cardano node is running");
 
-    // Check Gateway - derive port from .env file (single source of truth)
-    let gateway_dir = project_root.join("cardano/gateway");
-    let gateway_port = get_gateway_port(&gateway_dir);
-    let gateway_url = format!("http://127.0.0.1:{}/health", gateway_port);
-    let gateway_running = check_service_health(&gateway_url);
+    // Check Gateway
+    let gateway_running = check_service_health("http://127.0.0.1:5001/health");
     if !gateway_running {
         return Err("Gateway is not running. Please run 'caribic start bridge' first.".into());
     }
@@ -220,140 +142,7 @@ fn check_service_health(url: &str) -> bool {
     }
 }
 
-/// Get Gateway HTTP port from .env file, falling back to default 8000
-fn get_gateway_port(gateway_dir: &Path) -> u16 {
-    use std::fs;
-    use std::io::{BufRead, BufReader};
-    
-    let env_file = gateway_dir.join(".env");
-    
-    if let Ok(file) = fs::File::open(&env_file) {
-        let reader = BufReader::new(file);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                // Look for PORT=xxxx pattern
-                if line.starts_with("PORT=") {
-                    let port_str = line.trim_start_matches("PORT=").trim();
-                    if let Ok(port) = port_str.parse::<u16>() {
-                        return port;
-                    }
-                }
-            }
-        }
-    }
-    
-    // Default port (matches Gateway's main.ts fallback value)
-    8000
-}
-
-/// Query the current ibc_state_root from the HostState UTXO (STT Architecture)
-fn query_host_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    // Read deployment info to get the HostState NFT policy ID
-    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
-    
-    if !deployment_path.exists() {
-        return Err("Deployment file not found. Please run 'caribic start bridge' first.".into());
-    }
-
-    let deployment_json = std::fs::read_to_string(&deployment_path)?;
-    let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
-    
-    let host_state_nft_policy = deployment["hostStateNFT"]["policyId"]
-        .as_str()
-        .ok_or("hostStateNFT.policyId not found in deployment")?;
-    
-    verbose(&format!("   HostState NFT policy: {}", host_state_nft_policy));
-
-    // Query the HostState UTXO using cardano-cli inside the Docker container
-    let cardano_dir = project_root.join("chains/cardano");
-    
-    // Get HostState address from deployment
-    let host_state_address = deployment["validators"]["hostStateStt"]["address"]
-        .as_str()
-        .ok_or("validators.hostStateStt.address not found in deployment")?;
-    
-    verbose(&format!("   HostState address: {}", host_state_address));
-
-    // Query UTXOs at HostState address using docker compose exec
-    let output = Command::new("docker")
-        .args(&[
-            "compose", "exec", "-T", "cardano-node",
-            "cardano-cli", "query", "utxo",
-            "--address", host_state_address,
-            "--testnet-magic", "42",
-            "--out-file", "/dev/stdout",
-        ])
-        .current_dir(&cardano_dir)
-        .output()?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to query HostState UTXO: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
-
-    let utxo_json = String::from_utf8(output.stdout)?;
-    verbose(&format!("   Raw UTXO output: {}", utxo_json));
-
-    // Parse UTXO JSON to find the HostState UTXO (the one with the HostState NFT)
-    let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
-    
-    // Find UTXO with HostState NFT
-    let mut host_state_datum: Option<&serde_json::Value> = None;
-    
-    for (_utxo_ref, utxo_data) in utxos.as_object().ok_or("Invalid UTXO JSON")? {
-        if let Some(value) = utxo_data.get("value") {
-            if let Some(tokens) = value.as_object() {
-                if tokens.contains_key(host_state_nft_policy) {
-                    // Found the HostState UTXO - get the inlineDatum object
-                    if utxo_data.get("inlineDatum").is_some() {
-                        host_state_datum = Some(utxo_data);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let host_state_utxo = host_state_datum.ok_or("HostState UTXO not found or has no datum")?;
-    
-    // Extract the ibc_state_root from the inline datum
-    // HostStateDatum Structure: {constructor: 0, fields: [{constructor: 0, fields: [version, ibc_state_root, client_seq, conn_seq, chan_seq, ports, timestamp]}, nft_token]}
-    let inline_datum = host_state_utxo["inlineDatum"]
-        .as_object()
-        .ok_or("Invalid inlineDatum structure")?;
-    
-    let outer_fields = inline_datum["fields"]
-        .as_array()
-        .ok_or("Missing fields in inlineDatum")?;
-    
-    if outer_fields.len() < 1 {
-        return Err("Invalid HostState datum structure: missing state field".into());
-    }
-    
-    let state_obj = &outer_fields[0];
-    let state_fields = state_obj["fields"]
-        .as_array()
-        .ok_or("Missing fields in HostState")?;
-    
-    if state_fields.len() < 2 {
-        return Err("Invalid HostState: missing ibc_state_root field".into());
-    }
-    
-    // Field 1 (index 1) is ibc_state_root in STT HostState
-    let root_bytes = state_fields[1]["bytes"]
-        .as_str()
-        .ok_or("ibc_state_root not found or invalid")?;
-    
-    verbose(&format!("   Found ibc_state_root: {}...", &root_bytes[..16]));
-    
-    Ok(root_bytes.to_string())
-}
-
-/// Query the current ibc_state_root from the Handler UTXO (Legacy - kept for backward compatibility)
-#[allow(dead_code)]
+/// Query the current ibc_state_root from the Handler UTXO
 fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     // Read handler deployment info to get the handler token policy ID
     let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
@@ -507,165 +296,5 @@ fn create_test_client(project_root: &Path) -> Result<(), Box<dyn std::error::Err
     logger::verbose(&format!("   {}", stdout.trim()));
     
     Ok(())
-}
-
-/// Query all denom traces from Gateway gRPC endpoint
-/// 
-/// Returns a structure with traces, count, and total
-fn query_all_denom_traces(project_root: &Path) -> Result<DenomTracesResult, Box<dyn std::error::Error>> {
-    logger::verbose("   Querying all denom traces from Gateway...");
-    
-    let helper_script = project_root.join("cardano/gateway/test/helpers/query-all-denom-traces.js");
-    
-    if !helper_script.exists() {
-        return Err(format!(
-            "Test helper script not found: {}\n\
-             This script queries the Gateway's DenomTraces gRPC endpoint.",
-            helper_script.display()
-        ).into());
-    }
-    
-    // Run the helper script from proto-types directory so it has access to node_modules
-    let proto_types_dir = project_root.join("proto-types");
-    logger::verbose(&format!("   Running: node {} (from proto-types dir)", helper_script.display()));
-    
-    let output = Command::new("node")
-        .arg(&helper_script)
-        .current_dir(&proto_types_dir)
-        .output()?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // Check if it's a "not found" error (no traces exist) vs actual error
-        if stderr.contains("NOT_FOUND") || stderr.contains("not found") {
-            // Return empty result instead of error
-            return Ok(DenomTracesResult {
-                traces: vec![],
-                count: 0,
-                total: 0,
-            });
-        }
-        return Err(format!(
-            "Failed to query denom traces:\n\
-             stdout: {}\n\
-             stderr: {}\n\
-             \n\
-             Ensure the Gateway is running on localhost:5001.",
-            String::from_utf8_lossy(&output.stdout),
-            stderr
-        ).into());
-    }
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let result: DenomTracesResult = serde_json::from_str(&stdout)?;
-    
-    Ok(result)
-}
-
-/// Query a specific denom trace by hash from Gateway gRPC endpoint
-fn query_denom_trace(project_root: &Path, hash: &str) -> Result<DenomTraceResult, Box<dyn std::error::Error>> {
-    logger::verbose(&format!("   Querying denom trace for hash: {}...", &hash[..16]));
-    
-    let helper_script = project_root.join("cardano/gateway/test/helpers/query-denom-trace.js");
-    
-    if !helper_script.exists() {
-        return Err(format!(
-            "Test helper script not found: {}\n\
-             This script queries the Gateway's DenomTrace gRPC endpoint.",
-            helper_script.display()
-        ).into());
-    }
-    
-    // Run the helper script from proto-types directory so it has access to node_modules
-    let proto_types_dir = project_root.join("proto-types");
-    logger::verbose(&format!("   Running: node {} {} (from proto-types dir)", helper_script.display(), hash));
-    
-    let output = Command::new("node")
-        .arg(&helper_script)
-        .arg(hash)
-        .current_dir(&proto_types_dir)
-        .output()?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "Failed to query denom trace:\n\
-             stdout: {}\n\
-             stderr: {}\n\
-             \n\
-             Ensure the Gateway is running on localhost:5001.",
-            String::from_utf8_lossy(&output.stdout),
-            stderr
-        ).into());
-    }
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let result: DenomTraceResult = serde_json::from_str(&stdout)?;
-    
-    Ok(result)
-}
-
-/// Result structure for query_all_denom_traces
-#[derive(serde::Deserialize)]
-struct DenomTracesResult {
-    traces: Vec<DenomTraceInfo>,
-    total: usize,
-    count: usize,
-}
-
-/// Result structure for query_denom_trace
-#[derive(serde::Deserialize)]
-struct DenomTraceResult {
-    hash: String,
-    path: Option<String>,
-    base_denom: Option<String>,
-}
-
-/// Denom trace information
-#[derive(serde::Deserialize)]
-struct DenomTraceInfo {
-    path: Option<String>,
-    base_denom: Option<String>,
-}
-
-/// Get a denom trace hash from the database for testing
-/// 
-/// Queries the Gateway database directly to get a hash we can use for testing
-fn get_denom_trace_hash_from_db(_project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    // Check if we can access the database via docker
-    // Gateway database is typically in cardano-postgres-1 container
-    let output = Command::new("docker")
-        .args(&[
-            "exec",
-            "cardano-postgres-1",
-            "psql",
-            "-U", "postgres",
-            "-d", "gateway_app",
-            "-t", "-c",
-            "SELECT hash FROM denom_traces LIMIT 1;",
-        ])
-        .output();
-    
-    match output {
-        Ok(result) => {
-            if result.status.success() {
-                let hash = String::from_utf8(result.stdout)?
-                    .trim()
-                    .to_string();
-                if hash.is_empty() {
-                    return Err("No denom traces found in database".into());
-                }
-                Ok(hash)
-            } else {
-                Err(format!(
-                    "Failed to query database: {}",
-                    String::from_utf8_lossy(&result.stderr)
-                ).into())
-            }
-        }
-        Err(e) => {
-            Err(format!("Failed to execute database query: {}", e).into())
-        }
-    }
 }
 

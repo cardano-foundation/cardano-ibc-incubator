@@ -2,7 +2,7 @@ services:
   cardano-node:
     image: ghcr.io/blinklabs-io/cardano-node:10.1.4-3
     container_name: cardano-node
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./devnet:/devnet
     environment:
@@ -39,7 +39,7 @@ services:
 
   cardano-node-ogmios:
     image: cardanosolutions/ogmios:v6.10.0
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
       options:
@@ -65,8 +65,7 @@ services:
 
   kupo:
     image: cardanosolutions/kupo:v2.9.0
-    platform: linux/arm64
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
       options:
@@ -76,12 +75,6 @@ services:
       - cardano-node
     ports:
       - ${KUPO_PORT:-1442}:1442
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
     command:
       [
         "--node-socket",
@@ -89,24 +82,23 @@ services:
         "--node-config",
         "/devnet/cardano-node.json",
         "--since",
-        "origin",
+        "${KUPO_SINCE:-origin}",
         "--match",
-        "*",
+        "${KUPO_MATCH:-*}",
         "--workdir",
         "/db",
         "--host",
         "0.0.0.0",
         "--port",
-        "1442",
-        "--prune-utxo"
+        "1442"
       ]
     volumes:
       - ./devnet:/devnet
       - ./kupo-db:/db
 
   postgres:
-    image: postgres:14.10-alpine
-    # user: "${UID:-1000}:${GID:-1000}"
+    image: postgres:15
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_LOGGING=true
       - POSTGRES_DB_FILE=/run/secrets/postgres_db
@@ -139,7 +131,7 @@ services:
 
   cardano-db-sync:
     image: ghcr.io/blinklabs-io/cardano-db-sync:main
-    # user: "${UID:-1000}:${GID:-1000}"
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432

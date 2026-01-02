@@ -2,7 +2,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  Mint, Output, OutputReference, Redeemer, ScriptPurpose, Transaction,
+  Mint, Output, Redeemer, ScriptPurpose, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -36,16 +36,17 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
+// it looks like minting is missing here.
 validator acknowledge_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  spend(
-    _datum: Option<Data>,
+  //  mint(redeemer: MyMintRedeemer, policy_id: PolicyId, self: Transaction)
+  mint(
     channel_token: AuthToken,
-    _spent_output: OutputReference,
+    _policy_id: PolicyId,
     transaction: Transaction,
   ) {
     let Transaction {
@@ -56,6 +57,8 @@ validator acknowledge_packet(
       validity_range,
       ..
     } = transaction
+
+// TODO missing minting validation it should be list of ((_policy_id) ->1, (verify_proof_policy_id) -> 1)
 
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)

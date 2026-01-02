@@ -168,6 +168,7 @@ export class PacketService {
     }
   }
   async sendPacket(data: MsgTransfer): Promise<MsgTransferResponse> {
+    // used in the funding osmosis step
     try {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
@@ -306,9 +307,13 @@ export class PacketService {
   }
   async acknowledgementPacket(data: MsgAcknowledgement): Promise<MsgAcknowledgementResponse> {
     try {
-      this.logger.log('AcknowledgementPacket is processing');
+      // entypoint fromc controller.
+      this.logger.log('AcknowledgementPacket is processing data.packet.sequence: ', data.packet.sequence);
+      this.logger.log('AcknowledgementPacket is processing (MsgAcknowledgement): ', data);
 
       const { constructedAddress, ackPacketOperator } = validateAndFormatAcknowledgementPacketParams(data);
+      this.logger.log('AcknowledgementPacket ackPacketOperator.packetSequence: ', ackPacketOperator.packetSequence);
+      this.logger.log('AcknowledgementPacket ackPacketOperator: ', ackPacketOperator);
 
       // Build and complete the unsigned transaction
       const unsignedAckPacketTx: TxBuilder = await this.buildUnsignedAcknowlegementPacketTx(
