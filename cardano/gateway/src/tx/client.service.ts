@@ -365,7 +365,7 @@ export class ClientService {
         last_update_time: BigInt(Date.now()),
       },
     };
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientScriptHash = this.configService.get('deployment').validators.mintClientStt.scriptHash;
 
     const clientDatumState: ClientDatumState = {
       clientState: clientState,
@@ -381,7 +381,14 @@ export class ClientService {
         name: clientTokenName,
       },
     };
-    const mintClientOperator: MintClientOperator = this.createMintClientOperator();
+    // STT architecture: MintClientRedeemer is just the handler auth token
+    const handlerToken = this.configService.get('deployment').handlerAuthToken;
+    const mintClientRedeemer = {
+      handler_auth_token: {
+        policy_id: handlerToken.policyId,
+        name: handlerToken.name,
+      },
+    };
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
     
     // STT redeemer: Explicitly specify the operation type
@@ -392,7 +399,7 @@ export class ClientService {
     const hostStateRedeemer = 'CreateClient';
     
     // Encode all data for the transaction
-    const encodedMintClientOperator: string = await this.lucidService.encode(mintClientOperator, 'mintClientOperator');
+    const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(
       updatedHostStateDatum,
@@ -407,7 +414,7 @@ export class ClientService {
         hostStateUtxo,
         encodedHostStateRedeemer,
         clientAuthTokenUnit,
-        encodedMintClientOperator,
+        encodedMintClientRedeemer,
         encodedUpdatedHostStateDatum,
         encodedClientDatum,
         constructedAddress,

@@ -38,6 +38,7 @@ const fs = require('fs');
 const protoTypesPath = path.join(__dirname, '../../../../proto-types');
 const grpc = require(path.join(protoTypesPath, 'node_modules/@grpc/grpc-js'));
 const protoLoader = require(path.join(protoTypesPath, 'node_modules/@grpc/proto-loader'));
+const protobuf = require(path.join(protoTypesPath, 'node_modules/protobufjs'));
 
 // Load deployment info to get signer address
 const HANDLER_DEPLOYMENT_PATH = path.join(__dirname, '../../../offchain/deployments/handler.json');
@@ -84,50 +85,50 @@ const currentTimeMs = Date.now();
 const currentSeconds = Math.floor(currentTimeMs / 1000);
 const currentNanos = (currentTimeMs % 1000) * 1000000;
 
-// Create minimal client state (using proto-types' built-in encoding)
-// We'll use the Gateway's protobuf encoding by letting it handle the Any type
+// Create minimal client state 
+// protobufjs uses camelCase for field names
+// Chain ID format: {identifier}-{revision_number}
 const clientStateJson = {
-  chain_id: 'test-chain-1',
-  trust_level: { numerator: '1', denominator: '3' },
-  trusting_period: { seconds: '1209600', nanos: 0 }, // 14 days
-  unbonding_period: { seconds: '1814400', nanos: 0 }, // 21 days  
-  max_clock_drift: { seconds: '5', nanos: 0 },
-  frozen_height: { revision_number: '0', revision_height: '0' },
-  latest_height: { revision_number: '1', revision_height: '1' },
-  proof_specs: [],
-  upgrade_path: ['upgrade', 'upgradedIBCState'],
-  allow_update_after_expiry: false,
-  allow_update_after_misbehaviour: false,
+  chainId: 'testchain-0',  // revision 0
+  trustLevel: { numerator: '1', denominator: '3' },
+  trustingPeriod: { seconds: '1209600', nanos: 0 }, // 14 days
+  unbondingPeriod: { seconds: '1814400', nanos: 0 }, // 21 days  
+  maxClockDrift: { seconds: '5', nanos: 0 },
+  frozenHeight: { revisionNumber: '0', revisionHeight: '0' },
+  latestHeight: { revisionNumber: '0', revisionHeight: '1' },  // Match chain ID revision
+  proofSpecs: [],
+  upgradePath: ['upgrade', 'upgradedIBCState'],
+  allowUpdateAfterExpiry: false,
+  allowUpdateAfterMisbehaviour: false,
 };
 
 const consensusStateJson = {
   timestamp: { seconds: currentSeconds.toString(), nanos: currentNanos },
   root: { hash: Buffer.from('0000000000000000000000000000000000000000000000000000000000000000', 'hex') },
-  next_validators_hash: Buffer.from('0000000000000000000000000000000000000000000000000000000000000000', 'hex'),
+  nextValidatorsHash: Buffer.from('0000000000000000000000000000000000000000000000000000000000000000', 'hex'),
 };
 
-// Load proto types for encoding
-// We need to properly encode the client/consensus states as protobuf bytes
-const TM_PROTO_PATH = path.join(protoTypesPath, 'protos/ibc-go/ibc/lightclients/tendermint/v1/tendermint.proto');
-const tmPackageDef = protoLoader.loadSync(TM_PROTO_PATH, {
-  keepCase: true,
-  longs: String,
-  enums: String,
-  defaults: true,
-  oneofs: true,
-  includeDirs: [path.join(protoTypesPath, 'protos/ibc-go/')]
-});
+// Load proto types for encoding using protobufjs
+// protobufjs provides the encode() methods we need
+const root = new protobuf.Root();
+root.resolvePath = (origin, target) => {
+  return path.join(protoTypesPath, 'protos/ibc-go', target);
+};
 
-const tmProto = grpc.loadPackageDefinition(tmPackageDef);
+// Load all necessary proto files
+root.loadSync('ibc/lightclients/tendermint/v1/tendermint.proto');
+root.loadSync('google/protobuf/duration.proto');
+root.loadSync('google/protobuf/timestamp.proto');
+root.loadSync('ibc/core/client/v1/client.proto');
+root.loadSync('ibc/core/commitment/v1/commitment.proto');
 
-// Get the message types for encoding
-const ClientStateType = tmProto.ibc.lightclients.tendermint.v1.ClientState;
-const ConsensusStateType = tmProto.ibc.lightclients.tendermint.v1.ConsensusState;
+// Get the message types
+const ClientStateType = root.lookupType('ibc.lightclients.tendermint.v1.ClientState');
+const ConsensusStateType = root.lookupType('ibc.lightclients.tendermint.v1.ConsensusState');
 
 // Encode to protobuf bytes
-// proto-loader's generated types have encode() method that accepts plain objects
-const clientStateEncoded = ClientStateType.encode(clientStateJson).finish();
-const consensusStateEncoded = ConsensusStateType.encode(consensusStateJson).finish();
+const clientStateEncoded = ClientStateType.encode(ClientStateType.create(clientStateJson)).finish();
+const consensusStateEncoded = ConsensusStateType.encode(ConsensusStateType.create(consensusStateJson)).finish();
 
 const request = {
   client_state: {

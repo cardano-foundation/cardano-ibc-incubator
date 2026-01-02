@@ -72,6 +72,7 @@ export type CodecType =
   | 'host_state_redeemer'
   | 'spendClientRedeemer'
   | 'mintClientOperator'
+  | 'mintClientRedeemer'
   | 'handlerOperator'
   | 'mintConnectionRedeemer'
   | 'spendConnectionRedeemer'
@@ -117,9 +118,9 @@ export class LucidService {
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
-      mintChannel: deploymentConfig.validators.mintChannel.refUtxo,
-      mintClient: deploymentConfig.validators.mintClient.refUtxo,
-      mintConnection: deploymentConfig.validators.mintConnection.refUtxo,
+      mintChannel: deploymentConfig.validators.mintChannelStt?.refUtxo || deploymentConfig.validators.mintChannel.refUtxo,
+      mintClient: deploymentConfig.validators.mintClientStt?.refUtxo || deploymentConfig.validators.mintClient.refUtxo,
+      mintConnection: deploymentConfig.validators.mintConnectionStt?.refUtxo || deploymentConfig.validators.mintConnection.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
       hostStateStt: deploymentConfig.validators.hostStateStt?.refUtxo,
@@ -206,16 +207,16 @@ export class LucidService {
     );
   }
   public getClientPolicyId(): string {
-    return this.configService.get('deployment').validators.mintClient.scriptHash;
+    return this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
   }
   public getConnectionPolicyId(): string {
-    return this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
   public getChannelPolicyId(): string {
-    return this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
   public getClientAuthTokenUnit(handlerDatum: HandlerDatum, clientId: bigint): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
     // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence - 1n);
     const baseToken = handlerDatum.token;
     const clientStateTokenName = this.generateTokenName(baseToken, CLIENT_PREFIX, clientId);
@@ -296,6 +297,18 @@ export class LucidService {
           return await encodeSpendClientRedeemer(data as SpendClientRedeemer, this.LucidImporter);
         case 'mintClientOperator':
           return await encodeMintClientOperator(data as MintClientOperator, this.LucidImporter);
+        case 'mintClientRedeemer': {
+          // MintClientRedeemer is { handler_auth_token: AuthToken }
+          const { Data } = this.LucidImporter;
+          const AuthTokenSchema = Data.Object({
+            policy_id: Data.Bytes(),
+            name: Data.Bytes(),
+          });
+          const MintClientRedeemerSchema = Data.Object({
+            handler_auth_token: AuthTokenSchema,
+          });
+          return Data.to(data as any, MintClientRedeemerSchema);
+        }
         case 'handlerOperator':
           return await encodeHandlerOperator(data as HandlerOperator, this.LucidImporter);
         case 'mintConnectionRedeemer':
@@ -320,7 +333,7 @@ export class LucidService {
   }
 
   public getClientTokenUnit(clientId: string): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
     const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
     const clientTokenName = this.generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(clientId));
     return mintClientPolicyId + clientTokenName;
@@ -366,7 +379,7 @@ export class LucidService {
     hostStateUtxo: any,
     encodedHostStateRedeemer: string,
     clientAuthTokenUnit: string,
-    encodedMintClientOperator: string,
+    encodedMintClientRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedClientDatum: string,
     constructedAddress: string,
@@ -385,7 +398,7 @@ export class LucidService {
         {
           [clientAuthTokenUnit]: 1n,
         },
-        encodedMintClientOperator,
+        encodedMintClientRedeemer,
       );
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
@@ -1201,10 +1214,10 @@ export class LucidService {
   // ========================== private functions ==========================
 
   private getMintConnectionScriptHash(): string {
-    return this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
   private getMintChannelScriptHash(): string {
-    return this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
 
   public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {

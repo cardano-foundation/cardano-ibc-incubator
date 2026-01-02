@@ -148,6 +148,42 @@ export const createDeployment = async (
   } = await deployHostState(lucid);
   referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
 
+  // Load STT minting validators (parameterized for STT architecture)
+  console.log("Loading STT minting validators...");
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'deployment.ts:153',message:'Attempting to load STT validators',data:{spendClientScriptHash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
+  // Load mint client STT validator (parameterized by spend_client_script_hash, host_state_nft_policy_id)
+  const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
+    "minting_client_stt.mint_client_stt.mint",
+    lucid,
+    [spendClientScriptHash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string]
+  );
+  referredValidators.push(mintClientSttValidator);
+
+  // Load mint connection STT validator (parameterized by client_mint, verify_proof, spend_connection, host_state_nft hashes)
+  const [mintConnectionSttValidator, mintConnectionSttPolicyId] = await readValidator(
+    "minting_connection_stt.mint_connection_stt.mint",
+    lucid,
+    [mintClientSttPolicyId, verifyProofPolicyId, spendConnectionScriptHash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string]
+  );
+  referredValidators.push(mintConnectionSttValidator);
+
+  // Load mint channel STT validator (parameterized by client_mint, connection_mint, port_mint, verify_proof, spend_channel, host_state_nft hashes)
+  const [mintChannelSttValidator, mintChannelSttPolicyId] = await readValidator(
+    "minting_channel_stt.mint_channel_stt.mint",
+    lucid,
+    [mintClientSttPolicyId, mintConnectionSttPolicyId, mintPortPolicyId, verifyProofPolicyId, spendingChannel.base.hash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string, string, string]
+  );
+  referredValidators.push(mintChannelSttValidator);
+  
+  console.log("STT minting validators loaded");
+
   // load mint identifier validator
   const [mintIdentifierValidator, mintIdentifierPolicyId] = await readValidator(
     "minting_identifier.minting_identifier.mint",
@@ -292,6 +328,27 @@ export const createDeployment = async (
         scriptHash: hostStateStt.scriptHash,
         address: hostStateStt.address,
         refUtxo: refUtxosInfo[hostStateStt.scriptHash],
+      },
+      mintClientStt: {
+        title: "minting_client_stt.mint_client_stt.mint",
+        script: mintClientSttValidator.script,
+        scriptHash: mintClientSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintClientSttPolicyId],
+      },
+      mintConnectionStt: {
+        title: "minting_connection_stt.mint_connection_stt.mint",
+        script: mintConnectionSttValidator.script,
+        scriptHash: mintConnectionSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintConnectionSttPolicyId],
+      },
+      mintChannelStt: {
+        title: "minting_channel_stt.mint_channel_stt.mint",
+        script: mintChannelSttValidator.script,
+        scriptHash: mintChannelSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintChannelSttPolicyId],
       },
     },
     handlerAuthToken: {

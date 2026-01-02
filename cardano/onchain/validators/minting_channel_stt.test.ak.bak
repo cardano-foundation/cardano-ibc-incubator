@@ -1,0 +1,7 @@
+use validators/minting_channel_stt.{mint_channel_stt}
+
+test minting_channel_stt_compiles() {
+  // This test exists purely to ensure minting_channel_stt is included in the build
+  True
+}
+

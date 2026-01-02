@@ -31,6 +31,7 @@ let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
  * Serialize a value to Buffer for tree storage
  * 
  * Uses JSON serialization (deterministic, human-readable, works correctly).
+ * BigInt values are converted to strings for JSON compatibility.
  * 
  * Protobuf encoding would be needed only if:
  * - We need byte-identical compatibility with other IBC implementations
@@ -43,7 +44,9 @@ let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
  * @returns Buffer representation
  */
 function serializeValue(value: any): Buffer {
-  const json = JSON.stringify(value);
+  const json = JSON.stringify(value, (key, val) => 
+    typeof val === 'bigint' ? val.toString() : val
+  );
   return Buffer.from(json, 'utf8');
 }
 

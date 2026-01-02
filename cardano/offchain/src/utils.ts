@@ -24,8 +24,16 @@ export const readValidator = <T extends unknown[] = Data[]>(
   params?: Exact<[...T]>,
   type?: T
 ): [Script, ScriptHash, Address] => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'utils.ts:27',message:'readValidator called',data:{title,totalValidators:blueprint.validators.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
+    // #region agent log
+    const availableTitles = blueprint.validators.map(v => v.title).filter(t => t.includes('client') || t.includes('connection') || t.includes('channel') || t.includes('stt'));
+    fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'utils.ts:36',message:'Validator not found',data:{requestedTitle:title,availableRelatedValidators:availableTitles},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     throw new Error(`Unable to field validator with title ${title}`);
   }
 
@@ -204,7 +212,10 @@ type Validator =
   | "mintVoucher"
   | "verifyProof"
   | "hostStateStt"
-  | "mintHostStateNFT";
+  | "mintHostStateNFT"
+  | "mintClientStt"
+  | "mintConnectionStt"
+  | "mintChannelStt";
 
 type Module = "handler" | "transfer";
 

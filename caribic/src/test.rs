@@ -27,9 +27,9 @@ pub async fn run_integration_tests(
     verify_services_running(project_root)?;
     logger::log("PASS Test 1: All services are running\n");
 
-    // Test 2: Query Handler UTXO and verify ibc_state_root exists
-    logger::log("Test 2: Verifying Handler UTXO has ibc_state_root field...");
-    let initial_root = query_handler_state_root(project_root)?;
+    // Test 2: Query HostState UTXO and verify ibc_state_root exists
+    logger::log("Test 2: Verifying HostState UTXO has ibc_state_root field...");
+    let initial_root = query_host_state_root(project_root)?;
     
     if initial_root.len() != 64 {
         return Err(format!(
@@ -40,7 +40,7 @@ pub async fn run_integration_tests(
     }
     
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
-    logger::log("PASS Test 2: Handler UTXO has valid ibc_state_root\n");
+    logger::log("PASS Test 2: HostState UTXO has valid ibc_state_root\n");
 
     // Test 3: Create a client and verify root changes
     logger::log("Test 3: Creating client and verifying root changes...");
@@ -51,7 +51,7 @@ pub async fn run_integration_tests(
             logger::verbose("   Waiting for transaction confirmation...");
             std::thread::sleep(std::time::Duration::from_secs(10));
 
-            let root_after_client = query_handler_state_root(project_root)?;
+            let root_after_client = query_host_state_root(project_root)?;
             
             if root_after_client == initial_root {
                 return Err("ibc_state_root did not change after createClient".into());
@@ -246,7 +246,114 @@ fn get_gateway_port(gateway_dir: &Path) -> u16 {
     8000
 }
 
-/// Query the current ibc_state_root from the Handler UTXO
+/// Query the current ibc_state_root from the HostState UTXO (STT Architecture)
+fn query_host_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    // Read deployment info to get the HostState NFT policy ID
+    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    
+    if !deployment_path.exists() {
+        return Err("Deployment file not found. Please run 'caribic start bridge' first.".into());
+    }
+
+    let deployment_json = std::fs::read_to_string(&deployment_path)?;
+    let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
+    
+    let host_state_nft_policy = deployment["hostStateNFT"]["policyId"]
+        .as_str()
+        .ok_or("hostStateNFT.policyId not found in deployment")?;
+    
+    verbose(&format!("   HostState NFT policy: {}", host_state_nft_policy));
+
+    // Query the HostState UTXO using cardano-cli inside the Docker container
+    let cardano_dir = project_root.join("chains/cardano");
+    
+    // Get HostState address from deployment
+    let host_state_address = deployment["validators"]["hostStateStt"]["address"]
+        .as_str()
+        .ok_or("validators.hostStateStt.address not found in deployment")?;
+    
+    verbose(&format!("   HostState address: {}", host_state_address));
+
+    // Query UTXOs at HostState address using docker compose exec
+    let output = Command::new("docker")
+        .args(&[
+            "compose", "exec", "-T", "cardano-node",
+            "cardano-cli", "query", "utxo",
+            "--address", host_state_address,
+            "--testnet-magic", "42",
+            "--out-file", "/dev/stdout",
+        ])
+        .current_dir(&cardano_dir)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query HostState UTXO: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let utxo_json = String::from_utf8(output.stdout)?;
+    verbose(&format!("   Raw UTXO output: {}", utxo_json));
+
+    // Parse UTXO JSON to find the HostState UTXO (the one with the HostState NFT)
+    let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
+    
+    // Find UTXO with HostState NFT
+    let mut host_state_datum: Option<&serde_json::Value> = None;
+    
+    for (_utxo_ref, utxo_data) in utxos.as_object().ok_or("Invalid UTXO JSON")? {
+        if let Some(value) = utxo_data.get("value") {
+            if let Some(tokens) = value.as_object() {
+                if tokens.contains_key(host_state_nft_policy) {
+                    // Found the HostState UTXO - get the inlineDatum object
+                    if utxo_data.get("inlineDatum").is_some() {
+                        host_state_datum = Some(utxo_data);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let host_state_utxo = host_state_datum.ok_or("HostState UTXO not found or has no datum")?;
+    
+    // Extract the ibc_state_root from the inline datum
+    // HostStateDatum Structure: {constructor: 0, fields: [{constructor: 0, fields: [version, ibc_state_root, client_seq, conn_seq, chan_seq, ports, timestamp]}, nft_token]}
+    let inline_datum = host_state_utxo["inlineDatum"]
+        .as_object()
+        .ok_or("Invalid inlineDatum structure")?;
+    
+    let outer_fields = inline_datum["fields"]
+        .as_array()
+        .ok_or("Missing fields in inlineDatum")?;
+    
+    if outer_fields.len() < 1 {
+        return Err("Invalid HostState datum structure: missing state field".into());
+    }
+    
+    let state_obj = &outer_fields[0];
+    let state_fields = state_obj["fields"]
+        .as_array()
+        .ok_or("Missing fields in HostState")?;
+    
+    if state_fields.len() < 2 {
+        return Err("Invalid HostState: missing ibc_state_root field".into());
+    }
+    
+    // Field 1 (index 1) is ibc_state_root in STT HostState
+    let root_bytes = state_fields[1]["bytes"]
+        .as_str()
+        .ok_or("ibc_state_root not found or invalid")?;
+    
+    verbose(&format!("   Found ibc_state_root: {}...", &root_bytes[..16]));
+    
+    Ok(root_bytes.to_string())
+}
+
+/// Query the current ibc_state_root from the Handler UTXO (Legacy - kept for backward compatibility)
+#[allow(dead_code)]
 fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     // Read handler deployment info to get the handler token policy ID
     let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
