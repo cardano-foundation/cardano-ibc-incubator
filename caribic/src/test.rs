@@ -12,19 +12,13 @@ use std::process::Command;
 ///
 /// # Arguments
 /// * `project_root` - Path to the project root directory
-/// * `skip_setup` - If true, assumes services are already running
+///
+/// # Prerequisites
+/// All services must be running before running tests. Use 'caribic start all' first.
 pub async fn run_integration_tests(
     project_root: &Path,
-    skip_setup: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     logger::log("Running IBC Integration Tests\n");
-
-    if !skip_setup {
-        logger::log("Starting services (this may take a while)...");
-        // TODO: Call start::start_local_cardano_network and other setup functions
-        // For now, we'll require manual setup
-        return Err("Automatic setup not yet implemented. Please run 'caribic start all' first, then use 'caribic test --skip-setup'".into());
-    }
 
     // Test 1: Verify services are running
     logger::log("Test 1: Verifying services are running...");
@@ -63,8 +57,8 @@ pub async fn run_integration_tests(
                 None
             } else {
                 logger::log(&format!("   Client ID: {}", client_id));
-                logger::log(&format!("   New root: {}...", &root_after_client[..16]));
-                logger::log("PASS Test 3: Root changed after createClient\n");
+            logger::log(&format!("   New root: {}...", &root_after_client[..16]));
+            logger::log("PASS Test 3: Root changed after createClient\n");
                 Some(client_id)
             }
         }
@@ -130,19 +124,23 @@ pub async fn run_integration_tests(
 
 /// Verify that all required services are running
 fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let mut missing_services = Vec::new();
+
     // Check Cardano node using cardano-cli query tip
     let cardano_running = check_cardano_node_running(project_root);
     if !cardano_running {
-        return Err("Cardano node is not running. Please run 'caribic start network' first.".into());
+        missing_services.push("Cardano node");
+    } else {
+        verbose("   Cardano node is running");
     }
-    verbose("   Cardano node is running");
 
     // Check Gateway (via docker container status, since host networking doesn't work on macOS)
     let gateway_running = check_gateway_container_running();
     if !gateway_running {
-        return Err("Gateway is not running. Please run 'caribic start bridge' first.".into());
+        missing_services.push("Gateway");
+    } else {
+        verbose("   Gateway is running");
     }
-    verbose("   Gateway is running");
 
     // Check Mithril (optional)
     let mithril_running = check_service_health("http://127.0.0.1:8080/health");
@@ -150,6 +148,13 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
         logger::verbose("   Mithril is not running (optional)");
     } else {
         verbose("   Mithril is running");
+    }
+
+    if !missing_services.is_empty() {
+        return Err(format!(
+            "Required services not running: {}.\n\nPlease run 'caribic start all' first to start all services.",
+            missing_services.join(", ")
+        ).into());
     }
 
     Ok(())
