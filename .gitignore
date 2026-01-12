@@ -16,6 +16,12 @@
 
 .env
 
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
 cardano/gateway/deployment
 chains/osmosis/osmosis/
 chains/osmosis/osmosis.zip
@@ -42,9 +48,12 @@ chains/mithrils/data
 cardano-cli
 cardano-node
 
-.vscode/
-
 chains/summit-demo/
 relayer/.config
+
+# Ignore Hermes config files in relayer submodule (keep submodule clean)
+relayer/config.toml
+relayer/config.example.toml
+relayer/*.toml
 
 run_token_swap.sh

@@ -1,0 +1,4 @@
+[submodule "relayer"]
+	path = relayer
+	url = https://github.com/webisoftSoftware/hermes.git
+	branch = feat/cardano-integration

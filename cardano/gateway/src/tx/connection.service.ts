@@ -36,6 +36,11 @@ import {
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
+import { 
+  computeRootWithConnectionUpdate as computeRootWithConnectionUpdateHelper,
+  alignTreeWithChain,
+  isTreeAligned,
+} from '../shared/helpers/ibc-state-root';
 import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { clientStatePath } from '~@/shared/helpers/client-state';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
@@ -49,6 +54,8 @@ import {
 } from './dto';
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
+import { encodeHandlerDatumDefinite, encodeHostStateDatumDefinite } from '../shared/helpers/cbor-fix';
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -56,6 +63,25 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after connection update
+   * Now side-effect free - returns newRoot without mutating the canonical tree
+   */
+  private computeRootWithConnectionUpdate(oldRoot: string, connectionId: string, connectionState: any): string {
+    const result = computeRootWithConnectionUpdateHelper(oldRoot, connectionId, connectionState);
+    return result.newRoot;
+  }
+  
+  /**
+   * Ensure the in-memory Merkle tree is aligned with on-chain state
+   */
+  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
+    if (!isTreeAligned(onChainRoot)) {
+      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
+      await alignTreeWithChain();
+    }
+  }
   /**
    * Processes the connection open init tx.
    * @param data The message containing connection open initiation data.
@@ -73,16 +99,19 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenInitTxCompleted = await (await unsignedConnectionOpenInitTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // DEBUG: emit CBOR and key inputs so we can reproduce Ogmios eval failures
+      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      this.logger.log(
+        `[DEBUG] connectionOpenInit unsigned CBOR len=${unsignedTxCbor.length}, head=${unsignedTxCbor.substring(0, 80)}`,
+      );
 
-      this.logger.log(signedConnectionOpenInitTxCompleted.toHash(), 'connection open init - unsignedTX - hash');
+      // Return unsigned transaction for Hermes to sign
+      this.logger.log('Returning unsigned tx for connection open init');
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenInitTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgUpdateClientResponse;
       return response;
@@ -112,16 +141,15 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenTryTxCompleted = await (await unsignedConnectionOpenTryTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenTryTxCompleted.toHash(), 'connection open try - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open try');
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenTryTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenTryResponse;
       return response;
@@ -150,16 +178,16 @@ export class ConnectionService {
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenAckTxCompleted = await (await unsignedConnectionOpenAckTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenAckTxCompleted.toHash(), 'connection open ack - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open ack');
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenAckTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
@@ -193,18 +221,15 @@ export class ConnectionService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedConnectionOpenConfirmTxCompleted = await (
-        await unsignedConnectionOpenConfirmTxValidTo.complete()
-      ).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedConnectionOpenConfirmTxCompleted.toHash(), 'connection open confirm - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for connection open confirm');
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedConnectionOpenConfirmTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
       return response;
@@ -229,25 +254,68 @@ export class ConnectionService {
     connectionOpenInitOperator: ConnectionOpenInitOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum!,
+      'host_state',
+    );
+    
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    this.logger.log(
+      `[DEBUG] ConnOpenInit hostState seq=${hostStateDatum.state.next_connection_sequence}, root=${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit handler seq=${handlerDatum.state.next_connection_sequence}, root=${handlerDatum.state.ibc_state_root.slice(0, 20)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit client token unit=${clientTokenUnit}, client utxo=${clientUtxo.txHash}#${clientUtxo.outputIndex}`,
+    );
+    const clientAssetUnits = Object.keys(clientUtxo.assets || {}).filter((a) => a !== 'lovelace');
+    this.logger.log(`[DEBUG] ConnOpenInit client utxo assets=${clientAssetUnits.join(',') || 'lovelace-only'}`);
+
+    // Compute new IBC state root with connection update
+    const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
+    const newRoot = this.computeRootWithConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      connectionOpenInitOperator,
+    );
+
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
-        next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+      },
+    };
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
-      handlerDatum.state.next_connection_sequence,
+      hostStateDatum.state.next_connection_sequence,
     );
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+    this.logger.log(
+      `[DEBUG] ConnOpenInit connection token unit=${connectionTokenUnit}, policy=${mintConnectionPolicyId}, name=${connectionTokenName}`,
+    );
     const connToken: AuthToken = {
       policyId: mintConnectionPolicyId,
       name: connectionTokenName,
@@ -271,26 +339,43 @@ export class ConnectionService {
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
     );
+    const encodedHostStateRedeemer = await this.lucidService.encode<string>('CreateConnection', 'host_state_redeemer');
 
     const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
       spendHandlerRedeemer,
       'handlerOperator',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
+    const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',
     );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit encoded spendHandlerRedeemer: ${encodedSpendHandlerRedeemer.substring(0, 120)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit encoded mintConnectionRedeemer: ${encodedMintConnectionRedeemer.substring(0, 120)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit encoded handler datum (trunc): ${encodedUpdatedHandlerDatum.substring(0, 120)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit encoded host state datum (trunc): ${encodedUpdatedHostStateDatum.substring(0, 120)}...`,
+    );
+    this.logger.log(
+      `[DEBUG] ConnOpenInit encoded connection datum (trunc): ${encodedConnectionDatum.substring(0, 120)}...`,
+    );
     return this.lucidService.createUnsignedConnectionOpenInitTransaction(
       handlerUtxo,
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       encodedSpendHandlerRedeemer,
       connectionTokenUnit,
       clientUtxo,
       encodedMintConnectionRedeemer,
       encodedUpdatedHandlerDatum,
+      encodedUpdatedHostStateDatum,
       encodedConnectionDatum,
       constructedAddress,
     );
@@ -301,23 +386,52 @@ export class ConnectionService {
     connectionOpenTryOperator: ConnectionOpenTryOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum!,
+      'host_state',
+    );
+    
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    
+    // Compute new IBC state root with connection update
+    const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
+    const newRoot = this.computeRootWithConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      connectionOpenTryOperator,
+    );
+    
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
-        next_connection_sequence: handlerDatum.state.next_connection_sequence + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+      },
+    };
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
-      handlerDatum.state.next_connection_sequence,
+      hostStateDatum.state.next_connection_sequence,
     );
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     const connToken: AuthToken = {
@@ -343,6 +457,7 @@ export class ConnectionService {
         proof_height: connectionOpenTryOperator.proofHeight,
       },
     };
+    const encodedHostStateRedeemer = await this.lucidService.encode<string>('CreateConnection', 'host_state_redeemer');
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
@@ -351,21 +466,22 @@ export class ConnectionService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
+    const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',
     );
     return this.lucidService.createUnsignedConnectionOpenTryTransaction(
       handlerUtxo,
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       encodedSpendHandlerRedeemer,
       connectionTokenUnit,
       clientUtxo,
       encodedMintConnectionRedeemer,
       encodedUpdatedHandlerDatum,
+      encodedUpdatedHostStateDatum,
       encodedConnectionDatum,
       constructedAddress,
     );

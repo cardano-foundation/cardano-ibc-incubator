@@ -62,6 +62,12 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { 
+  computeRootWithChannelUpdate as computeRootWithChannelUpdateHelper,
+  alignTreeWithChain,
+  isTreeAligned,
+} from '../shared/helpers/ibc-state-root';
+import { encodeHandlerDatumDefinite } from '../shared/helpers/cbor-fix';
 
 @Injectable()
 export class ChannelService {
@@ -70,6 +76,25 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after channel update
+   * Now side-effect free - returns newRoot without mutating the canonical tree
+   */
+  private computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): string {
+    const result = computeRootWithChannelUpdateHelper(oldRoot, channelId, channelState);
+    return result.newRoot;
+  }
+  
+  /**
+   * Ensure the in-memory Merkle tree is aligned with on-chain state
+   */
+  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
+    if (!isTreeAligned(onChainRoot)) {
+      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
+      await alignTreeWithChain();
+    }
+  }
 
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     try {
@@ -87,19 +112,18 @@ export class ChannelService {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
-      // TODO: signing should be done by the relayer in the future
+      
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      const signedChannelOpenInitTxCompleted = await (await unsignedChannelOpenInitTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
-
-      this.logger.log(signedChannelOpenInitTxCompleted.toHash(), 'channel open init - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for channel open init');
       const response: MsgChannelOpenInitResponse = {
         channel_id: channelId,
         version: data.channel.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedChannelOpenInitTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgChannelOpenInitResponse;
       return response;
@@ -125,17 +149,17 @@ export class ChannelService {
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
-      // TODO: signing should be done by the relayer in the future
-      const signedChannelOpenTryTxCompleted = await (await unsignedChannelOpenTryTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedChannelOpenTryTxCompleted.toHash(), 'channel open try - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for channel open try');
       const response: MsgChannelOpenTryResponse = {
         version: channelOpenTryOperator.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedChannelOpenTryTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgChannelOpenTryResponse;
       return response;
@@ -165,17 +189,16 @@ export class ChannelService {
       }
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
-      // TODO: signing should be done by the relayer in the future
-      const signedChannelOpenAckTxCompleted = await (await unsignedChannelOpenAckTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
       await sleep(7000);
-      this.logger.log(signedChannelOpenAckTxCompleted.toHash(), 'channel open ack - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for channel open ack');
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedChannelOpenAckTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgChannelOpenAckResponse;
       return response;
@@ -201,16 +224,15 @@ export class ChannelService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
-      // TODO: signing should be done by the relayer in the future
-      const signedChannelConfirmInitTxCompleted = await (await unsignedChannelConfirmInitTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedChannelConfirmInitTxCompleted.toHash(), 'channelOpenConfirm - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for channel open confirm');
       const response: MsgChannelOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedChannelConfirmInitTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgChannelOpenConfirmResponse;
       return response;
@@ -236,16 +258,15 @@ export class ChannelService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
-      // TODO: signing should be done by the relayer in the future
-      const signedChannelCloseInitTxCompleted = await (await unsignedChannelCloseInitTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedChannelCloseInitTxCompleted.toHash(), 'channel close init - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for channel close init');
       const response: MsgChannelCloseInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedChannelCloseInitTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgChannelCloseInitResponse;
       return response;
@@ -264,6 +285,9 @@ export class ChannelService {
   ): Promise<{ unsignedTx: TxBuilder; channelId: string }> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
 
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenInitOperator.connectionId),
@@ -284,11 +308,18 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
+    
+    // Compute new IBC state root with channel update
+    const channelSequence = handlerDatum.state.next_channel_sequence;
+    const channelId = `channel-${channelSequence}`;
+    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenInitOperator);
+    
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {
@@ -296,8 +327,7 @@ export class ChannelService {
         handler_token: this.configService.get('deployment').handlerAuthToken,
       },
     };
-    const channelSequence = handlerDatum.state.next_channel_sequence;
-    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
+    const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
 
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(channelSequence);
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
@@ -331,10 +361,7 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
@@ -342,7 +369,7 @@ export class ChannelService {
       Callback: [
         {
           OnChanOpenInit: {
-            channel_id: channelId,
+            channel_id: channelIdHex,
           },
         },
       ],
@@ -366,7 +393,7 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
-    return { unsignedTx: unsignedUnorderedChannelTx, channelId: channelId.toString() };
+    return { unsignedTx: unsignedUnorderedChannelTx, channelId };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
@@ -375,6 +402,10 @@ export class ChannelService {
   ): Promise<TxBuilder> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
+    
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
     );
@@ -394,11 +425,18 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
+    
+    // Compute new IBC state root with channel update
+    const channelSequence = handlerDatum.state.next_channel_sequence;
+    const channelId = `channel-${channelSequence}`;
+    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenTryOperator);
+    
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
       },
     };
     const mintChannelRedeemer: MintChannelRedeemer = {
@@ -445,20 +483,17 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
     // Get mock module utxo
     const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
-    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + handlerDatum.state.next_channel_sequence.toString());
+    const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence.toString());
     const spendMockModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
           OnChanOpenTry: {
-            channel_id: channelId,
+            channel_id: channelIdHex,
           },
         },
       ],

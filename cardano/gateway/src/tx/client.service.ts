@@ -14,7 +14,9 @@ import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
 import { RpcException } from '@nestjs/microservices';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { ConfigService } from '@nestjs/config';
+import { encodeHostStateDatumDefinite } from 'src/shared/helpers/cbor-fix';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
 import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
 import { ClientDatum } from 'src/shared/types/client-datum';
@@ -32,6 +34,12 @@ import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { 
+  computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
+  alignTreeWithChain,
+  isTreeAligned,
+} from '../shared/helpers/ibc-state-root';
+import { TxEventsService } from './tx-events.service';
 
 @Injectable()
 export class ClientService {
@@ -39,7 +47,33 @@ export class ClientService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private readonly txEventsService: TxEventsService,
   ) {}
+
+  /**
+   * Computes the new IBC state root after client update
+   * 
+   * IMPORTANT: This is now side-effect free. The result contains a commit()
+   * function that should be called after tx confirmation, but for simplicity
+   * we just return the newRoot and let the next operation rebuild from chain.
+   */
+  private computeRootWithClientUpdate(oldRoot: string, clientId: string, clientState: any): string {
+    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState);
+    // Note: Not calling result.commit() - the tree will be rebuilt from chain on next operation
+    // This is safer because it handles failed transactions automatically
+    return result.newRoot;
+  }
+  
+  /**
+   * Ensure the in-memory Merkle tree is aligned with on-chain state
+   * Call this before building transactions if the tree may be stale
+   */
+  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
+    if (!isTreeAligned(onChainRoot)) {
+      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
+      await alignTreeWithChain();
+    }
+  }
   /**
    * Processes the creation of a client tx.
    * @param data The message containing client creation data.
@@ -56,30 +90,68 @@ export class ClientService {
         constructedAddress,
       );
 
-      const validToTime = Number(consensusState.timestamp / 10n ** 6n + 120n * 10n ** 3n);
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException(
-          `create client failed: tx time invalid consesusState.timestamp ${consensusState.timestamp} validToTime ${validToTime} validToSlot ${validToSlot} currentSlot ${currentSlot}`,
-        );
-      }
+      // Use absolute POSIX timestamps (milliseconds since Unix epoch)
+      // Lucid will convert these to slots relative to the devnet's systemStart
+      const now = Date.now(); // Current time in milliseconds
 
-      const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx.validTo(validToTime);
-      // Todo: signing should be done by the relayer in the future
-      const signedCreateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
-      this.logger.log(signedCreateClientTxCompleted.toHash(), 'create client - unsignedTX');
-      this.logger.log(clientId, 'create client - clientId');
+      const validFromTimestamp = now - 60000; // 1 minute ago (for clock skew tolerance)
+      // Keep validity bounds within Cardano's "safe zone" for devnet era summaries
+      // (otherwise Ogmios evaluateTransaction may fail with PastHorizon).
+      const validToTimestamp = now + TRANSACTION_TIME_TO_LIVE;
+
+      this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
+
+      const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx
+        .validFrom(validFromTimestamp)
+        .validTo(validToTimestamp);
+      
+      // Return unsigned transaction for Hermes to sign
+      // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
+      const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const unsignedTxHash = completedUnsignedTx.toHash();
+      
+      // Return the CBOR hex string as bytes for Hermes to parse
+      // unsignedTxCbor is a hex string from Lucid's toCBOR()
+      // Hermes expects to receive this as a UTF-8 string (hex characters as bytes)
+      // So we encode the string itself as a Uint8Array of its character codes
+      const hexStringBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      
+      const createdClientId = `${CLIENT_ID_PREFIX}-${clientId.toString()}`;
+
+      // Track expected IBC events for Hermes (keyed by tx hash, stable across signing).
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'create_client',
+          attributes: [
+            { key: 'client_id', value: createdClientId },
+            { key: 'client_type', value: '07-tendermint' },
+            {
+              key: 'consensus_height',
+              value: `${clientState.latestHeight.revisionNumber.toString()}-${clientState.latestHeight.revisionHeight.toString()}`,
+            },
+          ],
+        },
+      ]);
+
+      this.logger.log(`Returning unsigned tx for client creation (client_id: ${createdClientId})`);
+      this.logger.log(`CBOR hex string length: ${unsignedTxCbor.length}, first 40 chars: ${unsignedTxCbor.substring(0, 40)}`);
+      
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedCreateClientTxCompleted.toCBOR()),
+          value: hexStringBytes,
         },
-        client_id: `${CLIENT_ID_PREFIX}-${clientId.toString()}`,
+        client_id: createdClientId,
       } as unknown as MsgCreateClientResponse;
       return response;
     } catch (error) {
       this.logger.error(`createClient: ${error}`);
+      // Log full error object to capture Ogmios evaluateTransaction details
+      this.logger.error(`createClient FULL ERROR: ${JSON.stringify(error, Object.getOwnPropertyNames(error), 2)}`);
+      if (error?.cause) {
+        this.logger.error(`createClient ERROR CAUSE: ${JSON.stringify(error.cause, Object.getOwnPropertyNames(error.cause), 2)}`);
+      }
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error.stack}`);
       } else {
@@ -126,15 +198,17 @@ export class ClientService {
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(new Date().valueOf())
           .validTo(validToTime);
-        // Todo: signing should be done by the relayer in the future
-        const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
+        
+        // Return unsigned transaction for Hermes to sign
+        const completedUnsignedTx = await unSignedTxValidTo.complete();
+        const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-        this.logger.log(clientId, 'update client - client Id');
-        this.logger.log(signedUpdateClientTxCompleted.toHash(), 'update client on misbehaviour - unsignedTX - hash');
+        this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
+        
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
+            value: fromHex(unsignedTxCbor),
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -172,14 +246,16 @@ export class ClientService {
 
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
 
-      // Todo: signing should be done by the relayer in the future
-      const signedUpdateClientTxCompleted = await (await unSignedTxValidTo.complete()).sign.withWallet().complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unSignedTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      
+      this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 
-      // Build and complete the unsigned transaction
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedUpdateClientTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;
@@ -318,25 +394,62 @@ export class ClientService {
     consensusState: ConsensusState,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    // Decode the handler datum from the handler UTXO
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    // Create an updated handler datum with an incremented client sequence
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
+    // STT Architecture: Query the HostState UTXO via its unique NFT
+    // the NFT serves as a linear threading token -
+    // the UTXO set can only contain exactly one unspent output with this NFT at any given slot,
+    // which eliminates race conditions and indexing ambiguities that would otherwise require
+    // sophisticated conflict resolution when multiple Handler UTXOs could theoretically coexist.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    
+    this.logger.log(`[DEBUG] HostState UTXO: ${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex}`);
+    this.logger.log(`[DEBUG] HostState UTXO address: ${hostStateUtxo.address}`);
+    this.logger.log(`[DEBUG] HostState UTXO datum (FULL CBOR): ${hostStateUtxo.datum || 'MISSING!'}`);
+    this.logger.log(`[DEBUG] HostState UTXO datumHash: ${hostStateUtxo.datumHash || 'NONE (inline)'}`);
+    
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException(`HostState UTXO has no inline datum! This indicates a deployment issue.`);
+    }
+    
+    // Decode the HostState datum from the UTXO
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+    
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    // This prevents stale tree state from causing root mismatches after failed transactions
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    
+    this.logger.log(`[DEBUG] Decoded HostState datum - version: ${hostStateDatum.state.version}, nft_policy: ${hostStateDatum.nft_policy.substring(0, 20)}...`);
+    
+    this.logger.log(`[DEBUG] HostState datum version: ${hostStateDatum.state.version}`);
+    this.logger.log(`[DEBUG] HostState next_client_sequence: ${hostStateDatum.state.next_client_sequence}`);
+    this.logger.log(`[DEBUG] HostState ibc_state_root: ${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`);
+    
+    // Compute new IBC state root with client update
+    const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;
+    const newRoot = this.computeRootWithClientUpdate(hostStateDatum.state.ibc_state_root, clientId, clientState);
+    
+    // Create an updated HostState datum with:
+    // - Incremented version (STT monotonicity requirement)
+    // - Incremented client sequence
+    // - Updated ibc_state_root
+    // - Current timestamp
+    const updatedHostStateDatum = {
+      ...hostStateDatum,
       state: {
-        ...handlerDatum.state,
-        next_client_sequence: handlerDatum.state.next_client_sequence + 1n,
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_client_sequence: hostStateDatum.state.next_client_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
     };
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientScriptHash = this.configService.get('deployment').validators.mintClientStt.scriptHash;
 
     const clientDatumState: ClientDatumState = {
       clientState: clientState,
       consensusStates: new Map([[clientState.latestHeight, consensusState]]),
     };
 
-    const clientTokenName = this.generateClientTokenName(handlerDatum);
+    const clientTokenName = this.generateClientTokenName(hostStateDatum);
 
     const clientDatum: ClientDatum = {
       state: clientDatumState,
@@ -345,37 +458,64 @@ export class ClientService {
         name: clientTokenName,
       },
     };
-    const mintClientOperator: MintClientOperator = this.createMintClientOperator();
+    // STT architecture: MintClientRedeemer is just the handler auth token
+    const handlerToken = this.configService.get('deployment').handlerAuthToken;
+    const mintClientRedeemer = {
+      handler_auth_token: {
+        policy_id: handlerToken.policyId,
+        name: handlerToken.name,
+      },
+    };
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
-    const handlerOperator: HandlerOperator = 'CreateClient';
-    // Encode encoded data for created transaction
-    const encodedMintClientOperator: string = await this.lucidService.encode(mintClientOperator, 'mintClientOperator');
-    const encodedHandlerOperator: string = await this.lucidService.encode(handlerOperator, 'handlerOperator');
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    
+    // STT redeemer: Explicitly specify the operation type
+    // The reason I'm doing it this way is because the validator needs type-specific invariants -
+    // CreateClient requires incrementing next_client_sequence while preserving connection/channel
+    // sequences, whereas other operations have different field constraints. The redeemer acts as
+    // a dispatch mechanism so the validator can branch to operation-specific validation logic.
+    const hostStateRedeemer = 'CreateClient';
+    
+    // Encode all data for the transaction
+    const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    // CRITICAL: Use definite-length CBOR encoding for Aiken compatibility
+    // Lucid's Data.to() uses indefinite-length arrays which Aiken validators cannot deserialize
+    const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
     const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
+    
+    this.logger.log(`[DEBUG] ==================== TRANSACTION CBOR VALUES ====================`);
+    this.logger.log(`[DEBUG] Client token name: ${clientTokenName}`);
+    this.logger.log(`[DEBUG] Client auth token unit: ${clientAuthTokenUnit}`);
+    this.logger.log(`[DEBUG] Encoded mint client redeemer (CBOR): ${encodedMintClientRedeemer}`);
+    this.logger.log(`[DEBUG] Encoded host state redeemer (CBOR): ${encodedHostStateRedeemer}`);
+    this.logger.log(`[DEBUG] Encoded updated HostState datum (CBOR - FULL): ${encodedUpdatedHostStateDatum}`);
+    this.logger.log(`[DEBUG] Encoded client datum (CBOR - first 200 chars): ${encodedClientDatum.substring(0, 200)}...`);
+    this.logger.log(`[DEBUG] Updated HostState datum next_client_sequence: ${updatedHostStateDatum.state.next_client_sequence}`);
+    this.logger.log(`[DEBUG] ==================================================================`);
+    
     // Create and return the unsigned transaction for creating new client
+    // This will spend the old HostState UTXO and create a new one with the same NFT
     return {
       unsignedTx: this.lucidService.createUnsignedCreateClientTransaction(
-        handlerUtxo,
-        encodedHandlerOperator,
+        hostStateUtxo,
+        encodedHostStateRedeemer,
         clientAuthTokenUnit,
-        encodedMintClientOperator,
-        encodedUpdatedHandlerDatum,
+        encodedMintClientRedeemer,
+        encodedUpdatedHostStateDatum,
         encodedClientDatum,
         constructedAddress,
       ),
-      clientId: handlerDatum.state.next_client_sequence,
+      clientId: hostStateDatum.state.next_client_sequence,
     };
   }
-  private generateClientTokenName(handlerDatum: HandlerDatum): string {
-    // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence);
+  
+  private generateClientTokenName(hostStateDatum: any): string {
+    // Generate client token name from HostState NFT policy
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
     return this.lucidService.generateTokenName(
-      handlerDatum.token,
+      hostStateNFT,
       CLIENT_PREFIX,
-      handlerDatum.state.next_client_sequence,
+      hostStateDatum.state.next_client_sequence,
     );
   }
 

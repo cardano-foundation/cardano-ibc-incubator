@@ -24,8 +24,16 @@ export const readValidator = <T extends unknown[] = Data[]>(
   params?: Exact<[...T]>,
   type?: T
 ): [Script, ScriptHash, Address] => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'utils.ts:27',message:'readValidator called',data:{title,totalValidators:blueprint.validators.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
+    // #region agent log
+    const availableTitles = blueprint.validators.map(v => v.title).filter(t => t.includes('client') || t.includes('connection') || t.includes('channel') || t.includes('stt'));
+    fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'utils.ts:36',message:'Validator not found',data:{requestedTitle:title,availableRelatedValidators:availableTitles},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     throw new Error(`Unable to field validator with title ${title}`);
   }
 
@@ -108,7 +116,8 @@ export const generateTokenName = async (
 };
 
 export const hashSha3_256 = async (data: string) => {
-  const digest = await crypto.subtle.digest('SHA3-256', fromHex(data));
+  const hexData = fromHex(data);
+  const digest = await crypto.subtle.digest('SHA3-256', new Uint8Array(hexData));
   return toHex(new Uint8Array(digest));
 };
 
@@ -201,7 +210,12 @@ type Validator =
   | "mintIdentifier"
   | "spendTransferModule"
   | "mintVoucher"
-  | "verifyProof";
+  | "verifyProof"
+  | "hostStateStt"
+  | "mintHostStateNFT"
+  | "mintClientStt"
+  | "mintConnectionStt"
+  | "mintChannelStt";
 
 type Module = "handler" | "transfer";
 
@@ -223,6 +237,10 @@ export type DeploymentTemplate = {
     }
   >;
   handlerAuthToken: {
+    policyId: string;
+    name: string;
+  };
+  hostStateNFT?: {
     policyId: string;
     name: string;
   };
