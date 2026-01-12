@@ -1,6 +1,6 @@
 # Cardano IBC Sidechain
 
-**sidechain** is a blockchain leverages IBC to communicate with Cardano mainchain. It uses the Cosmos SDK and Tendermint and is created with Ignite.
+**sidechain** is a blockchain leverages IBC to communicate with Cardano mainchain. It uses the Cosmos SDK and Tendermint and is created with Ignite. In the broader bridge docs we refer to this as the **packet-forwarding chain**: a Cosmos chain we operate specifically as the entry point for Cardano↔Cosmos IBC traffic (the on-disk name remains `sidechain` for compatibility).
 
 ## Get started
 
@@ -22,11 +22,11 @@ sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.j
 sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from `./sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --dry-run
 
 Update client
-Estimate gas : sidechaind tx ibc client update "099-cardano-0" ./exampleCall/updateClient.json --from `sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --dry-run
+Estimate gas : sidechaind tx ibc client update "08-cardano-0" ./exampleCall/updateClient.json --from `sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --dry-run
 
 then append `--gas XXX` to the command below
 
-Exec : sidechaind tx ibc client update "099-cardano-0" ./exampleCall/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+Exec : sidechaind tx ibc client update "08-cardano-0" ./exampleCall/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
 
 Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states" -H  "accept: application/json"
 
@@ -45,7 +45,7 @@ txhash: <TX_HASH_HERE>
 ...
 
 
-Query created client using: sidechaind q tx <TX_HASH_HERE> | grep "099-cardano-"
+Query created client using: sidechaind q tx <TX_HASH_HERE> | grep "08-cardano-"
 will return:
 ...
     value: <CLIENT_ID_HERE>
@@ -101,11 +101,11 @@ sidechaind tx ibc client create ./exampleCall/testSPO/client.json ./exampleCall/
 
 Update client
 
-Replace "099-cardano-0" with client-id we\'ve created above
+Replace "08-cardano-0" with client-id we\'ve created above
 
-Exec with regis cert: sidechaind tx ibc client update "099-cardano-0" ./exampleCall/testSPO/regisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
+Exec with regis cert: sidechaind tx ibc client update "08-cardano-0" ./exampleCall/testSPO/regisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
 
-Exec with deregis cert: sidechaind tx ibc client update "099-cardano-0" ./exampleCall/testSPO/deregisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
+Exec with deregis cert: sidechaind tx ibc client update "08-cardano-0" ./exampleCall/testSPO/deregisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
 
 Verify: curl -X GET "http://localhost:1317/cosmos/tx/v1beta1/txs/{tx id got from exec}" -H  "accept: application/json"
 

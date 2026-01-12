@@ -62,7 +62,12 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import { computeRootWithChannelUpdate as computeRootWithChannelUpdateHelper } from '../shared/helpers/ibc-state-root';
+import { 
+  computeRootWithChannelUpdate as computeRootWithChannelUpdateHelper,
+  alignTreeWithChain,
+  isTreeAligned,
+} from '../shared/helpers/ibc-state-root';
+import { encodeHandlerDatumDefinite } from '../shared/helpers/cbor-fix';
 
 @Injectable()
 export class ChannelService {
@@ -74,10 +79,21 @@ export class ChannelService {
 
   /**
    * Computes the new IBC state root after channel update
-   * Delegates to the ibc-state-root helper
+   * Now side-effect free - returns newRoot without mutating the canonical tree
    */
   private computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): string {
-    return computeRootWithChannelUpdateHelper(oldRoot, channelId, channelState);
+    const result = computeRootWithChannelUpdateHelper(oldRoot, channelId, channelState);
+    return result.newRoot;
+  }
+  
+  /**
+   * Ensure the in-memory Merkle tree is aligned with on-chain state
+   */
+  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
+    if (!isTreeAligned(onChainRoot)) {
+      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
+      await alignTreeWithChain();
+    }
   }
 
   async channelOpenInit(data: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
@@ -270,6 +286,9 @@ export class ChannelService {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
 
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
+
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenInitOperator.connectionId),
     );
@@ -342,10 +361,7 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
@@ -386,6 +402,10 @@ export class ChannelService {
   ): Promise<TxBuilder> {
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
+    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
+    
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
     );
@@ -463,10 +483,7 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode<HandlerDatum>(
-      updatedHandlerDatum,
-      'handler',
-    );
+    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
     // Get mock module utxo

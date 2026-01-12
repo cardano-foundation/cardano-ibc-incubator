@@ -39,6 +39,23 @@ export class ICS23MerkleTree {
   constructor() {}
 
   /**
+   * Create a deep copy of this tree
+   * 
+   * Used to compute speculative state roots without mutating the canonical tree.
+   * The cloned tree can be modified freely; the original remains unchanged.
+   * 
+   * @returns A new ICS23MerkleTree with the same leaves
+   */
+  clone(): ICS23MerkleTree {
+    const cloned = new ICS23MerkleTree();
+    for (const [key, value] of this.leaves) {
+      cloned.leaves.set(key, Buffer.from(value));
+    }
+    cloned.dirty = true; // Force recomputation of root in clone
+    return cloned;
+  }
+
+  /**
    * Insert or update a key-value pair in the tree
    * @param key - The key (IBC path like "clients/07-tendermint-0/clientState")
    * @param value - The serialized value (protobuf encoded)
@@ -225,18 +242,6 @@ export class ICS23MerkleTree {
     });
 
     return tree;
-  }
-
-  /**
-   * Clone the tree
-   * @returns A new tree with the same state
-   */
-  clone(): ICS23MerkleTree {
-    const newTree = new ICS23MerkleTree();
-    this.leaves.forEach((value, key) => {
-      newTree.set(key, Buffer.from(value));
-    });
-    return newTree;
   }
 
   /**

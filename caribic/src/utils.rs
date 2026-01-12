@@ -210,7 +210,8 @@ pub async fn download_file(
     path: &Path,
     indicator_message: Option<IndicatorMessage>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut response = reqwest::get(url).await?.error_for_status()?;
+    let client = Client::builder().no_proxy().build()?;
+    let mut response = client.get(url).send().await?.error_for_status()?;
 
     let total_size = response.content_length();
     let mut fallback_message = String::from("Downloading ...");
@@ -250,7 +251,10 @@ pub async fn wait_for_health_check(
     interval: u64,
     custom_condition: Option<impl Fn(&String) -> bool>,
 ) -> Result<(), String> {
-    let client = Client::new();
+    let client = Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
     for retry in 0..retries {
         let response = client.get(url).send().await;

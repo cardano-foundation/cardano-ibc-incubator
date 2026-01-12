@@ -153,6 +153,11 @@ cargo run start bridge
 # will start network and bridge components
 ```
 
+### Testing against Cheqd / Osmosis
+
+> [!IMPORTANT]
+> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano` / `2000-cardano-mithril`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
+
 ### Stopping the services
 
 To stop the services:
@@ -176,7 +181,7 @@ You can run the demo use case by following these steps:
 
 - Follow the steps above to run a local Cardano network and the bridge components.
 - Make sure you see a message like `successfully created channel` in the logs of the relayer container.
-- Get the IBC (vessel-sidechain) channel ID (e.g., `channel-0`).
+- Get the IBC (vessel→packet-forwarding chain) channel ID (e.g., `channel-0`).
 - Enter the vessel use case production container and run:
 
 ```zsh
@@ -215,7 +220,7 @@ After running `xtransfer.sh`, the relayer will capture the packet, relay a messa
 ```sh
 2024-03-04T09:26:53.779140Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgRecvPacket"], "tx_hash": "a35bc010a9e5e78c88469707aa10c3501bf19e51e0539b4720d70479d44fc3bc"}
 ...
-2024-03-04T09:27:01.748158Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "packet_src_channel": "channel-7", "packet_dst_channel": "channel-7", "gas_used": 55261, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8573, "msg_types": ["/ibc.core.channel.v1.MsgAcknowledgement"], "tx_hash": "D162CC2356A09F09C80D616987FE4BE965FDEA7C3C93AC0F2D1D5BE4589C8A46"}
+2024-03-04T09:27:01.748158Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "sidechain", "packet_src_channel": "channel-7", "packet_dst_channel": "channel-7", "gas_used": 55261, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8573, "msg_types": ["/ibc.core.channel.v1.MsgAcknowledgement"], "tx_hash": "D162CC2356A09F09C80D616987FE4BE965FDEA7C3C93AC0F2D1D5BE4589C8A46"}  # packet-forwarding chain run by us
 ```
 
 You can query balance using this endpoint:
@@ -291,7 +296,7 @@ Example:
 
 #### Using the faucet to create and fund accounts in the test environment
 
-Sidechain:
+Packet-forwarding chain (Cosmos):
 ```sh
 curl -X POST "http://localhost:4500/" -H  "accept: application/json" -H  "Content-Type: application/json" -d "{  \"address\": \"cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6\",  \"coins\": [    \"10token\",\"10stake\"  ]}"
 ```

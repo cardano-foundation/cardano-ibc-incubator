@@ -212,12 +212,26 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    // const blockHeight = await (await this.getLedgerStateQueryClient()).blockHeight();
-    // const latestBlockNo = await this.dbService.queryLatestBlockNo();
-    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    // Prefer Mithril snapshots when available; fall back to db-sync for devnet/when Mithril is disabled.
+    try {
+      const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+      if (listSnapshots?.length) {
+        const latestHeightResponse = {
+          height: listSnapshots[0].block_number,
+        };
+        this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
+        return latestHeightResponse as unknown as QueryLatestHeightResponse;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Mithril snapshot unavailable, falling back to db-sync latest block height: ${error?.message ?? error}`,
+        'QueryLatestHeight',
+      );
+    }
 
+    const latestBlockNo = await this.dbService.queryLatestBlockNo();
     const latestHeightResponse = {
-      height: listSnapshots[0].block_number,
+      height: latestBlockNo,
     };
     this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
@@ -334,7 +348,15 @@ export class QueryService {
     }
 
     const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
-    const blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
+    let blockHeader = null;
+    try {
+      blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
+    } catch (err) {
+      this.logger.warn(
+        `Failed to fetch block header via mini-protocols for height=${height} slot=${blockDto.slot}: ${err?.message ?? err}`,
+        'queryBlockData',
+      );
+    }
     try {
       const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDto, blockHeader);
       blockDataOuroboros.chain_id = `${this.configService.get('cardanoChainNetworkMagic')}`;

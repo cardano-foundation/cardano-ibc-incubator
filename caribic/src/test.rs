@@ -1,6 +1,38 @@
 use crate::logger::{self, verbose};
 use std::path::Path;
 use std::process::Command;
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// Test results summary
+#[derive(Debug)]
+pub struct TestResults {
+    pub passed: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+impl TestResults {
+    pub fn new() -> Self {
+        TestResults {
+            passed: 0,
+            skipped: 0,
+            failed: 0,
+        }
+    }
+
+    pub fn total(&self) -> usize {
+        self.passed + self.skipped + self.failed
+    }
+
+    pub fn has_failures(&self) -> bool {
+        self.failed > 0
+    }
+
+    pub fn all_passed(&self) -> bool {
+        self.passed == self.total() && self.total() > 0
+    }
+}
 
 /// Run end-to-end integration tests to verify IBC functionality
 /// 
@@ -17,13 +49,15 @@ use std::process::Command;
 /// All services must be running before running tests. Use 'caribic start all' first.
 pub async fn run_integration_tests(
     project_root: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<TestResults, Box<dyn std::error::Error>> {
     logger::log("Running IBC Integration Tests\n");
+    let mut results = TestResults::new();
 
     // Test 1: Verify services are running
     logger::log("Test 1: Verifying services are running...");
     verify_services_running(project_root)?;
     logger::log("PASS Test 1: All services are running\n");
+    results.passed += 1;
 
     // Test 2: Query Handler UTXO and verify ibc_state_root exists
     logger::log("Test 2: Verifying Handler UTXO has ibc_state_root field...");
@@ -39,6 +73,7 @@ pub async fn run_integration_tests(
     
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
     logger::log("PASS Test 2: Handler UTXO has valid ibc_state_root\n");
+    results.passed += 1;
 
     // Test 3: Create a client and verify root changes
     logger::log("Test 3: Creating client via Hermes and verifying root changes...");
@@ -53,17 +88,20 @@ pub async fn run_integration_tests(
             
             if root_after_client == initial_root {
                 logger::log("   Warning: Root unchanged after client creation");
-                logger::log("SKIP Test 3: Root did not update (check Hermes logs)\n");
+                logger::log("FAIL Test 3: Root did not update after client creation\n");
+                results.failed += 1;
                 None
             } else {
                 logger::log(&format!("   Client ID: {}", client_id));
-            logger::log(&format!("   New root: {}...", &root_after_client[..16]));
-            logger::log("PASS Test 3: Root changed after createClient\n");
+                logger::log(&format!("   New root: {}...", &root_after_client[..16]));
+                logger::log("PASS Test 3: Root changed after createClient\n");
+                results.passed += 1;
                 Some(client_id)
             }
         }
         Err(e) => {
-            logger::log(&format!("SKIP Test 3: {}\n", e));
+            logger::log(&format!("FAIL Test 3: Hermes client creation failed\n{}\n", e));
+            results.failed += 1;
             None
         }
     };
@@ -83,15 +121,18 @@ pub async fn run_integration_tests(
                 logger::log(&format!("   Connection ID: {}", connection_id));
                 logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
                 logger::log("PASS Test 4: Connection created and root updated\n");
+                results.passed += 1;
                 Some(connection_id)
             }
             Err(e) => {
-                logger::log(&format!("SKIP Test 4: {}\n", e));
+                logger::log(&format!("FAIL Test 4: Hermes connection creation failed\n{}\n", e));
+                results.failed += 1;
                 None
             }
         }
     } else {
-        logger::log("   SKIP Test 4: Skipped due to client creation failure\n");
+        logger::log("SKIP Test 4: Skipped due to Test 3 failure\n");
+        results.skipped += 1;
         None
     };
 
@@ -110,16 +151,19 @@ pub async fn run_integration_tests(
                 logger::log(&format!("   Channel ID: {}", channel_id));
                 logger::log(&format!("   New root: {}...", &root_after_channel[..16]));
                 logger::log("PASS Test 5: Channel created and root updated\n");
+                results.passed += 1;
             }
             Err(e) => {
-                logger::log(&format!("SKIP Test 5: {}\n", e));
+                logger::log(&format!("FAIL Test 5: Hermes channel creation failed\n{}\n", e));
+                results.failed += 1;
             }
         }
     } else {
-        logger::log("   SKIP Test 5: Skipped due to connection creation failure\n");
+        logger::log("SKIP Test 5: Skipped due to Test 4 failure\n");
+        results.skipped += 1;
     }
 
-    Ok(())
+    Ok(results)
 }
 
 /// Verify that all required services are running
@@ -140,6 +184,16 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
         missing_services.push("Gateway");
     } else {
         verbose("   Gateway is running");
+    }
+
+    // Check local packet-forwarding chain (Cosmos chain we operate)
+    verbose("   Waiting for packet-forwarding chain RPC (http://127.0.0.1:26657/status) ...");
+    let pfc_running =
+        wait_for_service_health("http://127.0.0.1:26657/status", 120, Duration::from_secs(5));
+    if !pfc_running {
+        missing_services.push("Packet-forwarding chain (Cosmos) on :26657");
+    } else {
+        verbose("   Packet-forwarding chain is running");
     }
 
     // Check Mithril (optional)
@@ -199,10 +253,37 @@ fn check_gateway_container_running() -> bool {
 
 /// Check if a service is healthy by querying its health endpoint
 fn check_service_health(url: &str) -> bool {
-    match reqwest::blocking::get(url) {
-        Ok(response) => response.status().is_success(),
-        Err(_) => false,
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+
+    client
+        .get(url)
+        .send()
+        .map(|resp| resp.status().is_success())
+        .unwrap_or(false)
+}
+
+fn wait_for_service_health(url: &str, max_attempts: usize, interval: Duration) -> bool {
+    let start = Instant::now();
+    for attempt in 0..max_attempts {
+        if check_service_health(url) {
+            return true;
+        }
+        logger::verbose(&format!(
+            "   Waiting for {} (attempt {}/{}, elapsed {}s)...",
+            url,
+            attempt + 1,
+            max_attempts,
+            start.elapsed().as_secs()
+        ));
+        thread::sleep(interval);
     }
+    false
 }
 
 /// Query the current ibc_state_root from the Handler UTXO
@@ -332,13 +413,13 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         ).into());
     }
     
-    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain cheqd-testnet-6");
+    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain");
     
     let output = Command::new(&hermes_binary)
         .args(&[
             "create", "client",
             "--host-chain", "cardano-devnet",
-            "--reference-chain", "cheqd-testnet-6",
+            "--reference-chain", "sidechain",
         ])
         .output()?;
     
@@ -350,7 +431,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
              \n\
              Ensure Hermes is configured and keys are added:\n\
              - hermes keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt\n\
-             - hermes keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt",
+             - hermes keys add --chain sidechain --mnemonic-file ~/sidechain.txt",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ).into());
@@ -377,19 +458,19 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
 
 /// Create a test connection using Hermes relayer
 /// 
-/// Creates a connection between cardano-devnet and cheqd-testnet-6 chains
+/// Creates a connection between cardano-devnet and the local packet-forwarding chain
 fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating connection via Hermes...");
     
     let hermes_binary = project_root.join("relayer/target/release/hermes");
     
-    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain cheqd-testnet-6");
+    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain");
     
     let output = Command::new(&hermes_binary)
         .args(&[
             "create", "connection",
             "--a-chain", "cardano-devnet",
-            "--b-chain", "cheqd-testnet-6",
+            "--b-chain", "sidechain",
         ])
         .output()?;
     
@@ -476,4 +557,3 @@ fn create_test_channel(
     
     Ok(channel_id)
 }
-

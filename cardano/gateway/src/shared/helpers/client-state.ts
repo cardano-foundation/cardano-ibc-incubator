@@ -143,7 +143,10 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
   }
   // the latest height revision number must match the chain id revision number
   if (chainIdUtf8.includes('-')) {
-    const [_, chainIdRevision] = chainIdUtf8?.split('-');
+    // Extract the revision number from the chain ID (e.g., "cheqd-testnet-6" -> "6")
+    // The revision number is the last segment after splitting by '-'
+    const parts = chainIdUtf8.split('-');
+    const chainIdRevision = parts[parts.length - 1];
     const isValidRevisionNumber =
       !chainIdRevision || clientState.latestHeight?.revisionNumber.toString() === chainIdRevision;
 

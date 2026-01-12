@@ -15,8 +15,7 @@
 use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId, quantity_of}
-use cardano/script_context.{ScriptContext}
-use cardano/transaction.{InlineDatum, Input, Output, Transaction}
+use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, host_state_token_name, validate_bind_port,
   validate_create_channel, validate_create_client, validate_create_connection,
@@ -100,11 +99,10 @@ validator host_state_stt(nft_policy: PolicyId) {
   spend(
     datum_opt: Option<HostStateDatum>,
     redeemer: HostStateRedeemer,
-    _own_ref: Data,
-    ctx: ScriptContext,
+    _spent_output_ref: OutputReference,
+    transaction: Transaction,
   ) {
-    // 1. Extract transaction
-    let ScriptContext { transaction, .. } = ctx
+    // 1. Extract transaction fields
     let Transaction { inputs, outputs, .. } = transaction
     
     // 2. Find input HostState UTXO
@@ -164,4 +162,3 @@ validator host_state_stt(nft_policy: PolicyId) {
     fail @"HostState STT can only be spent"
   }
 }
-

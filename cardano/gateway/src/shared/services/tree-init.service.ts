@@ -1,7 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { KupoService } from '../modules/kupo/kupo.service';
 import { LucidService } from '../modules/lucid/lucid.service';
-import { rebuildTreeFromChain } from '../helpers/ibc-state-root';
+import { rebuildTreeFromChain, initTreeServices } from '../helpers/ibc-state-root';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
@@ -10,6 +10,7 @@ import { rebuildTreeFromChain } from '../helpers/ibc-state-root';
  * - Ensures the in-memory Merkle tree is synchronized with on-chain state
  * - Makes Gateway resilient to restarts and crashes
  * - Verifies tree integrity before processing transactions
+ * - Caches services for on-demand tree alignment
  * 
  * Lifecycle:
  * - Called automatically by NestJS on module initialization
@@ -27,6 +28,9 @@ export class TreeInitService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('Initializing IBC state tree from on-chain UTXOs...');
+    
+    // Cache services for on-demand tree alignment (used by alignTreeWithChain)
+    initTreeServices(this.kupoService, this.lucidService);
     
     try {
       const { tree, root } = await rebuildTreeFromChain(

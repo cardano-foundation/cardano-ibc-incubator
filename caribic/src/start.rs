@@ -506,7 +506,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     let url = "http://127.0.0.1:4500/";
     let max_retries = 60;
     let interval_ms = 10000; // 10 seconds
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build()?;
     
     for retry in 0..max_retries {
         let response = client.get(url).send().await;

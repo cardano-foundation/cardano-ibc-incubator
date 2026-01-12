@@ -193,7 +193,7 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	}
 }
 
-// Initialize checks that the initial consensus state is an 099-cardano consensus state and
+// Initialize checks that the initial consensus state is an 08-cardano consensus state and
 // sets the client state, consensus state and associated metadata in the provided client store.
 func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {
 	consensusState, ok := consState.(*ConsensusState)

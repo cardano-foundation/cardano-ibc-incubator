@@ -12,6 +12,7 @@ export const grpcClientOptions: GrpcOptions = {
       'ibc.core.connection.v1',
       'ibc.core.channel.v1',
       'ibc.applications.transfer.v1',
+      'ibc.cardano.v1',
     ],
     protoPath: [
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/core/client/v1/tx.proto'),
@@ -22,6 +23,7 @@ export const grpcClientOptions: GrpcOptions = {
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/core/channel/v1/query.proto'),
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/core/channel/v1/tx.proto'),
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/applications/transfer/v1/query.proto'),
+      join(__dirname, '../../../proto-types/protos/ibc-go/ibc/cardano/v1/tx.proto'),
     ],
     loader: {
       keepCase: true,

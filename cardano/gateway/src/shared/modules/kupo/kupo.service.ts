@@ -40,12 +40,16 @@ export class KupoService {
     const deployment = this.configService.get('deployment');
     
     // Initialize token prefixes for filtering
-    this.clientTokenPrefix = deployment.validators.mintClient.policy_id;
-    this.connectionTokenPrefix = deployment.validators.mintConnection.policy_id;
-    this.channelTokenPrefix = deployment.validators.mintChannel.policy_id;
+    // NOTE: `scriptHash` is the Cardano policy id for minting policies.
+    this.clientTokenPrefix =
+      deployment.validators.mintClientStt?.scriptHash || deployment.validators.mintClient.scriptHash;
+    this.connectionTokenPrefix =
+      deployment.validators.mintConnectionStt?.scriptHash || deployment.validators.mintConnection.scriptHash;
+    this.channelTokenPrefix =
+      deployment.validators.mintChannelStt?.scriptHash || deployment.validators.mintChannel.scriptHash;
     
     // Initialize addresses
-    this.handlerAddress = deployment.validators.address;
+    this.handlerAddress = deployment.validators.spendHandler.address;
     this.clientAddress = deployment.validators.spendClient.address;
     this.connectionAddress = deployment.validators.spendConnection.address;
     this.channelAddress = deployment.validators.spendChannel.address;
@@ -179,4 +183,3 @@ export class KupoService {
     return hostStateDatum.state.ibc_state_root;
   }
 }
-
