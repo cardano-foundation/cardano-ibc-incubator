@@ -28,5 +28,5 @@ export async function encodeMintClientOperator(
   type TMintClientOperator = Data.Static<typeof MintClientOperatorSchema>;
   const TMintClientOperator = MintClientOperatorSchema as unknown as MintClientOperator;
 
-  return Data.to(mintClientOperator, TMintClientOperator);
+  return Data.to(mintClientOperator, TMintClientOperator, { canonical: true });
 }

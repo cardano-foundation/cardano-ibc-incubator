@@ -35,7 +35,7 @@ export function encodeTransferModuleRedeemer(
   type TTransferModuleRedeemer = Data.Static<typeof TransferModuleRedeemerSchema>;
   const TTransferModuleRedeemer = TransferModuleRedeemerSchema as unknown as TransferModuleRedeemer;
 
-  return Data.to(transferModuleRedeemer, TTransferModuleRedeemer);
+  return Data.to(transferModuleRedeemer, TTransferModuleRedeemer, { canonical: true });
 }
 
 // cast to fungibleTokenPacket

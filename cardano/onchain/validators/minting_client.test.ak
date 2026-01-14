@@ -55,6 +55,7 @@ test test_create_valid_client() {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: mock_handler_auth_token,
     }
@@ -173,6 +174,7 @@ test fail_create_valid_client() fail {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: mock_handler_auth_token,
     }

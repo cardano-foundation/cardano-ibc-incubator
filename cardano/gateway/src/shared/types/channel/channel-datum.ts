@@ -60,7 +60,7 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
   });
   type TChannelDatum = Data.Static<typeof ChannelDatumSchema>;
   const TChannelDatum = ChannelDatumSchema as unknown as ChannelDatum;
-  return Data.to(channelDatum, TChannelDatum);
+  return Data.to(channelDatum, TChannelDatum, { canonical: true });
 }
 
 export async function decodeChannelDatum(channelDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {

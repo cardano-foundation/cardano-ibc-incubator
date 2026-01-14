@@ -180,5 +180,5 @@ export function encodeVerifyProofRedeemer(
   ]);
   type TVerifyProofRedeemer = Data.Static<typeof VerifyProofRedeemerSchema>;
   const TVerifyProofRedeemer = VerifyProofRedeemerSchema as unknown as VerifyProofRedeemer;
-  return Data.to(verifyProofRedeemer, TVerifyProofRedeemer);
+  return Data.to(verifyProofRedeemer, TVerifyProofRedeemer, { canonical: true });
 }

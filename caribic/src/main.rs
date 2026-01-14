@@ -463,7 +463,7 @@ async fn main() {
 
                 // Start gateway
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
                     Err(error) => {
                         bridge_down_with_error(&format!("ERROR: Failed to start gateway: {}", error))
                     }
@@ -517,7 +517,7 @@ async fn main() {
             if target == StartTarget::Gateway {
                 // Start only the Gateway service
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start gateway: {}", error));
                         std::process::exit(1);

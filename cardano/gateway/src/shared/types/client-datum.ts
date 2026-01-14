@@ -1,5 +1,4 @@
 import { type Data } from '@lucid-evolution/lucid';
-import cbor from 'cbor';
 import { AuthToken } from './auth-token';
 import { ClientDatumState } from './client-datum-state';
 
@@ -79,11 +78,7 @@ export async function encodeClientDatum(
   type TClientDatum = Data.Static<typeof ClientDatumSchema>;
   const TClientDatum = ClientDatumSchema as unknown as ClientDatum;
 
-  // Lucid's encoder can emit indefinite-length arrays; some on-chain decoders are stricter.
-  // Canonical CBOR encoding is always definite-length, so we round-trip through a canonical encoder.
-  const encoded = Data.to(clientDatum, TClientDatum, { canonical: true });
-  const decoded = cbor.decodeFirstSync(Buffer.from(encoded, 'hex'));
-  return cbor.encodeCanonical(decoded).toString('hex');
+  return Data.to(clientDatum, TClientDatum, { canonical: true });
 }
 
 export async function decodeClientDatum(

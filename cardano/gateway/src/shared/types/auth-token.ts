@@ -15,5 +15,5 @@ export function encodeAuthToken(token: AuthToken, Lucid: typeof import('@lucid-e
 
   type TAuthToken = Data.Static<typeof AuthTokenSchema>;
   const TAuthToken = AuthTokenSchema as unknown as TAuthToken;
-  return Data.to(token, TAuthToken);
+  return Data.to(token, TAuthToken, { canonical: true });
 }

@@ -63,6 +63,7 @@ fn setup() -> MockData {
         next_connection_sequence: connection_sequence,
         next_channel_sequence: 0,
         bound_port: [],
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: handler_token,
     }

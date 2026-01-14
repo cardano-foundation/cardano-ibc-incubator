@@ -297,7 +297,7 @@ export class LucidService {
             LucidData.Literal('UpdateChannel'),
             LucidData.Literal('HandlePacket'),
           ]);
-          return LucidData.to(data as string, HostStateRedeemerSchema as any);
+          return LucidData.to(data as string, HostStateRedeemerSchema as any, { canonical: true });
         }
         case 'spendClientRedeemer':
           return await encodeSpendClientRedeemer(data as SpendClientRedeemer, this.LucidImporter);
@@ -313,7 +313,7 @@ export class LucidService {
           const MintClientRedeemerSchema = Data.Object({
             handler_auth_token: AuthTokenSchema,
           });
-          return Data.to(data as any, MintClientRedeemerSchema);
+          return Data.to(data as any, MintClientRedeemerSchema, { canonical: true });
         }
         case 'handlerOperator':
           return await encodeHandlerOperator(data as HandlerOperator, this.LucidImporter);
@@ -1287,8 +1287,8 @@ export class LucidService {
   };
 
   private txFromWallet(constructedAddress: string): TxBuilder {
-    // Use the same DEPLOYER_SK as Hermes for consistent signing
-    // Both Gateway and Hermes now use the same wallet
+    // Use the deployer's private key to build transactions
+    // Hermes must be configured with the same key (DEPLOYER_SK) to sign correctly
     const deployerSk = this.configService.get('deployerSk');
     if (deployerSk) {
       this.lucid.selectWallet.fromPrivateKey(deployerSk);

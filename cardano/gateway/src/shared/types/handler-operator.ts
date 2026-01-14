@@ -24,5 +24,5 @@ export async function encodeHandlerOperator(
   ]);
   type THandlerOperator = Data.Static<typeof HandlerOperatorSchema>;
   const THandlerOperator = HandlerOperatorSchema as unknown as HandlerOperator;
-  return Data.to(handlerDatum, THandlerOperator);
+  return Data.to(handlerDatum, THandlerOperator, { canonical: true });
 }

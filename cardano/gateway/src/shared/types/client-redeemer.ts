@@ -98,7 +98,7 @@ export async function encodeSpendClientRedeemer(
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
-  return Data.to(spendClientRedeemer, TSpendClientRedeemer);
+  return Data.to(spendClientRedeemer, TSpendClientRedeemer, { canonical: true });
 }
 
 export function decodeSpendClientRedeemer(

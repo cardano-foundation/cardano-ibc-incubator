@@ -67,7 +67,6 @@ import {
   alignTreeWithChain,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
-import { encodeHandlerDatumDefinite } from '../shared/helpers/cbor-fix';
 
 @Injectable()
 export class ChannelService {
@@ -361,7 +360,7 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
+    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
@@ -483,7 +482,7 @@ export class ChannelService {
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
-    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
+    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
     // Get mock module utxo
