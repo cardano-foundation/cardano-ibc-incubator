@@ -37,6 +37,8 @@ impl TestResults {
 /// Run end-to-end integration tests to verify IBC functionality
 /// 
 /// Tests include:
+/// - Services are running
+/// - Gateway connectivity via Hermes health-check
 /// - Handler UTXO contains ibc_state_root field
 /// - Root changes after createClient
 /// - Root changes after connectionOpenInit  
@@ -59,8 +61,24 @@ pub async fn run_integration_tests(
     logger::log("PASS Test 1: All services are running\n");
     results.passed += 1;
 
-    // Test 2: Query Handler UTXO and verify ibc_state_root exists
-    logger::log("Test 2: Verifying Handler UTXO has ibc_state_root field...");
+    // Test 2: Gateway connectivity smoke test via Hermes health-check
+    logger::log("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
+    match run_hermes_health_check(project_root) {
+        Ok(_) => {
+            logger::log("PASS Test 2: Hermes health-check passed, Gateway connectivity verified\n");
+            results.passed += 1;
+        }
+        Err(e) => {
+            logger::log(&format!("FAIL Test 2: Hermes health-check failed\n{}\n", e));
+            results.failed += 1;
+            // This is a critical failure - if Hermes can't talk to Gateway, later tests will fail
+            logger::log("   Aborting remaining tests due to Gateway connectivity failure.\n");
+            return Ok(results);
+        }
+    }
+
+    // Test 3: Query Handler UTXO and verify ibc_state_root exists
+    logger::log("Test 3: Verifying Handler UTXO has ibc_state_root field...");
     let initial_root = query_handler_state_root(project_root)?;
     
     if initial_root.len() != 64 {
@@ -72,11 +90,11 @@ pub async fn run_integration_tests(
     }
     
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
-    logger::log("PASS Test 2: Handler UTXO has valid ibc_state_root\n");
+    logger::log("PASS Test 3: Handler UTXO has valid ibc_state_root\n");
     results.passed += 1;
 
-    // Test 3: Create a client and verify root changes
-    logger::log("Test 3: Creating client via Hermes and verifying root changes...");
+    // Test 4: Create a client and verify root changes
+    logger::log("Test 4: Creating client via Hermes and verifying root changes...");
     
     let client_id = match create_test_client(project_root) {
         Ok(client_id) => {
@@ -88,26 +106,26 @@ pub async fn run_integration_tests(
             
             if root_after_client == initial_root {
                 logger::log("   Warning: Root unchanged after client creation");
-                logger::log("FAIL Test 3: Root did not update after client creation\n");
+                logger::log("FAIL Test 4: Root did not update after client creation\n");
                 results.failed += 1;
                 None
             } else {
                 logger::log(&format!("   Client ID: {}", client_id));
                 logger::log(&format!("   New root: {}...", &root_after_client[..16]));
-                logger::log("PASS Test 3: Root changed after createClient\n");
+                logger::log("PASS Test 4: Root changed after createClient\n");
                 results.passed += 1;
                 Some(client_id)
             }
         }
         Err(e) => {
-            logger::log(&format!("FAIL Test 3: Hermes client creation failed\n{}\n", e));
+            logger::log(&format!("FAIL Test 4: Hermes client creation failed\n{}\n", e));
             results.failed += 1;
             None
         }
     };
 
-    // Test 4: Create a connection and verify root changes
-    logger::log("Test 4: Creating connection via Hermes and verifying root changes...");
+    // Test 5: Create a connection and verify root changes
+    logger::log("Test 5: Creating connection via Hermes and verifying root changes...");
     
     let connection_id = if client_id.is_some() {
         match create_test_connection(project_root) {
@@ -120,24 +138,24 @@ pub async fn run_integration_tests(
                 
                 logger::log(&format!("   Connection ID: {}", connection_id));
                 logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
-                logger::log("PASS Test 4: Connection created and root updated\n");
+                logger::log("PASS Test 5: Connection created and root updated\n");
                 results.passed += 1;
                 Some(connection_id)
             }
             Err(e) => {
-                logger::log(&format!("FAIL Test 4: Hermes connection creation failed\n{}\n", e));
+                logger::log(&format!("FAIL Test 5: Hermes connection creation failed\n{}\n", e));
                 results.failed += 1;
                 None
             }
         }
     } else {
-        logger::log("SKIP Test 4: Skipped due to Test 3 failure\n");
+        logger::log("SKIP Test 5: Skipped due to Test 4 failure\n");
         results.skipped += 1;
         None
     };
 
-    // Test 5: Create a channel and verify root changes
-    logger::log("Test 5: Creating channel via Hermes and verifying root changes...");
+    // Test 6: Create a channel and verify root changes
+    logger::log("Test 6: Creating channel via Hermes and verifying root changes...");
     
     if let Some(conn_id) = connection_id {
         match create_test_channel(project_root, &conn_id) {
@@ -150,16 +168,16 @@ pub async fn run_integration_tests(
                 
                 logger::log(&format!("   Channel ID: {}", channel_id));
                 logger::log(&format!("   New root: {}...", &root_after_channel[..16]));
-                logger::log("PASS Test 5: Channel created and root updated\n");
+                logger::log("PASS Test 6: Channel created and root updated\n");
                 results.passed += 1;
             }
             Err(e) => {
-                logger::log(&format!("FAIL Test 5: Hermes channel creation failed\n{}\n", e));
+                logger::log(&format!("FAIL Test 6: Hermes channel creation failed\n{}\n", e));
                 results.failed += 1;
             }
         }
     } else {
-        logger::log("SKIP Test 5: Skipped due to Test 4 failure\n");
+        logger::log("SKIP Test 6: Skipped due to Test 5 failure\n");
         results.skipped += 1;
     }
 
@@ -187,9 +205,9 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
     }
 
     // Check local packet-forwarding chain (Cosmos chain we operate)
-    verbose("   Waiting for packet-forwarding chain RPC (http://127.0.0.1:26657/status) ...");
-    let pfc_running =
-        wait_for_service_health("http://127.0.0.1:26657/status", 120, Duration::from_secs(5));
+    // Don't wait - just check once. User should run 'caribic start' first.
+    verbose("   Checking packet-forwarding chain RPC (http://127.0.0.1:26657/status)...");
+    let pfc_running = check_service_health("http://127.0.0.1:26657/status");
     if !pfc_running {
         missing_services.push("Packet-forwarding chain (Cosmos) on :26657");
     } else {
@@ -211,6 +229,79 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
         ).into());
     }
 
+    Ok(())
+}
+
+/// Run Hermes health-check to verify Gateway connectivity
+/// 
+/// This exercises the Hermes -> Gateway gRPC connection by querying LatestHeight.
+/// It validates that:
+/// - Hermes binary is built and accessible
+/// - Hermes config is valid and points to the Gateway
+/// - Gateway is accepting gRPC connections and responding correctly
+fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    
+    if !hermes_binary.exists() {
+        return Err(format!(
+            "Hermes binary not found at: {}\n\
+             Please build Hermes first: cd relayer && cargo build --release",
+            hermes_binary.display()
+        ).into());
+    }
+    
+    verbose("   Running: hermes health-check");
+    
+    let output = Command::new(&hermes_binary)
+        .args(&["health-check"])
+        .output()?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    
+    verbose(&format!("   stdout: {}", stdout.trim()));
+    if !stderr.is_empty() {
+        verbose(&format!("   stderr: {}", stderr.trim()));
+    }
+    
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes health-check failed (exit code: {:?}):\n\
+             stdout: {}\n\
+             stderr: {}\n\n\
+             This indicates Hermes cannot connect to the Gateway.\n\
+             Check that:\n\
+             - Gateway is running on port 5001\n\
+             - Hermes config (~/.hermes/config.toml) has correct grpc_addr for cardano-devnet\n\
+             - No firewall is blocking the connection",
+            output.status.code(),
+            stdout,
+            stderr
+        ).into());
+    }
+    
+    // Check that the Cardano chain is reported as healthy
+    // Hermes health-check output typically includes chain status
+    let combined_output = format!("{}{}", stdout, stderr);
+    
+    if combined_output.to_lowercase().contains("unhealthy") 
+        || combined_output.to_lowercase().contains("error") 
+        || combined_output.to_lowercase().contains("failed") {
+        return Err(format!(
+            "Hermes health-check reported unhealthy chain(s):\n{}",
+            combined_output
+        ).into());
+    }
+    
+    // Look for cardano-devnet being healthy
+    if combined_output.contains("cardano-devnet") {
+        if combined_output.contains("healthy") || combined_output.contains("Healthy") {
+            verbose("   cardano-devnet chain is healthy");
+        }
+    }
+    
+    verbose("   Hermes health-check passed");
+    
     Ok(())
 }
 

@@ -40,8 +40,6 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the local Cardano network, Mithril, gateway and relayer
-    All,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -58,8 +56,6 @@ enum StopTarget {
     Bridge,
     /// Stops the demo services
     Demo,
-    /// Stops the local Cardano network, Mithril, gateway and relayer and demo services
-    All,
     /// Stops only the Gateway service
     Gateway,
     /// Stops only the Hermes relayer
@@ -87,10 +83,10 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
-    /// Starts a specific bridge component. The component can be either the network, bridge or all. Default is all
+    /// Starts bridge components. No argument starts everything; optionally specify: network, bridge, gateway, relayer, mithril
     Start {
-        #[arg(value_enum, default_value_t = StartTarget::All)]
-        target: StartTarget,
+        #[arg(value_enum)]
+        target: Option<StartTarget>,
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
@@ -98,10 +94,10 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
     },
-    /// Stops a specific bridge component. The component can be either the network, bridge, demo or all. Default is all
+    /// Stops bridge components. No argument stops everything; optionally specify: network, bridge, demo, gateway, relayer, mithril
     Stop {
-        #[arg(value_enum, default_value_t = StopTarget::All)]
-        target: StopTarget,
+        #[arg(value_enum)]
+        target: Option<StopTarget>,
     },
     /// Manage Hermes keyring (add, list, delete keys)
     Keys {
@@ -358,37 +354,42 @@ async fn main() {
             let project_root_path = Path::new(&project_config.project_root);
             let osmosis_dir = utils::get_osmosis_dir(project_root_path);
 
-            if target == StopTarget::Bridge {
-                bridge_down();
-                logger::log("\nBridge stopped successfully");
-            } else if target == StopTarget::Network {
-                network_down();
-                logger::log("\nCardano Network successfully");
-            } else if target == StopTarget::Demo {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-                stop_cosmos(project_root_path.join("cosmos").as_path());
-                stop_osmosis(osmosis_dir.as_path());
-                logger::log("\nDemo services stopped successfully");
-            } else if target == StopTarget::All {
-                stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-                stop_cosmos(project_root_path.join("cosmos").as_path());
-                stop_osmosis(osmosis_dir.as_path());
-                bridge_down();
-                network_down();
-                logger::log("\nAll services stopped successfully");
-            } else if target == StopTarget::Gateway {
-                stop_gateway(project_root_path);
-                logger::log("\nGateway stopped successfully");
-            } else if target == StopTarget::Relayer {
-                stop_relayer(project_root_path.join("relayer").as_path());
-                logger::log("\nRelayer stopped successfully");
-            } else if target == StopTarget::Mithril {
-                stop_mithril(project_root_path.join("chains/mithrils").as_path());
-                logger::log("\nMithril stopped successfully");
-            } else {
-                logger::error(
-                    "ERROR: Invalid target to stop must be either 'bridge', 'network', 'demo', 'all', 'gateway', 'relayer', or 'mithril'",
-                );
+            match target {
+                Some(StopTarget::Bridge) => {
+                    bridge_down();
+                    logger::log("\nBridge stopped successfully");
+                }
+                Some(StopTarget::Network) => {
+                    network_down();
+                    logger::log("\nCardano Network stopped successfully");
+                }
+                Some(StopTarget::Demo) => {
+                    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                    stop_cosmos(project_root_path.join("cosmos").as_path());
+                    stop_osmosis(osmosis_dir.as_path());
+                    logger::log("\nDemo services stopped successfully");
+                }
+                Some(StopTarget::Gateway) => {
+                    stop_gateway(project_root_path);
+                    logger::log("\nGateway stopped successfully");
+                }
+                Some(StopTarget::Relayer) => {
+                    stop_relayer(project_root_path.join("relayer").as_path());
+                    logger::log("\nRelayer stopped successfully");
+                }
+                Some(StopTarget::Mithril) => {
+                    stop_mithril(project_root_path.join("chains/mithrils").as_path());
+                    logger::log("\nMithril stopped successfully");
+                }
+                None => {
+                    // No argument = stop all
+                    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                    stop_cosmos(project_root_path.join("cosmos").as_path());
+                    stop_osmosis(osmosis_dir.as_path());
+                    bridge_down();
+                    network_down();
+                    logger::log("\nAll services stopped successfully");
+                }
             }
         }
         Commands::Start { target, clean, with_mithril } => {
@@ -396,8 +397,12 @@ async fn main() {
             let project_root_path = Path::new(&project_config.project_root);
 
             let mut cardano_current_epoch = 0;
+            
+            // Determine what to start: None means start everything (network + bridge)
+            let start_network = target.is_none() || target == Some(StartTarget::Network);
+            let start_bridge = target.is_none() || target == Some(StartTarget::Bridge);
 
-            if target == StartTarget::Network || target == StartTarget::All {
+            if start_network {
                 // Start the local Cardano network and its services
                 match start_local_cardano_network(&project_root_path, clean).await {
                     Ok(_) => logger::log("PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)"),
@@ -408,7 +413,7 @@ async fn main() {
                 }
                 // Start Mithril if requested
                 if with_mithril {
-                    if target == StartTarget::All {
+                    if target.is_none() {
                         match start_mithril(&project_root_path).await {
                             Ok(current_epoch) => {
                                 cardano_current_epoch = current_epoch;
@@ -433,7 +438,7 @@ async fn main() {
                 logger::log("\nPASS: Cardano Network started successfully");
             }
 
-            if target == StartTarget::Bridge || target == StartTarget::All {
+            if start_bridge {
                 let balance = query_balance(
                     project_root_path,
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
@@ -497,7 +502,7 @@ async fn main() {
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
                 logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-                if with_mithril && target == StartTarget::All {
+                if with_mithril && target.is_none() {
                     match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {
@@ -514,7 +519,7 @@ async fn main() {
                 logger::log("   4. View keys: caribic keys list");
             }
 
-            if target == StartTarget::Gateway {
+            if target == Some(StartTarget::Gateway) {
                 // Start only the Gateway service
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
                     Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
@@ -525,7 +530,7 @@ async fn main() {
                 }
             }
 
-            if target == StartTarget::Relayer {
+            if target == Some(StartTarget::Relayer) {
                 // Build and configure Hermes relayer
                 match start_relayer(
                     project_root_path.join("relayer").as_path(),
@@ -550,7 +555,7 @@ async fn main() {
                 }
             }
 
-            if target == StartTarget::Mithril {
+            if target == Some(StartTarget::Mithril) {
                 // Start only Mithril services
                 match start_mithril(&project_root_path).await {
                     Ok(_) => logger::log("PASS: Mithril services started (1 aggregator, 2 signers)"),
