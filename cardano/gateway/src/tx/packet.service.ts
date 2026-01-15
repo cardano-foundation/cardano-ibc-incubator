@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
+import { DenomTraceService } from 'src/query/services/denom-trace.service';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -73,6 +74,7 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private denomTraceService: DenomTraceService,
   ) {}
   /**
    * @param data
@@ -142,17 +144,17 @@ export class PacketService {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 < packet.timeout_timestamp');
       }
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
-      // Todo: signing should be done in the relayer in the future
-      const signedRecvPacketCompleted = await (await unsignedRecvPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedRecvPacketCompleted.toHash(), 'recv packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for recv packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedRecvPacketCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -181,17 +183,16 @@ export class PacketService {
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedSendPacketTxCompleted.toHash(), 'send packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for send packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -221,17 +222,16 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedSendPacketTxCompleted = await (await unsignedSendPacketTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedSendPacketTxCompleted.toHash(), 'timeout packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for timeout packet');
       const response: MsgTimeoutResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedSendPacketTxCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgTimeoutResponse;
       return response;
@@ -282,16 +282,15 @@ export class PacketService {
       }
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedTimeoutRefreshCompleted = await (await unsignedTimeoutRefreshTxValidTo.complete()).sign
-        .withWallet()
-        .complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedTimeoutRefreshCompleted.toHash(), 'TimeoutRefresh - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for timeout refresh');
       const response: MsgTimeoutRefreshResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedTimeoutRefreshCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgTimeoutRefreshResponse;
       return response;
@@ -324,15 +323,16 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
-      // Todo: signing should be done in the relayer in the future
-      const signedAckPacketCompleted = await (await unsignedAckPacketTxValidTo.complete()).sign.withWallet().complete();
+      // Return unsigned transaction for Hermes to sign
+      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete();
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
 
-      this.logger.log(signedAckPacketCompleted.toHash(), 'ack packet - unsignedTX - hash');
+      this.logger.log('Returning unsigned tx for ack packet');
       const response: MsgAcknowledgementResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(signedAckPacketCompleted.toCBOR()),
+          value: fromHex(unsignedTxCbor),
         },
       } as unknown as MsgAcknowledgementResponse;
       return response;
@@ -613,6 +613,26 @@ export class PacketService {
             const voucherTokenName = hashSha3_256(prefixedDenom);
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
+            
+            // Track denom trace mapping
+            try {
+              const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+              const pathParts = fullDenomPath.split('/');
+              const baseDenom = pathParts[pathParts.length - 1];
+              const path = pathParts.slice(0, -1).join('/');
+              
+              await this.denomTraceService.saveDenomTrace({
+                hash: voucherTokenName,
+                path: path,
+                base_denom: baseDenom,
+                voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+                tx_hash: null, // Will be filled when tx is submitted
+              });
+            } catch (error) {
+              this.logger.warn(`Failed to save denom trace: ${error.message}`);
+              // Don't fail the transaction if denom trace saving fails
+            }
+
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
               state: {
@@ -883,6 +903,24 @@ export class PacketService {
     };
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
+
+    // Track denom trace mapping for timeout refund voucher
+    try {
+      const fullDenomPath = convertHex2String(prefixedDenom);
+      const pathParts = fullDenomPath.split('/');
+      const baseDenom = pathParts[pathParts.length - 1];
+      const path = pathParts.slice(0, -1).join('/');
+      
+      await this.denomTraceService.saveDenomTrace({
+        hash: voucherTokenName,
+        path: path,
+        base_denom: baseDenom,
+        voucher_policy_id: this.getMintVoucherScriptHash(),
+        tx_hash: null,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to save denom trace for timeout: ${error.message}`);
+    }
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -1398,6 +1436,25 @@ export class PacketService {
     const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
+    
+    // Track denom trace mapping for acknowledgement refund voucher
+    try {
+      const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+      const pathParts = fullDenomPath.split('/');
+      const baseDenom = pathParts[pathParts.length - 1];
+      const path = pathParts.slice(0, -1).join('/');
+      
+      await this.denomTraceService.saveDenomTrace({
+        hash: voucherTokenName,
+        path: path,
+        base_denom: baseDenom,
+        voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+        tx_hash: null,
+      });
+    } catch (error) {
+      this.logger.warn(`Failed to save denom trace for ack: ${error.message}`);
+    }
+
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,

@@ -77,7 +77,8 @@ export async function encodeClientDatum(
   });
   type TClientDatum = Data.Static<typeof ClientDatumSchema>;
   const TClientDatum = ClientDatumSchema as unknown as ClientDatum;
-  return Data.to(clientDatum, TClientDatum);
+
+  return Data.to(clientDatum, TClientDatum, { canonical: true });
 }
 
 export async function decodeClientDatum(

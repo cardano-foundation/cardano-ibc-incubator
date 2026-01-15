@@ -30,6 +30,8 @@ import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../he
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 
 @Injectable()
 export class ChannelService {
@@ -156,8 +158,22 @@ export class ChannelService {
         channelDatumDecoded.state.channel.state,
       );
 
-      const cardanoTxProof = await this.mithrilService.getProofsCardanoTransactionList([proof.txHash]);
-      const channelProof = cardanoTxProof?.certified_transactions[0]?.proof;
+      // Generate ICS-23 proof from the IBC state tree
+      // Channel path: channelEnds/ports/{portId}/channels/{channelId}
+      const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
+      const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
+      const tree = getCurrentTree();
+      
+      let channelProof: Buffer;
+      try {
+        const existenceProof = tree.generateProof(ibcPath);
+        channelProof = serializeExistenceProof(existenceProof);
+        
+        this.logger.log(`Generated ICS-23 proof for channel ${channelId}, proof size: ${channelProof.length} bytes`);
+      } catch (error) {
+        this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+        throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+      }
 
       const response: QueryChannelResponse = {
         channel: {
@@ -183,11 +199,10 @@ export class ChannelService {
           /** opaque channel version, which is agreed upon during the handshake */
           version: convertHex2String(channelDatumDecoded.state.channel.version),
         } as unknown as Channel,
-        // proof: bytesFromBase64(btoa(`0-${proof.blockNo}/channel/${proof.txHash}/${proof.index}`)), // TODO
-        proof: fromHex(channelProof),
+        proof: channelProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proof.blockNo, // TODO
+          revision_height: proof.blockNo,
         },
       } as unknown as QueryChannelResponse;
       return response;

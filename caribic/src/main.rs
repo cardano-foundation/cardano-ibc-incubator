@@ -42,6 +42,12 @@ enum StartTarget {
     Bridge,
     /// Starts the local Cardano network, Mithril, gateway and relayer
     All,
+    /// Starts only the Gateway service
+    Gateway,
+    /// Starts only the Hermes relayer
+    Relayer,
+    /// Starts only the Mithril services
+    Mithril,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -54,6 +60,12 @@ enum StopTarget {
     Demo,
     /// Stops the local Cardano network, Mithril, gateway and relayer and demo services
     All,
+    /// Stops only the Gateway service
+    Gateway,
+    /// Stops only the Hermes relayer
+    Relayer,
+    /// Stops only the Mithril services
+    Mithril,
 }
 
 #[derive(Parser)]
@@ -140,12 +152,10 @@ enum Commands {
         #[arg(value_enum)]
         use_case: DemoType,
     },
-    /// Runs end-to-end integration tests to verify IBC functionality
-    Test {
-        /// Skip starting services (assumes they're already running)
-        #[arg(long, default_value_t = false)]
-        skip_setup: bool,
-    },
+    /// Run end-to-end integration tests to verify IBC functionality
+    /// 
+    /// Prerequisites: All services must be running. Use 'caribic start all' first.
+    Test,
 }
 
 #[derive(Subcommand)]
@@ -366,9 +376,18 @@ async fn main() {
                 bridge_down();
                 network_down();
                 logger::log("\nAll services stopped successfully");
+            } else if target == StopTarget::Gateway {
+                stop_gateway(project_root_path);
+                logger::log("\nGateway stopped successfully");
+            } else if target == StopTarget::Relayer {
+                stop_relayer(project_root_path.join("relayer").as_path());
+                logger::log("\nRelayer stopped successfully");
+            } else if target == StopTarget::Mithril {
+                stop_mithril(project_root_path.join("chains/mithrils").as_path());
+                logger::log("\nMithril stopped successfully");
             } else {
                 logger::error(
-                    "ERROR: Invalid target to stop must be either 'bridge', 'network', 'demo' or 'all'",
+                    "ERROR: Invalid target to stop must be either 'bridge', 'network', 'demo', 'all', 'gateway', 'relayer', or 'mithril'",
                 );
             }
         }
@@ -444,7 +463,7 @@ async fn main() {
 
                 // Start gateway
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
                     Err(error) => {
                         bridge_down_with_error(&format!("ERROR: Failed to start gateway: {}", error))
                     }
@@ -493,6 +512,53 @@ async fn main() {
                 logger::log("   2. Add keys: caribic keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt");
                 logger::log("   3. Check health: caribic health-check");
                 logger::log("   4. View keys: caribic keys list");
+            }
+
+            if target == StartTarget::Gateway {
+                // Start only the Gateway service
+                match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start gateway: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == StartTarget::Relayer {
+                // Build and configure Hermes relayer
+                match start_relayer(
+                    project_root_path.join("relayer").as_path(),
+                    project_root_path.join("relayer/.env.example").as_path(),
+                    project_root_path.join("relayer/examples").as_path(),
+                    project_root_path.join("cardano/offchain/deployments/handler.json").as_path(),
+                ) {
+                    Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to configure Hermes relayer: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+
+                // Start Hermes daemon
+                match start::start_hermes_daemon(project_root_path.join("relayer").as_path()) {
+                    Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Hermes daemon: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == StartTarget::Mithril {
+                // Start only Mithril services
+                match start_mithril(&project_root_path).await {
+                    Ok(_) => logger::log("PASS: Mithril services started (1 aggregator, 2 signers)"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Mithril: {}", error));
+                        std::process::exit(1);
+                    }
+                }
             }
         }
         Commands::Keys { command } => {
@@ -598,12 +664,31 @@ async fn main() {
                 }
             }
         }
-        Commands::Test { skip_setup } => {
+        Commands::Test => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
-            match test::run_integration_tests(project_root_path, skip_setup).await {
-                Ok(_) => logger::log("\nAll integration tests passed!"),
+            match test::run_integration_tests(project_root_path).await {
+                Ok(results) => {
+                    // Print summary
+                    logger::log(&format!(
+                        "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTest Summary: {} total\n  ✓ {} passed\n  ⊘ {} skipped\n  ✗ {} failed\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                        results.total(),
+                        results.passed,
+                        results.skipped,
+                        results.failed
+                    ));
+
+                    if results.all_passed() {
+                        logger::log("\nAll integration tests passed!");
+                    } else if results.has_failures() {
+                        logger::error("\nTests failed! Fix the errors above and try again.");
+                        std::process::exit(1);
+                    } else if results.skipped > 0 {
+                        logger::log("\nSome tests were skipped due to prerequisite failures.");
+                        std::process::exit(1);
+                    }
+                }
                 Err(error) => {
                     logger::error(&format!("Integration tests failed: {}", error));
                     std::process::exit(1);

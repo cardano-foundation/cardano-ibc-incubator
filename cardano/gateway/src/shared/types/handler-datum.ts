@@ -7,6 +7,7 @@ export type HandlerDatum = {
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
     bound_port: bigint[];
+    ibc_state_root: string;
   };
   token: AuthToken;
 };
@@ -18,6 +19,7 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
     bound_port: Data.Array(Data.Integer()),
+    ibc_state_root: Data.Bytes(),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),
@@ -30,7 +32,7 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
   type THandlerDatum = Data.Static<typeof HandlerDatumSchema>;
   const THandlerDatum = HandlerDatumSchema as unknown as HandlerDatum;
 
-  return Data.to(handlerDatum, THandlerDatum);
+  return Data.to(handlerDatum, THandlerDatum, { canonical: true });
 }
 export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
@@ -39,6 +41,7 @@ export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof imp
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
     bound_port: Data.Array(Data.Integer()),
+    ibc_state_root: Data.Bytes(),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),

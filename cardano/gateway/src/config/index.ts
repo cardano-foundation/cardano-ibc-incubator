@@ -66,7 +66,11 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
-  signerWalletSeed: string;
+  
+  // Used by Gateway to build transactions (UTXO selection, fees, change address)
+  // Hermes handles actual transaction signing
+  deployerSk: string;
+  
   database: PostgresConnectionOptions;
 
   cardanoChainHost: string;
@@ -92,7 +96,7 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
-    signerWalletSeed: process.env.SIGNER_WALLET_SEED,
+    deployerSk: process.env.DEPLOYER_SK,
 
     cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
     cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),

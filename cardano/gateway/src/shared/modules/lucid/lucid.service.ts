@@ -1,5 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { bech32 } from 'bech32';
 import {
   type LucidEvolution,
   type UTxO,
@@ -10,6 +11,7 @@ import {
 import { LUCID_CLIENT, LUCID_IMPORTER } from './lucid.provider';
 import { CHANNEL_TOKEN_PREFIX, CLIENT_PREFIX, CONNECTION_TOKEN_PREFIX } from '../../../constant';
 import { HandlerDatum, decodeHandlerDatum, encodeHandlerDatum } from '../../types/handler-datum';
+import { HostStateDatum, decodeHostStateDatum, encodeHostStateDatum } from '../../types/host-state-datum';
 import { GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { MintClientOperator, encodeMintClientOperator } from '../../types/mint-client-operator';
 import { HandlerOperator, encodeHandlerOperator } from '../../types/handler-operator';
@@ -67,8 +69,11 @@ export type CodecType =
   | 'handler'
   | 'channel'
   | 'mockModule'
+  | 'host_state'
+  | 'host_state_redeemer'
   | 'spendClientRedeemer'
   | 'mintClientOperator'
+  | 'mintClientRedeemer'
   | 'handlerOperator'
   | 'mintConnectionRedeemer'
   | 'spendConnectionRedeemer'
@@ -88,6 +93,7 @@ type ReferenceScripts = {
   spendMockModule: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
+  hostStateStt: UTxO;
   channelOpenAck: UTxO;
   channelCloseInit: UTxO;
   receivePacket: UTxO;
@@ -113,11 +119,12 @@ export class LucidService {
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
-      mintChannel: deploymentConfig.validators.mintChannel.refUtxo,
-      mintClient: deploymentConfig.validators.mintClient.refUtxo,
-      mintConnection: deploymentConfig.validators.mintConnection.refUtxo,
+      mintChannel: deploymentConfig.validators.mintChannelStt?.refUtxo || deploymentConfig.validators.mintChannel.refUtxo,
+      mintClient: deploymentConfig.validators.mintClientStt?.refUtxo || deploymentConfig.validators.mintClient.refUtxo,
+      mintConnection: deploymentConfig.validators.mintConnectionStt?.refUtxo || deploymentConfig.validators.mintConnection.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
+      hostStateStt: deploymentConfig.validators.hostStateStt?.refUtxo,
       channelOpenAck: deploymentConfig.validators.spendChannel.refValidator.chan_open_ack.refUtxo,
       channelCloseInit: deploymentConfig.validators.spendChannel.refValidator.chan_close_init.refUtxo,
       receivePacket: deploymentConfig.validators.spendChannel.refValidator.recv_packet.refUtxo,
@@ -156,6 +163,40 @@ export class LucidService {
     if (!handlerUtxo) throw new GrpcNotFoundException(`Unable to find Handler UTxO at ${handlerAuthToken}`);
     return handlerUtxo;
   }
+
+  /**
+   * Find the HostState UTXO by its unique NFT (STT Architecture)
+   * 
+   * The IBC Host State NFT uniquely identifies the canonical host state UTXO.
+   * This provides:
+   * - Guaranteed uniqueness (exactly one UTXO with this NFT exists)
+   * - Simple querying (no ambiguous UTXOs)
+   * - Complete state history (follow the NFT through transactions)
+   * 
+   * @returns The HostState UTXO containing the NFT
+   * @throws GrpcNotFoundException if NFT or UTXO not found
+   */
+  public async findUtxoAtHostStateNFT(): Promise<UTxO> {
+    const { address: addressOrCredential } = this.configService.get('deployment').validators.hostStateStt;
+    const hostStateNFTConfig = this.configService.get('deployment').hostStateNFT;
+    const hostStateNFT = hostStateNFTConfig.policyId + hostStateNFTConfig.name;
+    
+    const hostStateUtxos = await this.lucid.utxosAt(addressOrCredential);
+    if (hostStateUtxos.length === 0) {
+      throw new GrpcNotFoundException(`Unable to find UTxOs at HostState STT address: ${addressOrCredential}`);
+    }
+    
+    const hostStateUtxo = hostStateUtxos.find((utxo) => utxo.assets.hasOwnProperty(hostStateNFT));
+    if (!hostStateUtxo) {
+      throw new GrpcNotFoundException(
+        `Unable to find HostState UTXO with NFT: ${hostStateNFT}. ` +
+        `This indicates the IBC Host State has not been initialized or the NFT was not minted correctly.`
+      );
+    }
+    
+    return hostStateUtxo;
+  }
+
   public async getPublicKeyHash(address: string): Promise<string> {
     return getAddressDetails(address).paymentCredential?.hash;
   }
@@ -167,19 +208,18 @@ export class LucidService {
     );
   }
   public getClientPolicyId(): string {
-    return this.configService.get('deployment').validators.mintClient.scriptHash;
+    return this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
   }
   public getConnectionPolicyId(): string {
-    return this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
   public getChannelPolicyId(): string {
-    return this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
   public getClientAuthTokenUnit(handlerDatum: HandlerDatum, clientId: bigint): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
-    // const encodedNextClientSequence = this.LucidImporter.Data.to(handlerDatum.state.next_client_sequence - 1n);
-    const baseToken = handlerDatum.token;
-    const clientStateTokenName = this.generateTokenName(baseToken, CLIENT_PREFIX, clientId);
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
+    const clientStateTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, clientId);
     return mintClientPolicyId + clientStateTokenName;
   }
 
@@ -219,6 +259,8 @@ export class LucidService {
           return (await decodeChannelDatum(encodedDatum, this.LucidImporter)) as T;
         case 'mockModule':
           return (await decodeMockModuleDatum(encodedDatum, this.LucidImporter)) as T;
+        case 'host_state':
+          return (await decodeHostStateDatum(encodedDatum, this.LucidImporter)) as T;
         default:
           throw new Error(`Unknown datum type: ${type}`);
       }
@@ -240,10 +282,39 @@ export class LucidService {
           return await encodeChannelDatum(data as ChannelDatum, this.LucidImporter);
         case 'mockModule':
           return await encodeMockModuleDatum(data as MockModuleDatum, this.LucidImporter);
+        case 'host_state':
+          return await encodeHostStateDatum(data as HostStateDatum, this.LucidImporter);
+        case 'host_state_redeemer': {
+          const { Data: LucidData } = this.LucidImporter;
+          // Must match the HostStateRedeemer ADT in host_state_stt.ak
+          const HostStateRedeemerSchema = LucidData.Enum([
+            LucidData.Literal('CreateClient'),
+            LucidData.Literal('CreateConnection'),
+            LucidData.Literal('CreateChannel'),
+            LucidData.Object({ BindPort: LucidData.Object({ port: LucidData.Integer() }) }),
+            LucidData.Literal('UpdateClient'),
+            LucidData.Literal('UpdateConnection'),
+            LucidData.Literal('UpdateChannel'),
+            LucidData.Literal('HandlePacket'),
+          ]);
+          return LucidData.to(data as string, HostStateRedeemerSchema as any, { canonical: true });
+        }
         case 'spendClientRedeemer':
           return await encodeSpendClientRedeemer(data as SpendClientRedeemer, this.LucidImporter);
         case 'mintClientOperator':
           return await encodeMintClientOperator(data as MintClientOperator, this.LucidImporter);
+        case 'mintClientRedeemer': {
+          // MintClientRedeemer is { handler_auth_token: AuthToken }
+          const { Data } = this.LucidImporter;
+          const AuthTokenSchema = Data.Object({
+            policy_id: Data.Bytes(),
+            name: Data.Bytes(),
+          });
+          const MintClientRedeemerSchema = Data.Object({
+            handler_auth_token: AuthTokenSchema,
+          });
+          return Data.to(data as any, MintClientRedeemerSchema, { canonical: true });
+        }
         case 'handlerOperator':
           return await encodeHandlerOperator(data as HandlerOperator, this.LucidImporter);
         case 'mintConnectionRedeemer':
@@ -268,21 +339,19 @@ export class LucidService {
   }
 
   public getClientTokenUnit(clientId: string): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClient.scriptHash;
-    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
-    const clientTokenName = this.generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(clientId));
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
+    const hostStateNFT: AuthToken = this.configService.get('deployment').hostStateNFT;
+    const clientTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, BigInt(clientId));
     return mintClientPolicyId + clientTokenName;
   }
   public getConnectionTokenUnit(connectionId: bigint): [string, string] {
     const mintConnectionPolicyId = this.getMintConnectionScriptHash();
-    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
-    const connectionTokenName = this.generateTokenName(handlerAuthToken, CONNECTION_TOKEN_PREFIX, BigInt(connectionId));
+    const connectionTokenName = CONNECTION_TOKEN_PREFIX + convertString2Hex(connectionId.toString());
     return [mintConnectionPolicyId, connectionTokenName];
   }
   public getChannelTokenUnit(channelId: bigint): [string, string] {
     const mintChannelPolicyId = this.getMintChannelScriptHash();
-    const handlerAuthToken: AuthToken = this.configService.get('deployment').handlerAuthToken;
-    const channelTokenName = this.generateTokenName(handlerAuthToken, CHANNEL_TOKEN_PREFIX, channelId);
+    const channelTokenName = CHANNEL_TOKEN_PREFIX + convertString2Hex(channelId.toString());
     return [mintChannelPolicyId, channelTokenName];
   }
   // ========================== Build transaction ==========================
@@ -311,53 +380,95 @@ export class LucidService {
   }
 
   public createUnsignedCreateClientTransaction(
-    handlerUtxo: any,
-    encodedHandlerOperator: string,
+    hostStateUtxo: any,
+    encodedHostStateRedeemer: string,
     clientAuthTokenUnit: string,
-    encodedMintClientOperator: string,
-    encodedUpdatedHandlerDatum: string,
+    encodedMintClientRedeemer: string,
+    encodedUpdatedHostStateDatum: string,
     encodedClientDatum: string,
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const handlerAuthToken = deploymentConfig.handlerAuthToken.policyId + deploymentConfig.handlerAuthToken.name;
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
 
-    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintClient])
-      .collectFrom([handlerUtxo], encodedHandlerOperator)
+    console.log('[DEBUG TX] ========== CREATE CLIENT TRANSACTION ==========');
+    console.log('[DEBUG TX] HostState NFT:', hostStateNFT);
+    console.log('[DEBUG TX] Client auth token unit:', clientAuthTokenUnit);
+    console.log('[DEBUG TX] HostState STT address:', deploymentConfig.validators.hostStateStt.address);
+    console.log('[DEBUG TX] Spend Client address:', deploymentConfig.validators.spendClient.address);
+    console.log('[DEBUG TX] HostState STT ref script:', this.referenceScripts.hostStateStt.txHash + '#' + this.referenceScripts.hostStateStt.outputIndex);
+    console.log('[DEBUG TX] Mint Client ref script:', this.referenceScripts.mintClient.txHash + '#' + this.referenceScripts.mintClient.outputIndex);
+
+    // STT Transaction Structure:
+    // 1. Spend the old HostState UTXO (with NFT)
+    // 2. Create a new HostState UTXO (with same NFT, updated datum)
+    // 3. Mint and create the new Client UTXO
+    
+    // CRITICAL: Override the datum in the UTXO to prevent Lucid from re-encoding it
+    // Lucid Evolution has a bug where it re-encodes inline datums with indefinite arrays
+    // We pass the original datum bytes explicitly to bypass Lucid's re-encoding
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,  // Keep the raw hex datum
+      datumHash: undefined,  // Remove datumHash to force inline datum
+    };
+    
+    console.log('[DEBUG TX] HostState UTXO datum (keeping raw):', hostStateUtxo.datum?.substring(0, 50));
+    console.log('[DEBUG TX] Redeemer for spending:', encodedHostStateRedeemer);
+    
+    // Build transaction: spend HostState UTXO, mint client token, create outputs
+    tx.readFrom([this.referenceScripts.hostStateStt, this.referenceScripts.mintClient])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .mintAssets(
         {
           [clientAuthTokenUnit]: 1n,
         },
-        encodedMintClientOperator,
+        encodedMintClientRedeemer,
       );
 
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
-    addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
-      [handlerAuthToken]: 1n,
+    
+    // Recreate HostState UTXO with updated datum and same NFT
+    addPayToContract(deploymentConfig.validators.hostStateStt.address, encodedUpdatedHostStateDatum, {
+      [hostStateNFT]: 1n,
     });
+    
+    // Create new Client UTXO
     addPayToContract(deploymentConfig.validators.spendClient.address, encodedClientDatum, {
       [clientAuthTokenUnit]: 1n,
     });
-    // Optional: call validTo method if needed
+    
+    console.log('[DEBUG TX] ================================================');
+    
     return tx;
   }
   public createUnsignedConnectionOpenInitTransaction(
     handlerUtxo: UTxO,
+    hostStateUtxo: UTxO,
+    encodedHostStateRedeemer: string,
     encodedSpendHandlerRedeemer: string,
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedMintConnectionRedeemer: string,
     encodedUpdatedHandlerDatum: string,
+    encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,
+      datumHash: undefined,
+    };
 
-    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintConnection])
+    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintConnection, this.referenceScripts.hostStateStt])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
@@ -370,6 +481,9 @@ export class LucidService {
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
+    addPayToContract(deploymentConfig.validators.hostStateStt.address, encodedUpdatedHostStateDatum, {
+      [hostStateNFT]: 1n,
+    });
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
     });
@@ -380,18 +494,28 @@ export class LucidService {
   }
   public createUnsignedConnectionOpenTryTransaction(
     handlerUtxo: UTxO,
+    hostStateUtxo: UTxO,
+    encodedHostStateRedeemer: string,
     encodedSpendHandlerRedeemer: string,
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedMintConnectionRedeemer: string,
     encodedUpdatedHandlerDatum: string,
+    encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,
+      datumHash: undefined,
+    };
 
-    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintConnection])
+    tx.readFrom([this.referenceScripts.spendHandler, this.referenceScripts.mintConnection, this.referenceScripts.hostStateStt])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
@@ -404,6 +528,9 @@ export class LucidService {
     const addPayToContract = (address: string, inline: string, token: Record<string, bigint>) => {
       tx.pay.ToContract(address, { kind: 'inline', value: inline }, token);
     };
+    addPayToContract(deploymentConfig.validators.hostStateStt.address, encodedUpdatedHostStateDatum, {
+      [hostStateNFT]: 1n,
+    });
     addPayToContract(deploymentConfig.validators.spendHandler.address, encodedUpdatedHandlerDatum, {
       [this.getHandlerTokenUnit()]: 1n,
     });
@@ -1143,10 +1270,10 @@ export class LucidService {
   // ========================== private functions ==========================
 
   private getMintConnectionScriptHash(): string {
-    return this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
   }
   private getMintChannelScriptHash(): string {
-    return this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
   }
 
   public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {
@@ -1160,27 +1287,11 @@ export class LucidService {
   };
 
   private txFromWallet(constructedAddress: string): TxBuilder {
-    if (constructedAddress) {
-      try {
-        let signer = constructedAddress;
-        /*
-          TODO: signing should be done by relayer in the future
-
-          if (!constructedAddress.startsWith('addr_')) {
-            signer = credentialToAddress(this.lucid.config().network, {
-              hash: constructedAddress,
-              type: 'Key',
-            });
-          }
-        */
-
-        const seed = this.configService.get('signerWalletSeed');
-        this.lucid.selectWallet.fromSeed(seed, { addressType: 'Enterprise' });
-        // this.lucid.selectWallet.fromAddress(signer, []);
-        return this.lucid.newTx();
-      } catch (err) {
-        throw new GrpcInternalException('invalid constructed address');
-      }
+    // Use the deployer's private key to build transactions
+    // Hermes must be configured with the same key (DEPLOYER_SK) to sign correctly
+    const deployerSk = this.configService.get('deployerSk');
+    if (deployerSk) {
+      this.lucid.selectWallet.fromPrivateKey(deployerSk);
     }
     return this.lucid.newTx();
   }

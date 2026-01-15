@@ -7,9 +7,8 @@ use crate::setup::{
 use crate::utils::{
     copy_dir_all, diagnose_container_failure, download_file, execute_script,
     execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
-    get_cardano_state, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
+    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
     IndicatorMessage,
-    copy_dir_all, download_file, execute_script, execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage
 };
 use crate::{
     config,
@@ -101,7 +100,6 @@ pub fn start_relayer(
         ),
         &optional_progress_bar,
     );
-    )?;
 
     execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
@@ -508,7 +506,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     let url = "http://127.0.0.1:4500/";
     let max_retries = 60;
     let interval_ms = 10000; // 10 seconds
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder().no_proxy().build()?;
     
     for retry in 0..max_retries {
         let response = client.get(url).send().await;
@@ -694,8 +692,7 @@ pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::erro
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("PASS: Osmosis configuration files copied successfully");
-            remove_previous_chain_data()?;
-            verbose("✅ Osmosis configuration files copied successfully");
+            verbose("Osmosis configuration files copied successfully");
             init_local_network(osmosis_dir)?;
             Ok(())
         }
@@ -1379,6 +1376,42 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     
     execute_script(&gateway_dir, "docker", script_args, None)?;
 
+    // Wait for Gateway gRPC port to be accessible
+    log_or_show_progress("Waiting for Gateway gRPC server to be ready", &optional_progress_bar);
+    let max_retries = 30; // 30 seconds max
+    let mut gateway_ready = false;
+    
+    for i in 0..max_retries {
+        // Check if gRPC port 5001 is accessible
+        let port_check = Command::new("nc")
+            .args(&["-z", "localhost", "5001"])
+            .output();
+        
+        if let Ok(output) = port_check {
+            if output.status.success() {
+                gateway_ready = true;
+                break;
+            }
+        }
+        
+        if i < max_retries - 1 {
+            thread::sleep(Duration::from_secs(1));
+            log_or_show_progress(
+                &format!("Waiting for Gateway gRPC... ({}/{})", i + 1, max_retries),
+                &optional_progress_bar,
+            );
+        }
+    }
+    
+    if !gateway_ready {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err("Gateway gRPC server (port 5001) did not become ready in time".into());
+    }
+    
+    log_or_show_progress("Gateway gRPC server is ready", &optional_progress_bar);
+
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
@@ -1636,13 +1669,6 @@ pub fn configure_hermes_cardano_cheqd(
     log("IBC channel created");
     log("Hermes configured successfully!");
     
-    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> =
-        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
-    execute_script(&gateway_dir, "docker", script_args, Some(docker_env_refs))?;
     Ok(())
 }
 
@@ -2107,18 +2133,18 @@ fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
-            // Try to connect to port 3001
+            // Try to connect to gRPC port 5001 (Hermes connects here)
             let port_check = Command::new("nc")
-                .args(&["-z", "localhost", "3001"])
+                .args(&["-z", "localhost", "5001"])
                 .output();
             
             if let Ok(port_output) = port_check {
                 if port_output.status.success() {
-                    return (true, "Container running, port 3001 accessible".to_string());
+                    return (true, "Container running, gRPC port 5001 accessible".to_string());
                 }
             }
             
-            return (true, "Container running".to_string());
+            return (true, "Container running (gRPC not ready yet)".to_string());
         }
     }
     

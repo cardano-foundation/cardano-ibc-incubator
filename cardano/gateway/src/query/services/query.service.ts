@@ -25,6 +25,7 @@ import {
 import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
+import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
 import { decodeHandlerDatum } from '@shared/types/handler-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
@@ -97,6 +98,16 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
+import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import {
+  QueryDenomTraceRequest,
+  QueryDenomTraceResponse,
+  QueryDenomTracesRequest,
+  QueryDenomTracesResponse,
+} from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
+import { DenomTrace } from '@plus/proto-types/build/ibc/applications/transfer/v1/transfer';
+import { DenomTraceService } from './denom-trace.service';
 
 @Injectable()
 export class QueryService {
@@ -104,9 +115,11 @@ export class QueryService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    @Inject(KupoService) private kupoService: KupoService,
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
+    @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
   ) {}
 
   async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -199,12 +212,26 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    // const blockHeight = await (await this.getLedgerStateQueryClient()).blockHeight();
-    // const latestBlockNo = await this.dbService.queryLatestBlockNo();
-    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    // Prefer Mithril snapshots when available; fall back to db-sync for devnet/when Mithril is disabled.
+    try {
+      const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+      if (listSnapshots?.length) {
+        const latestHeightResponse = {
+          height: listSnapshots[0].block_number,
+        };
+        this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
+        return latestHeightResponse as unknown as QueryLatestHeightResponse;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Mithril snapshot unavailable, falling back to db-sync latest block height: ${error?.message ?? error}`,
+        'QueryLatestHeight',
+      );
+    }
 
+    const latestBlockNo = await this.dbService.queryLatestBlockNo();
     const latestHeightResponse = {
-      height: listSnapshots[0].block_number,
+      height: latestBlockNo,
     };
     this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
@@ -240,9 +267,24 @@ export class QueryService {
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),
     };
 
+    // Generate ICS-23 proof from the IBC state tree
+    const ibcPath = `clients/${clientId}/clientState`;
+    const tree = getCurrentTree();
+    
+    let clientProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      clientProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for client ${clientId}, proof size: ${clientProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+
     const response = {
       client_state: clientStateAny,
-      proof: bytesFromBase64(btoa(`0-${proofHeight}/client/${spendClientUTXO.txHash}/${spendClientUTXO.outputIndex}`)),
+      proof: clientProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
         revision_height: proofHeight,
@@ -271,11 +313,25 @@ export class QueryService {
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
     const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
+    
+    // Generate ICS-23 proof from the IBC state tree
+    const ibcPath = `clients/${clientId}/consensusStates/${heightReq}`;
+    const tree = getCurrentTree();
+    
+    let consensusProof: Buffer;
+    try {
+      const existenceProof = tree.generateProof(ibcPath);
+      consensusProof = serializeExistenceProof(existenceProof);
+      
+      this.logger.log(`Generated ICS-23 proof for consensus state ${clientId}@${heightReq}, proof size: ${consensusProof.length} bytes`);
+    } catch (error) {
+      this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
+      throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
+    }
+    
     const response = {
       consensus_state: consensusStateAny,
-      proof: bytesFromBase64(
-        btoa(`0-${proofHeight}/consensus/${spendClientUTXO.txHash}/${spendClientUTXO.outputIndex}`),
-      ),
+      proof: consensusProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
         revision_height: proofHeight,
@@ -292,7 +348,15 @@ export class QueryService {
     }
 
     const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
-    const blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
+    let blockHeader = null;
+    try {
+      blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
+    } catch (err) {
+      this.logger.warn(
+        `Failed to fetch block header via mini-protocols for height=${height} slot=${blockDto.slot}: ${err?.message ?? err}`,
+        'queryBlockData',
+      );
+    }
     try {
       const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDto, blockHeader);
       blockDataOuroboros.chain_id = `${this.configService.get('cardanoChainNetworkMagic')}`;
@@ -391,6 +455,64 @@ export class QueryService {
       this.logger.error(err);
 
       this.logger.error(err.message, 'queryBlockResults');
+      throw new GrpcInternalException(err.message);
+    }
+  }
+
+  async queryEvents(request: { since_height: bigint }): Promise<{
+    current_height: bigint;
+    events: Array<{ height: bigint; events: ResponseDeliverTx[] }>;
+  }> {
+    const { since_height } = request;
+
+    if (since_height === undefined || since_height === null) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "since_height" must be provided');
+    }
+
+    try {
+      // Get current height
+      const latestHeight = await this.latestHeight({});
+      const currentHeight = Number(latestHeight.height);
+
+      // If since_height >= current, return empty
+      if (Number(since_height) >= currentHeight) {
+        return {
+          current_height: BigInt(currentHeight),
+          events: [],
+        };
+      }
+
+      // Query events for each block from since_height+1 to current
+      const blockEvents: Array<{ height: bigint; events: ResponseDeliverTx[] }> = [];
+      const startHeight = Number(since_height) + 1;
+
+      // Limit to reasonable range (e.g., 100 blocks at a time)
+      const endHeight = Math.min(currentHeight, startHeight + 100);
+
+      for (let height = startHeight; height <= endHeight; height++) {
+        try {
+          // Reuse existing queryBlockResults logic
+          const blockResult = await this.queryBlockResults({ height: BigInt(height) });
+
+          if (blockResult.block_results.txs_results.length > 0) {
+            blockEvents.push({
+              height: BigInt(height),
+              events: blockResult.block_results.txs_results,
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Failed to query events at height ${height}: ${err.message}`);
+          // Continue with next block
+        }
+      }
+
+      return {
+        current_height: BigInt(currentHeight),
+        events: blockEvents,
+      };
+    } catch (err) {
+      this.logger.error(err);
+      this.logger.error(err.message, 'queryEvents');
       throw new GrpcInternalException(err.message);
     }
   }
@@ -787,5 +909,97 @@ export class QueryService {
       header: mithrilHeaderAny,
     };
     return response;
+  }
+
+  /**
+   * Query the IBC state root at a specific height
+   * This is used by the Mithril light client on Cosmos to retrieve the ICS-23 Merkle root
+   * that has been certified by Mithril snapshot inclusion
+   * 
+   * Architecture:
+   * - Queries Kupo indexer for Handler UTXO at the specified height
+   * - Extracts ibc_state_root from the UTXO datum
+   * - Kupo must have indexed from at least the Handler UTXO deployment block
+   * 
+   * @param height - The Cardano block height to query
+   * @returns The IBC state root (32-byte hex string) at the specified height
+   */
+  async queryIBCStateRoot(height: number): Promise<{ root: string, height: number }> {
+    this.logger.log(`Querying IBC state root at height ${height}`);
+    
+    try {
+      // Query Kupo for the root at the specified height
+      const root = await this.kupoService.queryIBCStateRootAtHeight(height);
+      
+      return {
+        root: root,
+        height: height,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
+      throw new GrpcInternalException(`Failed to query IBC state root: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query a denom trace by its hash
+   */
+  async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
+    this.logger.log(`Querying denom trace for hash: ${request.hash}`);
+    
+    try {
+      if (!request.hash) {
+        throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+      }
+
+      const denomTrace = await this.denomTraceService.findByHash(request.hash);
+      
+      if (!denomTrace) {
+        throw new GrpcNotFoundException(`Denom trace not found for hash: ${request.hash}`);
+      }
+
+      const response: QueryDenomTraceResponse = {
+        denom_trace: {
+          path: denomTrace.path,
+          base_denom: denomTrace.base_denom,
+        },
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Failed to query denom trace: ${error.message}`);
+      if (error instanceof GrpcNotFoundException || error instanceof GrpcInvalidArgumentException) {
+        throw error;
+      }
+      throw new GrpcInternalException(`Failed to query denom trace: ${error.message}`);
+    }
+  }
+
+  /**
+   * Query all denom traces with optional pagination
+   */
+  async queryDenomTraces(request: QueryDenomTracesRequest): Promise<QueryDenomTracesResponse> {
+    this.logger.log('Querying all denom traces');
+    
+    try {
+      const pagination = request.pagination ? { offset: Number(request.pagination.offset || 0) } : undefined;
+      const denomTraces = await this.denomTraceService.findAll(pagination);
+      
+      const response: QueryDenomTracesResponse = {
+        denom_traces: denomTraces.map(trace => ({
+          path: trace.path,
+          base_denom: trace.base_denom,
+        })),
+        pagination: {
+          next_key: new Uint8Array(),
+          total: BigInt(await this.denomTraceService.getCount()),
+        },
+      };
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Failed to query denom traces: ${error.message}`);
+      throw new GrpcInternalException(`Failed to query denom traces: ${error.message}`);
+    }
   }
 }

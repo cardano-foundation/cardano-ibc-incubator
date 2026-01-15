@@ -16,6 +16,7 @@ async function bootstrap() {
   const config = new DocumentBuilder().setTitle('IBC Cardano API').setVersion('1.0').build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, document);
-  await app.listen(8000);
+  const port = Number(process.env.PORT) || 8000;
+  await app.listen(port);
 }
 bootstrap();

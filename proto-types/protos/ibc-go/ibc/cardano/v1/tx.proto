@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package ibc.cardano.v1;
+
+option go_package = "github.com/cosmos/ibc-go/v7/modules/cardano/types";
+
+// CardanoMsg defines the Cardano-specific transaction submission service.
+// This service is used by the Hermes relayer to submit signed Cardano transactions.
+service CardanoMsg {
+  // SubmitSignedTx submits a signed Cardano transaction.
+  rpc SubmitSignedTx(SubmitSignedTxRequest) returns (SubmitSignedTxResponse);
+}
+
+// SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.
+message SubmitSignedTxRequest {
+  // Signed transaction in CBOR hex format.
+  // This is the completed, signed Cardano transaction ready for submission.
+  string signed_tx_cbor = 1;
+  
+  // Optional description for logging/debugging.
+  string description = 2;
+}
+
+// SubmitSignedTxResponse contains the result of submitting a signed transaction.
+message SubmitSignedTxResponse {
+  // Transaction hash (Blake2b-256 hash of the signed transaction).
+  string tx_hash = 1;
+  
+  // Block height at which the transaction was confirmed (if available).
+  string height = 2;
+  
+  // Raw transaction events (for IBC event parsing).
+  repeated Event events = 3;
+}
+
+// Event represents a transaction event with type and attributes.
+message Event {
+  string type = 1;
+  repeated EventAttribute attributes = 2;
+}
+
+// EventAttribute represents a key-value pair in an event.
+message EventAttribute {
+  string key = 1;
+  string value = 2;
+}
+

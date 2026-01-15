@@ -23,7 +23,7 @@ export function encodeFungibleTokenPacketDatum(
   type TFungibleTokenPacketDatum = Data.Static<typeof FungibleTokenPacketDatumSchema>;
   const TFungibleTokenPacketDatum = FungibleTokenPacketDatumSchema as unknown as FungibleTokenPacketDatum;
 
-  return Data.to(fungibleTokenPacketDatum, TFungibleTokenPacketDatum);
+  return Data.to(fungibleTokenPacketDatum, TFungibleTokenPacketDatum, { canonical: true });
 }
 
 export function decodeFungibleTokenPacketDatum(

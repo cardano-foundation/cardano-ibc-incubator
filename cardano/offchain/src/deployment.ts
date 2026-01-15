@@ -28,7 +28,7 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema } from "../types/index.ts";
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -139,6 +139,50 @@ export const createDeployment = async (
     name: handlerTokenName,
   };
   const handlerTokenUnit = mintHandlerPolicyId + handlerTokenName;
+
+  // Deploy HostState (STT Architecture)
+  const {
+    mintHostStateNFT,
+    hostStateStt,
+    hostStateNFT,
+  } = await deployHostState(lucid);
+  referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
+
+  // Load STT minting validators (parameterized for STT architecture)
+  console.log("Loading STT minting validators...");
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'deployment.ts:153',message:'Attempting to load STT validators',data:{spendClientScriptHash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
+  
+  // Load mint client STT validator (parameterized by spend_client_script_hash, host_state_nft_policy_id)
+  const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
+    "minting_client_stt.mint_client_stt.mint",
+    lucid,
+    [spendClientScriptHash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string]
+  );
+  referredValidators.push(mintClientSttValidator);
+
+  // Load mint connection STT validator (parameterized by client_mint, verify_proof, spend_connection, host_state_nft hashes)
+  const [mintConnectionSttValidator, mintConnectionSttPolicyId] = await readValidator(
+    "minting_connection_stt.mint_connection_stt.mint",
+    lucid,
+    [mintClientSttPolicyId, verifyProofPolicyId, spendConnectionScriptHash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string]
+  );
+  referredValidators.push(mintConnectionSttValidator);
+
+  // Load mint channel STT validator (parameterized by client_mint, connection_mint, port_mint, verify_proof, spend_channel, host_state_nft hashes)
+  const [mintChannelSttValidator, mintChannelSttPolicyId] = await readValidator(
+    "minting_channel_stt.mint_channel_stt.mint",
+    lucid,
+    [mintClientSttPolicyId, mintConnectionSttPolicyId, mintPortPolicyId, verifyProofPolicyId, spendingChannel.base.hash, mintHostStateNFT.policyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string, string, string]
+  );
+  referredValidators.push(mintChannelSttValidator);
+  
+  console.log("STT minting validators loaded");
 
   // load mint identifier validator
   const [mintIdentifierValidator, mintIdentifierPolicyId] = await readValidator(
@@ -271,10 +315,49 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[verifyProofPolicyId],
       },
+      mintHostStateNFT: {
+        title: "host_state_nft.host_state_nft.mint",
+        script: mintHostStateNFT.validator.script,
+        scriptHash: mintHostStateNFT.policyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintHostStateNFT.policyId],
+      },
+      hostStateStt: {
+        title: "host_state_stt.host_state_stt.spend",
+        script: hostStateStt.validator.script,
+        scriptHash: hostStateStt.scriptHash,
+        address: hostStateStt.address,
+        refUtxo: refUtxosInfo[hostStateStt.scriptHash],
+      },
+      mintClientStt: {
+        title: "minting_client_stt.mint_client_stt.mint",
+        script: mintClientSttValidator.script,
+        scriptHash: mintClientSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintClientSttPolicyId],
+      },
+      mintConnectionStt: {
+        title: "minting_connection_stt.mint_connection_stt.mint",
+        script: mintConnectionSttValidator.script,
+        scriptHash: mintConnectionSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintConnectionSttPolicyId],
+      },
+      mintChannelStt: {
+        title: "minting_channel_stt.mint_channel_stt.mint",
+        script: mintChannelSttValidator.script,
+        scriptHash: mintChannelSttPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintChannelSttPolicyId],
+      },
     },
     handlerAuthToken: {
       policyId: handlerToken.policy_id,
       name: handlerToken.name,
+    },
+    hostStateNFT: {
+      policyId: hostStateNFT.policy_id,
+      name: hostStateNFT.name,
     },
     modules: {
       handler: {
@@ -422,12 +505,17 @@ const deployHandler = async (
   const handlerTokenUnit = mintHandlerPolicyId + HANDLER_TOKEN_NAME;
 
   // create handler datum
+  // ibc_state_root initialized to empty tree root (32 bytes of 0x00)
+  // This root will be updated with each IBC state change to reflect the current ICS-23 Merkle commitment
+  const EMPTY_TREE_ROOT = "0000000000000000000000000000000000000000000000000000000000000000";
+  
   const initHandlerDatum: HandlerDatum = {
     state: {
       next_client_sequence: 0n,
       next_connection_sequence: 0n,
       next_channel_sequence: 0n,
       bound_port: [],
+      ibc_state_root: EMPTY_TREE_ROOT,
     },
     token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
   };
@@ -452,7 +540,7 @@ const deployHandler = async (
       spendHandlerAddress,
       {
         kind: "inline",
-        value: Data.to(initHandlerDatum, HandlerDatum),
+        value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
       },
       {
         [handlerTokenUnit]: 1n,
@@ -558,35 +646,34 @@ const deployTransferModule = async (
   const mintModuleTx = lucid
     .newTx()
     .collectFrom([nonceUtxo], Data.void())
-    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator))
+    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }))
     .attach.SpendingValidator(spendHandlerValidator)
     .attach.MintingPolicy(mintPortValidator)
     .mintAssets(
       {
         [portTokenUnit]: 1n,
       },
-      Data.to(mintPortRedeemer, MintPortRedeemer)
+      Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true })
     )
     .attach.MintingPolicy(mintIdentifierValidator)
     .mintAssets(
       {
         [identifierTokenUnit]: 1n,
       },
-      Data.to(outputReference, OutputReference)
+      Data.to(outputReference, OutputReference, { canonical: true })
     )
     .pay.ToContract(
       validatorToAddress(lucid.config().network || 'Custom', spendHandlerValidator),
       {
         kind: "inline",
-        value: Data.to(updatedHandlerDatum, HandlerDatum),
+        value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
       },
       {
         [handlerTokenUnit]: 1n,
       }
     )
-    .pay.ToContract(
+    .pay.ToAddress(
       spendTransferModuleAddress,
-      undefined,
       {
         [identifierTokenUnit]: 1n,
         [portTokenUnit]: 1n,
@@ -605,6 +692,106 @@ const deployTransferModule = async (
       validator: spendTransferModuleValidator,
       scriptHash: spendTransferModuleScriptHash,
       address: spendTransferModuleAddress,
+    },
+  };
+};
+
+const deployHostState = async (lucid: LucidEvolution) => {
+  console.log("Deploy HostState (STT Architecture)");
+  
+  // Get nonce UTXO for one-time mint
+  const signerUtxos = await lucid.wallet().getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO found.");
+  const NONCE_UTXO = signerUtxos[0];
+  
+  const outputReference: OutputReference = {
+    transaction_id: NONCE_UTXO.txHash,
+    output_index: BigInt(NONCE_UTXO.outputIndex),
+  };
+  
+  // Load mint hostStateNFT validator (parameterized by UTXO ref)
+  const [mintHostStateNFTValidator, mintHostStateNFTPolicyId] = await readValidator(
+    "host_state_nft.host_state_nft.mint",
+    lucid,
+    [outputReference],
+    Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference]
+  );
+  
+  // Load hostStateStt spending validator (parameterized by nft_policy)
+  // CRITICAL: This validator MUST be parameterized with the NFT policy ID to verify NFT continuity
+  const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] = await readValidator(
+    "host_state_stt.host_state_stt.spend",
+    lucid,
+    [mintHostStateNFTPolicyId],  // Pass the NFT policy ID as parameter
+    Data.Tuple([Data.Bytes()]) as unknown as [string]  // Schema for the nft_policy parameter (must be Tuple for applyParamsToScript)
+  );
+  
+  const HOST_STATE_TOKEN_NAME = fromText("ibc_host_state");
+  const hostStateNFTUnit = mintHostStateNFTPolicyId + HOST_STATE_TOKEN_NAME;
+  
+  // Create initial HostState datum
+  // ibc_state_root initialized to empty tree root (32 bytes of 0x00)
+  const EMPTY_TREE_ROOT = "0000000000000000000000000000000000000000000000000000000000000000";
+  const currentTime = Date.now();
+  
+  const initHostStateDatum: HostStateDatum = {
+    state: {
+      version: 0n,
+      ibc_state_root: EMPTY_TREE_ROOT,
+      next_client_sequence: 0n,
+      next_connection_sequence: 0n,
+      next_channel_sequence: 0n,
+      bound_port: [],
+      last_update_time: BigInt(currentTime),
+    },
+    nft_policy: mintHostStateNFTPolicyId,
+  };
+  
+  // Create and send tx to mint NFT and create HostState UTXO
+  // NFTRedeemer has only one variant (MintInitial) with no fields
+  // Use Data.void() as the redeemer (same as other simple mints)
+  const encodedRedeemer = Data.void();
+  
+  const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, { canonical: true });
+  
+  const mintHostStateTx = lucid
+    .newTx()
+    .collectFrom([NONCE_UTXO])
+    .attach.MintingPolicy(mintHostStateNFTValidator)
+    .mintAssets(
+      {
+        [hostStateNFTUnit]: 1n,
+      },
+      encodedRedeemer
+    )
+    .pay.ToContract(
+      hostStateSttAddress,
+      {
+        kind: "inline",
+        value: encodedDatum,
+      },
+      {
+        [hostStateNFTUnit]: 1n,
+      }
+    );
+  
+  await submitTx(mintHostStateTx, lucid, "MintHostStateNFT");
+  
+  console.log("HostState NFT minted and HostState UTXO created");
+  
+  return {
+    mintHostStateNFT: {
+      validator: mintHostStateNFTValidator,
+      policyId: mintHostStateNFTPolicyId,
+    },
+    hostStateStt: {
+      validator: hostStateSttValidator,
+      scriptHash: hostStateSttScriptHash,
+      address: hostStateSttAddress,
+    },
+    hostStateNFT: {
+      policy_id: mintHostStateNFTPolicyId,
+      name: HOST_STATE_TOKEN_NAME,
     },
   };
 };

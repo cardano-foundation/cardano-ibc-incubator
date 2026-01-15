@@ -14,7 +14,7 @@ export async function encodeHeight(height: Height, Lucid: typeof import('@lucid-
   });
   type THeight = Data.Static<typeof HeightSchema>;
   const THeight = HeightSchema as unknown as Height;
-  return Data.to(height, THeight);
+  return Data.to(height, THeight, { canonical: true });
 }
 
 // IsRevisionFormat checks if a chainID is in the format required for parsing revisions
