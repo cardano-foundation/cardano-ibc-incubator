@@ -146,7 +146,7 @@ export async function encodeMintChannelRedeemer(
   ]);
   type TMintChannelRedeemer = Data.Static<typeof MintChannelRedeemerSchema>;
   const TMintChannelRedeemer = MintChannelRedeemerSchema as unknown as MintChannelRedeemer;
-  return Data.to(mintChannelRedeemer, TMintChannelRedeemer);
+  return Data.to(mintChannelRedeemer, TMintChannelRedeemer, { canonical: true });
 }
 
 export async function encodeSpendChannelRedeemer(
@@ -268,7 +268,7 @@ export async function encodeSpendChannelRedeemer(
   ]);
   type TSpendChannelRedeemer = Data.Static<typeof SpendChannelRedeemerSchema>;
   const TSpendChannelRedeemer = SpendChannelRedeemerSchema as unknown as SpendChannelRedeemer;
-  return Data.to(spendChannelRedeemer, TSpendChannelRedeemer);
+  return Data.to(spendChannelRedeemer, TSpendChannelRedeemer, { canonical: true });
 }
 
 export function decodeMintChannelRedeemer(

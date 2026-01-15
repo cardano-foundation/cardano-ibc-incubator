@@ -190,7 +190,7 @@ export async function encodeIBCModuleRedeemer(
 
   type TIBCModuleRedeemer = Data.Static<typeof IBCModuleRedeemerSchema>;
   const TIBCModuleRedeemer = IBCModuleRedeemerSchema as unknown as IBCModuleRedeemer;
-  return Data.to(ibcModuleRedeemer, TIBCModuleRedeemer);
+  return Data.to(ibcModuleRedeemer, TIBCModuleRedeemer, { canonical: true });
 }
 
 export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('@lucid-evolution/lucid')) {

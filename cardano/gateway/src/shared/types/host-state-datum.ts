@@ -33,7 +33,11 @@ export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
 
+<<<<<<< HEAD
   return Data.to(hostStateDatum, THostStateDatum);
+=======
+  return Data.to(hostStateDatum, THostStateDatum, { canonical: true });
+>>>>>>> main
 }
 
 export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {

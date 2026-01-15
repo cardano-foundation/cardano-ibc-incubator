@@ -38,11 +38,19 @@ export class TreeInitService implements OnModuleInit {
         this.lucidService,
       );
       
+<<<<<<< HEAD
       this.logger.log(`✅ IBC state tree initialized successfully`);
       this.logger.log(`   Root: ${root.substring(0, 16)}...`);
       
     } catch (error) {
       this.logger.error(`❌ Failed to initialize IBC state tree: ${error.message}`);
+=======
+      this.logger.log(`IBC state tree initialized successfully`);
+      this.logger.log(`   Root: ${root.substring(0, 16)}...`);
+      
+    } catch (error) {
+      this.logger.error(`Failed to initialize IBC state tree: ${error.message}`);
+>>>>>>> main
       this.logger.error(`   Gateway cannot start without valid tree state`);
       this.logger.error(`   Please verify:`);
       this.logger.error(`   - Kupo is running and indexing`);
@@ -54,4 +62,7 @@ export class TreeInitService implements OnModuleInit {
     }
   }
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> main

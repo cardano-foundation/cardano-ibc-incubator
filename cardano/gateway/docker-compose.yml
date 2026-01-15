@@ -1,5 +1,6 @@
 services:
   app:
+    container_name: gateway-app
     build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile

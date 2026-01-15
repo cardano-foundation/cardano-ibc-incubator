@@ -32,7 +32,7 @@ export async function encodeHandlerDatum(handlerDatum: HandlerDatum, Lucid: type
   type THandlerDatum = Data.Static<typeof HandlerDatumSchema>;
   const THandlerDatum = HandlerDatumSchema as unknown as HandlerDatum;
 
-  return Data.to(handlerDatum, THandlerDatum);
+  return Data.to(handlerDatum, THandlerDatum, { canonical: true });
 }
 export async function decodeHandlerDatum(handlerDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;

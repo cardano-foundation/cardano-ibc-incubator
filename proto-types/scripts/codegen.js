@@ -108,7 +108,7 @@ telescope({
     `;
     writeFileSync(`${outPath}/index.ts`, index_ts);
 
-    console.log("✨ All Done!");
+    console.log("All Done!");
   },
   (e) => {
     console.error(e);

@@ -30,5 +30,5 @@ export async function encodeMockModuleDatum(
   type TMockModuleDatum = Data.Static<typeof MockModuleDatumSchema>;
   const TMockModuleDatum = MockModuleDatumSchema as unknown as MockModuleDatum;
 
-  return Data.to(mockModuleDatum, TMockModuleDatum);
+  return Data.to(mockModuleDatum, TMockModuleDatum, { canonical: true });
 }

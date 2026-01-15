@@ -53,5 +53,5 @@ export function encodeMintVoucherRedeemer(
   type TMintVoucherRedeemer = Data.Static<typeof MintVoucherRedeemerSchema>;
   const TMintVoucherRedeemer = MintVoucherRedeemerSchema as unknown as MintVoucherRedeemer;
 
-  return Data.to(mintVoucherRedeemer, TMintVoucherRedeemer);
+  return Data.to(mintVoucherRedeemer, TMintVoucherRedeemer, { canonical: true });
 }

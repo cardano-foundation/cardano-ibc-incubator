@@ -28,7 +28,11 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
+<<<<<<< HEAD
 import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum, HostStateDatumSchema } from "../types/index.ts";
+=======
+import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum } from "../types/index.ts";
+>>>>>>> main
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -618,7 +622,7 @@ const deployHandler = async (
       spendHandlerAddress,
       {
         kind: "inline",
-        value: Data.to(initHandlerDatum, HandlerDatum),
+        value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
       },
       {
         [handlerTokenUnit]: 1n,
@@ -724,35 +728,34 @@ const deployTransferModule = async (
   const mintModuleTx = lucid
     .newTx()
     .collectFrom([nonceUtxo], Data.void())
-    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator))
+    .collectFrom([handlerUtxo], Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }))
     .attach.SpendingValidator(spendHandlerValidator)
     .attach.MintingPolicy(mintPortValidator)
     .mintAssets(
       {
         [portTokenUnit]: 1n,
       },
-      Data.to(mintPortRedeemer, MintPortRedeemer)
+      Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true })
     )
     .attach.MintingPolicy(mintIdentifierValidator)
     .mintAssets(
       {
         [identifierTokenUnit]: 1n,
       },
-      Data.to(outputReference, OutputReference)
+      Data.to(outputReference, OutputReference, { canonical: true })
     )
     .pay.ToContract(
       validatorToAddress(lucid.config().network || 'Custom', spendHandlerValidator),
       {
         kind: "inline",
-        value: Data.to(updatedHandlerDatum, HandlerDatum),
+        value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
       },
       {
         [handlerTokenUnit]: 1n,
       }
     )
-    .pay.ToContract(
+    .pay.ToAddress(
       spendTransferModuleAddress,
-      undefined,
       {
         [identifierTokenUnit]: 1n,
         [portTokenUnit]: 1n,
@@ -831,6 +834,7 @@ const deployHostState = async (lucid: LucidEvolution) => {
   // Use Data.void() as the redeemer (same as other simple mints)
   const encodedRedeemer = Data.void();
   
+<<<<<<< HEAD
   // CRITICAL: Manually encode with definite-length arrays for Aiken compatibility
   // Lucid's Data.to() uses indefinite-length arrays which Aiken validators cannot deserialize
   function hexToBytes(hex: string): number[] {
@@ -885,6 +889,9 @@ const deployHostState = async (lucid: LucidEvolution) => {
   cborBytes.push(...hexToBytes(mintHostStateNFTPolicyId));
   
   const encodedDatum = Uint8Array.from(cborBytes).reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+=======
+  const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, { canonical: true });
+>>>>>>> main
   
   const mintHostStateTx = lucid
     .newTx()

@@ -53,7 +53,7 @@ export async function encodeConnectionDatum(
   });
   type TConnectionDatum = Data.Static<typeof ConnectionDatumSchema>;
   const TConnectionDatum = ConnectionDatumSchema as unknown as ConnectionDatum;
-  return Data.to(connectionDatum, TConnectionDatum);
+  return Data.to(connectionDatum, TConnectionDatum, { canonical: true });
 }
 
 export async function decodeConnectionDatum(connectionDatum: string, Lucid: typeof import('@lucid-evolution/lucid')) {

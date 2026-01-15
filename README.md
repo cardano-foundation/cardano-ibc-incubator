@@ -71,6 +71,7 @@ git commit -m "chore: update Hermes submodule to latest"
 
 This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
 
+
 #### Hermes Configuration
 
 > [!CAUTION]

@@ -4,3 +4,6 @@ Cargo.lock
 **/*.rs.bk
 *.pdb
 .idea/
+.cargo-home/
+.local/
+.rustup-home/

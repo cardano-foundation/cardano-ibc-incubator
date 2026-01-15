@@ -478,9 +478,16 @@ export class ClientService {
     // Encode all data for the transaction
     const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+<<<<<<< HEAD
     // CRITICAL: Use definite-length CBOR encoding for Aiken compatibility
     // Lucid's Data.to() uses indefinite-length arrays which Aiken validators cannot deserialize
     const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
+=======
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(
+      updatedHostStateDatum,
+      'host_state',
+    );
+>>>>>>> main
     const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
     
     this.logger.log(`[DEBUG] ==================== TRANSACTION CBOR VALUES ====================`);

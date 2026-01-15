@@ -463,7 +463,7 @@ async fn main() {
 
                 // Start gateway
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
                     Err(error) => {
                         bridge_down_with_error(&format!("ERROR: Failed to start gateway: {}", error))
                     }
@@ -517,7 +517,11 @@ async fn main() {
             if target == StartTarget::Gateway {
                 // Start only the Gateway service
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
+<<<<<<< HEAD
                     Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 3001)"),
+=======
+                    Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
+>>>>>>> main
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start gateway: {}", error));
                         std::process::exit(1);
@@ -680,12 +684,21 @@ async fn main() {
                     ));
 
                     if results.all_passed() {
+<<<<<<< HEAD
                         logger::log("\n✅ All integration tests passed!");
                     } else if results.has_failures() {
                         logger::error("\n❌ Tests failed! Fix the errors above and try again.");
                         std::process::exit(1);
                     } else if results.skipped > 0 {
                         logger::log("\n⚠️  Some tests were skipped due to prerequisite failures.");
+=======
+                        logger::log("\nAll integration tests passed!");
+                    } else if results.has_failures() {
+                        logger::error("\nTests failed! Fix the errors above and try again.");
+                        std::process::exit(1);
+                    } else if results.skipped > 0 {
+                        logger::log("\nSome tests were skipped due to prerequisite failures.");
+>>>>>>> main
                         std::process::exit(1);
                     }
                 }

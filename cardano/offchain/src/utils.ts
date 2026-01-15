@@ -58,7 +58,7 @@ export const submitTx = async (
   lucid: LucidEvolution,
   txName: string,
   logSize = true,
-  localUPLCEval?: boolean
+  localUPLCEval = false // Default to false to use Ogmios for script evaluation
 ) => {
   console.log("Submitting tx [", txName, "]");
   const completedTx = await tx.complete({ localUPLCEval });
@@ -180,6 +180,8 @@ export const querySystemStart = async (ogmiosUrl: string) => {
 };
 
 export const generateIdentifierTokenName = (outRef: OutputReference) => {
+  // Note: Aiken's cbor.serialise() produces indefinite-length CBOR arrays,
+  // so we must NOT use { canonical: true } here to match the on-chain hash computation.
   const serializedData = Data.to(outRef, OutputReference);
   return hashSha3_256(serializedData);
 };

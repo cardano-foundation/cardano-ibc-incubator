@@ -134,7 +134,7 @@ export async function encodeMintConnectionRedeemer(
   ]);
   type TMintConnectionRedeemer = Data.Static<typeof MintConnectionRedeemerSchema>;
   const TMintConnectionRedeemer = MintConnectionRedeemerSchema as unknown as MintConnectionRedeemer;
-  return Data.to(mintConnectionRedeemer, TMintConnectionRedeemer);
+  return Data.to(mintConnectionRedeemer, TMintConnectionRedeemer, { canonical: true });
 }
 export async function encodeSpendConnectionRedeemer(
   spendConnectionRedeemer: SpendConnectionRedeemer,
@@ -230,7 +230,7 @@ export async function encodeSpendConnectionRedeemer(
   ]);
   type TSpendConnectionRedeemer = Data.Static<typeof SpendConnectionRedeemerSchema>;
   const TSpendConnectionRedeemer = SpendConnectionRedeemerSchema as unknown as SpendConnectionRedeemer;
-  return Data.to(spendConnectionRedeemer, TSpendConnectionRedeemer);
+  return Data.to(spendConnectionRedeemer, TSpendConnectionRedeemer, { canonical: true });
 }
 
 export function decodeMintConnectionRedeemer(
