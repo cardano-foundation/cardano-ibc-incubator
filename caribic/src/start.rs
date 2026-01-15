@@ -101,6 +101,75 @@ pub fn start_relayer(
         &optional_progress_bar,
     );
 
+    // Auto-configure Hermes keys for both chains
+    log_or_show_progress("Setting up Hermes keys for cardano-devnet and sidechain", &optional_progress_bar);
+    
+    // Sidechain: Use the pre-funded "relayer" account from cosmos/sidechain/config.yml
+    let sidechain_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+    let sidechain_mnemonic_file = std::env::temp_dir().join("sidechain-mnemonic.txt");
+    fs::write(&sidechain_mnemonic_file, sidechain_mnemonic)
+        .map_err(|e| format!("Failed to write sidechain mnemonic: {}", e))?;
+    
+    let sidechain_key_output = Command::new(&hermes_binary)
+        .args(&[
+            "keys", "add",
+            "--chain", "sidechain",
+            "--mnemonic-file", sidechain_mnemonic_file.to_str().unwrap(),
+            "--overwrite",
+        ])
+        .output();
+    
+    let _ = fs::remove_file(&sidechain_mnemonic_file);
+    
+    match sidechain_key_output {
+        Ok(output) if output.status.success() => {
+            log_or_show_progress("Added key for sidechain", &optional_progress_bar);
+        }
+        Ok(output) => {
+            verbose(&format!(
+                "Warning: Failed to add sidechain key: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            verbose(&format!("Warning: Failed to add sidechain key: {}", e));
+        }
+    }
+    
+    // Cardano: Use DEPLOYER_SK from environment (or default test key)
+    // Our modified Hermes CardanoKeyring accepts bech32 private keys (ed25519_sk...)
+    let cardano_key = std::env::var("DEPLOYER_SK")
+        .unwrap_or_else(|_| "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string());
+    let cardano_key_file = std::env::temp_dir().join("cardano-key.txt");
+    fs::write(&cardano_key_file, &cardano_key)
+        .map_err(|e| format!("Failed to write cardano key: {}", e))?;
+    
+    let cardano_key_output = Command::new(&hermes_binary)
+        .args(&[
+            "keys", "add",
+            "--chain", "cardano-devnet",
+            "--mnemonic-file", cardano_key_file.to_str().unwrap(),
+            "--overwrite",
+        ])
+        .output();
+    
+    let _ = fs::remove_file(&cardano_key_file);
+    
+    match cardano_key_output {
+        Ok(output) if output.status.success() => {
+            log_or_show_progress("Added key for cardano-devnet", &optional_progress_bar);
+        }
+        Ok(output) => {
+            verbose(&format!(
+                "Warning: Failed to add cardano-devnet key: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+        Err(e) => {
+            verbose(&format!("Warning: Failed to add cardano-devnet key: {}", e));
+        }
+    }
+
     execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
 
     // Note: execute_script_with_progress doesn't support environment variables

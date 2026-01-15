@@ -512,11 +512,11 @@ async fn main() {
                 }
                 
                 logger::log("\nBridge started successfully!");
+                logger::log("Keys have been automatically configured for cardano-devnet and sidechain.");
                 logger::log("Next steps:");
-                logger::log("   1. Add keys: caribic keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt");
-                logger::log("   2. Add keys: caribic keys add --chain cheqd-testnet-6 --mnemonic-file ~/cheqd.txt");
-                logger::log("   3. Check health: caribic health-check");
-                logger::log("   4. View keys: caribic keys list");
+                logger::log("   1. Check health: caribic health-check");
+                logger::log("   2. View keys: caribic keys list");
+                logger::log("   3. Run tests: caribic test");
             }
 
             if target == Some(StartTarget::Gateway) {
