@@ -28,11 +28,7 @@ import {
   PORT_PREFIX,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
-<<<<<<< HEAD
-import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum, HostStateDatumSchema } from "../types/index.ts";
-=======
 import { AuthToken, AuthTokenSchema, HandlerDatum, HandlerOperator, MintPortRedeemer, OutputReference, OutputReferenceSchema, HostStateDatum } from "../types/index.ts";
->>>>>>> main
 
 // deno-lint-ignore no-explicit-any
 (BigInt.prototype as any).toJSON = function () {
@@ -834,64 +830,7 @@ const deployHostState = async (lucid: LucidEvolution) => {
   // Use Data.void() as the redeemer (same as other simple mints)
   const encodedRedeemer = Data.void();
   
-<<<<<<< HEAD
-  // CRITICAL: Manually encode with definite-length arrays for Aiken compatibility
-  // Lucid's Data.to() uses indefinite-length arrays which Aiken validators cannot deserialize
-  function hexToBytes(hex: string): number[] {
-    const bytes: number[] = [];
-    for (let i = 0; i < hex.length; i += 2) {
-      bytes.push(parseInt(hex.substr(i, 2), 16));
-    }
-    return bytes;
-  }
-  
-  function encodeInteger(bytes: number[], n: number) {
-    if (n >= 0 && n <= 23) {
-      bytes.push(n);
-    } else if (n >= 24 && n <= 255) {
-      bytes.push(0x18, n);
-    } else if (n >= 256 && n <= 65535) {
-      bytes.push(0x19, (n >> 8) & 0xff, n & 0xff);
-    } else if (n >= 65536 && n <= 0xffffffff) {
-      bytes.push(0x1a, (n >> 24) & 0xff, (n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
-    } else {
-      // 64-bit
-      bytes.push(0x1b);
-      const hi = Math.floor(n / 0x100000000);
-      const lo = n & 0xffffffff;
-      bytes.push(
-        (hi >> 24) & 0xff, (hi >> 16) & 0xff, (hi >> 8) & 0xff, hi & 0xff,
-        (lo >> 24) & 0xff, (lo >> 16) & 0xff, (lo >> 8) & 0xff, lo & 0xff
-      );
-    }
-  }
-  
-  const cborBytes: number[] = [];
-  // Outer Constructor 0 with 2 fields
-  cborBytes.push(0xd8, 0x79, 0x82);
-  // Inner Constructor 0 with 7 fields
-  cborBytes.push(0xd8, 0x79, 0x87);
-  // version
-  encodeInteger(cborBytes, Number(initHostStateDatum.state.version));
-  // ibc_state_root (32 bytes)
-  cborBytes.push(0x58, 0x20);
-  cborBytes.push(...hexToBytes(initHostStateDatum.state.ibc_state_root));
-  // sequences
-  encodeInteger(cborBytes, Number(initHostStateDatum.state.next_client_sequence));
-  encodeInteger(cborBytes, Number(initHostStateDatum.state.next_connection_sequence));
-  encodeInteger(cborBytes, Number(initHostStateDatum.state.next_channel_sequence));
-  // bound_port (empty array)
-  cborBytes.push(0x80);
-  // last_update_time
-  encodeInteger(cborBytes, Number(initHostStateDatum.state.last_update_time));
-  // nft_policy (28 bytes)
-  cborBytes.push(0x58, 0x1c);
-  cborBytes.push(...hexToBytes(mintHostStateNFTPolicyId));
-  
-  const encodedDatum = Uint8Array.from(cborBytes).reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
-=======
   const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, { canonical: true });
->>>>>>> main
   
   const mintHostStateTx = lucid
     .newTx()

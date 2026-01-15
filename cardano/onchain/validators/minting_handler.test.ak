@@ -34,11 +34,7 @@ test mint_handler() {
       next_connection_sequence: 0,
       next_channel_sequence: 0,
       bound_port: [],
-<<<<<<< HEAD
-      ibc_state_root: empty_ibc_state_root,
-=======
       ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
->>>>>>> main
     }
 
   let handler_token = AuthToken { policy_id, name: handler_token_name }

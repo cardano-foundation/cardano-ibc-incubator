@@ -55,10 +55,7 @@ import {
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
-<<<<<<< HEAD
-import { encodeHandlerDatumDefinite, encodeHostStateDatumDefinite } from '../shared/helpers/cbor-fix';
-=======
->>>>>>> main
+
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -348,13 +345,8 @@ export class ConnectionService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
-<<<<<<< HEAD
-    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
-    const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
-=======
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
->>>>>>> main
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',
@@ -474,13 +466,8 @@ export class ConnectionService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
-<<<<<<< HEAD
-    const encodedUpdatedHandlerDatum: string = encodeHandlerDatumDefinite(updatedHandlerDatum);
-    const encodedUpdatedHostStateDatum: string = encodeHostStateDatumDefinite(updatedHostStateDatum);
-=======
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
->>>>>>> main
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',

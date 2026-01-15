@@ -692,11 +692,6 @@ pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::erro
     match copy_osmosis_config_files(osmosis_dir) {
         Ok(_) => {
             verbose("PASS: Osmosis configuration files copied successfully");
-<<<<<<< HEAD
-            verbose("✅ Osmosis configuration files copied successfully");
-=======
-            verbose("Osmosis configuration files copied successfully");
->>>>>>> main
             init_local_network(osmosis_dir)?;
             Ok(())
         }

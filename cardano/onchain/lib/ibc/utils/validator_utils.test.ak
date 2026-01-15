@@ -524,11 +524,7 @@ fn setup_validate_handler_redeemer() -> (
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
-<<<<<<< HEAD
-        ibc_state_root: empty_ibc_state_root,
-=======
         ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
->>>>>>> main
       },
       token: handler_token,
     }
