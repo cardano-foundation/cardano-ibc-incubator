@@ -251,13 +251,32 @@ export class QueryService {
     return [clientDatum, spendClientUTXO];
   }
 
+  /**
+   * Query client state for a given client ID.
+   * 
+   * The `height` parameter is the "query height" (state snapshot height), which specifies
+   * which version of the chain's state tree to read from. In the canonical IBC/Cosmos gRPC API,
+   * this is typically passed via gRPC metadata (`x-cosmos-block-height`), not as a request field.
+   * 
+   * Following standard IBC convention:
+   * - If height is not provided, we default to "latest" (most recent committed state)
+   * - The actual height used is returned in `proof_height` so the caller knows which snapshot was queried
+   * 
+   * This matches Hermes behavior where QueryHeight::Latest means "don't specify a height; use latest".
+   */
   async queryClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
     this.logger.log(request.client_id, 'queryClientState');
     const { client_id: clientId } = validQueryClientStateParam(request);
-    const { height } = request;
+    
+    // Query height is optional - if not provided, use latest (standard IBC/Cosmos behavior)
+    // This is the "query height" (state snapshot), not a data identifier
+    let { height } = request;
     if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+      const latestHeightResponse = await this.latestHeight({});
+      height = latestHeightResponse.height;
+      this.logger.log(`queryClientState: No height provided, using latest: ${height}`);
     }
+    
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
 
@@ -294,16 +313,34 @@ export class QueryService {
     return response as unknown as QueryClientStateResponse;
   }
 
+  /**
+   * Query consensus state for a given client ID at a specific height.
+   * 
+   * The `height` parameter here is the "consensus height" (counterparty height / data identifier),
+   * NOT the "query height" (state snapshot height). This identifies WHICH specific consensus state
+   * entry to retrieve, not which version of the state tree to read from.
+   * 
+   * Height behavior:
+   * - If height is not provided or is 0: Returns the latest consensus state for this client
+   * - If height is provided: Returns the consensus state at that specific revision height
+   * 
+   * This is different from the "query height" concept in queryClientState.
+   * See the documentation in client.validate.ts for the full explanation of the two height types.
+   */
   async queryConsensusState(request: QueryConsensusStateRequest): Promise<QueryConsensusStateResponse> {
     this.logger.log(`client_id = ${request.client_id}, height = ${request.height}`, 'queryConsensusState');
-    const { client_id: clientId, height } = validQueryConsensusStateParam(request);
+    const { client_id: clientId } = validQueryConsensusStateParam(request);
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-    let heightReq = BigInt(height.toString());
-    if (height == BigInt(0)) {
+    
+    // Consensus height: identifies which consensus state entry to retrieve
+    // If not provided or 0, use the latest consensus state for this client
+    const height = request.height;
+    let heightReq: bigint;
+    if (!height || height == BigInt(0)) {
       heightReq = clientDatum.state.clientState.latestHeight.revisionHeight;
+      this.logger.log(`queryConsensusState: Using latest consensus height: ${heightReq}`);
+    } else {
+      heightReq = BigInt(height.toString());
     }
     const consensusStateTendermint = normalizeConsensusStateFromDatum(clientDatum.state.consensusStates, heightReq);
     if (!consensusStateTendermint)
