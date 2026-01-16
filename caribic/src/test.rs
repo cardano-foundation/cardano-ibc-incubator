@@ -449,7 +449,15 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
         }
     }
 
-    let host_state_utxo = host_state_datum.ok_or("HostState UTXO not found or has no datum")?;
+    let host_state_utxo = host_state_datum.ok_or(
+        "HostState UTXO not found or has no datum.\n\n\
+         This can happen when the deployment config (handler.json) is out of sync\n\
+         with the on-chain state. Common causes:\n\
+         - The devnet was regenerated but contracts weren't redeployed\n\
+         - A previous deployment failed partway through\n\
+         - The handler.json is from a different devnet instance\n\n\
+         Fix: Run 'caribic start --clean' to reset and redeploy everything."
+    )?;
     
     // Extract the ibc_state_root from the inline datum
     // HostStateDatum structure: {constructor: 0, fields: [state, nft_policy]}
