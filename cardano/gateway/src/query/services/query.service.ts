@@ -287,7 +287,9 @@ export class QueryService {
     };
 
     // Generate ICS-23 proof from the IBC state tree
-    const ibcPath = `clients/${clientId}/clientState`;
+    // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
+    // The clientId here is just the sequence number (e.g., "0") after prefix stripping
+    const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
     const tree = getCurrentTree();
     
     let clientProof: Buffer;
@@ -352,7 +354,8 @@ export class QueryService {
     const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
     
     // Generate ICS-23 proof from the IBC state tree
-    const ibcPath = `clients/${clientId}/consensusStates/${heightReq}`;
+    // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
+    const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
     const tree = getCurrentTree();
     
     let consensusProof: Buffer;
