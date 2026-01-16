@@ -40,6 +40,8 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
+    /// Starts the Cosmos sidechain (packet-forwarding chain)
+    Cosmos,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -54,6 +56,8 @@ enum StopTarget {
     Network,
     /// Tears down the gateway and relayer
     Bridge,
+    /// Stops the Cosmos sidechain
+    Cosmos,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -150,7 +154,7 @@ enum Commands {
     },
     /// Run end-to-end integration tests to verify IBC functionality
     /// 
-    /// Prerequisites: All services must be running. Use 'caribic start all' first.
+    /// Prerequisites: All services must be running. Use 'caribic start' first.
     Test,
 }
 
@@ -363,6 +367,10 @@ async fn main() {
                     network_down();
                     logger::log("\nCardano Network stopped successfully");
                 }
+                Some(StopTarget::Cosmos) => {
+                    stop_cosmos(project_root_path.join("cosmos").as_path());
+                    logger::log("\nCosmos sidechain stopped successfully");
+                }
                 Some(StopTarget::Demo) => {
                     stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
                     stop_cosmos(project_root_path.join("cosmos").as_path());
@@ -398,8 +406,9 @@ async fn main() {
 
             let mut cardano_current_epoch = 0;
             
-            // Determine what to start: None means start everything (network + bridge)
+            // Determine what to start: None means start everything (network + cosmos + bridge)
             let start_network = target.is_none() || target == Some(StartTarget::Network);
+            let start_cosmos = target.is_none() || target == Some(StartTarget::Cosmos);
             let start_bridge = target.is_none() || target == Some(StartTarget::Bridge);
 
             if start_network {
@@ -436,6 +445,20 @@ async fn main() {
                     logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
                 }
                 logger::log("\nPASS: Cardano Network started successfully");
+            }
+
+            if start_cosmos {
+                // Start the Cosmos sidechain (packet-forwarding chain)
+                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                    Ok(_) => logger::log("PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Cosmos sidechain: {}", error));
+                        if target.is_none() {
+                            // If starting everything, this is a critical failure
+                            std::process::exit(1);
+                        }
+                    }
+                }
             }
 
             if start_bridge {

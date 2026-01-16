@@ -1787,6 +1787,30 @@ pub fn hermes_keys_add(
     Ok(format!("Key added for chain '{}'\n{}", chain, stdout))
 }
 
+/// Parse a Hermes key list "- key_name (address)" into (key_name, address)
+fn parse_hermes_key_line(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    if !line.starts_with('-') && !line.starts_with("SUCCESS") {
+        return None;
+    }
+    
+    // Skip "SUCCESS" lines
+    if line.starts_with("SUCCESS") {
+        return None;
+    }
+    
+    // Format: "- key_name (address)"
+    let line = line.trim_start_matches('-').trim();
+    if let Some(paren_pos) = line.find('(') {
+        let key_name = line[..paren_pos].trim().to_string();
+        let address = line[paren_pos..].trim_matches(|c| c == '(' || c == ')').to_string();
+        if !key_name.is_empty() && !address.is_empty() {
+            return Some((key_name, address));
+        }
+    }
+    None
+}
+
 /// List keys in Hermes keyring via caribic
 pub fn hermes_keys_list(
     relayer_path: &Path,
@@ -1836,24 +1860,36 @@ pub fn hermes_keys_list(
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
-                result.push_str(&output_str);
+                // Parse and reformat the output for clarity
+                for line in output_str.lines() {
+                    if let Some(key_info) = parse_hermes_key_line(line) {
+                        result.push_str(&format!("  key_name: {}\n", key_info.0));
+                        result.push_str(&format!("  address:  {}\n", key_info.1));
+                    }
+                }
                 found_any_keys = true;
             }
             result.push('\n');
         }
         
-        // List for cheqd-testnet-6
-        let cheqd_output = Command::new(&hermes_binary)
-            .args(&["keys", "list", "--chain", "cheqd-testnet-6"])
+        // List for sidechain (local Cosmos chain)
+        let sidechain_output = Command::new(&hermes_binary)
+            .args(&["keys", "list", "--chain", "sidechain"])
             .output()?;
         
-        if cheqd_output.status.success() {
-            let output_str = String::from_utf8_lossy(&cheqd_output.stdout);
-            result.push_str("cheqd-testnet-6:\n");
+        if sidechain_output.status.success() {
+            let output_str = String::from_utf8_lossy(&sidechain_output.stdout);
+            result.push_str("sidechain:\n");
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
-                result.push_str(&output_str);
+                // Parse and reformat the output for clarity
+                for line in output_str.lines() {
+                    if let Some(key_info) = parse_hermes_key_line(line) {
+                        result.push_str(&format!("  key_name: {}\n", key_info.0));
+                        result.push_str(&format!("  address:  {}\n", key_info.1));
+                    }
+                }
                 found_any_keys = true;
             }
         }
@@ -1902,99 +1938,6 @@ pub fn hermes_keys_delete(
     }
     
     Ok(format!("Key deleted for chain '{}'", chain))
-}
-
-/// Run Hermes health check via caribic
-pub fn hermes_health_check(
-    relayer_path: &Path,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let hermes_binary = relayer_path.join("target/release/hermes");
-    
-    if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
-    }
-    
-    log("Running Hermes health check...");
-    
-    let output = Command::new(&hermes_binary)
-        .args(&["health-check"])
-        .output()?;
-    
-    if !output.status.success() {
-        return Err(format!(
-            "Health check failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ).into());
-    }
-    
-    let raw_output = String::from_utf8_lossy(&output.stdout);
-    
-    // Parse and format the health check output
-    let mut result = String::new();
-    let mut current_chain = String::new();
-    let mut chain_status: Vec<(String, bool, Vec<String>)> = Vec::new();
-    let mut warnings: Vec<String> = Vec::new();
-    
-    for line in raw_output.lines() {
-        // Extract chain name from log lines
-        if line.contains("health_check{chain=") {
-            if let Some(start) = line.find("chain=") {
-                if let Some(end) = line[start..].find("}") {
-                    current_chain = line[start + 6..start + end].to_string();
-                }
-            }
-            
-            // Check for health status
-            if line.contains("chain is healthy") {
-                chain_status.push((current_chain.clone(), true, warnings.clone()));
-                warnings.clear();
-            } else if line.contains("chain is not healthy") {
-                chain_status.push((current_chain.clone(), false, warnings.clone()));
-                warnings.clear();
-            } else if line.contains("WARN") && line.contains("reason:") {
-                // Extract warning reason
-                if let Some(reason_start) = line.find("reason:") {
-                    let reason = line[reason_start + 8..].trim();
-                    warnings.push(reason.to_string());
-                }
-            }
-        }
-    }
-    
-    // Format output
-    result.push_str("\nHealth Check Results:\n");
-    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
-    for (chain, is_healthy, chain_warnings) in &chain_status {
-        let status_symbol = if *is_healthy { "[OK]" } else { "[FAIL]" };
-        let status_text = if *is_healthy { "HEALTHY" } else { "UNHEALTHY" };
-        
-        result.push_str(&format!("{} {}: {}\n", status_symbol, chain, status_text));
-        
-        // Show warnings for unhealthy chains
-        for warning in chain_warnings {
-            result.push_str(&format!("  WARNING: {}\n", warning));
-        }
-    }
-    
-    result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
-    // Add summary
-    let healthy_count = chain_status.iter().filter(|(_, h, _)| *h).count();
-    let total_count = chain_status.len();
-    
-    if healthy_count == total_count {
-        result.push_str(&format!("\nAll {} chain(s) are healthy\n", total_count));
-    } else {
-        result.push_str(&format!(
-            "\nWARNING: {}/{} chain(s) healthy, {} need attention\n",
-            healthy_count,
-            total_count,
-            total_count - healthy_count
-        ));
-    }
-    
-    Ok(result)
 }
 
 /// Create IBC client via caribic
@@ -2144,6 +2087,7 @@ pub fn comprehensive_health_check(
         ("kupo", "Kupo (Chain Indexer)"),
         ("ogmios", "Ogmios (JSON/RPC)"),
         ("hermes", "Hermes Relayer Daemon"),
+        ("cosmos", "Cosmos Sidechain (Packet-forwarding)"),
     ];
     
     for (service_name, service_label) in services {
@@ -2163,6 +2107,7 @@ pub fn comprehensive_health_check(
             "kupo" => check_kupo_health(&cardano_dir),
             "ogmios" => check_ogmios_health(&cardano_dir),
             "hermes" => check_hermes_daemon_health(&relayer_path),
+            "cosmos" => check_cosmos_health(),
             _ => (false, "Unknown service".to_string()),
         };
         
@@ -2343,4 +2288,34 @@ fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
     }
     
     (false, "Daemon not running".to_string())
+}
+
+/// Check Cosmos sidechain health (packet-forwarding chain on port 26657)
+fn check_cosmos_health() -> (bool, String) {
+    // Try to connect to the Cosmos RPC port
+    let port_check = Command::new("nc")
+        .args(&["-z", "localhost", "26657"])
+        .output();
+    
+    if let Ok(output) = port_check {
+        if output.status.success() {
+            // Try to get status from the RPC endpoint
+            let status_check = Command::new("curl")
+                .args(&["-s", "--connect-timeout", "3", "http://127.0.0.1:26657/status"])
+                .output();
+            
+            if let Ok(status_output) = status_check {
+                if status_output.status.success() {
+                    let stdout = String::from_utf8_lossy(&status_output.stdout);
+                    if stdout.contains("result") {
+                        return (true, "Running on port 26657".to_string());
+                    }
+                }
+            }
+            
+            return (true, "Port 26657 accessible".to_string());
+        }
+    }
+    
+    (false, "Not running (port 26657 not accessible)".to_string())
 }

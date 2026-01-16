@@ -48,7 +48,7 @@ impl TestResults {
 /// * `project_root` - Path to the project root directory
 ///
 /// # Prerequisites
-/// All services must be running before running tests. Use 'caribic start all' first.
+/// All services must be running before running tests. Use 'caribic start' first.
 pub async fn run_integration_tests(
     project_root: &Path,
 ) -> Result<TestResults, Box<dyn std::error::Error>> {
@@ -224,7 +224,7 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
 
     if !missing_services.is_empty() {
         return Err(format!(
-            "Required services not running: {}.\n\nPlease run 'caribic start all' first to start all services.",
+            "Required services not running: {}.\n\nPlease run 'caribic start' first to start all services.",
             missing_services.join(", ")
         ).into());
     }
