@@ -13,6 +13,35 @@
 // IMPORTANT: State-root computations are SIDE-EFFECT FREE until committed.
 // All compute functions return a result object with `newRoot` and `commit()`.
 // Call `commit()` only after the transaction is confirmed on-chain.
+//
+// ============================================================================
+// CRASH RECOVERY / SELF-HEALING BEHAVIOR
+// ============================================================================
+//
+// The in-memory Merkle tree is ephemeral - it's lost when the Gateway process stops.
+// However, the Gateway is designed to be SELF-HEALING and requires NO MANUAL INTERVENTION
+// after a restart. Here's how it works:
+//
+// 1. On Gateway restart, the in-memory tree starts empty.
+//
+// 2. When a query arrives that requires proof generation (e.g., queryClientState),
+//    the query service calls `ensureTreeAligned()` BEFORE generating the proof.
+//
+// 3. `ensureTreeAligned()` compares the in-memory tree's root with the on-chain
+//    `ibc_state_root` stored in the HostState UTXO.
+//
+// 4. If they don't match (which they won't after restart), `alignTreeWithChain()`
+//    is called automatically. This queries all IBC UTXOs (clients, connections,
+//    channels) and rebuilds the tree from scratch.
+//
+// 5. After rebuilding, the tree matches on-chain state and proofs can be generated.
+//
+// This "lazy rebuild on demand" approach means:
+// - The first proof-generating query after restart will be slower (rebuild overhead)
+// - Subsequent queries are fast (just a root comparison)
+// - No manual intervention or startup scripts needed
+// - The system is resilient to crashes at any point
+//
 
 import { ICS23MerkleTree } from './ics23-merkle-tree';
 
@@ -109,16 +138,30 @@ function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
 }
 
 /**
- * Align the in-memory tree with on-chain state
+ * Align the in-memory tree with on-chain state (This is an automatic self-healing mechanism)
  * 
- * Call this:
- * - On Gateway startup
- * - Before building a transaction if the previous one failed
- * - Any time you suspect the tree may be stale
+ * This is the core of the Gateway's crash recovery. It rebuilds the entire
+ * Merkle tree from on-chain UTXOs, ensuring the in-memory state matches
+ * what's actually committed on Cardano.
  * 
- * This queries the HostState UTXO and all IBC entity UTXOs,
- * rebuilds the Merkle tree from scratch, and verifies the computed
- * root matches the on-chain root.
+ * WHEN THIS IS CALLED:
+ * - Automatically by `ensureTreeAligned()` when a query detects stale state
+ * - After Gateway restart (triggered by first proof-generating query)
+ * - If a transaction fails and the speculative tree becomes invalid
+ * 
+ * WHAT IT DOES:
+ * 1. Queries the HostState UTXO to get the expected root
+ * 2. Queries ALL IBC entity UTXOs (clients, connections, channels)
+ * 3. Rebuilds the Merkle tree from scratch with all entries
+ * 4. Verifies the computed root matches the on-chain commitment
+ * 5. Replaces the in-memory tree with the rebuilt one
+ * 
+ * PERFORMANCE NOTE:
+ * This is expensive (queries many UTXOs), but only runs when needed.
+ * In normal operation, `isTreeAligned()` returns true and this is skipped.
+ * 
+ * @returns Object containing the rebuilt tree's root hash
+ * @throws Error if tree services not initialized via initTreeServices()
  */
 export async function alignTreeWithChain(): Promise<{ root: string }> {
   if (!cachedKupoService || !cachedLucidService) {
@@ -134,7 +177,11 @@ export async function alignTreeWithChain(): Promise<{ root: string }> {
 /**
  * Check if the in-memory tree matches the given on-chain root
  * 
- * Use this to detect staleness before building transactions.
+ * Use this to detect staleness before building transactions or generating proofs.
+ * This is a cheap operation (just compares two hash strings).
+ * 
+ * @param onChainRoot - The ibc_state_root from the HostState UTXO (64-char hex)
+ * @returns true if in-memory tree matches on-chain state, false if rebuild needed
  */
 export function isTreeAligned(onChainRoot: string): boolean {
   if (onChainRoot === '0'.repeat(64)) {
@@ -152,22 +199,39 @@ export function isTreeAligned(onChainRoot: string): boolean {
  * @param oldRoot - Current IBC state root (64-character hex string)
  * @param clientId - Client identifier being created/updated
  * @param clientState - New client state value
+ * @param consensusState - Optional consensus state to add (required for CreateClient)
+ * @param consensusHeight - Height key for the consensus state (e.g., "123" or the revisionHeight)
  * @returns StateRootResult with newRoot and commit function
  */
 export function computeRootWithClientUpdate(
   oldRoot: string,
   clientId: string,
   clientState: any,
+  consensusState?: any,
+  consensusHeight?: string | number | bigint,
 ): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
   
   // IBC path for client state: clients/{clientId}/clientState
-  const path = `clients/${clientId}/clientState`;
+  // This stores the overall client configuration (chain ID, trust level, latest height, etc.)
+  const clientPath = `clients/${clientId}/clientState`;
+  const clientValue = serializeValue(clientState);
+  speculativeTree.set(clientPath, clientValue);
   
-  // Serialize and store the client state in the SPECULATIVE tree
-  const value = serializeValue(clientState);
-  speculativeTree.set(path, value);
+  // If a consensus state is provided, also add it to the tree.
+  // Consensus states are snapshots of the counterparty chain at specific heights.
+  // They're used for proof verification - when verifying a packet commitment,
+  // we need the consensus state at the height the commitment was made.
+  //
+  // IBC path: clients/{clientId}/consensusStates/{height}
+  if (consensusState && consensusHeight !== undefined) {
+    const heightStr = String(consensusHeight);
+    const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
+    const consensusValue = serializeValue(consensusState);
+    speculativeTree.set(consensusPath, consensusValue);
+    console.log(`Added consensus state for ${clientId} at height ${heightStr}`);
+  }
   
   // Compute new root
   const newRoot = speculativeTree.getRoot();
@@ -329,10 +393,40 @@ export async function rebuildTreeFromChain(
       const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
       const clientId = `07-tendermint-${clientSequence.toString()}`;
       
-      const value = serializeValue(clientDatum.state.clientState);
-      tree.set(`clients/${clientId}/clientState`, value);
+      // Add client state to tree
+      // ICS-24 path: clients/{clientId}/clientState
+      const clientStateValue = serializeValue(clientDatum.state.clientState);
+      tree.set(`clients/${clientId}/clientState`, clientStateValue);
       
-      console.log(`  Added client: ${clientId}`);
+      // Add all consensus states to tree
+      // ICS-24 path: clients/{clientId}/consensusStates/{height}
+      // The consensusStates map stores consensus state snapshots at various heights.
+      // These are needed for proof generation when verifying packet commitments, etc.
+      const consensusStates = clientDatum.state.consensusStates;
+      if (consensusStates && (consensusStates instanceof Map || typeof consensusStates === 'object')) {
+        // Handle both Map and plain object (depending on how it was decoded)
+        const entries = consensusStates instanceof Map 
+          ? Array.from(consensusStates.entries())
+          : Object.entries(consensusStates);
+        
+        for (const [heightKey, consensusState] of entries) {
+          // Height key format varies - could be object {revisionNumber, revisionHeight} or string
+          let heightStr: string;
+          if (typeof heightKey === 'object' && heightKey !== null) {
+            // Height is an object like {revisionNumber: 0, revisionHeight: 123}
+            const h = heightKey as { revisionNumber?: bigint | number; revisionHeight?: bigint | number };
+            heightStr = `${h.revisionHeight || 0}`;
+          } else {
+            heightStr = String(heightKey);
+          }
+          
+          const consensusValue = serializeValue(consensusState);
+          tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
+        }
+        console.log(`  Added client: ${clientId} with ${entries.length} consensus state(s)`);
+      } else {
+        console.log(`  Added client: ${clientId} (no consensus states)`);
+      }
     }
     
     // Query and add all Connection UTXOs

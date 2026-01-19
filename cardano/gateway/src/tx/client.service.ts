@@ -55,9 +55,22 @@ export class ClientService {
    * IMPORTANT: This is now side-effect free. The result contains a commit()
    * function that should be called after tx confirmation, but for simplicity
    * we just return the newRoot and let the next operation rebuild from chain.
+   * 
+   * @param oldRoot - Current IBC state root
+   * @param clientId - Client identifier (e.g., "07-tendermint-0")
+   * @param clientState - The client state to store
+   * @param consensusState - Optional consensus state (required for CreateClient)
+   * @param consensusHeight - Height key for the consensus state
+   * @returns The new IBC state root (64-character hex string)
    */
-  private computeRootWithClientUpdate(oldRoot: string, clientId: string, clientState: any): string {
-    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState);
+  private computeRootWithClientUpdate(
+    oldRoot: string, 
+    clientId: string, 
+    clientState: any,
+    consensusState?: any,
+    consensusHeight?: string | number | bigint,
+  ): string {
+    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState, consensusState, consensusHeight);
     // Note: Not calling result.commit() - the tree will be rebuilt from chain on next operation
     // This is safer because it handles failed transactions automatically
     return result.newRoot;
@@ -423,8 +436,19 @@ export class ClientService {
     this.logger.log(`[DEBUG] HostState ibc_state_root: ${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`);
     
     // Compute new IBC state root with client update
+    // When creating a client, we need to add BOTH the clientState AND the initial consensusState
+    // to the Merkle tree. The consensus state is keyed by the client's latest height.
+    // This is essential for proof generation - without the consensus state in the tree,
+    // queries for proofs will fail with "key not found".
     const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;
-    const newRoot = this.computeRootWithClientUpdate(hostStateDatum.state.ibc_state_root, clientId, clientState);
+    const consensusHeight = clientState.latestHeight.revisionHeight;
+    const newRoot = this.computeRootWithClientUpdate(
+      hostStateDatum.state.ibc_state_root, 
+      clientId, 
+      clientState,
+      consensusState,
+      consensusHeight,
+    );
     
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)

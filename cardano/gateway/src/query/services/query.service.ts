@@ -28,6 +28,7 @@ import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
 import { decodeHandlerDatum } from '@shared/types/handler-datum';
+import { HostStateDatum } from '@shared/types/host-state-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
@@ -98,7 +99,7 @@ import {
   normalizeMithrilStakeDistribution,
   normalizeMithrilStakeDistributionCertificate,
 } from '../../shared/helpers/mithril-header';
-import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { getCurrentTree, isTreeAligned, alignTreeWithChain } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
   QueryDenomTraceRequest,
@@ -121,6 +122,78 @@ export class QueryService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
   ) {}
+
+  /**
+   * Ensure the in-memory ICS-23 Merkle tree is aligned with on-chain state.
+   * 
+   * This is part of the Gateway's selfphealing mechanism. After a crash or restart,
+   * No manual intervention is required - this method automatically detects stale state
+   * and triggers a rebuild from on-chain data.
+   * 
+   * The Gateway maintains an in-memory Merkle tree for generating ICS-23 proofs.
+   * This tree can become out of sync in several scenarios:
+   *   1. Gateway restarts - the in-memory tree is lost (most common case)
+   *   2. A transaction fails after we speculatively updated the tree (should not happen
+   *      since we work on a clone and only `commit()` after tx is confirmed)
+   *   3. Another Gateway instance (or direct on-chain interaction) modified state
+   * 
+   * HOW IT WORKS:
+   * We query the HostState UTXO (identified by a unique NFT in the STT architecture)
+   * and compare its stored ibc_state_root with our in-memory tree's root.
+   * If they don't match, we call alignTreeWithChain() to rebuild from on-chain UTXOs.
+   * 
+   * CRASH RECOVERY FLOW:
+   * 1. Gateway restarts -> in-memory tree is empty
+   * 2. First query arrives (e.g., Hermes calls queryClientState)
+   * 3. This method detects root mismatch (empty tree vs on-chain root)
+   * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
+   * 5. Proof generation proceeds normally
+   * 6. Subsequent queries find the tree aligned (cheap root comparison)
+   * 
+   * PERFORMANCE NOTE:
+   * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
+   * the tree is actually stale. In normal operation, this is a cheap root comparison.
+   * 
+   * @returns Promise that resolves when tree is aligned (may trigger rebuild)
+   * @throws GrpcInternalException if HostState UTXO is missing or invalid
+   */
+  private async ensureTreeAligned(): Promise<void> {
+    // Query the HostState UTXO to get the authoritative on-chain root.
+    // The HostState UTXO is identified by a unique NFT (STT architecture)
+    // which guarantees exactly one canonical state exists at any time.
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    
+    if (!hostStateUtxo?.datum) {
+      // This should never happen in a properly deployed system.
+      // If it does, there's a fundamental issue with the IBC deployment.
+      this.logger.error('HostState UTXO has no datum - cannot verify tree alignment');
+      throw new GrpcInternalException('IBC infrastructure error: HostState UTXO missing datum');
+    }
+    
+    // Decode the datum to extract the committed ibc_state_root.
+    // This root is the Merkle commitment over all IBC state (clients, connections, channels, etc.)
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+    const onChainRoot = hostStateDatum.state.ibc_state_root;
+    
+    // Check if our in-memory tree matches the on-chain commitment.
+    // If it does, we're good to go - proofs generated from our tree will verify correctly.
+    if (isTreeAligned(onChainRoot)) {
+      this.logger.debug(`Tree aligned with on-chain root ${onChainRoot.substring(0, 16)}...`);
+      return;
+    }
+    
+    // Tree is stale. This happens after Gateway restart, failed transactions, etc.
+    // We need to rebuild the tree from on-chain UTXOs before we can generate valid proofs.
+    this.logger.warn(
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`
+    );
+    
+    // alignTreeWithChain() queries all IBC UTXOs (clients, connections, channels)
+    // and rebuilds the Merkle tree from scratch. This is expensive but necessary.
+    const result = await alignTreeWithChain();
+    
+    this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
+  }
 
   async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
     const { height } = request;
@@ -290,6 +363,13 @@ export class QueryService {
     // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
     // The clientId here is just the sequence number (e.g., "0") after prefix stripping
     const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
+    
+    // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
+    // generating proofs. The tree can become stale after Gateway restarts, failed
+    // transactions, or if state was modified by another process. If we generate a proof
+    // from a stale tree, the proof won't verify against the on-chain commitment.
+    await this.ensureTreeAligned();
+    
     const tree = getCurrentTree();
     
     let clientProof: Buffer;
@@ -356,6 +436,12 @@ export class QueryService {
     // Generate ICS-23 proof from the IBC state tree
     // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
+    
+    // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
+    // generating proofs. See ensureTreeAligned() for detailed explanation of why this
+    // is necessary and when the tree can become stale.
+    await this.ensureTreeAligned();
+    
     const tree = getCurrentTree();
     
     let consensusProof: Buffer;
