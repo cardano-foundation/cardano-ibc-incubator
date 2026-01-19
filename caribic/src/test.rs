@@ -61,6 +61,7 @@ pub async fn run_integration_tests(
     logger::log("PASS Test 1: All services are running\n");
     results.passed += 1;
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 2: Gateway connectivity smoke test via Hermes health-check
     logger::log("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
     match run_hermes_health_check(project_root) {
@@ -93,6 +94,7 @@ pub async fn run_integration_tests(
     logger::log("PASS Test 3: Handler UTXO has valid ibc_state_root\n");
     results.passed += 1;
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 4: Create a client and verify root changes
     logger::log("Test 4: Creating client via Hermes and verifying root changes...");
     
@@ -124,6 +126,7 @@ pub async fn run_integration_tests(
         }
     };
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 5: Query client state to verify Tendermint light client is working
     logger::log("Test 5: Querying client state via Hermes...");
     
@@ -154,6 +157,7 @@ pub async fn run_integration_tests(
         results.skipped += 1;
     }
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 6: Update client with new Tendermint headers and verify height advances
     logger::log("Test 6: Updating client with new headers (exercises Tendermint verification)...");
     
@@ -191,6 +195,7 @@ pub async fn run_integration_tests(
         results.skipped += 1;
     }
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 7: Create a connection and verify root changes
     logger::log("Test 7: Creating connection via Hermes and verifying root changes...");
     
@@ -229,6 +234,7 @@ pub async fn run_integration_tests(
         None
     };
 
+    // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 8: Create a channel and verify root changes
     logger::log("Test 8: Creating channel via Hermes and verifying root changes...");
     
