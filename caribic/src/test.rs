@@ -63,6 +63,17 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 2: Gateway connectivity smoke test via Hermes health-check
+    //
+    // This is the first real test of Hermes talking to the Gateway. Hermes runs its
+    // built-in health-check command which calls the Gateway's gRPC endpoint to fetch
+    // the latest Cardano block height. If this fails, nothing else will work since
+    // all IBC operations flow through this same gRPC channel.
+    //
+    // What's being tested:
+    //   - Gateway is listening on a local port (5001) and accepting gRPC connections
+    //   - Hermes config (normally at ~/.hermes/config.toml) has grpc_addr = "http://localhost:5001" for cardano-devnet
+    //     (can obviously change this setup as needed but I would call this the canonical setup)
+    //   - The LatestHeight query should actually return valid data from the Cardano network
     logger::log("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
     match run_hermes_health_check(project_root) {
         Ok(_) => {
@@ -96,6 +107,31 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 4: Create a client and verify root changes
+    //
+    // We're testing the full CreateClient flow end-to-end.
+    //
+    // Quick clarification on "creating" vs "deploying" light clients:
+    //   - The light client code (Plutus validators that verify Tendermint headers) was
+    //     already deployed to Cardano during `caribic start bridge`. That's infrastructure.
+    //   - What we're doing here is creating a client INSTANCE - a piece of on-chain state
+    //     that tracks a specific counterparty chain (the sidechain's chain ID, current
+    //     trusted height, validator set hash, etc.) When you call CreateClient that's basically
+    //     initializing the first anchor point of trust. Its a state snapshot as opposed to code.
+    //
+    // Hermes asks the Gateway to build an unsigned Cardano transaction that will
+    // create this Tendermint client instance on Cardano. In Cardano terms, this means
+    // creating a new UTXO at the client validator address, where the datum contains
+    // the trusted state (chain ID, height, validator set hash, etc.). Hermes then
+    // signs the tx with its own wallet keys and submits it to Cardano.
+    //
+    // What's being tested:
+    //   - Gateway's CreateClient gRPC endpoint builds a valid unsigned tx
+    //   - The tx includes the correct Tendermint ClientState and ConsensusState
+    //   - Hermes can sign and submit the transaction to Cardano
+    //   - The on-chain ibc_state_root actually changes (proving the tx landed)
+    //
+    // The flow: Hermes -> Gateway (builds tx) -> Hermes (signs) -> Cardano (submits)
+
     logger::log("Test 4: Creating client via Hermes and verifying root changes...");
     
     let client_id = match create_test_client(project_root) {
@@ -128,6 +164,21 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 5: Query client state to verify Tendermint light client is working
+    //
+    // After creating a client, we want to read it back to confirm it's stored correctly.
+    // Hermes queries the Gateway which reads the client state from Cardano's on-chain
+    // storage and returns it in standard IBC format.
+    //
+    // What's being tested:
+    //   - Gateway's ClientState query endpoint can find and decode stored clients
+    //   - The Tendermint client state fields (chain_id, trust_level, heights) are correct
+    //   - Round-trip: what we wrote in Test 4 can be read back properly
+    //
+    // Known limitation: Gateway currently requires an explicit height parameter for
+    // client queries. If this test skips, it means we need to add support for querying
+    // at "latest" height without requiring the caller to specify it.
+    //
+    // Status: May skip due to height parameter requirement - this is a known TODO.
     logger::log("Test 5: Querying client state via Hermes...");
     
     if let Some(ref cid) = client_id {
@@ -159,6 +210,20 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 6: Update client with new Tendermint headers and verify height advances
+    //
+    // This is where the Tendermint light client gets exercised. Hermes fetches
+    // new block headers from the Cosmos sidechain and submits them to update the client
+    // on Cardano. The Cardano smart contracts verify the headers are valid (signatures,
+    // validator set transitions, etc.) before accepting them.
+    //
+    // What's being tested:
+    //   - Gateway's UpdateClient endpoint can build header update transactions
+    //   - Tendermint header verification logic in Cardano smart contracts works
+    //   - The client's trusted height advances after accepting new headers
+    //
+    // This is important because it proves we can track the Cosmos chain's progress
+    // from Cardano - which is essential for verifying IBC packet proofs later.
+    //
     logger::log("Test 6: Updating client with new headers (exercises Tendermint verification)...");
     
     if let Some(ref cid) = client_id {
@@ -197,6 +262,22 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 7: Create a connection and verify root changes
+    //
+    // IBC connections are the next layer up from clients. A connection links two
+    // chains together and requires a 4-step handshake (Init, Try, Ack, Confirm).
+    // This test has Hermes orchestrate the full handshake between Cardano and Cosmos.
+    //
+    // What's being tested:
+    //   - Gateway's ConnectionOpenInit, Try, Ack, Confirm endpoints all work
+    //   - Hermes can coordinate the back-and-forth between both chains
+    //   - Connection state is properly stored on Cardano
+    //
+    // Known limitation: This requires a Cardano light client to exist on the Cosmos
+    // side too (for the bidirectional handshake). If the Cardano light client isn't
+    // implemented on Cosmos yet, this test will skip. At the point of writing this,
+    // there is still some uncertainty around Mithril/Ourobouos/STT architecture.
+    //
+    // Status: May skip - depends on Cardano light client being available on Cosmos.
     logger::log("Test 7: Creating connection via Hermes and verifying root changes...");
     
     let connection_id = if client_id.is_some() {
@@ -236,6 +317,19 @@ pub async fn run_integration_tests(
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
     // Test 8: Create a channel and verify root changes
+    //
+    // Channels are the final layer. They're what applications actually use to send
+    // packets. This test creates a "transfer" channel (ICS-20) for moving tokens
+    // between Cardano and Cosmos. Like connections, channels have a 4-step handshake.
+    //
+    // What's being tested:
+    //   - Gateway's ChannelOpenInit, Try, Ack, Confirm endpoints all work
+    //   - The channel is bound to the "transfer" port on both sides
+    //   - Channel state is properly stored on Cardano
+    //
+    // Once this works we're ready to test actual token transfers. 
+    //
+    // Status: Depends on Test 7 passing (needs an established connection first).
     logger::log("Test 8: Creating channel via Hermes and verifying root changes...");
     
     if let Some(conn_id) = connection_id {
