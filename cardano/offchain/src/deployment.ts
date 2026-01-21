@@ -145,15 +145,11 @@ export const createDeployment = async (
     mintHostStateNFT,
     hostStateStt,
     hostStateNFT,
-  } = await deployHostState(lucid);
-  referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
+  } = await deployHostState(lucid, spendClientScriptHash, spendConnectionScriptHash, spendingChannel.base.hash);
+		  referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
 
   // Load STT minting validators (parameterized for STT architecture)
   console.log("Loading STT minting validators...");
-  
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/c584c220-25f6-470a-8eff-fc08634f1f67',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'deployment.ts:153',message:'Attempting to load STT validators',data:{spendClientScriptHash},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-  // #endregion
   
   // Load mint client STT validator (parameterized by spend_client_script_hash, host_state_nft_policy_id)
   const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
@@ -696,7 +692,12 @@ const deployTransferModule = async (
   };
 };
 
-const deployHostState = async (lucid: LucidEvolution) => {
+const deployHostState = async (
+  lucid: LucidEvolution,
+  spendClientScriptHash: string,
+  spendConnectionScriptHash: string,
+  spendChannelScriptHash: string,
+) => {
   console.log("Deploy HostState (STT Architecture)");
   
   // Get nonce UTXO for one-time mint
@@ -717,13 +718,18 @@ const deployHostState = async (lucid: LucidEvolution) => {
     Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference]
   );
   
-  // Load hostStateStt spending validator (parameterized by nft_policy)
-  // CRITICAL: This validator MUST be parameterized with the NFT policy ID to verify NFT continuity
+  // Load hostStateStt spending validator.
+  //
+  // Parameters (in order):
+  // 1) `nft_policy` (HostState NFT policy id)
+  // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
+  // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
+  // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] = await readValidator(
     "host_state_stt.host_state_stt.spend",
     lucid,
-    [mintHostStateNFTPolicyId],  // Pass the NFT policy ID as parameter
-    Data.Tuple([Data.Bytes()]) as unknown as [string]  // Schema for the nft_policy parameter (must be Tuple for applyParamsToScript)
+    [mintHostStateNFTPolicyId, spendClientScriptHash, spendConnectionScriptHash, spendChannelScriptHash],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string],
   );
   
   const HOST_STATE_TOKEN_NAME = fromText("ibc_host_state");

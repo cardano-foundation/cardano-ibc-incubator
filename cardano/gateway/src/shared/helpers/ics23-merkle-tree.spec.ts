@@ -203,9 +203,8 @@ describe('ICS23MerkleTree', () => {
         
         expect(proof.key).toEqual(Buffer.from('key1', 'utf8'));
         expect(proof.value).toEqual(Buffer.from('value1'));
-        expect(proof.leaf.hash).toBe(1); // SHA256
-        expect(proof.leaf.length).toBe(1); // VAR_PROTO
-        expect(proof.path).toHaveLength(0); // No inner nodes for single leaf
+        expect(proof.leaf.hash).toBe(1); // SHA256 (metadata only)
+        expect(proof.path).toHaveLength(64); // Fixed-depth proof
       });
 
       it('should generate proof for multi-leaf tree', () => {
@@ -217,7 +216,7 @@ describe('ICS23MerkleTree', () => {
         
         expect(proof.key).toEqual(Buffer.from('key2', 'utf8'));
         expect(proof.value).toEqual(Buffer.from('value2'));
-        expect(proof.path.length).toBeGreaterThan(0); // Should have inner nodes
+        expect(proof.path).toHaveLength(64); // Fixed-depth proof
         
         // Verify all InnerOps have correct structure
         proof.path.forEach((innerOp) => {
@@ -297,7 +296,7 @@ describe('ICS23MerkleTree', () => {
     });
 
     describe('NonExistenceProof', () => {
-      it('should generate non-existence proof with left and right neighbors', () => {
+      it('should generate non-existence proof as an "empty value" membership proof', () => {
         tree.set('clients/07-tendermint-0/clientState', Buffer.from('client0'));
         tree.set('clients/07-tendermint-2/clientState', Buffer.from('client2'));
         
@@ -306,28 +305,23 @@ describe('ICS23MerkleTree', () => {
         
         expect(proof.key).toEqual(Buffer.from(nonExistentKey, 'utf8'));
         expect(proof.left).not.toBeNull();
-        expect(proof.right).not.toBeNull();
-        
-        // Verify left neighbor is before target
-        expect(proof.left!.key.toString('utf8')).toBe('clients/07-tendermint-0/clientState');
-        
-        // Verify right neighbor is after target
-        expect(proof.right!.key.toString('utf8')).toBe('clients/07-tendermint-2/clientState');
+        expect(proof.right).toBeNull();
+
+        // Our non-membership format is a membership proof for the empty value.
+        expect(proof.left!.key.toString('utf8')).toBe(nonExistentKey);
+        expect(proof.left!.value.length).toBe(0);
+        expect(tree.verifyProof(proof.left!)).toBe(true);
       });
 
-      it('should generate valid neighbor proofs', () => {
+      it('should generate a valid empty-value proof for a missing key', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key3', Buffer.from('value3'));
         
         const proof = tree.generateNonExistenceProof('key2');
         
-        // Both neighbor proofs should be valid
-        if (proof.left) {
-          expect(tree.verifyProof(proof.left)).toBe(true);
-        }
-        if (proof.right) {
-          expect(tree.verifyProof(proof.right)).toBe(true);
-        }
+        expect(proof.left).not.toBeNull();
+        expect(proof.right).toBeNull();
+        expect(tree.verifyProof(proof.left!)).toBe(true);
       });
 
       it('should throw error for existing key', () => {
@@ -344,28 +338,26 @@ describe('ICS23MerkleTree', () => {
         );
       });
 
-      it('should handle key before all existing keys', () => {
+      it('should provide a valid empty-value proof even if key is before all stored keys', () => {
         tree.set('key5', Buffer.from('value5'));
         tree.set('key10', Buffer.from('value10'));
         
         const proof = tree.generateNonExistenceProof('key1');
         
-        // Should have right neighbor but no left
-        expect(proof.left).toBeNull();
-        expect(proof.right).not.toBeNull();
-        expect(proof.right!.key.toString('utf8')).toBe('key10'); // Lexicographically first
+        expect(proof.left).not.toBeNull();
+        expect(proof.right).toBeNull();
+        expect(tree.verifyProof(proof.left!)).toBe(true);
       });
 
-      it('should handle key after all existing keys', () => {
+      it('should provide a valid empty-value proof even if key is after all stored keys', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key5', Buffer.from('value5'));
         
         const proof = tree.generateNonExistenceProof('key9');
         
-        // Should have left neighbor but no right
         expect(proof.left).not.toBeNull();
-        expect(proof.left!.key.toString('utf8')).toBe('key5');
         expect(proof.right).toBeNull();
+        expect(tree.verifyProof(proof.left!)).toBe(true);
       });
     });
 
@@ -446,13 +438,17 @@ describe('ICS23MerkleTree', () => {
         expect(tree.verifyProof(proof)).toBe(true);
       });
 
-      it('should handle empty values', () => {
-        const emptyValue = Buffer.alloc(0);
-        tree.set('empty-key', emptyValue);
-        
-        const proof = tree.generateProof('empty-key');
-        expect(proof.value).toEqual(emptyValue);
-        expect(tree.verifyProof(proof)).toBe(true);
+      it('should treat empty values as deletion (no leaf contribution)', () => {
+        tree.set('key1', Buffer.from('value1'));
+        const rootWithValue = tree.getRoot();
+
+        // Setting an empty value removes the key from the tree.
+        tree.set('key1', Buffer.alloc(0));
+        expect(tree.get('key1')).toBeUndefined();
+        expect(tree.getRoot()).toBe('0'.repeat(64));
+
+        // Sanity check: the root actually changed.
+        expect(rootWithValue).not.toBe('0'.repeat(64));
       });
 
       it('should handle large values', () => {
@@ -466,4 +462,3 @@ describe('ICS23MerkleTree', () => {
     });
   });
 });
-

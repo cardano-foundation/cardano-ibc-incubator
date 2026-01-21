@@ -10,7 +10,9 @@ import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/l
 
 export function normalizeClientStateFromDatum(clientState: ClientState): ClientStateTendermint {
   const clientStateTendermint: ClientStateTendermint = {
-    chain_id: clientState.chainId,
+    // On-chain we store `chainId` as bytes (hex) for Plutus data efficiency.
+    // For IBC/Tendermint client state over gRPC we must return the plain UTF-8 chain id.
+    chain_id: convertHex2String(clientState.chainId),
     trust_level: {
       numerator: clientState.trustLevel.numerator,
       denominator: clientState.trustLevel.denominator,

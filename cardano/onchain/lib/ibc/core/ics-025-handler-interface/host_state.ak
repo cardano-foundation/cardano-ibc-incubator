@@ -13,6 +13,9 @@
 //
 // This design eliminates state ambiguity and simplifies indexing/querying.
 
+use aiken/collection/list
+use aiken/primitive/int
+
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
 pub const empty_ibc_state_root = #"0000000000000000000000000000000000000000000000000000000000000000"
 
@@ -149,15 +152,49 @@ pub fn validate_bind_port(
   new: HostStateDatum,
   port: Int,
 ) -> Bool {
-  // TODO: Add check that port is not already bound
+  // A port can only be bound once.
+  //
+  // If a port is already in the list, we reject the transition.
+  expect
+    if list.has(old.state.bound_port, port) {
+      False
+    } else {
+      True
+    }
+
   and {
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    // Port list should have the new port added and be sorted
-    // TODO: Implement proper list addition and sort check
+    // Port list should have the new port added and be sorted.
+    new.state.bound_port ==
+      (list.push(old.state.bound_port, port) |> list.sort(int.compare)),
     new.nft_policy == old.nft_policy,
   }
 }
 
+/// Validate HostState transitions for operations that only update the commitment root.
+///
+/// These operations should not:
+/// - create new clients/connections/channels (so the "next_*_sequence" fields must not change)
+/// - change the set of bound ports
+/// - change which NFT policy identifies the HostState UTxO
+///
+/// They are still allowed to:
+/// - increment the monotonically increasing `version`
+/// - update `ibc_state_root`
+/// - update `last_update_time`
+pub fn validate_update_only_root(
+  old: HostStateDatum,
+  new: HostStateDatum,
+) -> Bool {
+  and {
+    validate_version_increment(old.state, new.state),
+    new.state.next_client_sequence == old.state.next_client_sequence,
+    new.state.next_connection_sequence == old.state.next_connection_sequence,
+    new.state.next_channel_sequence == old.state.next_channel_sequence,
+    new.state.bound_port == old.state.bound_port,
+    new.nft_policy == old.nft_policy,
+  }
+}
