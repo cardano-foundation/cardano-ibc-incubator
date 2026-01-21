@@ -10,8 +10,8 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
-// CheckForMisbehaviour detects duplicate height misbehaviour and time violation misbehaviour
-// in a submitted MithrilHeader message and verifies the correctness of a submitted Misbehaviour ClientMessage
+// CheckForMisbehaviour checks for evidence of misbehaviour in a Header or Misbehaviour type.
+// It assumes the ClientMessage has already been verified by VerifyClientMessage.
 func (ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, msg exported.ClientMessage) bool {
 	// switch msg := msg.(type) {
 	// case *MithrilHeader:

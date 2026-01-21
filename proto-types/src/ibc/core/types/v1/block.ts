@@ -33,7 +33,7 @@ function createBaseEventAttribute(): EventAttribute {
   return {
     key: "",
     value: "",
-    index: false
+    index: false,
   };
 }
 export const EventAttribute = {
@@ -93,12 +93,12 @@ export const EventAttribute = {
     message.value = object.value ?? "";
     message.index = object.index ?? false;
     return message;
-  }
+  },
 };
 function createBaseEvent(): Event {
   return {
     type: "",
-    event_attribute: []
+    event_attribute: [],
   };
 }
 export const Event = {
@@ -135,14 +135,15 @@ export const Event = {
   fromJSON(object: any): Event {
     const obj = createBaseEvent();
     if (isSet(object.type)) obj.type = String(object.type);
-    if (Array.isArray(object?.event_attribute)) obj.event_attribute = object.event_attribute.map((e: any) => EventAttribute.fromJSON(e));
+    if (Array.isArray(object?.event_attribute))
+      obj.event_attribute = object.event_attribute.map((e: any) => EventAttribute.fromJSON(e));
     return obj;
   },
   toJSON(message: Event): unknown {
     const obj: any = {};
     message.type !== undefined && (obj.type = message.type);
     if (message.event_attribute) {
-      obj.event_attribute = message.event_attribute.map(e => e ? EventAttribute.toJSON(e) : undefined);
+      obj.event_attribute = message.event_attribute.map((e) => (e ? EventAttribute.toJSON(e) : undefined));
     } else {
       obj.event_attribute = [];
     }
@@ -151,14 +152,14 @@ export const Event = {
   fromPartial<I extends Exact<DeepPartial<Event>, I>>(object: I): Event {
     const message = createBaseEvent();
     message.type = object.type ?? "";
-    message.event_attribute = object.event_attribute?.map(e => EventAttribute.fromPartial(e)) || [];
+    message.event_attribute = object.event_attribute?.map((e) => EventAttribute.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseResponseDeliverTx(): ResponseDeliverTx {
   return {
     code: 0,
-    events: []
+    events: [],
   };
 }
 export const ResponseDeliverTx = {
@@ -202,7 +203,7 @@ export const ResponseDeliverTx = {
     const obj: any = {};
     message.code !== undefined && (obj.code = Math.round(message.code));
     if (message.events) {
-      obj.events = message.events.map(e => e ? Event.toJSON(e) : undefined);
+      obj.events = message.events.map((e) => (e ? Event.toJSON(e) : undefined));
     } else {
       obj.events = [];
     }
@@ -211,14 +212,14 @@ export const ResponseDeliverTx = {
   fromPartial<I extends Exact<DeepPartial<ResponseDeliverTx>, I>>(object: I): ResponseDeliverTx {
     const message = createBaseResponseDeliverTx();
     message.code = object.code ?? 0;
-    message.events = object.events?.map(e => Event.fromPartial(e)) || [];
+    message.events = object.events?.map((e) => Event.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseResultBlockResults(): ResultBlockResults {
   return {
     height: undefined,
-    txs_results: []
+    txs_results: [],
   };
 }
 export const ResultBlockResults = {
@@ -255,14 +256,15 @@ export const ResultBlockResults = {
   fromJSON(object: any): ResultBlockResults {
     const obj = createBaseResultBlockResults();
     if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
-    if (Array.isArray(object?.txs_results)) obj.txs_results = object.txs_results.map((e: any) => ResponseDeliverTx.fromJSON(e));
+    if (Array.isArray(object?.txs_results))
+      obj.txs_results = object.txs_results.map((e: any) => ResponseDeliverTx.fromJSON(e));
     return obj;
   },
   toJSON(message: ResultBlockResults): unknown {
     const obj: any = {};
     message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
     if (message.txs_results) {
-      obj.txs_results = message.txs_results.map(e => e ? ResponseDeliverTx.toJSON(e) : undefined);
+      obj.txs_results = message.txs_results.map((e) => (e ? ResponseDeliverTx.toJSON(e) : undefined));
     } else {
       obj.txs_results = [];
     }
@@ -273,13 +275,13 @@ export const ResultBlockResults = {
     if (object.height !== undefined && object.height !== null) {
       message.height = Height.fromPartial(object.height);
     }
-    message.txs_results = object.txs_results?.map(e => ResponseDeliverTx.fromPartial(e)) || [];
+    message.txs_results = object.txs_results?.map((e) => ResponseDeliverTx.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseBlockInfo(): BlockInfo {
   return {
-    height: BigInt(0)
+    height: BigInt(0),
   };
 }
 export const BlockInfo = {
@@ -323,12 +325,12 @@ export const BlockInfo = {
       message.height = BigInt(object.height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseResultBlockSearch(): ResultBlockSearch {
   return {
     block_id: BigInt(0),
-    block: undefined
+    block: undefined,
   };
 }
 export const ResultBlockSearch = {
@@ -383,5 +385,5 @@ export const ResultBlockSearch = {
       message.block = BlockInfo.fromPartial(object.block);
     }
     return message;
-  }
+  },
 };

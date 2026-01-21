@@ -16,7 +16,7 @@ function createBaseGenesisState(): GenesisState {
     connections: [],
     client_connection_paths: [],
     next_connection_sequence: BigInt(0),
-    params: Params.fromPartial({})
+    params: Params.fromPartial({}),
   };
 }
 export const GenesisState = {
@@ -64,32 +64,41 @@ export const GenesisState = {
   },
   fromJSON(object: any): GenesisState {
     const obj = createBaseGenesisState();
-    if (Array.isArray(object?.connections)) obj.connections = object.connections.map((e: any) => IdentifiedConnection.fromJSON(e));
-    if (Array.isArray(object?.client_connection_paths)) obj.client_connection_paths = object.client_connection_paths.map((e: any) => ConnectionPaths.fromJSON(e));
-    if (isSet(object.next_connection_sequence)) obj.next_connection_sequence = BigInt(object.next_connection_sequence.toString());
+    if (Array.isArray(object?.connections))
+      obj.connections = object.connections.map((e: any) => IdentifiedConnection.fromJSON(e));
+    if (Array.isArray(object?.client_connection_paths))
+      obj.client_connection_paths = object.client_connection_paths.map((e: any) =>
+        ConnectionPaths.fromJSON(e),
+      );
+    if (isSet(object.next_connection_sequence))
+      obj.next_connection_sequence = BigInt(object.next_connection_sequence.toString());
     if (isSet(object.params)) obj.params = Params.fromJSON(object.params);
     return obj;
   },
   toJSON(message: GenesisState): unknown {
     const obj: any = {};
     if (message.connections) {
-      obj.connections = message.connections.map(e => e ? IdentifiedConnection.toJSON(e) : undefined);
+      obj.connections = message.connections.map((e) => (e ? IdentifiedConnection.toJSON(e) : undefined));
     } else {
       obj.connections = [];
     }
     if (message.client_connection_paths) {
-      obj.client_connection_paths = message.client_connection_paths.map(e => e ? ConnectionPaths.toJSON(e) : undefined);
+      obj.client_connection_paths = message.client_connection_paths.map((e) =>
+        e ? ConnectionPaths.toJSON(e) : undefined,
+      );
     } else {
       obj.client_connection_paths = [];
     }
-    message.next_connection_sequence !== undefined && (obj.next_connection_sequence = (message.next_connection_sequence || BigInt(0)).toString());
+    message.next_connection_sequence !== undefined &&
+      (obj.next_connection_sequence = (message.next_connection_sequence || BigInt(0)).toString());
     message.params !== undefined && (obj.params = message.params ? Params.toJSON(message.params) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<GenesisState>, I>>(object: I): GenesisState {
     const message = createBaseGenesisState();
-    message.connections = object.connections?.map(e => IdentifiedConnection.fromPartial(e)) || [];
-    message.client_connection_paths = object.client_connection_paths?.map(e => ConnectionPaths.fromPartial(e)) || [];
+    message.connections = object.connections?.map((e) => IdentifiedConnection.fromPartial(e)) || [];
+    message.client_connection_paths =
+      object.client_connection_paths?.map((e) => ConnectionPaths.fromPartial(e)) || [];
     if (object.next_connection_sequence !== undefined && object.next_connection_sequence !== null) {
       message.next_connection_sequence = BigInt(object.next_connection_sequence.toString());
     }
@@ -97,5 +106,5 @@ export const GenesisState = {
       message.params = Params.fromPartial(object.params);
     }
     return message;
-  }
+  },
 };

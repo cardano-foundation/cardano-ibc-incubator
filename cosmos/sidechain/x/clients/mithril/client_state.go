@@ -1,10 +1,78 @@
+// as per IBC spec, ClientState encapsulates the light client implementation and its semantics.
+
 package mithril
+
+// Mithril Light Client for IBC Architecture:
+//
+// This client bridges Mithril's certificate-based snapshot verification with IBC's ICS-23 proof requirements.
+//
+// KEY COMPONENTS:
+//
+// 1. ClientState (this file):
+//    - latest_height: Cardano block height/slot that the latest certified snapshot corresponds to
+//    - trusting_period, max_clock_drift: IBC timing parameters
+//    - Mithril params: protocol version, threshold params (k, m, φ_f, τ), aggregator identity/endpoint(s)
+//    - trust_anchor: hash of the trusted certificate (or genesis/stored checkpoint)
+//    - signer_set_commitment: commitment to registered signer VKeys (or rolling commitment via cert chain)
+//
+// 2. ConsensusState (at Height H):
+//    - timestamp: from the certified block/certificate time
+//    - root: the ICS-23 Merkle root for verifying membership/non-membership proofs (see CRITICAL POINT below)
+//    - certificate_digest: hash of the Mithril certificate that attests the snapshot at H
+//    - snapshot_digest: hash(manifest) of the snapshot bundle at H
+//    - cardano_block_hash/slot: optional, for anchoring
+//
+// 3. Header/ClientMessage:
+//    - new Mithril certificate (with parent hash) + its signed snapshot identifier
+//    - minimal snapshot manifest header (height, block hash, snapshot_digest)
+//    - optional batch update (multiple certs to fast forward)
+//
+// How ICS-23 Proofs Work with Mithril:
+//
+// The certificate attests to the snapshot, and ConsensusState.root must be a commitment inside that snapshot.
+//
+// IBC's VerifyMembership/VerifyNonMembership expects ICS-23 Merkle proofs against a commitment root at a given height.
+// Mithril by itself certifies a snapshot blob (manifest hash) at height H, but does NOT natively provide per-key
+// Merkle proofs for arbitrary IBC paths (e.g., "clients/07-tendermint-0/clientState").
+//
+// The solution which maintains all important state on-chain is the Host-State Root UTXO:
+//
+// The Cardano IBC host maintains a single ICS-23 Merkle root (covering clients/, connections/, channels/, packets/, etc.)
+// in a well-known reference UTXO datum. Each block/step that mutates host state updates this root deterministically.
+//
+// The snapshot taken at height H contains that UTXO and its datum, thus:
+//   snapshot_digest -> certificate -> UTXO -> datum -> ICS-23 root
+//
+// On Cosmos: ConsensusState(H).root = <that ICS-23 root from the UTXO datum>
+//
+// Then VerifyMembership/VerifyNonMembership validate ICS-23 proofs against this root, exactly as IBC expects.
+// All important state remains on-chain (in the UTXO), while Mithril provides efficient certification of that state.
+
+// As of November 14 2025:
+// Mithril certifies a Merkle root that commits to the entire UTXO set, but currently does NOT expose
+// individual UTXO-level Merkle branches/proofs. This means:
+//
+// 1. UpdateState() have no choice but to trust the Gateway to provide the correct ibc_state_root from the Handler UTXO
+//    - We cannot cryptographically verify this extraction via Mithril proof
+//    - If Mithril exposed UTXO-level Merkle branches in the future, this could become trustless
+//
+// 2. VerifyMembership() cryptographically verifies ICS-23 proofs against the ibc_state_root
+//    - These proofs ARE unforgeable (given the root)
+//    - Gateway cannot lie about IBC state once the root is established
+//
+// Security implications:
+// - Malicious Gateway can cause denial-of-service (wrong root -> proofs fail)
+// - Malicious Gateway can cause state confusion (providing old but valid root)
+// - ***Gateway CANNOT forge proofs that verify against a given root (crypto prevents this)***
+//
+// This is a practical trade-off: we trust Gateway for data availability and root extraction,
+// but maintain cryptographic integrity for all IBC state verification via ICS-23 proofs.
 
 import (
 	"strings"
 	"time"
 
-	// ics23 "github.com/cosmos/ics23/go"
+	ics23 "github.com/cosmos/ics23/go"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -14,6 +82,7 @@ import (
 
 	cmttypes "github.com/cometbft/cometbft/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
@@ -50,7 +119,8 @@ func (ClientState) ClientType() string {
 	return ModuleName
 }
 
-// GetTimestampAtHeight returns the timestamp in seconds of the consensus state at the given height.
+// GetTimestampAtHeight returns the timestamp for the consensus state associated with the provided height.
+// This value is used to facilitate timeouts by checking the packet timeout timestamp against the returned value.
 func (ClientState) GetTimestampAtHeight(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -65,14 +135,12 @@ func (ClientState) GetTimestampAtHeight(
 	return consState.GetTimestamp(), nil
 }
 
-// Status returns the status of the mithril client.
-// The client may be:
-// - Active: FrozenHeight is zero and client is not expired
-// - Frozen: Frozen Height is not zero
-// - Expired: the latest consensus state timestamp + trusting period <= current time
+// Status returns the status of the mithril client. Possible statuses:
+// - Active: clients are allowed to process packets
+// - Frozen: misbehaviour was detected and client is not allowed to be used
+// - Expired: client was not updated for longer than the trusting period
 //
-// A frozen client will become expired, so the Frozen status
-// has higher precedence.
+// A frozen client will become expired, so the Frozen status has higher precedence.
 func (cs ClientState) Status(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -175,8 +243,8 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	}
 }
 
-// Initialize checks that the initial consensus state is an  consensus state and
-// sets the client state, consensus state and associated metadata in the provided client store.
+// Initialize validates the initial consensus state and sets the initial client state,
+// consensus state, and client-specific metadata in the provided client store.
 func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {
 	consensusState, ok := consState.(*ConsensusState)
 	if !ok {
@@ -194,7 +262,7 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	return nil
 }
 
-// GetLatestHeight returns latest block height.
+// GetLatestHeight returns the latest block height that the client state represents.
 func (cs ClientState) GetLatestHeight() exported.Height {
 	return cs.LatestHeight
 }
@@ -202,6 +270,16 @@ func (cs ClientState) GetLatestHeight() exported.Height {
 // VerifyMembership is a generic proof verification method which verifies a proof of the existence of a value at a given CommitmentPath at the specified height.
 // The caller is expected to construct the full CommitmentPath from a CommitmentPrefix and a standardized path (as defined in ICS 24).
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
+//
+// Implementation:
+//   1. Retrieve ConsensusState(height).IbcStateRoot - the ICS-23 Merkle root from the Handler UTXO
+//   2. Deserialize the ICS-23 MerkleProof from the proof bytes
+//   3. Use ics23.VerifyMembership to cryptographically verify the proof against the root
+//   4. Confirm the value at the path matches the expected value
+//
+// The IbcStateRoot is maintained on-chain in the Handler UTXO datum and updated with each state change.
+// Mithril certifies the snapshot containing this UTXO, and Gateway extracts the root (trusted for extraction).
+// Once the root is in ConsensusState, ICS-23 proofs are cryptographically unforgeable.
 func (cs ClientState) VerifyMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -213,13 +291,62 @@ func (cs ClientState) VerifyMembership(
 	path exported.Path,
 	value []byte,
 ) error {
+	// 1. Retrieve the consensus state at the given height
+	consensusState, found := GetConsensusState(clientStore, cdc, height)
+	if !found {
+		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
+	}
+
+	// 2. Get the IBC state root (32-byte Merkle root)
+	if len(consensusState.IbcStateRoot) != 32 {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "ibc_state_root is not 32 bytes")
+	}
+	
+	// Wrap the root bytes in a MerkleRoot commitment type
+	merkleRoot := commitmenttypes.MerkleRoot{Hash: consensusState.IbcStateRoot}
+
+	// 3. Deserialize the ICS-23 MerkleProof from protobuf bytes
+	var merkleProof commitmenttypes.MerkleProof
+	if err := cdc.Unmarshal(proof, &merkleProof); err != nil {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "failed to unmarshal proof: %v", err)
+	}
+
+	// 4. Construct the Merkle path from the IBC path
+	// The path is expected to be a MerklePath (ICS-24 commitment path)
+	merklePath, ok := path.(commitmenttypes.MerklePath)
+	if !ok {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "expected MerklePath, got %T", path)
+	}
+
+	// 5. Get ICS-23 proof specs (simple Merkle tree spec)
+	// This should match the spec used by the Gateway's ICS23MerkleTree implementation:
+	// - SHA256 hashing
+	// - VAR_PROTO length prefix encoding
+	// - No prefix for leaf nodes
+	// - 0x01 prefix for inner nodes
+	specs := []*ics23.ProofSpec{getCardanoIBCProofSpec()}
+
+	// 6. Verify the membership proof using ics23 library
+	// This cryptographically verifies that the value exists at the path with the given root
+	if err := merkleProof.VerifyMembership(specs, merkleRoot, merklePath, value); err != nil {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "failed to verify membership: %v", err)
+	}
+
 	return nil
-	// return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
 }
 
 // VerifyNonMembership is a generic proof verification method which verifies the absence of a given CommitmentPath at a specified height.
 // The caller is expected to construct the full CommitmentPath from a CommitmentPrefix and a standardized path (as defined in ICS 24).
 // If a zero proof height is passed in, it will fail to retrieve the associated consensus state.
+//
+// Implementation:
+//   1. Retrieve ConsensusState(height).IbcStateRoot - the ICS-23 Merkle root from the Handler UTXO
+//   2. Deserialize the ICS-23 MerkleProof (containing NonExistenceProof) from the proof bytes
+//   3. Use ics23.VerifyNonMembership to cryptographically verify the proof against the root
+//   4. Confirm that the path does not exist in the commitment tree
+//
+// NonExistenceProof works by providing existence proofs for the left and right neighbors of the absent key,
+// proving that the key cannot exist between them in the lexicographically-ordered tree.
 func (cs ClientState) VerifyNonMembership(
 	ctx sdk.Context,
 	clientStore storetypes.KVStore,
@@ -230,6 +357,75 @@ func (cs ClientState) VerifyNonMembership(
 	proof []byte,
 	path exported.Path,
 ) error {
+	// 1. Retrieve the consensus state at the given height
+	consensusState, found := GetConsensusState(clientStore, cdc, height)
+	if !found {
+		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
+	}
+
+	// 2. Get the IBC state root (32-byte Merkle root)
+	if len(consensusState.IbcStateRoot) != 32 {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "ibc_state_root is not 32 bytes")
+	}
+	
+	// Wrap the root bytes in a MerkleRoot commitment type
+	merkleRoot := commitmenttypes.MerkleRoot{Hash: consensusState.IbcStateRoot}
+
+	// 3. Deserialize the ICS-23 MerkleProof from protobuf bytes
+	var merkleProof commitmenttypes.MerkleProof
+	if err := cdc.Unmarshal(proof, &merkleProof); err != nil {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "failed to unmarshal proof: %v", err)
+	}
+
+	// 4. Construct the Merkle path from the IBC path
+	merklePath, ok := path.(commitmenttypes.MerklePath)
+	if !ok {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "expected MerklePath, got %T", path)
+	}
+
+	// 5. Get ICS-23 proof specs
+	specs := []*ics23.ProofSpec{getCardanoIBCProofSpec()}
+
+	// 6. Verify the non-membership proof using ics23 library
+	// This cryptographically verifies that the key does not exist at the path
+	if err := merkleProof.VerifyNonMembership(specs, merkleRoot, merklePath); err != nil {
+		return errorsmod.Wrapf(commitmenttypes.ErrInvalidProof, "failed to verify non-membership: %v", err)
+	}
+
 	return nil
-	// return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+}
+
+// getCardanoIBCProofSpec returns the ICS-23 ProofSpec for Cardano IBC state tree
+//
+// This spec MUST match the Gateway's ICS23MerkleTree implementation:
+// - SHA256 hashing
+// - VAR_PROTO length-prefix encoding (protobuf varint)
+// - No prefix for leaf nodes
+// - 0x01 prefix for inner nodes
+//
+// The spec defines how to reconstruct the Merkle root from a proof by:
+// 1. Hashing the leaf: hash(length(key) || key || length(value) || value)
+// 2. Hashing each inner level: hash(0x01 || left_child || right_child)
+// 3. Continuing until root is reconstructed
+func getCardanoIBCProofSpec() *ics23.ProofSpec {
+	return &ics23.ProofSpec{
+		LeafSpec: &ics23.LeafOp{
+			Hash:         ics23.HashOp_SHA256,
+			PrehashKey:   ics23.HashOp_NO_HASH,
+			PrehashValue: ics23.HashOp_NO_HASH,
+			Length:       ics23.LengthOp_VAR_PROTO,
+			Prefix:       []byte{}, // No prefix for leaf nodes
+		},
+		InnerSpec: &ics23.InnerSpec{
+			ChildOrder:      []int32{0, 1}, // Binary tree: left child (0), right child (1)
+			ChildSize:       32,             // SHA256 output is 32 bytes
+			MinPrefixLength: 1,              // Inner nodes have 0x01 prefix
+			MaxPrefixLength: 1,
+			EmptyChild:      []byte{}, // No empty child marker
+			Hash:            ics23.HashOp_SHA256,
+		},
+		MinDepth: 0,  // Single-leaf tree has depth 0
+		MaxDepth: 64, // Reasonable maximum depth for binary tree
+		PrehashKeyBeforeComparison: false,
+	}
 }

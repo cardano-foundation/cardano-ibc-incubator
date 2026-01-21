@@ -18,7 +18,7 @@ function createBaseGenesisState(): GenesisState {
   return {
     client_genesis: GenesisState1.fromPartial({}),
     connection_genesis: GenesisState2.fromPartial({}),
-    channel_genesis: GenesisState3.fromPartial({})
+    channel_genesis: GenesisState3.fromPartial({}),
   };
 }
 export const GenesisState = {
@@ -61,15 +61,25 @@ export const GenesisState = {
   fromJSON(object: any): GenesisState {
     const obj = createBaseGenesisState();
     if (isSet(object.client_genesis)) obj.client_genesis = GenesisState1.fromJSON(object.client_genesis);
-    if (isSet(object.connection_genesis)) obj.connection_genesis = GenesisState2.fromJSON(object.connection_genesis);
+    if (isSet(object.connection_genesis))
+      obj.connection_genesis = GenesisState2.fromJSON(object.connection_genesis);
     if (isSet(object.channel_genesis)) obj.channel_genesis = GenesisState3.fromJSON(object.channel_genesis);
     return obj;
   },
   toJSON(message: GenesisState): unknown {
     const obj: any = {};
-    message.client_genesis !== undefined && (obj.client_genesis = message.client_genesis ? GenesisState1.toJSON(message.client_genesis) : undefined);
-    message.connection_genesis !== undefined && (obj.connection_genesis = message.connection_genesis ? GenesisState2.toJSON(message.connection_genesis) : undefined);
-    message.channel_genesis !== undefined && (obj.channel_genesis = message.channel_genesis ? GenesisState3.toJSON(message.channel_genesis) : undefined);
+    message.client_genesis !== undefined &&
+      (obj.client_genesis = message.client_genesis
+        ? GenesisState1.toJSON(message.client_genesis)
+        : undefined);
+    message.connection_genesis !== undefined &&
+      (obj.connection_genesis = message.connection_genesis
+        ? GenesisState2.toJSON(message.connection_genesis)
+        : undefined);
+    message.channel_genesis !== undefined &&
+      (obj.channel_genesis = message.channel_genesis
+        ? GenesisState3.toJSON(message.channel_genesis)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<GenesisState>, I>>(object: I): GenesisState {
@@ -84,5 +94,5 @@ export const GenesisState = {
       message.channel_genesis = GenesisState3.fromPartial(object.channel_genesis);
     }
     return message;
-  }
+  },
 };

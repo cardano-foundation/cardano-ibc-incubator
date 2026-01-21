@@ -23,7 +23,7 @@ export interface Consensus {
 function createBaseApp(): App {
   return {
     protocol: BigInt(0),
-    software: ""
+    software: "",
   };
 }
 export const App = {
@@ -76,12 +76,12 @@ export const App = {
     }
     message.software = object.software ?? "";
     return message;
-  }
+  },
 };
 function createBaseConsensus(): Consensus {
   return {
     block: BigInt(0),
-    app: BigInt(0)
+    app: BigInt(0),
   };
 }
 export const Consensus = {
@@ -136,5 +136,5 @@ export const Consensus = {
       message.app = BigInt(object.app.toString());
     }
     return message;
-  }
+  },
 };

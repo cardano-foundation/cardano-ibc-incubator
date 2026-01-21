@@ -75,7 +75,7 @@ export interface UpgradeProposal {
  * Height is a monotonically increasing data type
  * that can be compared against another Height for the purposes of updating and
  * freezing clients
- * 
+ *
  * Normally the RevisionHeight is incremented at each height while keeping
  * RevisionNumber the same. However some consensus algorithms may choose to
  * reset the height in certain conditions e.g. hard forks, state-machine
@@ -97,7 +97,7 @@ export interface Params {
 function createBaseIdentifiedClientState(): IdentifiedClientState {
   return {
     client_id: "",
-    client_state: undefined
+    client_state: undefined,
   };
 }
 export const IdentifiedClientState = {
@@ -140,7 +140,8 @@ export const IdentifiedClientState = {
   toJSON(message: IdentifiedClientState): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.client_state !== undefined && (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
+    message.client_state !== undefined &&
+      (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<IdentifiedClientState>, I>>(object: I): IdentifiedClientState {
@@ -150,12 +151,12 @@ export const IdentifiedClientState = {
       message.client_state = Any.fromPartial(object.client_state);
     }
     return message;
-  }
+  },
 };
 function createBaseConsensusStateWithHeight(): ConsensusStateWithHeight {
   return {
     height: Height.fromPartial({}),
-    consensus_state: undefined
+    consensus_state: undefined,
   };
 }
 export const ConsensusStateWithHeight = {
@@ -198,10 +199,13 @@ export const ConsensusStateWithHeight = {
   toJSON(message: ConsensusStateWithHeight): unknown {
     const obj: any = {};
     message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
-    message.consensus_state !== undefined && (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
+    message.consensus_state !== undefined &&
+      (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<ConsensusStateWithHeight>, I>>(object: I): ConsensusStateWithHeight {
+  fromPartial<I extends Exact<DeepPartial<ConsensusStateWithHeight>, I>>(
+    object: I,
+  ): ConsensusStateWithHeight {
     const message = createBaseConsensusStateWithHeight();
     if (object.height !== undefined && object.height !== null) {
       message.height = Height.fromPartial(object.height);
@@ -210,12 +214,12 @@ export const ConsensusStateWithHeight = {
       message.consensus_state = Any.fromPartial(object.consensus_state);
     }
     return message;
-  }
+  },
 };
 function createBaseClientConsensusStates(): ClientConsensusStates {
   return {
     client_id: "",
-    consensus_states: []
+    consensus_states: [],
   };
 }
 export const ClientConsensusStates = {
@@ -252,14 +256,17 @@ export const ClientConsensusStates = {
   fromJSON(object: any): ClientConsensusStates {
     const obj = createBaseClientConsensusStates();
     if (isSet(object.client_id)) obj.client_id = String(object.client_id);
-    if (Array.isArray(object?.consensus_states)) obj.consensus_states = object.consensus_states.map((e: any) => ConsensusStateWithHeight.fromJSON(e));
+    if (Array.isArray(object?.consensus_states))
+      obj.consensus_states = object.consensus_states.map((e: any) => ConsensusStateWithHeight.fromJSON(e));
     return obj;
   },
   toJSON(message: ClientConsensusStates): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
     if (message.consensus_states) {
-      obj.consensus_states = message.consensus_states.map(e => e ? ConsensusStateWithHeight.toJSON(e) : undefined);
+      obj.consensus_states = message.consensus_states.map((e) =>
+        e ? ConsensusStateWithHeight.toJSON(e) : undefined,
+      );
     } else {
       obj.consensus_states = [];
     }
@@ -268,16 +275,17 @@ export const ClientConsensusStates = {
   fromPartial<I extends Exact<DeepPartial<ClientConsensusStates>, I>>(object: I): ClientConsensusStates {
     const message = createBaseClientConsensusStates();
     message.client_id = object.client_id ?? "";
-    message.consensus_states = object.consensus_states?.map(e => ConsensusStateWithHeight.fromPartial(e)) || [];
+    message.consensus_states =
+      object.consensus_states?.map((e) => ConsensusStateWithHeight.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseClientUpdateProposal(): ClientUpdateProposal {
   return {
     title: "",
     description: "",
     subject_client_id: "",
-    substitute_client_id: ""
+    substitute_client_id: "",
   };
 }
 export const ClientUpdateProposal = {
@@ -346,14 +354,14 @@ export const ClientUpdateProposal = {
     message.subject_client_id = object.subject_client_id ?? "";
     message.substitute_client_id = object.substitute_client_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseUpgradeProposal(): UpgradeProposal {
   return {
     title: "",
     description: "",
     plan: Plan.fromPartial({}),
-    upgraded_client_state: undefined
+    upgraded_client_state: undefined,
   };
 }
 export const UpgradeProposal = {
@@ -404,7 +412,8 @@ export const UpgradeProposal = {
     if (isSet(object.title)) obj.title = String(object.title);
     if (isSet(object.description)) obj.description = String(object.description);
     if (isSet(object.plan)) obj.plan = Plan.fromJSON(object.plan);
-    if (isSet(object.upgraded_client_state)) obj.upgraded_client_state = Any.fromJSON(object.upgraded_client_state);
+    if (isSet(object.upgraded_client_state))
+      obj.upgraded_client_state = Any.fromJSON(object.upgraded_client_state);
     return obj;
   },
   toJSON(message: UpgradeProposal): unknown {
@@ -412,7 +421,10 @@ export const UpgradeProposal = {
     message.title !== undefined && (obj.title = message.title);
     message.description !== undefined && (obj.description = message.description);
     message.plan !== undefined && (obj.plan = message.plan ? Plan.toJSON(message.plan) : undefined);
-    message.upgraded_client_state !== undefined && (obj.upgraded_client_state = message.upgraded_client_state ? Any.toJSON(message.upgraded_client_state) : undefined);
+    message.upgraded_client_state !== undefined &&
+      (obj.upgraded_client_state = message.upgraded_client_state
+        ? Any.toJSON(message.upgraded_client_state)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<UpgradeProposal>, I>>(object: I): UpgradeProposal {
@@ -426,12 +438,12 @@ export const UpgradeProposal = {
       message.upgraded_client_state = Any.fromPartial(object.upgraded_client_state);
     }
     return message;
-  }
+  },
 };
 function createBaseHeight(): Height {
   return {
     revision_number: BigInt(0),
-    revision_height: BigInt(0)
+    revision_height: BigInt(0),
   };
 }
 export const Height = {
@@ -473,8 +485,10 @@ export const Height = {
   },
   toJSON(message: Height): unknown {
     const obj: any = {};
-    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
-    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    message.revision_number !== undefined &&
+      (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined &&
+      (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Height>, I>>(object: I): Height {
@@ -486,11 +500,11 @@ export const Height = {
       message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseParams(): Params {
   return {
-    allowed_clients: []
+    allowed_clients: [],
   };
 }
 export const Params = {
@@ -520,13 +534,14 @@ export const Params = {
   },
   fromJSON(object: any): Params {
     const obj = createBaseParams();
-    if (Array.isArray(object?.allowed_clients)) obj.allowed_clients = object.allowed_clients.map((e: any) => String(e));
+    if (Array.isArray(object?.allowed_clients))
+      obj.allowed_clients = object.allowed_clients.map((e: any) => String(e));
     return obj;
   },
   toJSON(message: Params): unknown {
     const obj: any = {};
     if (message.allowed_clients) {
-      obj.allowed_clients = message.allowed_clients.map(e => e);
+      obj.allowed_clients = message.allowed_clients.map((e) => e);
     } else {
       obj.allowed_clients = [];
     }
@@ -534,7 +549,7 @@ export const Params = {
   },
   fromPartial<I extends Exact<DeepPartial<Params>, I>>(object: I): Params {
     const message = createBaseParams();
-    message.allowed_clients = object.allowed_clients?.map(e => e) || [];
+    message.allowed_clients = object.allowed_clients?.map((e) => e) || [];
     return message;
-  }
+  },
 };

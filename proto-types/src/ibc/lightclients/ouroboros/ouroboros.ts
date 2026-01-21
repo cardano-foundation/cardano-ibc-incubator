@@ -99,7 +99,7 @@ function createBaseTokenConfigs(): TokenConfigs {
     handler_token_unit: "",
     client_policy_id: "",
     connection_policy_id: "",
-    channel_policy_id: ""
+    channel_policy_id: "",
   };
 }
 export const TokenConfigs = {
@@ -168,12 +168,12 @@ export const TokenConfigs = {
     message.connection_policy_id = object.connection_policy_id ?? "";
     message.channel_policy_id = object.channel_policy_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseHeight(): Height {
   return {
     revision_number: BigInt(0),
-    revision_height: BigInt(0)
+    revision_height: BigInt(0),
   };
 }
 export const Height = {
@@ -215,8 +215,10 @@ export const Height = {
   },
   toJSON(message: Height): unknown {
     const obj: any = {};
-    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
-    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    message.revision_number !== undefined &&
+      (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined &&
+      (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Height>, I>>(object: I): Height {
@@ -228,12 +230,12 @@ export const Height = {
       message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseConsensusState(): ConsensusState {
   return {
     timestamp: BigInt(0),
-    slot: BigInt(0)
+    slot: BigInt(0),
   };
 }
 export const ConsensusState = {
@@ -288,12 +290,12 @@ export const ConsensusState = {
       message.slot = BigInt(object.slot.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseValidator(): Validator {
   return {
     vrf_key_hash: "",
-    pool_id: ""
+    pool_id: "",
   };
 }
 export const Validator = {
@@ -344,7 +346,7 @@ export const Validator = {
     message.vrf_key_hash = object.vrf_key_hash ?? "";
     message.pool_id = object.pool_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseBlockData(): BlockData {
   return {
@@ -357,7 +359,7 @@ function createBaseBlockData(): BlockData {
     body_cbor: "",
     epoch_nonce: "",
     timestamp: BigInt(0),
-    chain_id: ""
+    chain_id: "",
   };
 }
 export const BlockData = {
@@ -488,7 +490,7 @@ export const BlockData = {
     }
     message.chain_id = object.chain_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseClientState(): ClientState {
   return {
@@ -504,7 +506,7 @@ function createBaseClientState(): ClientState {
     next_validator_set: [],
     trusting_period: BigInt(0),
     upgrade_path: [],
-    token_configs: undefined
+    token_configs: undefined,
   };
 }
 export const ClientState = {
@@ -613,41 +615,53 @@ export const ClientState = {
     if (isSet(object.genesis_time)) obj.genesis_time = BigInt(object.genesis_time.toString());
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.epoch_length)) obj.epoch_length = BigInt(object.epoch_length.toString());
-    if (isSet(object.slot_per_kes_period)) obj.slot_per_kes_period = BigInt(object.slot_per_kes_period.toString());
-    if (Array.isArray(object?.current_validator_set)) obj.current_validator_set = object.current_validator_set.map((e: any) => Validator.fromJSON(e));
-    if (Array.isArray(object?.next_validator_set)) obj.next_validator_set = object.next_validator_set.map((e: any) => Validator.fromJSON(e));
+    if (isSet(object.slot_per_kes_period))
+      obj.slot_per_kes_period = BigInt(object.slot_per_kes_period.toString());
+    if (Array.isArray(object?.current_validator_set))
+      obj.current_validator_set = object.current_validator_set.map((e: any) => Validator.fromJSON(e));
+    if (Array.isArray(object?.next_validator_set))
+      obj.next_validator_set = object.next_validator_set.map((e: any) => Validator.fromJSON(e));
     if (isSet(object.trusting_period)) obj.trusting_period = BigInt(object.trusting_period.toString());
-    if (Array.isArray(object?.upgrade_path)) obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
+    if (Array.isArray(object?.upgrade_path))
+      obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
     if (isSet(object.token_configs)) obj.token_configs = TokenConfigs.fromJSON(object.token_configs);
     return obj;
   },
   toJSON(message: ClientState): unknown {
     const obj: any = {};
     message.chain_id !== undefined && (obj.chain_id = message.chain_id);
-    message.latest_height !== undefined && (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
-    message.frozen_height !== undefined && (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
+    message.latest_height !== undefined &&
+      (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
+    message.frozen_height !== undefined &&
+      (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
     message.valid_after !== undefined && (obj.valid_after = (message.valid_after || BigInt(0)).toString());
     message.genesis_time !== undefined && (obj.genesis_time = (message.genesis_time || BigInt(0)).toString());
-    message.current_epoch !== undefined && (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
+    message.current_epoch !== undefined &&
+      (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
     message.epoch_length !== undefined && (obj.epoch_length = (message.epoch_length || BigInt(0)).toString());
-    message.slot_per_kes_period !== undefined && (obj.slot_per_kes_period = (message.slot_per_kes_period || BigInt(0)).toString());
+    message.slot_per_kes_period !== undefined &&
+      (obj.slot_per_kes_period = (message.slot_per_kes_period || BigInt(0)).toString());
     if (message.current_validator_set) {
-      obj.current_validator_set = message.current_validator_set.map(e => e ? Validator.toJSON(e) : undefined);
+      obj.current_validator_set = message.current_validator_set.map((e) =>
+        e ? Validator.toJSON(e) : undefined,
+      );
     } else {
       obj.current_validator_set = [];
     }
     if (message.next_validator_set) {
-      obj.next_validator_set = message.next_validator_set.map(e => e ? Validator.toJSON(e) : undefined);
+      obj.next_validator_set = message.next_validator_set.map((e) => (e ? Validator.toJSON(e) : undefined));
     } else {
       obj.next_validator_set = [];
     }
-    message.trusting_period !== undefined && (obj.trusting_period = (message.trusting_period || BigInt(0)).toString());
+    message.trusting_period !== undefined &&
+      (obj.trusting_period = (message.trusting_period || BigInt(0)).toString());
     if (message.upgrade_path) {
-      obj.upgrade_path = message.upgrade_path.map(e => e);
+      obj.upgrade_path = message.upgrade_path.map((e) => e);
     } else {
       obj.upgrade_path = [];
     }
-    message.token_configs !== undefined && (obj.token_configs = message.token_configs ? TokenConfigs.toJSON(message.token_configs) : undefined);
+    message.token_configs !== undefined &&
+      (obj.token_configs = message.token_configs ? TokenConfigs.toJSON(message.token_configs) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -674,23 +688,23 @@ export const ClientState = {
     if (object.slot_per_kes_period !== undefined && object.slot_per_kes_period !== null) {
       message.slot_per_kes_period = BigInt(object.slot_per_kes_period.toString());
     }
-    message.current_validator_set = object.current_validator_set?.map(e => Validator.fromPartial(e)) || [];
-    message.next_validator_set = object.next_validator_set?.map(e => Validator.fromPartial(e)) || [];
+    message.current_validator_set = object.current_validator_set?.map((e) => Validator.fromPartial(e)) || [];
+    message.next_validator_set = object.next_validator_set?.map((e) => Validator.fromPartial(e)) || [];
     if (object.trusting_period !== undefined && object.trusting_period !== null) {
       message.trusting_period = BigInt(object.trusting_period.toString());
     }
-    message.upgrade_path = object.upgrade_path?.map(e => e) || [];
+    message.upgrade_path = object.upgrade_path?.map((e) => e) || [];
     if (object.token_configs !== undefined && object.token_configs !== null) {
       message.token_configs = TokenConfigs.fromPartial(object.token_configs);
     }
     return message;
-  }
+  },
 };
 function createBaseMisbehaviour(): Misbehaviour {
   return {
     client_id: "",
     block_data1: undefined,
-    block_data2: undefined
+    block_data2: undefined,
   };
 }
 export const Misbehaviour = {
@@ -740,8 +754,10 @@ export const Misbehaviour = {
   toJSON(message: Misbehaviour): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.block_data1 !== undefined && (obj.block_data1 = message.block_data1 ? BlockData.toJSON(message.block_data1) : undefined);
-    message.block_data2 !== undefined && (obj.block_data2 = message.block_data2 ? BlockData.toJSON(message.block_data2) : undefined);
+    message.block_data1 !== undefined &&
+      (obj.block_data1 = message.block_data1 ? BlockData.toJSON(message.block_data1) : undefined);
+    message.block_data2 !== undefined &&
+      (obj.block_data2 = message.block_data2 ? BlockData.toJSON(message.block_data2) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
@@ -754,5 +770,5 @@ export const Misbehaviour = {
       message.block_data2 = BlockData.fromPartial(object.block_data2);
     }
     return message;
-  }
+  },
 };

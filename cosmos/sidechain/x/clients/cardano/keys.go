@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	ModuleName                       = "099-cardano"
+	ModuleName                       = "08-cardano"
 	KeyClientSPOsPrefix              = "clientSPOs"
 	KeySPOStatePrefix                = "SPOState"
 	KeyRegisterCertPrefix            = "registerCert"

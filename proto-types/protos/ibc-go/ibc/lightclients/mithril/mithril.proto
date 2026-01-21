@@ -47,6 +47,10 @@ message ClientState {
 // MithrilConsensusState represents the consensus state in the Mithril system.
 // This message stores the latest transaction snapshot hash and the first certificate hash of the latest epoch.
 // These are used to verify the latest transaction snapshot.
+// 
+// The ibc_state_root field contains the ICS-23 Merkle root extracted from the Handler UTXO datum
+// at the certified height. This root commits to all IBC state (clients, connections, channels, packets)
+// and is used for VerifyMembership/VerifyNonMembership proof verification.
 message ConsensusState {
   option (gogoproto.goproto_getters) = false;
 
@@ -55,6 +59,9 @@ message ConsensusState {
   string first_cert_hash_latest_epoch = 2;
 
   string latest_cert_hash_tx_snapshot = 3;
+
+  // IBC state root from Handler UTXO datum (32-byte ICS-23 Merkle root)
+  bytes ibc_state_root = 4;
 }
 
 // Misbehavior represents a conflict between two headers.

@@ -15,7 +15,7 @@ function createBaseIncentivizedAcknowledgement(): IncentivizedAcknowledgement {
   return {
     app_acknowledgement: new Uint8Array(),
     forward_relayer_address: "",
-    underlying_app_success: false
+    underlying_app_success: false,
   };
 }
 export const IncentivizedAcknowledgement = {
@@ -57,23 +57,33 @@ export const IncentivizedAcknowledgement = {
   },
   fromJSON(object: any): IncentivizedAcknowledgement {
     const obj = createBaseIncentivizedAcknowledgement();
-    if (isSet(object.app_acknowledgement)) obj.app_acknowledgement = bytesFromBase64(object.app_acknowledgement);
-    if (isSet(object.forward_relayer_address)) obj.forward_relayer_address = String(object.forward_relayer_address);
-    if (isSet(object.underlying_app_success)) obj.underlying_app_success = Boolean(object.underlying_app_success);
+    if (isSet(object.app_acknowledgement))
+      obj.app_acknowledgement = bytesFromBase64(object.app_acknowledgement);
+    if (isSet(object.forward_relayer_address))
+      obj.forward_relayer_address = String(object.forward_relayer_address);
+    if (isSet(object.underlying_app_success))
+      obj.underlying_app_success = Boolean(object.underlying_app_success);
     return obj;
   },
   toJSON(message: IncentivizedAcknowledgement): unknown {
     const obj: any = {};
-    message.app_acknowledgement !== undefined && (obj.app_acknowledgement = base64FromBytes(message.app_acknowledgement !== undefined ? message.app_acknowledgement : new Uint8Array()));
-    message.forward_relayer_address !== undefined && (obj.forward_relayer_address = message.forward_relayer_address);
-    message.underlying_app_success !== undefined && (obj.underlying_app_success = message.underlying_app_success);
+    message.app_acknowledgement !== undefined &&
+      (obj.app_acknowledgement = base64FromBytes(
+        message.app_acknowledgement !== undefined ? message.app_acknowledgement : new Uint8Array(),
+      ));
+    message.forward_relayer_address !== undefined &&
+      (obj.forward_relayer_address = message.forward_relayer_address);
+    message.underlying_app_success !== undefined &&
+      (obj.underlying_app_success = message.underlying_app_success);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<IncentivizedAcknowledgement>, I>>(object: I): IncentivizedAcknowledgement {
+  fromPartial<I extends Exact<DeepPartial<IncentivizedAcknowledgement>, I>>(
+    object: I,
+  ): IncentivizedAcknowledgement {
     const message = createBaseIncentivizedAcknowledgement();
     message.app_acknowledgement = object.app_acknowledgement ?? new Uint8Array();
     message.forward_relayer_address = object.forward_relayer_address ?? "";
     message.underlying_app_success = object.underlying_app_success ?? false;
     return message;
-  }
+  },
 };

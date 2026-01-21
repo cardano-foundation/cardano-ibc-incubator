@@ -66,7 +66,7 @@ function createBaseMsgRegisterPayee(): MsgRegisterPayee {
     port_id: "",
     channel_id: "",
     relayer: "",
-    payee: ""
+    payee: "",
   };
 }
 export const MsgRegisterPayee = {
@@ -135,7 +135,7 @@ export const MsgRegisterPayee = {
     message.relayer = object.relayer ?? "";
     message.payee = object.payee ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgRegisterPayeeResponse(): MsgRegisterPayeeResponse {
   return {};
@@ -170,14 +170,14 @@ export const MsgRegisterPayeeResponse = {
   fromPartial<I extends Exact<DeepPartial<MsgRegisterPayeeResponse>, I>>(_: I): MsgRegisterPayeeResponse {
     const message = createBaseMsgRegisterPayeeResponse();
     return message;
-  }
+  },
 };
 function createBaseMsgRegisterCounterpartyPayee(): MsgRegisterCounterpartyPayee {
   return {
     port_id: "",
     channel_id: "",
     relayer: "",
-    counterparty_payee: ""
+    counterparty_payee: "",
   };
 }
 export const MsgRegisterCounterpartyPayee = {
@@ -239,21 +239,26 @@ export const MsgRegisterCounterpartyPayee = {
     message.counterparty_payee !== undefined && (obj.counterparty_payee = message.counterparty_payee);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgRegisterCounterpartyPayee>, I>>(object: I): MsgRegisterCounterpartyPayee {
+  fromPartial<I extends Exact<DeepPartial<MsgRegisterCounterpartyPayee>, I>>(
+    object: I,
+  ): MsgRegisterCounterpartyPayee {
     const message = createBaseMsgRegisterCounterpartyPayee();
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
     message.relayer = object.relayer ?? "";
     message.counterparty_payee = object.counterparty_payee ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgRegisterCounterpartyPayeeResponse(): MsgRegisterCounterpartyPayeeResponse {
   return {};
 }
 export const MsgRegisterCounterpartyPayeeResponse = {
   typeUrl: "/ibc.applications.fee.v1.MsgRegisterCounterpartyPayeeResponse",
-  encode(_: MsgRegisterCounterpartyPayeeResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    _: MsgRegisterCounterpartyPayeeResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): MsgRegisterCounterpartyPayeeResponse {
@@ -278,10 +283,12 @@ export const MsgRegisterCounterpartyPayeeResponse = {
     const obj: any = {};
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgRegisterCounterpartyPayeeResponse>, I>>(_: I): MsgRegisterCounterpartyPayeeResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgRegisterCounterpartyPayeeResponse>, I>>(
+    _: I,
+  ): MsgRegisterCounterpartyPayeeResponse {
     const message = createBaseMsgRegisterCounterpartyPayeeResponse();
     return message;
-  }
+  },
 };
 function createBaseMsgPayPacketFee(): MsgPayPacketFee {
   return {
@@ -289,7 +296,7 @@ function createBaseMsgPayPacketFee(): MsgPayPacketFee {
     source_port_id: "",
     source_channel_id: "",
     signer: "",
-    relayers: []
+    relayers: [],
   };
 }
 export const MsgPayPacketFee = {
@@ -357,7 +364,7 @@ export const MsgPayPacketFee = {
     message.source_channel_id !== undefined && (obj.source_channel_id = message.source_channel_id);
     message.signer !== undefined && (obj.signer = message.signer);
     if (message.relayers) {
-      obj.relayers = message.relayers.map(e => e);
+      obj.relayers = message.relayers.map((e) => e);
     } else {
       obj.relayers = [];
     }
@@ -371,9 +378,9 @@ export const MsgPayPacketFee = {
     message.source_port_id = object.source_port_id ?? "";
     message.source_channel_id = object.source_channel_id ?? "";
     message.signer = object.signer ?? "";
-    message.relayers = object.relayers?.map(e => e) || [];
+    message.relayers = object.relayers?.map((e) => e) || [];
     return message;
-  }
+  },
 };
 function createBaseMsgPayPacketFeeResponse(): MsgPayPacketFeeResponse {
   return {};
@@ -408,12 +415,12 @@ export const MsgPayPacketFeeResponse = {
   fromPartial<I extends Exact<DeepPartial<MsgPayPacketFeeResponse>, I>>(_: I): MsgPayPacketFeeResponse {
     const message = createBaseMsgPayPacketFeeResponse();
     return message;
-  }
+  },
 };
 function createBaseMsgPayPacketFeeAsync(): MsgPayPacketFeeAsync {
   return {
     packet_id: PacketId.fromPartial({}),
-    packet_fee: PacketFee.fromPartial({})
+    packet_fee: PacketFee.fromPartial({}),
   };
 }
 export const MsgPayPacketFeeAsync = {
@@ -455,8 +462,10 @@ export const MsgPayPacketFeeAsync = {
   },
   toJSON(message: MsgPayPacketFeeAsync): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
-    message.packet_fee !== undefined && (obj.packet_fee = message.packet_fee ? PacketFee.toJSON(message.packet_fee) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_fee !== undefined &&
+      (obj.packet_fee = message.packet_fee ? PacketFee.toJSON(message.packet_fee) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgPayPacketFeeAsync>, I>>(object: I): MsgPayPacketFeeAsync {
@@ -468,7 +477,7 @@ export const MsgPayPacketFeeAsync = {
       message.packet_fee = PacketFee.fromPartial(object.packet_fee);
     }
     return message;
-  }
+  },
 };
 function createBaseMsgPayPacketFeeAsyncResponse(): MsgPayPacketFeeAsyncResponse {
   return {};
@@ -500,10 +509,12 @@ export const MsgPayPacketFeeAsyncResponse = {
     const obj: any = {};
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgPayPacketFeeAsyncResponse>, I>>(_: I): MsgPayPacketFeeAsyncResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgPayPacketFeeAsyncResponse>, I>>(
+    _: I,
+  ): MsgPayPacketFeeAsyncResponse {
     const message = createBaseMsgPayPacketFeeAsyncResponse();
     return message;
-  }
+  },
 };
 /** Msg defines the ICS29 Msg service. */
 export interface Msg {
@@ -522,7 +533,9 @@ export interface Msg {
    * the destination chain must include the registered counterparty payee address in the acknowledgement. This function
    * may be called more than once by a relayer, in which case, the latest counterparty payee address is always used.
    */
-  RegisterCounterpartyPayee(request: MsgRegisterCounterpartyPayee): Promise<MsgRegisterCounterpartyPayeeResponse>;
+  RegisterCounterpartyPayee(
+    request: MsgRegisterCounterpartyPayee,
+  ): Promise<MsgRegisterCounterpartyPayeeResponse>;
   /**
    * PayPacketFee defines a rpc handler method for MsgPayPacketFee
    * PayPacketFee is an open callback that may be called by any module/user that wishes to escrow funds in order to
@@ -550,21 +563,23 @@ export class MsgClientImpl implements Msg {
   RegisterPayee(request: MsgRegisterPayee): Promise<MsgRegisterPayeeResponse> {
     const data = MsgRegisterPayee.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Msg", "RegisterPayee", data);
-    return promise.then(data => MsgRegisterPayeeResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgRegisterPayeeResponse.decode(new BinaryReader(data)));
   }
-  RegisterCounterpartyPayee(request: MsgRegisterCounterpartyPayee): Promise<MsgRegisterCounterpartyPayeeResponse> {
+  RegisterCounterpartyPayee(
+    request: MsgRegisterCounterpartyPayee,
+  ): Promise<MsgRegisterCounterpartyPayeeResponse> {
     const data = MsgRegisterCounterpartyPayee.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Msg", "RegisterCounterpartyPayee", data);
-    return promise.then(data => MsgRegisterCounterpartyPayeeResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgRegisterCounterpartyPayeeResponse.decode(new BinaryReader(data)));
   }
   PayPacketFee(request: MsgPayPacketFee): Promise<MsgPayPacketFeeResponse> {
     const data = MsgPayPacketFee.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Msg", "PayPacketFee", data);
-    return promise.then(data => MsgPayPacketFeeResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgPayPacketFeeResponse.decode(new BinaryReader(data)));
   }
   PayPacketFeeAsync(request: MsgPayPacketFeeAsync): Promise<MsgPayPacketFeeAsyncResponse> {
     const data = MsgPayPacketFeeAsync.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.fee.v1.Msg", "PayPacketFeeAsync", data);
-    return promise.then(data => MsgPayPacketFeeAsyncResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgPayPacketFeeAsyncResponse.decode(new BinaryReader(data)));
   }
 }

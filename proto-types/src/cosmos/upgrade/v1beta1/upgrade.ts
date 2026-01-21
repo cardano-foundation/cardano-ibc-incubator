@@ -68,7 +68,7 @@ export interface CancelSoftwareUpgradeProposal {
 }
 /**
  * ModuleVersion specifies a module and its consensus version.
- * 
+ *
  * Since: cosmos-sdk 0.43
  */
 export interface ModuleVersion {
@@ -83,7 +83,7 @@ function createBasePlan(): Plan {
     time: Timestamp.fromPartial({}),
     height: BigInt(0),
     info: "",
-    upgraded_client_state: undefined
+    upgraded_client_state: undefined,
   };
 }
 export const Plan = {
@@ -141,7 +141,8 @@ export const Plan = {
     if (isSet(object.time)) obj.time = fromJsonTimestamp(object.time);
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     if (isSet(object.info)) obj.info = String(object.info);
-    if (isSet(object.upgraded_client_state)) obj.upgraded_client_state = Any.fromJSON(object.upgraded_client_state);
+    if (isSet(object.upgraded_client_state))
+      obj.upgraded_client_state = Any.fromJSON(object.upgraded_client_state);
     return obj;
   },
   toJSON(message: Plan): unknown {
@@ -150,7 +151,10 @@ export const Plan = {
     message.time !== undefined && (obj.time = fromTimestamp(message.time).toISOString());
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     message.info !== undefined && (obj.info = message.info);
-    message.upgraded_client_state !== undefined && (obj.upgraded_client_state = message.upgraded_client_state ? Any.toJSON(message.upgraded_client_state) : undefined);
+    message.upgraded_client_state !== undefined &&
+      (obj.upgraded_client_state = message.upgraded_client_state
+        ? Any.toJSON(message.upgraded_client_state)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Plan>, I>>(object: I): Plan {
@@ -167,13 +171,13 @@ export const Plan = {
       message.upgraded_client_state = Any.fromPartial(object.upgraded_client_state);
     }
     return message;
-  }
+  },
 };
 function createBaseSoftwareUpgradeProposal(): SoftwareUpgradeProposal {
   return {
     title: "",
     description: "",
-    plan: Plan.fromPartial({})
+    plan: Plan.fromPartial({}),
   };
 }
 export const SoftwareUpgradeProposal = {
@@ -235,12 +239,12 @@ export const SoftwareUpgradeProposal = {
       message.plan = Plan.fromPartial(object.plan);
     }
     return message;
-  }
+  },
 };
 function createBaseCancelSoftwareUpgradeProposal(): CancelSoftwareUpgradeProposal {
   return {
     title: "",
-    description: ""
+    description: "",
   };
 }
 export const CancelSoftwareUpgradeProposal = {
@@ -286,17 +290,19 @@ export const CancelSoftwareUpgradeProposal = {
     message.description !== undefined && (obj.description = message.description);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CancelSoftwareUpgradeProposal>, I>>(object: I): CancelSoftwareUpgradeProposal {
+  fromPartial<I extends Exact<DeepPartial<CancelSoftwareUpgradeProposal>, I>>(
+    object: I,
+  ): CancelSoftwareUpgradeProposal {
     const message = createBaseCancelSoftwareUpgradeProposal();
     message.title = object.title ?? "";
     message.description = object.description ?? "";
     return message;
-  }
+  },
 };
 function createBaseModuleVersion(): ModuleVersion {
   return {
     name: "",
-    version: BigInt(0)
+    version: BigInt(0),
   };
 }
 export const ModuleVersion = {
@@ -349,5 +355,5 @@ export const ModuleVersion = {
       message.version = BigInt(object.version.toString());
     }
     return message;
-  }
+  },
 };

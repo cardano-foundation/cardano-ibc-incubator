@@ -5,7 +5,7 @@ export const protobufPackage = "cosmos.base.query.v1beta1";
 /**
  * PageRequest is to be embedded in gRPC request messages for efficient
  * pagination. Ex:
- * 
+ *
  *  message SomeRequest {
  *          Foo some_parameter = 1;
  *          PageRequest pagination = 2;
@@ -38,7 +38,7 @@ export interface PageRequest {
   count_total: boolean;
   /**
    * reverse is set to true if results are to be returned in the descending order.
-   * 
+   *
    * Since: cosmos-sdk 0.43
    */
   reverse: boolean;
@@ -46,7 +46,7 @@ export interface PageRequest {
 /**
  * PageResponse is to be embedded in gRPC response messages where the
  * corresponding request message has used PageRequest.
- * 
+ *
  *  message SomeResponse {
  *          repeated Bar results = 1;
  *          PageResponse page = 2;
@@ -71,7 +71,7 @@ function createBasePageRequest(): PageRequest {
     offset: BigInt(0),
     limit: BigInt(0),
     count_total: false,
-    reverse: false
+    reverse: false,
   };
 }
 export const PageRequest = {
@@ -134,7 +134,8 @@ export const PageRequest = {
   },
   toJSON(message: PageRequest): unknown {
     const obj: any = {};
-    message.key !== undefined && (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
+    message.key !== undefined &&
+      (obj.key = base64FromBytes(message.key !== undefined ? message.key : new Uint8Array()));
     message.offset !== undefined && (obj.offset = (message.offset || BigInt(0)).toString());
     message.limit !== undefined && (obj.limit = (message.limit || BigInt(0)).toString());
     message.count_total !== undefined && (obj.count_total = message.count_total);
@@ -153,12 +154,12 @@ export const PageRequest = {
     message.count_total = object.count_total ?? false;
     message.reverse = object.reverse ?? false;
     return message;
-  }
+  },
 };
 function createBasePageResponse(): PageResponse {
   return {
     next_key: new Uint8Array(),
-    total: BigInt(0)
+    total: BigInt(0),
   };
 }
 export const PageResponse = {
@@ -200,7 +201,8 @@ export const PageResponse = {
   },
   toJSON(message: PageResponse): unknown {
     const obj: any = {};
-    message.next_key !== undefined && (obj.next_key = base64FromBytes(message.next_key !== undefined ? message.next_key : new Uint8Array()));
+    message.next_key !== undefined &&
+      (obj.next_key = base64FromBytes(message.next_key !== undefined ? message.next_key : new Uint8Array()));
     message.total !== undefined && (obj.total = (message.total || BigInt(0)).toString());
     return obj;
   },
@@ -211,5 +213,5 @@ export const PageResponse = {
       message.total = BigInt(object.total.toString());
     }
     return message;
-  }
+  },
 };

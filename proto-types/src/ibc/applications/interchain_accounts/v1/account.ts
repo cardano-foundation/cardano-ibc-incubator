@@ -11,7 +11,7 @@ export interface InterchainAccount {
 function createBaseInterchainAccount(): InterchainAccount {
   return {
     base_account: undefined,
-    account_owner: ""
+    account_owner: "",
   };
 }
 export const InterchainAccount = {
@@ -53,7 +53,8 @@ export const InterchainAccount = {
   },
   toJSON(message: InterchainAccount): unknown {
     const obj: any = {};
-    message.base_account !== undefined && (obj.base_account = message.base_account ? BaseAccount.toJSON(message.base_account) : undefined);
+    message.base_account !== undefined &&
+      (obj.base_account = message.base_account ? BaseAccount.toJSON(message.base_account) : undefined);
     message.account_owner !== undefined && (obj.account_owner = message.account_owner);
     return obj;
   },
@@ -64,5 +65,5 @@ export const InterchainAccount = {
     }
     message.account_owner = object.account_owner ?? "";
     return message;
-  }
+  },
 };
