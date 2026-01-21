@@ -43,6 +43,9 @@ use spending_transfer_module
 //=====================================Test================================================
 
 type MockData {
+  host_state_nft_policy_id: PolicyId,
+  host_state_input: Input,
+  host_state_output: Output,
   handler_token: AuthToken,
   port_token: AuthToken,
   module_token: AuthToken,
@@ -61,6 +64,27 @@ type MockData {
 }
 
 fn setup() -> MockData {
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
+  let host_state_token_name = "ibc_host_state"
+  let host_state_script_hash = "mock host_state_stt_script_hash"
+
+  let host_state_output =
+    Output {
+      address: from_script(host_state_script_hash),
+      value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+
+  let host_state_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
+        output_index: 0,
+      },
+      output: host_state_output,
+    }
+
   let handler_token =
     AuthToken {
       policy_id: "mock handler token policy_id",
@@ -283,6 +307,9 @@ fn setup() -> MockData {
   let cosmos_address = "mock cosmos address"
 
   MockData {
+    host_state_nft_policy_id,
+    host_state_input,
+    host_state_output,
     handler_token,
     port_token,
     module_token,
@@ -335,10 +362,10 @@ test on_chan_open_init_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input]
+  let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -371,6 +398,51 @@ test on_chan_open_init_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    transaction,
+  )
+}
+
+test on_chan_open_init_fails_without_host_state_co_spend() fail {
+  let mock = setup()
+
+  // Same transaction as `on_chan_open_init_succeed`, but without the HostState input/output.
+  let inputs = [mock.module_input]
+  let outputs = [mock.module_output, mock.channel_output]
+
+  let module_redeemer: Redeemer =
+    Callback(OnChanOpenInit { channel_id: mock.channel_id })
+
+  let channel_redeemer: Redeemer =
+    ChanOpenInit { handler_token: mock.handler_token }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Mint(mock.channel_minting_policy_id), channel_redeemer),
+    ]
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      outputs: outputs,
+      redeemers: redeemers,
+    }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.handler_token,
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -382,10 +454,10 @@ test on_chan_open_try_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input]
+  let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -423,6 +495,7 @@ test on_chan_open_try_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -434,10 +507,10 @@ test on_chan_open_ack_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -474,6 +547,7 @@ test on_chan_open_ack_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -485,10 +559,10 @@ test on_chan_open_confirm_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -521,6 +595,7 @@ test on_chan_open_confirm_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -532,10 +607,10 @@ test on_recv_packet_mint_voucher_succeed() {
   let mock = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -603,6 +678,7 @@ test on_recv_packet_mint_voucher_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -618,7 +694,7 @@ test on_recv_packet_unescrow_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -639,7 +715,7 @@ test on_recv_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -705,6 +781,7 @@ test on_recv_packet_unescrow_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -720,7 +797,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -741,7 +818,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -816,6 +893,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -831,7 +909,7 @@ test transfer_escrow_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -841,7 +919,7 @@ test transfer_escrow_succeed() {
         |> add(ada_policy_id, ada_asset_name, transfer_amount),
     }
 
-  let outputs = [module_output, mock.channel_output]
+  let outputs = [module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -895,6 +973,7 @@ test transfer_escrow_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -910,7 +989,7 @@ test transfer_burn_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -931,7 +1010,7 @@ test transfer_burn_voucher_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -993,6 +1072,7 @@ test transfer_burn_voucher_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1006,10 +1086,10 @@ test on_timeout_packet_mint_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1075,6 +1155,7 @@ test on_timeout_packet_mint_voucher_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1090,7 +1171,7 @@ test on_timeout_packet_unescrow_succeed() {
   let sender = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -1110,7 +1191,7 @@ test on_timeout_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1168,6 +1249,7 @@ test on_timeout_packet_unescrow_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1181,10 +1263,10 @@ test on_acknowledgement_packet_result_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1253,6 +1335,7 @@ test on_acknowledgement_packet_result_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1266,10 +1349,10 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   let receiver = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output]
+  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1345,6 +1428,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1360,7 +1444,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   let sender = mock.cardano_public_key_hash
 
   //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input]
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output =
@@ -1380,7 +1464,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output]
+  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1449,6 +1533,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     mock.port_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1460,12 +1545,12 @@ test on_chan_close_init_given_any_input_returns_false() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input]
+  let inputs = [fake_data.module_input, fake_data.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
 
-  let outputs = [module_output]
+  let outputs = [module_output, fake_data.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -1491,6 +1576,7 @@ test on_chan_close_init_given_any_input_returns_false() {
     fake_data.port_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
+    fake_data.host_state_nft_policy_id,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
@@ -1502,12 +1588,12 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input]
+  let inputs = [fake_data.module_input, fake_data.host_state_input]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
 
-  let outputs = [module_output]
+  let outputs = [module_output, fake_data.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -1533,6 +1619,7 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     fake_data.port_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
+    fake_data.host_state_nft_policy_id,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,

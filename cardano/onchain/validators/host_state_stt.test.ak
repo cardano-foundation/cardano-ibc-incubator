@@ -227,6 +227,117 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
   )
 }
 
+test host_state_cannot_move_nft_to_different_address() fail {
+  // Arrange: a valid HostState input at the HostState script address.
+  let nft_policy: PolicyId =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+
+  let dummy_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+
+  let original_address =
+    Address(
+      Script(dummy_script_hash),
+      None,
+    )
+
+  let moved_address =
+    Address(
+      Script(#"00000000000000000000000000000000000000000000000000000000"),
+      None,
+    )
+
+  let old_state =
+    HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    }
+
+  let old_datum = HostStateDatum { state: old_state, nft_policy: nft_policy }
+
+  let input_ref =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address: original_address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(old_datum),
+        reference_script: None,
+      },
+    )
+
+  // Arrange: a valid state transition (BindPort) that would succeed, except the
+  // output tries to move the NFT to a different address.
+  let port = 99
+  let port_siblings =
+    repeat_bytearray(
+      ibc_state_commitment.empty_hash,
+      ibc_state_commitment.merkle_depth_bits,
+    )
+
+  let port_key = port_commitment_key(port)
+  let port_value = cbor.serialise(port)
+
+  let new_root =
+    ibc_state_commitment.apply_update(
+      old_state.ibc_state_root,
+      port_key,
+      "",
+      port_value,
+      port_siblings,
+    )
+
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+      bound_port: [port],
+    }
+
+  let new_datum = HostStateDatum { state: new_state, nft_policy: nft_policy }
+
+  let host_output =
+    Output {
+      address: moved_address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: InlineDatum(new_datum),
+      reference_script: None,
+    }
+
+  let redeemer: host_state_stt.HostStateRedeemer =
+    host_state_stt.BindPort { port: port, port_siblings: port_siblings }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output],
+    }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    redeemer,
+    input_ref,
+    transaction,
+  )
+}
+
 test host_state_bind_port_fails_without_required_sibling_hashes() fail {
   let nft_policy: PolicyId =
     #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
