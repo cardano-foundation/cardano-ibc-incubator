@@ -1,5 +1,7 @@
 use ibc/auth.{AuthToken}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
+use ibc/core/ics_025_handler_interface/handler.{
+  HandlerState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 
 const policy_id_sample =

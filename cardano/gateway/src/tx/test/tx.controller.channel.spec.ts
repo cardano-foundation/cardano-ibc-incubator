@@ -3,10 +3,13 @@ import { ClientService } from '../client.service';
 import { ConnectionService } from '../connection.service';
 import { ChannelService } from '../channel.service';
 import { PacketService } from '../packet.service';
+import { SubmissionService } from '../submission.service';
+import { TxEventsService } from '../tx-events.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CodecType, LucidService } from '../../shared/modules/lucid/lucid.service';
+import { DenomTraceService } from 'src/query/services/denom-trace.service';
 import handlerDatumMockBuilder from './mock/handler-datum';
 import handlerUtxoMockBuilder from './mock/handler-utxo';
 import { configHandler } from './mock/handler';
@@ -20,7 +23,6 @@ import {
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import msgChannelOpenInitMockBuilder from './mock/msg-channel-open-int';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
-import { convertString2Hex } from '@shared/helpers/hex';
 import msgChannelOpenAckBuilder from './mock/msg-channel-open-ack';
 import channelDatumMockBuilder from './mock/channel-datum';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
@@ -45,6 +47,7 @@ describe('TxController - Client', () => {
     Data: Data,
   } as typeof import('@lucid-evolution/lucid');
   const mockLucidService = {
+    LucidImporter: mockLucidImporter,
     findUtxoByUnit: (tokenUnit: string) => {
       return new Promise((resolve) =>
         resolve(
@@ -59,11 +62,19 @@ describe('TxController - Client', () => {
     findUtxoAtHandlerAuthToken: jest.fn().mockImplementation(() => {
       return new Promise((resolve) => resolve(handlerUtxoMockBuilder.build()));
     }),
+    findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({
+      txHash: generateRandomHex(),
+      outputIndex: 0,
+      address: 'addr_test_host_state',
+      assets: {},
+      datum: 'host_state_datum',
+    }),
     lucid: {
       SLOT_CONFIG_NETWORK: {
         Custom: { zeroTime: 0, zeroSlot: 0, slotLength: 0 },
       },
       currentSlot: () => 100,
+      unixTimeToSlot: () => 200,
       config: () => ({
         network: 'Custom',
       }),
@@ -77,11 +88,36 @@ describe('TxController - Client', () => {
           case 'connection':
             return (await decodeConnectionDatum(encodedDatum, mockLucidImporter)) as T;
           case 'handler':
-            return (await decodeHandlerDatum(encodedDatum, mockLucidImporter)) as T;
+            return {
+              state: {
+                next_client_sequence: 0n,
+                next_connection_sequence: 0n,
+                next_channel_sequence: 0n,
+                bound_port: [],
+                ibc_state_root: '0'.repeat(64),
+              },
+              token: {
+                policyId: '00',
+                name: '68616e646c6572',
+              },
+            } as T;
           case 'channel':
             return (await decodeChannelDatum(encodedDatum, mockLucidImporter)) as T;
           case 'mockModule':
             return (await decodeMockModuleDatum(encodedDatum, mockLucidImporter)) as T;
+          case 'host_state':
+            return {
+              state: {
+                version: 0n,
+                ibc_state_root: '0'.repeat(64),
+                next_client_sequence: 0n,
+                next_connection_sequence: 0n,
+                next_channel_sequence: 0n,
+                bound_port: [],
+                last_update_time: 0n,
+              },
+              nft_policy: '00',
+            } as T;
           default:
             throw new Error(`Unknown datum type: ${type}`);
         }
@@ -98,10 +134,11 @@ describe('TxController - Client', () => {
         case 'handler':
           const handlerData = {
             state: {
-              next_client_sequence: 1n,
-              next_connection_sequence: 1n,
-              next_channel_sequence: 1n,
+              next_client_sequence: 0n,
+              next_connection_sequence: 0n,
+              next_channel_sequence: 0n,
               bound_port: [100n],
+              ibc_state_root: '0000000000000000000000000000000000000000000000000000000000000000',
             },
             token: {
               policyId: '11d98f7566bb47cd0bd738390dd8fa748167206013059a26000334b1',
@@ -126,7 +163,10 @@ describe('TxController - Client', () => {
       }
     }),
     getHandlerTokenUnit: jest.fn().mockImplementation(() => ''),
-    getChannelTokenUnit: jest.fn().mockImplementation(() => ''),
+    getChannelTokenUnit: jest.fn().mockImplementation(() => [
+      '11d98f7566bb47cd0bd738390dd8fa748167206013059a26000334b1',
+      '6368616e6e656c30', // fromText("channel0")
+    ]),
     getConnectionTokenUnit: (connectionSequence: string) => {
       return [
         'ffd279f2b8bb524d317a1a4abcda69c5dc5979c0d10a4fd7b0a4a578',
@@ -142,6 +182,7 @@ describe('TxController - Client', () => {
       validTo: jest.fn().mockImplementation(() => ({
         complete: jest.fn().mockResolvedValue({
           toHash: jest.fn().mockReturnValue(''),
+          toCBOR: jest.fn().mockReturnValue(generateRandomHex(128)),
           txComplete: {
             to_bytes: jest.fn().mockReturnValue(''),
           },
@@ -197,6 +238,25 @@ describe('TxController - Client', () => {
         ConnectionService,
         ChannelService,
         PacketService,
+        {
+          provide: DenomTraceService,
+          useValue: {
+            saveDenomTrace: jest.fn(),
+          },
+        },
+        {
+          provide: SubmissionService,
+          useValue: {
+            submitSignedTransaction: jest.fn(),
+          },
+        },
+        {
+          provide: TxEventsService,
+          useValue: {
+            register: jest.fn(),
+            take: jest.fn(),
+          },
+        },
         { provide: Logger, useClass: TestLogger },
         {
           provide: ConfigService,
@@ -222,7 +282,7 @@ describe('TxController - Client', () => {
     it('should call channel open init successfully', async () => {
       const data: MsgChannelOpenInitResponse = await controller.ChannelOpenInit(request);
       expect(data.unsigned_tx).toBeDefined;
-      expect(data.channel_id).toBe(convertString2Hex(CHANNEL_ID_PREFIX + '-' + '0'));
+      expect(data.channel_id).toBe(`${CHANNEL_ID_PREFIX}-0`);
       expect(data.version).toBeDefined;
     });
     it('should return error if signer is null', async () => {

@@ -19,7 +19,7 @@ import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { AuthToken } from 'src/shared/types/auth-token';
-import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
+import { ConnectionDatum, encodeConnectionEndValue } from 'src/shared/types/connection/connection-datum';
 import { State } from 'src/shared/types/connection/state';
 import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/connection/connection-redeemer';
 import { ConfigService } from '@nestjs/config';
@@ -37,7 +37,7 @@ import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/
 import { getBlockDelay } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
 import { 
-  computeRootWithConnectionUpdate as computeRootWithConnectionUpdateHelper,
+  computeRootWithCreateConnectionUpdate as computeRootWithCreateConnectionUpdateHelper,
   alignTreeWithChain,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
@@ -55,6 +55,7 @@ import {
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
+
 @Injectable()
 export class ConnectionService {
   constructor(
@@ -64,12 +65,16 @@ export class ConnectionService {
   ) {}
 
   /**
-   * Computes the new IBC state root after connection update
-   * Now side-effect free - returns newRoot without mutating the canonical tree
+   * Compute the new IBC state root for CreateConnection, plus the update witness
+   * required by the on-chain HostState validator.
    */
-  private computeRootWithConnectionUpdate(oldRoot: string, connectionId: string, connectionState: any): string {
-    const result = computeRootWithConnectionUpdateHelper(oldRoot, connectionId, connectionState);
-    return result.newRoot;
+  private computeRootWithCreateConnectionUpdate(
+    oldRoot: string,
+    connectionId: string,
+    connectionEndValue: Buffer,
+  ): { newRoot: string; connectionSiblings: string[] } {
+    const result = computeRootWithCreateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue);
+    return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings };
   }
   
   /**
@@ -280,31 +285,14 @@ export class ConnectionService {
     const clientAssetUnits = Object.keys(clientUtxo.assets || {}).filter((a) => a !== 'lovelace');
     this.logger.log(`[DEBUG] ConnOpenInit client utxo assets=${clientAssetUnits.join(',') || 'lovelace-only'}`);
 
-    // Compute new IBC state root with connection update
+    // Derive the new connection identifier from the HostState sequence.
     const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
-    const newRoot = this.computeRootWithConnectionUpdate(
-      hostStateDatum.state.ibc_state_root,
-      connectionId,
-      connectionOpenInitOperator,
-    );
 
-    // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
       state: {
         ...handlerDatum.state,
         next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
-    const updatedHostStateDatum: HostStateDatum = {
-      ...hostStateDatum,
-      state: {
-        ...hostStateDatum.state,
-        version: hostStateDatum.state.version + 1n,
-        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newRoot,
-        last_update_time: BigInt(Date.now()),
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
@@ -319,14 +307,45 @@ export class ConnectionService {
       policyId: mintConnectionPolicyId,
       name: connectionTokenName,
     };
-    const connectionDatum: ConnectionDatum = {
+
+    // The on-chain HostState validator enforces that `ibc_state_root` is derived from
+    // the previous root with exactly the allowed CreateConnection key update applied.
+    //
+    // This means we must commit the exact bytes that the on-chain code uses:
+    // `cbor.serialise(connection_end)`.
+    const connectionEnd: ConnectionDatum['state'] = {
+      client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenInitOperator.clientId),
+      counterparty: connectionOpenInitOperator.counterparty,
+      delay_period: 0n,
+      versions: connectionOpenInitOperator.versions,
+      state: State.Init,
+    };
+    const connectionEndValue = Buffer.from(
+      await encodeConnectionEndValue(connectionEnd, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      connectionEndValue,
+    );
+
+    // Update both Handler and HostState roots to the new committed root.
+    updatedHandlerDatum.state.ibc_state_root = newRoot;
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
       state: {
-        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenInitOperator.clientId),
-        counterparty: connectionOpenInitOperator.counterparty,
-        delay_period: 0n,
-        versions: connectionOpenInitOperator.versions,
-        state: State.Init,
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
+    };
+    const connectionDatum: ConnectionDatum = {
+      state: connectionEnd,
       token: connToken,
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
@@ -338,7 +357,12 @@ export class ConnectionService {
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
     );
-    const encodedHostStateRedeemer = await this.lucidService.encode<string>('CreateConnection', 'host_state_redeemer');
+    const hostStateRedeemer = {
+      CreateConnection: {
+        connection_siblings: connectionSiblings,
+      },
+    };
+    const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
 
     const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
       spendHandlerRedeemer,
@@ -401,13 +425,8 @@ export class ConnectionService {
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     
-    // Compute new IBC state root with connection update
+    // Derive the new connection identifier from the HostState sequence.
     const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
-    const newRoot = this.computeRootWithConnectionUpdate(
-      hostStateDatum.state.ibc_state_root,
-      connectionId,
-      connectionOpenTryOperator,
-    );
     
     // Retrieve the current client datum from the UTXO
     const updatedHandlerDatum: HandlerDatum = {
@@ -415,17 +434,6 @@ export class ConnectionService {
       state: {
         ...handlerDatum.state,
         next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
-    const updatedHostStateDatum: HostStateDatum = {
-      ...hostStateDatum,
-      state: {
-        ...hostStateDatum.state,
-        version: hostStateDatum.state.version + 1n,
-        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-        ibc_state_root: newRoot,
-        last_update_time: BigInt(Date.now()),
       },
     };
     const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';
@@ -437,14 +445,39 @@ export class ConnectionService {
       policyId: mintConnectionPolicyId,
       name: connectionTokenName,
     };
-    const connectionDatum: ConnectionDatum = {
+
+    const connectionEnd: ConnectionDatum['state'] = {
+      client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenTryOperator.clientId),
+      counterparty: connectionOpenTryOperator.counterparty,
+      delay_period: 0n,
+      versions: connectionOpenTryOperator.versions,
+      state: State.TryOpen,
+    };
+    const connectionEndValue = Buffer.from(
+      await encodeConnectionEndValue(connectionEnd, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      connectionEndValue,
+    );
+
+    updatedHandlerDatum.state.ibc_state_root = newRoot;
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
       state: {
-        client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenTryOperator.clientId),
-        counterparty: connectionOpenTryOperator.counterparty,
-        delay_period: 0n,
-        versions: connectionOpenTryOperator.versions,
-        state: State.TryOpen,
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
       },
+    };
+    const connectionDatum: ConnectionDatum = {
+      state: connectionEnd,
       token: connToken,
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
@@ -456,7 +489,12 @@ export class ConnectionService {
         proof_height: connectionOpenTryOperator.proofHeight,
       },
     };
-    const encodedHostStateRedeemer = await this.lucidService.encode<string>('CreateConnection', 'host_state_redeemer');
+    const hostStateRedeemer = {
+      CreateConnection: {
+        connection_siblings: connectionSiblings,
+      },
+    };
+    const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
@@ -490,6 +528,15 @@ export class ConnectionService {
     connectionOpenAckOperator: ConnectionOpenAckOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum!,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       BigInt(connectionOpenAckOperator.connectionSequence),
@@ -523,6 +570,37 @@ export class ConnectionService {
         },
       },
     };
+
+    // Root correctness enforcement: update the committed `connections/{id}` value.
+    //
+    // The on-chain `host_state_stt` validator will recompute the root update from the
+    // old and new connection datums in this transaction, using the sibling hashes below.
+    const connectionId = `${CONNECTION_ID_PREFIX}-${connectionOpenAckOperator.connectionSequence}`;
+    const updatedConnectionEndValue = Buffer.from(
+      await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
+      'hex',
+    );
+    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      updatedConnectionEndValue,
+    );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+    const hostStateRedeemer = {
+      UpdateConnection: {
+        connection_siblings: connectionSiblings,
+      },
+    };
+
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
@@ -541,6 +619,8 @@ export class ConnectionService {
       updatedConnectionDatum,
       'connection',
     );
+    const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
     const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
@@ -615,6 +695,9 @@ export class ConnectionService {
     );
 
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       connectionUtxo,
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,
@@ -631,6 +714,15 @@ export class ConnectionService {
     connectionOpenConfirmOperator: ConnectionOpenConfirmOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum!,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
     // Get the token unit associated with the client
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       BigInt(connectionOpenConfirmOperator.connectionSequence),
@@ -659,6 +751,34 @@ export class ConnectionService {
         state: State.Open,
       },
     };
+
+    // Root correctness enforcement: update the committed `connections/{id}` value.
+    const connectionId = `${CONNECTION_ID_PREFIX}-${connectionOpenConfirmOperator.connectionSequence}`;
+    const updatedConnectionEndValue = Buffer.from(
+      await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
+      'hex',
+    );
+    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+      hostStateDatum.state.ibc_state_root,
+      connectionId,
+      updatedConnectionEndValue,
+    );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+    const hostStateRedeemer = {
+      UpdateConnection: {
+        connection_siblings: connectionSiblings,
+      },
+    };
+
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
@@ -670,7 +790,12 @@ export class ConnectionService {
       updatedConnectionDatum,
       'connection',
     );
+    const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     return this.lucidService.createUnsignedConnectionOpenConfirmTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       connectionUtxo,
       encodedSpendConnectionRedeemer,
       connectionTokenUnit,

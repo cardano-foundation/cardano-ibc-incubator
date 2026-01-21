@@ -1,484 +1,72 @@
-// ICS-23 Compatible Merkle Tree Implementation
+// Merkle tree implementation used for `ibc_state_root`.
 //
-// This module implements a Merkle tree for generating cryptographic proofs of IBC state.
-// 
-// Architecture:
-// - Only the 32-byte root hash is stored on-chain (in Handler UTXO datum)
-// - Gateway maintains the full tree in memory and generates proofs on-demand
-// - Proofs are compact (~log₂N sibling hashes) and cryptographically unforgeable
-// - Cosmos verifies proofs by reconstructing the root and comparing to certified root
+// The key goal of this tree is not "fast inserts", it is "deterministic roots"
+// plus the ability to produce compact per-key proofs and per-key update
+// witnesses.
 //
-// Tree structure:
-// - SHA-256 hashing with length-prefix encoding
-// - Lexicographic key ordering for determinism
-// - Binary tree built bottom-up from sorted leaves
+// This implementation is intentionally simple:
+// - Keys are mapped to a fixed-depth binary tree via `sha256(key)`.
+// - Each stored value is hashed first, so leaves always commit to 32 bytes.
+// - Empty subtrees are represented by a 32-byte zero hash.
 //
-// Reference: https://github.com/cosmos/ibc/tree/main/spec/core/ics-023-vector-commitments
+// This matches the on-chain `ibc_state_commitment.ak` logic used by `host_state_stt`.
 
 import { sha256 } from 'js-sha256';
 
-/**
- * Represents a node in the Merkle tree
- */
-interface MerkleNode {
-  key: string;
-  value: Buffer;
-  hash: Buffer;
-  left?: MerkleNode;
-  right?: MerkleNode;
+const MERKLE_DEPTH_BITS = 64;
+const HASH_SIZE_BYTES = 32;
+const EMPTY_HASH = Buffer.alloc(HASH_SIZE_BYTES, 0);
+
+function sha256Bytes(data: Buffer): Buffer {
+  return Buffer.from(sha256.array(data));
+}
+
+function leafHash(value: Buffer): Buffer {
+  // On-chain we treat the empty value as "absent" and map it to the all-zero hash.
+  if (value.length === 0) return EMPTY_HASH;
+
+  // leaf = sha256(0x00 || sha256(value))
+  const valueHash = sha256Bytes(value);
+  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), valueHash]));
+}
+
+function innerHash(left: Buffer, right: Buffer): Buffer {
+  // Empty subtree compression: if both children are empty, parent is empty.
+  if (left.equals(EMPTY_HASH) && right.equals(EMPTY_HASH)) return EMPTY_HASH;
+  // inner = sha256(0x01 || left || right)
+  return sha256Bytes(Buffer.concat([Buffer.from([0x01]), left, right]));
+}
+
+function keyIndex64(key: string): bigint {
+  // The on-chain code uses the first 64 bits of `sha256(key)` to define the path.
+  // We interpret those 8 bytes as a big-endian unsigned integer.
+  const keyHash = sha256Bytes(Buffer.from(key, 'utf8'));
+  const first8 = keyHash.subarray(0, 8);
+  return BigInt(`0x${first8.toString('hex')}`);
 }
 
 /**
- * ICS-23 compatible Merkle Tree for IBC state commitments
+ * Represents an inner step of a proof.
+ *
+ * This intentionally mirrors the existing "ICS23InnerOp" shape used in the
+ * Gateway codebase, even though the current proof encoding is JSON.
+ *
+ * Convention:
+ * - If `suffix` is non-empty, the current node is the LEFT child and `suffix` is the sibling hash.
+ * - If `suffix` is empty, the current node is the RIGHT child and `prefix` contains `0x01 || leftSiblingHash`.
  */
-export class ICS23MerkleTree {
-  private leaves: Map<string, Buffer> = new Map();
-  private root: Buffer | null = null;
-  private dirty: boolean = true;
-
-  constructor() {}
-
-  /**
-   * Create a deep copy of this tree
-   * 
-   * Used to compute speculative state roots without mutating the canonical tree.
-   * The cloned tree can be modified freely; the original remains unchanged.
-   * 
-   * @returns A new ICS23MerkleTree with the same leaves
-   */
-  clone(): ICS23MerkleTree {
-    const cloned = new ICS23MerkleTree();
-    for (const [key, value] of this.leaves) {
-      cloned.leaves.set(key, Buffer.from(value));
-    }
-    cloned.dirty = true; // Force recomputation of root in clone
-    return cloned;
-  }
-
-  /**
-   * Insert or update a key-value pair in the tree
-   * @param key - The key (IBC path like "clients/07-tendermint-0/clientState")
-   * @param value - The serialized value (protobuf encoded)
-   */
-  set(key: string, value: Buffer | string): void {
-    const valueBuffer = typeof value === 'string' ? Buffer.from(value, 'hex') : value;
-    this.leaves.set(key, valueBuffer);
-    this.dirty = true;
-  }
-
-  /**
-   * Get a value from the tree
-   * @param key - The key to retrieve
-   * @returns The value buffer or undefined if not found
-   */
-  get(key: string): Buffer | undefined {
-    return this.leaves.get(key);
-  }
-
-  /**
-   * Delete a key from the tree
-   * @param key - The key to delete
-   */
-  delete(key: string): void {
-    this.leaves.delete(key);
-    this.dirty = true;
-  }
-
-  /**
-   * Compute the Merkle root hash of the tree
-   * @returns The root hash as a hex string (64 characters for SHA-256)
-   */
-  getRoot(): string {
-    if (!this.dirty && this.root) {
-      return this.root.toString('hex');
-    }
-
-    if (this.leaves.size === 0) {
-      // Empty tree root is 32 bytes of zeros
-      this.root = Buffer.alloc(32, 0);
-      this.dirty = false;
-      return this.root.toString('hex');
-    }
-
-    // Build the tree from sorted leaves
-    const sortedKeys = Array.from(this.leaves.keys()).sort();
-    const leafNodes: MerkleNode[] = sortedKeys.map((key) => ({
-      key,
-      value: this.leaves.get(key)!,
-      hash: this.hashLeaf(key, this.leaves.get(key)!),
-    }));
-
-    // Build tree bottom-up
-    this.root = this.buildTree(leafNodes);
-    this.dirty = false;
-
-    return this.root.toString('hex');
-  }
-
-  /**
-   * Hash a leaf node according to ICS-23 specification
-   * @param key - The key
-   * @param value - The value
-   * @returns The leaf hash
-   */
-  private hashLeaf(key: string, value: Buffer): Buffer {
-    // ICS-23 leaf hash: hash(length(key) || key || length(value) || value)
-    const keyBuffer = Buffer.from(key, 'utf8');
-    const keyLength = this.encodeVarint(keyBuffer.length);
-    const valueLength = this.encodeVarint(value.length);
-
-    const data = Buffer.concat([keyLength, keyBuffer, valueLength, value]);
-    return Buffer.from(sha256.array(data));
-  }
-
-  /**
-   * Hash an inner node
-   * @param left - Left child hash
-   * @param right - Right child hash
-   * @returns The inner node hash
-   */
-  private hashInner(left: Buffer, right: Buffer): Buffer {
-    // ICS-23 inner hash: hash(0x01 || left || right)
-    // The 0x01 prefix distinguishes inner nodes from leaf nodes
-    const data = Buffer.concat([Buffer.from([0x01]), left, right]);
-    return Buffer.from(sha256.array(data));
-  }
-
-  /**
-   * Build the Merkle tree from leaf nodes
-   * @param nodes - Array of leaf nodes (must be sorted)
-   * @returns The root hash
-   */
-  private buildTree(nodes: MerkleNode[]): Buffer {
-    if (nodes.length === 0) {
-      return Buffer.alloc(32, 0);
-    }
-
-    if (nodes.length === 1) {
-      return nodes[0].hash;
-    }
-
-    // Build tree level by level
-    let currentLevel = nodes.map((node) => node.hash);
-
-    while (currentLevel.length > 1) {
-      const nextLevel: Buffer[] = [];
-
-      for (let i = 0; i < currentLevel.length; i += 2) {
-        if (i + 1 < currentLevel.length) {
-          // Pair exists
-          nextLevel.push(this.hashInner(currentLevel[i], currentLevel[i + 1]));
-        } else {
-          // Odd node out - promote it to next level
-          nextLevel.push(currentLevel[i]);
-        }
-      }
-
-      currentLevel = nextLevel;
-    }
-
-    return currentLevel[0];
-  }
-
-  /**
-   * Encode an integer as varint (protobuf-style)
-   * @param value - The integer to encode
-   * @returns The varint-encoded buffer
-   */
-  private encodeVarint(value: number): Buffer {
-    const bytes: number[] = [];
-
-    while (value >= 0x80) {
-      bytes.push((value & 0x7f) | 0x80);
-      value >>>= 7;
-    }
-
-    bytes.push(value & 0x7f);
-    return Buffer.from(bytes);
-  }
-
-  /**
-   * Get all keys in the tree
-   * @returns Array of all keys
-   */
-  getKeys(): string[] {
-    return Array.from(this.leaves.keys());
-  }
-
-  /**
-   * Get the number of entries in the tree
-   * @returns The number of key-value pairs
-   */
-  size(): number {
-    return this.leaves.size;
-  }
-
-  /**
-   * Serialize the tree state to a JSON-compatible object
-   * @returns Serialized tree state
-   */
-  toJSON(): { leaves: Record<string, string>; root: string } {
-    const leaves: Record<string, string> = {};
-    this.leaves.forEach((value, key) => {
-      leaves[key] = value.toString('hex');
-    });
-
-    return {
-      leaves,
-      root: this.getRoot(),
-    };
-  }
-
-  /**
-   * Deserialize tree state from JSON
-   * @param data - Serialized tree state
-   * @returns New MerkleTree instance
-   */
-  static fromJSON(data: { leaves: Record<string, string>; root?: string }): ICS23MerkleTree {
-    const tree = new ICS23MerkleTree();
-
-    Object.entries(data.leaves).forEach(([key, value]) => {
-      tree.set(key, Buffer.from(value, 'hex'));
-    });
-
-    return tree;
-  }
-
-  /**
-   * Generate an ICS-23 ExistenceProof for a given key
-   * 
-   * Proof generation walks the tree collecting sibling hashes at each level.
-   * These siblings let the verifier reconstruct the root via repeated hashing:
-   * 
-   *   leafHash = hash(key || value)
-   *   level1 = hash(prefix || leafHash || sibling₁)
-   *   level2 = hash(prefix || level1 || sibling₂)
-   *   ... until root
-   * 
-   * Security: Proofs are unforgeable because they require the exact sibling hashes
-   * from the real tree. Faking data breaks the hash chain (unless you break SHA-256).
-   * 
-   * @param key - The IBC path key (e.g., "clients/07-tendermint-0/clientState")
-   * @returns ExistenceProof object containing key, value, leaf spec, and inner path
-   * @throws Error if the key doesn't exist in the tree
-   */
-  generateProof(key: string): ICS23ExistenceProof {
-    // 1. Verify key exists
-    const value = this.leaves.get(key);
-    if (!value) {
-      throw new Error(`Cannot generate proof: key '${key}' not found in tree`);
-    }
-
-    if (this.leaves.size === 0) {
-      throw new Error(`Cannot generate proof: tree is empty`);
-    }
-
-    // 2. Build sorted leaf array (same as getRoot())
-    const sortedKeys = Array.from(this.leaves.keys()).sort();
-    
-    // Find the index of our key
-    const keyIndex = sortedKeys.indexOf(key);
-    if (keyIndex === -1) {
-      throw new Error(`Key '${key}' not found in sorted leaves`);
-    }
-
-    // 3. Build leaf nodes
-    const leafNodes: MerkleNode[] = sortedKeys.map((k) => ({
-      key: k,
-      value: this.leaves.get(k)!,
-      hash: this.hashLeaf(k, this.leaves.get(k)!),
-    }));
-
-    // Special case: single leaf tree
-    if (leafNodes.length === 1) {
-      return {
-        key: Buffer.from(key, 'utf8'),
-        value: value,
-        leaf: {
-          hash: 1, // HashOp.SHA256
-          prehash_key: 0, // HashOp.NO_HASH
-          prehash_value: 0, // HashOp.NO_HASH
-          length: 1, // LengthOp.VAR_PROTO
-          prefix: Buffer.alloc(0), // No prefix for leaf nodes
-        },
-        path: [], // No inner nodes for single leaf
-      };
-    }
-
-    // 4. Build tree level by level, tracking our key's path
-    let currentLevel = leafNodes.map((node) => node.hash);
-    let currentIndex = keyIndex;
-    const innerOps: ICS23InnerOp[] = [];
-
-    while (currentLevel.length > 1) {
-      const nextLevel: Buffer[] = [];
-      const nextIndex = Math.floor(currentIndex / 2);
-
-      for (let i = 0; i < currentLevel.length; i += 2) {
-        if (i + 1 < currentLevel.length) {
-          // Pair exists - create inner node
-          const left = currentLevel[i];
-          const right = currentLevel[i + 1];
-          nextLevel.push(this.hashInner(left, right));
-
-          // If this pair contains our node, record the sibling
-          if (i === currentIndex || i + 1 === currentIndex) {
-            const isLeftChild = (currentIndex % 2 === 0);
-            
-            if (isLeftChild) {
-              // Our node is the left child, sibling is on the right
-              innerOps.push({
-                hash: 1, // HashOp.SHA256
-                prefix: Buffer.from([0x01]), // Inner node prefix
-                suffix: right, // Right sibling hash
-              });
-            } else {
-              // Our node is the right child, sibling is on the left
-              innerOps.push({
-                hash: 1, // HashOp.SHA256
-                prefix: Buffer.concat([Buffer.from([0x01]), left]), // Prefix includes left sibling
-                suffix: Buffer.alloc(0), // No suffix
-              });
-            }
-          }
-        } else {
-          // Odd node out - promote to next level
-          nextLevel.push(currentLevel[i]);
-          
-          // If this is our node being promoted, no sibling at this level
-          if (i === currentIndex) {
-            // Node promoted without pairing - this is handled implicitly
-            // The next level index calculation will work correctly
-          }
-        }
-      }
-
-      currentLevel = nextLevel;
-      currentIndex = nextIndex;
-    }
-
-    // 5. Return the ExistenceProof
-    return {
-      key: Buffer.from(key, 'utf8'),
-      value: value,
-      leaf: {
-        hash: 1, // HashOp.SHA256
-        prehash_key: 0, // HashOp.NO_HASH
-        prehash_value: 0, // HashOp.NO_HASH
-        length: 1, // LengthOp.VAR_PROTO
-        prefix: Buffer.alloc(0), // No prefix for leaf nodes in our spec
-      },
-      path: innerOps,
-    };
-  }
-
-  /**
-   * Generate an ICS-23 NonExistenceProof for a key that doesn't exist
-   * 
-   * A non-existence proof demonstrates that a key is not present in the tree
-   * by providing existence proofs for the closest left and right neighbors.
-   * If both neighbors are valid and adjacent, the absence of the key is proven.
-   * 
-   * @param key - The key to prove non-existence for
-   * @returns NonExistenceProof with left and right neighbor proofs
-   * @throws Error if the key exists, or if neighbors can't be found
-   */
-  generateNonExistenceProof(key: string): ICS23NonExistenceProof {
-    // 1. Verify key doesn't exist
-    if (this.leaves.has(key)) {
-      throw new Error(`Cannot generate non-existence proof: key '${key}' exists in tree`);
-    }
-
-    if (this.leaves.size === 0) {
-      throw new Error(`Cannot generate non-existence proof: tree is empty`);
-    }
-
-    // 2. Find left and right neighbors
-    const sortedKeys = Array.from(this.leaves.keys()).sort();
-    
-    let leftKey: string | null = null;
-    let rightKey: string | null = null;
-
-    for (let i = 0; i < sortedKeys.length; i++) {
-      if (sortedKeys[i] < key) {
-        leftKey = sortedKeys[i];
-      } else if (sortedKeys[i] > key && rightKey === null) {
-        rightKey = sortedKeys[i];
-        break;
-      }
-    }
-
-    // 3. Verify we have both neighbors (or handle edge cases)
-    if (!leftKey && !rightKey) {
-      throw new Error(`Cannot generate non-existence proof: no neighbors found for key '${key}'`);
-    }
-
-    // 4. Generate existence proofs for neighbors
-    const leftProof = leftKey ? this.generateProof(leftKey) : null;
-    const rightProof = rightKey ? this.generateProof(rightKey) : null;
-
-    return {
-      key: Buffer.from(key, 'utf8'),
-      left: leftProof,
-      right: rightProof,
-    };
-  }
-
-  /**
-   * Verify a proof against this tree's root
-   * 
-   * This is primarily for testing - reconstructs the root from the proof
-   * and compares it to this tree's computed root.
-   * 
-   * @param proof - The ExistenceProof to verify
-   * @returns true if proof is valid for this tree
-   */
-  verifyProof(proof: ICS23ExistenceProof): boolean {
-    // 1. Start with leaf hash
-    const keyBuffer = proof.key;
-    const valueBuffer = proof.value;
-    
-    const keyLength = this.encodeVarint(keyBuffer.length);
-    const valueLength = this.encodeVarint(valueBuffer.length);
-    const leafData = Buffer.concat([keyLength, keyBuffer, valueLength, valueBuffer]);
-    let currentHash = Buffer.from(sha256.array(leafData));
-
-    // 2. Apply each InnerOp to reconstruct the root
-    for (const innerOp of proof.path) {
-      if (innerOp.suffix.length > 0) {
-        // Suffix is the sibling - we are the left child
-        const data = Buffer.concat([innerOp.prefix, currentHash, innerOp.suffix]);
-        currentHash = Buffer.from(sha256.array(data));
-      } else {
-        // Prefix contains sibling - we are the right child
-        // Prefix format: 0x01 || leftSiblingHash
-        const data = Buffer.concat([innerOp.prefix, currentHash]);
-        currentHash = Buffer.from(sha256.array(data));
-      }
-    }
-
-    // 3. Compare reconstructed root with tree root
-    const expectedRoot = this.getRoot();
-    return currentHash.toString('hex') === expectedRoot;
-  }
-}
-
-/**
- * ICS-23 proof type definitions
- */
-
-export interface ICS23LeafOp {
-  hash: number; // HashOp enum value
-  prehash_key: number; // HashOp enum value
-  prehash_value: number; // HashOp enum value
-  length: number; // LengthOp enum value
-  prefix: Buffer;
-}
-
 export interface ICS23InnerOp {
-  hash: number; // HashOp enum value
+  hash: number;
   prefix: Buffer;
   suffix: Buffer;
+}
+
+export interface ICS23LeafOp {
+  hash: number;
+  prehash_key: number;
+  prehash_value: number;
+  length: number;
+  prefix: Buffer;
 }
 
 export interface ICS23ExistenceProof {
@@ -494,3 +82,283 @@ export interface ICS23NonExistenceProof {
   right: ICS23ExistenceProof | null;
 }
 
+/**
+ * Fixed-depth Merkle tree keyed by `sha256(key)`.
+ */
+export class ICS23MerkleTree {
+  private leaves: Map<string, Buffer> = new Map();
+
+  private root: Buffer = EMPTY_HASH;
+  private dirty = true;
+  private nodesByHeight: Array<Map<bigint, Buffer>> | null = null;
+
+  clone(): ICS23MerkleTree {
+    const cloned = new ICS23MerkleTree();
+    for (const [key, value] of this.leaves) {
+      cloned.leaves.set(key, Buffer.from(value));
+    }
+    cloned.dirty = true;
+    return cloned;
+  }
+
+  set(key: string, value: Buffer | string): void {
+    const valueBuffer = typeof value === 'string' ? Buffer.from(value, 'hex') : value;
+    // Empty values are treated as "absent" in this commitment scheme, so we
+    // model them as deletion to avoid ambiguous state.
+    if (valueBuffer.length === 0) {
+      this.leaves.delete(key);
+    } else {
+      this.leaves.set(key, valueBuffer);
+    }
+    this.dirty = true;
+  }
+
+  get(key: string): Buffer | undefined {
+    return this.leaves.get(key);
+  }
+
+  delete(key: string): void {
+    this.leaves.delete(key);
+    this.dirty = true;
+  }
+
+  size(): number {
+    return this.leaves.size;
+  }
+
+  getKeys(): string[] {
+    return Array.from(this.leaves.keys());
+  }
+
+  getRoot(): string {
+    this.ensureRebuilt();
+    return this.root.toString('hex');
+  }
+
+  /**
+   * Return the per-level sibling hashes for this key, even if the key is not present.
+   *
+   * This is the exact structure we use as an on-chain update witness.
+   */
+  getSiblings(key: string): Buffer[] {
+    this.ensureRebuilt();
+
+    const siblings: Buffer[] = [];
+    let index = keyIndex64(key);
+
+    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
+      const siblingIndex = index ^ 1n;
+      const siblingHash = this.nodesByHeight![height].get(siblingIndex) ?? EMPTY_HASH;
+      siblings.push(Buffer.from(siblingHash));
+      index >>= 1n;
+    }
+
+    return siblings;
+  }
+
+  /**
+   * Generate a membership proof for an existing key.
+   */
+  generateProof(key: string): ICS23ExistenceProof {
+    if (this.leaves.size === 0) {
+      throw new Error(`Cannot generate proof: tree is empty`);
+    }
+
+    const value = this.leaves.get(key);
+    if (!value) {
+      throw new Error(`Cannot generate proof: key '${key}' not found in tree`);
+    }
+
+    const siblings = this.getSiblings(key);
+    const path: ICS23InnerOp[] = [];
+
+    let index = keyIndex64(key);
+    for (const siblingHash of siblings) {
+      const isLeftChild = (index & 1n) === 0n;
+
+      if (isLeftChild) {
+        path.push({
+          hash: 1, // SHA-256
+          prefix: Buffer.from([0x01]),
+          suffix: siblingHash,
+        });
+      } else {
+        path.push({
+          hash: 1, // SHA-256
+          prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
+          suffix: Buffer.alloc(0),
+        });
+      }
+
+      index >>= 1n;
+    }
+
+    return {
+      key: Buffer.from(key, 'utf8'),
+      value,
+      // These fields are currently carried through as metadata for JSON proof serialization.
+      // The verification logic below does not rely on them.
+      leaf: {
+        hash: 1,
+        prehash_key: 0,
+        prehash_value: 0,
+        length: 0,
+        prefix: Buffer.alloc(0),
+      },
+      path,
+    };
+  }
+
+  /**
+   * Generate a non-membership proof for a missing key.
+   *
+   * For this fixed-depth tree, we model "missing" as "present with an empty value".
+   * The leaf hash for an empty value is the all-zero hash.
+   */
+  generateNonExistenceProof(key: string): ICS23NonExistenceProof {
+    if (this.leaves.has(key)) {
+      throw new Error(`Cannot generate non-existence proof: key '${key}' exists in tree`);
+    }
+
+    if (this.leaves.size === 0) {
+      throw new Error(`Cannot generate non-existence proof: tree is empty`);
+    }
+
+    const siblings = this.getSiblings(key);
+    const path: ICS23InnerOp[] = [];
+
+    let index = keyIndex64(key);
+    for (const siblingHash of siblings) {
+      const isLeftChild = (index & 1n) === 0n;
+
+      if (isLeftChild) {
+        path.push({
+          hash: 1,
+          prefix: Buffer.from([0x01]),
+          suffix: siblingHash,
+        });
+      } else {
+        path.push({
+          hash: 1,
+          prefix: Buffer.concat([Buffer.from([0x01]), siblingHash]),
+          suffix: Buffer.alloc(0),
+        });
+      }
+
+      index >>= 1n;
+    }
+
+    const emptyValueProof: ICS23ExistenceProof = {
+      key: Buffer.from(key, 'utf8'),
+      value: Buffer.alloc(0),
+      leaf: {
+        hash: 1,
+        prehash_key: 0,
+        prehash_value: 0,
+        length: 0,
+        prefix: Buffer.alloc(0),
+      },
+      path,
+    };
+
+    return {
+      key: Buffer.from(key, 'utf8'),
+      left: emptyValueProof,
+      right: null,
+    };
+  }
+
+  /**
+   * Verify a proof against the current tree root.
+   *
+   * This is primarily used by unit tests to sanity-check the proof generator.
+   */
+  verifyProof(proof: ICS23ExistenceProof): boolean {
+    this.ensureRebuilt();
+
+    // Leaf hash is based on the value only (the key influences the path, not the leaf digest).
+    let currentHash = leafHash(proof.value);
+
+    for (const op of proof.path) {
+      if (op.suffix.length > 0) {
+        const left = currentHash;
+        const right = op.suffix;
+        currentHash = innerHash(left, right);
+      } else {
+        // prefix format: 0x01 || leftSiblingHash
+        const leftSibling = op.prefix.subarray(1);
+        const left = leftSibling;
+        const right = currentHash;
+        currentHash = innerHash(left, right);
+      }
+    }
+
+    return currentHash.equals(this.root);
+  }
+
+  toJSON(): { leaves: Record<string, string>; root: string } {
+    const leaves: Record<string, string> = {};
+    this.leaves.forEach((value, key) => {
+      leaves[key] = value.toString('hex');
+    });
+    return { leaves, root: this.getRoot() };
+  }
+
+  static fromJSON(data: { leaves: Record<string, string>; root?: string }): ICS23MerkleTree {
+    const tree = new ICS23MerkleTree();
+    for (const [key, value] of Object.entries(data.leaves)) {
+      tree.set(key, Buffer.from(value, 'hex'));
+    }
+    return tree;
+  }
+
+  private ensureRebuilt(): void {
+    if (!this.dirty && this.nodesByHeight) return;
+
+    const nodesByHeight: Array<Map<bigint, Buffer>> = Array.from(
+      { length: MERKLE_DEPTH_BITS + 1 },
+      () => new Map<bigint, Buffer>(),
+    );
+
+    const indexToKey = new Map<bigint, string>();
+    for (const [key, value] of this.leaves) {
+      const index = keyIndex64(key);
+
+      const previousKey = indexToKey.get(index);
+      if (previousKey && previousKey !== key) {
+        throw new Error(
+          `Merkle key collision at index ${index.toString()}: '${previousKey}' and '${key}'`,
+        );
+      }
+      indexToKey.set(index, key);
+
+      const h = leafHash(value);
+      if (!h.equals(EMPTY_HASH)) nodesByHeight[0].set(index, h);
+    }
+
+    for (let height = 1; height <= MERKLE_DEPTH_BITS; height++) {
+      const childMap = nodesByHeight[height - 1];
+      const parentMap = nodesByHeight[height];
+
+      const parents = new Set<bigint>();
+      for (const childIndex of childMap.keys()) {
+        parents.add(childIndex >> 1n);
+      }
+
+      for (const parentIndex of parents) {
+        const leftIndex = parentIndex << 1n;
+        const rightIndex = leftIndex + 1n;
+
+        const left = childMap.get(leftIndex) ?? EMPTY_HASH;
+        const right = childMap.get(rightIndex) ?? EMPTY_HASH;
+
+        const p = innerHash(left, right);
+        if (!p.equals(EMPTY_HASH)) parentMap.set(parentIndex, p);
+      }
+    }
+
+    this.nodesByHeight = nodesByHeight;
+    this.root = nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
+    this.dirty = false;
+  }
+}

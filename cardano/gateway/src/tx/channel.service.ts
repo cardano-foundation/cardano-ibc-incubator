@@ -17,13 +17,14 @@ import {
   MsgChannelOpenTryResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { MintChannelRedeemer, SpendChannelRedeemer } from 'src/shared/types/channel/channel-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { AuthToken } from 'src/shared/types/auth-token';
-import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
+import { ChannelDatum, encodeChannelEndValue } from 'src/shared/types/channel/channel-datum';
 import { ChannelState } from 'src/shared/types/channel/state';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
@@ -62,9 +63,10 @@ import {
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import { 
-  computeRootWithChannelUpdate as computeRootWithChannelUpdateHelper,
+import {
   alignTreeWithChain,
+  computeRootWithCreateChannelUpdate,
+  computeRootWithUpdateChannelUpdate,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
 
@@ -77,12 +79,76 @@ export class ChannelService {
   ) {}
 
   /**
-   * Computes the new IBC state root after channel update
-   * Now side-effect free - returns newRoot without mutating the canonical tree
+   * Compute the new IBC state root for CreateChannel, and also return the per-key witnesses.
+   *
+   * The on-chain `host_state_stt` validator uses these witnesses to enforce that the new
+   * `ibc_state_root` is derived from the old root (not an arbitrary value).
    */
-  private computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): string {
-    const result = computeRootWithChannelUpdateHelper(oldRoot, channelId, channelState);
-    return result.newRoot;
+  private async computeRootWithCreateChannelUpdate(
+    oldRoot: string,
+    portId: string,
+    channelId: string,
+    channelDatum: ChannelDatum,
+  ): Promise<{
+    newRoot: string;
+    channelSiblings: string[];
+    nextSequenceSendSiblings: string[];
+    nextSequenceRecvSiblings: string[];
+    nextSequenceAckSiblings: string[];
+  }> {
+    // Encode the exact bytes that the on-chain validator commits to the root.
+    // These bytes must match Aiken's `cbor.serialise(...)` output.
+    const channelValue = Buffer.from(
+      await encodeChannelEndValue(channelDatum.state.channel, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { Data } = this.lucidService.LucidImporter;
+    const nextSequenceSendValue = Buffer.from(
+      Data.to(channelDatum.state.next_sequence_send as any, Data.Integer() as any),
+      'hex',
+    );
+    const nextSequenceRecvValue = Buffer.from(
+      Data.to(channelDatum.state.next_sequence_recv as any, Data.Integer() as any),
+      'hex',
+    );
+    const nextSequenceAckValue = Buffer.from(
+      Data.to(channelDatum.state.next_sequence_ack as any, Data.Integer() as any),
+      'hex',
+    );
+
+    return computeRootWithCreateChannelUpdate(
+      oldRoot,
+      portId,
+      channelId,
+      channelValue,
+      nextSequenceSendValue,
+      nextSequenceRecvValue,
+      nextSequenceAckValue,
+    );
+  }
+
+  /**
+   * Compute the new IBC state root for UpdateChannel (handshake continuation),
+   * and also return the per-key witness.
+   *
+   * The on-chain `host_state_stt` validator uses this witness to enforce that the new
+   * `ibc_state_root` is derived from the old root (not an arbitrary value).
+   */
+  private async computeRootWithUpdateChannelUpdate(
+    oldRoot: string,
+    portId: string,
+    channelId: string,
+    channelDatum: ChannelDatum,
+  ): Promise<{ newRoot: string; channelSiblings: string[] }> {
+    // Encode the exact bytes that the on-chain validator commits to the root.
+    // These bytes must match Aiken's `cbor.serialise(...)` output.
+    const channelValue = Buffer.from(
+      await encodeChannelEndValue(channelDatum.state.channel, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    return computeRootWithUpdateChannelUpdate(oldRoot, portId, channelId, channelValue);
   }
   
   /**
@@ -282,11 +348,29 @@ export class ChannelService {
     channelOpenInitOperator: ChannelOpenInitOperator,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; channelId: string }> {
+    // STT Architecture: Query the HostState UTXO via its unique NFT.
+    // This datum is the authoritative source of:
+    // - `ibc_state_root` (the Merkle commitment root)
+    // - sequence counters (client/connection/channel)
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-
-    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
+    if (handlerDatum.state.next_channel_sequence !== hostStateDatum.state.next_channel_sequence) {
+      throw new GrpcInternalException(
+        `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
+      );
+    }
 
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenInitOperator.connectionId),
@@ -308,19 +392,9 @@ export class ChannelService {
       'handlerOperator',
     );
     
-    // Compute new IBC state root with channel update
-    const channelSequence = handlerDatum.state.next_channel_sequence;
+    // Derive the new channel identifier from the HostState sequence.
+    const channelSequence = hostStateDatum.state.next_channel_sequence;
     const channelId = `channel-${channelSequence}`;
-    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenInitOperator);
-    
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
     const mintChannelRedeemer: MintChannelRedeemer = {
       ChanOpenInit: {
         handler_token: this.configService.get('deployment').handlerAuthToken,
@@ -356,11 +430,55 @@ export class ChannelService {
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
     };
+
+    const {
+      newRoot,
+      channelSiblings,
+      nextSequenceSendSiblings,
+      nextSequenceRecvSiblings,
+      nextSequenceAckSiblings,
+    } = await this.computeRootWithCreateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      channelOpenInitOperator.port_id,
+      channelId,
+      channelDatum,
+    );
+
+    const updatedHandlerDatum: HandlerDatum = {
+      ...handlerDatum,
+      state: {
+        ...handlerDatum.state,
+        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
+      },
+    };
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      CreateChannel: {
+        channel_siblings: channelSiblings,
+        next_sequence_send_siblings: nextSequenceSendSiblings,
+        next_sequence_recv_siblings: nextSequenceRecvSiblings,
+        next_sequence_ack_siblings: nextSequenceAckSiblings,
+      },
+    };
     const encodedMintChannelRedeemer: string = await this.lucidService.encode<MintChannelRedeemer>(
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const transferModuleIdentifier = this.configService.get('deployment').modules.transfer.identifier;
     const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
@@ -378,6 +496,8 @@ export class ChannelService {
       'iBCModuleRedeemer',
     );
     const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       handlerUtxo,
       connectionUtxo,
       clientUtxo,
@@ -387,6 +507,7 @@ export class ChannelService {
       encodedMintChannelRedeemer,
       channelTokenUnit,
       encodedUpdatedHandlerDatum,
+      encodedUpdatedHostStateDatum,
       encodedChannelDatum,
       constructedAddress,
     };
@@ -399,11 +520,26 @@ export class ChannelService {
     channelOpenTryOperator: ChannelOpenTryOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    // STT Architecture: Query the HostState UTXO via its unique NFT.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    
-    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
-    await this.ensureTreeAligned(handlerDatum.state.ibc_state_root);
+    if (handlerDatum.state.next_channel_sequence !== hostStateDatum.state.next_channel_sequence) {
+      throw new GrpcInternalException(
+        `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
+      );
+    }
     
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
@@ -424,20 +560,10 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
-    
-    // Compute new IBC state root with channel update
-    const channelSequence = handlerDatum.state.next_channel_sequence;
+
+    // Derive the new channel identifier from the HostState sequence.
+    const channelSequence = hostStateDatum.state.next_channel_sequence;
     const channelId = `channel-${channelSequence}`;
-    const newRoot = this.computeRootWithChannelUpdate(handlerDatum.state.ibc_state_root, channelId, channelOpenTryOperator);
-    
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_channel_sequence: handlerDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
     const mintChannelRedeemer: MintChannelRedeemer = {
       ChanOpenTry: {
         handler_token: this.configService.get('deployment').handlerAuthToken,
@@ -448,7 +574,7 @@ export class ChannelService {
       },
     };
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
-      handlerDatum.state.next_channel_sequence,
+      hostStateDatum.state.next_channel_sequence,
     );
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const channelToken: AuthToken = {
@@ -478,11 +604,55 @@ export class ChannelService {
       token: channelToken,
     };
 
+    const {
+      newRoot,
+      channelSiblings,
+      nextSequenceSendSiblings,
+      nextSequenceRecvSiblings,
+      nextSequenceAckSiblings,
+    } = await this.computeRootWithCreateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      channelOpenTryOperator.port_id,
+      channelId,
+      channelDatum,
+    );
+
+    const updatedHandlerDatum: HandlerDatum = {
+      ...handlerDatum,
+      state: {
+        ...handlerDatum.state,
+        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
+      },
+    };
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      CreateChannel: {
+        channel_siblings: channelSiblings,
+        next_sequence_send_siblings: nextSequenceSendSiblings,
+        next_sequence_recv_siblings: nextSequenceRecvSiblings,
+        next_sequence_ack_siblings: nextSequenceAckSiblings,
+      },
+    };
+
     const encodedMintChannelRedeemer: string = await this.lucidService.encode<MintChannelRedeemer>(
       mintChannelRedeemer,
       'mintChannelRedeemer',
     );
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
     // Get mock module utxo
@@ -518,6 +688,8 @@ export class ChannelService {
     // Call createUnsignedChannelOpenTryTransaction method with defined parameters
     return this.lucidService.createUnsignedChannelOpenTryTransaction(
       handlerUtxo,
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       connectionUtxo,
       clientUtxo,
       mockModuleUtxo,
@@ -526,6 +698,7 @@ export class ChannelService {
       encodedMintChannelRedeemer,
       channelTokenUnit,
       encodedUpdatedHandlerDatum,
+      encodedUpdatedHostStateDatum,
       encodedChannelDatum,
       encodedNewMockModuleDatum,
       constructedAddress,
@@ -545,6 +718,19 @@ export class ChannelService {
     if (channelDatum.state.channel.state !== 'Init') {
       throw new GrpcInternalException('ChanOpenAck to channel not in Init state');
     }
+
+    // STT Architecture: Query the HostState UTXO via its unique NFT.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       //TODO: recheck
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -583,6 +769,32 @@ export class ChannelService {
         },
       },
     };
+
+    // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
+    const portId = convertHex2String(channelDatum.port);
+    const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenAckOperator.channelSequence}`;
+    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      portId,
+      channelIdForRoot,
+      updatedChannelDatum,
+    );
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    // The HostState redeemer carries the witness proving how the root was updated.
+    const hostStateRedeemer = {
+      UpdateChannel: {
+        channel_siblings: channelSiblings,
+      },
+    };
     const spendChannelRedeemer: SpendChannelRedeemer = {
       ChanOpenAck: {
         counterparty_version: convertString2Hex(channelOpenAckOperator.counterpartyVersion),
@@ -595,6 +807,8 @@ export class ChannelService {
       spendChannelRedeemer,
       'spendChannelRedeemer',
     );
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
       updatedChannelDatum,
       'channel',
@@ -670,6 +884,9 @@ export class ChannelService {
       'iBCModuleRedeemer',
     );
     const unsignedChannelOpenAckParams: UnsignedChannelOpenAckDto = {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       channelUtxo,
       connectionUtxo,
       clientUtxo,
@@ -701,6 +918,19 @@ export class ChannelService {
     if (channelDatum.state.channel.state !== 'TryOpen') {
       throw new GrpcInternalException('ChanOpenConfirm to channel not in TryOpen state');
     }
+
+    // STT Architecture: Query the HostState UTXO via its unique NFT.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       //TODO: recheck
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -727,6 +957,32 @@ export class ChannelService {
         },
       },
     };
+
+    // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
+    const portId = convertHex2String(channelDatum.port);
+    const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenConfirmOperator.channelSequence}`;
+    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      portId,
+      channelIdForRoot,
+      updatedChannelDatum,
+    );
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    // The HostState redeemer carries the witness proving how the root was updated.
+    const hostStateRedeemer = {
+      UpdateChannel: {
+        channel_siblings: channelSiblings,
+      },
+    };
     const spendChannelRedeemer: SpendChannelRedeemer = {
       ChanOpenConfirm: {
         //TODO
@@ -738,6 +994,8 @@ export class ChannelService {
       spendChannelRedeemer,
       'spendChannelRedeemer',
     );
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
       updatedChannelDatum,
       'channel',
@@ -770,6 +1028,9 @@ export class ChannelService {
     );
     // Call createUnsignedChannelOpenConfirmTransaction method with defined parameters
     return this.lucidService.createUnsignedChannelOpenConfirmTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       channelUtxo,
       connectionUtxo,
       clientUtxo,
@@ -787,6 +1048,20 @@ export class ChannelService {
     channelCloseInitOperator: ChannelCloseInitOperator,
     constructedAddress: string,
   ): Promise<TxBuilder> {
+    // STT Architecture: Query the HostState UTXO via its unique NFT.
+    // This datum is the authoritative source of the current commitment root.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
     const channelSequence = channelCloseInitOperator.channel_id;
 
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -830,6 +1105,35 @@ export class ChannelService {
         },
       },
     };
+
+    // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
+    const portId = convertHex2String(channelDatum.port);
+    const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
+    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      portId,
+      channelIdForRoot,
+      updatedChannelDatum,
+    );
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    // The HostState redeemer carries the witness proving how the root was updated.
+    const hostStateRedeemer = {
+      UpdateChannel: {
+        channel_siblings: channelSiblings,
+      },
+    };
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
+
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
       updatedChannelDatum,
       'channel',
@@ -868,6 +1172,9 @@ export class ChannelService {
     );
 
     const unsignedChannelCloseInitParams: UnsignedChannelCloseInitDto = {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       channelUtxo,
       connectionUtxo,
       clientUtxo,

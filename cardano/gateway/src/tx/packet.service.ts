@@ -35,6 +35,7 @@ import { commitPacket } from '../shared/helpers/commitment';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import { AcknowledgementResponse } from '@shared/types/channel/acknowledgement_response';
+import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import {
   validateAndFormatAcknowledgementPacketParams,
   validateAndFormatRecvPacketParams,
@@ -67,6 +68,7 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
+import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
 
 @Injectable()
 export class PacketService {
@@ -118,6 +120,99 @@ export class PacketService {
     }
 
     return JSON.stringify(obj, replacer, indent);
+  }
+
+  /**
+   * Ensure the in-memory Merkle tree is aligned with on-chain state.
+   *
+   * Packet handlers must compute sibling witnesses against the *current* root,
+   * otherwise `host_state_stt` will reject the transaction.
+   */
+  private async ensureTreeAligned(onChainRoot: string): Promise<void> {
+    if (!isTreeAligned(onChainRoot)) {
+      this.logger.warn(`Tree is out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding...`);
+      await alignTreeWithChain();
+    }
+  }
+
+  /**
+   * Build the HostState STT update required for any packet-related channel update.
+   *
+   * Every packet operation mutates some part of ChannelDatum (sequence counters and/or
+   * packet maps). The HostState commitment root must be updated in the same transaction,
+   * and the HostState redeemer must carry sibling hashes proving the root transition.
+   */
+  private async buildHostStateUpdateForHandlePacket(
+    inputChannelDatum: ChannelDatum,
+    outputChannelDatum: ChannelDatum,
+    channelIdForRoot: string,
+  ): Promise<{
+    hostStateUtxo: UTxO;
+    encodedHostStateRedeemer: string;
+    encodedUpdatedHostStateDatum: string;
+  }> {
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
+    const portId = convertHex2String(inputChannelDatum.port);
+
+    const {
+      newRoot,
+      channelSiblings,
+      nextSequenceSendSiblings,
+      nextSequenceRecvSiblings,
+      nextSequenceAckSiblings,
+      packetCommitmentSiblings,
+      packetReceiptSiblings,
+      packetAcknowledgementSiblings,
+    } = await computeRootWithHandlePacketUpdate(
+      hostStateDatum.state.ibc_state_root,
+      portId,
+      channelIdForRoot,
+      inputChannelDatum,
+      outputChannelDatum,
+      this.lucidService.LucidImporter,
+    );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      HandlePacket: {
+        channel_siblings: channelSiblings,
+        next_sequence_send_siblings: nextSequenceSendSiblings,
+        next_sequence_recv_siblings: nextSequenceRecvSiblings,
+        next_sequence_ack_siblings: nextSequenceAckSiblings,
+        packet_commitment_siblings: packetCommitmentSiblings,
+        packet_receipt_siblings: packetReceiptSiblings,
+        packet_acknowledgement_siblings: packetAcknowledgementSiblings,
+      },
+    };
+
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
+
+    return {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+    };
   }
 
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
@@ -567,12 +662,18 @@ export class PacketService {
               'channel',
             );
 
+            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+              await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+
             const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
+              hostStateUtxo,
               channelUtxo,
               connectionUtxo,
               clientUtxo,
               transferModuleUtxo,
 
+              encodedHostStateRedeemer,
+              encodedUpdatedHostStateDatum,
               encodedSpendChannelRedeemer,
               encodedSpendTransferModuleRedeemer,
               channelTokenUnit,
@@ -651,12 +752,18 @@ export class PacketService {
               'channel',
             );
 
+            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+              await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+
             const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
+              hostStateUtxo,
               channelUtxo,
               connectionUtxo,
               clientUtxo,
               transferModuleUtxo,
 
+              encodedHostStateRedeemer,
+              encodedUpdatedHostStateDatum,
               encodedSpendChannelRedeemer,
               encodedSpendTransferModuleRedeemer,
               encodedMintVoucherRedeemer,
@@ -701,11 +808,17 @@ export class PacketService {
       'channel',
     );
 
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+
     const unsignedRecvPacketMintParams: UnsignedRecvPacketDto = {
+      hostStateUtxo,
       channelUtxo,
       connectionUtxo,
       clientUtxo,
 
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
       encodedUpdatedChannelDatum,
 
@@ -813,6 +926,9 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
+
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, convertHex2String(packet.source_channel));
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       spendTransferModuleRedeemer,
       'iBCModuleRedeemer',
@@ -866,11 +982,14 @@ export class PacketService {
       this.logger.log(denom, 'unescrow timeout processing');
 
       const unsignedSendPacketParams: UnsignedTimeoutPacketUnescrowDto = {
+        hostStateUtxo: hostStateUtxo,
         channelUtxo: channelUtxo,
         transferModuleUtxo: transferModuleUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
 
+        encodedHostStateRedeemer: encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
         encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
@@ -927,11 +1046,14 @@ export class PacketService {
       'mintVoucherRedeemer',
     );
     const unsignedTimeoutPacketMintDto: UnsignedTimeoutPacketMintDto = {
+      hostStateUtxo: hostStateUtxo,
       channelUtxo: channelUtxo,
       transferModuleUtxo: transferModuleUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
 
+      encodedHostStateRedeemer: encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
       encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer: encodedMintVoucherRedeemer,
@@ -1062,6 +1184,9 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
+
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
     const deploymentConfig = this.configService.get('deployment');
 
     const sendPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash;
@@ -1096,12 +1221,15 @@ export class PacketService {
       const senderVoucherTokenUtxo = await this.lucidService.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
       // send burn
       const unsignedSendPacketParams: UnsignedSendPacketBurnDto = {
+        hostStateUtxo,
         channelUTxO: channelUtxo,
         connectionUTxO: connectionUtxo,
         clientUTxO: clientUtxo,
         transferModuleUTxO: transferModuleUtxo,
         senderVoucherTokenUtxo,
 
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
         encodedMintVoucherRedeemer,
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
@@ -1126,11 +1254,14 @@ export class PacketService {
     // escrow
     this.logger.log('send escrow');
     const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
+      hostStateUtxo,
       channelUTxO: channelUtxo,
       connectionUTxO: connectionUtxo,
       clientUTxO: clientUtxo,
       transferModuleUTxO: transferModuleUtxo,
 
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
       encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
       encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
@@ -1340,11 +1471,16 @@ export class PacketService {
         updatedChannelDatum,
         'channel',
       );
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
       const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
+        hostStateUtxo,
         channelUtxo,
         connectionUtxo,
         clientUtxo,
         transferModuleUtxo,
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
         channelTokenUnit,
@@ -1390,12 +1526,17 @@ export class PacketService {
         updatedChannelDatum,
         'channel',
       );
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
       const unsignedAckPacketUnescrowParams: UnsignedAckPacketUnescrowDto = {
+        hostStateUtxo,
         channelUtxo,
         connectionUtxo,
         clientUtxo,
         transferModuleUtxo,
 
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
         channelTokenUnit,
@@ -1467,12 +1608,17 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
     const unsignedAckPacketMintParams: UnsignedAckPacketMintDto = {
+      hostStateUtxo,
       channelUtxo,
       connectionUtxo,
       clientUtxo,
       transferModuleUtxo,
 
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
       encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer,

@@ -2,10 +2,13 @@ import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '../../../../types/auth-token';
 
 export type UnsignedRecvPacketDto = {
+  hostStateUtxo: UTxO;
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
 
+  encodedHostStateRedeemer: string;
+  encodedUpdatedHostStateDatum: string;
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;
 
@@ -20,11 +23,14 @@ export type UnsignedRecvPacketDto = {
 };
 
 export type UnsignedRecvPacketMintDto = {
+  hostStateUtxo: UTxO;
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
   transferModuleUtxo: UTxO;
 
+  encodedHostStateRedeemer: string;
+  encodedUpdatedHostStateDatum: string;
   encodedSpendChannelRedeemer: string;
   encodedSpendTransferModuleRedeemer: string;
   encodedMintVoucherRedeemer: string;

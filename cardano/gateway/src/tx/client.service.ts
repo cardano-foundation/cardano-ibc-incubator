@@ -18,7 +18,7 @@ import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { ConfigService } from '@nestjs/config';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
 import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
-import { ClientDatum } from 'src/shared/types/client-datum';
+import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
 import { MintClientOperator } from 'src/shared/types/mint-client-operator';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
@@ -35,6 +35,8 @@ import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParam
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { 
   computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
+  computeRootWithCreateClientUpdate,
+  computeRootWithUpdateClientUpdate,
   alignTreeWithChain,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
@@ -55,9 +57,22 @@ export class ClientService {
    * IMPORTANT: This is now side-effect free. The result contains a commit()
    * function that should be called after tx confirmation, but for simplicity
    * we just return the newRoot and let the next operation rebuild from chain.
+   * 
+   * @param oldRoot - Current IBC state root
+   * @param clientId - Client identifier (e.g., "07-tendermint-0")
+   * @param clientState - The client state to store
+   * @param consensusState - Optional consensus state (required for CreateClient)
+   * @param consensusHeight - Height key for the consensus state
+   * @returns The new IBC state root (64-character hex string)
    */
-  private computeRootWithClientUpdate(oldRoot: string, clientId: string, clientState: any): string {
-    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState);
+  private computeRootWithClientUpdate(
+    oldRoot: string, 
+    clientId: string, 
+    clientState: any,
+    consensusState?: any,
+    consensusHeight?: string | number | bigint,
+  ): string {
+    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState, consensusState, consensusHeight);
     // Note: Not calling result.commit() - the tree will be rebuilt from chain on next operation
     // This is safer because it handles failed transactions automatically
     return result.newRoot;
@@ -300,11 +315,85 @@ export class ClientService {
       },
     };
 
+    // Root correctness enforcement (HostState update)
+    //
+    // UpdateClient must update `ibc_state_root` so that proofs about the client state
+    // remain verifiable by a counterparty. Without this, an operator could update the
+    // on-chain client datum while leaving the root unchanged.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
+    // The IBC client identifier used in the commitment tree matches the on-chain convention.
+    const ibcClientId = `07-tendermint-${updateOnMisbehaviourOperator.clientId}`;
+
+    // Determine consensus-state removals/insertions by diffing input vs output.
+    // We compare by full (revisionNumber, revisionHeight) equality to match on-chain `pairs.has_key`.
+    const outputFullKeys = new Set(
+      Array.from(newClientDatum.state.consensusStates.keys()).map(
+        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
+      ),
+    );
+
+    const removedConsensusHeights: string[] = [];
+    for (const [height] of currentClientDatumState.consensusStates.entries()) {
+      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
+      if (!outputFullKeys.has(fullKey)) {
+        removedConsensusHeights.push(height.revisionHeight.toString());
+      }
+    }
+
+    // Misbehaviour updates do not add a new consensus state.
+    const addedConsensusState = undefined;
+
+    const newClientStateValue = Buffer.from(
+      await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings } =
+      computeRootWithUpdateClientUpdate(
+        hostStateDatum.state.ibc_state_root,
+        ibcClientId,
+        newClientStateValue,
+        removedConsensusHeights,
+        addedConsensusState,
+      );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      UpdateClient: {
+        client_state_siblings: clientStateSiblings,
+        consensus_state_siblings: consensusStateSiblings,
+        removed_consensus_state_siblings: removedConsensusStateSiblings,
+      },
+    };
+
     const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     return this.lucidService.createUnsignedUpdateClientTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       updateOnMisbehaviourOperator.currentClientUtxo,
       encodedSpendClientRedeemer,
+      encodedUpdatedHostStateDatum,
       encodedNewClientDatum,
       updateOnMisbehaviourOperator.clientTokenUnit,
       updateOnMisbehaviourOperator.constructedAddress,
@@ -373,11 +462,106 @@ export class ClientService {
       },
     };
 
+    // Root correctness enforcement (HostState update)
+    //
+    // This transaction changes client state and (usually) adds a new consensus state while
+    // pruning older ones. The HostState root must commit to those changes, otherwise a
+    // counterparty cannot verify proofs about the updated client.
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
+    const ibcClientId = `07-tendermint-${updateClientOperator.clientId}`;
+
+    const inputFullKeys = new Set(
+      Array.from(currentClientDatumState.consensusStates.keys()).map(
+        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
+      ),
+    );
+    const outputFullKeys = new Set(
+      Array.from(newClientDatum.state.consensusStates.keys()).map(
+        (h) => `${h.revisionNumber.toString()}-${h.revisionHeight.toString()}`,
+      ),
+    );
+
+    const removedConsensusHeights: string[] = [];
+    for (const [height] of currentClientDatumState.consensusStates.entries()) {
+      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
+      if (!outputFullKeys.has(fullKey)) {
+        removedConsensusHeights.push(height.revisionHeight.toString());
+      }
+    }
+
+    let addedConsensusState:
+      | {
+          height: string;
+          value: Buffer;
+        }
+      | undefined = undefined;
+    for (const [height, consensusState] of newClientDatum.state.consensusStates.entries()) {
+      const fullKey = `${height.revisionNumber.toString()}-${height.revisionHeight.toString()}`;
+      if (!inputFullKeys.has(fullKey)) {
+        if (addedConsensusState) {
+          throw new GrpcInternalException('UpdateClient should add at most one consensus state');
+        }
+        addedConsensusState = {
+          height: height.revisionHeight.toString(),
+          value: Buffer.from(
+            await encodeConsensusStateValue(consensusState, this.lucidService.LucidImporter),
+            'hex',
+          ),
+        };
+      }
+    }
+
+    const newClientStateValue = Buffer.from(
+      await encodeClientStateValue(newClientState, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings } =
+      computeRootWithUpdateClientUpdate(
+        hostStateDatum.state.ibc_state_root,
+        ibcClientId,
+        newClientStateValue,
+        removedConsensusHeights,
+        addedConsensusState,
+      );
+
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      UpdateClient: {
+        client_state_siblings: clientStateSiblings,
+        consensus_state_siblings: consensusStateSiblings,
+        removed_consensus_state_siblings: removedConsensusStateSiblings,
+      },
+    };
+
     const encodedSpendClientRedeemer = await this.lucidService.encode(spendClientRedeemer, 'spendClientRedeemer');
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     return this.lucidService.createUnsignedUpdateClientTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
       updateClientOperator.currentClientUtxo,
       encodedSpendClientRedeemer,
+      encodedUpdatedHostStateDatum,
       encodedNewClientDatum,
       updateClientOperator.clientTokenUnit,
       updateClientOperator.constructedAddress,
@@ -423,8 +607,32 @@ export class ClientService {
     this.logger.log(`[DEBUG] HostState ibc_state_root: ${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`);
     
     // Compute new IBC state root with client update
+    // When creating a client, we need to add BOTH the clientState AND the initial consensusState
+    // to the Merkle tree. The consensus state is keyed by the client's latest height.
+    // This is essential for proof generation - without the consensus state in the tree,
+    // queries for proofs will fail with "key not found".
     const clientId = `07-tendermint-${hostStateDatum.state.next_client_sequence}`;
-    const newRoot = this.computeRootWithClientUpdate(hostStateDatum.state.ibc_state_root, clientId, clientState);
+    const consensusHeight = clientState.latestHeight.revisionHeight;
+
+    // Encode the exact bytes that the on-chain validator commits to the root.
+    // These bytes must match Aiken's `cbor.serialise(...)` output.
+    const clientStateValue = Buffer.from(
+      await encodeClientStateValue(clientState, this.lucidService.LucidImporter),
+      'hex',
+    );
+    const consensusStateValue = Buffer.from(
+      await encodeConsensusStateValue(consensusState, this.lucidService.LucidImporter),
+      'hex',
+    );
+
+    const { newRoot, clientStateSiblings, consensusStateSiblings } =
+      computeRootWithCreateClientUpdate(
+        hostStateDatum.state.ibc_state_root,
+        clientId,
+        clientStateValue,
+        consensusStateValue,
+        consensusHeight,
+      );
     
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)
@@ -472,7 +680,12 @@ export class ClientService {
     // CreateClient requires incrementing next_client_sequence while preserving connection/channel
     // sequences, whereas other operations have different field constraints. The redeemer acts as
     // a dispatch mechanism so the validator can branch to operation-specific validation logic.
-    const hostStateRedeemer = 'CreateClient';
+    const hostStateRedeemer = {
+      CreateClient: {
+        client_state_siblings: clientStateSiblings,
+        consensus_state_siblings: consensusStateSiblings,
+      },
+    };
     
     // Encode all data for the transaction
     const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');

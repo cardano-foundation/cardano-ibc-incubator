@@ -113,7 +113,6 @@ export class MiniProtocalsService {
     const client: BlockFetchClient = new BlockFetchClient(mplexer);
     client.on('error', (err) => {
       this.logger.error('BlockFetchClient error', err);
-      throw err;
     });
     const res = await client.request(startPoint);
 
@@ -127,14 +126,21 @@ export class MiniProtocalsService {
   async _performHandshake(mplexer: Multiplexer, networkMagic: number) {
     return new Promise<void>((resolve, reject) => {
       mplexer.on(MiniProtocol.Handshake, (chunk) => {
-        const msg = handshakeMessageFromCborObj(Cbor.parse(chunk));
+        try {
+          const msg = handshakeMessageFromCborObj(Cbor.parse(chunk));
 
-        if (msg instanceof HandshakeAcceptVersion) {
+          if (msg instanceof HandshakeAcceptVersion) {
+            mplexer.clearListeners(MiniProtocol.Handshake);
+            resolve();
+            return;
+          }
+
           mplexer.clearListeners(MiniProtocol.Handshake);
-          resolve();
-        } else {
-          this.logger.error('connection refused', msg);
-          throw new Error('handle rejection');
+          this.logger.error('Handshake rejected by node', msg);
+          reject(new Error(`Handshake rejected by node: ${JSON.stringify(msg)}`));
+        } catch (error) {
+          mplexer.clearListeners(MiniProtocol.Handshake);
+          reject(error);
         }
       });
 
