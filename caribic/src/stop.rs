@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 
 use crate::{
     config,
@@ -6,9 +7,32 @@ use crate::{
     utils::execute_script,
 };
 
+/// Check if any docker compose containers are running in a given directory
+fn has_running_containers(path: &Path) -> bool {
+    let output = Command::new("docker")
+        .args(&["compose", "ps", "-q"])
+        .current_dir(path)
+        .output();
+    
+    match output {
+        Ok(result) => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            !stdout.trim().is_empty()
+        }
+        Err(_) => false,
+    }
+}
+
 pub fn stop_gateway(project_root_path: &Path) {
+    let gateway_path = project_root_path.join("cardano/gateway");
+    
+    if !has_running_containers(&gateway_path) {
+        log("Gateway was not running");
+        return;
+    }
+    
     let gateway_result = execute_script(
-        project_root_path.join("cardano/gateway").as_path(),
+        &gateway_path,
         "docker",
         Vec::from(["compose", "down"]),
         None,
@@ -24,15 +48,22 @@ pub fn stop_gateway(project_root_path: &Path) {
 }
 
 pub fn stop_cardano_network(project_root_path: &Path) {
+    let cardano_path = project_root_path.join("chains/cardano");
+    
+    if !has_running_containers(&cardano_path) {
+        log("Cardano network was not running");
+        return;
+    }
+    
     let cardano_result = execute_script(
-        project_root_path.join("chains/cardano").as_path(),
+        &cardano_path,
         "docker",
         Vec::from(["compose", "down"]),
         None,
     );
     match cardano_result {
         Ok(_) => {
-            log("Cardano network stopped");
+            log("Cardano network stopped successfully");
         }
         Err(e) => {
             error(&format!("ERROR: Failed to stop Cardano network: {}", e));
@@ -41,35 +72,42 @@ pub fn stop_cardano_network(project_root_path: &Path) {
 }
 
 pub fn stop_cosmos(cosmos_path: &Path) {
-    if cosmos_path.exists() {
-        let cosmos_result =
-            execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
-        match cosmos_result {
-            Ok(_) => {
-                log("Cosmos stopped successfully");
-            }
-            Err(e) => {
-                error(&format!("ERROR: Failed to stop Cosmos: {}", e));
-            }
+    if !cosmos_path.exists() {
+        return;
+    }
+    
+    if !has_running_containers(cosmos_path) {
+        log("Cosmos was not running");
+        return;
+    }
+    
+    let cosmos_result =
+        execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
+    match cosmos_result {
+        Ok(_) => {
+            log("Cosmos stopped successfully");
+        }
+        Err(e) => {
+            error(&format!("ERROR: Failed to stop Cosmos: {}", e));
         }
     }
 }
 
 pub fn stop_osmosis(osmosis_path: &Path) {
+    // Osmosis uses make instead of docker compose, harder to check if running
+    // Just attempt to stop and let make handle it gracefully
     let osmosis_result = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
     match osmosis_result {
         Ok(_) => {
-            log("Osmosis stopped successfully");
+            // make localnet-stop doesn't tell us if it was running, so be quiet
         }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop Osmosis: {}", e));
+        Err(_) => {
+            // Silently ignore errors - osmosis might not be set up
         }
     }
 }
 
 pub fn stop_relayer(_relayer_path: &Path) {
-    use std::process::Command;
-    
     // Stop Hermes daemon by finding and killing the process
     let pkill_result = Command::new("pkill")
         .args(&["-f", "hermes start"])
@@ -90,8 +128,30 @@ pub fn stop_relayer(_relayer_path: &Path) {
 }
 
 pub fn stop_mithril(mithril_path: &Path) {
-    let mithril_data_dir = mithril_path.join("data");
     let mithril_script_path = mithril_path.join("scripts");
+    
+    if !mithril_script_path.exists() {
+        log("Mithril was not configured");
+        return;
+    }
+    
+    // Check if mithril containers are running
+    let output = Command::new("docker")
+        .args(&["compose", "-f", "docker-compose.yaml", "--profile", "mithril", "ps", "-q"])
+        .current_dir(&mithril_script_path)
+        .output();
+    
+    let has_containers = match output {
+        Ok(result) => !String::from_utf8_lossy(&result.stdout).trim().is_empty(),
+        Err(_) => false,
+    };
+    
+    if !has_containers {
+        log("Mithril was not running");
+        return;
+    }
+    
+    let mithril_data_dir = mithril_path.join("data");
     let mithril_config = config::get_config().mithril;
     let mithril_result = execute_script(
         &mithril_script_path,

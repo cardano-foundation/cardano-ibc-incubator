@@ -598,6 +598,19 @@ pub fn prepare_db_sync_and_gateway(
         &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
     )?;
 
+    // Populate DEPLOYER_SK with the key from me.sk (used by Gateway to build transactions)
+    let deployer_sk_path = cardano_dir.join("config/credentials/me.sk");
+    if deployer_sk_path.exists() {
+        let deployer_sk = fs::read_to_string(&deployer_sk_path)
+            .map_err(|e| format!("Failed to read me.sk: {}", e))?;
+        replace_text_in_file(
+            &gateway_env,
+            r#"DEPLOYER_SK=.*"#,
+            &format!("DEPLOYER_SK={}", deployer_sk.trim()),
+        )?;
+        verbose(&format!("Set DEPLOYER_SK from {}", deployer_sk_path.display()));
+    }
+
     // Wait for postgres to be ready before creating gateway database
     let mut postgres_ready = false;
     for attempt in 1..=30 {
