@@ -1,20 +1,25 @@
 # Known Issues, Asymmetries, and Architectural Considerations
 
-## Cardano Key Derivation: Non-Hardened Path Requirement
+## Cardano Key Derivation and Interop With Hermes/Lucid
 
-Hermes and Lucid Evolution initially derived different Cardano addresses from the same BIP39 mnemonic despite using the correct BIP32-Ed25519 algorithm. The root cause was a derivation path mismatch:
+Cardano wallets do not have a single universally implemented derivation path. The common convention for Shelley-era wallets is CIP-1852, which uses the path `m/1852'/1815'/account'/role/index`, where `role` and `index` are non-hardened. Some Ed25519-BIP32 implementations only support fully hardened derivation, and some toolchains differ in how they interpret or expose these roles. As a result, two pieces of software can legitimately derive different payment addresses from the same BIP-39 mnemonic, which can look like funds disappearing or signatures failing when the real issue is that different components are not using the same derivation scheme.
 
-- Lucid Evolution (via cardano-multiplatform-lib): Uses `m/1852'/1815'/0'/0/0` with the last two indices non-hardened
-- Standard BIP32-Ed25519 libraries: Only support fully hardened paths like `m/1852'/1815'/0'/0'/0'`
-
-This is not a bug in either implementation but a fundamental difference in Cardano's key derivation standards. CIP-1852 specifies that payment credentials should use `m/1852'/1815'/account'/role/index` where `role` and `index` are non-hardened (0/0, not 0'/0'). Most generic BIP32-Ed25519 libraries only implement hardened derivation for Ed25519, as non-hardened derivation requires special handling.
-
-For testing and development, we use direct private key sharing via bech32-encoded keys (`DEPLOYER_SK`). Both Gateway and Hermes load the same `ed25519_sk1...` key directly, avoiding the complexity of implementing Cardano-specific non-hardened BIP32-Ed25519 derivation.
+For local development we currently avoid this class of mismatch by using a shared bech32-encoded private key (`DEPLOYER_SK`) so that Gateway and Hermes are guaranteed to operate with the same signing key material. For production, this should be replaced with a well-defined and consistently implemented key management approach for Cardano.
 
 ## Denom Trace Mapping Lives Off-Chain
 
-Cosmos SDK chains store denom trace mappings in a consensus-state KVStore, but Cardano's UTXO model lacks an equivalent on-chain key-value store. Voucher tokens embed the denom trace hash in their token names, which preserves authenticity, but the reverse lookup from hash to full trace must be maintained off-chain (in the Gateway's PostgreSQL database).
+Cosmos SDK chains store denom trace mappings in a consensus-state KVStore, but Cardano’s UTxO model does not provide an equivalent general-purpose on-chain key-value store. Voucher tokens embed the denom trace hash in their token names, which preserves authenticity, but the reverse lookup from hash to full trace must be maintained off-chain (for example in the Gateway’s database).
 
-The mapping is fully reconstructible from on-chain data: each voucher minting transaction includes a RecvPacket redeemer containing the full fungible token packet data with the original denom string, and the transaction simultaneously mints a voucher token whose name is the sha3_256 hash of the prefixed denom. By scanning historical transactions that interact with the voucher minting policy, the hash-to-trace mappings can be deterministically rebuilt.
+The mapping is fully reconstructible from on-chain data because voucher minting transactions contain the full fungible token packet data while simultaneously minting a voucher whose token name is derived from that denom. In practice, however, denom trace queries rely on off-chain indexing infrastructure rather than direct chain state queries, and we should continue to track this asymmetry and decide whether additional on-chain data or standardized rebuild tooling is needed for production readiness.
 
-This architectural difference does not compromise security or correctness, as the hash-based token naming ensures voucher authenticity, but it does create an implementation asymmetry where denom trace queries rely on off-chain indexing infrastructure rather than direct chain state queries.
+## Underlying Cryptography
+
+There are two different membership and non-membership problems in IBC, and the asymmetry between Tendermint and Cardano matters in different ways depending on which direction verification is happening.
+
+When Cardano verifies Cosmos state, it follows the standard ICS-07 flow: Cardano stores a trusted consensus root for the Cosmos chain from signed Tendermint headers and verifies ICS-23 membership and non-membership proofs against that root.
+
+When a Cosmos chain verifies Cardano state, there is a fundamental asymmetry. Tendermint exposes a consensus-signed `app_hash` each height, so the counterparty can trust the root it verifies proofs against. Cardano does not expose a consensus-signed application state commitment in block headers, so the IBC HostState UTxO datum (which contains `ibc_state_root`) is an application-level commitment that lives inside the ledger and is not directly attested to by Ouroboros in the same way.
+
+As things currently stand, it is possible for IBC state that is supposed to be committed under `ibc_state_root` to be updated without atomically updating the HostState commitment, because the individual spending validators for clients, connections, channels, and packet state do not yet require the HostState UTxO to be co-spent. In IBC this should not be possible because counterparty verification assumes the commitment root uniquely represents the state at a given height. This is possible because root updates and state updates are not enforced to be a single atomic transition at the script level. Making this not possible requires enforcing that any state transition which changes committed IBC state must also co-spend the HostState UTxO (or otherwise prove and apply the corresponding root update), so the root and the underlying state cannot diverge.
+
+Separately, a trustless counterparty must be able to convince itself that the specific HostState UTxO (and the exact datum bytes that contain `ibc_state_root`) is included in a sufficiently finalized view of the Cardano ledger. The concrete mechanism for this attestation is still an open design point. Mithril is relevant here as a potential source of certified ledger snapshots and inclusion proofs, but it does not replace the need for a clear and verifiable story for how a Cosmos chain anchors Cardano state roots over time.

@@ -17,6 +17,48 @@ export type ChannelDatum = {
   token: AuthToken;
 };
 
+/**
+ * Encode a `Channel` value exactly as the on-chain Aiken code does.
+ *
+ * This encoding is used for the `ibc_state_root` commitment tree value bytes at:
+ * `channelEnds/ports/{portId}/channels/{channelId}`.
+ */
+export async function encodeChannelEndValue(
+  channelEnd: Channel,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): Promise<string> {
+  const { Data } = Lucid;
+
+  const StateSchema = Data.Enum([
+    Data.Literal('Uninitialized'),
+    Data.Literal('Init'),
+    Data.Literal('TryOpen'),
+    Data.Literal('Open'),
+    Data.Literal('Close'),
+  ]);
+  const OrderSchema = Data.Enum([Data.Literal('None'), Data.Literal('Unordered'), Data.Literal('Ordered')]);
+  const ChannelCounterpartySchema = Data.Object({
+    port_id: Data.Bytes(),
+    channel_id: Data.Bytes(),
+  });
+  const ChannelSchema = Data.Object({
+    state: StateSchema,
+    ordering: OrderSchema,
+    counterparty: ChannelCounterpartySchema,
+    connection_hops: Data.Array(Data.Bytes()),
+    version: Data.Bytes(),
+  });
+
+  // IMPORTANT: do NOT set `{ canonical: true }` here.
+  //
+  // On-chain we commit to `aiken/cbor.serialise(...)` of these values, and Aiken's
+  // CBOR serialization is not canonical (it may use indefinite-length arrays).
+  //
+  // For root correctness enforcement to work, the Gateway must produce the exact
+  // same bytes as the on-chain `cbor.serialise` call.
+  return Data.to(channelEnd, ChannelSchema as any);
+}
+
 export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
 

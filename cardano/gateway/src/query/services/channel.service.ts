@@ -10,7 +10,6 @@ import {
   QueryConnectionChannelsResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
@@ -23,9 +22,8 @@ import {
   stateFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
-import { convertHex2String, fromHex } from '../../shared/helpers/hex';
+import { convertHex2String } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
@@ -55,13 +53,8 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const channelTokenName = this.lucidService.generateTokenName(handlerAuthToken, CHANNEL_TOKEN_PREFIX, BigInt(0));
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
-      minChannelScriptHash,
-      channelTokenName.slice(0, 20),
-    );
+    const [mintChannelPolicyId] = this.lucidService.getChannelTokenUnit(0n);
+    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, CHANNEL_TOKEN_PREFIX);
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -94,7 +87,12 @@ export class ChannelService {
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
-          channel_id: `${CHANNEL_ID_PREFIX}-${getChannelIdByTokenName(utxo.assetsName, handlerAuthToken, CHANNEL_TOKEN_PREFIX)}`,
+          channel_id: (() => {
+            const tokenNameStr = Buffer.from(utxo.assetsName, 'hex').toString('utf8');
+            if (!tokenNameStr.startsWith('channel')) return `${CHANNEL_ID_PREFIX}-`;
+            const channelSequenceStr = tokenNameStr.slice('channel'.length);
+            return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
+          })(),
         };
 
         return identifiedChannel as unknown as IdentifiedChannel;
@@ -140,20 +138,12 @@ export class ChannelService {
     const { channel_id: channelId } = validQueryChannelParam(request);
     this.logger.log(channelId, 'queryChannel');
     try {
-      const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-      const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-      const channelTokenName = this.lucidService.generateTokenName(
-        handlerAuthToken,
-        CHANNEL_TOKEN_PREFIX,
-        BigInt(channelId),
-      );
-
-      const channelTokenUnit = minChannelScriptHash + channelTokenName;
+      const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+      const channelTokenUnit = mintChannelPolicyId + channelTokenName;
       const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
       const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-        minChannelScriptHash,
+        mintChannelPolicyId,
         channelTokenName,
         channelDatumDecoded.state.channel.state,
       );
@@ -225,13 +215,8 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const channelTokenName = this.lucidService.generateTokenName(handlerAuthToken, CHANNEL_TOKEN_PREFIX, BigInt(0));
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
-      minChannelScriptHash,
-      channelTokenName.slice(0, 20),
-    );
+    const [mintChannelPolicyId] = this.lucidService.getChannelTokenUnit(0n);
+    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, CHANNEL_TOKEN_PREFIX);
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -264,7 +249,12 @@ export class ChannelService {
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
-          channel_id: `${CHANNEL_ID_PREFIX}-${getChannelIdByTokenName(utxo.assetsName, handlerAuthToken, CHANNEL_TOKEN_PREFIX)}`,
+          channel_id: (() => {
+            const tokenNameStr = Buffer.from(utxo.assetsName, 'hex').toString('utf8');
+            if (!tokenNameStr.startsWith('channel')) return `${CHANNEL_ID_PREFIX}-`;
+            const channelSequenceStr = tokenNameStr.slice('channel'.length);
+            return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
+          })(),
         };
 
         return identifiedChannel as unknown as IdentifiedChannel;
