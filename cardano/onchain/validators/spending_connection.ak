@@ -38,6 +38,7 @@ use ibc/utils/validator_utils
 validator spend_connection(
   client_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   spend(
     datum: Option<ConnectionDatum>,
@@ -53,6 +54,14 @@ validator spend_connection(
       redeemers,
       ..
     } = transaction
+
+    // Any connection state update must be committed into the HostState root in the same transaction.
+    expect _ =
+      validator_utils.require_host_state_thread(
+        inputs,
+        outputs,
+        host_state_nft_policy_id,
+      )
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output

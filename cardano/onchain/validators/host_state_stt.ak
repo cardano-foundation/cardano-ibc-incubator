@@ -1014,6 +1014,12 @@ fn validate_handle_packet_root(
     // 3. Find output HostState UTXO
     expect Some(host_output) = find_host_state_output(outputs, nft_policy)
     let new_datum = decode_host_state_datum(host_output)
+
+    // The HostState NFT must remain locked at the HostState script address.
+    //
+    // In practice, this means the output that carries the NFT must stay at the
+    // same address as the spent HostState UTxO.
+    expect host_output.address == host_input.output.address
     
     // 4. Verify NFT policy matches
     expect old_datum.nft_policy == nft_policy

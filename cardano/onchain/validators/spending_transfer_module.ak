@@ -46,6 +46,7 @@ validator spend_transfer_module(
   port_id: ByteArray,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -53,7 +54,17 @@ validator spend_transfer_module(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, .. } = transaction
+    let Transaction { inputs, outputs, .. } = transaction
+
+    // Any transfer-module state transition is part of an IBC transaction and must be committed
+    // into the HostState root in the same transaction.
+    expect _ =
+      validator_utils.require_host_state_thread(
+        inputs,
+        outputs,
+        host_state_nft_policy_id,
+      )
+
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 

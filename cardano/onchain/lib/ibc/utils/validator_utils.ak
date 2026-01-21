@@ -21,6 +21,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerOperator}
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 type PosixTime =
   Int
@@ -257,6 +258,58 @@ pub fn validate_token_remain(
   } else {
     fail @"Invalid tokens amount"
   }
+}
+
+/// Require that the HostState UTxO is co-spent and re-created in the same transaction.
+///
+/// Why this exists:
+/// In this architecture, `HostState` is the canonical commitment over IBC core state.
+/// If another IBC state UTxO (client/connection/channel/module) can be updated without also
+/// consuming and re-creating the HostState UTxO, then the on-chain state and the committed
+/// root can diverge, breaking proofs and making the system unsafe.
+///
+/// What this enforces:
+/// - Exactly one input contains the HostState NFT.
+/// - Exactly one output contains the HostState NFT.
+/// - The HostState NFT stays at the same address (single-token-thread continuity).
+/// - Both the input and output carry inline datums (so scripts can reliably read HostState).
+pub fn require_host_state_thread(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  host_state_nft_policy_id: PolicyId,
+) -> (Input, Output) {
+  expect [host_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        quantity_of(
+          input.output.value,
+          host_state_nft_policy_id,
+          host_state_token_name,
+        ) == 1
+      },
+    )
+
+  expect [host_output] =
+    list.filter(
+      outputs,
+      fn(output) {
+        quantity_of(
+          output.value,
+          host_state_nft_policy_id,
+          host_state_token_name,
+        ) == 1
+      },
+    )
+
+  // The HostState NFT must remain locked at a single address.
+  expect host_output.address == host_input.output.address
+
+  // Require inline datums so other validators can safely decode HostState.
+  expect InlineDatum(_) = host_input.output.datum
+  expect InlineDatum(_) = host_output.datum
+
+  (host_input, host_output)
 }
 
 pub fn compare_purpose(_key1: ScriptPurpose, _key2: ScriptPurpose) -> Ordering {

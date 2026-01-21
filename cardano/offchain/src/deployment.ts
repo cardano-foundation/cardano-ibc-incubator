@@ -43,6 +43,36 @@ export const createDeployment = async (
   console.log("Create deployment info");
   const referredValidators: Script[] = [];
 
+  // ---------------------------------------------------------------------------
+  // HostState NFT policy id is a required parameter for several validators.
+  //
+  // It depends on an `OutputReference`, so we must pick that upfront and use the
+  // same reference later when minting the NFT (otherwise the policy id changes).
+  // ---------------------------------------------------------------------------
+  const signerUtxos = await lucid.wallet().getUtxos();
+  if (signerUtxos.length < 1) throw new Error("No UTXO found.");
+  const hostStateNonceUtxo = signerUtxos[0];
+
+  const hostStateOutputReference: OutputReference = {
+    transaction_id: hostStateNonceUtxo.txHash,
+    output_index: BigInt(hostStateNonceUtxo.outputIndex),
+  };
+
+  const [mintHostStateNFTValidator, mintHostStateNFTPolicyId] =
+    await readValidator(
+      "host_state_nft.host_state_nft.mint",
+      lucid,
+      [hostStateOutputReference],
+      Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference]
+    );
+
+  const mintHostStateNFT = {
+    validator: mintHostStateNFTValidator,
+    policyId: mintHostStateNFTPolicyId,
+  };
+
+  referredValidators.push(mintHostStateNFTValidator);
+
   const [verifyProofValidator, verifyProofPolicyId] = await readValidator(
     "verifying_proof.verify_proof.mint",
     lucid
@@ -58,7 +88,9 @@ export const createDeployment = async (
 
   // load spend client validator
   const [spendClientValidator, spendClientScriptHash, spendClientAddress] =
-    await readValidator("spending_client.spend_client.spend", lucid);
+    await readValidator("spending_client.spend_client.spend", lucid, [
+      mintHostStateNFTPolicyId,
+    ]);
   referredValidators.push(spendClientValidator);
 
   // load mint client validator
@@ -77,6 +109,7 @@ export const createDeployment = async (
   ] = await readValidator("spending_connection.spend_connection.spend", lucid, [
     mintClientPolicyId,
     verifyProofPolicyId,
+    mintHostStateNFTPolicyId,
   ]);
   referredValidators.push(spendConnectionValidator);
 
@@ -94,7 +127,8 @@ export const createDeployment = async (
     mintClientPolicyId,
     mintConnectionPolicyId,
     mintPortPolicyId,
-    verifyProofPolicyId
+    verifyProofPolicyId,
+    mintHostStateNFTPolicyId
   );
 
   referredValidators.push(
@@ -142,11 +176,19 @@ export const createDeployment = async (
 
   // Deploy HostState (STT Architecture)
   const {
-    mintHostStateNFT,
     hostStateStt,
     hostStateNFT,
-  } = await deployHostState(lucid);
-  referredValidators.push(mintHostStateNFT.validator, hostStateStt.validator);
+  } = await deployHostState(
+    lucid,
+    hostStateNonceUtxo,
+    hostStateOutputReference,
+    mintHostStateNFTValidator,
+    mintHostStateNFTPolicyId,
+    spendClientScriptHash,
+    spendConnectionScriptHash,
+    spendingChannel.base.hash
+  );
+  referredValidators.push(hostStateStt.validator);
 
   // Load STT minting validators (parameterized for STT architecture)
   console.log("Loading STT minting validators...");
@@ -159,7 +201,7 @@ export const createDeployment = async (
   const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
     "minting_client_stt.mint_client_stt.mint",
     lucid,
-    [spendClientScriptHash, mintHostStateNFT.policyId],
+    [spendClientScriptHash, mintHostStateNFTPolicyId],
     Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string]
   );
   referredValidators.push(mintClientSttValidator);
@@ -168,7 +210,7 @@ export const createDeployment = async (
   const [mintConnectionSttValidator, mintConnectionSttPolicyId] = await readValidator(
     "minting_connection_stt.mint_connection_stt.mint",
     lucid,
-    [mintClientSttPolicyId, verifyProofPolicyId, spendConnectionScriptHash, mintHostStateNFT.policyId],
+    [mintClientSttPolicyId, verifyProofPolicyId, spendConnectionScriptHash, mintHostStateNFTPolicyId],
     Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string]
   );
   referredValidators.push(mintConnectionSttValidator);
@@ -177,7 +219,7 @@ export const createDeployment = async (
   const [mintChannelSttValidator, mintChannelSttPolicyId] = await readValidator(
     "minting_channel_stt.mint_channel_stt.mint",
     lucid,
-    [mintClientSttPolicyId, mintConnectionSttPolicyId, mintPortPolicyId, verifyProofPolicyId, spendingChannel.base.hash, mintHostStateNFT.policyId],
+    [mintClientSttPolicyId, mintConnectionSttPolicyId, mintPortPolicyId, verifyProofPolicyId, spendingChannel.base.hash, mintHostStateNFTPolicyId],
     Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [string, string, string, string, string, string]
   );
   referredValidators.push(mintChannelSttValidator);
@@ -201,7 +243,8 @@ export const createDeployment = async (
     mintPortValidator,
     mintIdentifierValidator,
     mintChannelPolicyId,
-    TRANSFER_MODULE_PORT
+    TRANSFER_MODULE_PORT,
+    mintHostStateNFTPolicyId
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
@@ -563,7 +606,8 @@ const deployTransferModule = async (
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
   mintChannelPolicyId: string,
-  portNumber: bigint
+  portNumber: bigint,
+  hostStateNftPolicyId: string
 ) => {
   console.log("Create Transfer Module");
 
@@ -610,6 +654,7 @@ const deployTransferModule = async (
       portId,
       mintChannelPolicyId,
       mintVoucherPolicyId,
+      hostStateNftPolicyId,
     ],
     Data.Tuple([
       AuthTokenSchema,
@@ -618,7 +663,8 @@ const deployTransferModule = async (
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-    ]) as unknown as [AuthToken, AuthToken, AuthToken, string, string, string]
+      Data.Bytes(),
+    ]) as unknown as [AuthToken, AuthToken, AuthToken, string, string, string, string]
   );
 
   const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
@@ -696,35 +742,54 @@ const deployTransferModule = async (
   };
 };
 
-const deployHostState = async (lucid: LucidEvolution) => {
+const deployHostState = async (
+  lucid: LucidEvolution,
+  nonceUtxo: UTxO,
+  outputReference: OutputReference,
+  mintHostStateNFTValidator: MintingPolicy,
+  mintHostStateNFTPolicyId: string,
+  spendClientScriptHash: string,
+  spendConnectionScriptHash: string,
+  spendChannelScriptHash: string,
+) => {
   console.log("Deploy HostState (STT Architecture)");
-  
-  // Get nonce UTXO for one-time mint
-  const signerUtxos = await lucid.wallet().getUtxos();
-  if (signerUtxos.length < 1) throw new Error("No UTXO found.");
-  const NONCE_UTXO = signerUtxos[0];
-  
-  const outputReference: OutputReference = {
-    transaction_id: NONCE_UTXO.txHash,
-    output_index: BigInt(NONCE_UTXO.outputIndex),
+
+  // Ensure we mint with the same UTxO reference used to parameterize the policy id.
+  const expectedOutRef: OutputReference = {
+    transaction_id: nonceUtxo.txHash,
+    output_index: BigInt(nonceUtxo.outputIndex),
   };
+  if (
+    expectedOutRef.transaction_id !== outputReference.transaction_id ||
+    expectedOutRef.output_index !== outputReference.output_index
+  ) {
+    throw new Error("HostState nonce UTxO does not match policy parameter outref.");
+  }
   
-  // Load mint hostStateNFT validator (parameterized by UTXO ref)
-  const [mintHostStateNFTValidator, mintHostStateNFTPolicyId] = await readValidator(
-    "host_state_nft.host_state_nft.mint",
-    lucid,
-    [outputReference],
-    Data.Tuple([OutputReferenceSchema]) as unknown as [OutputReference]
-  );
-  
-  // Load hostStateStt spending validator (parameterized by nft_policy)
-  // CRITICAL: This validator MUST be parameterized with the NFT policy ID to verify NFT continuity
-  const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] = await readValidator(
-    "host_state_stt.host_state_stt.spend",
-    lucid,
-    [mintHostStateNFTPolicyId],  // Pass the NFT policy ID as parameter
-    Data.Tuple([Data.Bytes()]) as unknown as [string]  // Schema for the nft_policy parameter (must be Tuple for applyParamsToScript)
-  );
+  // Load hostStateStt spending validator.
+  //
+  // Parameters (in order):
+  // 1) `nft_policy` (HostState NFT policy id)
+  // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
+  // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
+  // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
+  const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
+    await readValidator(
+      "host_state_stt.host_state_stt.spend",
+      lucid,
+      [
+        mintHostStateNFTPolicyId,
+        spendClientScriptHash,
+        spendConnectionScriptHash,
+        spendChannelScriptHash,
+      ],
+      Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+        string,
+        string,
+        string,
+        string,
+      ]
+    );
   
   const HOST_STATE_TOKEN_NAME = fromText("ibc_host_state");
   const hostStateNFTUnit = mintHostStateNFTPolicyId + HOST_STATE_TOKEN_NAME;
@@ -756,7 +821,7 @@ const deployHostState = async (lucid: LucidEvolution) => {
   
   const mintHostStateTx = lucid
     .newTx()
-    .collectFrom([NONCE_UTXO])
+    .collectFrom([nonceUtxo])
     .attach.MintingPolicy(mintHostStateNFTValidator)
     .mintAssets(
       {
@@ -780,10 +845,6 @@ const deployHostState = async (lucid: LucidEvolution) => {
   console.log("HostState NFT minted and HostState UTXO created");
   
   return {
-    mintHostStateNFT: {
-      validator: mintHostStateNFTValidator,
-      policyId: mintHostStateNFTPolicyId,
-    },
     hostStateStt: {
       validator: hostStateSttValidator,
       scriptHash: hostStateSttScriptHash,
@@ -801,7 +862,8 @@ const deploySpendChannel = async (
   mintClientPolicyId: PolicyId,
   mintConnectionPolicyId: PolicyId,
   mintPortPolicyId: PolicyId,
-  verifyProofScriptHash: PolicyId
+  verifyProofScriptHash: PolicyId,
+  hostStateNftPolicyId: PolicyId
 ) => {
   const referredValidators = {
     chan_open_ack: "chan_open_ack.mint",
@@ -839,7 +901,10 @@ const deploySpendChannel = async (
   const [script, hash, address] = await readValidator(
     "spending_channel.spend_channel.spend",
     lucid,
-    Object.keys(referredValidators).map((name) => referredScripts[name].hash)
+    [
+      ...Object.keys(referredValidators).map((name) => referredScripts[name].hash),
+      hostStateNftPolicyId,
+    ]
   );
 
   return {
