@@ -149,7 +149,7 @@ export class QueryService {
    * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
    * 5. Proof generation proceeds normally
    * 6. Subsequent queries find the tree aligned (cheap root comparison)
-   * 
+   * TO-DO: Will a growing amount of IBC UTXOs be a problem in the future for this recovery but also for any in-memory limits?
    * PERFORMANCE NOTE:
    * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
    * the tree is actually stale. In normal operation, this is a cheap root comparison.
