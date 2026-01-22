@@ -2,6 +2,9 @@ import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '~@/shared/types/auth-token';
 
 export type UnsignedChannelOpenAckDto = {
+  hostStateUtxo: UTxO;
+  encodedHostStateRedeemer: string;
+  encodedUpdatedHostStateDatum: string;
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;

@@ -10,7 +10,9 @@ import { ClientState as CardanoClientState } from '@plus/proto-types/build/ibc/l
 
 export function normalizeClientStateFromDatum(clientState: ClientState): ClientStateTendermint {
   const clientStateTendermint: ClientStateTendermint = {
-    chain_id: clientState.chainId,
+    // On-chain we store `chainId` as bytes (hex) for Plutus data efficiency.
+    // For IBC/Tendermint client state over gRPC we must return the plain UTF-8 chain id.
+    chain_id: convertHex2String(clientState.chainId),
     trust_level: {
       numerator: clientState.trustLevel.numerator,
       denominator: clientState.trustLevel.denominator,
@@ -143,7 +145,10 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
   }
   // the latest height revision number must match the chain id revision number
   if (chainIdUtf8.includes('-')) {
-    const [_, chainIdRevision] = chainIdUtf8?.split('-');
+    // Extract the revision number from the chain ID (e.g., "cheqd-testnet-6" -> "6")
+    // The revision number is the last segment after splitting by '-'
+    const parts = chainIdUtf8.split('-');
+    const chainIdRevision = parts[parts.length - 1];
     const isValidRevisionNumber =
       !chainIdRevision || clientState.latestHeight?.revisionNumber.toString() === chainIdRevision;
 

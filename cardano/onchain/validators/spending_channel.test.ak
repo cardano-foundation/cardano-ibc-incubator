@@ -50,6 +50,9 @@ use ibc/utils/validator_utils
 use spending_channel
 
 type MockData {
+  host_state_nft_policy_id: PolicyId,
+  host_state_input: Input,
+  host_state_output: Output,
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
@@ -75,6 +78,27 @@ type MockData {
 }
 
 fn setup() -> MockData {
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
+  let host_state_token_name = "ibc_host_state"
+  let host_state_script_hash = "mock host_state_stt_script_hash"
+
+  let host_state_output =
+    Output {
+      address: from_script(host_state_script_hash),
+      value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+
+  let host_state_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"1111111111111111111111111111111111111111111111111111111111111111",
+        output_index: 0,
+      },
+      output: host_state_output,
+    }
+
   let handler_token =
     AuthToken {
       name: "mock handler token name",
@@ -292,6 +316,9 @@ fn setup() -> MockData {
     }
 
   MockData {
+    host_state_nft_policy_id,
+    host_state_input,
+    host_state_output,
     client_minting_policy_id,
     connection_minting_policy_id,
     port_minting_policy_id,
@@ -440,7 +467,7 @@ test chan_open_ack_succeed() {
 
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 14 }
@@ -489,7 +516,7 @@ test chan_open_ack_succeed() {
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -625,6 +652,7 @@ test chan_open_ack_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -666,7 +694,7 @@ test chan_open_confirm_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 16 }
@@ -701,7 +729,7 @@ test chan_open_confirm_succeed() {
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
 
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -838,6 +866,7 @@ test chan_open_confirm_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -879,7 +908,7 @@ test recv_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 19 }
@@ -934,7 +963,7 @@ test recv_packet_succeed() {
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
 
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1077,6 +1106,7 @@ test recv_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -1130,7 +1160,7 @@ test send_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let reference_inputs = [mock_data.connection_input, mock_data.client_input]
@@ -1154,7 +1184,7 @@ test send_packet_succeed() {
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
 
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1195,6 +1225,7 @@ test send_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -1252,7 +1283,7 @@ test timeout_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -1291,7 +1322,7 @@ test timeout_packet_succeed() {
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
 
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1457,6 +1488,7 @@ test timeout_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -1512,7 +1544,7 @@ test acknowledge_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 20 }
@@ -1547,7 +1579,7 @@ test acknowledge_packet_succeed() {
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
 
-  let outputs = [channel_output]
+  let outputs = [channel_output, mock_data.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -1707,6 +1739,7 @@ test acknowledge_packet_succeed() {
     mock_data.send_packet_policy_id,
     mock_data.timeout_packet_policy_id,
     mock_data.acknowledge_packet_policy_id,
+    mock_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -1748,7 +1781,7 @@ test chan_close_init_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, fake_data.channel_token)
 
-  let inputs = [channel_input]
+  let inputs = [channel_input, fake_data.host_state_input]
 
   //========================arrange redeemers=======================
   let chan_close_init_redeemer: Redeemer = fake_data.channel_token
@@ -1757,6 +1790,73 @@ test chan_close_init_succeed() {
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
   //==========================arrange context=========================
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: inputs,
+      outputs: [fake_data.host_state_output],
+      redeemers: redeemers,
+    }
+
+  let spend_channel_redeemer = ChanCloseInit
+
+  spending_channel.spend_channel.spend(
+    fake_data.chan_open_ack_policy_id,
+    fake_data.chan_open_confirm_policy_id,
+    fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
+    fake_data.recv_packet_policy_id,
+    fake_data.send_packet_policy_id,
+    fake_data.timeout_packet_policy_id,
+    fake_data.acknowledge_packet_policy_id,
+    fake_data.host_state_nft_policy_id,
+    Some(input_channel_datum),
+    spend_channel_redeemer,
+    channel_input.output_reference,
+    transaction,
+  )
+}
+
+test chan_close_init_fails_without_host_state_co_spend() fail {
+  let fake_data = setup()
+
+  // Same as `chan_close_init_succeed`, but without the HostState input/output.
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-0",
+        channel_id: "channel-0",
+      },
+      connection_hops: [],
+      version: "fake-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: "port-0",
+      token: fake_data.channel_token,
+    }
+
+  let channel_input =
+    build_channel_input(input_channel_datum, fake_data.channel_token)
+
+  let inputs = [channel_input]
+
+  let chan_close_init_redeemer: Redeemer = fake_data.channel_token
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
+
   let transaction =
     Transaction {
       ..transaction.placeholder,
@@ -1775,6 +1875,7 @@ test chan_close_init_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
+    fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,
@@ -1816,7 +1917,7 @@ test chan_close_confirm_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, fake_data.channel_token)
 
-  let inputs = [channel_input]
+  let inputs = [channel_input, fake_data.host_state_input]
 
   //========================arrange redeemers=======================
   let chan_close_init_redeemer: Redeemer = fake_data.channel_token
@@ -1834,6 +1935,7 @@ test chan_close_confirm_succeed() {
     Transaction {
       ..transaction.placeholder,
       inputs: inputs,
+      outputs: [fake_data.host_state_output],
       redeemers: redeemers,
     }
 
@@ -1852,6 +1954,7 @@ test chan_close_confirm_succeed() {
     fake_data.send_packet_policy_id,
     fake_data.timeout_packet_policy_id,
     fake_data.acknowledge_packet_policy_id,
+    fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
     channel_input.output_reference,

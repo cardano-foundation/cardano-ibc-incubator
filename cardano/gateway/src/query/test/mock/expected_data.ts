@@ -16,7 +16,7 @@ const block_results = {
               },
               {
                 key: 'counterparty_client_id',
-                value: '099-cardano-24',
+                value: '08-cardano-24',
                 index: true,
               },
               {
@@ -93,7 +93,7 @@ const block_results_has_connection_event = {
               },
               {
                 key: 'counterparty_client_id',
-                value: '099-cardano-24',
+                value: '08-cardano-24',
                 index: true,
               },
               {
@@ -173,7 +173,7 @@ const query_connections_expected = {
       ],
       state: 1,
       counterparty: {
-        client_id: '099-cardano-24',
+        client_id: '08-cardano-24',
         connection_id: '',
         prefix: { key_prefix: '696263' },
       },
@@ -195,7 +195,7 @@ const query_connection_expected = {
     ],
     state: 1,
     counterparty: {
-      client_id: '099-cardano-24',
+      client_id: '08-cardano-24',
       connection_id: '',
       prefix: { key_prefix: '696263' },
     },

@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { ConsensusState as ConsensusStateTendermint } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { Timestamp } from '@plus/proto-types/build/google/protobuf/timestamp';
-import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
 import { ConsensusState } from '../types/consensus-state';
 import { Height } from '../types/height';
-import { toHex } from './hex';
+import { fromHex, toHex } from './hex';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 export function normalizeConsensusStateFromDatum(
@@ -26,9 +25,9 @@ export function normalizeConsensusStateFromDatum(
     }),
     /** commitment root (i.e app hash) */
     root: {
-      hash: bytesFromBase64(consensusState.root.hash),
+      hash: fromHex(consensusState.root.hash),
     },
-    next_validators_hash: bytesFromBase64(consensusState.next_validators_hash),
+    next_validators_hash: fromHex(consensusState.next_validators_hash),
   } as unknown as ConsensusStateTendermint;
   return consensus;
 }

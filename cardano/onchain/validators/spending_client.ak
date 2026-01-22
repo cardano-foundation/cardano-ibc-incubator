@@ -1,4 +1,5 @@
 use aiken/collection/list
+use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
 use ibc/auth
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -15,7 +16,7 @@ use ibc/core/ics_002_client_semantics/types/client as client_status_mod
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 use ibc/utils/validator_utils
 
-validator spend_client {
+validator spend_client(host_state_nft_policy_id: PolicyId) {
   spend(
     datum: Option<ClientDatum>,
     redeemer: SpendClientRedeemer,
@@ -23,6 +24,15 @@ validator spend_client {
     transaction: Transaction,
   ) {
     let Transaction { outputs, inputs, validity_range, .. } = transaction
+
+    // Any client state update must be committed into the HostState root in the same transaction.
+    expect _ =
+      validator_utils.require_host_state_thread(
+        inputs,
+        outputs,
+        host_state_nft_policy_id,
+      )
+
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
 
