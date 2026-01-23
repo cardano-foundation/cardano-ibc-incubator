@@ -388,7 +388,7 @@ describe.skip('QueryController', () => {
   describe.skip('Test QueryClientState', () => {
     it('QueryClientState should be called successfully', async () => {
       const data = await controller.queryClientState(<QueryClientStateRequest>{
-        height: 650879n,
+        client_id: 'ibc_client-0',
       });
 
       expect(data.client_state.type_url).toBe('/ibc.lightclients.tendermint.v1.ClientState');
@@ -400,7 +400,7 @@ describe.skip('QueryController', () => {
 
     it('QueryClientState should be called with invalid params', async () => {
       const expectMessage =
-        '{"error":"Invalid argument: \\"height\\" must be provided","type":"string","exceptionName":"RpcException"}';
+        '{"error":"Invalid argument: \\"client_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
       try {
         const data = await controller.queryClientState({} as unknown as QueryClientStateRequest);
         expect(data).toBe(expectMessage);
@@ -416,7 +416,7 @@ describe.skip('QueryController', () => {
       const expectMessage = 'Unable to find UTxO with unit';
       try {
         const data = await controller.queryClientState(<QueryClientStateRequest>{
-          height: 650879n,
+          client_id: 'ibc_client-0',
         });
         expect(data).toContain(expectMessage);
       } catch (error) {
@@ -428,7 +428,10 @@ describe.skip('QueryController', () => {
   describe.skip('Test QueryConsensusState', () => {
     it('QueryConsensusState should be called successfully', async () => {
       const data = await controller.queryConsensusState(<QueryConsensusStateRequest>{
-        height: 100970n,
+        client_id: 'ibc_client-0',
+        revision_number: 0n,
+        revision_height: 100970n,
+        latest_height: false,
       });
       expect(data.consensus_state.type_url).toBe('/ibc.lightclients.tendermint.v1.ConsensusState');
       expect(Buffer.from(data.consensus_state.value).toString('base64')).toBe(
@@ -439,7 +442,7 @@ describe.skip('QueryController', () => {
 
     it('QueryConsensusState should be called with invalid params', async () => {
       const expectMessage =
-        '{"error":"Invalid argument: \\"height\\" must be provided","type":"string","exceptionName":"RpcException"}';
+        '{"error":"Invalid argument: \\"client_id\\" must be provided","type":"string","exceptionName":"RpcException"}';
       try {
         const data = await controller.queryConsensusState({} as unknown as QueryConsensusStateRequest);
         expect(data).toBe(expectMessage);
@@ -451,8 +454,11 @@ describe.skip('QueryController', () => {
     it("QueryConsensusState should be called failed because it's not found", async () => {
       const expectMessage = 'Unable to find Consensus State at height 123';
       try {
-        const data = await controller.queryConsensusState(<QueryClientStateRequest>{
-          height: 123n,
+        const data = await controller.queryConsensusState(<QueryConsensusStateRequest>{
+          client_id: 'ibc_client-0',
+          revision_number: 0n,
+          revision_height: 123n,
+          latest_height: false,
         });
 
         expect(data).toContainEqual(expectMessage);
@@ -500,7 +506,7 @@ describe.skip('QueryController', () => {
     it("QueryBlockData should be called failed because it's not found height", async () => {
       const expectMessage = '"Not found: \\"height\\" 6508790 not found"';
       try {
-        const data = await controller.queryBlockData(<QueryClientStateRequest>{
+        const data = await controller.queryBlockData(<QueryBlockDataRequest>{
           height: 6508790n,
         });
         expect(data).toContainEqual(expectMessage);

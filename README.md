@@ -104,6 +104,9 @@ This project uses Docker containers that require platform-specific images depend
 
 The `chains/cardano/docker-compose.yaml` file includes platform specifications where needed. If you're running on a different architecture or encounter compatibility issues, you may need to adjust these platform settings accordingly.
 
+> [!NOTE]
+TO-DO: Prior to BuilderFest 2026 we need to plan and document architecture/OS-specific setup instructions for hackathon participants who may be using different machines (Windows, Linux, macOS on Intel vs Apple Silicon, etc.). This includes ensuring all Docker images and dependencies work across platforms.
+
 ### Running a local Cardano network
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:

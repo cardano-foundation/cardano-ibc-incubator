@@ -598,6 +598,32 @@ pub fn prepare_db_sync_and_gateway(
         &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
     )?;
 
+    // The Gateway builds unsigned transactions using Lucid. Even though Hermes performs signing,
+    // the Gateway still needs a wallet context to select UTxOs for fees and change.
+    //
+    // For local devnet testing, we use the same signing key that funds the devnet address
+    // (`chains/cardano/config/credentials/me.sk`).
+    //
+    // Note: this writes into `cardano/gateway/.env` which is intentionally not tracked by git.
+    let deployer_sk_path = cardano_dir.join("config/credentials/me.sk");
+    if deployer_sk_path.exists() {
+        let deployer_sk = fs::read_to_string(&deployer_sk_path).map_err(|error| {
+            format!(
+                "Failed to read deployer signing key at {}: {}",
+                deployer_sk_path.display(),
+                error
+            )
+        })?;
+        let deployer_sk = deployer_sk.trim();
+        if !deployer_sk.is_empty() {
+            replace_text_in_file(
+                &gateway_env,
+                r#"DEPLOYER_SK=.*"#,
+                &format!("DEPLOYER_SK={}", deployer_sk),
+            )?;
+        }
+    }
+
     // Wait for postgres to be ready before creating gateway database
     let mut postgres_ready = false;
     for attempt in 1..=30 {

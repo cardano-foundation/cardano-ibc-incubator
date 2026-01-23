@@ -32,7 +32,7 @@ function createBaseMsgRegisterInterchainAccount(): MsgRegisterInterchainAccount 
   return {
     owner: "",
     connection_id: "",
-    version: ""
+    version: "",
   };
 }
 export const MsgRegisterInterchainAccount = {
@@ -86,22 +86,27 @@ export const MsgRegisterInterchainAccount = {
     message.version !== undefined && (obj.version = message.version);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgRegisterInterchainAccount>, I>>(object: I): MsgRegisterInterchainAccount {
+  fromPartial<I extends Exact<DeepPartial<MsgRegisterInterchainAccount>, I>>(
+    object: I,
+  ): MsgRegisterInterchainAccount {
     const message = createBaseMsgRegisterInterchainAccount();
     message.owner = object.owner ?? "";
     message.connection_id = object.connection_id ?? "";
     message.version = object.version ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgRegisterInterchainAccountResponse(): MsgRegisterInterchainAccountResponse {
   return {
-    channel_id: ""
+    channel_id: "",
   };
 }
 export const MsgRegisterInterchainAccountResponse = {
   typeUrl: "/ibc.applications.interchain_accounts.controller.v1.MsgRegisterInterchainAccountResponse",
-  encode(message: MsgRegisterInterchainAccountResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+  encode(
+    message: MsgRegisterInterchainAccountResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
     if (message.channel_id !== "") {
       writer.uint32(10).string(message.channel_id);
     }
@@ -134,18 +139,20 @@ export const MsgRegisterInterchainAccountResponse = {
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgRegisterInterchainAccountResponse>, I>>(object: I): MsgRegisterInterchainAccountResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgRegisterInterchainAccountResponse>, I>>(
+    object: I,
+  ): MsgRegisterInterchainAccountResponse {
     const message = createBaseMsgRegisterInterchainAccountResponse();
     message.channel_id = object.channel_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgSendTx(): MsgSendTx {
   return {
     owner: "",
     connection_id: "",
     packet_data: InterchainAccountPacketData.fromPartial({}),
-    relative_timeout: BigInt(0)
+    relative_timeout: BigInt(0),
   };
 }
 export const MsgSendTx = {
@@ -203,8 +210,12 @@ export const MsgSendTx = {
     const obj: any = {};
     message.owner !== undefined && (obj.owner = message.owner);
     message.connection_id !== undefined && (obj.connection_id = message.connection_id);
-    message.packet_data !== undefined && (obj.packet_data = message.packet_data ? InterchainAccountPacketData.toJSON(message.packet_data) : undefined);
-    message.relative_timeout !== undefined && (obj.relative_timeout = (message.relative_timeout || BigInt(0)).toString());
+    message.packet_data !== undefined &&
+      (obj.packet_data = message.packet_data
+        ? InterchainAccountPacketData.toJSON(message.packet_data)
+        : undefined);
+    message.relative_timeout !== undefined &&
+      (obj.relative_timeout = (message.relative_timeout || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgSendTx>, I>>(object: I): MsgSendTx {
@@ -218,11 +229,11 @@ export const MsgSendTx = {
       message.relative_timeout = BigInt(object.relative_timeout.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseMsgSendTxResponse(): MsgSendTxResponse {
   return {
-    sequence: BigInt(0)
+    sequence: BigInt(0),
   };
 }
 export const MsgSendTxResponse = {
@@ -266,12 +277,14 @@ export const MsgSendTxResponse = {
       message.sequence = BigInt(object.sequence.toString());
     }
     return message;
-  }
+  },
 };
 /** Msg defines the 27-interchain-accounts/controller Msg service. */
 export interface Msg {
   /** RegisterInterchainAccount defines a rpc handler for MsgRegisterInterchainAccount. */
-  RegisterInterchainAccount(request: MsgRegisterInterchainAccount): Promise<MsgRegisterInterchainAccountResponse>;
+  RegisterInterchainAccount(
+    request: MsgRegisterInterchainAccount,
+  ): Promise<MsgRegisterInterchainAccountResponse>;
   /** SendTx defines a rpc handler for MsgSendTx. */
   SendTx(request: MsgSendTx): Promise<MsgSendTxResponse>;
 }
@@ -282,14 +295,24 @@ export class MsgClientImpl implements Msg {
     this.RegisterInterchainAccount = this.RegisterInterchainAccount.bind(this);
     this.SendTx = this.SendTx.bind(this);
   }
-  RegisterInterchainAccount(request: MsgRegisterInterchainAccount): Promise<MsgRegisterInterchainAccountResponse> {
+  RegisterInterchainAccount(
+    request: MsgRegisterInterchainAccount,
+  ): Promise<MsgRegisterInterchainAccountResponse> {
     const data = MsgRegisterInterchainAccount.encode(request).finish();
-    const promise = this.rpc.request("ibc.applications.interchain_accounts.controller.v1.Msg", "RegisterInterchainAccount", data);
-    return promise.then(data => MsgRegisterInterchainAccountResponse.decode(new BinaryReader(data)));
+    const promise = this.rpc.request(
+      "ibc.applications.interchain_accounts.controller.v1.Msg",
+      "RegisterInterchainAccount",
+      data,
+    );
+    return promise.then((data) => MsgRegisterInterchainAccountResponse.decode(new BinaryReader(data)));
   }
   SendTx(request: MsgSendTx): Promise<MsgSendTxResponse> {
     const data = MsgSendTx.encode(request).finish();
-    const promise = this.rpc.request("ibc.applications.interchain_accounts.controller.v1.Msg", "SendTx", data);
-    return promise.then(data => MsgSendTxResponse.decode(new BinaryReader(data)));
+    const promise = this.rpc.request(
+      "ibc.applications.interchain_accounts.controller.v1.Msg",
+      "SendTx",
+      data,
+    );
+    return promise.then((data) => MsgSendTxResponse.decode(new BinaryReader(data)));
   }
 }

@@ -1,6 +1,7 @@
 package mithril
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -149,6 +150,93 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidCertificate, "Expect newer header: TS.Epoch: %v, cs.Epoch: %v, TS.BlockNumber: %v, cs.LatestHeight.RevisionHeight: %v", header.TransactionSnapshot.Epoch, cs.CurrentEpoch, header.TransactionSnapshot.BlockNumber, cs.LatestHeight.RevisionHeight)
 	}
 
+	// Verify that this header carries enough evidence to authenticate the
+	// Cardano IBC commitment root (`ibc_state_root`) at this height.
+	//
+	// Plainly:
+	// - Mithril certifies that a specific transaction happened at this block height (inclusion proof).
+	// - Our `ibc_state_root` is not stored in Mithril; it is stored inside Cardano, in the HostState UTxO datum.
+	// - So we authenticate the root by authenticating the *transaction that created the HostState output*,
+	//   then extracting `ibc_state_root` from that output's inline datum.
+	//
+	// Without this step, membership/non-membership proofs for Cardano IBC state would be anchored to an
+	// unauthenticated root and the light client would effectively be trusting the relayer/Gateway.
+	if err := cs.verifyHostStateCommitmentEvidence(header); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cs *ClientState) verifyHostStateCommitmentEvidence(header *MithrilHeader) error {
+	if header.TransactionSnapshot == nil || header.TransactionSnapshotCertificate == nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "missing transaction snapshot certificate")
+	}
+
+	if header.HostStateTxHash == "" || len(header.HostStateTxBodyCbor) == 0 || len(header.HostStateTxProof) == 0 {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "missing host state commitment evidence")
+	}
+
+	// Step 1: Verify the Mithril transaction-set proof.
+	//
+	// This proves that `HostStateTxHash` is part of the Mithril-certified set of transactions for
+	// `header.TransactionSnapshot.BlockNumber`, and ties that proof to the snapshot certificate.
+	var proofs CardanoTransactionsProofsMessage
+	if err := json.Unmarshal(header.HostStateTxProof, &proofs); err != nil {
+		return errorsmod.Wrapf(ErrInvalidCardanoTransactionsProofs, "malformed host state tx proof: %v", err)
+	}
+
+	verified, err := proofs.Verify()
+	if err != nil {
+		return err
+	}
+
+	if strings.ToLower(verified.MerkleRoot) != strings.ToLower(header.TransactionSnapshot.MerkleRoot) {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"transaction proof merkle root mismatch: expected %s, got %s",
+			header.TransactionSnapshot.MerkleRoot,
+			verified.MerkleRoot,
+		)
+	}
+
+	// The proof must be tied to the same snapshot certificate as the header.
+	if proofs.CertificateHash != "" && proofs.CertificateHash != header.TransactionSnapshotCertificate.Hash {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"transaction proof certificate hash mismatch: expected %s, got %s",
+			header.TransactionSnapshotCertificate.Hash,
+			proofs.CertificateHash,
+		)
+	}
+
+	found := false
+	for _, txHash := range verified.CertifiedTransactions {
+		if strings.ToLower(txHash) == strings.ToLower(header.HostStateTxHash) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"host state tx hash not certified by transaction proof",
+		)
+	}
+
+	// Step 2: Use the certified transaction body to derive the authenticated `ibc_state_root`.
+	//
+	// The relayer/Gateway provides:
+	// - the transaction body CBOR
+	// - an output index (which output is the HostState output)
+	//
+	// We do not "trust" that output index blindly: we check the output contains the HostState NFT
+	// (stored in `ClientState`) and carries an inline datum. The datum is then decoded and the
+	// `ibc_state_root` extracted. That root is the one we store in consensus state and use for proof verification.
+	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "invalid host state tx body: %v", err)
+	}
+
 	return nil
 }
 
@@ -179,11 +267,22 @@ func (cs *ClientState) UpdateState(
 	cs.LatestHeight = &height
 	cs.CurrentEpoch = header.TransactionSnapshot.Epoch
 
-	// Create a new consensus state
+	// Create a new consensus state.
+	//
+	// At this point `VerifyClientMessage` has already called `verifyHostStateCommitmentEvidence`,
+	// which (a) verifies Mithril inclusion and (b) verifies we can extract `ibc_state_root` from
+	// the HostState output datum. So this extraction should only fail if the header is internally
+	// inconsistent (programming error) rather than because it is untrusted user input.
+	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
+	if err != nil {
+		panic(fmt.Errorf("failed to extract ibc_state_root from verified MithrilHeader: %w", err))
+	}
+
 	newConsensusState := &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
 		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate,
 		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
+		IbcStateRoot:             ibcStateRoot,
 	}
 
 	// Set the latest certificate of transaction snapshot for the epoch

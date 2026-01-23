@@ -224,6 +224,16 @@ func (cs ClientState) VerifyMembership(
 	path exported.Path,
 	expectedValue []byte,
 ) error {
+	// TODO(ibc): This client uses a non-standard "proof" model.
+	//
+	// Today, `proof` is treated as an index key into this chain's local KV store, and the
+	// KV store is populated by parsing Cardano blocks and extracting IBC datums off-chain.
+	// That is useful for integration testing, but it does not provide IBC-style security:
+	// the counterparty is not proving membership/non-membership against an authenticated root.
+	//
+	// Long term, this should be replaced (or heavily revised) to:
+	// - store an authenticated `ibc_state_root` for Cardano at `height`, and
+	// - verify ICS-23 proofs against that root (like other IBC clients do).
 	if cs.GetLatestHeight().LT(height) {
 		return errorsmod.Wrapf(
 			ibcerrors.ErrInvalidHeight,

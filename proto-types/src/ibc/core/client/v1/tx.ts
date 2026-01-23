@@ -84,7 +84,7 @@ function createBaseMsgCreateClient(): MsgCreateClient {
   return {
     client_state: undefined,
     consensus_state: undefined,
-    signer: ""
+    signer: "",
   };
 }
 export const MsgCreateClient = {
@@ -133,8 +133,10 @@ export const MsgCreateClient = {
   },
   toJSON(message: MsgCreateClient): unknown {
     const obj: any = {};
-    message.client_state !== undefined && (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
-    message.consensus_state !== undefined && (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
+    message.client_state !== undefined &&
+      (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
+    message.consensus_state !== undefined &&
+      (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
     message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
@@ -148,12 +150,12 @@ export const MsgCreateClient = {
     }
     message.signer = object.signer ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgCreateClientResponse(): MsgCreateClientResponse {
   return {
     unsigned_tx: undefined,
-    client_id: ""
+    client_id: "",
   };
 }
 export const MsgCreateClientResponse = {
@@ -195,7 +197,8 @@ export const MsgCreateClientResponse = {
   },
   toJSON(message: MsgCreateClientResponse): unknown {
     const obj: any = {};
-    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     message.client_id !== undefined && (obj.client_id = message.client_id);
     return obj;
   },
@@ -206,13 +209,13 @@ export const MsgCreateClientResponse = {
     }
     message.client_id = object.client_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgUpdateClient(): MsgUpdateClient {
   return {
     client_id: "",
     client_message: undefined,
-    signer: ""
+    signer: "",
   };
 }
 export const MsgUpdateClient = {
@@ -262,7 +265,8 @@ export const MsgUpdateClient = {
   toJSON(message: MsgUpdateClient): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.client_message !== undefined && (obj.client_message = message.client_message ? Any.toJSON(message.client_message) : undefined);
+    message.client_message !== undefined &&
+      (obj.client_message = message.client_message ? Any.toJSON(message.client_message) : undefined);
     message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
@@ -274,11 +278,11 @@ export const MsgUpdateClient = {
     }
     message.signer = object.signer ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgUpdateClientResponse(): MsgUpdateClientResponse {
   return {
-    unsigned_tx: undefined
+    unsigned_tx: undefined,
   };
 }
 export const MsgUpdateClientResponse = {
@@ -313,7 +317,8 @@ export const MsgUpdateClientResponse = {
   },
   toJSON(message: MsgUpdateClientResponse): unknown {
     const obj: any = {};
-    message.unsigned_tx !== undefined && (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MsgUpdateClientResponse>, I>>(object: I): MsgUpdateClientResponse {
@@ -322,7 +327,7 @@ export const MsgUpdateClientResponse = {
       message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
     }
     return message;
-  }
+  },
 };
 function createBaseMsgUpgradeClient(): MsgUpgradeClient {
   return {
@@ -331,7 +336,7 @@ function createBaseMsgUpgradeClient(): MsgUpgradeClient {
     consensus_state: undefined,
     proof_upgrade_client: new Uint8Array(),
     proof_upgrade_consensus_state: new Uint8Array(),
-    signer: ""
+    signer: "",
   };
 }
 export const MsgUpgradeClient = {
@@ -394,18 +399,30 @@ export const MsgUpgradeClient = {
     if (isSet(object.client_id)) obj.client_id = String(object.client_id);
     if (isSet(object.client_state)) obj.client_state = Any.fromJSON(object.client_state);
     if (isSet(object.consensus_state)) obj.consensus_state = Any.fromJSON(object.consensus_state);
-    if (isSet(object.proof_upgrade_client)) obj.proof_upgrade_client = bytesFromBase64(object.proof_upgrade_client);
-    if (isSet(object.proof_upgrade_consensus_state)) obj.proof_upgrade_consensus_state = bytesFromBase64(object.proof_upgrade_consensus_state);
+    if (isSet(object.proof_upgrade_client))
+      obj.proof_upgrade_client = bytesFromBase64(object.proof_upgrade_client);
+    if (isSet(object.proof_upgrade_consensus_state))
+      obj.proof_upgrade_consensus_state = bytesFromBase64(object.proof_upgrade_consensus_state);
     if (isSet(object.signer)) obj.signer = String(object.signer);
     return obj;
   },
   toJSON(message: MsgUpgradeClient): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.client_state !== undefined && (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
-    message.consensus_state !== undefined && (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
-    message.proof_upgrade_client !== undefined && (obj.proof_upgrade_client = base64FromBytes(message.proof_upgrade_client !== undefined ? message.proof_upgrade_client : new Uint8Array()));
-    message.proof_upgrade_consensus_state !== undefined && (obj.proof_upgrade_consensus_state = base64FromBytes(message.proof_upgrade_consensus_state !== undefined ? message.proof_upgrade_consensus_state : new Uint8Array()));
+    message.client_state !== undefined &&
+      (obj.client_state = message.client_state ? Any.toJSON(message.client_state) : undefined);
+    message.consensus_state !== undefined &&
+      (obj.consensus_state = message.consensus_state ? Any.toJSON(message.consensus_state) : undefined);
+    message.proof_upgrade_client !== undefined &&
+      (obj.proof_upgrade_client = base64FromBytes(
+        message.proof_upgrade_client !== undefined ? message.proof_upgrade_client : new Uint8Array(),
+      ));
+    message.proof_upgrade_consensus_state !== undefined &&
+      (obj.proof_upgrade_consensus_state = base64FromBytes(
+        message.proof_upgrade_consensus_state !== undefined
+          ? message.proof_upgrade_consensus_state
+          : new Uint8Array(),
+      ));
     message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
@@ -422,7 +439,7 @@ export const MsgUpgradeClient = {
     message.proof_upgrade_consensus_state = object.proof_upgrade_consensus_state ?? new Uint8Array();
     message.signer = object.signer ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgUpgradeClientResponse(): MsgUpgradeClientResponse {
   return {};
@@ -457,13 +474,13 @@ export const MsgUpgradeClientResponse = {
   fromPartial<I extends Exact<DeepPartial<MsgUpgradeClientResponse>, I>>(_: I): MsgUpgradeClientResponse {
     const message = createBaseMsgUpgradeClientResponse();
     return message;
-  }
+  },
 };
 function createBaseMsgSubmitMisbehaviour(): MsgSubmitMisbehaviour {
   return {
     client_id: "",
     misbehaviour: undefined,
-    signer: ""
+    signer: "",
   };
 }
 export const MsgSubmitMisbehaviour = {
@@ -513,7 +530,8 @@ export const MsgSubmitMisbehaviour = {
   toJSON(message: MsgSubmitMisbehaviour): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.misbehaviour !== undefined && (obj.misbehaviour = message.misbehaviour ? Any.toJSON(message.misbehaviour) : undefined);
+    message.misbehaviour !== undefined &&
+      (obj.misbehaviour = message.misbehaviour ? Any.toJSON(message.misbehaviour) : undefined);
     message.signer !== undefined && (obj.signer = message.signer);
     return obj;
   },
@@ -525,7 +543,7 @@ export const MsgSubmitMisbehaviour = {
     }
     message.signer = object.signer ?? "";
     return message;
-  }
+  },
 };
 function createBaseMsgSubmitMisbehaviourResponse(): MsgSubmitMisbehaviourResponse {
   return {};
@@ -557,10 +575,12 @@ export const MsgSubmitMisbehaviourResponse = {
     const obj: any = {};
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MsgSubmitMisbehaviourResponse>, I>>(_: I): MsgSubmitMisbehaviourResponse {
+  fromPartial<I extends Exact<DeepPartial<MsgSubmitMisbehaviourResponse>, I>>(
+    _: I,
+  ): MsgSubmitMisbehaviourResponse {
     const message = createBaseMsgSubmitMisbehaviourResponse();
     return message;
-  }
+  },
 };
 /** Msg defines the ibc/client Msg service. */
 export interface Msg {
@@ -585,21 +605,21 @@ export class MsgClientImpl implements Msg {
   CreateClient(request: MsgCreateClient): Promise<MsgCreateClientResponse> {
     const data = MsgCreateClient.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Msg", "CreateClient", data);
-    return promise.then(data => MsgCreateClientResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgCreateClientResponse.decode(new BinaryReader(data)));
   }
   UpdateClient(request: MsgUpdateClient): Promise<MsgUpdateClientResponse> {
     const data = MsgUpdateClient.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Msg", "UpdateClient", data);
-    return promise.then(data => MsgUpdateClientResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgUpdateClientResponse.decode(new BinaryReader(data)));
   }
   UpgradeClient(request: MsgUpgradeClient): Promise<MsgUpgradeClientResponse> {
     const data = MsgUpgradeClient.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Msg", "UpgradeClient", data);
-    return promise.then(data => MsgUpgradeClientResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgUpgradeClientResponse.decode(new BinaryReader(data)));
   }
   SubmitMisbehaviour(request: MsgSubmitMisbehaviour): Promise<MsgSubmitMisbehaviourResponse> {
     const data = MsgSubmitMisbehaviour.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Msg", "SubmitMisbehaviour", data);
-    return promise.then(data => MsgSubmitMisbehaviourResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => MsgSubmitMisbehaviourResponse.decode(new BinaryReader(data)));
   }
 }

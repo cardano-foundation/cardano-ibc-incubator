@@ -6,6 +6,8 @@ export function initializeMithrilClientState(clientStateMsg: ClientStateMithril)
   return {
     /** Chain id */
     chain_id: fromText(clientStateMsg.chain_id),
+    host_state_nft_policy_id: Buffer.from(clientStateMsg.host_state_nft_policy_id).toString('hex'),
+    host_state_nft_token_name: Buffer.from(clientStateMsg.host_state_nft_token_name).toString('hex'),
     /** Latest height the client was updated to */
     latest_height: {
       revisionNumber: clientStateMsg.latest_height.revision_number,
@@ -38,6 +40,8 @@ export function getMithrilClientStateForVerifyProofRedeemer(
 ): ClientStateMithril {
   return {
     chain_id: convertHex2String(mithrilClientState.chain_id),
+    host_state_nft_policy_id: Buffer.from(mithrilClientState.host_state_nft_policy_id, 'hex'),
+    host_state_nft_token_name: Buffer.from(mithrilClientState.host_state_nft_token_name, 'hex'),
     latest_height: {
       revision_number: mithrilClientState.latest_height.revisionNumber,
       revision_height: mithrilClientState.latest_height.revisionHeight,

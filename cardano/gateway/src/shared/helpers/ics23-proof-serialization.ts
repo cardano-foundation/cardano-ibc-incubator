@@ -1,90 +1,75 @@
 // ICS-23 Proof Serialization
 //
-// ICS-23 proofs are compact cryptographic recipes that let anyone verify data exists in a Merkle tree.
-// 
-// How it works:
-// 1. Gateway generates proof = { key, value, sibling_hashes[] }
-// 2. Hermes relays proof to Cosmos
-// 3. Cosmos reconstructs root: hash(leaf + sibling₁ + sibling₂ + ...) 
-// 4. If reconstructed root == certified root → data is authentic 
+// The Gateway maintains an in-memory Merkle tree whose root is committed on-chain as `ibc_state_root`.
+// For queries like ClientState/ConsensusState/Connection/Channel/Packet commitments, we return:
+// - the queried value, and
+// - a proof that can be verified against `ibc_state_root` on the counterparty chain.
 //
-// Security: Even a malicious Gateway cannot forge valid proofs (would require breaking SHA-256).
-// The proof is unforgeable because changing any data breaks the hash chain.
+// Proof format:
+// - We must emit canonical protobuf bytes for `ibc.core.commitment.v1.MerkleProof` so Hermes and
+//   standard IBC tooling can carry these proofs unchanged.
+// - The Cosmos-side Mithril light client accepts `MerkleProof` bytes and verifies the path according
+//   to the Cardano commitment scheme (a fixed-depth binary tree keyed by sha256(key)).
+//
+// Note: While we use the ICS-23 protobuf container types (`ExistenceProof`, `InnerOp`, ...),
+// the verification logic on the counterparty is specific to our commitment scheme, not the generic
+// ICS-23 proof specs used by IAVL/SMT in Cosmos SDK chains.
 
 import {
   ICS23ExistenceProof,
   ICS23NonExistenceProof,
-  ICS23LeafOp,
-  ICS23InnerOp,
 } from './ics23-merkle-tree';
+
+import { HashOp } from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
+import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
 
 /**
  * Serialize an ICS-23 ExistenceProof to protobuf-compatible MerkleProof bytes
- * 
- * The IBC MerkleProof format wraps the ExistenceProof in a CommitmentProof message:
- * MerkleProof {
- *   proofs: [CommitmentProof{ exist: ExistenceProof }]
- * }
- * 
- * For now, this returns a JSON representation. In production, this should use
- * the @plus/proto-types compiled protobuf library to properly encode.
- * 
- * TODO: Replace with actual protobuf encoding using @plus/proto-types
- * 
+ *
  * @param proof - The ExistenceProof to serialize
  * @returns Buffer containing protobuf-encoded MerkleProof
  */
 export function serializeExistenceProof(proof: ICS23ExistenceProof): Buffer {
-  // For now, return JSON-encoded proof
-  // This is sufficient for testing and demonstration
-  // Production implementation should use protobufjs or @plus/proto-types
-  
-  const merkleProof = {
+  const merkleProof: MerkleProof = {
     proofs: [
       {
         exist: {
-          key: proof.key.toString('hex'),
-          value: proof.value.toString('hex'),
-          leaf: {
-            hash: proof.leaf.hash,
-            prehash_key: proof.leaf.prehash_key,
-            prehash_value: proof.leaf.prehash_value,
-            length: proof.leaf.length,
-            prefix: proof.leaf.prefix.toString('hex'),
-          },
+          key: proof.key,
+          value: proof.value,
+          // We intentionally omit `leaf`: counterparty verification does not rely on it.
           path: proof.path.map((innerOp) => ({
-            hash: innerOp.hash,
-            prefix: innerOp.prefix.toString('hex'),
-            suffix: innerOp.suffix.toString('hex'),
+            hash: HashOp.SHA256,
+            prefix: innerOp.prefix,
+            suffix: innerOp.suffix,
           })),
         },
       },
     ],
   };
 
-  return Buffer.from(JSON.stringify(merkleProof), 'utf8');
+  return Buffer.from(MerkleProof.encode(merkleProof).finish());
 }
 
 /**
  * Serialize an ICS-23 NonExistenceProof to protobuf-compatible MerkleProof bytes
- * 
+ *
  * @param proof - The NonExistenceProof to serialize
  * @returns Buffer containing protobuf-encoded MerkleProof
  */
 export function serializeNonExistenceProof(proof: ICS23NonExistenceProof): Buffer {
-  const merkleProof = {
+  const merkleProof: MerkleProof = {
     proofs: [
       {
         nonexist: {
-          key: proof.key.toString('hex'),
-          left: proof.left ? serializeExistenceProofInner(proof.left) : null,
-          right: proof.right ? serializeExistenceProofInner(proof.right) : null,
+          key: proof.key,
+          left: proof.left ? serializeExistenceProofInner(proof.left) : undefined,
+          right: proof.right ? serializeExistenceProofInner(proof.right) : undefined,
         },
       },
     ],
   };
 
-  return Buffer.from(JSON.stringify(merkleProof), 'utf8');
+  return Buffer.from(MerkleProof.encode(merkleProof).finish());
 }
 
 /**
@@ -92,43 +77,12 @@ export function serializeNonExistenceProof(proof: ICS23NonExistenceProof): Buffe
  */
 function serializeExistenceProofInner(proof: ICS23ExistenceProof): any {
   return {
-    key: proof.key.toString('hex'),
-    value: proof.value.toString('hex'),
-    leaf: {
-      hash: proof.leaf.hash,
-      prehash_key: proof.leaf.prehash_key,
-      prehash_value: proof.leaf.prehash_value,
-      length: proof.leaf.length,
-      prefix: proof.leaf.prefix.toString('hex'),
-    },
+    key: proof.key,
+    value: proof.value,
     path: proof.path.map((innerOp) => ({
-      hash: innerOp.hash,
-      prefix: innerOp.prefix.toString('hex'),
-      suffix: innerOp.suffix.toString('hex'),
+      hash: HashOp.SHA256,
+      prefix: innerOp.prefix,
+      suffix: innerOp.suffix,
     })),
   };
 }
-
-/**
- * Placeholder for future protobuf encoding using @plus/proto-types
- * 
- * When implemented, this will properly encode using the compiled protobuf definitions:
- * 
- * import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
- * 
- * export function serializeExistenceProofProtobuf(proof: ICS23ExistenceProof): Buffer {
- *   const merkleProof = MerkleProof.fromPartial({
- *     proofs: [{
- *       exist: {
- *         key: proof.key,
- *         value: proof.value,
- *         leaf: proof.leaf,
- *         path: proof.path,
- *       }
- *     }]
- *   });
- *   
- *   return Buffer.from(MerkleProof.encode(merkleProof).finish());
- * }
- */
-

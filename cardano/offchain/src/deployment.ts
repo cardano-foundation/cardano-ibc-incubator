@@ -48,10 +48,57 @@ export const createDeployment = async (
   //
   // It depends on an `OutputReference`, so we must pick that upfront and use the
   // same reference later when minting the NFT (otherwise the policy id changes).
+  //
+  // Important: this output reference is not just "data baked into a script".
+  // The corresponding UTxO must also be spent in the minting transaction.
+  //
+  // We also mint the Handler auth token using a separate "nonce UTxO" to ensure
+  // uniqueness. Therefore we need *two distinct* wallet UTxOs available:
+  // - one reserved for the HostState NFT mint (and for parameterizing the policy id),
+  // - one reserved for the Handler token mint.
+  //
+  // If we accidentally reuse the same nonce UTxO for both mints, the first mint
+  // will spend it and the second mint will fail with "unknown UTxO references".
   // ---------------------------------------------------------------------------
-  const signerUtxos = await lucid.wallet().getUtxos();
+  let signerUtxos = await lucid.wallet().getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO found.");
-  const hostStateNonceUtxo = signerUtxos[0];
+
+  // Ensure we have at least 2 UTxOs to use as distinct nonces.
+  //
+  // On fresh devnets we may start with a single large UTxO. We split it into two
+  // explicit outputs so later deployment transactions don't "accidentally" pull in
+  // the other nonce as an extra input to fund fees/min-ADA.
+  if (signerUtxos.length < 2) {
+    const address = await lucid.wallet().address();
+    const splitAmount = 50_000_000n; // 50 ADA, comfortably above any min-ADA + fees for these setup txs.
+    const splitTx = lucid
+      .newTx()
+      .collectFrom([signerUtxos[0]])
+      .pay.ToAddress(address, { lovelace: splitAmount })
+      .pay.ToAddress(address, { lovelace: splitAmount });
+    await submitTx(splitTx, lucid, "SplitNonceUtxos", false);
+    signerUtxos = await lucid.wallet().getUtxos();
+  }
+
+  // Prefer large UTxOs for these nonce inputs so Lucid doesn't need to auto-select
+  // additional wallet inputs, which could accidentally spend the other nonce.
+  const sortedUtxos = [...signerUtxos].sort((a, b) => {
+    const aLovelace = a.assets.lovelace ?? 0n;
+    const bLovelace = b.assets.lovelace ?? 0n;
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? 1 : -1;
+  });
+
+  const handlerNonceUtxo = sortedUtxos[0];
+  const hostStateNonceUtxo = sortedUtxos.find(
+    (u) => u.txHash !== handlerNonceUtxo.txHash || u.outputIndex !== handlerNonceUtxo.outputIndex,
+  );
+  if (!handlerNonceUtxo) {
+    throw new Error("Not enough distinct wallet UTxOs to deploy (need at least 2).");
+  }
+  if (!hostStateNonceUtxo) {
+    throw new Error("Not enough distinct wallet UTxOs to deploy (need at least 2).");
+  }
 
   const hostStateOutputReference: OutputReference = {
     transaction_id: hostStateNonceUtxo.txHash,
@@ -165,7 +212,8 @@ export const createDeployment = async (
   // deploy handler
   const [mintHandlerPolicyId, handlerTokenName] = await deployHandler(
     lucid,
-    spendHandlerScriptHash
+    spendHandlerScriptHash,
+    handlerNonceUtxo,
   );
 
   const handlerToken: AuthToken = {
@@ -520,14 +568,13 @@ async function createReferenceUtxos(
 
 const deployHandler = async (
   lucid: LucidEvolution,
-  spendHandlerScriptHash: ScriptHash
+  spendHandlerScriptHash: ScriptHash,
+  nonceUtxo: UTxO,
 ) => {
   console.log("Create Handler");
 
   // load nonce UTXO
-  const signerUtxos = await lucid.wallet().getUtxos();
-  if (signerUtxos.length < 1) throw new Error("No UTXO found.");
-  const NONCE_UTXO = signerUtxos[0];
+  const NONCE_UTXO = nonceUtxo;
 
   // load mint handler validator
   const outputReference: OutputReference = {

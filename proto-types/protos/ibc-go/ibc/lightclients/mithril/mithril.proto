@@ -42,6 +42,15 @@ message ClientState {
 
   // Path at which next upgraded client will be committed.
   repeated string upgrade_path = 7;
+
+  // HostState NFT identification on the Cardano chain.
+  //
+  // The HostState UTxO is the single source of truth for Cardano IBC state and is
+  // uniquely identified by this NFT. The light client uses this to locate the
+  // HostState output inside the certified transaction body and to extract the
+  // `ibc_state_root` from its inline datum.
+  bytes host_state_nft_policy_id = 8;
+  bytes host_state_nft_token_name = 9;
 }
 
 // MithrilConsensusState represents the consensus state in the Mithril system.
@@ -52,9 +61,16 @@ message ConsensusState {
 
   uint64 timestamp = 1;
 
-  string first_cert_hash_latest_epoch = 2;
+  MithrilCertificate first_cert_hash_latest_epoch = 2;
 
   string latest_cert_hash_tx_snapshot = 3;
+
+  // Authenticated commitment root for Cardano IBC state at this height.
+  //
+  // This is the exact 32-byte `ibc_state_root` extracted from the on-chain
+  // HostState datum whose creating transaction is proven to be included in the
+  // Mithril-certified transaction snapshot for this height.
+  bytes ibc_state_root = 4;
 }
 
 // Misbehavior represents a conflict between two headers.
@@ -77,6 +93,18 @@ message MithrilHeader {
   CardanoTransactionSnapshot transaction_snapshot = 3;
 
   MithrilCertificate transaction_snapshot_certificate = 4;
+
+  // HostState commitment evidence for this height.
+  //
+  // The goal is to let the counterparty verify:
+  // 1) a specific transaction is included in the Mithril-certified transaction set,
+  // 2) that transaction creates the HostState UTxO (identified by the HostState NFT),
+  // 3) the inline datum on that output commits to `ibc_state_root`, and
+  // 4) that root is used for ICS-23 proof verification at this height.
+  string host_state_tx_hash = 5;
+  bytes host_state_tx_body_cbor = 6;
+  uint32 host_state_tx_output_index = 7;
+  bytes host_state_tx_proof = 8;
 }
 
 // Mithril Stake Distribution

@@ -49,7 +49,8 @@ function keyIndex64(key: string): bigint {
  * Represents an inner step of a proof.
  *
  * This intentionally mirrors the existing "ICS23InnerOp" shape used in the
- * Gateway codebase, even though the current proof encoding is JSON.
+ * Gateway codebase and can be serialized into standard protobuf `MerkleProof`
+ * bytes for Hermes/Cosmos verification.
  *
  * Convention:
  * - If `suffix` is non-empty, the current node is the LEFT child and `suffix` is the sibling hash.
@@ -196,8 +197,8 @@ export class ICS23MerkleTree {
     return {
       key: Buffer.from(key, 'utf8'),
       value,
-      // These fields are currently carried through as metadata for JSON proof serialization.
-      // The verification logic below does not rely on them.
+      // These fields are carried through for compatibility and potential future
+      // tooling. Our current verification logic does not rely on them.
       leaf: {
         hash: 1,
         prehash_key: 0,

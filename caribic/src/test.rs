@@ -197,7 +197,10 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
     }
 
     // Check Mithril (optional)
-    let mithril_running = check_service_health("http://127.0.0.1:8080/health");
+    //
+    // Mithril aggregator does not expose a `/health` endpoint in our current setup.
+    // The `/aggregator` endpoint is stable and returns 2xx when the service is up.
+    let mithril_running = check_service_health("http://127.0.0.1:8080/aggregator");
     if !mithril_running {
         logger::verbose("   Mithril is not running (optional)");
     } else {

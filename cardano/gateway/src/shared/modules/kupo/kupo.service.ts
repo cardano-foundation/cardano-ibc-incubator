@@ -147,6 +147,13 @@ export class KupoService {
     // TODO: Convert height to slot number
     // TODO: Make direct Kupo API call for historical UTXO
     // For now, return current UTXO
+    //
+    // TODO(ibc): For IBC proof verification, callers need the HostState UTxO (and its datum)
+    // as it existed at the queried height, not "latest". This requires:
+    // - a deterministic mapping from the requested height to a Cardano slot / point-in-time filter
+    // - a historical query that returns the HostState NFT output that was live at that time
+    // - enough metadata to later prove this output was part of a finalized, certified Cardano view
+    //   (e.g., via Mithril-certified evidence), instead of trusting the indexer.
     
     return await this.lucidService.findUtxoAtHostStateNFT();
   }
@@ -172,6 +179,12 @@ export class KupoService {
    * @returns The IBC state root (32-byte hex string)
    */
   async queryIBCStateRootAtHeight(height: number): Promise<string> {
+    // TODO(ibc): This currently returns the root from whatever HostState UTxO is live "now",
+    // because `queryHostStateUtxoAtHeight()` is not actually height-specific yet.
+    //
+    // Once historical HostState queries are implemented, this method should return the root
+    // for the exact HostState datum at the requested height, along with enough information
+    // to tie that datum to certified Cardano data (so the root can be treated as authenticated).
     const hostStateUtxo = await this.queryHostStateUtxoAtHeight(height);
     
     if (!hostStateUtxo.datum) {
