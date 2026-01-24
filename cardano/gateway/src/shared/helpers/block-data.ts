@@ -7,7 +7,12 @@ export function normalizeBlockDataFromOuroboros(
   blockHeaderDto?: BlockHeaderDto | null,
 ): BlockData {
   const blockdata: BlockData = {
-    /** Block number */
+    /**
+     * IBC height semantics:
+     * - `revision_height` is a Cardano block height (db-sync `block_no`) surfaced as an IBC Height.
+     * - Cardano `slot` is tracked separately; it is not used as the IBC height, but it matters for
+     *   Cardano-specific time/validity and horizon rules (slot-based).
+     */
     height: {
       revision_number: 0,
       /** the height within the given revision */

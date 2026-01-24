@@ -3,11 +3,24 @@ export function parseClientSequence(clientId: string): string {
 
   if (fragments.length < 2) throw new Error('Invalid client id format');
 
-  if (!(fragments.slice(0, -1).join('') === 'ibc_client')) {
+  // IBC client identifiers are of the form `{client_type}-{sequence}`.
+  //
+  // Examples:
+  // - `07-tendermint-12`
+  // - `08-cardano-5`
+  //
+  // Historically this code used a Cardano-specific `ibc_client-{sequence}` format.
+  // We now accept the canonical IBC client id format used by Hermes and ibc-go.
+  const sequence = fragments.pop()!;
+  const clientType = fragments.join('-');
+
+  if (!clientType) throw new Error('Invalid client id format');
+
+  if (!/^\d+$/.test(sequence)) {
     throw new Error('Invalid client id format');
   }
 
-  return fragments.pop()!;
+  return sequence;
 }
 
 export function parseConnectionSequence(connectionId: string): bigint {

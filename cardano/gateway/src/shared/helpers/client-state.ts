@@ -1,6 +1,6 @@
 import { ClientState as ClientStateTendermint } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { bytesFromBase64, toDuration } from '@plus/proto-types/build/helpers';
-import { hashOpFromJSON, lengthOpFromJSON } from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
+import { HashOp, LengthOp, hashOpFromJSON, lengthOpFromJSON } from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
 import { ClientState } from '../types/client-state-types';
 import { convertHex2String, convertString2Hex } from './hex';
 import { convertToProofType } from './proof_types';
@@ -62,21 +62,52 @@ export function normalizeClientStateFromDatum(clientState: ClientState): ClientS
 }
 // Define the conversion function for proofSpec
 function convertProofSpec(proofSpec: any): any {
+  const toHashOp = (value: any): HashOp => {
+    if (typeof value === 'string') return hashOpFromJSON(value);
+    if (typeof value === 'bigint') return Number(value) as HashOp;
+    if (typeof value === 'number') return value as HashOp;
+    return HashOp.UNRECOGNIZED;
+  };
+
+  const toLengthOp = (value: any): LengthOp => {
+    if (typeof value === 'string') return lengthOpFromJSON(value);
+    if (typeof value === 'bigint') return Number(value) as LengthOp;
+    if (typeof value === 'number') return value as LengthOp;
+    return LengthOp.UNRECOGNIZED;
+  };
+
+  const bytesFromBase64OrHex = (value: any): Uint8Array => {
+    if (value instanceof Uint8Array) return value;
+    if (typeof value !== 'string') return new Uint8Array();
+
+    const trimmed = value.startsWith('0x') ? value.slice(2) : value;
+    const looksLikeHex = trimmed.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(trimmed);
+    if (looksLikeHex) {
+      return Buffer.from(trimmed, 'hex');
+    }
+
+    try {
+      return bytesFromBase64(value);
+    } catch {
+      return new Uint8Array();
+    }
+  };
+
   return {
     leaf_spec: {
-      hash: hashOpFromJSON(proofSpec.leaf_spec.hash),
-      prehash_key: hashOpFromJSON(proofSpec.leaf_spec.prehash_key),
-      prehash_value: hashOpFromJSON(proofSpec.leaf_spec.prehash_value),
-      length: lengthOpFromJSON(proofSpec.leaf_spec.length),
-      prefix: bytesFromBase64(proofSpec.leaf_spec.prefix),
+      hash: toHashOp(proofSpec.leaf_spec.hash),
+      prehash_key: toHashOp(proofSpec.leaf_spec.prehash_key),
+      prehash_value: toHashOp(proofSpec.leaf_spec.prehash_value),
+      length: toLengthOp(proofSpec.leaf_spec.length),
+      prefix: bytesFromBase64OrHex(proofSpec.leaf_spec.prefix),
     },
     inner_spec: {
       child_order: proofSpec.inner_spec.child_order.map((e: any) => Number(e)),
       child_size: Number(proofSpec.inner_spec.child_size),
       min_prefix_length: Number(proofSpec.inner_spec.min_prefix_length),
       max_prefix_length: Number(proofSpec.inner_spec.max_prefix_length),
-      empty_child: bytesFromBase64(proofSpec.inner_spec.empty_child),
-      hash: hashOpFromJSON(proofSpec.inner_spec.hash),
+      empty_child: bytesFromBase64OrHex(proofSpec.inner_spec.empty_child),
+      hash: toHashOp(proofSpec.inner_spec.hash),
     },
     max_depth: Number(proofSpec.max_depth),
     min_depth: Number(proofSpec.min_depth),

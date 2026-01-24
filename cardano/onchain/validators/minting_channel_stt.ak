@@ -2,7 +2,6 @@
 // Simplified version - validates HostState NFT presence and basic channel setup
 
 use aiken/collection/list
-use aiken/primitive/bytearray
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{InlineDatum, Input, Transaction}
@@ -95,7 +94,12 @@ validator mint_channel_stt(
       ) == Active
 
     let id_str = string_utils.int_to_string(channel_id_sequence)
-    let channel_token_name = bytearray.concat(channel_keys.channel_prefix, id_str)
+    let host_state_nft = AuthToken {
+      policy_id: host_state_nft_policy_id,
+      name: host_state_token_name,
+    }
+    let channel_token_name =
+      auth.generate_token_name(host_state_nft, channel_keys.channel_prefix, id_str)
     let channel_token =
       AuthToken {
         policy_id: channel_minting_policy_id,

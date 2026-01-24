@@ -33,11 +33,23 @@ export function normalizeConsensusStateFromDatum(
 }
 // Convert consensus state operator to a structured ConsensusState object to submit to cardano
 export function initializeConsensusState(consensusStateMsg: ConsensusStateTendermint): ConsensusState {
+  if (!consensusStateMsg.timestamp) {
+    throw new GrpcInvalidArgumentException('consensus_state.timestamp is required');
+  }
+
+  const timestampSeconds = BigInt(consensusStateMsg.timestamp.seconds ?? 0);
+  const timestampNanos = BigInt(consensusStateMsg.timestamp.nanos ?? 0);
+  const timestamp = timestampSeconds * 10n ** 9n + timestampNanos;
+
+  if (timestamp <= 0n) {
+    throw new GrpcInvalidArgumentException('consensus_state.timestamp must be a positive Unix time');
+  }
+
   const consensusState: ConsensusState = {
-    timestamp: BigInt(Date.now()) * 10n ** 6n,
-    /*timestamp:
-      BigInt(consensusStateMsg.timestamp.seconds) * BigInt(1e9) + BigInt(consensusStateMsg.timestamp.nanos || 0n) ??
-      null,*/
+    // Tendermint consensus state timestamps are nanoseconds since Unix epoch.
+    // This must come from the counterparty chain header, not local wall-clock time,
+    // otherwise UpdateClient header verification will fail.
+    timestamp,
     next_validators_hash: toHex(consensusStateMsg.next_validators_hash),
     root: { hash: toHex(consensusStateMsg.root.hash) },
   };

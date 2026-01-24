@@ -154,7 +154,7 @@ fn setup() -> MockData {
       proof_specs,
     }
 
-  let client_id = "ibc_client-44"
+  let client_id = "07-tendermint-44"
 
   let client_sequence = client_keys_mod.parse_client_id_sequence(client_id)
 
@@ -338,6 +338,8 @@ test conn_open_ack_succeed() {
         phi_f: Fraction { numerator: 0, denominator: 1 },
       },
       upgrade_path: [],
+      host_state_nft_policy_id: mock.host_state_nft_policy_id,
+      host_state_nft_token_name: "ibc_host_state",
     }
 
   let proof_try = MerkleProof { proofs: [] }
@@ -542,6 +544,8 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
         phi_f: Fraction { numerator: 0, denominator: 1 },
       },
       upgrade_path: [],
+      host_state_nft_policy_id: mock.host_state_nft_policy_id,
+      host_state_nft_token_name: "ibc_host_state",
     }
 
   let proof_try = MerkleProof { proofs: [] }
@@ -680,7 +684,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //   let input_datum =
 //     ConnectionDatum {
 //       state: ConnectionEnd {
-//         client_id: "ibc_client-1",
+//         client_id: "07-tendermint-1",
 //         versions: [
 //           Version {
 //             identifier: "1",
@@ -689,7 +693,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //         ],
 //         state: connection_state.Open,
 //         counterparty: Counterparty {
-//           client_id: "2000-cardano-mithril-2",
+//           client_id: "08-cardano-2",
 //           connection_id: "",
 //           prefix: MerklePrefix { key_prefix: "ibc" },
 //         },
@@ -701,7 +705,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //   let updated_datum =
 //     ConnectionDatum {
 //       state: ConnectionEnd {
-//         client_id: "ibc_client-1",
+//         client_id: "07-tendermint-1",
 //         versions: [
 //           Version {
 //             identifier: "1",
@@ -710,7 +714,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //         ],
 //         state: connection_state.Open,
 //         counterparty: Counterparty {
-//           client_id: "2000-cardano-mithril-2",
+//           client_id: "08-cardano-2",
 //           connection_id: "connection-2",
 //           prefix: MerklePrefix { key_prefix: "ibc" },
 //         },

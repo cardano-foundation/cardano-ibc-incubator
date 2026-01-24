@@ -16,7 +16,7 @@ import {
   ResponseResultType,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
-import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -241,15 +241,16 @@ export class PacketService {
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete();
+      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for recv packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -279,15 +280,16 @@ export class PacketService {
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for send packet');
       const response: MsgRecvPacketResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgRecvPacketResponse;
       return response;
@@ -318,15 +320,16 @@ export class PacketService {
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete();
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for timeout packet');
       const response: MsgTimeoutResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgTimeoutResponse;
       return response;
@@ -378,14 +381,15 @@ export class PacketService {
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete();
+      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for timeout refresh');
       const response: MsgTimeoutRefreshResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgTimeoutRefreshResponse;
       return response;
@@ -419,15 +423,16 @@ export class PacketService {
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete();
+      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for ack packet');
       const response: MsgAcknowledgementResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgAcknowledgementResponse;
       return response;

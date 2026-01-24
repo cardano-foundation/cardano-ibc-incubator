@@ -20,6 +20,7 @@ import {
 import {
   ClientState as ClientStateMithril,
   ConsensusState as ConsensusStateMithril,
+  MithrilCertificate,
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
@@ -197,57 +198,80 @@ export class QueryService {
     this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
   }
 
-  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
-    const { height } = request;
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-    const currentEpochSettings = await this.mithrilService.getCurrentEpochSettings();
+	  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
+	    const { height } = request;
+	    if (!height) {
+	      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
+	    }
 
-    let mithrilStakeDistributionsList = await this.mithrilService.mithrilClient.list_mithril_stake_distributions();
-    let mithrilDistribution = mithrilStakeDistributionsList[0];
-    let fcCertificateMsd = await this.mithrilService.mithrilClient.get_mithril_certificate(
-      mithrilDistribution.certificate_hash,
-    );
+	    // NOTE: Do not use the WASM Mithril client here.
+	    //
+	    // Our local Mithril aggregator returns certificate JSON that does not include the legacy `beacon`
+    // field (it instead encodes coordinates inside `signed_entity_type`). The WASM client performs
+    // strict JSON deserialization and fails with errors like:
+    // "missing field `beacon` at line ...".
+    //
+	    // For the Gateway's purposes (building a Mithril IBC client/consensus state), we only need the
+	    // raw REST payloads and can avoid strict deserialization entirely.
+	    const mithrilStakeDistributionsList = await this.mithrilService.getMostRecentMithrilStakeDistributions();
 
-    let certificateList = await this.mithrilService.mithrilClient.list_mithril_certificates();
-    const latestCertificateMsd = certificateList.find(
-      (certificate) => BigInt(certificate.epoch) === BigInt(mithrilDistribution.epoch),
-    );
+	    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+	    const snapshot =
+	      snapshots.find((snapshot) => BigInt(snapshot.block_number) === BigInt(height)) ?? snapshots[0];
+	    if (!snapshot) {
+	      throw new GrpcNotFoundException('Not found: no Mithril transaction snapshots available');
+	    }
 
-    const listSnapshots = await this.mithrilService.mithrilClient.list_snapshots();
-    let latestSnapshot = listSnapshots[0];
-    const latestSnapshotCertificate = await this.mithrilService.mithrilClient.get_mithril_certificate(
-      latestSnapshot.certificate_hash,
-    );
+	    const snapshotCertificate = await this.mithrilService.getCertificateByHash(snapshot.certificate_hash);
+	    const stakeDistributionCertHash = snapshotCertificate.previous_hash;
+	    if (!stakeDistributionCertHash) {
+	      throw new GrpcNotFoundException('Not found: transaction snapshot certificate is missing previous_hash');
+	    }
 
-    const phifFraction = doubleToFraction(currentEpochSettings.protocol.phi_f);
-    const clientStateMithril: ClientStateMithril = {
-      /** Chain id */
-      chain_id: this.configService.get('cardanoChainNetworkMagic').toString(),
-      /** Latest height the client was updated to */
-      latest_height: {
-        /** the immutable file number */
-        mithril_height: BigInt(latestSnapshotCertificate.beacon.immutable_file_number),
-      },
+	    const stakeDistribution = mithrilStakeDistributionsList.find(
+	      (d) => d.certificate_hash === stakeDistributionCertHash,
+	    );
+	    if (!stakeDistribution) {
+	      throw new GrpcNotFoundException(
+	        `Not found: no Mithril stake distribution found for certificate ${stakeDistributionCertHash}`,
+	      );
+	    }
+	    const stakeDistributionCertificate = await this.mithrilService.getCertificateByHash(stakeDistributionCertHash);
+
+	    const phifFraction = doubleToFraction(stakeDistributionCertificate.metadata.parameters.phi_f);
+	    const clientStateMithril: ClientStateMithril = {
+	      /** Chain id */
+	      chain_id: this.configService.get('cardanoChainId'),
+	      /** Latest height the client was updated to */
+	      latest_height: {
+	        revision_number: 0n,
+	        // We treat "height" as the Mithril transaction snapshot block number (see QueryLatestHeight).
+	        revision_height: BigInt(snapshot.block_number),
+	      },
       /** Block height when the client was frozen due to a misbehaviour */
-      frozen_height: {
-        mithril_height: 0n,
-      },
-      /** Epoch number of current chain state */
-      current_epoch: BigInt(currentEpochSettings.epoch),
-      trusting_period: {
-        seconds: 0n,
-        nanos: 0,
-      },
-      protocol_parameters: {
-        /** Quorum parameter */
-        k: BigInt(currentEpochSettings.protocol.k),
-        /** Security parameter (number of lotteries) */
-        m: BigInt(currentEpochSettings.protocol.m),
-        /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
-        phi_f: {
-          numerator: phifFraction.numerator,
+	      frozen_height: {
+	        revision_number: 0n,
+	        revision_height: 0n,
+	      },
+	      /** Epoch number of current chain state */
+	      current_epoch: BigInt(stakeDistribution.epoch),
+	      trusting_period: {
+	        // The Cosmos-side light client rejects a zero trusting period.
+	        //
+        // This value is a policy choice. For local devnet testing we just need a non-zero period
+        // so the client doesn't immediately expire. In production this should be derived from
+        // the security assumptions of the Cardano/Mithril verification model.
+        seconds: 86_400n, // 24 hours
+	        nanos: 0,
+	      },
+	      protocol_parameters: {
+	        /** Quorum parameter */
+	        k: BigInt(stakeDistributionCertificate.metadata.parameters.k),
+	        /** Security parameter (number of lotteries) */
+	        m: BigInt(stakeDistributionCertificate.metadata.parameters.m),
+	        /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
+	        phi_f: {
+	          numerator: phifFraction.numerator,
           denominator: phifFraction.denominator,
         },
       },
@@ -263,11 +287,11 @@ export class QueryService {
       // only accepts the output that carries this NFT.
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-    } as unknown as ClientStateMithril;
+	    } as unknown as ClientStateMithril;
 
-    // ConsensusState timestamp is expressed in nanoseconds since Unix epoch.
-    const timestampMs = new Date(fcCertificateMsd.metadata.sealed_at).valueOf();
-    const consensusTimestampNs = BigInt(timestampMs) * 1_000_000n;
+	    // ConsensusState timestamp is expressed in nanoseconds since Unix epoch.
+	    const timestampMs = new Date(snapshotCertificate.metadata.sealed_at).valueOf();
+	    const consensusTimestampNs = BigInt(timestampMs) * 1_000_000n;
 
     // For the initial client, we include the current on-chain `ibc_state_root`.
     //
@@ -282,12 +306,15 @@ export class QueryService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const ibcStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
 
-    const consensusStateMithril: ConsensusStateMithril = {
-      timestamp: consensusTimestampNs,
-      first_cert_hash_latest_epoch: normalizeMithrilStakeDistributionCertificate(mithrilDistribution, fcCertificateMsd),
-      latest_cert_hash_tx_snapshot: latestSnapshot.certificate_hash,
-      ibc_state_root: ibcStateRootBytes,
-    } as unknown as ConsensusStateMithril;
+	    const consensusStateMithril: ConsensusStateMithril = {
+	      timestamp: consensusTimestampNs,
+	      first_cert_hash_latest_epoch: normalizeMithrilStakeDistributionCertificate(
+	        stakeDistribution,
+	        stakeDistributionCertificate,
+	      ),
+	      latest_cert_hash_tx_snapshot: snapshot.certificate_hash,
+	      ibc_state_root: ibcStateRootBytes,
+	    } as unknown as ConsensusStateMithril;
 
     const clientStateAny: Any = {
       type_url: '/ibc.clients.mithril.v1.ClientState',
@@ -364,15 +391,24 @@ export class QueryService {
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
 
-    const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
+    // NOTE: The Gateway currently serves proofs from the latest aligned in-memory tree.
+    // Therefore `proof_height` must correspond to the height of the root that those proofs
+    // verify against (i.e., the Mithril-certified height the counterparty will update to),
+    // not the height of the UTxO that happens to store this datum.
+    const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const latestSnapshotForProof = latestSnapshotsForProof?.[0];
+    if (!latestSnapshotForProof) {
+      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+    }
+    const proofHeight = BigInt(latestSnapshotForProof.block_number);
     const clientStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ClientState',
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),
     };
 
-    // Generate ICS-23 proof from the IBC state tree
-    // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
-    // The clientId here is just the sequence number (e.g., "0") after prefix stripping
+    // Generate ICS-23 proof from the IBC state tree.
+    // The request `client_id` is the canonical IBC identifier (e.g., `07-tendermint-36`);
+    // `clientId` here is the sequence number after prefix stripping.
     const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
     
     // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
@@ -446,10 +482,14 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
-    const proofHeight = await this.dbService.findHeightByTxHash(spendClientUTXO.txHash);
+    const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const latestSnapshotForProof = latestSnapshotsForProof?.[0];
+    if (!latestSnapshotForProof) {
+      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+    }
+    const proofHeight = BigInt(latestSnapshotForProof.block_number);
     
-    // Generate ICS-23 proof from the IBC state tree
-    // Note: External client ID is "ibc_client-X" but ICS-24 path uses "07-tendermint-X"
+    // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
     
     // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
@@ -546,9 +586,17 @@ export class QueryService {
     // }
 
     try {
-      const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-      const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-      const mintChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+      const deploymentConfig = this.configService.get('deployment');
+      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
+      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
+
+      const mintConnScriptHash =
+        deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+      const mintChannelScriptHash =
+        deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
+
+      const connectionBaseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
+      const channelBaseToken = deploymentConfig.validators.mintChannelStt?.scriptHash ? hostStateNFT : handlerAuthToken;
 
       const totalEventResults: ResponseDeliverTx[] = [];
       for (const blockNo of [height]) {
@@ -560,9 +608,9 @@ export class QueryService {
             .map(async (utxo) => {
               switch (utxo.assetsPolicy) {
                 case mintConnScriptHash:
-                  return await this._parseEventConnection(utxo, handlerAuthToken);
+                  return await this._parseEventConnection(utxo, connectionBaseToken, mintConnScriptHash);
                 case mintChannelScriptHash:
-                  return await this._parseEventChannel(utxo, handlerAuthToken);
+                  return await this._parseEventChannel(utxo, channelBaseToken, mintChannelScriptHash);
               }
             }),
         );
@@ -689,12 +737,15 @@ export class QueryService {
     return txsResults;
   }
 
-  private async _parseEventConnection(utxo: UtxoDto, handlerAuthToken: AuthToken): Promise<ResponseDeliverTx> {
+  private async _parseEventConnection(
+    utxo: UtxoDto,
+    tokenBase: AuthToken,
+    mintScriptHash: string,
+  ): Promise<ResponseDeliverTx> {
     const connDatumDecoded: ConnectionDatum = await decodeConnectionDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, handlerAuthToken, CONNECTION_TOKEN_PREFIX);
+    const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, tokenBase, CONNECTION_TOKEN_PREFIX);
     const txsResult = normalizeTxsResultFromConnDatum(connDatumDecoded, currentConnectionId);
 
-    const mintScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
     const spendAddress = this.configService.get('deployment').validators.spendConnection.address;
     const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
       utxo.txId.toString(),
@@ -728,15 +779,18 @@ export class QueryService {
     return txsResult as unknown as ResponseDeliverTx;
   }
 
-  private async _parseEventChannel(utxo: UtxoDto, handlerAuthToken: AuthToken): Promise<ResponseDeliverTx> {
+  private async _parseEventChannel(
+    utxo: UtxoDto,
+    tokenBase: AuthToken,
+    mintScriptHash: string,
+  ): Promise<ResponseDeliverTx> {
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
 
-    const currentChannelId = getChannelIdByTokenName(utxo.assetsName, handlerAuthToken, CHANNEL_TOKEN_PREFIX);
+    const currentChannelId = getChannelIdByTokenName(utxo.assetsName, tokenBase, CHANNEL_TOKEN_PREFIX);
     const currentConnectionId = getConnectionIdFromConnectionHops(channelDatumDecoded.state.channel.connection_hops[0]);
 
     const txsResult = normalizeTxsResultFromChannelDatum(channelDatumDecoded, currentConnectionId, currentChannelId);
 
-    const mintScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
     const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
     let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
       utxo.txId.toString(),
@@ -833,9 +887,12 @@ export class QueryService {
   }
 
   private async _parseEventClient(utxos: UtxoDto[]): Promise<ResponseDeliverTx[]> {
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
-    const spendClientAddress = this.configService.get('deployment').validators.spendClient.address;
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
+    const deploymentConfig = this.configService.get('deployment');
+    const mintClientScriptHash =
+      deploymentConfig.validators.mintClientStt?.scriptHash || deploymentConfig.validators.mintClient.scriptHash;
+    const spendClientAddress = deploymentConfig.validators.spendClient.address;
+    const handlerAuthToken = deploymentConfig.handlerAuthToken;
+    const tokenBase = deploymentConfig.validators.mintClientStt?.scriptHash ? deploymentConfig.hostStateNFT : handlerAuthToken;
     const hasHandlerUtxo = utxos.find((utxo) => utxo.assetsPolicy === handlerAuthToken.policyId);
 
     const txsResults = await Promise.all(
@@ -843,7 +900,7 @@ export class QueryService {
         .filter((utxo) => [mintClientScriptHash].includes(utxo.assetsPolicy))
         .map(async (clientUtxo) => {
           const eventClient = hasHandlerUtxo ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
-          const clientId = getIdByTokenName(clientUtxo.assetsName, handlerAuthToken, CLIENT_PREFIX);
+          const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
           const clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
 
           const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
@@ -1030,8 +1087,7 @@ export class QueryService {
     // - the output at `host_state_tx_output_index` holds the HostState NFT and carries the inline datum
     // `height` refers to the Mithril-certified height Hermes is operating on (latest stable block).
     // The HostState UTxO may not change at every certified height, so we locate the most recent
-    // HostState output at or before `height` and certify its creating transaction.
-    const hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(height);
+    // HostState output at or before the certified snapshot height we are actually going to use.
 
     // This endpoint supplies the Cosmos-side Mithril light client with everything
     // it needs to authenticate Cardano's IBC commitment root at `height`:
@@ -1046,27 +1102,128 @@ export class QueryService {
     //
     // The WASM mithril client performs strict JSON deserialization which can break if our
     // local aggregator version changes its certificate JSON shape (we've observed runtime
-    // errors like "missing field `beacon`"). For the Gateway's purpose (transporting
-    // Mithril data to the Cosmos-side light client), we only need the raw certificate payload.
-    const mithrilStakeDistributionsList = await this.mithrilService.getMostRecentMithrilStakeDistributions();
-    const mithrilStakeDistribution = mithrilStakeDistributionsList[0];
-    if (!mithrilStakeDistribution) {
-      throw new GrpcNotFoundException('Not found: no Mithril stake distributions available');
+	    // errors like "missing field `beacon`"). For the Gateway's purpose (transporting
+	    // Mithril data to the Cosmos-side light client), we only need the raw certificate payload.
+	    const mithrilStakeDistributionsList = await this.mithrilService.getMostRecentMithrilStakeDistributions();
+	    if (!mithrilStakeDistributionsList?.length) {
+	      throw new GrpcNotFoundException('Not found: no Mithril stake distributions available');
+	    }
+
+	    // Mithril stake distribution certificate chain (epoch catch-up).
+	    //
+    // The Cosmos-side Mithril light client verifies certificate chains epoch-by-epoch.
+    // If the client is updated after missing one or more epochs, it needs the intervening
+    // stake distribution certificates in order to verify the `previous_hash` chain.
+    //
+    // The Gateway includes a bounded list of previous stake distribution certificates so the
+    // light client can "catch up" across epochs in a single update.
+    const stakeDistributionByCertificateHash = new Map<string, any>();
+	    for (const stakeDistribution of mithrilStakeDistributionsList) {
+	      if (stakeDistribution?.certificate_hash) {
+	        stakeDistributionByCertificateHash.set(stakeDistribution.certificate_hash, stakeDistribution);
+	      }
+	    }
+
+    // IMPORTANT: Mithril `cardano-transaction` proofs are currently served against the latest
+    // available CardanoTransactions snapshot (as exposed by the aggregator).
+    //
+    // If we pair:
+    // - a TransactionSnapshot at height H, with
+    // - a proof computed against a different snapshot height,
+    // then the Cosmos-side Mithril light client will reject the update with a merkle root mismatch.
+    //
+    // Therefore we align the header's TransactionSnapshot + certificate to the snapshot referenced
+    // by the returned proof.
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const latestSnapshot = listSnapshots[0];
+    if (!latestSnapshot) {
+      throw new GrpcNotFoundException('Not found: no Mithril transaction snapshots available');
     }
 
-    const distributionCertificate = await this.mithrilService.getCertificateByHash(
-      mithrilStakeDistribution.certificate_hash,
-    );
+    // We always anchor to a certified snapshot height. If the caller requested a future height,
+    // fail early (this matches the expectation that "height" is a Mithril-certified height).
+    if (BigInt(height) > BigInt(latestSnapshot.block_number)) {
+      throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
+    }
 
-    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const snapshot = listSnapshots.find((e) => BigInt(e.block_number) === BigInt(height));
-    if (!snapshot) throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
-    const snapshotCertificate = await this.mithrilService.getCertificateByHash(snapshot.certificate_hash);
+    // Start from the latest certified height (proof endpoint certifies against latest).
+    let snapshot = latestSnapshot;
+    let hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+    let hostStateTxProof: any;
 
-    // Fetch a Mithril transaction-set inclusion proof for the HostState update transaction.
+    // Ensure snapshot/proof/HostState tx are mutually consistent (best-effort, bounded attempts).
+    for (let attempt = 0; attempt < 2; attempt++) {
+      hostStateTxProof = await this.mithrilService.getProofsCardanoTransactionList([hostStateUtxo.txHash]);
+      const proofSnapshotHeight = hostStateTxProof?.latest_block_number ?? snapshot.block_number;
+      const proofCertificateHash = hostStateTxProof?.certificate_hash;
+
+      const snapshotForProof =
+        listSnapshots.find((s) => BigInt(s.block_number) === BigInt(proofSnapshotHeight)) ??
+        (proofCertificateHash
+          ? listSnapshots.find((s) => s.certificate_hash === proofCertificateHash)
+          : undefined);
+
+      if (!snapshotForProof) {
+        throw new GrpcNotFoundException(`Not found: Mithril transaction snapshot for proof height ${proofSnapshotHeight} not found`);
+      }
+
+      snapshot = snapshotForProof;
+      const hostStateAtSnapshot = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+      if (hostStateAtSnapshot.txHash === hostStateUtxo.txHash) {
+        hostStateUtxo = hostStateAtSnapshot;
+        break;
+      }
+      hostStateUtxo = hostStateAtSnapshot;
+    }
+
+	    const snapshotCertificate = await this.mithrilService.getCertificateByHash(snapshot.certificate_hash);
+	    const hostStateTxProofBytes = Buffer.from(JSON.stringify(hostStateTxProof), 'utf8');
+
+	    // Align the stake distribution certificate with the chosen transaction snapshot.
+	    //
+	    // The Cosmos-side verifier expects:
+	    // - TransactionSnapshotCertificate.previous_hash == MithrilStakeDistributionCertificate.hash
+	    // - Both certificates to refer to the same epoch progression.
+	    const stakeDistributionCertHash = snapshotCertificate.previous_hash;
+	    if (!stakeDistributionCertHash) {
+	      throw new GrpcNotFoundException('Not found: transaction snapshot certificate is missing previous_hash');
+	    }
+
+	    const mithrilStakeDistribution = stakeDistributionByCertificateHash.get(stakeDistributionCertHash);
+	    if (!mithrilStakeDistribution) {
+	      throw new GrpcNotFoundException(
+	        `Not found: no Mithril stake distribution found for certificate ${stakeDistributionCertHash}`,
+	      );
+	    }
+	    const distributionCertificate = await this.mithrilService.getCertificateByHash(stakeDistributionCertHash);
+
+	    // Build a bounded chain of previous stake distribution certificates to support epoch catch-up.
+	    const previousMithrilStakeDistributionCertificates: MithrilCertificate[] = [];
+	    let previousCertificateHash = distributionCertificate.previous_hash;
+	    const maxPreviousCertificates = 20;
+	    for (let depth = 0; depth < maxPreviousCertificates && previousCertificateHash; depth++) {
+	      const previousCertificate = await this.mithrilService.getCertificateByHash(previousCertificateHash);
+	      const previousStakeDistribution = stakeDistributionByCertificateHash.get(previousCertificate.hash);
+
+	      if (!previousStakeDistribution) {
+	        this.logger.warn(
+	          `Mithril stake distribution artifact missing for certificate ${previousCertificate.hash}; stopping certificate chain construction`,
+	          'queryIBCHeader',
+	        );
+	        break;
+	      }
+
+	      previousMithrilStakeDistributionCertificates.push(
+	        normalizeMithrilStakeDistributionCertificate(previousStakeDistribution, previousCertificate),
+	      );
+
+	      previousCertificateHash = previousCertificate.previous_hash;
+	    }
+
+	    // Older -> newer as expected by the Cosmos-side verifier (it may still sort defensively).
+	    previousMithrilStakeDistributionCertificates.reverse();
+
     const hostStateTxHash = hostStateUtxo.txHash;
-    const hostStateTxProof = await this.mithrilService.getProofsCardanoTransactionList([hostStateTxHash]);
-    const hostStateTxProofBytes = Buffer.from(JSON.stringify(hostStateTxProof), 'utf8');
 
     // Fetch the block body that contains the HostState transaction and locate the transaction body CBOR.
     //
@@ -1103,6 +1260,7 @@ export class QueryService {
         },
         snapshotCertificate,
       ),
+      previous_mithril_stake_distribution_certificates: previousMithrilStakeDistributionCertificates,
 
       host_state_tx_hash: hostStateTxHash,
       host_state_tx_body_cbor: hostStateTxBodyCbor,

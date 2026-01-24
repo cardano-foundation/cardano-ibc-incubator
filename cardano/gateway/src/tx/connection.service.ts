@@ -2,6 +2,7 @@ import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client
 import { TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { inspect } from 'util';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import {
@@ -15,7 +16,7 @@ import {
   MsgConnectionOpenTryResponse,
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
-import { CLIENT_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
+import { CLIENT_ID_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
 import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { AuthToken } from 'src/shared/types/auth-token';
@@ -55,6 +56,7 @@ import {
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
+import { TxEventsService } from './tx-events.service';
 
 @Injectable()
 export class ConnectionService {
@@ -62,6 +64,7 @@ export class ConnectionService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private readonly txEventsService: TxEventsService,
   ) {}
 
   /**
@@ -96,7 +99,7 @@ export class ConnectionService {
       this.logger.log('Connection Open Init is processing');
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenInitTx: TxBuilder = await this.buildUnsignedConnectionOpenInitTx(
+      const { unsignedTx: unsignedConnectionOpenInitTx, connectionId } = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
         constructedAddress,
       );
@@ -104,23 +107,38 @@ export class ConnectionService {
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
       // DEBUG: emit CBOR and key inputs so we can reproduce Ogmios eval failures
-      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       this.logger.log(
         `[DEBUG] connectionOpenInit unsigned CBOR len=${unsignedTxCbor.length}, head=${unsignedTxCbor.substring(0, 80)}`,
       );
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_init',
+          attributes: [
+            { key: 'connection_id', value: connectionId },
+            { key: 'client_id', value: data.client_id },
+            { key: 'counterparty_client_id', value: data.counterparty.client_id },
+            { key: 'counterparty_connection_id', value: data.counterparty.connection_id || '' },
+          ],
+        },
+      ]);
 
       // Return unsigned transaction for Hermes to sign
       this.logger.log('Returning unsigned tx for connection open init');
       const response: MsgConnectionOpenInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgUpdateClientResponse;
       return response;
     } catch (error) {
       this.logger.error(`connectionOpenInit: ${error}`);
+      this.logger.error(`[DEBUG] connectionOpenInit error detail: ${inspect(error, { depth: 15 })}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
@@ -138,22 +156,36 @@ export class ConnectionService {
     try {
       const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenTryTx: TxBuilder = await this.buildUnsignedConnectionOpenTryTx(
+      const { unsignedTx: unsignedConnectionOpenTryTx, connectionId } = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
-
+      
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete();
+      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_try',
+          attributes: [
+            { key: 'connection_id', value: connectionId },
+            { key: 'client_id', value: data.client_id },
+            { key: 'counterparty_client_id', value: data.counterparty.client_id },
+            { key: 'counterparty_connection_id', value: data.counterparty.connection_id },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open try');
       const response: MsgConnectionOpenTryResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgConnectionOpenTryResponse;
       return response;
@@ -176,7 +208,8 @@ export class ConnectionService {
     try {
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenAckTx: TxBuilder = await this.buildUnsignedConnectionOpenAckTx(
+      const { unsignedTx: unsignedConnectionOpenAckTx, clientId, counterpartyClientId } =
+        await this.buildUnsignedConnectionOpenAckTx(
         connectionOpenAckOperator,
         constructedAddress,
       );
@@ -184,14 +217,28 @@ export class ConnectionService {
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete();
+      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_ack',
+          attributes: [
+            { key: 'connection_id', value: data.connection_id },
+            { key: 'client_id', value: clientId },
+            { key: 'counterparty_client_id', value: counterpartyClientId },
+            { key: 'counterparty_connection_id', value: data.counterparty_connection_id },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open ack');
       const response: MsgConnectionOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgConnectionOpenAckResponse;
       return response;
@@ -218,7 +265,12 @@ export class ConnectionService {
       this.logger.log('Connection Open Confirm is processing');
       const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
       // Build and complete the unsigned transaction
-      const unsignedConnectionOpenConfirmTx: TxBuilder = await this.buildUnsignedConnectionOpenConfirmTx(
+      const {
+        unsignedTx: unsignedConnectionOpenConfirmTx,
+        clientId,
+        counterpartyClientId,
+        counterpartyConnectionId,
+      } = await this.buildUnsignedConnectionOpenConfirmTx(
         connectionOpenConfirmOperator,
         constructedAddress,
       );
@@ -226,14 +278,28 @@ export class ConnectionService {
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete();
+      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_confirm',
+          attributes: [
+            { key: 'connection_id', value: data.connection_id },
+            { key: 'client_id', value: clientId },
+            { key: 'counterparty_client_id', value: counterpartyClientId },
+            { key: 'counterparty_connection_id', value: counterpartyConnectionId },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open confirm');
       const response: MsgConnectionOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgConnectionOpenConfirmResponse;
       return response;
@@ -257,7 +323,7 @@ export class ConnectionService {
   async buildUnsignedConnectionOpenInitTx(
     connectionOpenInitOperator: ConnectionOpenInitOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; connectionId: string }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -314,7 +380,10 @@ export class ConnectionService {
     // This means we must commit the exact bytes that the on-chain code uses:
     // `cbor.serialise(connection_end)`.
     const connectionEnd: ConnectionDatum['state'] = {
-      client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenInitOperator.clientId),
+      // IMPORTANT: The IBC store key for client state is derived from the client identifier string.
+      // For Cardano↔Cosmos parity, this must use canonical IBC identifiers like `07-tendermint-{n}`,
+      // not the internal NFT/token prefix used by the STT auth tokens.
+      client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenInitOperator.clientId}`),
       counterparty: connectionOpenInitOperator.counterparty,
       delay_period: 0n,
       versions: connectionOpenInitOperator.versions,
@@ -389,7 +458,7 @@ export class ConnectionService {
     this.logger.log(
       `[DEBUG] ConnOpenInit encoded connection datum (trunc): ${encodedConnectionDatum.substring(0, 120)}...`,
     );
-    return this.lucidService.createUnsignedConnectionOpenInitTransaction(
+    const unsignedTx = this.lucidService.createUnsignedConnectionOpenInitTransaction(
       handlerUtxo,
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -402,13 +471,14 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
+    return { unsignedTx, connectionId };
   }
 
   /* istanbul ignore next */
   public async buildUnsignedConnectionOpenTryTx(
     connectionOpenTryOperator: ConnectionOpenTryOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; connectionId: string }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -447,7 +517,8 @@ export class ConnectionService {
     };
 
     const connectionEnd: ConnectionDatum['state'] = {
-      client_id: CLIENT_PREFIX + convertString2Hex('-' + connectionOpenTryOperator.clientId),
+      // See the note in `connectionOpenInit`: this must be the canonical IBC client identifier.
+      client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenTryOperator.clientId}`),
       counterparty: connectionOpenTryOperator.counterparty,
       delay_period: 0n,
       versions: connectionOpenTryOperator.versions,
@@ -509,7 +580,7 @@ export class ConnectionService {
       connectionDatum,
       'connection',
     );
-    return this.lucidService.createUnsignedConnectionOpenTryTransaction(
+    const unsignedTx = this.lucidService.createUnsignedConnectionOpenTryTransaction(
       handlerUtxo,
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -522,12 +593,13 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
+    return { unsignedTx, connectionId };
   }
 
   private async buildUnsignedConnectionOpenAckTx(
     connectionOpenAckOperator: ConnectionOpenAckOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; clientId: string; counterpartyClientId: string }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -557,6 +629,8 @@ export class ConnectionService {
       connectionUtxo.datum!,
       'connection',
     );
+    const clientId = convertHex2String(connectionDatum.state.client_id);
+    const counterpartyClientId = convertHex2String(connectionDatum.state.counterparty.client_id);
 
     const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     const updatedConnectionDatum: ConnectionDatum = {
@@ -648,6 +722,49 @@ export class ConnectionService {
       type_url: '/ibc.clients.mithril.v1.ClientState',
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
+
+    // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
+    // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
+    //
+    // If this is wrong, the on-chain `verify_proof` minting policy will fail, and the
+    // `spend_connection` script will fail as well (it requires a successful verify-proof mint).
+    try {
+      const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
+      const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
+      const expectedClientKeyUtf8 = clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id));
+      const expectedClientValue = Any.encode(mithrilClientStateAny).finish();
+
+      const firstExist = (proof: any) => {
+        for (const p of proof?.proofs ?? []) {
+          const inner = p?.proof;
+          if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
+        }
+        return undefined;
+      };
+
+      const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
+      if (tryExist?.key && tryExist?.value) {
+        const keyUtf8 = Buffer.from(tryExist.key, 'hex').toString('utf8');
+        const valueBytes = Buffer.from(tryExist.value, 'hex');
+        const decoded = ConnectionEnd.decode(valueBytes);
+        this.logger.log(
+          `[DEBUG] ConnOpenAck proof_try: key='${keyUtf8}', expected='${expectedConnKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedConnValue.length}, decoded_state=${decoded.state}`,
+        );
+      }
+
+      const clientExist = firstExist(connectionOpenAckOperator.proofClient as any);
+      if (clientExist?.key && clientExist?.value) {
+        const keyUtf8 = Buffer.from(clientExist.key, 'hex').toString('utf8');
+        const valueBytes = Buffer.from(clientExist.value, 'hex');
+        const decodedAny = Any.decode(valueBytes);
+        this.logger.log(
+          `[DEBUG] ConnOpenAck proof_client: key='${keyUtf8}', expected='${expectedClientKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedClientValue.length}, any_type_url=${decodedAny.type_url}`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
+    }
+
     const verifyProofRedeemer: VerifyProofRedeemer = {
       BatchVerifyMembership: [
         [
@@ -707,13 +824,19 @@ export class ConnectionService {
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
     };
-    return this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
+    const unsignedTx = this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
+    return { unsignedTx, clientId, counterpartyClientId };
   }
   /* istanbul ignore next */
   async buildUnsignedConnectionOpenConfirmTx(
     connectionOpenConfirmOperator: ConnectionOpenConfirmOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{
+    unsignedTx: TxBuilder;
+    clientId: string;
+    counterpartyClientId: string;
+    counterpartyConnectionId: string;
+  }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -740,6 +863,13 @@ export class ConnectionService {
       connectionUtxo.datum!,
       'connection',
     );
+    const clientId = convertHex2String(connectionDatum.state.client_id);
+    const counterpartyClientId = convertHex2String(connectionDatum.state.counterparty.client_id);
+    const counterpartyConnectionId =
+      /^[0-9a-fA-F]+$/.test(connectionDatum.state.counterparty.connection_id) &&
+      connectionDatum.state.counterparty.connection_id.length % 2 === 0
+        ? convertHex2String(connectionDatum.state.counterparty.connection_id)
+        : connectionDatum.state.counterparty.connection_id;
     if (connectionDatum.state.state !== State.Init) {
       throw new Error('ConnOpenAck to a Connection not in Init state');
     }
@@ -792,7 +922,7 @@ export class ConnectionService {
     );
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    return this.lucidService.createUnsignedConnectionOpenConfirmTransaction(
+    const unsignedTx = this.lucidService.createUnsignedConnectionOpenConfirmTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
@@ -803,5 +933,6 @@ export class ConnectionService {
       encodedUpdatedConnectionDatum,
       constructedAddress,
     );
+    return { unsignedTx, clientId, counterpartyClientId, counterpartyConnectionId };
   }
 }

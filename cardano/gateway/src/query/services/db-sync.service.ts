@@ -176,7 +176,7 @@ export class DbSyncService {
       WHERE generating_block.block_no <= $1
         AND ma.policy = $2
         AND ma.name = $3
-      ORDER BY generating_block.block_no DESC, tx_out.index DESC
+      ORDER BY generating_block.block_no DESC, generating_tx.id DESC, tx_out.index DESC
       LIMIT 1;
     `;
 
@@ -208,8 +208,11 @@ export class DbSyncService {
   }
 
   async findUtxoByPolicyAndTokenNameAndState(policyId: string, tokenName: string, state: string): Promise<UtxoDto> {
-    const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+    const deploymentConfig = this.configService.get('deployment');
+    const mintConnScriptHash =
+      deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+    const minChannelScriptHash =
+      deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
 
     const query = `
     SELECT 
@@ -286,11 +289,12 @@ export class DbSyncService {
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
-    const clientTokenName = this.lucidService
-      .generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(0))
-      .slice(0, 40);
+    const deploymentConfig = this.configService.get('deployment');
+    const handlerAuthToken = deploymentConfig.handlerAuthToken;
+    const mintClientScriptHash =
+      deploymentConfig.validators.mintClientStt?.scriptHash || deploymentConfig.validators.mintClient.scriptHash;
+    const tokenBase = deploymentConfig.validators.mintClientStt?.scriptHash ? deploymentConfig.hostStateNFT : handlerAuthToken;
+    const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
 
     const query = `
       SELECT 
@@ -338,7 +342,7 @@ export class DbSyncService {
       )
       .filter((utxo) => {
         if ([handlerAuthToken.policyId].includes(utxo.assetsPolicy)) return true;
-        if ([mintClientScriptHash].includes(utxo.assetsPolicy) && utxo.assetsName.startsWith(clientTokenName))
+        if ([mintClientScriptHash].includes(utxo.assetsPolicy) && utxo.assetsName.startsWith(clientTokenNamePrefix))
           return true;
 
         return false;
@@ -346,6 +350,10 @@ export class DbSyncService {
   }
 
   async findBlockByHeight(height: bigint): Promise<BlockDto> {
+    // Height semantics:
+    // - `height` here refers to db-sync `block_no` (Cardano block number), which we map to IBC
+    //   `Height.revision_height` across Gateway/Hermes.
+    // - Cardano `slot_no` is returned separately and should not be confused with the IBC height.
     const query =
       'SELECT block_no as height, slot_no as slot, epoch_no as epoch, id, hash, time FROM block WHERE block_no = $1';
     if (!height) {

@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -214,15 +214,16 @@ export class ClientService {
           .validTo(validToTime);
         
         // Return unsigned transaction for Hermes to sign
-        const completedUnsignedTx = await unSignedTxValidTo.complete();
+        const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
+        const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
         this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
         
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: fromHex(unsignedTxCbor),
+            value: cborHexBytes,
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -230,12 +231,27 @@ export class ClientService {
       }
       const headerMsg = decodeHeader(data.client_message.value);
       const header = initializeHeader(headerMsg);
-      const validFromTime =
-        (BigInt(header.signedHeader.header.time || 0) -
-          BigInt(currentClientDatum.state.clientState.maxClockDrift || 0)) /
-          10n ** 6n +
-        100n * 10n ** 3n;
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const nowMs = Date.now();
+      // NOTE: UpdateClient header verification uses the transaction validity lower bound
+      // (`valid_from`) as a proxy for "current time" in the Tendermint light client.
+      //
+      // In particular, `verifier.verify_new_header_and_vals` checks:
+      //   header.time < (tx_valid_from + max_clock_drift)
+      //
+      // If we backdate `valid_from` too far (e.g., 60s) while `max_clock_drift` is smaller
+      // (e.g., 30s), then otherwise-valid headers will be rejected as "in the future".
+      //
+      // So for UpdateClient we only backdate by a small amount, bounded by max_clock_drift.
+      const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
+      // We also need `valid_from` to be *safely in the past* relative to the ledger's current slot,
+      // otherwise the node may reject the transaction as "submitted too early" (invalidBefore > currentSlot).
+      // A small backdate (bounded by maxClockDrift) avoids both issues:
+      // - too-early submission at the node, and
+      // - "header is in the future" failures in Tendermint verification.
+      const safeBackdateMs = Number((maxClockDriftMs / 2n) < 10_000n ? (maxClockDriftMs / 2n) : 10_000n);
+      const validFromTimeMs = nowMs - safeBackdateMs;
+      const validToTimeMs = nowMs + TRANSACTION_TIME_TO_LIVE;
+      const txValidFromNs = BigInt(validFromTimeMs) * 1_000_000n;
       const updateClientHeaderOperator: UpdateClientOperatorDto = {
         clientId,
         header,
@@ -243,33 +259,23 @@ export class ClientService {
         clientDatum: currentClientDatum,
         clientTokenUnit,
         currentClientUtxo,
-        txValidFrom: validFromTime,
+        txValidFrom: txValidFromNs,
       };
 
       const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-
-      const validFromSlot = this.lucidService.lucid.unixTimeToSlot(Number(validFromTime));
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot < validFromSlot || currentSlot > validToSlot) {
-        throw new GrpcInternalException('tx time invalid');
-      }
-
-      const validFrom = Number(validFromTime);
-      const validTo = Date.now() + TRANSACTION_TIME_TO_LIVE;
-
-      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFrom).validTo(validTo);
+      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unSignedTxValidTo.complete();
+      const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       
       this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;

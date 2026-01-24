@@ -5,7 +5,7 @@ use ibc/core/ics_003_connection_semantics/types/state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 
-const mock_client_id = "ibc_client-123"
+const mock_client_id = "07-tendermint-123"
 
 const mock_counterparty_client_id = "counterparty_client_id"
 

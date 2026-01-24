@@ -383,12 +383,14 @@ export class LucidService {
   }
   public getConnectionTokenUnit(connectionId: bigint): [string, string] {
     const mintConnectionPolicyId = this.getMintConnectionScriptHash();
-    const connectionTokenName = CONNECTION_TOKEN_PREFIX + convertString2Hex(connectionId.toString());
+    const hostStateNFT: AuthToken = this.configService.get('deployment').hostStateNFT;
+    const connectionTokenName = this.generateTokenName(hostStateNFT, CONNECTION_TOKEN_PREFIX, connectionId);
     return [mintConnectionPolicyId, connectionTokenName];
   }
   public getChannelTokenUnit(channelId: bigint): [string, string] {
     const mintChannelPolicyId = this.getMintChannelScriptHash();
-    const channelTokenName = CHANNEL_TOKEN_PREFIX + convertString2Hex(channelId.toString());
+    const hostStateNFT: AuthToken = this.configService.get('deployment').hostStateNFT;
+    const channelTokenName = this.generateTokenName(hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
     return [mintChannelPolicyId, channelTokenName];
   }
   // ========================== Build transaction ==========================

@@ -55,41 +55,10 @@ export class SubmissionService {
 
       // Hermes expects a non-empty IBC height string in the form "revisionNumber-revisionHeight".
       // For Cardano devnet we use revisionNumber=0 and revisionHeight=block_no from db-sync.
+      // This is a Cardano block number (db-sync `block_no`), not a slot.
       const confirmedBlockNo = await this.waitForDbSyncTxHeight(txHash);
 
-      let events = this.txEventsService.take(txHash) || [];
-      const hasCreateClient = events.some((e) => e.type === 'create_client');
-
-      // Cosmos SDK always emits a create_client event; mirror that behavior.
-      // If no events were registered (e.g., Hermes signed tx hash differs from the unsigned hash we cached),
-      // or if the create_client event is missing, synthesize it from the HostState datum so Hermes never sees an empty list.
-      if (!hasCreateClient) {
-        try {
-          const hostStateUtxo = await this.kupoService.queryCurrentHostStateUtxo();
-          if (hostStateUtxo?.datum) {
-            const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
-              hostStateUtxo.datum,
-              'host_state',
-            );
-            const createdClientSeq = hostStateDatum.state.next_client_sequence - 1n;
-            const clientId = `ibc_client-${createdClientSeq.toString()}`;
-            events = events.concat({
-              type: 'create_client',
-              attributes: [
-                { key: 'client_id', value: clientId },
-                { key: 'client_type', value: '07-tendermint' },
-                // Use the confirmed block as consensus_height fallback
-                { key: 'consensus_height', value: `0-${confirmedBlockNo}` },
-              ],
-            });
-            this.logger.warn(`Synthesized create_client event for tx ${txHash} (client_id: ${clientId}).`);
-          }
-        } catch (fallbackError) {
-          this.logger.warn(
-            `Failed to synthesize events for tx ${txHash}: ${fallbackError.message || fallbackError}`,
-          );
-        }
-      }
+      const events = this.txEventsService.take(txHash) || [];
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
       
       const response: SubmitSignedTxResponse = {

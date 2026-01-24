@@ -237,6 +237,8 @@ const mithril_client_state_empty =
     0,
     MithrilProtocolParameters(0, 0, Fraction(0, 1)),
     [],
+    #"",
+    #"",
   )
 
 const mithril_client_state_empty_deprecated =
@@ -279,6 +281,8 @@ const mithril_client_state =
       #"6561737931206973207468652062657374207374616b6520706f6f6c",
       #"6561737931206973207468652062657374207374616b6520706f6f6c",
     ],
+    #"",
+    #"",
   )
 
 const mithril_client_state_deprecated =

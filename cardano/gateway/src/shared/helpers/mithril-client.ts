@@ -3,6 +3,22 @@ import { convertHex2String, fromText } from './hex';
 import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
 
 export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {
+  if (!clientStateMsg.latest_height) {
+    throw new Error('Invalid Mithril ClientState: latest_height is missing');
+  }
+
+  if (!clientStateMsg.trusting_period) {
+    throw new Error('Invalid Mithril ClientState: trusting_period is missing');
+  }
+
+  if (!clientStateMsg.protocol_parameters) {
+    throw new Error('Invalid Mithril ClientState: protocol_parameters is missing');
+  }
+
+  if (!clientStateMsg.protocol_parameters.phi_f) {
+    throw new Error('Invalid Mithril ClientState: protocol_parameters.phi_f is missing');
+  }
+
   return {
     /** Chain id */
     chain_id: fromText(clientStateMsg.chain_id),
@@ -15,8 +31,8 @@ export function initializeMithrilClientState(clientStateMsg: ClientStateMithril)
     },
     /** Block height when the client was frozen due to a misbehaviour */
     frozen_height: {
-      revisionNumber: clientStateMsg.frozen_height.revision_number,
-      revisionHeight: clientStateMsg.frozen_height.revision_height,
+      revisionNumber: clientStateMsg.frozen_height?.revision_number ?? 0n,
+      revisionHeight: clientStateMsg.frozen_height?.revision_height ?? 0n,
     },
     /** Epoch number of current chain state */
     current_epoch: clientStateMsg.current_epoch,

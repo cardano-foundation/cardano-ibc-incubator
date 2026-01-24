@@ -937,10 +937,14 @@ export async function rebuildTreeFromChain(
       if (!connectionUnit || connectionUnit.length <= 56) continue;
 
       const tokenNameHex = connectionUnit.slice(56);
-      const tokenNameStr = Buffer.from(tokenNameHex, 'hex').toString('utf8');
-      if (!tokenNameStr.startsWith('connection')) continue;
+      if (tokenNameHex.length < 48 + 2) continue;
 
-      const connectionSequenceStr = tokenNameStr.slice('connection'.length);
+      // Token names follow the auth scheme:
+      // - first 20 bytes: base token hash
+      // - next 4 bytes: prefix hash
+      // - remaining bytes: sequence (UTF-8 digits)
+      const postfixHex = tokenNameHex.slice(48);
+      const connectionSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
       if (!/^\d+$/.test(connectionSequenceStr)) continue;
 
       const connectionId = `connection-${connectionSequenceStr}`;
@@ -966,10 +970,14 @@ export async function rebuildTreeFromChain(
       if (!channelUnit || channelUnit.length <= 56) continue;
 
       const tokenNameHex = channelUnit.slice(56);
-      const tokenNameStr = Buffer.from(tokenNameHex, 'hex').toString('utf8');
-      if (!tokenNameStr.startsWith('channel')) continue;
+      if (tokenNameHex.length < 48 + 2) continue;
 
-      const channelSequenceStr = tokenNameStr.slice('channel'.length);
+      // Token names follow the auth scheme:
+      // - first 20 bytes: base token hash
+      // - next 4 bytes: prefix hash
+      // - remaining bytes: sequence (UTF-8 digits)
+      const postfixHex = tokenNameHex.slice(48);
+      const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
       if (!/^\d+$/.test(channelSequenceStr)) continue;
 
       const channelId = `channel-${channelSequenceStr}`;

@@ -388,7 +388,7 @@ describe.skip('QueryController', () => {
   describe.skip('Test QueryClientState', () => {
     it('QueryClientState should be called successfully', async () => {
       const data = await controller.queryClientState(<QueryClientStateRequest>{
-        client_id: 'ibc_client-0',
+        client_id: '07-tendermint-0',
       });
 
       expect(data.client_state.type_url).toBe('/ibc.lightclients.tendermint.v1.ClientState');
@@ -416,7 +416,7 @@ describe.skip('QueryController', () => {
       const expectMessage = 'Unable to find UTxO with unit';
       try {
         const data = await controller.queryClientState(<QueryClientStateRequest>{
-          client_id: 'ibc_client-0',
+          client_id: '07-tendermint-0',
         });
         expect(data).toContain(expectMessage);
       } catch (error) {
@@ -428,7 +428,7 @@ describe.skip('QueryController', () => {
   describe.skip('Test QueryConsensusState', () => {
     it('QueryConsensusState should be called successfully', async () => {
       const data = await controller.queryConsensusState(<QueryConsensusStateRequest>{
-        client_id: 'ibc_client-0',
+        client_id: '07-tendermint-0',
         revision_number: 0n,
         revision_height: 100970n,
         latest_height: false,
@@ -455,7 +455,7 @@ describe.skip('QueryController', () => {
       const expectMessage = 'Unable to find Consensus State at height 123';
       try {
         const data = await controller.queryConsensusState(<QueryConsensusStateRequest>{
-          client_id: 'ibc_client-0',
+          client_id: '07-tendermint-0',
           revision_number: 0n,
           revision_height: 123n,
           latest_height: false,

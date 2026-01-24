@@ -14,6 +14,8 @@ pub type MithrilClientState {
   trusting_period: Int,
   protocol_parameters: MithrilProtocolParameters,
   upgrade_path: List<ByteArray>,
+  host_state_nft_policy_id: ByteArray,
+  host_state_nft_token_name: ByteArray,
 }
 
 pub type CardanoHeight {
@@ -62,6 +64,8 @@ pub fn marshal_for_client_state(
     trusting_period,
     protocol_parameters,
     upgrade_path,
+    host_state_nft_policy_id,
+    host_state_nft_token_name,
   } = client_state
   (0, #"")
     |> size_and_concat(encode_bytearray(chain_id, 10))
@@ -89,6 +93,8 @@ pub fn marshal_for_client_state(
           },
         ),
       )
+    |> add_and_concat(encode_bytearray(host_state_nft_policy_id, 0x42))
+    |> add_and_concat(encode_bytearray(host_state_nft_token_name, 0x4a))
 }
 
 pub fn marshal_for_height(height: CardanoHeight) -> (Int, ByteArray) {

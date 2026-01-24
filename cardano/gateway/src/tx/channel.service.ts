@@ -1,4 +1,4 @@
-import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -179,8 +179,9 @@ export class ChannelService {
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open init');
       const response: MsgChannelOpenInitResponse = {
@@ -188,7 +189,7 @@ export class ChannelService {
         version: data.channel.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenInitResponse;
       return response;
@@ -216,15 +217,16 @@ export class ChannelService {
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open try');
       const response: MsgChannelOpenTryResponse = {
         version: channelOpenTryOperator.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenTryResponse;
       return response;
@@ -255,15 +257,16 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       await sleep(7000);
       this.logger.log('Returning unsigned tx for channel open ack');
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenAckResponse;
       return response;
@@ -290,14 +293,15 @@ export class ChannelService {
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open confirm');
       const response: MsgChannelOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenConfirmResponse;
       return response;
@@ -324,14 +328,15 @@ export class ChannelService {
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel close init');
       const response: MsgChannelCloseInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelCloseInitResponse;
       return response;

@@ -10,7 +10,6 @@ import {
   QueryConnectionChannelsResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import {
@@ -28,8 +27,9 @@ import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../he
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
-import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import { HostStateDatum } from '../../shared/types/host-state-datum';
 
 @Injectable()
 export class ChannelService {
@@ -40,6 +40,30 @@ export class ChannelService {
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
+
+  private async ensureTreeAligned(): Promise<void> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo?.datum) {
+      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+    }
+
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+    const onChainRoot = hostStateDatum.state.ibc_state_root;
+
+    if (isTreeAligned(onChainRoot)) return;
+
+    this.logger.warn(`Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`);
+    await alignTreeWithChain();
+  }
+
+  private async getProofHeight(): Promise<bigint> {
+    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const latestSnapshot = snapshots?.[0];
+    if (!latestSnapshot) {
+      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+    }
+    return BigInt(latestSnapshot.block_number);
+  }
 
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
     this.logger.log('', 'queryChannels');
@@ -53,8 +77,9 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId] = this.lucidService.getChannelTokenUnit(0n);
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, CHANNEL_TOKEN_PREFIX);
+    const [mintChannelPolicyId, sampleChannelTokenName] = this.lucidService.getChannelTokenUnit(0n);
+    const channelTokenPrefix = sampleChannelTokenName.slice(0, 48);
+    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, channelTokenPrefix);
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -88,9 +113,11 @@ export class ChannelService {
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
           channel_id: (() => {
-            const tokenNameStr = Buffer.from(utxo.assetsName, 'hex').toString('utf8');
-            if (!tokenNameStr.startsWith('channel')) return `${CHANNEL_ID_PREFIX}-`;
-            const channelSequenceStr = tokenNameStr.slice('channel'.length);
+            const tokenNameHex = utxo.assetsName;
+            if (!tokenNameHex || tokenNameHex.length < 48 + 2) return `${CHANNEL_ID_PREFIX}-`;
+            const postfixHex = tokenNameHex.slice(48);
+            const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
+            if (!/^\d+$/.test(channelSequenceStr)) return `${CHANNEL_ID_PREFIX}-`;
             return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
           })(),
         };
@@ -142,11 +169,9 @@ export class ChannelService {
       const channelTokenUnit = mintChannelPolicyId + channelTokenName;
       const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-      const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-        mintChannelPolicyId,
-        channelTokenName,
-        channelDatumDecoded.state.channel.state,
-      );
+      const proofHeight = await this.getProofHeight();
+
+      await this.ensureTreeAligned();
 
       // Generate ICS-23 proof from the IBC state tree
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
@@ -192,7 +217,7 @@ export class ChannelService {
         proof: channelProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proof.blockNo,
+          revision_height: proofHeight,
         },
       } as unknown as QueryChannelResponse;
       return response;
@@ -215,8 +240,9 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId] = this.lucidService.getChannelTokenUnit(0n);
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, CHANNEL_TOKEN_PREFIX);
+    const [mintChannelPolicyId, sampleChannelTokenName] = this.lucidService.getChannelTokenUnit(0n);
+    const channelTokenPrefix = sampleChannelTokenName.slice(0, 48);
+    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, channelTokenPrefix);
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -250,9 +276,11 @@ export class ChannelService {
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
           channel_id: (() => {
-            const tokenNameStr = Buffer.from(utxo.assetsName, 'hex').toString('utf8');
-            if (!tokenNameStr.startsWith('channel')) return `${CHANNEL_ID_PREFIX}-`;
-            const channelSequenceStr = tokenNameStr.slice('channel'.length);
+            const tokenNameHex = utxo.assetsName;
+            if (!tokenNameHex || tokenNameHex.length < 48 + 2) return `${CHANNEL_ID_PREFIX}-`;
+            const postfixHex = tokenNameHex.slice(48);
+            const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
+            if (!/^\d+$/.test(channelSequenceStr)) return `${CHANNEL_ID_PREFIX}-`;
             return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
           })(),
         };

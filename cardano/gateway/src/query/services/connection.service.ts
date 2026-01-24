@@ -26,8 +26,9 @@ import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import { HostStateDatum } from '../../shared/types/host-state-datum';
 
 @Injectable()
 export class ConnectionService {
@@ -38,6 +39,22 @@ export class ConnectionService {
     @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
+
+  private async ensureTreeAligned(): Promise<void> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo?.datum) {
+      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+    }
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+    const onChainRoot = hostStateDatum.state.ibc_state_root;
+
+    if (isTreeAligned(onChainRoot)) return;
+
+    this.logger.warn(
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+    );
+    await alignTreeWithChain();
+  }
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
     this.logger.log('', 'queryConnections');
@@ -51,16 +68,20 @@ export class ConnectionService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const connectionTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CONNECTION_TOKEN_PREFIX,
-      BigInt(0),
-    );
+    const deploymentConfig = this.configService.get('deployment');
+    const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
+    const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
+
+    const baseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
+    const mintConnScriptHash =
+      deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+
+    const sampleConnectionTokenName = this.lucidService.generateTokenName(baseToken, CONNECTION_TOKEN_PREFIX, 0n);
+    const connectionTokenPrefix = sampleConnectionTokenName.slice(0, 48);
+
     const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
       mintConnScriptHash,
-      connectionTokenName.slice(0, 20),
+      connectionTokenPrefix,
     );
 
     const identifiedConnections = await Promise.all(
@@ -70,7 +91,7 @@ export class ConnectionService {
           this.lucidService.LucidImporter,
         );
         const identifiedConnection = {
-          id: `${CONNECTION_ID_PREFIX}-${getConnectionIdByTokenName(utxo.assetsName, handlerAuthToken, CONNECTION_TOKEN_PREFIX)}`,
+          id: `${CONNECTION_ID_PREFIX}-${getConnectionIdByTokenName(utxo.assetsName, baseToken, CONNECTION_TOKEN_PREFIX)}`,
           /** client associated with this connection. */
           client_id: convertHex2String(connDatumDecoded.state.client_id),
           /**
@@ -83,14 +104,14 @@ export class ConnectionService {
           })),
           /** current state of the connection end. */
           state: stateFromJSON(STATE_MAPPING_CONNECTION[connDatumDecoded.state.state]),
-          /** counterparty chain associated with this connection. */
-          counterparty: {
-            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
-            // identifies the connection end on the counterparty chain associated with a given connection.
-            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
-            // commitment merkle prefix of the counterparty chain.
-            prefix: connDatumDecoded.state.counterparty.prefix,
-          },
+	          /** counterparty chain associated with this connection. */
+	          counterparty: {
+	            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
+	            // identifies the connection end on the counterparty chain associated with a given connection.
+	            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
+	            // commitment merkle prefix of the counterparty chain.
+	            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
+	          },
           /** delay period associated with this connection. */
           delay_period: connDatumDecoded.state.delay_period,
         };
@@ -140,11 +161,16 @@ export class ConnectionService {
     }
     this.logger.log(connectionId, 'queryConnection');
     try {
-      const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-      const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
+      const deploymentConfig = this.configService.get('deployment');
+      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
+      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
+
+      const baseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
+      const mintConnScriptHash =
+        deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
 
       const connectionTokenName = this.lucidService.generateTokenName(
-        handlerAuthToken,
+        baseToken,
         CONNECTION_TOKEN_PREFIX,
         BigInt(connectionId),
       );
@@ -155,19 +181,21 @@ export class ConnectionService {
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
+      const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+      const latestSnapshotForProof = latestSnapshotsForProof?.[0];
+      if (!latestSnapshotForProof) {
+        throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+      }
+      const proofHeight = BigInt(latestSnapshotForProof.block_number);
 
-      const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-        mintConnScriptHash,
-        connectionTokenName,
-        connDatumDecoded.state.state,
-      );
+      await this.ensureTreeAligned();
 
       // Generate ICS-23 proof from the IBC state tree
       // 
       // The proof contains sibling hashes that let Cosmos verify this connection state
       // is authentic by reconstructing the Merkle root (which is certified by Mithril).
       // Even if Gateway is compromised, it cannot forge valid proofs.
-      const ibcPath = `connections/${connectionId}`;
+      const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
       const tree = getCurrentTree();
       
       let connectionProof: Buffer;
@@ -191,19 +219,19 @@ export class ConnectionService {
           state:
             STATE_MAPPING_CONNECTION[connDatumDecoded.state.state] ??
             StateConnectionEnd.STATE_UNINITIALIZED_UNSPECIFIED,
-          counterparty: {
-            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
-            // identifies the connection end on the counterparty chain associated with a given connection.
-            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
-            // commitment merkle prefix of the counterparty chain.
-            prefix: connDatumDecoded.state.counterparty.prefix,
-          },
+	          counterparty: {
+	            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
+	            // identifies the connection end on the counterparty chain associated with a given connection.
+	            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
+	            // commitment merkle prefix of the counterparty chain.
+	            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
+	          },
           delay_period: connDatumDecoded.state.delay_period,
         } as unknown as ConnectionEnd,
         proof: connectionProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proof.blockNo,
+          revision_height: proofHeight,
         },
       } as unknown as QueryConnectionResponse;
       return response;
