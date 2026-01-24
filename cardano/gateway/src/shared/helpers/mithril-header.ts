@@ -4,7 +4,7 @@ import {
   MithrilStakeDistribution,
   ProtocolMessagePartKey,
   SignedEntityType,
-} from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+} from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { getNanoseconds } from './time';
 import { doubleToFraction } from './number';
 import { convertHex2String } from './hex';

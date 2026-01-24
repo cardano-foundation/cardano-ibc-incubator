@@ -22,7 +22,7 @@ import {
   ConsensusState as ConsensusStateMithril,
   MithrilCertificate,
   MithrilHeader,
-} from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+} from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
@@ -317,12 +317,12 @@ export class QueryService {
 	    } as unknown as ConsensusStateMithril;
 
     const clientStateAny: Any = {
-      type_url: '/ibc.clients.mithril.v1.ClientState',
+      type_url: '/ibc.lightclients.mithril.v1.ClientState',
       value: ClientStateMithril.encode(clientStateMithril).finish(),
     };
 
     const consensusStateAny: Any = {
-      type_url: '/ibc.clients.mithril.v1.ConsensusState',
+      type_url: '/ibc.lightclients.mithril.v1.ConsensusState',
       value: ConsensusStateMithril.encode(consensusStateMithril).finish(),
     };
 
@@ -522,6 +522,11 @@ export class QueryService {
   }
 
   async queryBlockData(request: QueryBlockDataRequest): Promise<QueryBlockDataResponse> {
+    // Legacy query used by the old Ouroboros/Cardano light client implementation.
+    //
+    // The production Cosmos-side Cardano client is the Mithril client, and Hermes uses
+    // `queryIBCHeader()` + ICS-23 proofs for verification. Keeping this endpoint around is
+    // useful when comparing historical approaches, but it is not part of the relaying path.
     const { height } = request;
     this.logger.log(height, 'queryBlockData');
     if (!height) {
@@ -549,7 +554,7 @@ export class QueryService {
 
       const blockData: QueryBlockDataResponse = {
         block_data: {
-          type_url: 'ibc.clients.cardano.v1.BlockData',
+          type_url: '/ibc.clients.cardano.v1.BlockData',
           value: BlockData.encode(blockDataOuroboros).finish(),
         },
       } as unknown as QueryBlockDataResponse;
@@ -1269,7 +1274,7 @@ export class QueryService {
     };
 
     const mithrilHeaderAny: Any = {
-      type_url: '/ibc.clients.mithril.v1.MithrilHeader',
+      type_url: '/ibc.lightclients.mithril.v1.MithrilHeader',
       value: MithrilHeader.encode(mithrilHeader).finish(),
     };
     const response: QueryIBCHeaderResponse = {

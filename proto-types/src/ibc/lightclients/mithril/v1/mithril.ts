@@ -1,8 +1,8 @@
 /* eslint-disable */
-import { Duration } from "../../../google/protobuf/duration";
-import { BinaryReader, BinaryWriter } from "../../../binary";
-import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../helpers";
-export const protobufPackage = "ibc.clients.mithril.v1";
+import { Duration } from "../../../../google/protobuf/duration";
+import { BinaryReader, BinaryWriter } from "../../../../binary";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../../helpers";
+export const protobufPackage = "ibc.lightclients.mithril.v1";
 /** Protocol Message Part Key */
 export enum ProtocolMessagePartKey {
   /** PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED - Invalid message part key */
@@ -272,7 +272,7 @@ function createBaseHeight(): Height {
   };
 }
 export const Height = {
-  typeUrl: "/ibc.clients.mithril.v1.Height",
+  typeUrl: "/ibc.lightclients.mithril.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.revision_number !== BigInt(0)) {
       writer.uint32(8).uint64(message.revision_number);
@@ -341,7 +341,7 @@ function createBaseClientState(): ClientState {
   };
 }
 export const ClientState = {
-  typeUrl: "/ibc.clients.mithril.v1.ClientState",
+  typeUrl: "/ibc.lightclients.mithril.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.chain_id !== "") {
       writer.uint32(10).string(message.chain_id);
@@ -495,7 +495,7 @@ function createBaseConsensusState(): ConsensusState {
   };
 }
 export const ConsensusState = {
-  typeUrl: "/ibc.clients.mithril.v1.ConsensusState",
+  typeUrl: "/ibc.lightclients.mithril.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.timestamp !== BigInt(0)) {
       writer.uint32(8).uint64(message.timestamp);
@@ -585,7 +585,7 @@ function createBaseMisbehaviour(): Misbehaviour {
   };
 }
 export const Misbehaviour = {
-  typeUrl: "/ibc.clients.mithril.v1.Misbehaviour",
+  typeUrl: "/ibc.lightclients.mithril.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.client_id !== "") {
       writer.uint32(10).string(message.client_id);
@@ -667,7 +667,7 @@ function createBaseMithrilHeader(): MithrilHeader {
   };
 }
 export const MithrilHeader = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilHeader",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilHeader",
   encode(message: MithrilHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.mithril_stake_distribution !== undefined) {
       MithrilStakeDistribution.encode(message.mithril_stake_distribution, writer.uint32(10).fork()).ldelim();
@@ -859,7 +859,7 @@ function createBaseMithrilStakeDistribution(): MithrilStakeDistribution {
   };
 }
 export const MithrilStakeDistribution = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilStakeDistribution",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilStakeDistribution",
   encode(message: MithrilStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -974,7 +974,7 @@ function createBaseCardanoTransactionSnapshot(): CardanoTransactionSnapshot {
   };
 }
 export const CardanoTransactionSnapshot = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoTransactionSnapshot",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactionSnapshot",
   encode(message: CardanoTransactionSnapshot, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.merkle_root !== "") {
       writer.uint32(10).string(message.merkle_root);
@@ -1080,7 +1080,7 @@ function createBaseMithrilCertificate(): MithrilCertificate {
   };
 }
 export const MithrilCertificate = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilCertificate",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilCertificate",
   encode(message: MithrilCertificate, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.hash !== "") {
       writer.uint32(10).string(message.hash);
@@ -1231,7 +1231,7 @@ function createBaseCertificateMetadata(): CertificateMetadata {
   };
 }
 export const CertificateMetadata = {
-  typeUrl: "/ibc.clients.mithril.v1.CertificateMetadata",
+  typeUrl: "/ibc.lightclients.mithril.v1.CertificateMetadata",
   encode(message: CertificateMetadata, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.network !== "") {
       writer.uint32(10).string(message.network);
@@ -1334,7 +1334,7 @@ function createBaseSignerWithStake(): SignerWithStake {
   };
 }
 export const SignerWithStake = {
-  typeUrl: "/ibc.clients.mithril.v1.SignerWithStake",
+  typeUrl: "/ibc.lightclients.mithril.v1.SignerWithStake",
   encode(message: SignerWithStake, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.party_id !== "") {
       writer.uint32(10).string(message.party_id);
@@ -1391,7 +1391,7 @@ function createBaseProtocolMessage(): ProtocolMessage {
   };
 }
 export const ProtocolMessage = {
-  typeUrl: "/ibc.clients.mithril.v1.ProtocolMessage",
+  typeUrl: "/ibc.lightclients.mithril.v1.ProtocolMessage",
   encode(message: ProtocolMessage, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     for (const v of message.message_parts) {
       MessagePart.encode(v!, writer.uint32(10).fork()).ldelim();
@@ -1443,7 +1443,7 @@ function createBaseMessagePart(): MessagePart {
   };
 }
 export const MessagePart = {
-  typeUrl: "/ibc.clients.mithril.v1.MessagePart",
+  typeUrl: "/ibc.lightclients.mithril.v1.MessagePart",
   encode(message: MessagePart, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.protocol_message_part_key !== 0) {
       writer.uint32(8).int32(message.protocol_message_part_key);
@@ -1504,7 +1504,7 @@ function createBaseMithrilProtocolParameters(): MithrilProtocolParameters {
   };
 }
 export const MithrilProtocolParameters = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilProtocolParameters",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilProtocolParameters",
   encode(message: MithrilProtocolParameters, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.k !== BigInt(0)) {
       writer.uint32(8).uint64(message.k);
@@ -1576,7 +1576,7 @@ function createBaseProtocolGenesisSignature(): ProtocolGenesisSignature {
   };
 }
 export const ProtocolGenesisSignature = {
-  typeUrl: "/ibc.clients.mithril.v1.ProtocolGenesisSignature",
+  typeUrl: "/ibc.lightclients.mithril.v1.ProtocolGenesisSignature",
   encode(message: ProtocolGenesisSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.signature.length !== 0) {
       writer.uint32(10).bytes(message.signature);
@@ -1630,7 +1630,7 @@ function createBaseSignedEntityType(): SignedEntityType {
   };
 }
 export const SignedEntityType = {
-  typeUrl: "/ibc.clients.mithril.v1.SignedEntityType",
+  typeUrl: "/ibc.lightclients.mithril.v1.SignedEntityType",
   encode(message: SignedEntityType, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.mithril_stake_distribution !== undefined) {
       MithrilStakeDistribution.encode(message.mithril_stake_distribution, writer.uint32(10).fork()).ldelim();
@@ -1738,7 +1738,7 @@ function createBaseCardanoStakeDistribution(): CardanoStakeDistribution {
   };
 }
 export const CardanoStakeDistribution = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoStakeDistribution",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoStakeDistribution",
   encode(message: CardanoStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -1788,7 +1788,7 @@ function createBaseCardanoImmutableFilesFull(): CardanoImmutableFilesFull {
   };
 }
 export const CardanoImmutableFilesFull = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoImmutableFilesFull",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoImmutableFilesFull",
   encode(message: CardanoImmutableFilesFull, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.beacon !== undefined) {
       CardanoDbBeacon.encode(message.beacon, writer.uint32(10).fork()).ldelim();
@@ -1840,7 +1840,7 @@ function createBaseCardanoTransactions(): CardanoTransactions {
   };
 }
 export const CardanoTransactions = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoTransactions",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactions",
   encode(message: CardanoTransactions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -1901,7 +1901,7 @@ function createBaseCardanoDbBeacon(): CardanoDbBeacon {
   };
 }
 export const CardanoDbBeacon = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoDbBeacon",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoDbBeacon",
   encode(message: CardanoDbBeacon, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.network !== "") {
       writer.uint32(10).string(message.network);
@@ -1972,7 +1972,7 @@ function createBaseFraction(): Fraction {
   };
 }
 export const Fraction = {
-  typeUrl: "/ibc.clients.mithril.v1.Fraction",
+  typeUrl: "/ibc.lightclients.mithril.v1.Fraction",
   encode(message: Fraction, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.numerator !== BigInt(0)) {
       writer.uint32(8).uint64(message.numerator);

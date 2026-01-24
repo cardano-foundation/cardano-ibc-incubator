@@ -403,7 +403,7 @@ test conn_open_ack_succeed() {
   let counterparty_client_state_bz =
     mithril_pb.marshal_for_any_client_state(
       AnyMithrilClientState {
-        type_url: "/ibc.clients.mithril.v1.ClientState",
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd
@@ -608,7 +608,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
   let counterparty_client_state_bz =
     mithril_pb.marshal_for_any_client_state(
       AnyMithrilClientState {
-        type_url: "/ibc.clients.mithril.v1.ClientState",
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd

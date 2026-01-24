@@ -14,7 +14,7 @@ import {
   MsgConnectionOpenTry,
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
-import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ConnectionOpenTryOperator } from '../dto/connection/connection-open-try-operator.dto';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';

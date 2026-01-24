@@ -12,7 +12,7 @@ const (
 	// like `08-cardano-0`.
 	//
 	// Note: this string is independent from the protobuf type URLs for the client
-	// state / header, which remain under `ibc.clients.mithril.v1.*`.
+	// state / header, which remain under `ibc.lightclients.mithril.v1.*`.
 	ModuleName                           = "08-cardano"
 	KeyFirstCertificateInEpochPrefix     = "fcInEpoch"
 	KeyFirstCertificateMsdInEpochPrefix  = "fcMsdInEpoch"

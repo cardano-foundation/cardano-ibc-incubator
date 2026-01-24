@@ -214,6 +214,13 @@ export function clientStatePath(clientId: string): string {
   return `${KEY_CLIENT_PREFIX}/${clientId}/${KEY_CLIENT_STATE}`;
 }
 
+/**
+ * Legacy helper for the old Ouroboros/Cardano light client approach.
+ *
+ * The production Cosmos-side Cardano client is the Mithril client. This function is kept only to
+ * avoid losing historical work while the codebase is being consolidated; it is not used by the
+ * current Hermes ↔ Gateway relaying flow.
+ */
 export function getCardanoClientStateForVerifyProofRedeemer(
   cardanoClientState: CardanoClientState,
 ): CardanoClientState {

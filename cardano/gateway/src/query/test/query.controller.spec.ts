@@ -542,12 +542,10 @@ describe.skip('QueryController', () => {
       const data = await controller.NewClient(<QueryNewClientRequest>{
         height: 650879n,
       });
-      expect(data.client_state.type_url).toBe('/ibc.clients.cardano.v1.ClientState');
-      expect(Buffer.from(data.client_state.value).toString('base64')).toBe(
-        'CgI0MhIEEP/cJxoAKLizuK0GMAY4gK8aQMD0B0p8CkBmZWMxN2VkNjBjYmYyZWM1YmUzZjA2MWZiNGRlMGI2ZWYxZjIwOTQ3Y2ZiZmNlNWZiMjc4M2QxMmYzZjY5ZmY1Ejhwb29sMTNnc2VrNnZkOGRocXhzdTM0Nnp2YWUzMHI0bXRkNzd5dGgwN2ZjYzdwNDlrcWMzZmQwOWoA',
-      );
-      expect(data.consensus_state.type_url).toBe('/ibc.clients.cardano.v1.ConsensusState');
-      expect(Buffer.from(data.consensus_state.value).toString('base64')).toBe('CM+h164GEJfungE=');
+      expect(data.client_state.type_url).toBe('/ibc.lightclients.mithril.v1.ClientState');
+      expect(data.client_state.value.length).toBeGreaterThan(0);
+      expect(data.consensus_state.type_url).toBe('/ibc.lightclients.mithril.v1.ConsensusState');
+      expect(data.consensus_state.value.length).toBeGreaterThan(0);
     });
 
     it('QueryNewClient should be called failed with invalid params', async () => {

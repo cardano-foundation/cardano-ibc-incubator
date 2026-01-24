@@ -14,55 +14,13 @@ ignite chain serve -y
 
 Your blockchain in development can be configured with `config.yml`.
 
-### Call Create client
+### IBC client type
 
-```sh
-sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
+This chain tracks Cardano via a custom IBC light client (client type `08-cardano`) using protobuf types under `ibc.lightclients.mithril.v1` (see `cosmos/sidechain/proto/ibc/lightclients/mithril/v1/mithril.proto`).
 
-sidechaind tx ibc client create ./exampleCall/client.json ./exampleCall/consen.json --from `./sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --dry-run
+In the repo’s standard developer workflow, Hermes drives client creation/updates and handshake/packet relaying end-to-end via the Gateway and Cardano devnet. For that reason, we do not keep static JSON fixtures for Mithril client creation in this folder, since the values are deployment-specific (for example, the HostState NFT identifiers and the certified HostState transaction evidence).
 
-Update client
-Estimate gas : sidechaind tx ibc client update "08-cardano-0" ./exampleCall/updateClient.json --from `sidechaind keys show --address alice` --home ~/.sidechain/ --chain-id sidechain --dry-run
-
-then append `--gas XXX` to the command below
-
-Exec : sidechaind tx ibc client update "08-cardano-0" ./exampleCall/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
-
-Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states" -H  "accept: application/json"
-
-```
-
-### Test Misbehaviour Client
-
-```sh
-Create new client:
-sidechaind tx ibc client create ./exampleCall/testMisbehaviour/client.json ./exampleCall/testMisbehaviour/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
-
-will return:
-...
-tx: null
-txhash: <TX_HASH_HERE>
-...
-
-
-Query created client using: sidechaind q tx <TX_HASH_HERE> | grep "08-cardano-"
-will return:
-...
-    value: <CLIENT_ID_HERE>
-...
-
-Update client, using CLIENT_ID from above:
-sidechaind tx ibc client update <CLIENT_ID_HERE> ./exampleCall/testMisbehaviour/updateClient.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
-
-Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states/<CLIENT_ID_HERE>" -H  "accept: application/json"
-
-Now submit misbehavior:
-sidechaind tx ibc client update <CLIENT_ID_HERE> ./exampleCall/testMisbehaviour/misbehavior.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
-
-Verify: curl -X GET "http://localhost:1317/ibc/core/client/v1/client_states/<CLIENT_ID_HERE>" -H  "accept: application/json"
-Notice that *frozen_height* of this client changed from 0 to 1, that mark this client being frozen
-
-```
+Legacy Ouroboros/Cardano client JSON examples are kept under `cosmos/sidechain/exampleCall/legacy-ouroboros/` for reference only and are not part of the production flow.
 
 ## Debug with vs code
 
@@ -92,22 +50,4 @@ Stop the running script above, then wait for about 100 blocks (~2 mins), then ch
 
 curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
 
-```
-
-### Test call update client with de/register Cert
-
-```sh
-sidechaind tx ibc client create ./exampleCall/testSPO/client.json ./exampleCall/testSPO/consen.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y
-
-Update client
-
-Replace "08-cardano-0" with client-id we\'ve created above
-
-Exec with regis cert: sidechaind tx ibc client update "08-cardano-0" ./exampleCall/testSPO/regisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
-
-Exec with deregis cert: sidechaind tx ibc client update "08-cardano-0" ./exampleCall/testSPO/deregisSPO.json --from alice --home ~/.sidechain/ --chain-id sidechain --keyring-backend=test -y --gas 360000
-
-Verify: curl -X GET "http://localhost:1317/cosmos/tx/v1beta1/txs/{tx id got from exec}" -H  "accept: application/json"
-
-Check if there is a key: register-cert or unregister-cert
 ```

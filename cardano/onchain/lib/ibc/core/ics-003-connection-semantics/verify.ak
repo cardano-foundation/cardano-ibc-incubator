@@ -78,7 +78,7 @@ pub fn verify_client_state(
     merkle_path,
     mithril_pb.marshal_for_any_client_state(
       AnyMithrilClientState {
-        type_url: "/ibc.clients.mithril.v1.ClientState",
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd,

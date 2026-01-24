@@ -46,7 +46,7 @@ import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build
 import { clientStatePath } from '~@/shared/helpers/client-state';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
-import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import {
   ConnectionOpenAckOperator,
   ConnectionOpenConfirmOperator,
@@ -719,7 +719,7 @@ export class ConnectionService {
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.clients.mithril.v1.ClientState',
+      type_url: '/ibc.lightclients.mithril.v1.ClientState',
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
 

@@ -2,6 +2,8 @@ import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ou
 import { BlockDto } from '../../query/dtos/block.dto';
 import { BlockHeaderDto } from '../modules/mini-protocals/dtos/block-header.dto';
 
+// Legacy helper for the old Ouroboros/Cardano light client approach.
+// Not part of the current production relaying flow (which uses Mithril headers + ICS-23 proofs).
 export function normalizeBlockDataFromOuroboros(
   blockDataRes: BlockDto,
   blockHeaderDto?: BlockHeaderDto | null,

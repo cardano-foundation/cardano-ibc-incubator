@@ -162,7 +162,7 @@ describe.skip('TxController - Client', () => {
       }
     });
     it('should return error if consensus_state can not be decoded', async () => {
-      const expectedMessage = '{"error":"Error decoding consensus state ouroboros:';
+      const expectedMessage = '{"error":"Error decoding consensus state:';
       try {
         const data: MsgCreateClientResponse = await controller.CreateClient({
           ...request,

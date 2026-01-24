@@ -1,6 +1,6 @@
 import { MithrilClientState } from '../types/mithril';
 import { convertHex2String, fromText } from './hex';
-import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {
   if (!clientStateMsg.latest_height) {
@@ -26,6 +26,10 @@ export function initializeMithrilClientState(clientStateMsg: ClientStateMithril)
     host_state_nft_token_name: Buffer.from(clientStateMsg.host_state_nft_token_name).toString('hex'),
     /** Latest height the client was updated to */
     latest_height: {
+      // Height note:
+      // For Mithril, the "height" carried through IBC is not a Cardano slot number.
+      // We currently treat `revision_height` as the Mithril transaction snapshot `block_number`
+      // (see `QueryLatestHeight` / `QueryNewClient` in the Gateway query service).
       revisionNumber: clientStateMsg.latest_height.revision_number,
       revisionHeight: clientStateMsg.latest_height.revision_height,
     },
