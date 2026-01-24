@@ -43,6 +43,35 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 
 The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem.
 
+#### Working with the Hermes Submodule
+
+```bash
+# Initial clone (includes submodule)
+git clone --recurse-submodules https://github.com/webisoftSoftware/cardano-ibc-official.git
+
+# Or if already cloned, initialize the submodule
+git submodule update --init --recursive
+
+# Update submodule to latest
+cd relayer
+git pull origin feat/cardano-integration
+
+# Make changes to Hermes
+cd relayer
+# ... make changes ...
+git add -A
+git commit -m "feat: your changes"
+git push origin feat/cardano-integration
+
+# Update main repo to point to new submodule commit
+cd ..
+git add relayer
+git commit -m "chore: update Hermes submodule to latest"
+```
+
+This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
+
+
 #### Hermes Configuration
 
 > [!CAUTION]

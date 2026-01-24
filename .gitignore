@@ -48,6 +48,7 @@ chains/mithrils/data
 cardano-cli
 cardano-node
 
+.cursor/
 chains/summit-demo/
 relayer/.config
 

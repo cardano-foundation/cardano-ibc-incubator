@@ -16,7 +16,9 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
-// VerifyClientMessage checks if the clientMessage is of type MithrilHeader or Misbehaviour and verifies the message
+// VerifyClientMessage verifies a ClientMessage (Header, Misbehaviour, or batch update).
+// It handles each type appropriately and returns an error if verification fails.
+// Calls to CheckForMisbehaviour, UpdateState, and UpdateStateOnMisbehaviour assume the content has been verified.
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
 	clientMsg exported.ClientMessage,
@@ -332,6 +334,8 @@ func (cs *ClientState) verifyHostStateCommitmentEvidence(header *MithrilHeader) 
 	return nil
 }
 
+// UpdateState updates and stores the ClientState and corresponding ConsensusState for the IBC client.
+// It returns a list of updated heights.
 func (cs *ClientState) UpdateState(
 	ctx sdk.Context,
 	cdc codec.BinaryCodec,
@@ -422,8 +426,8 @@ func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.Binar
 	}
 }
 
-// UpdateStateOnMisbehaviour updates state upon misbehaviour, freezing the ClientState. This method should only be called when misbehaviour is detected
-// as it does not perform any misbehaviour checks.
+// UpdateStateOnMisbehaviour performs appropriate state changes on the client given that misbehaviour has been detected and verified.
+// This method freezes the ClientState and should only be called after misbehaviour is confirmed.
 func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage) {
 	// cs.FrozenHeight = &FrozenHeight
 	clientStore.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, &cs))
