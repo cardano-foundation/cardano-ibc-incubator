@@ -34,7 +34,7 @@ services:
       - DB_DIRECTORY=/data/db
       - SNAPSHOT_DIRECTORY=/mithril/aggregator
       - SERVER_PORT=8080
-      - SIGNED_ENTITY_TYPES=CardanoTransactions
+      - SIGNED_ENTITY_TYPES=MithrilStakeDistribution,CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=5
@@ -46,6 +46,15 @@ services:
       ]
 
   mithril-aggregator-genesis:
+    # One-off bootstrap job for local devnet:
+    #
+    # The aggregator can be "up" (serving 2xx responses) while still having zero certificates,
+    # in which case all artifact endpoints return an empty array (`[]`) and IBC tests that depend
+    # on Mithril certification will stall or fail.
+    #
+    # `genesis bootstrap` seeds the first certificate chain using GENESIS_* keys from Caribic
+    # config. If GENESIS_* keys change without cleaning the mounted mithril store directory, the
+    # aggregator may report certificate-chain/AVK mismatch errors and never produce artifacts.
     image: ${MITHRIL_AGGREGATOR_IMAGE}
     user: "${UID:-1000}:${GID:-1000}"
     profiles:
@@ -80,7 +89,7 @@ services:
       - DB_DIRECTORY=/data/db
       - SNAPSHOT_DIRECTORY=/mithril/aggregator
       - SERVER_PORT=8080
-      - SIGNED_ENTITY_TYPES=CardanoTransactions
+      - SIGNED_ENTITY_TYPES=MithrilStakeDistribution,CardanoTransactions
       - CURRENT_ERA_EPOCH=0
       - ERA_ADAPTER_TYPE=bootstrap
       - CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP=5
@@ -114,7 +123,7 @@ services:
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
       - KES_SECRET_KEY_PATH=/data/kes.skey
       - OPERATIONAL_CERTIFICATE_PATH=/data/opcert.cert
-      - SIGNED_ENTITY_TYPES=CardanoTransactions
+      - SIGNED_ENTITY_TYPES=MithrilStakeDistribution,CardanoTransactions
     command:
       [
         "-vvv"
@@ -143,7 +152,7 @@ services:
       - CARDANO_CLI_PATH=/app/bin/cardano-cli
       - KES_SECRET_KEY_PATH=/data/kes.skey
       - OPERATIONAL_CERTIFICATE_PATH=/data/opcert.cert
-      - SIGNED_ENTITY_TYPES=CardanoTransactions
+      - SIGNED_ENTITY_TYPES=MithrilStakeDistribution,CardanoTransactions
     command:
       [
         "-vvv"

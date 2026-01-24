@@ -101,7 +101,7 @@ account_prefix = 'cosmos'
 key_name = 'sidechain-relayer'
 store_prefix = 'ibc'
 default_gas = 200000
-max_gas = 800000
+max_gas = 5000000
 gas_price = { price = 0.025, denom = 'stake' }
 gas_multiplier = 1.1
 max_msg_num = 30

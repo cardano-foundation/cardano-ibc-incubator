@@ -1187,6 +1187,21 @@ pub fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
     cardano_epoch_on_mithril_start: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Mithril has two practical prerequisites on a fresh local Cardano devnet:
+    //
+    // 1) Cardano immutable files must exist.
+    //    The aggregator/signer timepoint logic reads immutable files; if started too early it can
+    //    error with messages like "no immutable file was returned".
+    //
+    // 2) A genesis certificate chain must exist.
+    //    The aggregator serves `/aggregator` even when it has zero certificates, but in that
+    //    state it will never be able to certify artifacts, and the artifact endpoints will keep
+    //    returning `[]`. The `genesis bootstrap` job seeds the first certificate using the genesis
+    //    keys in `~/.caribic/config.json`.
+    //
+    // After bootstrap, the running aggregator/signer processes should start producing stake
+    // distributions and Cardano transaction snapshots. If they remain empty, a Mithril restart
+    // can be required to pick up the seeded certificate chain cleanly.
     let mithril_dir = project_root_dir.join("chains/mithrils");
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
@@ -1279,6 +1294,12 @@ pub fn wait_and_start_mithril_genesis(
         mithril_genesis_env.push((key, value.as_str()));
     }
 
+    // Seed the first Mithril certificate chain.
+    //
+    // If Mithril was previously started with different genesis keys and the data directory was
+    // not cleaned, the aggregator may report certificate-chain/AVK mismatches. In that case,
+    // restart Mithril with a clean data directory so the on-disk store matches the configured
+    // keys.
     execute_script(
         &mithril_script_dir,
         "docker",

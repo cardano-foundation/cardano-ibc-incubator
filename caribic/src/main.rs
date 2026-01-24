@@ -443,6 +443,19 @@ async fn main() {
                     &balance.to_string().as_str()
                 ));
 
+                if target == StartTarget::All {
+                    // Start the local packet-forwarding chain (Cosmos). This is required for
+                    // `caribic test`, which exercises Hermes-driven handshakes against a local
+                    // Cosmos chain rather than relying on external networks.
+                    match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                        Ok(_) => logger::log("PASS: Packet-forwarding chain started (Cosmos sidechain on :26657)"),
+                        Err(error) => bridge_down_with_error(&format!(
+                            "ERROR: Failed to start packet-forwarding chain: {}",
+                            error
+                        )),
+                    }
+                }
+
                 // Deploy Contracts
                 match deploy_contracts(&project_root_path, clean).await {
                     Ok(_) => logger::log("PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)"),
