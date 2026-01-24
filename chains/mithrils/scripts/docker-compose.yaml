@@ -1,4 +1,12 @@
 services:
+  # Devnet-only Mithril infrastructure.
+  #
+  # In local devnet we run a Mithril aggregator and signers so that certificates, transaction snapshots,
+  # and inclusion proofs are produced for the local Cardano chain.
+  #
+  # In production deployments on public Cardano networks, the IBC stack is not intended to run its own
+  # Mithril aggregator/signers. Instead it should consume an existing aggregator endpoint for the target
+  # Cardano network and verify the returned certificates/proofs.
   mithril-aggregator:
     image: ${MITHRIL_AGGREGATOR_IMAGE}
     user: "${UID:-1000}:${GID:-1000}"

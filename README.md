@@ -140,6 +140,13 @@ TO-DO: Prior to BuilderFest 2026 we need to plan and document architecture/OS-sp
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
 
+Mithril note:
+In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
+
+Mithril transaction snapshots are periodic checkpoints, not “one certificate per Cardano block”. In this repository, the Mithril “height” used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as “latest snapshot only”, so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`.
+
+In production deployments on public Cardano networks, the IBC stack is not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer are configured to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verifies Mithril certificates and proofs and does not need to trust the aggregator as an authority (it is a data source and availability dependency).
+
 ```sh
 cd caribic
 cargo run start network 
