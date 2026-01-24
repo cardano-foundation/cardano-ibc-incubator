@@ -131,7 +131,7 @@ cargo run start bridge
 ### Testing against Cheqd / Osmosis
 
 > [!IMPORTANT]
-> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano` / `2000-cardano-mithril`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
+> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
 
 ### Stopping the services
 

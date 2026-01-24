@@ -138,6 +138,19 @@ export interface MithrilHeader {
   transaction_snapshot?: CardanoTransactionSnapshot;
   transaction_snapshot_certificate?: MithrilCertificate;
   /**
+   * Optional chain of previous Mithril stake distribution certificates.
+   *
+   * The Mithril stake distribution certificate of epoch N links to the previous epoch’s
+   * certificate via `previous_hash`. If the light client is updated after missing one or
+   * more epochs, it must be able to verify and store those missing certificates to keep
+   * the certificate chain verifiable.
+   *
+   * This list should include the certificates for the epochs immediately preceding
+   * `mithril_stake_distribution_certificate` (field 2). It MUST NOT include the current
+   * epoch’s certificate (field 2). The verifier may ignore extra entries.
+   */
+  previous_mithril_stake_distribution_certificates: MithrilCertificate[];
+  /**
    * HostState commitment evidence for this height.
    *
    * The goal is to let the counterparty verify:
@@ -646,6 +659,7 @@ function createBaseMithrilHeader(): MithrilHeader {
     mithril_stake_distribution_certificate: undefined,
     transaction_snapshot: undefined,
     transaction_snapshot_certificate: undefined,
+    previous_mithril_stake_distribution_certificates: [],
     host_state_tx_hash: "",
     host_state_tx_body_cbor: new Uint8Array(),
     host_state_tx_output_index: 0,
@@ -669,6 +683,9 @@ export const MithrilHeader = {
     }
     if (message.transaction_snapshot_certificate !== undefined) {
       MithrilCertificate.encode(message.transaction_snapshot_certificate, writer.uint32(34).fork()).ldelim();
+    }
+    for (const v of message.previous_mithril_stake_distribution_certificates) {
+      MithrilCertificate.encode(v!, writer.uint32(74).fork()).ldelim();
     }
     if (message.host_state_tx_hash !== "") {
       writer.uint32(42).string(message.host_state_tx_hash);
@@ -703,6 +720,11 @@ export const MithrilHeader = {
         case 4:
           message.transaction_snapshot_certificate = MithrilCertificate.decode(reader, reader.uint32());
           break;
+        case 9:
+          message.previous_mithril_stake_distribution_certificates.push(
+            MithrilCertificate.decode(reader, reader.uint32()),
+          );
+          break;
         case 5:
           message.host_state_tx_hash = reader.string();
           break;
@@ -736,6 +758,11 @@ export const MithrilHeader = {
       obj.transaction_snapshot_certificate = MithrilCertificate.fromJSON(
         object.transaction_snapshot_certificate,
       );
+    if (Array.isArray(object?.previous_mithril_stake_distribution_certificates))
+      obj.previous_mithril_stake_distribution_certificates =
+        object.previous_mithril_stake_distribution_certificates.map((e: any) =>
+          MithrilCertificate.fromJSON(e),
+        );
     if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
     if (isSet(object.host_state_tx_body_cbor))
       obj.host_state_tx_body_cbor = bytesFromBase64(object.host_state_tx_body_cbor);
@@ -763,6 +790,14 @@ export const MithrilHeader = {
       (obj.transaction_snapshot_certificate = message.transaction_snapshot_certificate
         ? MithrilCertificate.toJSON(message.transaction_snapshot_certificate)
         : undefined);
+    if (message.previous_mithril_stake_distribution_certificates) {
+      obj.previous_mithril_stake_distribution_certificates =
+        message.previous_mithril_stake_distribution_certificates.map((e) =>
+          e ? MithrilCertificate.toJSON(e) : undefined,
+        );
+    } else {
+      obj.previous_mithril_stake_distribution_certificates = [];
+    }
     message.host_state_tx_hash !== undefined && (obj.host_state_tx_hash = message.host_state_tx_hash);
     message.host_state_tx_body_cbor !== undefined &&
       (obj.host_state_tx_body_cbor = base64FromBytes(
@@ -802,6 +837,10 @@ export const MithrilHeader = {
         object.transaction_snapshot_certificate,
       );
     }
+    message.previous_mithril_stake_distribution_certificates =
+      object.previous_mithril_stake_distribution_certificates?.map((e) =>
+        MithrilCertificate.fromPartial(e),
+      ) || [];
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
     message.host_state_tx_body_cbor = object.host_state_tx_body_cbor ?? new Uint8Array();
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;

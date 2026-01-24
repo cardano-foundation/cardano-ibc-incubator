@@ -36,7 +36,7 @@ func main() {
 
 	nextClientSequenceBytes := queryABCI(ctx, pathStore, []byte("nextClientSequence"), defaultOpts)
 	clientSeq := sdk.BigEndianToUint64(nextClientSequenceBytes)
-	clientId := "099-cardano-" + strconv.Itoa(int(clientSeq-1))
+	clientId := "08-cardano-" + strconv.Itoa(int(clientSeq-1))
 	fmt.Printf("ClientSeq: %v\n", clientSeq)
 
 	epochNumber := GetLatestEpochNo(clientId)

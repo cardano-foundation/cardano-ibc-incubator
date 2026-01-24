@@ -7,9 +7,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	// Import the existing Cardano CBOR datum decoders/comparators so we can
+	// semantically compare Cardano-committed values (CBOR / PlutusData) with the
+	// protobuf-encoded values produced by ibc-go.
+	//
+	// The Cardano commitment scheme commits to `aiken/cbor.serialise(...)` bytes,
+	// not to protobuf bytes. The light client is responsible for bridging that
+	// encoding difference during verification.
+	cardanodatum "sidechain/x/clients/mithril/cardanodatum"
+
+	proto "github.com/cosmos/gogoproto/proto"
+	gogotypes "github.com/cosmos/gogoproto/types"
+	connectiontypes "github.com/cosmos/ibc-go/v8/modules/core/03-connection/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
+	tmtypes "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 	ics23 "github.com/cosmos/ics23/go"
+	"github.com/fxamacker/cbor/v2"
 )
 
 var (
@@ -42,11 +57,25 @@ func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes 
 	if len(exist.Key) > 0 && !bytes.Equal(exist.Key, key) {
 		return fmt.Errorf("existence proof key mismatch")
 	}
+
+	// Cardano commits to CBOR/PlutusData bytes for many IBC values (eg. connection end,
+	// tendermint client state, tendermint consensus state). ibc-go constructs the
+	// expected `value` using protobuf encoding, so byte-for-byte equality is not expected.
+	//
+	// If the proof carries a value, we (a) semantically compare it to the expected protobuf
+	// value, and (b) use the proof’s value bytes as the committed leaf when recomputing the root.
 	if len(exist.Value) > 0 && !bytes.Equal(exist.Value, value) {
-		return fmt.Errorf("existence proof value mismatch")
+		if err := verifyCardanoValueMatchesExpected(key, value, exist.Value); err != nil {
+			return err
+		}
 	}
 
-	computed, err := computeRootFromProofPath(key, value, exist.Path)
+	committedValue := value
+	if len(exist.Value) > 0 {
+		committedValue = exist.Value
+	}
+
+	computed, err := computeRootFromProofPath(key, committedValue, exist.Path)
 	if err != nil {
 		return err
 	}
@@ -56,6 +85,77 @@ func VerifyIbcStateMembership(root []byte, key []byte, value []byte, proofBytes 
 	}
 
 	return nil
+}
+
+func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committedValue []byte) error {
+	keyStr := string(key)
+
+	switch {
+	case strings.HasPrefix(keyStr, "connections/"):
+		var expected connectiontypes.ConnectionEnd
+		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
+			return fmt.Errorf("failed to decode expected ConnectionEnd protobuf: %w", err)
+		}
+		var committed cardanodatum.ConnectionEndDatum
+		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+			return fmt.Errorf("failed to decode committed ConnectionEnd CBOR: %w", err)
+		}
+		if err := committed.Cmp(expected); err != nil {
+			return err
+		}
+		return nil
+
+	case strings.HasPrefix(keyStr, "clients/") && strings.HasSuffix(keyStr, "/clientState"):
+		// On Cosmos chains, IBC stores the client state value as a protobuf `Any`
+		// (type_url + value), not as the raw concrete client state bytes.
+		//
+		// Our Cardano commitment scheme commits to the *CBOR datum bytes* for the
+		// concrete client state (no Any wrapper). During verification we therefore:
+		//  1) unwrap the Any from the expected IBC store value
+		//  2) decode the inner Tendermint ClientState protobuf
+		//  3) semantically compare it with the committed CBOR datum
+		var expectedAny gogotypes.Any
+		innerExpectedValue := expectedValue
+		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
+			innerExpectedValue = expectedAny.Value
+		}
+
+		var expected tmtypes.ClientState
+		if err := proto.Unmarshal(innerExpectedValue, &expected); err != nil {
+			return fmt.Errorf("failed to decode expected Tendermint ClientState protobuf: %w", err)
+		}
+		var committed cardanodatum.ClientStateDatum
+		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+			return fmt.Errorf("failed to decode committed Tendermint ClientState CBOR: %w", err)
+		}
+		if err := committed.Cmp(&expected); err != nil {
+			return err
+		}
+		return nil
+
+	case strings.HasPrefix(keyStr, "clients/") && strings.Contains(keyStr, "/consensusStates/"):
+		// Consensus states are also stored as a protobuf `Any` value in the IBC store.
+		var expectedAny gogotypes.Any
+		innerExpectedValue := expectedValue
+		if err := proto.Unmarshal(expectedValue, &expectedAny); err == nil && len(expectedAny.Value) > 0 {
+			innerExpectedValue = expectedAny.Value
+		}
+
+		var expected tmtypes.ConsensusState
+		if err := proto.Unmarshal(innerExpectedValue, &expected); err != nil {
+			return fmt.Errorf("failed to decode expected Tendermint ConsensusState protobuf: %w", err)
+		}
+		var committed cardanodatum.ConsensusStateDatum
+		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+			return fmt.Errorf("failed to decode committed Tendermint ConsensusState CBOR: %w", err)
+		}
+		if err := committed.Cmp(&expected); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return fmt.Errorf("existence proof value mismatch")
 }
 
 // VerifyIbcStateNonMembership verifies that `key` is absent under `root`.

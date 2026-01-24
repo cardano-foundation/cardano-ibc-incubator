@@ -80,8 +80,16 @@ func (cs ClientState) Status(
 	clientStore storetypes.KVStore,
 	cdc codec.BinaryCodec,
 ) exported.Status {
-	if !cs.FrozenHeight.IsZero() {
+	// FrozenHeight is optional in protobuf and may be omitted (nil) in some client
+	// creation flows. Treat a missing height as "not frozen" instead of panicking.
+	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return exported.Frozen
+	}
+
+	// LatestHeight is required for any meaningful status check. If it is missing,
+	// we cannot locate a consensus state and must treat the client as expired.
+	if cs.LatestHeight == nil {
+		return exported.Expired
 	}
 
 	// get latest consensus state from clientStore to check for expiry
@@ -121,6 +129,9 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
 	}
 
+	if cs.LatestHeight == nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height cannot be nil")
+	}
 	if cs.LatestHeight.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height revision height cannot be zero")
 	}
@@ -142,6 +153,9 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_token_name must not be empty")
 	}
 
+	if cs.ProtocolParameters == nil {
+		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, "protocol parameters must not be nil")
+	}
 	if err := validateProtocolParameters(cs.ProtocolParameters); err != nil {
 		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, err.Error())
 	}
@@ -157,6 +171,9 @@ func (cs ClientState) Validate() error {
 }
 
 func validateProtocolParameters(pm *MithrilProtocolParameters) error {
+	if pm == nil {
+		return fmt.Errorf("protocol parameters must not be nil")
+	}
 	if pm.K == 0 {
 		return errorsmod.Wrapf(ErrInvalidNumberRequiredSignatures, "number of required signatures should be greater than 0")
 	}
@@ -292,7 +309,32 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	// IBC typically passes paths like ["ibc", "clients/<id>/clientState"].
 	// The Cardano `ibc_state_root` commits to the IBC key itself (second segment),
 	// not the store prefix.
-	return []byte(mpath.KeyPath[len(mpath.KeyPath)-1]), nil
+	//
+	// Height note (IBC vs Cardano)
+	// - Canonical IBC consensus state keys are formatted as:
+	//     `clients/<client-id>/consensusStates/<revisionNumber>-<revisionHeight>`
+	// - The current Cardano commitment scheme (and Gateway tree) uses only the
+	//   `revisionHeight` segment:
+	//     `clients/<client-id>/consensusStates/<revisionHeight>`
+	//
+	// Until Cardano switches to the canonical key format, we bridge the mismatch
+	// here so the light client verifies against the key actually committed under
+	// `ibc_state_root`.
+	key := mpath.KeyPath[len(mpath.KeyPath)-1]
+	if strings.Contains(key, "/consensusStates/") {
+		parts := strings.SplitN(key, "/consensusStates/", 2)
+		if len(parts) == 2 {
+			heightPart := parts[1]
+			if revParts := strings.SplitN(heightPart, "-", 2); len(revParts) == 2 {
+				// Expected pattern is "<revisionNumber>-<revisionHeight>".
+				// If it matches, drop the revisionNumber.
+				if revParts[0] != "" && revParts[1] != "" {
+					key = parts[0] + "/consensusStates/" + revParts[1]
+				}
+			}
+		}
+	}
+	return []byte(key), nil
 }
 
 // verifyDelayPeriodPassed ensures the packet delay period has passed since the consensus state at `height`

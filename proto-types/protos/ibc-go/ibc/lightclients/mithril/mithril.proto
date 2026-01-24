@@ -94,6 +94,18 @@ message MithrilHeader {
 
   MithrilCertificate transaction_snapshot_certificate = 4;
 
+  // Optional chain of previous Mithril stake distribution certificates.
+  //
+  // The Mithril stake distribution certificate of epoch N links to the previous epoch’s
+  // certificate via `previous_hash`. If the light client is updated after missing one or
+  // more epochs, it must be able to verify and store those missing certificates to keep
+  // the certificate chain verifiable.
+  //
+  // This list should include the certificates for the epochs immediately preceding
+  // `mithril_stake_distribution_certificate` (field 2). It MUST NOT include the current
+  // epoch’s certificate (field 2). The verifier may ignore extra entries.
+  repeated MithrilCertificate previous_mithril_stake_distribution_certificates = 9;
+
   // HostState commitment evidence for this height.
   //
   // The goal is to let the counterparty verify:

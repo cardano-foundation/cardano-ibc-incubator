@@ -3,6 +3,7 @@ package mithril
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -47,7 +48,20 @@ func (cs *ClientState) verifyHeader(
 		expectedPreviousCerForTs = firstCertInEpoch
 	} else {
 		if firstCertInPrevEpoch == nilCertificate {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+			// Epoch catch-up: when a client is updated after skipping one or more epochs, the
+			// missing stake distribution certificates must be verified and stored so the
+			// `previous_hash` chain remains contiguous.
+			//
+			// The Gateway supplies a bounded list of prior stake distribution certificates in
+			// `previous_mithril_stake_distribution_certificates` to support this.
+			if err := backfillPreviousStakeDistributionCertificates(clientStore, header.PreviousMithrilStakeDistributionCertificates); err != nil {
+				return err
+			}
+
+			firstCertInPrevEpoch = getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
+			if firstCertInPrevEpoch == nilCertificate {
+				return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+			}
 		}
 		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
 		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
@@ -163,6 +177,84 @@ func (cs *ClientState) verifyHeader(
 	// unauthenticated root and the light client would effectively be trusting the relayer/Gateway.
 	if err := cs.verifyHostStateCommitmentEvidence(header); err != nil {
 		return err
+	}
+
+		return nil
+	}
+
+// backfillPreviousStakeDistributionCertificates verifies and stores missing Mithril stake distribution
+// certificates provided in a MithrilHeader update.
+//
+// The Mithril certificate verifier requires a contiguous chain via `previous_hash`. If the client
+// is updated after missing one or more epochs, we may not have the previous epoch’s certificate in
+// store yet. The Gateway includes prior certificates so the chain can be verified on-chain.
+func backfillPreviousStakeDistributionCertificates(
+	clientStore storetypes.KVStore,
+	certificates []*MithrilCertificate,
+) error {
+	if len(certificates) == 0 {
+		return nil
+	}
+
+	// Work on a copy so we do not mutate the header slice.
+	ordered := make([]*MithrilCertificate, 0, len(certificates))
+	for _, cert := range certificates {
+		if cert != nil {
+			ordered = append(ordered, cert)
+		}
+	}
+
+	// Verify/store from older -> newer.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].Epoch < ordered[j].Epoch
+	})
+
+	nilCertificate := MithrilCertificate{}
+	msdVerifier := &MithrilCertificateVerifier{
+		CertificateRetriever: &MSDCertificateRetriever{
+			ClientStore: clientStore,
+		},
+	}
+
+	for _, cert := range ordered {
+		// If we already stored the first certificate for this epoch, nothing to do.
+		if getFcInEpoch(clientStore, cert.Epoch) != nilCertificate {
+			continue
+		}
+
+		// We can only verify this certificate if its previous certificate is already known.
+		// (It may have been stored at client creation time, or by an earlier iteration of this loop.)
+		if getMSDCertificateWithHash(clientStore, cert.PreviousHash) == nilCertificate {
+			continue
+		}
+
+		msdCertificate, err := FromCertificateProto(cert)
+		if err != nil {
+			return errorsmod.Wrapf(
+				ErrInvalidCertificate,
+				"invalid mithril stake distribution certificate in header chain: %v",
+				err,
+			)
+		}
+
+		protocolMultiSignature, err := FromCertificateSignatureProto(
+			cert.SignedEntityType,
+			cert.MultiSignature,
+			"",
+		)
+		if err != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril stake distribution certificate cannot be parsed: error: %v", err)
+		}
+
+		if _, err := msdVerifier.VerifyStandardCertificate(
+			msdCertificate,
+			protocolMultiSignature.MultiSignature.ProtocolMultiSignature,
+		); err != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril stake distribution certificate is invalid: error: %v", err)
+		}
+
+		// Store as the first certificate in its epoch and index by hash.
+		setFcInEpoch(clientStore, *cert, cert.Epoch)
 	}
 
 	return nil
