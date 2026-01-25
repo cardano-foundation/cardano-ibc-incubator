@@ -9,6 +9,8 @@ author: Chinh Nguyen Duc <chinhnd@smartosc.com>, Dat Le Trong <datlt@smartosc.co
 created: 2024-04-24
 ---
 
+> **Caution (Julius Tranquilli, January 2026):** This document was created near the inception of the incubator as an initial prototype. I believe there to be issues with this interpretation of how Mithril works, notably the implementation uses `block_number` for height rather than `immutable_file_number` as described here. As I understand Mithril in January 2026, multiple Mithril certificates can exist on the same immutable file number, which would violate IBC's uniqueness requirement for heights. This document is preserved for other maintainers to review, but should not be treated as an accurate representation of how Mithril works or how this codebase implements it.
+
 ## Synopsis
 
 This specification document describes a Ouroboros light client based on Mithril
