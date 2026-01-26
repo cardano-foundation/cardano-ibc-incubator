@@ -143,7 +143,35 @@ To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
 Mithril note:
 In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
 
-Mithril transaction snapshots are periodic checkpoints, not “one certificate per Cardano block”. In this repository, the Mithril “height” used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as “latest snapshot only”, so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`.
+Mithril transaction snapshots are periodic checkpoints, not one certificate per Cardano block/slot. In this repository, the Mithril "height" used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`.
+
+**Mithril Configuration Parameters:**
+
+The key Mithril aggregator configs that affect snapshot frequency and IBC latency:
+
+| Config | Description |
+|--------|-------------|
+| `RUN_INTERVAL` | Polling interval (ms) - how often the aggregator checks for new blocks to process. This is NOT the snapshot frequency. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | Snapshot frequency - a new `CardanoTransactions` snapshot is created every N blocks. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | How many blocks behind the chain tip snapshots are created. Provides finality buffer. |
+| `PROTOCOL_PARAMETERS__K` | Mithril protocol security parameter (lottery). |
+| `PROTOCOL_PARAMETERS__M` | Mithril protocol quorum parameter. |
+| `PROTOCOL_PARAMETERS__PHI_F` | Mithril protocol stake threshold parameter. |
+
+**Devnet vs Mainnet Values:**
+
+| Config | Devnet | Mainnet (Jan 2026, per @jpraynaud) |
+|--------|--------|-------------------------------------|
+| `RUN_INTERVAL` | 1000 (1s) | 60000 (60s) |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | 5 | 30 |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | 15 | 100 |
+| `PROTOCOL_PARAMETERS__K` | 3 | 2422 |
+| `PROTOCOL_PARAMETERS__M` | 50 | 20973 |
+| `PROTOCOL_PARAMETERS__PHI_F` | 0.67 | 0.2 |
+
+Devnet values are configured in `chains/mithrils/scripts/docker-compose.yaml` for fast local iteration.
+
+This means on mainnet you can expect a new `CardanoTransactions` certification approximately every ~10 minutes (~30 blocks), at 100 blocks behin* the chain tip. At this point in time, with the current architecture for IBC relaying, this translates to a minimum ~10 minute latency between a Cardano transaction being included and being provable to the counterparty chain via Mithril.
 
 In production deployments on public Cardano networks, the IBC stack is not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer are configured to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verifies Mithril certificates and proofs and does not need to trust the aggregator as an authority (it is a data source and availability dependency).
 
