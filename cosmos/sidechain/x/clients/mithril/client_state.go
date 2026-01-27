@@ -1,6 +1,7 @@
 package mithril
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 	cmttypes "github.com/cometbft/cometbft/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
@@ -78,8 +80,16 @@ func (cs ClientState) Status(
 	clientStore storetypes.KVStore,
 	cdc codec.BinaryCodec,
 ) exported.Status {
-	if !cs.FrozenHeight.IsZero() {
+	// FrozenHeight is optional in protobuf and may be omitted (nil) in some client
+	// creation flows. Treat a missing height as "not frozen" instead of panicking.
+	if cs.FrozenHeight != nil && !cs.FrozenHeight.IsZero() {
 		return exported.Frozen
+	}
+
+	// LatestHeight is required for any meaningful status check. If it is missing,
+	// we cannot locate a consensus state and must treat the client as expired.
+	if cs.LatestHeight == nil {
+		return exported.Expired
 	}
 
 	// get latest consensus state from clientStore to check for expiry
@@ -100,8 +110,8 @@ func (cs ClientState) Status(
 // IsExpired returns whether or not the client has passed the trusting period since the last
 // update (in which case no headers are considered valid).
 func (cs ClientState) IsExpired(latestTimestamp uint64, now time.Time) bool {
-	// expirationTime := time.Unix(int64(latestTimestamp), 0).Add(cs.TrustingPeriod)
-	return false
+	expirationTime := time.Unix(0, int64(latestTimestamp)).Add(cs.TrustingPeriod)
+	return !expirationTime.After(now)
 }
 
 // Validate performs a basic validation of the client state fields.
@@ -119,6 +129,9 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidChainID, "chainID is too long; got: %d, max: %d", len(cs.ChainId), cmttypes.MaxChainIDLen)
 	}
 
+	if cs.LatestHeight == nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height cannot be nil")
+	}
 	if cs.LatestHeight.RevisionHeight == 0 {
 		return errorsmod.Wrapf(ErrInvalidMithrilHeaderHeight, "mithril client's latest height revision height cannot be zero")
 	}
@@ -131,6 +144,18 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrap(ErrInvalidTrustingPeriod, "trusting period must be greater than zero")
 	}
 
+	// HostState NFT identification must be present so the light client can locate
+	// the HostState output and extract `ibc_state_root` from certified data.
+	if len(cs.HostStateNftPolicyId) != 28 {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_policy_id must be 28 bytes")
+	}
+	if len(cs.HostStateNftTokenName) == 0 {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_token_name must not be empty")
+	}
+
+	if cs.ProtocolParameters == nil {
+		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, "protocol parameters must not be nil")
+	}
 	if err := validateProtocolParameters(cs.ProtocolParameters); err != nil {
 		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, err.Error())
 	}
@@ -146,6 +171,9 @@ func (cs ClientState) Validate() error {
 }
 
 func validateProtocolParameters(pm *MithrilProtocolParameters) error {
+	if pm == nil {
+		return fmt.Errorf("protocol parameters must not be nil")
+	}
 	if pm.K == 0 {
 		return errorsmod.Wrapf(ErrInvalidNumberRequiredSignatures, "number of required signatures should be greater than 0")
 	}
@@ -169,9 +197,11 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	// copy over all chain-specified fields
 	// and leave custom fields empty
 	return &ClientState{
-		ChainId:      cs.ChainId,
-		LatestHeight: cs.LatestHeight,
-		UpgradePath:  cs.UpgradePath,
+		ChainId:               cs.ChainId,
+		LatestHeight:          cs.LatestHeight,
+		UpgradePath:           cs.UpgradePath,
+		HostStateNftPolicyId:  cs.HostStateNftPolicyId,
+		HostStateNftTokenName: cs.HostStateNftTokenName,
 	}
 }
 
@@ -213,8 +243,25 @@ func (cs ClientState) VerifyMembership(
 	path exported.Path,
 	value []byte,
 ) error {
+	if err := verifyDelayPeriodPassed(ctx, clientStore, height, delayTimePeriod, delayBlockPeriod); err != nil {
+		return err
+	}
+
+	consState, found := GetConsensusState(clientStore, cdc, height)
+	if !found {
+		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
+	}
+
+	key, err := ibcStateKeyFromPath(path)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
+	}
+
+	if err := VerifyIbcStateMembership(consState.IbcStateRoot, key, value, proof); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
+	}
+
 	return nil
-	// return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
 }
 
 // VerifyNonMembership is a generic proof verification method which verifies the absence of a given CommitmentPath at a specified height.
@@ -230,6 +277,93 @@ func (cs ClientState) VerifyNonMembership(
 	proof []byte,
 	path exported.Path,
 ) error {
+	if err := verifyDelayPeriodPassed(ctx, clientStore, height, delayTimePeriod, delayBlockPeriod); err != nil {
+		return err
+	}
+
+	consState, found := GetConsensusState(clientStore, cdc, height)
+	if !found {
+		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height)
+	}
+
+	key, err := ibcStateKeyFromPath(path)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
+	}
+
+	if err := VerifyIbcStateNonMembership(consState.IbcStateRoot, key, proof); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrFailedMembershipVerification, err.Error())
+	}
+
 	return nil
-	// return errorsmod.Wrap(ErrNotImplemented, "this method is not implemented")
+}
+
+func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
+	mpath, ok := path.(commitmenttypes.MerklePath)
+	if !ok {
+		return nil, fmt.Errorf("path is not a MerklePath")
+	}
+	if len(mpath.KeyPath) == 0 {
+		return nil, fmt.Errorf("empty MerklePath")
+	}
+	// IBC typically passes paths like ["ibc", "clients/<id>/clientState"].
+	// The Cardano `ibc_state_root` commits to the IBC key itself (second segment),
+	// not the store prefix.
+	//
+	// Height note (IBC vs Cardano)
+	// - Canonical IBC consensus state keys are formatted as:
+	//     `clients/<client-id>/consensusStates/<revisionNumber>-<revisionHeight>`
+	// - The current Cardano commitment scheme (and Gateway tree) uses only the
+	//   `revisionHeight` segment:
+	//     `clients/<client-id>/consensusStates/<revisionHeight>`
+	//
+	// Until Cardano switches to the canonical key format, we bridge the mismatch
+	// here so the light client verifies against the key actually committed under
+	// `ibc_state_root`.
+	key := mpath.KeyPath[len(mpath.KeyPath)-1]
+	if strings.Contains(key, "/consensusStates/") {
+		parts := strings.SplitN(key, "/consensusStates/", 2)
+		if len(parts) == 2 {
+			heightPart := parts[1]
+			if revParts := strings.SplitN(heightPart, "-", 2); len(revParts) == 2 {
+				// Expected pattern is "<revisionNumber>-<revisionHeight>".
+				// If it matches, drop the revisionNumber.
+				if revParts[0] != "" && revParts[1] != "" {
+					key = parts[0] + "/consensusStates/" + revParts[1]
+				}
+			}
+		}
+	}
+	return []byte(key), nil
+}
+
+// verifyDelayPeriodPassed ensures the packet delay period has passed since the consensus state at `height`
+// was processed on this chain.
+func verifyDelayPeriodPassed(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height, delayTimePeriod, delayBlockPeriod uint64) error {
+	if delayTimePeriod != 0 {
+		processedTime, found := GetProcessedTime(clientStore, height)
+		if !found {
+			return errorsmod.Wrapf(ErrProcessedTimeNotFound, "processed time not found for height: %s", height)
+		}
+
+		validTime := processedTime + delayTimePeriod
+		if uint64(ctx.BlockTime().UnixNano()) < validTime {
+			return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "block time %d has not passed delay time %d", ctx.BlockTime().UnixNano(), validTime)
+		}
+	}
+
+	if delayBlockPeriod != 0 {
+		processedHeight, found := GetProcessedHeight(clientStore, height)
+		if !found {
+			return errorsmod.Wrapf(ErrProcessedHeightNotFound, "processed height not found for height: %s", height)
+		}
+
+		currentHeight := clienttypes.GetSelfHeight(ctx)
+		validHeight := processedHeight.GetRevisionHeight() + delayBlockPeriod
+		if currentHeight.GetRevisionHeight() < validHeight {
+			return errorsmod.Wrapf(ErrDelayPeriodNotPassed, "current height %s has not passed delay height %d", currentHeight, validHeight)
+		}
+	}
+
+	return nil
 }

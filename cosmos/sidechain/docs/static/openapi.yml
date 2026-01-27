@@ -1,0 +1,7 @@
+# Placeholder OpenAPI spec committed so `//go:embed static` builds work in clean
+# checkouts. Replace with a generated/real spec when the API surface is finalized.
+openapi: 3.0.0
+info:
+  title: Packet-forwarding chain API
+  version: 0.0.0
+paths: {}

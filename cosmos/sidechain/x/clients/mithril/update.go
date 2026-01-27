@@ -1,7 +1,9 @@
 package mithril
 
 import (
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,7 +16,9 @@ import (
 	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 )
 
-// VerifyClientMessage checks if the clientMessage is of type MithrilHeader or Misbehaviour and verifies the message
+// VerifyClientMessage verifies a ClientMessage (Header, Misbehaviour, or batch update).
+// It handles each type appropriately and returns an error if verification fails.
+// Calls to CheckForMisbehaviour, UpdateState, and UpdateStateOnMisbehaviour assume the content has been verified.
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
 	clientMsg exported.ClientMessage,
@@ -46,7 +50,20 @@ func (cs *ClientState) verifyHeader(
 		expectedPreviousCerForTs = firstCertInEpoch
 	} else {
 		if firstCertInPrevEpoch == nilCertificate {
-			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+			// Epoch catch-up: when a client is updated after skipping one or more epochs, the
+			// missing stake distribution certificates must be verified and stored so the
+			// `previous_hash` chain remains contiguous.
+			//
+			// The Gateway supplies a bounded list of prior stake distribution certificates in
+			// `previous_mithril_stake_distribution_certificates` to support this.
+			if err := backfillPreviousStakeDistributionCertificates(clientStore, header.PreviousMithrilStakeDistributionCertificates); err != nil {
+				return err
+			}
+
+			firstCertInPrevEpoch = getFcInEpoch(clientStore, header.MithrilStakeDistribution.Epoch-1)
+			if firstCertInPrevEpoch == nilCertificate {
+				return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+			}
 		}
 		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
 		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
@@ -149,9 +166,176 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidCertificate, "Expect newer header: TS.Epoch: %v, cs.Epoch: %v, TS.BlockNumber: %v, cs.LatestHeight.RevisionHeight: %v", header.TransactionSnapshot.Epoch, cs.CurrentEpoch, header.TransactionSnapshot.BlockNumber, cs.LatestHeight.RevisionHeight)
 	}
 
+	// Verify that this header carries enough evidence to authenticate the
+	// Cardano IBC commitment root (`ibc_state_root`) at this height.
+	//
+	// Plainly:
+	// - Mithril certifies that a specific transaction happened at this block height (inclusion proof).
+	// - Our `ibc_state_root` is not stored in Mithril; it is stored inside Cardano, in the HostState UTxO datum.
+	// - So we authenticate the root by authenticating the *transaction that created the HostState output*,
+	//   then extracting `ibc_state_root` from that output's inline datum.
+	//
+	// Without this step, membership/non-membership proofs for Cardano IBC state would be anchored to an
+	// unauthenticated root and the light client would effectively be trusting the relayer/Gateway.
+	if err := cs.verifyHostStateCommitmentEvidence(header); err != nil {
+		return err
+	}
+
+		return nil
+	}
+
+// backfillPreviousStakeDistributionCertificates verifies and stores missing Mithril stake distribution
+// certificates provided in a MithrilHeader update.
+//
+// The Mithril certificate verifier requires a contiguous chain via `previous_hash`. If the client
+// is updated after missing one or more epochs, we may not have the previous epoch’s certificate in
+// store yet. The Gateway includes prior certificates so the chain can be verified on-chain.
+func backfillPreviousStakeDistributionCertificates(
+	clientStore storetypes.KVStore,
+	certificates []*MithrilCertificate,
+) error {
+	if len(certificates) == 0 {
+		return nil
+	}
+
+	// Work on a copy so we do not mutate the header slice.
+	ordered := make([]*MithrilCertificate, 0, len(certificates))
+	for _, cert := range certificates {
+		if cert != nil {
+			ordered = append(ordered, cert)
+		}
+	}
+
+	// Verify/store from older -> newer.
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return ordered[i].Epoch < ordered[j].Epoch
+	})
+
+	nilCertificate := MithrilCertificate{}
+	msdVerifier := &MithrilCertificateVerifier{
+		CertificateRetriever: &MSDCertificateRetriever{
+			ClientStore: clientStore,
+		},
+	}
+
+	for _, cert := range ordered {
+		// If we already stored the first certificate for this epoch, nothing to do.
+		if getFcInEpoch(clientStore, cert.Epoch) != nilCertificate {
+			continue
+		}
+
+		// We can only verify this certificate if its previous certificate is already known.
+		// (It may have been stored at client creation time, or by an earlier iteration of this loop.)
+		if getMSDCertificateWithHash(clientStore, cert.PreviousHash) == nilCertificate {
+			continue
+		}
+
+		msdCertificate, err := FromCertificateProto(cert)
+		if err != nil {
+			return errorsmod.Wrapf(
+				ErrInvalidCertificate,
+				"invalid mithril stake distribution certificate in header chain: %v",
+				err,
+			)
+		}
+
+		protocolMultiSignature, err := FromCertificateSignatureProto(
+			cert.SignedEntityType,
+			cert.MultiSignature,
+			"",
+		)
+		if err != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril stake distribution certificate cannot be parsed: error: %v", err)
+		}
+
+		if _, err := msdVerifier.VerifyStandardCertificate(
+			msdCertificate,
+			protocolMultiSignature.MultiSignature.ProtocolMultiSignature,
+		); err != nil {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "mithril stake distribution certificate is invalid: error: %v", err)
+		}
+
+		// Store as the first certificate in its epoch and index by hash.
+		setFcInEpoch(clientStore, *cert, cert.Epoch)
+	}
+
 	return nil
 }
 
+func (cs *ClientState) verifyHostStateCommitmentEvidence(header *MithrilHeader) error {
+	if header.TransactionSnapshot == nil || header.TransactionSnapshotCertificate == nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "missing transaction snapshot certificate")
+	}
+
+	if header.HostStateTxHash == "" || len(header.HostStateTxBodyCbor) == 0 || len(header.HostStateTxProof) == 0 {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "missing host state commitment evidence")
+	}
+
+	// Step 1: Verify the Mithril transaction-set proof.
+	//
+	// This proves that `HostStateTxHash` is part of the Mithril-certified set of transactions for
+	// `header.TransactionSnapshot.BlockNumber`, and ties that proof to the snapshot certificate.
+	var proofs CardanoTransactionsProofsMessage
+	if err := json.Unmarshal(header.HostStateTxProof, &proofs); err != nil {
+		return errorsmod.Wrapf(ErrInvalidCardanoTransactionsProofs, "malformed host state tx proof: %v", err)
+	}
+
+	verified, err := proofs.Verify()
+	if err != nil {
+		return err
+	}
+
+	if strings.ToLower(verified.MerkleRoot) != strings.ToLower(header.TransactionSnapshot.MerkleRoot) {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"transaction proof merkle root mismatch: expected %s, got %s",
+			header.TransactionSnapshot.MerkleRoot,
+			verified.MerkleRoot,
+		)
+	}
+
+	// The proof must be tied to the same snapshot certificate as the header.
+	if proofs.CertificateHash != "" && proofs.CertificateHash != header.TransactionSnapshotCertificate.Hash {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"transaction proof certificate hash mismatch: expected %s, got %s",
+			header.TransactionSnapshotCertificate.Hash,
+			proofs.CertificateHash,
+		)
+	}
+
+	found := false
+	for _, txHash := range verified.CertifiedTransactions {
+		if strings.ToLower(txHash) == strings.ToLower(header.HostStateTxHash) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return errorsmod.Wrapf(
+			ErrInvalidCardanoTransactionsProofs,
+			"host state tx hash not certified by transaction proof",
+		)
+	}
+
+	// Step 2: Use the certified transaction body to derive the authenticated `ibc_state_root`.
+	//
+	// The relayer/Gateway provides:
+	// - the transaction body CBOR
+	// - an output index (which output is the HostState output)
+	//
+	// We do not "trust" that output index blindly: we check the output contains the HostState NFT
+	// (stored in `ClientState`) and carries an inline datum. The datum is then decoded and the
+	// `ibc_state_root` extracted. That root is the one we store in consensus state and use for proof verification.
+	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMithrilHeader, "invalid host state tx body: %v", err)
+	}
+
+	return nil
+}
+
+// UpdateState updates and stores the ClientState and corresponding ConsensusState for the IBC client.
+// It returns a list of updated heights.
 func (cs *ClientState) UpdateState(
 	ctx sdk.Context,
 	cdc codec.BinaryCodec,
@@ -179,11 +363,22 @@ func (cs *ClientState) UpdateState(
 	cs.LatestHeight = &height
 	cs.CurrentEpoch = header.TransactionSnapshot.Epoch
 
-	// Create a new consensus state
+	// Create a new consensus state.
+	//
+	// At this point `VerifyClientMessage` has already called `verifyHostStateCommitmentEvidence`,
+	// which (a) verifies Mithril inclusion and (b) verifies we can extract `ibc_state_root` from
+	// the HostState output datum. So this extraction should only fail if the header is internally
+	// inconsistent (programming error) rather than because it is untrusted user input.
+	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
+	if err != nil {
+		panic(fmt.Errorf("failed to extract ibc_state_root from verified MithrilHeader: %w", err))
+	}
+
 	newConsensusState := &ConsensusState{
 		Timestamp:                header.GetTimestamp(),
 		FirstCertHashLatestEpoch: header.MithrilStakeDistributionCertificate,
 		LatestCertHashTxSnapshot: header.TransactionSnapshotCertificate.Hash,
+		IbcStateRoot:             ibcStateRoot,
 	}
 
 	// Set the latest certificate of transaction snapshot for the epoch
@@ -231,8 +426,8 @@ func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.Binar
 	}
 }
 
-// UpdateStateOnMisbehaviour updates state upon misbehaviour, freezing the ClientState. This method should only be called when misbehaviour is detected
-// as it does not perform any misbehaviour checks.
+// UpdateStateOnMisbehaviour performs appropriate state changes on the client given that misbehaviour has been detected and verified.
+// This method freezes the ClientState and should only be called after misbehaviour is confirmed.
 func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage) {
 	// cs.FrozenHeight = &FrozenHeight
 	clientStore.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, &cs))

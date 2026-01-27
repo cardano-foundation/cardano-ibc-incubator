@@ -7,15 +7,15 @@ import (
 )
 
 type CardanoTransactionsProofsMessage struct {
-	CertificateHash          string
-	CertifiedTransactions    []*CardanoTransactionsSetProofMessagePart
-	NonCertifiedTransactions []entities.TransactionHash
-	LatestBlockNumber        entities.BlockNumber
+	CertificateHash          string                                    `json:"certificate_hash"`
+	CertifiedTransactions    []*CardanoTransactionsSetProofMessagePart `json:"certified_transactions"`
+	NonCertifiedTransactions []entities.TransactionHash                `json:"non_certified_transactions"`
+	LatestBlockNumber        entities.BlockNumber                      `json:"latest_block_number"`
 }
 
 type CardanoTransactionsSetProofMessagePart struct {
-	TransactionsHashes []entities.TransactionHash
-	Proof              entities.HexEncodedKey
+	TransactionsHashes []entities.TransactionHash `json:"transactions_hashes"`
+	Proof              entities.HexEncodedKey     `json:"proof"`
 }
 
 func (part *CardanoTransactionsSetProofMessagePart) ToCardanoTransactionsSetProof() (*entities.CardanoTransactionsSetProof, error) {

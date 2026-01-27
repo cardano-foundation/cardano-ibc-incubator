@@ -13,10 +13,31 @@ var _ exported.ClientMessage = (*MithrilHeader)(nil)
 
 // ConsensusState returns the updated consensus state associated with the header
 func (h MithrilHeader) ConsensusState() *ConsensusState {
-	return &ConsensusState{
+	consState := &ConsensusState{
 		Timestamp:                h.GetTimestamp(),
+		FirstCertHashLatestEpoch: h.MithrilStakeDistributionCertificate,
 		LatestCertHashTxSnapshot: h.TransactionSnapshot.CertificateHash,
+		IbcStateRoot:             emptyHash,
 	}
+
+	// Best-effort extraction of the Cardano IBC root from the HostState transaction
+	// carried in the header. The authoritative verification is performed as part of
+	// `ClientState.verifyHostStateCommitmentEvidence()` during UpdateClient.
+	if len(h.HostStateTxBodyCbor) > 0 {
+		if txBody, err := decodeTransactionBody(h.HostStateTxBodyCbor); err == nil {
+			outputs := txBody.Outputs()
+			outputIndex := int(h.HostStateTxOutputIndex)
+			if outputIndex >= 0 && outputIndex < len(outputs) {
+				if datum := outputs[outputIndex].Datum(); datum != nil {
+					if root, err := ExtractIbcStateRootFromHostStateDatum(datum.Cbor(), nil); err == nil {
+						consState.IbcStateRoot = root
+					}
+				}
+			}
+		}
+	}
+
+	return consState
 }
 
 // ClientType defines that the Header is a Mithril header
@@ -63,6 +84,15 @@ func (h MithrilHeader) ValidateBasic() error {
 	}
 	if !strings.EqualFold(h.TransactionSnapshot.CertificateHash, h.TransactionSnapshotCertificate.Hash) {
 		return errorsmod.Wrap(ErrInvalidMithrilHeader, "transaction snapshot does not match transaction snapshot certificate")
+	}
+	if strings.TrimSpace(h.HostStateTxHash) == "" {
+		return errorsmod.Wrap(ErrInvalidMithrilHeader, "host_state_tx_hash cannot be empty")
+	}
+	if len(h.HostStateTxBodyCbor) == 0 {
+		return errorsmod.Wrap(ErrInvalidMithrilHeader, "host_state_tx_body_cbor cannot be empty")
+	}
+	if len(h.HostStateTxProof) == 0 {
+		return errorsmod.Wrap(ErrInvalidMithrilHeader, "host_state_tx_proof cannot be empty")
 	}
 	return nil
 }

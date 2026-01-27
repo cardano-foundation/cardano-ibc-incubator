@@ -46,6 +46,9 @@ func (cs ConsensusState) GetTime() time.Time {
 
 // ValidateBasic defines a basic validation for the mithril consensus state.
 func (cs ConsensusState) ValidateBasic() error {
+	if cs.FirstCertHashLatestEpoch == nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "first certificate of latest epoch must be set")
+	}
 	if data, err := hex.DecodeString(cs.FirstCertHashLatestEpoch.Hash); err != nil || cmttypes.ValidateHash(data) != nil {
 		return errorsmod.Wrap(err, "first certificate hash of latest epoch of mithril stake distribution is invalid")
 	}
@@ -54,6 +57,9 @@ func (cs ConsensusState) ValidateBasic() error {
 	}
 	if cs.Timestamp <= 0 {
 		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "timestamp must be a positive Unix time")
+	}
+	if cmttypes.ValidateHash(cs.IbcStateRoot) != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "ibc_state_root must be a 32-byte hash")
 	}
 
 	return nil
