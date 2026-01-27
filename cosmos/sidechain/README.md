@@ -1,6 +1,6 @@
 # Cardano IBC Packet-Forwarding Chain
 
-This Cosmos SDK chain is used as a dedicated packet-forwarding chain between Cardano and other Cosmos chains. In this repo it lives in `cosmos/sidechain/`, and the binary is named `sidechaind` for historical compatibility.
+This Cosmos SDK chain is used as a dedicated packet-forwarding chain between Cardano and other Cosmos chains. In this repo it lives in `cosmos/sidechain/`, and the binary is named `sidechaind`.
 
 ## Get started
 
