@@ -174,6 +174,11 @@ export const createDeployment = async (
     mintClientSttPolicyId,
     verifyProofPolicyId,
     mintHostStateNFTPolicyId,
+  ],
+  Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+    string,
+    string,
+    string,
   ]);
   referredValidators.push(spendConnectionValidator);
 

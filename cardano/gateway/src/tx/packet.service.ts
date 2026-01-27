@@ -520,8 +520,10 @@ export class PacketService {
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
-    if (!isValidProofHeight(heightsArray, recvPacketOperator.proofHeight.revisionHeight)) {
-      throw new GrpcInternalException(`Invalid proof height: ${recvPacketOperator.proofHeight.revisionHeight}`);
+    if (!isValidProofHeight(heightsArray, recvPacketOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+      );
     }
     // check packet receipt has sequence packet
     if (channelDatum.state.packet_receipt.has(recvPacketOperator.packetSequence)) {
@@ -566,16 +568,24 @@ export class PacketService {
       name: channelTokenName,
     };
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
-      ([key]) => key.revisionHeight === recvPacketOperator.proofHeight.revisionHeight,
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === recvPacketOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === recvPacketOperator.proofHeight.revisionHeight,
     );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: recvPacketOperator.proofHeight,
         delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: recvPacketOperator.proofCommitment,
         path: {
           key_path: [
@@ -873,8 +883,10 @@ export class PacketService {
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     // Check if consensus state includes the proof height
-    if (!isValidProofHeight(heightsArray, timeoutPacketOperator.proofHeight.revisionHeight)) {
-      throw new GrpcInternalException(`Invalid proof height: ${timeoutPacketOperator.proofHeight.revisionHeight}`);
+    if (!isValidProofHeight(heightsArray, timeoutPacketOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${timeoutPacketOperator.proofHeight.revisionNumber}/${timeoutPacketOperator.proofHeight.revisionHeight}`,
+      );
     }
     const packetSequence: bigint = timeoutPacketOperator.packet.sequence;
     const packet: Packet = timeoutPacketOperator.packet;
@@ -952,16 +964,24 @@ export class PacketService {
       name: channelTokenName,
     };
 
-    const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
-      ([key]) => key.revisionHeight === timeoutPacketOperator.proofHeight.revisionHeight,
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === timeoutPacketOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === timeoutPacketOperator.proofHeight.revisionHeight,
     );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${timeoutPacketOperator.proofHeight.revisionNumber}/${timeoutPacketOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyNonMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: timeoutPacketOperator.proofHeight,
         delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: timeoutPacketOperator.proofUnreceived,
         path: {
           key_path: [
@@ -1333,8 +1353,10 @@ export class PacketService {
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
-    if (!isValidProofHeight(heightsArray, ackPacketOperator.proofHeight.revisionHeight)) {
-      throw new GrpcInternalException(`Invalid proof height: ${ackPacketOperator.proofHeight.revisionHeight}`);
+    if (!isValidProofHeight(heightsArray, ackPacketOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${ackPacketOperator.proofHeight.revisionNumber}/${ackPacketOperator.proofHeight.revisionHeight}`,
+      );
     }
     if (!channelDatum.state.packet_commitment.has(ackPacketOperator.packetSequence)) {
       throw new GrpcInternalException(
@@ -1424,16 +1446,24 @@ export class PacketService {
     };
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    const [, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
-      ([key]) => key.revisionHeight === ackPacketOperator.proofHeight.revisionHeight,
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === ackPacketOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === ackPacketOperator.proofHeight.revisionHeight,
     );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${ackPacketOperator.proofHeight.revisionNumber}/${ackPacketOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: ackPacketOperator.proofHeight,
         delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: ackPacketOperator.proofAcked,
         path: {
           key_path: [

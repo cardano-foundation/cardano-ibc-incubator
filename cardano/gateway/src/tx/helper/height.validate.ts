@@ -1,5 +1,9 @@
 import { Height } from '@shared/types/height';
 
-export function isValidProofHeight(heights: Height[], revisionHeight: bigint): boolean {
-  return heights.some((key) => BigInt(revisionHeight) === BigInt(key.revisionHeight));
+export function isValidProofHeight(heights: Height[], proofHeight: Height): boolean {
+  return heights.some(
+    (height) =>
+      height.revisionNumber === proofHeight.revisionNumber &&
+      height.revisionHeight === proofHeight.revisionHeight,
+  );
 }

@@ -607,11 +607,21 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
+    const connectionUtxoWithRawDatum = {
+      ...dto.connectionUtxo,
+      datum: dto.connectionUtxo.datum,
+      datumHash: undefined,
+    };
+    const clientUtxoWithRawDatum = {
+      ...dto.clientUtxo,
+      datum: dto.clientUtxo.datum,
+      datumHash: undefined,
+    };
 
     tx.readFrom([this.referenceScripts.spendConnection, this.referenceScripts.verifyProof, this.referenceScripts.hostStateStt])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.connectionUtxo], dto.encodedSpendConnectionRedeemer)
-      .readFrom([dto.clientUtxo])
+      .collectFrom([connectionUtxoWithRawDatum], dto.encodedSpendConnectionRedeemer)
+      .readFrom([clientUtxoWithRawDatum])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: 'inline', value: dto.encodedUpdatedHostStateDatum },
@@ -653,11 +663,21 @@ export class LucidService {
       datum: hostStateUtxo.datum,
       datumHash: undefined,
     };
+    const connectionUtxoWithRawDatum = {
+      ...connectionUtxo,
+      datum: connectionUtxo.datum,
+      datumHash: undefined,
+    };
+    const clientUtxoWithRawDatum = {
+      ...clientUtxo,
+      datum: clientUtxo.datum,
+      datumHash: undefined,
+    };
 
     tx.readFrom([this.referenceScripts.spendConnection, this.referenceScripts.hostStateStt])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
-      .collectFrom([connectionUtxo], encodedSpendConnectionRedeemer)
-      .readFrom([clientUtxo])
+      .collectFrom([connectionUtxoWithRawDatum], encodedSpendConnectionRedeemer)
+      .readFrom([clientUtxoWithRawDatum])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         { kind: 'inline', value: encodedUpdatedHostStateDatum },

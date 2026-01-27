@@ -58,6 +58,15 @@ export function initializeMithrilClientState(clientStateMsg: ClientStateMithril)
 export function getMithrilClientStateForVerifyProofRedeemer(
   mithrilClientState: MithrilClientState,
 ): ClientStateMithril {
+  // Encoding detail:
+  //
+  // The Cosmos chain typically leaves `frozen_height` unset until the client is actually frozen.
+  // If we always re-encode it as an "empty" Height (0/0), the protobuf bytes differ by 2 bytes
+  // (field tag + length=0). That breaks membership verification where the proof leaf value must
+  // match the exact bytes stored on the Cosmos chain.
+  const includeFrozenHeight =
+    mithrilClientState.frozen_height.revisionNumber !== 0n || mithrilClientState.frozen_height.revisionHeight !== 0n;
+
   return {
     chain_id: convertHex2String(mithrilClientState.chain_id),
     host_state_nft_policy_id: Buffer.from(mithrilClientState.host_state_nft_policy_id, 'hex'),
@@ -66,10 +75,12 @@ export function getMithrilClientStateForVerifyProofRedeemer(
       revision_number: mithrilClientState.latest_height.revisionNumber,
       revision_height: mithrilClientState.latest_height.revisionHeight,
     },
-    frozen_height: {
-      revision_number: mithrilClientState.frozen_height.revisionNumber,
-      revision_height: mithrilClientState.frozen_height.revisionHeight,
-    },
+    frozen_height: includeFrozenHeight
+      ? {
+          revision_number: mithrilClientState.frozen_height.revisionNumber,
+          revision_height: mithrilClientState.frozen_height.revisionHeight,
+        }
+      : undefined,
     current_epoch: mithrilClientState.current_epoch,
     trusting_period: {
       seconds: mithrilClientState.trusting_period / 10n ** 9n,

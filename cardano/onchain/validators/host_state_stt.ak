@@ -194,27 +194,23 @@ fn client_id_from_token_name(token_name: AssetName) -> ByteArray {
 
 /// Derive a `connection-{N}` identifier from a connection token name.
 ///
-/// Off-chain, connection tokens are named as `"connection" ++ decimal(N)`.
-/// The on-chain code needs the `connection-{N}` form for the ICS-24 store key.
+/// Connection auth tokens are generated with `auth.generate_token_name(...)`.
+/// That scheme is hash-based and appends the decimal sequence number as a postfix.
+///
+/// The on-chain code needs the `connection-{N}` identifier form for the ICS-24 store key.
 fn connection_id_from_token_name(token_name: AssetName) -> ByteArray {
-  let prefix = "connection"
-  expect bytearray.length(token_name) > bytearray.length(prefix)
-  expect bytearray.take(token_name, bytearray.length(prefix)) == prefix
-
-  let sequence = bytearray.drop(token_name, bytearray.length(prefix))
+  let sequence = auth.extract_token_sequence(token_name)
   sequence |> conn_id_keys.format_connection_identifier()
 }
 
 /// Derive a `channel-{N}` identifier from a channel token name.
 ///
-/// Off-chain, channel tokens are named as `"channel" ++ decimal(N)`.
-/// The on-chain code needs the `channel-{N}` form for the ICS-24 store key.
+/// Channel auth tokens are generated with `auth.generate_token_name(...)`.
+/// That scheme is hash-based and appends the decimal sequence number as a postfix.
+///
+/// The on-chain code needs the `channel-{N}` identifier form for the ICS-24 store key.
 fn channel_id_from_token_name(token_name: AssetName) -> ByteArray {
-  let prefix = "channel"
-  expect bytearray.length(token_name) > bytearray.length(prefix)
-  expect bytearray.take(token_name, bytearray.length(prefix)) == prefix
-
-  let sequence = bytearray.drop(token_name, bytearray.length(prefix))
+  let sequence = auth.extract_token_sequence(token_name)
   sequence |> chan_id_keys.format_channel_identifier()
 }
 

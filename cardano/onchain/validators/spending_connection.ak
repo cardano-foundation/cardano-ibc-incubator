@@ -258,30 +258,43 @@ fn validate_conn_open_ack_proof(
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
 
   let valid_proof_redeemer =
-    verify_proof_redeemer == BatchVerifyMembership(
-      [
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_try,
-          path: conn_merkle_path,
-          value: expected_connection_bz,
-        },
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_client,
-          path: client_merkle_path,
-          value: counterparty_client_state_bz,
-        },
-      ],
-    )
+    when verify_proof_redeemer is {
+      BatchVerifyMembership([item0, item1]) -> {
+        // Avoid relying on derived equality for `MerklePath`/`List<ByteArray>` inside
+        // the redeemer match. For IBC on Cosmos, proofs are always built for a 2-level
+        // path (store prefix + key), so we assert the shape and compare element-wise.
+
+        expect [item0_prefix, item0_key] = item0.path.key_path
+        expect [exp0_prefix, exp0_key] = conn_merkle_path.key_path
+
+        let ok0_path = and { item0_prefix == exp0_prefix, item0_key == exp0_key }
+
+        expect [item1_prefix, item1_key] = item1.path.key_path
+        expect [exp1_prefix, exp1_key] = client_merkle_path.key_path
+
+        let ok1_path = and { item1_prefix == exp1_prefix, item1_key == exp1_key }
+
+        and {
+          item0.cs == client_datum_state.client_state,
+          item0.cons_state == consensus_state,
+          item0.height == proof_height,
+          item0.delay_time_period == time_delay,
+          item0.delay_block_period == block_delay,
+          item0.proof == proof_try,
+          ok0_path,
+          item0.value == expected_connection_bz,
+          item1.cs == client_datum_state.client_state,
+          item1.cons_state == consensus_state,
+          item1.height == proof_height,
+          item1.delay_time_period == time_delay,
+          item1.delay_block_period == block_delay,
+          item1.proof == proof_client,
+          ok1_path,
+          item1.value == counterparty_client_state_bz,
+        }
+      }
+      _ -> False
+    }
 
   and {
     valid_client_state?,

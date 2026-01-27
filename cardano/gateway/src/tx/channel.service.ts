@@ -756,8 +756,10 @@ export class ChannelService {
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
-    if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight.revisionHeight)) {
-      throw new GrpcInternalException(`Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionHeight}`);
+    if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionNumber}/${channelOpenAckOperator.proofHeight.revisionHeight}`,
+      );
     }
 
     const updatedChannelDatum: ChannelDatum = {
@@ -829,9 +831,17 @@ export class ChannelService {
     };
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
-      ([key]) => key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelOpenAckOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
     );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelOpenAckOperator.proofHeight.revisionNumber}/${channelOpenAckOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
 
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_TRYOPEN,
@@ -850,7 +860,7 @@ export class ChannelService {
         cons_state: consensusState,
         height: channelOpenAckOperator.proofHeight,
         delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: channelOpenAckOperator.proofTry,
         path: {
           key_path: [
