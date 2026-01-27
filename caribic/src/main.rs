@@ -36,6 +36,8 @@ enum DemoType {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
+    /// Starts everything (network + packet-forwarding chain + bridge)
+    All,
     /// Starts the local Cardano network related services
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
@@ -52,6 +54,8 @@ enum StartTarget {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StopTarget {
+    /// Stops everything (network + packet-forwarding chain + bridge + demos)
+    All,
     /// Stops the local Cardano network related services
     Network,
     /// Tears down the gateway and relayer
@@ -87,7 +91,7 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
-    /// Starts bridge components. No argument starts everything; optionally specify: network, bridge, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -98,7 +102,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: network, bridge, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -359,6 +363,15 @@ async fn main() {
             let osmosis_dir = utils::get_osmosis_dir(project_root_path);
 
             match target {
+                Some(StopTarget::All) | None => {
+                    // No argument (or explicit `all`) = stop everything
+                    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
+                    stop_cosmos(project_root_path.join("cosmos").as_path());
+                    stop_osmosis(osmosis_dir.as_path());
+                    bridge_down();
+                    network_down();
+                    logger::log("\nAll services stopped successfully");
+                }
                 Some(StopTarget::Bridge) => {
                     bridge_down();
                     logger::log("\nBridge stopped successfully");
@@ -389,15 +402,6 @@ async fn main() {
                     stop_mithril(project_root_path.join("chains/mithrils").as_path());
                     logger::log("\nMithril stopped successfully");
                 }
-                None => {
-                    // No argument = stop all
-                    stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
-                    stop_cosmos(project_root_path.join("cosmos").as_path());
-                    stop_osmosis(osmosis_dir.as_path());
-                    bridge_down();
-                    network_down();
-                    logger::log("\nAll services stopped successfully");
-                }
             }
         }
         Commands::Start { target, clean, with_mithril } => {
@@ -406,10 +410,13 @@ async fn main() {
 
             let mut cardano_current_epoch = 0;
             
-            // Determine what to start: None means start everything (network + cosmos + bridge)
-            let start_network = target.is_none() || target == Some(StartTarget::Network);
-            let start_cosmos = target.is_none() || target == Some(StartTarget::Cosmos);
-            let start_bridge = target.is_none() || target == Some(StartTarget::Bridge);
+            // Determine what to start.
+            // - No argument is treated as "all"
+            // - We also accept an explicit `all` target for clarity
+            let start_all = target.is_none() || target == Some(StartTarget::All);
+            let start_network = start_all || target == Some(StartTarget::Network);
+            let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
+            let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
             if start_network {
                 // Start the local Cardano network and its services
@@ -422,7 +429,7 @@ async fn main() {
                 }
                 // Start Mithril if requested
                 if with_mithril {
-                    if target.is_none() {
+                    if start_all {
                         match start_mithril(&project_root_path).await {
                             Ok(current_epoch) => {
                                 cardano_current_epoch = current_epoch;
@@ -453,7 +460,7 @@ async fn main() {
                     Ok(_) => logger::log("PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)"),
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start Cosmos sidechain: {}", error));
-                        if target.is_none() {
+                        if start_all {
                             // If starting everything, this is a critical failure
                             std::process::exit(1);
                         }
@@ -470,19 +477,6 @@ async fn main() {
                     "Initial balance {}",
                     &balance.to_string().as_str()
                 ));
-
-                if target == StartTarget::All {
-                    // Start the local packet-forwarding chain (Cosmos). This is required for
-                    // `caribic test`, which exercises Hermes-driven handshakes against a local
-                    // Cosmos chain rather than relying on external networks.
-                    match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
-                        Ok(_) => logger::log("PASS: Packet-forwarding chain started (Cosmos sidechain on :26657)"),
-                        Err(error) => bridge_down_with_error(&format!(
-                            "ERROR: Failed to start packet-forwarding chain: {}",
-                            error
-                        )),
-                    }
-                }
 
                 // Deploy Contracts
                 match deploy_contracts(&project_root_path, clean).await {
@@ -538,7 +532,12 @@ async fn main() {
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
                 logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-                if with_mithril && target.is_none() {
+                // Run the Mithril genesis bootstrap whenever we are "starting everything".
+                //
+                // We treat `caribic start` (no target) and `caribic start all` as equivalent.
+                // The genesis bootstrap is required for a fresh local devnet, otherwise the
+                // aggregator stays "up but not ready" (no certificates/artifacts, empty lists).
+                if with_mithril && start_all {
                     match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
                     Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
                     Err(error) => {

@@ -77,6 +77,17 @@ account = 0
 # Maximum time per block for this chain (in milliseconds)
 max_block_time = '20000ms'
 
+# When Hermes submits a Cardano transaction via the Gateway, the Gateway reports the
+# Cardano inclusion *block number*. For Cardano↔Cosmos IBC, the Cosmos-side light
+# client only accepts Mithril-certified heights. Hermes therefore waits until the
+# latest Mithril `cardano-transactions` snapshot has a `block_number` >= the
+# transaction inclusion block number before continuing the handshake/relay.
+#
+# Note: this "height" is a Cardano block number, not a Cardano slot number.
+mithril_certification_timeout = '10m'
+mithril_poll_interval = '5s'
+mithril_wait_log_interval = '30s'
+
 # Trust threshold for client updates (2/3 = 0.66)
 trust_threshold = { numerator = '2', denominator = '3' }
 

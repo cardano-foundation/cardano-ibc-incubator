@@ -170,20 +170,8 @@ pub fn start_relayer(
         }
     }
 
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
-
-    // Note: execute_script_with_progress doesn't support environment variables
-    // Using regular execute_script for relayer with UID/GID support
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> =
-        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
-    execute_script(
-        relayer_path,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        Some(docker_env_refs),
-    )?;
+    // Hermes runs as a local process (see `start_hermes_daemon`), not as a docker-compose service.
+    // Any previous docker-compose calls here were legacy and would fail in a clean setup.
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();

@@ -135,22 +135,6 @@ pub fn stop_mithril(mithril_path: &Path) {
         return;
     }
     
-    // Check if mithril containers are running
-    let output = Command::new("docker")
-        .args(&["compose", "-f", "docker-compose.yaml", "--profile", "mithril", "ps", "-q"])
-        .current_dir(&mithril_script_path)
-        .output();
-    
-    let has_containers = match output {
-        Ok(result) => !String::from_utf8_lossy(&result.stdout).trim().is_empty(),
-        Err(_) => false,
-    };
-    
-    if !has_containers {
-        log("Mithril was not running");
-        return;
-    }
-    
     let mithril_data_dir = mithril_path.join("data");
     let mithril_config = config::get_config().mithril;
     let mithril_result = execute_script(
