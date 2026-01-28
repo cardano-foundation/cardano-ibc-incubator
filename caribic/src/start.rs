@@ -1356,21 +1356,48 @@ pub fn wait_and_start_mithril_genesis(
     // not cleaned, the aggregator may report certificate-chain/AVK mismatches. In that case,
     // restart Mithril with a clean data directory so the on-disk store matches the configured
     // keys.
-    execute_script(
-        &mithril_script_dir,
-        "docker",
-        vec![
-            "compose",
-            "-f",
-            "docker-compose.yaml",
-            "--profile",
-            "mithril-genesis",
-            "run",
-            "--rm",
-            "mithril-aggregator-genesis",
-        ],
-        Some(mithril_genesis_env),
-    )?;
+    // NOTE: On fresh devnets, the aggregator may not have any registered signers yet.
+    // In that case `genesis bootstrap` fails with "Missing signers for epoch X".
+    // Retry a few times to give the signers/registration rounds time to populate.
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        let result = execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "--profile",
+                "mithril-genesis",
+                "run",
+                "--rm",
+                "mithril-aggregator-genesis",
+            ],
+            Some(mithril_genesis_env.clone()),
+        );
+
+        match result {
+            Ok(_) => break,
+            Err(err) => {
+                let err_str = err.to_string();
+                let retryable = err_str.contains("Missing signers for epoch")
+                    || err_str.contains("The list of signers must not be empty");
+
+                if retryable && attempts < 10 {
+                    log(&format!(
+                        "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
+                        attempts
+                    ));
+                    std::thread::sleep(Duration::from_secs(15));
+                    continue;
+                }
+
+                return Err(err.into());
+            }
+        }
+    }
 
     current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
 
