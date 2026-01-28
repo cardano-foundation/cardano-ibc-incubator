@@ -129,7 +129,9 @@ export const createDeployment = async (
   // load mint port validator
   const [mintPortValidator, mintPortPolicyId] = await readValidator(
     "minting_port.mint_port.mint",
-    lucid
+    lucid,
+    [mintHostStateNFTPolicyId],
+    Data.Tuple([Data.Bytes()]) as unknown as [string]
   );
   referredValidators.push(mintPortValidator);
 
@@ -310,7 +312,7 @@ export const createDeployment = async (
 	    mintIdentifierValidator,
 	    mintChannelSttPolicyId,
 	    TRANSFER_MODULE_PORT,
-	    mintHostStateNFTPolicyId
+	    hostStateNFT
 	  );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
@@ -672,7 +674,7 @@ const deployTransferModule = async (
   mintIdentifierValidator: MintingPolicy,
   mintChannelPolicyId: string,
   portNumber: bigint,
-  hostStateNftPolicyId: string
+  hostStateNFT: AuthToken
 ) => {
   console.log("Create Transfer Module");
 
@@ -692,10 +694,13 @@ const deployTransferModule = async (
     Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken]
   );
 
-  const portId = fromText("port-" + portNumber.toString());
+  // NOTE: IBC port identifiers are part of on-chain commitment paths and are exchanged
+  // over IBC. For the transfer module we use the canonical Cosmos port ID so Hermes can
+  // operate without any Cardano-specific port mapping.
+  const portId = fromText("transfer");
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
   const portTokenName = await generateTokenName(
-    handlerToken,
+    hostStateNFT,
     PORT_PREFIX,
     portNumber
   );
@@ -719,7 +724,7 @@ const deployTransferModule = async (
       portId,
       mintChannelPolicyId,
       mintVoucherPolicyId,
-      hostStateNftPolicyId,
+      hostStateNFT.policy_id,
     ],
     Data.Tuple([
       AuthTokenSchema,
