@@ -208,9 +208,19 @@ export class ClientService {
 
         const unsignedUpdateClientTx: TxBuilder =
           await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
-        const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+        const nowMs = Date.now();
+        const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
+        const maxBackdateMarginMs = 1_000n;
+        const maxBackdateCapMs = 60_000n;
+        const maxAllowedBackdateMs =
+          maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
+        const safeBackdateMs = Number(
+          maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
+        );
+        const validFromTimeMs = nowMs - safeBackdateMs;
+        const validToTime = nowMs + TRANSACTION_TIME_TO_LIVE;
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
-          .validFrom(new Date().valueOf())
+          .validFrom(validFromTimeMs)
           .validTo(validToTime);
         
         // Return unsigned transaction for Hermes to sign
@@ -241,14 +251,17 @@ export class ClientService {
       // If we backdate `valid_from` too far (e.g., 60s) while `max_clock_drift` is smaller
       // (e.g., 30s), then otherwise-valid headers will be rejected as "in the future".
       //
-      // So for UpdateClient we only backdate by a small amount, bounded by max_clock_drift.
+      // So for UpdateClient we backdate by an amount that:
+      // - stays strictly within `max_clock_drift` (so the header is not "in the future"), and
+      // - is large enough to tolerate node/host clock skew and ledger catch-up lag
+      //   (so the node doesn't reject the tx as "submitted too early").
       const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
-      // We also need `valid_from` to be *safely in the past* relative to the ledger's current slot,
-      // otherwise the node may reject the transaction as "submitted too early" (invalidBefore > currentSlot).
-      // A small backdate (bounded by maxClockDrift) avoids both issues:
-      // - too-early submission at the node, and
-      // - "header is in the future" failures in Tendermint verification.
-      const safeBackdateMs = Number((maxClockDriftMs / 2n) < 10_000n ? (maxClockDriftMs / 2n) : 10_000n);
+      // Leave a small margin so the header can be up to ~1s ahead of `valid_from + max_clock_drift`
+      // due to normal cross-chain time skew.
+      const maxBackdateMarginMs = 1_000n;
+      const maxBackdateCapMs = 60_000n;
+      const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
+      const safeBackdateMs = Number(maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs);
       const validFromTimeMs = nowMs - safeBackdateMs;
       const validToTimeMs = nowMs + TRANSACTION_TIME_TO_LIVE;
       const txValidFromNs = BigInt(validFromTimeMs) * 1_000_000n;
