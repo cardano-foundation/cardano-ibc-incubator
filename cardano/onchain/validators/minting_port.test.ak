@@ -13,11 +13,13 @@ use ibc/core/ics_025_handler_interface/handler.{
 }
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerBindPort}
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 use minting_port
 
 type MockData {
   handler_token: AuthToken,
+  host_state_nft_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   spend_module_script_hash: Hash<Blake2b_224, Script>,
   handler_input: Input,
@@ -28,6 +30,8 @@ type MockData {
 fn setup() -> MockData {
   let handler_token =
     AuthToken { policy_id: "mock handler policy_id", name: "mock name" }
+
+  let host_state_nft_policy_id = "mock host_state_nft_policy_id"
 
   let port_minting_policy_id = "mock port_minting_policy_id"
 
@@ -66,12 +70,17 @@ fn setup() -> MockData {
 
   let port_token_name =
     string_utils.int_to_string(port_number)
-      |> auth.generate_token_name(handler_token, port_keys.port_prefix, _)
+      |> auth.generate_token_name(
+          AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
+          port_keys.port_prefix,
+          _,
+        )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
   MockData {
     handler_token,
+    host_state_nft_policy_id,
     port_minting_policy_id,
     spend_module_script_hash,
     handler_input,
@@ -133,6 +142,7 @@ test mint_port_succeed() {
     }
 
   minting_port.mint_port.mint(
+    mock.host_state_nft_policy_id,
     redeemer,
     mock.port_minting_policy_id,
     transaction,

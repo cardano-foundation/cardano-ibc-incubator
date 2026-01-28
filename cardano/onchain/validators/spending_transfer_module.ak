@@ -36,6 +36,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket,
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -80,11 +81,18 @@ validator spend_transfer_module(
     trace @"updated_output.datum": updated_output.datum
     expect NoDatum = updated_output.datum
 
+    // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
+    // as the base token. The transfer module must derive the *same* token name when
+    // locating the channel UTxO in the transaction.
+    let host_state_nft =
+      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name }
+
     when redeemer is {
       Callback(cb) ->
         handler_callback(
           cb,
           handler_token,
+          host_state_nft,
           spent_output_ref,
           transaction,
           updated_output,
@@ -96,6 +104,7 @@ validator spend_transfer_module(
         handler_operator(
           op,
           handler_token,
+          host_state_nft,
           spent_output_ref,
           transaction,
           updated_output,
@@ -145,6 +154,7 @@ fn validate_output_amount(
 fn handler_callback(
   cb: IBCModuleCallback,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
   transaction: Transaction,
   updated_output: Output,
@@ -163,6 +173,7 @@ fn handler_callback(
           redeemers,
           channel_minting_policy_id,
           handler_token,
+          host_state_nft,
           outputs,
           port_id,
           channel_id,
@@ -186,6 +197,7 @@ fn handler_callback(
           redeemers,
           channel_minting_policy_id,
           handler_token,
+          host_state_nft,
           outputs,
           port_id,
           channel_id,
@@ -211,6 +223,7 @@ fn handler_callback(
           redeemers,
           channel_minting_policy_id,
           handler_token,
+          host_state_nft,
           outputs,
           port_id,
           channel_id,
@@ -234,6 +247,7 @@ fn handler_callback(
           redeemers,
           channel_minting_policy_id,
           handler_token,
+          host_state_nft,
           outputs,
           port_id,
           channel_id,
@@ -261,7 +275,7 @@ fn handler_callback(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
+          host_state_nft,
           channel_id,
         )
       expect RecvPacket { packet, .. } = channel_redeemer
@@ -327,7 +341,7 @@ fn handler_callback(
 
         let channel_token_name =
           auth.generate_token_name(
-            handler_token,
+            host_state_nft,
             channel_keys.channel_prefix,
             channel_sequence,
           )
@@ -422,7 +436,7 @@ fn handler_callback(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
+          host_state_nft,
           channel_id,
         )
       expect TimeoutPacket { packet, .. } = channel_redeemer
@@ -454,7 +468,7 @@ fn handler_callback(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
+          host_state_nft,
           channel_id,
         )
       expect AcknowledgePacket { packet, acknowledgement: channel_ack, .. } =
@@ -490,6 +504,7 @@ fn handler_callback(
 fn handler_operator(
   op: IBCModuleOperator,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
   transaction: Transaction,
   updated_output: Output,
@@ -513,7 +528,7 @@ fn handler_operator(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
+          host_state_nft,
           channel_id,
         )
       expect SendPacket { packet } = channel_redeemer
@@ -580,6 +595,7 @@ fn validate_channel_open_init(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
@@ -599,7 +615,7 @@ fn validate_channel_open_init(
 
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      host_state_nft,
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -625,6 +641,7 @@ fn validate_channel_open_try(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
@@ -646,7 +663,7 @@ fn validate_channel_open_try(
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      host_state_nft,
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -673,6 +690,7 @@ fn validate_chan_open_ack(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
@@ -682,7 +700,7 @@ fn validate_chan_open_ack(
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      host_state_nft,
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -720,6 +738,7 @@ fn validate_chan_open_confirm(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
   handler_token: AuthToken,
+  host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
   channel_id: ByteArray,
@@ -729,7 +748,7 @@ fn validate_chan_open_confirm(
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      host_state_nft,
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -766,7 +785,7 @@ fn extract_channel_redeemer(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
-  handler_token: AuthToken,
+  host_state_nft: AuthToken,
   channel_id: ByteArray,
 ) -> Option<SpendChannelRedeemer> {
   expect channel_keys.is_valid_channel_id(channel_id)
@@ -774,7 +793,7 @@ fn extract_channel_redeemer(
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      host_state_nft,
       channel_keys.channel_prefix,
       channel_sequence,
     )

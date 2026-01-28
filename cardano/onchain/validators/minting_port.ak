@@ -6,6 +6,7 @@ use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerBindPort, HandlerOperator,
 }
@@ -24,7 +25,7 @@ fn valid_number_of_ports(
   number_of_ports <= max_number_of_ports
 }
 
-validator mint_port {
+validator mint_port(host_state_nft_policy_id: PolicyId) {
   mint(
     redeemer: MintPortRedeemer,
     port_minting_policy_id: PolicyId,
@@ -49,9 +50,17 @@ validator mint_port {
       pairs.get_first(redeemers, Spend(handler_input.output_reference))
     expect handler_operator: HandlerOperator = spent_handler_redeemer
     let valid_handler_operator = handler_operator == HandlerBindPort
+
+    // Port tokens are referenced across IBC transactions that only have access to the
+    // channel auth token name. Channel auth tokens are derived from the HostState NFT.
+    //
+    // To make the port-token name derivable from the channel-token name, the port-token
+    // name must also be derived from the same HostState NFT base.
+    let host_state_nft =
+      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name }
     let port_token_name =
       string_utils.int_to_string(port_number)
-        |> auth.generate_token_name(handler_token, port_keys.port_prefix, _)
+        |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)
     let port_token =
       AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
     expect [module_output] =
