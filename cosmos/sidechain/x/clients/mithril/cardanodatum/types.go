@@ -1,6 +1,14 @@
-package cardano
+package cardanodatum
 
 import "github.com/blinklabs-io/gouroboros/ledger"
+
+// This package contains CBOR/Plutus datum shapes used by the Cardano chain.
+//
+// The Mithril IBC light client needs these types to semantically compare values committed by
+// Cardano (which are CBOR-serialized datums) with the protobuf-encoded values used by ibc-go.
+//
+// It is intentionally *not* an IBC light client implementation: it is a small set of decoding
+// helpers that support the Mithril client's membership/non-membership verification logic.
 
 type SPOState struct {
 	IsRegisCert bool
@@ -28,7 +36,7 @@ type ExtractBlockOutput struct {
 }
 
 //////////////////////////////////////////////////////
-// Struct type saved at Cardano side
+// Struct types saved on the Cardano side (CBOR / PlutusData)
 
 // Client and consensus state
 type RootHashInDatum struct {
@@ -189,3 +197,4 @@ type ChannelDatumWithPort struct {
 
 //
 //////////////////////////////////////////////////////
+
