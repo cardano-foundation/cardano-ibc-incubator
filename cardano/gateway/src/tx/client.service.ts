@@ -260,8 +260,11 @@ export class ClientService {
       // due to normal cross-chain time skew.
       const maxBackdateMarginMs = 1_000n;
       const maxBackdateCapMs = 60_000n;
-      const maxAllowedBackdateMs = maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
-      const safeBackdateMs = Number(maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs);
+      const maxAllowedBackdateMs =
+        maxClockDriftMs > maxBackdateMarginMs ? (maxClockDriftMs - maxBackdateMarginMs) : 0n;
+      const safeBackdateMs = Number(
+        maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
+      );
       const validFromTimeMs = nowMs - safeBackdateMs;
       const validToTimeMs = nowMs + TRANSACTION_TIME_TO_LIVE;
       const txValidFromNs = BigInt(validFromTimeMs) * 1_000_000n;

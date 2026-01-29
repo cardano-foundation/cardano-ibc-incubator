@@ -304,16 +304,16 @@ export const createDeployment = async (
     identifierTokenUnit: transferModuleIdentifier,
     mintVoucher,
     spendTransferModule,
-	  } = await deployTransferModule(
-	    lucid,
-	    handlerToken,
-	    spendHandlerValidator,
-	    mintPortValidator,
-	    mintIdentifierValidator,
-	    mintChannelSttPolicyId,
-	    TRANSFER_MODULE_PORT,
-	    hostStateNFT
-	  );
+  } = await deployTransferModule(
+    lucid,
+    handlerToken,
+    spendHandlerValidator,
+    mintPortValidator,
+    mintIdentifierValidator,
+    mintChannelSttPolicyId,
+    TRANSFER_MODULE_PORT,
+    hostStateNFT
+  );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
   const refUtxosInfo = await createReferenceUtxos(
