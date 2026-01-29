@@ -2107,6 +2107,7 @@ pub fn comprehensive_health_check(
     let cardano_dir = project_root_path.join("cardano");
     let gateway_dir = project_root_path.join("cardano/gateway");
     let relayer_path = project_root_path.join("relayer");
+    let mithril_dir = project_root_path.join("chains/mithrils");
     
     let mut result = String::new();
     result.push_str("\nBridge Health Check\n");
@@ -2122,6 +2123,7 @@ pub fn comprehensive_health_check(
         ("postgres", "PostgreSQL (db-sync)"),
         ("kupo", "Kupo (Chain Indexer)"),
         ("ogmios", "Ogmios (JSON/RPC)"),
+        ("mithril", "Mithril (Aggregator + Signers)"),
         ("hermes", "Hermes Relayer Daemon"),
         ("cosmos", "Cosmos Sidechain (Packet-forwarding)"),
     ];
@@ -2142,6 +2144,7 @@ pub fn comprehensive_health_check(
             "postgres" => check_postgres_health(&cardano_dir),
             "kupo" => check_kupo_health(&cardano_dir),
             "ogmios" => check_ogmios_health(&cardano_dir),
+            "mithril" => check_mithril_health(&mithril_dir),
             "hermes" => check_hermes_daemon_health(&relayer_path),
             "cosmos" => check_cosmos_health(),
             _ => (false, "Unknown service".to_string()),
@@ -2297,6 +2300,90 @@ fn check_ogmios_health(_cardano_dir: &Path) -> (bool, String) {
     }
     
     (false, "Container not running".to_string())
+}
+
+/// Check Mithril health (aggregator + signers)
+fn check_mithril_health(mithril_dir: &Path) -> (bool, String) {
+    let mithril_compose = mithril_dir.join("scripts/docker-compose.yaml");
+    if !mithril_compose.exists() {
+        return (
+            false,
+            "Not configured (missing chains/mithrils/scripts/docker-compose.yaml)".to_string(),
+        );
+    }
+
+    let aggregator_running = Command::new("docker")
+        .args(&[
+            "ps",
+            "--filter",
+            "name=mithril-aggregator",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .ok()
+        .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+        .unwrap_or(false);
+
+    let signer_1_running = Command::new("docker")
+        .args(&[
+            "ps",
+            "--filter",
+            "name=mithril-signer-1",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .ok()
+        .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+        .unwrap_or(false);
+
+    let signer_2_running = Command::new("docker")
+        .args(&[
+            "ps",
+            "--filter",
+            "name=mithril-signer-2",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .ok()
+        .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+        .unwrap_or(false);
+
+    let aggregator_port_accessible = Command::new("nc")
+        .args(&["-z", "localhost", "8080"])
+        .output()
+        .ok()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+
+    let aggregator_status = if aggregator_running {
+        if aggregator_port_accessible {
+            "running (port 8080 accessible)"
+        } else {
+            "running (port 8080 not ready yet)"
+        }
+    } else {
+        "not running"
+    };
+    let signer_1_status = if signer_1_running { "running" } else { "not running" };
+    let signer_2_status = if signer_2_running { "running" } else { "not running" };
+
+    let is_healthy = aggregator_running && signer_1_running && signer_2_running;
+    (
+        is_healthy,
+        format!(
+            "Aggregator: {}; Signer 1: {}; Signer 2: {}",
+            aggregator_status, signer_1_status, signer_2_status
+        ),
+    )
 }
 
 /// Check Hermes daemon health
