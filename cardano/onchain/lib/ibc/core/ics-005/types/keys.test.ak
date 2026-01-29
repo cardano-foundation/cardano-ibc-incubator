@@ -16,15 +16,21 @@ test parse_port_id_number_succeed() {
   keys_mod.parse_port_id_number("port-932") == "932"
 }
 
+test parse_port_id_number_transfer_succeed() {
+  keys_mod.parse_port_id_number("transfer") == "100"
+}
+
 //============================is_valid_port_id====================================
 test test_is_valid_port_id() {
   let test_cases =
     [
       ("port-123", True),
-      // invalid prefix
-      ("client-123", False),
-      // invalid sequence
-      ("port-1x3", False),
+      ("transfer", True),
+      ("client-123", True),
+      // too short
+      ("a", False),
+      // invalid character (slash is not allowed in IBC identifiers)
+      ("ports/transfer", False),
     ]
 
   list.all(

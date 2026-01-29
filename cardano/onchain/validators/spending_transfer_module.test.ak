@@ -136,7 +136,7 @@ fn setup() -> MockData {
 
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
       channel_keys.channel_prefix,
       channel_sequence,
     )

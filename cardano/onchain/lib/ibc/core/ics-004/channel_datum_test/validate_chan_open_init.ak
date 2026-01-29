@@ -183,7 +183,8 @@ test fail_if_packet_acknowledgement_is_not_empty() fail {
 test fail_if_port_id_is_invalid() fail {
   let (chan_datum, auth_token) = setup()
 
-  let chan_datum = ChannelDatum { ..chan_datum, port_id: "port-abc" }
+  // Slash is not allowed in IBC identifiers (it would break commitment paths).
+  let chan_datum = ChannelDatum { ..chan_datum, port_id: "ports/transfer" }
 
   channel_datum_mod.validate_chan_open_init(chan_datum, auth_token)
 }

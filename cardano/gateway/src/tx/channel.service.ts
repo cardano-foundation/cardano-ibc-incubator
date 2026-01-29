@@ -33,6 +33,7 @@ import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
+import { TxEventsService } from './tx-events.service';
 import {
   validateAndFormatChannelOpenAckParams,
   validateAndFormatChannelOpenConfirmParams,
@@ -76,6 +77,7 @@ export class ChannelService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private readonly txEventsService: TxEventsService,
   ) {}
 
   /**
@@ -181,6 +183,23 @@ export class ChannelService {
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      // Hermes expects an ABCI-style event list from the tx submission response.
+      // Cardano has no native events, so the Gateway synthesizes the equivalent IBC events
+      // and returns them from the SubmitSignedTx response (keyed by tx hash).
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'channel_open_init',
+          attributes: [
+            { key: 'port_id', value: channelOpenInitOperator.port_id },
+            { key: 'channel_id', value: channelId },
+            { key: 'connection_id', value: channelOpenInitOperator.connectionId },
+            { key: 'counterparty_port_id', value: channelOpenInitOperator.counterpartyPortId },
+            { key: 'counterparty_channel_id', value: '' },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for channel open init');
       const response: MsgChannelOpenInitResponse = {
@@ -242,7 +261,8 @@ export class ChannelService {
       this.logger.log('Channel Open Ack is processing');
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelOpenAckTx: TxBuilder = await this.buildUnsignedChannelOpenAckTx(
+      const { unsignedTx: unsignedChannelOpenAckTx, event: channelOpenAckEvent } =
+        await this.buildUnsignedChannelOpenAckTx(
         channelOpenAckOperator,
         constructedAddress,
       );
@@ -257,6 +277,20 @@ export class ChannelService {
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete();
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'channel_open_ack',
+          attributes: [
+            { key: 'port_id', value: channelOpenAckEvent.port_id },
+            { key: 'channel_id', value: channelOpenAckEvent.channel_id },
+            { key: 'connection_id', value: channelOpenAckEvent.connection_id },
+            { key: 'counterparty_port_id', value: channelOpenAckEvent.counterparty_port_id },
+            { key: 'counterparty_channel_id', value: channelOpenAckEvent.counterparty_channel_id },
+          ],
+        },
+      ]);
 
       await sleep(7000);
       this.logger.log('Returning unsigned tx for channel open ack');
@@ -707,7 +741,16 @@ export class ChannelService {
   async buildUnsignedChannelOpenAckTx(
     channelOpenAckOperator: ChannelOpenAckOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{
+    unsignedTx: TxBuilder;
+    event: {
+      port_id: string;
+      channel_id: string;
+      connection_id: string;
+      counterparty_port_id: string;
+      counterparty_channel_id: string;
+    };
+  }> {
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
       BigInt(channelOpenAckOperator.channelSequence),
@@ -901,7 +944,18 @@ export class ChannelService {
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
     };
-    return this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
+    const unsignedTx = this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
+
+    return {
+      unsignedTx,
+      event: {
+        port_id: portId,
+        channel_id: channelIdForRoot,
+        connection_id: convertHex2String(channelDatum.state.channel.connection_hops[0]),
+        counterparty_port_id: convertHex2String(channelDatum.state.channel.counterparty.port_id),
+        counterparty_channel_id: channelOpenAckOperator.counterpartyChannelId || '',
+      },
+    };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenConfirmTx(

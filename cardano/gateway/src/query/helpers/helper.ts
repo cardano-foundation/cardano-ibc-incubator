@@ -1,13 +1,25 @@
 import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
-import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 
-export function validPagination(pagination: PageRequest): PageRequest {
-  // if (pagination.offset == undefined && !pagination.key)
-  //   throw new GrpcInvalidArgumentException(
-  //     'Invalid argument: "pagination.offset" or "pagination.key" must be provided',
-  //   );
+/**
+ * Normalize pagination parameters.
+ *
+ * Cosmos SDK treats pagination as optional; missing/zero limits are replaced by a
+ * chain-defined default. Hermes relies on this behavior and often omits the
+ * pagination field entirely for list queries.
+ */
+export function validPagination(pagination?: PageRequest): PageRequest {
+  const DEFAULT_LIMIT = BigInt(100);
 
-  if (!pagination.limit)
-    throw new GrpcInvalidArgumentException('Invalid argument: "pagination.limit" must be provided');
-  return pagination;
+  const normalized: PageRequest = pagination ?? {
+    key: new Uint8Array(),
+    offset: BigInt(0),
+    limit: DEFAULT_LIMIT,
+    count_total: false,
+    reverse: false,
+  };
+
+  return {
+    ...normalized,
+    limit: normalized.limit > BigInt(0) ? normalized.limit : DEFAULT_LIMIT,
+  };
 }
