@@ -1,10 +1,5 @@
 # Known Issues, Asymmetries, and Architectural Considerations
 
-## Cardano Key Derivation and Interop With Hermes/Lucid
-
-Cardano wallets do not have a single universally implemented derivation path. The common convention for Shelley-era wallets is CIP-1852, which uses the path `m/1852'/1815'/account'/role/index`, where `role` and `index` are non-hardened. Some Ed25519-BIP32 implementations only support fully hardened derivation, and some toolchains differ in how they interpret or expose these roles. As a result, two pieces of software can legitimately derive different payment addresses from the same BIP-39 mnemonic, which can look like funds disappearing or signatures failing when the real issue is that different components are not using the same derivation scheme.
-
-For local development we currently avoid this class of mismatch by using a shared bech32-encoded private key (`DEPLOYER_SK`) so that Gateway and Hermes are guaranteed to operate with the same signing key material. For production, this should be replaced with a well-defined and consistently implemented key management approach for Cardano.
 
 ## Denom Trace Mapping Lives Off-Chain
 
@@ -18,8 +13,23 @@ There are two different membership and non-membership problems in IBC, and the a
 
 When Cardano verifies Cosmos state, it follows the standard ICS-07 flow: Cardano stores a trusted consensus root for the Cosmos chain from signed Tendermint headers and verifies ICS-23 membership and non-membership proofs against that root.
 
-When a Cosmos chain verifies Cardano state, there is a fundamental asymmetry. Tendermint exposes a consensus-signed `app_hash` each height, so the counterparty can trust the root it verifies proofs against. Cardano does not expose a consensus-signed application state commitment in block headers, so the IBC HostState UTxO datum (which contains `ibc_state_root`) is an application-level commitment that lives inside the ledger and is not directly attested to by Ouroboros in the same way.
+When a Cosmos chain verifies Cardano state there is a fundamental asymmetry. Tendermint exposes a consensus-signed `app_hash` each height, so the counterparty can trust the root it verifies proofs against. Cardano does not expose a consensus-signed application state commitment, or anything analogous in block headers, so the IBC HostState UTxO datum (which contains `ibc_state_root`) is an application-level commitment that lives inside the ledger and is not directly attested to by Ouroboros in the same way.
 
-As things currently stand, Cardano IBC state transitions are enforced to be atomic at the script level by requiring any update to committed IBC state to co-spend the HostState UTxO and update `ibc_state_root` in the same transaction, so the commitment root and the underlying state cannot diverge.
+As things currently stand, Cardano IBC state transitions are enforced to be atomic at the script level by requiring any update to committed IBC state to co-spend the HostState UTxO and update `ibc_state_root` in the same transaction, so the commitment root and the underlying state cannot diverge. (This is a tight constraint causing other important considerations discussed below)
 
 Separately, a trustless counterparty must be able to convince itself that the specific HostState UTxO (and the exact datum bytes that contain `ibc_state_root`) is included in a sufficiently finalized view of the Cardano ledger. The concrete mechanism for this attestation is still an open design point. Mithril is relevant here as a potential source of certified ledger snapshots and inclusion proofs, but it does not replace the need for a clear and verifiable story for how a Cosmos chain anchors Cardano state roots over time.
+
+## UTXO Contention
+
+ 
+The IBC HostState design treats the HostState UTxO (identified by the HostState NFT) as the single source of truth for `ibc_state_root`, every IBC state transition that changes committed state must co-spend that same UTxO to update the root. This effectively serializes all root-changing IBC operations (client, connection, channel, and packet state updates), even if they touch disjoint keys. This allows us to achieve the IBC trust constraints and cryptographic security of the bridge but it also creates contention under load. This is not a correctness problem, but it is a throughput and liveness constraint that differs materially from Cosmos SDK chains where many updates can be committed independently in the same block.
+
+We haven't settled on a production strategy to mitigate this. Options include batching multiple IBC updates into a single HostState-spending transaction, which I think is an uglier solution,  or alternatively sharding committed IBC state into multiple independently-spendable state UTxOs (and adjusting the commitment model and light client verification accordingly) so unrelated flows do not contend on a single global input. This will likely be a complex and challenging solution but I believe is the more "correct" path forward.
+
+
+
+## Constrained by Mithril Certificate Frequency
+
+It should be clear that Mithril certificates are **not** produced on a per-block basis. On Cosmos chains IBC proofs are available at essentially every block height because the counterparty can verify ICS-23 proofs against the consensus-signed `app_hash` of that height. In the current Cardano to Cosmos direction, the Cosmos chain instead anchors Cardano IBC state by verifying that a specific HostState-updating transaction is included in a Mithril-certified transaction snapshot, and then extracting the HostState datum bytes (and `ibc_state_root`) from that certified evidence. This means cross-chain progress is bottlenecked by certificate issuance and snapshot publication. If certificates are produced on the order of minutes then a HostState update can be observed by the Gateway immediately but cannot be used as a verifiable proof on the Cosmos chain until it is covered by a certificate. 
+
+This also introduces a height asymmetry: the proof height that the Cosmos chain can safely accept is the Mithril-certified snapshot height and not a Cardano slot number. If we keep Mithril as the attestation layer in production.
