@@ -400,7 +400,7 @@ async fn main() {
                 }
                 Some(StopTarget::Mithril) => {
                     stop_mithril(project_root_path.join("chains/mithrils").as_path());
-                    logger::log("\nMithril stopped successfully");
+                    logger::log("\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)");
                 }
             }
         }
