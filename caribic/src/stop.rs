@@ -194,7 +194,7 @@ pub fn stop_mithril(mithril_path: &Path) {
     );
     match mithril_result {
         Ok(_) => {
-            log("Mithril stopped successfully");
+            log("Mithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)");
         }
         Err(e) => {
             error(&format!("ERROR: Failed to stop Mithril: {}", e));
