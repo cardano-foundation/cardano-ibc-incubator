@@ -314,11 +314,12 @@ pub fn execute_script(
     script_args: Vec<&str>,
     script_env: Option<Vec<(&str, &str)>>,
 ) -> io::Result<String> {
+    let script_args_display = script_args.join(" ");
     logger::verbose(&format!(
         "{} {} {}",
         script_dir.display(),
         script_name,
-        script_args.join(" ")
+        script_args_display
     ));
     let envs = script_env.unwrap_or_default();
 
@@ -337,19 +338,36 @@ pub fn execute_script(
     let stderr_reader = io::BufReader::new(stderr);
 
     let mut output = String::new();
+    let mut stderr_output = String::new();
     for line in stdout_reader.lines() {
         let line = line?;
         output.push_str(&line);
+        output.push('\n');
         logger::info(&line);
     }
 
     for line in stderr_reader.lines() {
         let line = line?;
+        stderr_output.push_str(&line);
+        stderr_output.push('\n');
         logger::info(&line);
     }
 
     let status = cmd.wait()?;
     logger::info(&format!("Script exited with status: {}", status));
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Command failed (status={}): {} {}\nstdout:\n{}\nstderr:\n{}",
+                status,
+                script_name,
+                script_args_display,
+                output.trim(),
+                stderr_output.trim()
+            ),
+        ));
+    }
     Ok(output)
 }
 

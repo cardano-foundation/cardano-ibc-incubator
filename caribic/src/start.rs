@@ -170,20 +170,8 @@ pub fn start_relayer(
         }
     }
 
-    execute_script(relayer_path, "docker", Vec::from(["compose", "stop"]), None)?;
-
-    // Note: execute_script_with_progress doesn't support environment variables
-    // Using regular execute_script for relayer with UID/GID support
-    let docker_env = get_docker_env_vars();
-    let docker_env_refs: Vec<(&str, &str)> =
-        docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-
-    execute_script(
-        relayer_path,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        Some(docker_env_refs),
-    )?;
+    // Hermes runs as a local process (see `start_hermes_daemon`), not as a docker-compose service.
+    // Any previous docker-compose calls here were legacy and would fail in a clean setup.
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
@@ -1255,6 +1243,21 @@ pub fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
     cardano_epoch_on_mithril_start: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Mithril has two practical prerequisites on a fresh local Cardano devnet:
+    //
+    // 1) Cardano immutable files must exist.
+    //    The aggregator/signer timepoint logic reads immutable files; if started too early it can
+    //    error with messages like "no immutable file was returned".
+    //
+    // 2) A genesis certificate chain must exist.
+    //    The aggregator serves `/aggregator` even when it has zero certificates, but in that
+    //    state it will never be able to certify artifacts, and the artifact endpoints will keep
+    //    returning `[]`. The `genesis bootstrap` job seeds the first certificate using the genesis
+    //    keys in `~/.caribic/config.json`.
+    //
+    // After bootstrap, the running aggregator/signer processes should start producing stake
+    // distributions and Cardano transaction snapshots. If they remain empty, a Mithril restart
+    // can be required to pick up the seeded certificate chain cleanly.
     let mithril_dir = project_root_dir.join("chains/mithrils");
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
