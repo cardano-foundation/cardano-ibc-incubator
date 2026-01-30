@@ -153,7 +153,7 @@ fn setup() -> MockData {
       proof_specs,
     }
 
-  let client_id = "ibc_client-10"
+  let client_id = "07-tendermint-10"
 
   let client_sequence = client_keys_mod.parse_client_id_sequence(client_id)
 

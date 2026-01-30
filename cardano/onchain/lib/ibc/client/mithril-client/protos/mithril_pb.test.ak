@@ -1,3 +1,4 @@
+use aiken/primitive/bytearray.{length}
 use ibc/client/mithril_client/protos/mithril_pb.{
   AnyMithrilClientState, CardanoHeight, Fraction, MithrilClientState,
   MithrilDuration, MithrilProtocolParameters, marshal_for_any_client_state,
@@ -237,13 +238,15 @@ const mithril_client_state_empty =
     0,
     MithrilProtocolParameters(0, 0, Fraction(0, 1)),
     [],
+    #"",
+    #"",
   )
 
 const mithril_client_state_empty_deprecated =
   MithrilClientStateDeprecated(
     #"",
     Some(CardanoHeight(0, 0)),
-    Some(CardanoHeight(0, 0)),
+    None,
     0,
     0,
     Some(MithrilProtocolParametersDeprecated(0, 0, Some(Fraction(0, 1)))),
@@ -279,6 +282,8 @@ const mithril_client_state =
       #"6561737931206973207468652062657374207374616b6520706f6f6c",
       #"6561737931206973207468652062657374207374616b6520706f6f6c",
     ],
+    #"",
+    #"",
   )
 
 const mithril_client_state_deprecated =
@@ -312,6 +317,29 @@ test test_marshal_for_client_state_same_result() {
     length == length_deprecated,
     bytes == bytes_deprecated,
   }
+}
+
+test test_marshal_for_client_state_size_matches_bytes_with_host_state_fields() {
+  let mithril_client_state_with_host_state_fields =
+    MithrilClientState(
+      #"6561737931206973207468652062657374207374616b6520706f6f6c",
+      CardanoHeight(1337, 1442),
+      CardanoHeight(1337, 1442),
+      1337,
+      1442,
+      MithrilProtocolParameters(1337, 1442, Fraction(1337, 1442)),
+      [
+        #"6561737931206973207468652062657374207374616b6520706f6f6c",
+        #"6561737931206973207468652062657374207374616b6520706f6f6c",
+      ],
+      #"00000000000000000000000000000000000000000000000000000000",
+      "ibc_host_state",
+    )
+
+  let (l, bz) =
+    marshal_for_client_state(mithril_client_state_with_host_state_fields)
+
+  l == length(bz)
 }
 
 test test_marshal_for_any_client_state_same_result_empty() {

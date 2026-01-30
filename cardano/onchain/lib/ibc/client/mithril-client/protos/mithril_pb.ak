@@ -14,6 +14,8 @@ pub type MithrilClientState {
   trusting_period: Int,
   protocol_parameters: MithrilProtocolParameters,
   upgrade_path: List<ByteArray>,
+  host_state_nft_policy_id: ByteArray,
+  host_state_nft_token_name: ByteArray,
 }
 
 pub type CardanoHeight {
@@ -62,11 +64,24 @@ pub fn marshal_for_client_state(
     trusting_period,
     protocol_parameters,
     upgrade_path,
+    host_state_nft_policy_id,
+    host_state_nft_token_name,
   } = client_state
   (0, #"")
     |> size_and_concat(encode_bytearray(chain_id, 10))
     |> add_and_concat(nest_record(marshal_for_height(latest_height), 0x12))
-    |> add_and_concat(nest_record(marshal_for_height(frozen_height), 0x1a))
+    // `frozen_height` is unset on the Cosmos chain until the client is actually frozen.
+    // When it is unset, the on-chain stored bytes omit the entire field (proto3 presence).
+    //
+    // For membership verification on Cardano, we must reproduce the exact leaf value bytes,
+    // so we omit `frozen_height` when it is the zero height (0/0).
+    |> add_and_concat(
+        if frozen_height.revision_number == 0 && frozen_height.revision_height == 0 {
+          (0, #"")
+        } else {
+          nest_record(marshal_for_height(frozen_height), 0x1a)
+        },
+      )
     |> add_and_concat(encode_int(current_epoch, 0x20))
     |> add_and_concat(
         nest_record(marshal_for_duration(duration_proto(trusting_period)), 0x2a),
@@ -89,6 +104,8 @@ pub fn marshal_for_client_state(
           },
         ),
       )
+    |> size_and_concat(encode_bytearray(host_state_nft_policy_id, 0x42))
+    |> size_and_concat(encode_bytearray(host_state_nft_token_name, 0x4a))
 }
 
 pub fn marshal_for_height(height: CardanoHeight) -> (Int, ByteArray) {
