@@ -21,6 +21,7 @@ import (
 	proto "github.com/cosmos/gogoproto/proto"
 	gogotypes "github.com/cosmos/gogoproto/types"
 	connectiontypes "github.com/cosmos/ibc-go/v8/modules/core/03-connection/types"
+	channeltypes "github.com/cosmos/ibc-go/v8/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
 	tmtypes "github.com/cosmos/ibc-go/v8/modules/light-clients/07-tendermint"
 	ics23 "github.com/cosmos/ics23/go"
@@ -150,6 +151,20 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 			return fmt.Errorf("failed to decode committed Tendermint ConsensusState CBOR: %w", err)
 		}
 		if err := committed.Cmp(&expected); err != nil {
+			return err
+		}
+		return nil
+
+	case strings.HasPrefix(keyStr, "channelEnds/"):
+		var expected channeltypes.Channel
+		if err := proto.Unmarshal(expectedValue, &expected); err != nil {
+			return fmt.Errorf("failed to decode expected Channel protobuf: %w", err)
+		}
+		var committed cardanodatum.ChannelDatum
+		if err := cbor.Unmarshal(committedValue, &committed); err != nil {
+			return fmt.Errorf("failed to decode committed Channel CBOR: %w", err)
+		}
+		if err := committed.Cmp(expected); err != nil {
 			return err
 		}
 		return nil
