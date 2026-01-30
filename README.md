@@ -43,6 +43,35 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 
 The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem.
 
+#### Working with the Hermes Submodule
+
+```bash
+# Initial clone (includes submodule)
+git clone --recurse-submodules https://github.com/webisoftSoftware/cardano-ibc-official.git
+
+# Or if already cloned, initialize the submodule
+git submodule update --init --recursive
+
+# Update submodule to latest
+cd relayer
+git pull origin feat/cardano-integration
+
+# Make changes to Hermes
+cd relayer
+# ... make changes ...
+git add -A
+git commit -m "feat: your changes"
+git push origin feat/cardano-integration
+
+# Update main repo to point to new submodule commit
+cd ..
+git add relayer
+git commit -m "chore: update Hermes submodule to latest"
+```
+
+This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
+
+
 #### Hermes Configuration
 
 > [!CAUTION]
@@ -104,9 +133,48 @@ This project uses Docker containers that require platform-specific images depend
 
 The `chains/cardano/docker-compose.yaml` file includes platform specifications where needed. If you're running on a different architecture or encounter compatibility issues, you may need to adjust these platform settings accordingly.
 
+> [!NOTE]
+TO-DO: Prior to BuilderFest 2026 we need to plan and document architecture/OS-specific setup instructions for hackathon participants who may be using different machines (Windows, Linux, macOS on Intel vs Apple Silicon, etc.). This includes ensuring all Docker images and dependencies work across platforms.
+
 ### Running a local Cardano network
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
+
+Mithril note:
+In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
+When running a local devnet, start Caribic with `caribic start --with-mithril` so the local Mithril aggregator and signers attest to state on your local network.
+
+Mithril transaction snapshots are periodic checkpoints, not one certificate per Cardano block/slot. In this repository, the Mithril "height" used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`.
+
+**Mithril Configuration Parameters:**
+
+The key Mithril aggregator configs that affect snapshot frequency and IBC latency:
+
+| Config | Description |
+|--------|-------------|
+| `RUN_INTERVAL` | Polling interval (ms) - how often the aggregator checks for new blocks to process. This is NOT the snapshot frequency. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | Snapshot frequency - a new `CardanoTransactions` snapshot is created every N blocks. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | How many blocks behind the chain tip snapshots are created. Provides finality buffer. |
+| `PROTOCOL_PARAMETERS__K` | Mithril protocol security parameter (lottery). |
+| `PROTOCOL_PARAMETERS__M` | Mithril protocol quorum parameter. |
+| `PROTOCOL_PARAMETERS__PHI_F` | Mithril protocol stake threshold parameter. |
+
+**Devnet vs Mainnet Values:**
+
+| Config | Devnet | Mainnet (Jan 2026, per @jpraynaud) |
+|--------|--------|-------------------------------------|
+| `RUN_INTERVAL` | 1000 (1s) | 60000 (60s) |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | 5 | 30 |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | 15 | 100 |
+| `PROTOCOL_PARAMETERS__K` | 3 | 2422 |
+| `PROTOCOL_PARAMETERS__M` | 50 | 20973 |
+| `PROTOCOL_PARAMETERS__PHI_F` | 0.67 | 0.2 |
+
+Devnet values are configured in `chains/mithrils/scripts/docker-compose.yaml` for fast local iteration.
+
+This means on mainnet you can expect a new `CardanoTransactions` certification approximately every ~10 minutes (~30 blocks), at 100 blocks behin* the chain tip. At this point in time, with the current architecture for IBC relaying, this translates to a minimum ~10 minute latency between a Cardano transaction being included and being provable to the counterparty chain via Mithril.
+
+In production deployments on public Cardano networks, the IBC stack is not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer are configured to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verifies Mithril certificates and proofs and does not need to trust the aggregator as an authority (it is a data source and availability dependency).
 
 ```sh
 cd caribic
@@ -128,7 +196,7 @@ cargo run start bridge
 ### Testing against Cheqd / Osmosis
 
 > [!IMPORTANT]
-> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano` / `2000-cardano-mithril`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
+> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
 
 ### Stopping the services
 
