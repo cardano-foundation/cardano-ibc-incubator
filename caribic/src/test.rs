@@ -1,8 +1,105 @@
 use crate::logger::{self, verbose};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
+
+/// Run a command while streaming its stdout/stderr to the user (for long-running steps),
+/// while also capturing the full output for later parsing.
+fn run_command_streaming(mut command: Command, label: &str) -> Result<Output, Box<dyn std::error::Error>> {
+    enum Stream {
+        Stdout,
+        Stderr,
+    }
+
+    let verbosity = logger::get_verbosity();
+    let mut last_progress_line: Option<String> = None;
+    let mut last_progress_at = Instant::now()
+        .checked_sub(Duration::from_secs(60))
+        .unwrap_or_else(Instant::now);
+
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+
+    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+
+    let (sender, receiver) = mpsc::channel::<(Stream, String)>();
+
+    let stdout_sender = sender.clone();
+    let stdout_handle = thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().flatten() {
+            let _ = stdout_sender.send((Stream::Stdout, line));
+        }
+    });
+
+    let stderr_sender = sender.clone();
+    let stderr_handle = thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().flatten() {
+            let _ = stderr_sender.send((Stream::Stderr, line));
+        }
+    });
+
+    drop(sender);
+
+    let mut stdout_buf = String::new();
+    let mut stderr_buf = String::new();
+
+    for (stream, line) in receiver {
+        let trimmed = line.trim_end().to_string();
+
+        match stream {
+            Stream::Stdout => {
+                stdout_buf.push_str(&trimmed);
+                stdout_buf.push('\n');
+            }
+            Stream::Stderr => {
+                stderr_buf.push_str(&trimmed);
+                stderr_buf.push('\n');
+            }
+        }
+
+        // Always keep full logs available in verbose mode.
+        logger::verbose(&format!("   [{}] {}", label, trimmed));
+
+        // In normal runs, emit a few "heartbeat" lines so long Hermes steps don't look stuck.
+        if verbosity != logger::Verbosity::Verbose {
+            let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
+                || trimmed.contains("certified")
+                || trimmed.contains("submitted")
+                || trimmed.contains("Building unsigned transaction")
+                || trimmed.contains("MsgConnection")
+                || trimmed.contains("ERROR")
+                || trimmed.contains("Error")
+                || trimmed.contains("failed");
+
+            if is_progress_line {
+                let now = Instant::now();
+                let should_emit = last_progress_line.as_deref() != Some(trimmed.as_str())
+                    && now.duration_since(last_progress_at) >= Duration::from_secs(2);
+                if should_emit {
+                    logger::log(&format!("   [{}] {}", label, trimmed));
+                    last_progress_line = Some(trimmed.clone());
+                    last_progress_at = now;
+                }
+            }
+        }
+    }
+
+    let status = child.wait()?;
+    let _ = stdout_handle.join();
+    let _ = stderr_handle.join();
+
+    Ok(Output {
+        status,
+        stdout: stdout_buf.into_bytes(),
+        stderr: stderr_buf.into_bytes(),
+    })
+}
 
 /// Test results summary
 #[derive(Debug)]
@@ -57,7 +154,7 @@ pub async fn run_integration_tests(
 
     // Test 1: Verify services are running
     logger::log("Test 1: Verifying services are running...");
-    verify_services_running(project_root)?;
+    verify_services_running(project_root).await?;
     logger::log("PASS Test 1: All services are running\n");
     results.passed += 1;
 
@@ -282,51 +379,39 @@ pub async fn run_integration_tests(
     
     let mut connection_test_skipped = false;
     let connection_id = if client_id.is_some() {
-        // A full connection handshake requires a Cardano client on the Cosmos side.
-        // In this repo that path currently relies on Mithril to serve Cardano headers to the Cosmos chain.
-        // If Mithril is not running, we skip instead of failing to keep local tests deterministic.
-        let mithril_running = check_service_health("http://127.0.0.1:8080/health");
-        if !mithril_running {
-            logger::log("SKIP Test 7: Mithril is not running; skipping bidirectional connection handshake");
-            logger::log("   Start with Mithril enabled to run this test: caribic start --with-mithril\n");
-            results.skipped += 1;
-            connection_test_skipped = true;
-            None
-        } else {
-            match create_test_connection(project_root) {
-                Ok(connection_id) => {
-                    // Wait for transaction confirmation
-                    logger::verbose("   Waiting for transaction confirmation...");
-                    std::thread::sleep(std::time::Duration::from_secs(10));
+        match create_test_connection(project_root) {
+            Ok(connection_id) => {
+                // Wait for transaction confirmation
+                logger::verbose("   Waiting for transaction confirmation...");
+                std::thread::sleep(std::time::Duration::from_secs(10));
 
-                    let root_after_connection = query_handler_state_root(project_root)?;
-                    
-                    logger::log(&format!("   Connection ID: {}", connection_id));
-                    logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
-                    logger::log("PASS Test 7: Connection created and root updated\n");
-                    results.passed += 1;
-                    Some(connection_id)
+                let root_after_connection = query_handler_state_root(project_root)?;
+                
+                logger::log(&format!("   Connection ID: {}", connection_id));
+                logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
+                logger::log("PASS Test 7: Connection created and root updated\n");
+                results.passed += 1;
+                Some(connection_id)
+            }
+            Err(e) => {
+                let error_str = e.to_string();
+                // If we know we're missing the Cardano light client pieces on the Cosmos side,
+                // skip the test rather than failing the full suite.
+                if error_str.contains("CardanoClientState -> AnyClientState")
+                    || error_str.contains("not yet implemented")
+                    || error_str.contains("Cardano header verification is not implemented")
+                    || error_str.contains("/ibc.lightclients.cardano.v1.Header")
+                {
+                    logger::log("SKIP Test 7: Bidirectional connection requires Cardano light client on Cosmos");
+                    logger::log(&format!("   {}", error_str));
+                    logger::log("");
+                    results.skipped += 1;
+                    connection_test_skipped = true;
+                } else {
+                    logger::log(&format!("FAIL Test 7: Hermes connection creation failed\n{}\n", e));
+                    results.failed += 1;
                 }
-                Err(e) => {
-                    let error_str = e.to_string();
-                    // If we know we're missing the Cardano light client pieces on the Cosmos side,
-                    // skip the test rather than failing the full suite.
-                    if error_str.contains("CardanoClientState -> AnyClientState")
-                        || error_str.contains("not yet implemented")
-                        || error_str.contains("Cardano header verification is not implemented")
-                        || error_str.contains("/ibc.lightclients.cardano.v1.Header")
-                    {
-                        logger::log("SKIP Test 7: Bidirectional connection requires Cardano light client on Cosmos");
-                        logger::log(&format!("   {}", error_str));
-                        logger::log("");
-                        results.skipped += 1;
-                        connection_test_skipped = true;
-                    } else {
-                        logger::log(&format!("FAIL Test 7: Hermes connection creation failed\n{}\n", e));
-                        results.failed += 1;
-                    }
-                    None
-                }
+                None
             }
         }
     } else {
@@ -385,8 +470,13 @@ pub async fn run_integration_tests(
 }
 
 /// Verify that all required services are running
-fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut missing_services = Vec::new();
+    let http_client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     // Check Cardano node using cardano-cli query tip
     let cardano_running = check_cardano_node_running(project_root);
@@ -405,21 +495,79 @@ fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std::error
     }
 
     // Check local packet-forwarding chain (Cosmos chain we operate)
-    // Don't wait - just check once. User should run 'caribic start' first.
-    verbose("   Checking packet-forwarding chain RPC (http://127.0.0.1:26657/status)...");
-    let pfc_running = check_service_health("http://127.0.0.1:26657/status");
+    verbose("   Waiting for packet-forwarding chain RPC (http://127.0.0.1:26657/status) ...");
+    let pfc_running = wait_for_service_health(
+        &http_client,
+        "http://127.0.0.1:26657/status",
+        120,
+        Duration::from_secs(5),
+    )
+    .await;
     if !pfc_running {
         missing_services.push("Packet-forwarding chain (Cosmos) on :26657");
     } else {
         verbose("   Packet-forwarding chain is running");
     }
 
-    // Check Mithril (optional)
-    let mithril_running = check_service_health("http://127.0.0.1:8080/health");
+    // Check Mithril (required for bidirectional IBC tests)
+    // Mithril is required for Cosmos-side Cardano client creation (the Mithril light client),
+    // which is exercised by connection/channel tests.
+    //
+    // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
+    // `/aggregator` endpoint is stable and returns 2xx when the service is up.
+    let mithril_running = check_service_health(&http_client, "http://127.0.0.1:8080/aggregator").await;
     if !mithril_running {
-        logger::verbose("   Mithril is not running (optional)");
+        missing_services.push("Mithril aggregator on :8080");
     } else {
         verbose("   Mithril is running");
+
+        // Mithril "up" is not the same as "ready".
+        //
+        // The aggregator can return 2xx for `/aggregator` while it still has no certificate chain.
+        // In that state, all artifact endpoints keep returning an empty JSON array (`[]`) and the
+        // Cosmos-side Cardano client cannot be created, which will later stall or fail connection/
+        // channel handshakes.
+        //
+        // Common symptoms when Mithril is not ready:
+        // - `GET /aggregator/certificates` returns `[]`
+        // - aggregator logs contain "No certificate found", "certificate chain is invalid", or
+        //   aggregate verification key (AVK) mismatch errors.
+        //
+        // Local devnet recovery (one-time bootstrap):
+        // - run the `mithril-aggregator-genesis` job (docker compose profile `mithril-genesis`)
+        //   with the genesis keys from `~/.caribic/config.json`
+        // - restart Mithril aggregator + signers so they pick up the seeded certificate chain
+
+        // Gateway's `queryNewMithrilClient` requires stake distributions + transaction snapshots.
+        // These are produced asynchronously by the local aggregator, so we wait here to avoid
+        // flaky failures in later Hermes-driven tests.
+        verbose("   Waiting for Mithril stake distributions ...");
+        let stake_distributions_ready = wait_for_json_array_non_empty(
+            &http_client,
+            "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions",
+            60,
+            Duration::from_secs(5),
+        )
+        .await;
+        if !stake_distributions_ready {
+            missing_services.push("Mithril stake distributions (not ready)");
+        } else {
+            verbose("   Mithril stake distributions available");
+        }
+
+        verbose("   Waiting for Mithril Cardano transaction snapshots ...");
+        let tx_snapshots_ready = wait_for_json_array_non_empty(
+            &http_client,
+            "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions",
+            60,
+            Duration::from_secs(5),
+        )
+        .await;
+        if !tx_snapshots_ready {
+            missing_services.push("Mithril Cardano transaction snapshots (not ready)");
+        } else {
+            verbose("   Mithril Cardano transaction snapshots available");
+        }
     }
 
     if !missing_services.is_empty() {
@@ -543,26 +691,22 @@ fn check_gateway_container_running() -> bool {
 }
 
 /// Check if a service is healthy by querying its health endpoint
-fn check_service_health(url: &str) -> bool {
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-
-    client
-        .get(url)
-        .send()
-        .map(|resp| resp.status().is_success())
-        .unwrap_or(false)
+async fn check_service_health(client: &reqwest::Client, url: &str) -> bool {
+    match client.get(url).send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
 }
 
-fn wait_for_service_health(url: &str, max_attempts: usize, interval: Duration) -> bool {
+async fn wait_for_service_health(
+    client: &reqwest::Client,
+    url: &str,
+    max_attempts: usize,
+    interval: Duration,
+) -> bool {
     let start = Instant::now();
     for attempt in 0..max_attempts {
-        if check_service_health(url) {
+        if check_service_health(client, url).await {
             return true;
         }
         logger::verbose(&format!(
@@ -572,7 +716,47 @@ fn wait_for_service_health(url: &str, max_attempts: usize, interval: Duration) -
             max_attempts,
             start.elapsed().as_secs()
         ));
-        thread::sleep(interval);
+        tokio::time::sleep(interval).await;
+    }
+    false
+}
+
+async fn check_json_array_non_empty(client: &reqwest::Client, url: &str) -> bool {
+    let resp = match client.get(url).send().await {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    if !resp.status().is_success() {
+        return false;
+    }
+    match resp.json::<serde_json::Value>().await {
+        Ok(serde_json::Value::Array(items)) => !items.is_empty(),
+        _ => false,
+    }
+}
+
+async fn wait_for_json_array_non_empty(
+    client: &reqwest::Client,
+    url: &str,
+    max_attempts: usize,
+    interval: Duration,
+) -> bool {
+    // Some services (notably the local Mithril aggregator) intentionally return `[]` until they
+    // have produced their first artifacts. For our readiness checks, "non-empty array" is the
+    // simplest portable signal that the service is usable for subsequent tests.
+    let start = Instant::now();
+    for attempt in 0..max_attempts {
+        if check_json_array_non_empty(client, url).await {
+            return true;
+        }
+        logger::verbose(&format!(
+            "   Waiting for {} (attempt {}/{}, elapsed {}s)...",
+            url,
+            attempt + 1,
+            max_attempts,
+            start.elapsed().as_secs()
+        ));
+        tokio::time::sleep(interval).await;
     }
     false
 }
@@ -823,13 +1007,13 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
     
     logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain");
     
-    let output = Command::new(&hermes_binary)
-        .args(&[
-            "create", "client",
-            "--host-chain", "cardano-devnet",
-            "--reference-chain", "sidechain",
-        ])
-        .output()?;
+    let mut command = Command::new(&hermes_binary);
+    command.args(&[
+        "create", "client",
+        "--host-chain", "cardano-devnet",
+        "--reference-chain", "sidechain",
+    ]);
+    let output = run_command_streaming(command, "hermes create client")?;
     
     if !output.status.success() {
         return Err(format!(
@@ -848,16 +1032,29 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
     
-    // Extract client_id from output (format: "ibc_client-0" or similar)
+    // Extract client_id from Hermes output.
+    //
+    // Hermes prints a multi-line debug representation (not a single stable line), so we scan all
+    // whitespace-delimited tokens and pick the first one that looks like a client identifier.
+    //
+    // For Cardano↔Cosmos, clients stored on Cardano that track a Cosmos chain are Tendermint
+    // clients and must use the standard `07-tendermint-{n}` prefix.
     let client_id = stdout
-        .lines()
-        .find(|line| line.contains("client") || line.contains("Client"))
-        .and_then(|line| {
-            line.split_whitespace()
-                .find(|word| word.starts_with("ibc_client-") || word.contains("07-tendermint-"))
+        .split_whitespace()
+        .filter_map(|word| {
+            // Hermes output often wraps identifiers in quotes and punctuation, e.g. `"07-tendermint-12",`
+            // or `id=07-tendermint-12`. Normalize those into a plain identifier.
+            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
+
+            if cleaned.starts_with("07-tendermint-") || cleaned.starts_with("ibc_client-") {
+                Some(cleaned.to_string())
+            } else {
+                None
+            }
         })
-        .unwrap_or("ibc_client-0")
-        .to_string();
+        .next()
+        .ok_or_else(|| format!("Failed to parse client id from Hermes output:\n{}", stdout.trim()))?;
     
     logger::verbose(&format!("   Client created: {}", client_id));
     
@@ -869,18 +1066,26 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
 /// Creates a connection between cardano-devnet and the local packet-forwarding chain
 fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating connection via Hermes...");
-    
+
+    // The connection handshake can legitimately take a few minutes on a local devnet:
+    // - Hermes waits for Cardano tx inclusion, then for Mithril certification of the inclusion
+    //   height (used as the IBC `proof_height` when proving Cardano state to the Cosmos chain).
+    //
+    // If this appears stuck, the next debugging step is to identify which handshake message was
+    // last submitted (OpenInit/OpenTry/OpenAck/OpenConfirm) in `~/.hermes/hermes.log`, then check
+    // Gateway logs for the corresponding unsigned-tx build/evaluation errors (Plutus failures,
+    // PastHorizon/slot horizon issues, etc).
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
+
     logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain");
     
-    let output = Command::new(&hermes_binary)
-        .args(&[
-            "create", "connection",
-            "--a-chain", "cardano-devnet",
-            "--b-chain", "sidechain",
-        ])
-        .output()?;
+    let mut command = Command::new(&hermes_binary);
+    command.args(&[
+        "create", "connection",
+        "--a-chain", "cardano-devnet",
+        "--b-chain", "sidechain",
+    ]);
+    let output = run_command_streaming(command, "hermes create connection")?;
     
     if !output.status.success() {
         return Err(format!(
@@ -895,16 +1100,24 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
     
-    // Extract connection_id from output
+    // Extract connection_id from Hermes output.
     let connection_id = stdout
-        .lines()
-        .find(|line| line.contains("connection"))
-        .and_then(|line| {
-            line.split_whitespace()
-                .find(|word| word.starts_with("connection-"))
+        .split_whitespace()
+        .filter_map(|word| {
+            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
+
+            cleaned
+                .starts_with("connection-")
+                .then(|| cleaned.to_string())
         })
-        .unwrap_or("connection-0")
-        .to_string();
+        .next()
+        .ok_or_else(|| {
+            format!(
+                "Failed to parse connection id from Hermes output:\n{}",
+                stdout.trim()
+            )
+        })?;
     
     logger::verbose(&format!("   Connection created: {}", connection_id));
     
@@ -927,15 +1140,15 @@ fn create_test_channel(
         connection_id
     ));
     
-    let output = Command::new(&hermes_binary)
-        .args(&[
-            "create", "channel",
-            "--a-chain", "cardano-devnet",
-            "--a-connection", connection_id,
-            "--a-port", "transfer",
-            "--b-port", "transfer",
-        ])
-        .output()?;
+    let mut command = Command::new(&hermes_binary);
+    command.args(&[
+        "create", "channel",
+        "--a-chain", "cardano-devnet",
+        "--a-connection", connection_id,
+        "--a-port", "transfer",
+        "--b-port", "transfer",
+    ]);
+    let output = run_command_streaming(command, "hermes create channel")?;
     
     if !output.status.success() {
         return Err(format!(
@@ -950,16 +1163,17 @@ fn create_test_channel(
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
     
-    // Extract channel_id from output
+    // Extract channel_id from Hermes output.
     let channel_id = stdout
-        .lines()
-        .find(|line| line.contains("channel"))
-        .and_then(|line| {
-            line.split_whitespace()
-                .find(|word| word.starts_with("channel-"))
+        .split_whitespace()
+        .filter_map(|word| {
+            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
+
+            cleaned.starts_with("channel-").then(|| cleaned.to_string())
         })
-        .unwrap_or("channel-0")
-        .to_string();
+        .next()
+        .ok_or_else(|| format!("Failed to parse channel id from Hermes output:\n{}", stdout.trim()))?;
     
     logger::verbose(&format!("   Channel created: {}", channel_id));
     
