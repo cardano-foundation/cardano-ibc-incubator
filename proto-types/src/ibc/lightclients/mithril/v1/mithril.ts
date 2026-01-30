@@ -1,8 +1,8 @@
 /* eslint-disable */
-import { Duration } from "../../../google/protobuf/duration";
-import { BinaryReader, BinaryWriter } from "../../../binary";
-import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../helpers";
-export const protobufPackage = "ibc.clients.mithril.v1";
+import { Duration } from "../../../../google/protobuf/duration";
+import { BinaryReader, BinaryWriter } from "../../../../binary";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../../helpers";
+export const protobufPackage = "ibc.lightclients.mithril.v1";
 /** Protocol Message Part Key */
 export enum ProtocolMessagePartKey {
   /** PROTOCOL_MESSAGE_PART_KEY_UNSPECIFIED - Invalid message part key */
@@ -94,6 +94,16 @@ export interface ClientState {
   protocol_parameters?: MithrilProtocolParameters;
   /** Path at which next upgraded client will be committed. */
   upgrade_path: string[];
+  /**
+   * HostState NFT identification on the Cardano chain.
+   *
+   * The HostState UTxO is the single source of truth for Cardano IBC state and is
+   * uniquely identified by this NFT. The light client uses this to locate the
+   * HostState output inside the certified transaction body and to extract the
+   * `ibc_state_root` from its inline datum.
+   */
+  host_state_nft_policy_id: Uint8Array;
+  host_state_nft_token_name: Uint8Array;
 }
 /**
  * MithrilConsensusState represents the consensus state in the Mithril system.
@@ -102,8 +112,16 @@ export interface ClientState {
  */
 export interface ConsensusState {
   timestamp: bigint;
-  first_cert_hash_latest_epoch: string;
+  first_cert_hash_latest_epoch?: MithrilCertificate;
   latest_cert_hash_tx_snapshot: string;
+  /**
+   * Authenticated commitment root for Cardano IBC state at this height.
+   *
+   * This is the exact 32-byte `ibc_state_root` extracted from the on-chain
+   * HostState datum whose creating transaction is proven to be included in the
+   * Mithril-certified transaction snapshot for this height.
+   */
+  ibc_state_root: Uint8Array;
 }
 /** Misbehavior represents a conflict between two headers. */
 export interface Misbehaviour {
@@ -119,6 +137,32 @@ export interface MithrilHeader {
   mithril_stake_distribution_certificate?: MithrilCertificate;
   transaction_snapshot?: CardanoTransactionSnapshot;
   transaction_snapshot_certificate?: MithrilCertificate;
+  /**
+   * Optional chain of previous Mithril stake distribution certificates.
+   *
+   * The Mithril stake distribution certificate of epoch N links to the previous epoch’s
+   * certificate via `previous_hash`. If the light client is updated after missing one or
+   * more epochs, it must be able to verify and store those missing certificates to keep
+   * the certificate chain verifiable.
+   *
+   * This list should include the certificates for the epochs immediately preceding
+   * `mithril_stake_distribution_certificate` (field 2). It MUST NOT include the current
+   * epoch’s certificate (field 2). The verifier may ignore extra entries.
+   */
+  previous_mithril_stake_distribution_certificates: MithrilCertificate[];
+  /**
+   * HostState commitment evidence for this height.
+   *
+   * The goal is to let the counterparty verify:
+   * 1) a specific transaction is included in the Mithril-certified transaction set,
+   * 2) that transaction creates the HostState UTxO (identified by the HostState NFT),
+   * 3) the inline datum on that output commits to `ibc_state_root`, and
+   * 4) that root is used for ICS-23 proof verification at this height.
+   */
+  host_state_tx_hash: string;
+  host_state_tx_body_cbor: Uint8Array;
+  host_state_tx_output_index: number;
+  host_state_tx_proof: Uint8Array;
 }
 /** Mithril Stake Distribution */
 export interface MithrilStakeDistribution {
@@ -224,11 +268,11 @@ export interface Fraction {
 function createBaseHeight(): Height {
   return {
     revision_number: BigInt(0),
-    revision_height: BigInt(0)
+    revision_height: BigInt(0),
   };
 }
 export const Height = {
-  typeUrl: "/ibc.clients.mithril.v1.Height",
+  typeUrl: "/ibc.lightclients.mithril.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.revision_number !== BigInt(0)) {
       writer.uint32(8).uint64(message.revision_number);
@@ -266,8 +310,10 @@ export const Height = {
   },
   toJSON(message: Height): unknown {
     const obj: any = {};
-    message.revision_number !== undefined && (obj.revision_number = (message.revision_number || BigInt(0)).toString());
-    message.revision_height !== undefined && (obj.revision_height = (message.revision_height || BigInt(0)).toString());
+    message.revision_number !== undefined &&
+      (obj.revision_number = (message.revision_number || BigInt(0)).toString());
+    message.revision_height !== undefined &&
+      (obj.revision_height = (message.revision_height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Height>, I>>(object: I): Height {
@@ -279,7 +325,7 @@ export const Height = {
       message.revision_height = BigInt(object.revision_height.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseClientState(): ClientState {
   return {
@@ -289,11 +335,13 @@ function createBaseClientState(): ClientState {
     current_epoch: BigInt(0),
     trusting_period: Duration.fromPartial({}),
     protocol_parameters: undefined,
-    upgrade_path: []
+    upgrade_path: [],
+    host_state_nft_policy_id: new Uint8Array(),
+    host_state_nft_token_name: new Uint8Array(),
   };
 }
 export const ClientState = {
-  typeUrl: "/ibc.clients.mithril.v1.ClientState",
+  typeUrl: "/ibc.lightclients.mithril.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.chain_id !== "") {
       writer.uint32(10).string(message.chain_id);
@@ -315,6 +363,12 @@ export const ClientState = {
     }
     for (const v of message.upgrade_path) {
       writer.uint32(58).string(v!);
+    }
+    if (message.host_state_nft_policy_id.length !== 0) {
+      writer.uint32(66).bytes(message.host_state_nft_policy_id);
+    }
+    if (message.host_state_nft_token_name.length !== 0) {
+      writer.uint32(74).bytes(message.host_state_nft_token_name);
     }
     return writer;
   },
@@ -346,6 +400,12 @@ export const ClientState = {
         case 7:
           message.upgrade_path.push(reader.string());
           break;
+        case 8:
+          message.host_state_nft_policy_id = reader.bytes();
+          break;
+        case 9:
+          message.host_state_nft_token_name = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -360,23 +420,46 @@ export const ClientState = {
     if (isSet(object.frozen_height)) obj.frozen_height = Height.fromJSON(object.frozen_height);
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.trusting_period)) obj.trusting_period = Duration.fromJSON(object.trusting_period);
-    if (isSet(object.protocol_parameters)) obj.protocol_parameters = MithrilProtocolParameters.fromJSON(object.protocol_parameters);
-    if (Array.isArray(object?.upgrade_path)) obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
+    if (isSet(object.protocol_parameters))
+      obj.protocol_parameters = MithrilProtocolParameters.fromJSON(object.protocol_parameters);
+    if (Array.isArray(object?.upgrade_path))
+      obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
+    if (isSet(object.host_state_nft_policy_id))
+      obj.host_state_nft_policy_id = bytesFromBase64(object.host_state_nft_policy_id);
+    if (isSet(object.host_state_nft_token_name))
+      obj.host_state_nft_token_name = bytesFromBase64(object.host_state_nft_token_name);
     return obj;
   },
   toJSON(message: ClientState): unknown {
     const obj: any = {};
     message.chain_id !== undefined && (obj.chain_id = message.chain_id);
-    message.latest_height !== undefined && (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
-    message.frozen_height !== undefined && (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
-    message.current_epoch !== undefined && (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
-    message.trusting_period !== undefined && (obj.trusting_period = message.trusting_period ? Duration.toJSON(message.trusting_period) : undefined);
-    message.protocol_parameters !== undefined && (obj.protocol_parameters = message.protocol_parameters ? MithrilProtocolParameters.toJSON(message.protocol_parameters) : undefined);
+    message.latest_height !== undefined &&
+      (obj.latest_height = message.latest_height ? Height.toJSON(message.latest_height) : undefined);
+    message.frozen_height !== undefined &&
+      (obj.frozen_height = message.frozen_height ? Height.toJSON(message.frozen_height) : undefined);
+    message.current_epoch !== undefined &&
+      (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
+    message.trusting_period !== undefined &&
+      (obj.trusting_period = message.trusting_period ? Duration.toJSON(message.trusting_period) : undefined);
+    message.protocol_parameters !== undefined &&
+      (obj.protocol_parameters = message.protocol_parameters
+        ? MithrilProtocolParameters.toJSON(message.protocol_parameters)
+        : undefined);
     if (message.upgrade_path) {
-      obj.upgrade_path = message.upgrade_path.map(e => e);
+      obj.upgrade_path = message.upgrade_path.map((e) => e);
     } else {
       obj.upgrade_path = [];
     }
+    message.host_state_nft_policy_id !== undefined &&
+      (obj.host_state_nft_policy_id = base64FromBytes(
+        message.host_state_nft_policy_id !== undefined ? message.host_state_nft_policy_id : new Uint8Array(),
+      ));
+    message.host_state_nft_token_name !== undefined &&
+      (obj.host_state_nft_token_name = base64FromBytes(
+        message.host_state_nft_token_name !== undefined
+          ? message.host_state_nft_token_name
+          : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -397,28 +480,34 @@ export const ClientState = {
     if (object.protocol_parameters !== undefined && object.protocol_parameters !== null) {
       message.protocol_parameters = MithrilProtocolParameters.fromPartial(object.protocol_parameters);
     }
-    message.upgrade_path = object.upgrade_path?.map(e => e) || [];
+    message.upgrade_path = object.upgrade_path?.map((e) => e) || [];
+    message.host_state_nft_policy_id = object.host_state_nft_policy_id ?? new Uint8Array();
+    message.host_state_nft_token_name = object.host_state_nft_token_name ?? new Uint8Array();
     return message;
-  }
+  },
 };
 function createBaseConsensusState(): ConsensusState {
   return {
     timestamp: BigInt(0),
-    first_cert_hash_latest_epoch: "",
-    latest_cert_hash_tx_snapshot: ""
+    first_cert_hash_latest_epoch: undefined,
+    latest_cert_hash_tx_snapshot: "",
+    ibc_state_root: new Uint8Array(),
   };
 }
 export const ConsensusState = {
-  typeUrl: "/ibc.clients.mithril.v1.ConsensusState",
+  typeUrl: "/ibc.lightclients.mithril.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.timestamp !== BigInt(0)) {
       writer.uint32(8).uint64(message.timestamp);
     }
-    if (message.first_cert_hash_latest_epoch !== "") {
-      writer.uint32(18).string(message.first_cert_hash_latest_epoch);
+    if (message.first_cert_hash_latest_epoch !== undefined) {
+      MithrilCertificate.encode(message.first_cert_hash_latest_epoch, writer.uint32(18).fork()).ldelim();
     }
     if (message.latest_cert_hash_tx_snapshot !== "") {
       writer.uint32(26).string(message.latest_cert_hash_tx_snapshot);
+    }
+    if (message.ibc_state_root.length !== 0) {
+      writer.uint32(34).bytes(message.ibc_state_root);
     }
     return writer;
   },
@@ -433,10 +522,13 @@ export const ConsensusState = {
           message.timestamp = reader.uint64();
           break;
         case 2:
-          message.first_cert_hash_latest_epoch = reader.string();
+          message.first_cert_hash_latest_epoch = MithrilCertificate.decode(reader, reader.uint32());
           break;
         case 3:
           message.latest_cert_hash_tx_snapshot = reader.string();
+          break;
+        case 4:
+          message.ibc_state_root = reader.bytes();
           break;
         default:
           reader.skipType(tag & 7);
@@ -448,15 +540,26 @@ export const ConsensusState = {
   fromJSON(object: any): ConsensusState {
     const obj = createBaseConsensusState();
     if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
-    if (isSet(object.first_cert_hash_latest_epoch)) obj.first_cert_hash_latest_epoch = String(object.first_cert_hash_latest_epoch);
-    if (isSet(object.latest_cert_hash_tx_snapshot)) obj.latest_cert_hash_tx_snapshot = String(object.latest_cert_hash_tx_snapshot);
+    if (isSet(object.first_cert_hash_latest_epoch))
+      obj.first_cert_hash_latest_epoch = MithrilCertificate.fromJSON(object.first_cert_hash_latest_epoch);
+    if (isSet(object.latest_cert_hash_tx_snapshot))
+      obj.latest_cert_hash_tx_snapshot = String(object.latest_cert_hash_tx_snapshot);
+    if (isSet(object.ibc_state_root)) obj.ibc_state_root = bytesFromBase64(object.ibc_state_root);
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
     const obj: any = {};
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
-    message.first_cert_hash_latest_epoch !== undefined && (obj.first_cert_hash_latest_epoch = message.first_cert_hash_latest_epoch);
-    message.latest_cert_hash_tx_snapshot !== undefined && (obj.latest_cert_hash_tx_snapshot = message.latest_cert_hash_tx_snapshot);
+    message.first_cert_hash_latest_epoch !== undefined &&
+      (obj.first_cert_hash_latest_epoch = message.first_cert_hash_latest_epoch
+        ? MithrilCertificate.toJSON(message.first_cert_hash_latest_epoch)
+        : undefined);
+    message.latest_cert_hash_tx_snapshot !== undefined &&
+      (obj.latest_cert_hash_tx_snapshot = message.latest_cert_hash_tx_snapshot);
+    message.ibc_state_root !== undefined &&
+      (obj.ibc_state_root = base64FromBytes(
+        message.ibc_state_root !== undefined ? message.ibc_state_root : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -464,20 +567,25 @@ export const ConsensusState = {
     if (object.timestamp !== undefined && object.timestamp !== null) {
       message.timestamp = BigInt(object.timestamp.toString());
     }
-    message.first_cert_hash_latest_epoch = object.first_cert_hash_latest_epoch ?? "";
+    if (object.first_cert_hash_latest_epoch !== undefined && object.first_cert_hash_latest_epoch !== null) {
+      message.first_cert_hash_latest_epoch = MithrilCertificate.fromPartial(
+        object.first_cert_hash_latest_epoch,
+      );
+    }
     message.latest_cert_hash_tx_snapshot = object.latest_cert_hash_tx_snapshot ?? "";
+    message.ibc_state_root = object.ibc_state_root ?? new Uint8Array();
     return message;
-  }
+  },
 };
 function createBaseMisbehaviour(): Misbehaviour {
   return {
     client_id: "",
     mithril_header1: undefined,
-    mithril_header2: undefined
+    mithril_header2: undefined,
   };
 }
 export const Misbehaviour = {
-  typeUrl: "/ibc.clients.mithril.v1.Misbehaviour",
+  typeUrl: "/ibc.lightclients.mithril.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.client_id !== "") {
       writer.uint32(10).string(message.client_id);
@@ -523,8 +631,14 @@ export const Misbehaviour = {
   toJSON(message: Misbehaviour): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.mithril_header1 !== undefined && (obj.mithril_header1 = message.mithril_header1 ? MithrilHeader.toJSON(message.mithril_header1) : undefined);
-    message.mithril_header2 !== undefined && (obj.mithril_header2 = message.mithril_header2 ? MithrilHeader.toJSON(message.mithril_header2) : undefined);
+    message.mithril_header1 !== undefined &&
+      (obj.mithril_header1 = message.mithril_header1
+        ? MithrilHeader.toJSON(message.mithril_header1)
+        : undefined);
+    message.mithril_header2 !== undefined &&
+      (obj.mithril_header2 = message.mithril_header2
+        ? MithrilHeader.toJSON(message.mithril_header2)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
@@ -537,30 +651,53 @@ export const Misbehaviour = {
       message.mithril_header2 = MithrilHeader.fromPartial(object.mithril_header2);
     }
     return message;
-  }
+  },
 };
 function createBaseMithrilHeader(): MithrilHeader {
   return {
     mithril_stake_distribution: undefined,
     mithril_stake_distribution_certificate: undefined,
     transaction_snapshot: undefined,
-    transaction_snapshot_certificate: undefined
+    transaction_snapshot_certificate: undefined,
+    previous_mithril_stake_distribution_certificates: [],
+    host_state_tx_hash: "",
+    host_state_tx_body_cbor: new Uint8Array(),
+    host_state_tx_output_index: 0,
+    host_state_tx_proof: new Uint8Array(),
   };
 }
 export const MithrilHeader = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilHeader",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilHeader",
   encode(message: MithrilHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.mithril_stake_distribution !== undefined) {
       MithrilStakeDistribution.encode(message.mithril_stake_distribution, writer.uint32(10).fork()).ldelim();
     }
     if (message.mithril_stake_distribution_certificate !== undefined) {
-      MithrilCertificate.encode(message.mithril_stake_distribution_certificate, writer.uint32(18).fork()).ldelim();
+      MithrilCertificate.encode(
+        message.mithril_stake_distribution_certificate,
+        writer.uint32(18).fork(),
+      ).ldelim();
     }
     if (message.transaction_snapshot !== undefined) {
       CardanoTransactionSnapshot.encode(message.transaction_snapshot, writer.uint32(26).fork()).ldelim();
     }
     if (message.transaction_snapshot_certificate !== undefined) {
       MithrilCertificate.encode(message.transaction_snapshot_certificate, writer.uint32(34).fork()).ldelim();
+    }
+    for (const v of message.previous_mithril_stake_distribution_certificates) {
+      MithrilCertificate.encode(v!, writer.uint32(74).fork()).ldelim();
+    }
+    if (message.host_state_tx_hash !== "") {
+      writer.uint32(42).string(message.host_state_tx_hash);
+    }
+    if (message.host_state_tx_body_cbor.length !== 0) {
+      writer.uint32(50).bytes(message.host_state_tx_body_cbor);
+    }
+    if (message.host_state_tx_output_index !== 0) {
+      writer.uint32(56).uint32(message.host_state_tx_output_index);
+    }
+    if (message.host_state_tx_proof.length !== 0) {
+      writer.uint32(66).bytes(message.host_state_tx_proof);
     }
     return writer;
   },
@@ -583,6 +720,23 @@ export const MithrilHeader = {
         case 4:
           message.transaction_snapshot_certificate = MithrilCertificate.decode(reader, reader.uint32());
           break;
+        case 9:
+          message.previous_mithril_stake_distribution_certificates.push(
+            MithrilCertificate.decode(reader, reader.uint32()),
+          );
+          break;
+        case 5:
+          message.host_state_tx_hash = reader.string();
+          break;
+        case 6:
+          message.host_state_tx_body_cbor = reader.bytes();
+          break;
+        case 7:
+          message.host_state_tx_output_index = reader.uint32();
+          break;
+        case 8:
+          message.host_state_tx_proof = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -592,36 +746,107 @@ export const MithrilHeader = {
   },
   fromJSON(object: any): MithrilHeader {
     const obj = createBaseMithrilHeader();
-    if (isSet(object.mithril_stake_distribution)) obj.mithril_stake_distribution = MithrilStakeDistribution.fromJSON(object.mithril_stake_distribution);
-    if (isSet(object.mithril_stake_distribution_certificate)) obj.mithril_stake_distribution_certificate = MithrilCertificate.fromJSON(object.mithril_stake_distribution_certificate);
-    if (isSet(object.transaction_snapshot)) obj.transaction_snapshot = CardanoTransactionSnapshot.fromJSON(object.transaction_snapshot);
-    if (isSet(object.transaction_snapshot_certificate)) obj.transaction_snapshot_certificate = MithrilCertificate.fromJSON(object.transaction_snapshot_certificate);
+    if (isSet(object.mithril_stake_distribution))
+      obj.mithril_stake_distribution = MithrilStakeDistribution.fromJSON(object.mithril_stake_distribution);
+    if (isSet(object.mithril_stake_distribution_certificate))
+      obj.mithril_stake_distribution_certificate = MithrilCertificate.fromJSON(
+        object.mithril_stake_distribution_certificate,
+      );
+    if (isSet(object.transaction_snapshot))
+      obj.transaction_snapshot = CardanoTransactionSnapshot.fromJSON(object.transaction_snapshot);
+    if (isSet(object.transaction_snapshot_certificate))
+      obj.transaction_snapshot_certificate = MithrilCertificate.fromJSON(
+        object.transaction_snapshot_certificate,
+      );
+    if (Array.isArray(object?.previous_mithril_stake_distribution_certificates))
+      obj.previous_mithril_stake_distribution_certificates =
+        object.previous_mithril_stake_distribution_certificates.map((e: any) =>
+          MithrilCertificate.fromJSON(e),
+        );
+    if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
+    if (isSet(object.host_state_tx_body_cbor))
+      obj.host_state_tx_body_cbor = bytesFromBase64(object.host_state_tx_body_cbor);
+    if (isSet(object.host_state_tx_output_index))
+      obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
+    if (isSet(object.host_state_tx_proof))
+      obj.host_state_tx_proof = bytesFromBase64(object.host_state_tx_proof);
     return obj;
   },
   toJSON(message: MithrilHeader): unknown {
     const obj: any = {};
-    message.mithril_stake_distribution !== undefined && (obj.mithril_stake_distribution = message.mithril_stake_distribution ? MithrilStakeDistribution.toJSON(message.mithril_stake_distribution) : undefined);
-    message.mithril_stake_distribution_certificate !== undefined && (obj.mithril_stake_distribution_certificate = message.mithril_stake_distribution_certificate ? MithrilCertificate.toJSON(message.mithril_stake_distribution_certificate) : undefined);
-    message.transaction_snapshot !== undefined && (obj.transaction_snapshot = message.transaction_snapshot ? CardanoTransactionSnapshot.toJSON(message.transaction_snapshot) : undefined);
-    message.transaction_snapshot_certificate !== undefined && (obj.transaction_snapshot_certificate = message.transaction_snapshot_certificate ? MithrilCertificate.toJSON(message.transaction_snapshot_certificate) : undefined);
+    message.mithril_stake_distribution !== undefined &&
+      (obj.mithril_stake_distribution = message.mithril_stake_distribution
+        ? MithrilStakeDistribution.toJSON(message.mithril_stake_distribution)
+        : undefined);
+    message.mithril_stake_distribution_certificate !== undefined &&
+      (obj.mithril_stake_distribution_certificate = message.mithril_stake_distribution_certificate
+        ? MithrilCertificate.toJSON(message.mithril_stake_distribution_certificate)
+        : undefined);
+    message.transaction_snapshot !== undefined &&
+      (obj.transaction_snapshot = message.transaction_snapshot
+        ? CardanoTransactionSnapshot.toJSON(message.transaction_snapshot)
+        : undefined);
+    message.transaction_snapshot_certificate !== undefined &&
+      (obj.transaction_snapshot_certificate = message.transaction_snapshot_certificate
+        ? MithrilCertificate.toJSON(message.transaction_snapshot_certificate)
+        : undefined);
+    if (message.previous_mithril_stake_distribution_certificates) {
+      obj.previous_mithril_stake_distribution_certificates =
+        message.previous_mithril_stake_distribution_certificates.map((e) =>
+          e ? MithrilCertificate.toJSON(e) : undefined,
+        );
+    } else {
+      obj.previous_mithril_stake_distribution_certificates = [];
+    }
+    message.host_state_tx_hash !== undefined && (obj.host_state_tx_hash = message.host_state_tx_hash);
+    message.host_state_tx_body_cbor !== undefined &&
+      (obj.host_state_tx_body_cbor = base64FromBytes(
+        message.host_state_tx_body_cbor !== undefined ? message.host_state_tx_body_cbor : new Uint8Array(),
+      ));
+    message.host_state_tx_output_index !== undefined &&
+      (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
+    message.host_state_tx_proof !== undefined &&
+      (obj.host_state_tx_proof = base64FromBytes(
+        message.host_state_tx_proof !== undefined ? message.host_state_tx_proof : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MithrilHeader>, I>>(object: I): MithrilHeader {
     const message = createBaseMithrilHeader();
     if (object.mithril_stake_distribution !== undefined && object.mithril_stake_distribution !== null) {
-      message.mithril_stake_distribution = MithrilStakeDistribution.fromPartial(object.mithril_stake_distribution);
+      message.mithril_stake_distribution = MithrilStakeDistribution.fromPartial(
+        object.mithril_stake_distribution,
+      );
     }
-    if (object.mithril_stake_distribution_certificate !== undefined && object.mithril_stake_distribution_certificate !== null) {
-      message.mithril_stake_distribution_certificate = MithrilCertificate.fromPartial(object.mithril_stake_distribution_certificate);
+    if (
+      object.mithril_stake_distribution_certificate !== undefined &&
+      object.mithril_stake_distribution_certificate !== null
+    ) {
+      message.mithril_stake_distribution_certificate = MithrilCertificate.fromPartial(
+        object.mithril_stake_distribution_certificate,
+      );
     }
     if (object.transaction_snapshot !== undefined && object.transaction_snapshot !== null) {
       message.transaction_snapshot = CardanoTransactionSnapshot.fromPartial(object.transaction_snapshot);
     }
-    if (object.transaction_snapshot_certificate !== undefined && object.transaction_snapshot_certificate !== null) {
-      message.transaction_snapshot_certificate = MithrilCertificate.fromPartial(object.transaction_snapshot_certificate);
+    if (
+      object.transaction_snapshot_certificate !== undefined &&
+      object.transaction_snapshot_certificate !== null
+    ) {
+      message.transaction_snapshot_certificate = MithrilCertificate.fromPartial(
+        object.transaction_snapshot_certificate,
+      );
     }
+    message.previous_mithril_stake_distribution_certificates =
+      object.previous_mithril_stake_distribution_certificates?.map((e) =>
+        MithrilCertificate.fromPartial(e),
+      ) || [];
+    message.host_state_tx_hash = object.host_state_tx_hash ?? "";
+    message.host_state_tx_body_cbor = object.host_state_tx_body_cbor ?? new Uint8Array();
+    message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
+    message.host_state_tx_proof = object.host_state_tx_proof ?? new Uint8Array();
     return message;
-  }
+  },
 };
 function createBaseMithrilStakeDistribution(): MithrilStakeDistribution {
   return {
@@ -630,11 +855,11 @@ function createBaseMithrilStakeDistribution(): MithrilStakeDistribution {
     hash: "",
     certificate_hash: "",
     created_at: BigInt(0),
-    protocol_parameter: undefined
+    protocol_parameter: undefined,
   };
 }
 export const MithrilStakeDistribution = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilStakeDistribution",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilStakeDistribution",
   encode(message: MithrilStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -691,33 +916,42 @@ export const MithrilStakeDistribution = {
   fromJSON(object: any): MithrilStakeDistribution {
     const obj = createBaseMithrilStakeDistribution();
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (Array.isArray(object?.signers_with_stake)) obj.signers_with_stake = object.signers_with_stake.map((e: any) => SignerWithStake.fromJSON(e));
+    if (Array.isArray(object?.signers_with_stake))
+      obj.signers_with_stake = object.signers_with_stake.map((e: any) => SignerWithStake.fromJSON(e));
     if (isSet(object.hash)) obj.hash = String(object.hash);
     if (isSet(object.certificate_hash)) obj.certificate_hash = String(object.certificate_hash);
     if (isSet(object.created_at)) obj.created_at = BigInt(object.created_at.toString());
-    if (isSet(object.protocol_parameter)) obj.protocol_parameter = MithrilProtocolParameters.fromJSON(object.protocol_parameter);
+    if (isSet(object.protocol_parameter))
+      obj.protocol_parameter = MithrilProtocolParameters.fromJSON(object.protocol_parameter);
     return obj;
   },
   toJSON(message: MithrilStakeDistribution): unknown {
     const obj: any = {};
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
     if (message.signers_with_stake) {
-      obj.signers_with_stake = message.signers_with_stake.map(e => e ? SignerWithStake.toJSON(e) : undefined);
+      obj.signers_with_stake = message.signers_with_stake.map((e) =>
+        e ? SignerWithStake.toJSON(e) : undefined,
+      );
     } else {
       obj.signers_with_stake = [];
     }
     message.hash !== undefined && (obj.hash = message.hash);
     message.certificate_hash !== undefined && (obj.certificate_hash = message.certificate_hash);
     message.created_at !== undefined && (obj.created_at = (message.created_at || BigInt(0)).toString());
-    message.protocol_parameter !== undefined && (obj.protocol_parameter = message.protocol_parameter ? MithrilProtocolParameters.toJSON(message.protocol_parameter) : undefined);
+    message.protocol_parameter !== undefined &&
+      (obj.protocol_parameter = message.protocol_parameter
+        ? MithrilProtocolParameters.toJSON(message.protocol_parameter)
+        : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MithrilStakeDistribution>, I>>(object: I): MithrilStakeDistribution {
+  fromPartial<I extends Exact<DeepPartial<MithrilStakeDistribution>, I>>(
+    object: I,
+  ): MithrilStakeDistribution {
     const message = createBaseMithrilStakeDistribution();
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
-    message.signers_with_stake = object.signers_with_stake?.map(e => SignerWithStake.fromPartial(e)) || [];
+    message.signers_with_stake = object.signers_with_stake?.map((e) => SignerWithStake.fromPartial(e)) || [];
     message.hash = object.hash ?? "";
     message.certificate_hash = object.certificate_hash ?? "";
     if (object.created_at !== undefined && object.created_at !== null) {
@@ -727,7 +961,7 @@ export const MithrilStakeDistribution = {
       message.protocol_parameter = MithrilProtocolParameters.fromPartial(object.protocol_parameter);
     }
     return message;
-  }
+  },
 };
 function createBaseCardanoTransactionSnapshot(): CardanoTransactionSnapshot {
   return {
@@ -736,11 +970,11 @@ function createBaseCardanoTransactionSnapshot(): CardanoTransactionSnapshot {
     block_number: BigInt(0),
     hash: "",
     certificate_hash: "",
-    created_at: ""
+    created_at: "",
   };
 }
 export const CardanoTransactionSnapshot = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoTransactionSnapshot",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactionSnapshot",
   encode(message: CardanoTransactionSnapshot, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.merkle_root !== "") {
       writer.uint32(10).string(message.merkle_root);
@@ -814,7 +1048,9 @@ export const CardanoTransactionSnapshot = {
     message.created_at !== undefined && (obj.created_at = message.created_at);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CardanoTransactionSnapshot>, I>>(object: I): CardanoTransactionSnapshot {
+  fromPartial<I extends Exact<DeepPartial<CardanoTransactionSnapshot>, I>>(
+    object: I,
+  ): CardanoTransactionSnapshot {
     const message = createBaseCardanoTransactionSnapshot();
     message.merkle_root = object.merkle_root ?? "";
     if (object.epoch !== undefined && object.epoch !== null) {
@@ -827,7 +1063,7 @@ export const CardanoTransactionSnapshot = {
     message.certificate_hash = object.certificate_hash ?? "";
     message.created_at = object.created_at ?? "";
     return message;
-  }
+  },
 };
 function createBaseMithrilCertificate(): MithrilCertificate {
   return {
@@ -840,11 +1076,11 @@ function createBaseMithrilCertificate(): MithrilCertificate {
     signed_message: "",
     aggregate_verification_key: "",
     multi_signature: "",
-    genesis_signature: ""
+    genesis_signature: "",
   };
 }
 export const MithrilCertificate = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilCertificate",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilCertificate",
   encode(message: MithrilCertificate, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.hash !== "") {
       writer.uint32(10).string(message.hash);
@@ -927,11 +1163,14 @@ export const MithrilCertificate = {
     if (isSet(object.hash)) obj.hash = String(object.hash);
     if (isSet(object.previous_hash)) obj.previous_hash = String(object.previous_hash);
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (isSet(object.signed_entity_type)) obj.signed_entity_type = SignedEntityType.fromJSON(object.signed_entity_type);
+    if (isSet(object.signed_entity_type))
+      obj.signed_entity_type = SignedEntityType.fromJSON(object.signed_entity_type);
     if (isSet(object.metadata)) obj.metadata = CertificateMetadata.fromJSON(object.metadata);
-    if (isSet(object.protocol_message)) obj.protocol_message = ProtocolMessage.fromJSON(object.protocol_message);
+    if (isSet(object.protocol_message))
+      obj.protocol_message = ProtocolMessage.fromJSON(object.protocol_message);
     if (isSet(object.signed_message)) obj.signed_message = String(object.signed_message);
-    if (isSet(object.aggregate_verification_key)) obj.aggregate_verification_key = String(object.aggregate_verification_key);
+    if (isSet(object.aggregate_verification_key))
+      obj.aggregate_verification_key = String(object.aggregate_verification_key);
     if (isSet(object.multi_signature)) obj.multi_signature = String(object.multi_signature);
     if (isSet(object.genesis_signature)) obj.genesis_signature = String(object.genesis_signature);
     return obj;
@@ -941,11 +1180,19 @@ export const MithrilCertificate = {
     message.hash !== undefined && (obj.hash = message.hash);
     message.previous_hash !== undefined && (obj.previous_hash = message.previous_hash);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
-    message.signed_entity_type !== undefined && (obj.signed_entity_type = message.signed_entity_type ? SignedEntityType.toJSON(message.signed_entity_type) : undefined);
-    message.metadata !== undefined && (obj.metadata = message.metadata ? CertificateMetadata.toJSON(message.metadata) : undefined);
-    message.protocol_message !== undefined && (obj.protocol_message = message.protocol_message ? ProtocolMessage.toJSON(message.protocol_message) : undefined);
+    message.signed_entity_type !== undefined &&
+      (obj.signed_entity_type = message.signed_entity_type
+        ? SignedEntityType.toJSON(message.signed_entity_type)
+        : undefined);
+    message.metadata !== undefined &&
+      (obj.metadata = message.metadata ? CertificateMetadata.toJSON(message.metadata) : undefined);
+    message.protocol_message !== undefined &&
+      (obj.protocol_message = message.protocol_message
+        ? ProtocolMessage.toJSON(message.protocol_message)
+        : undefined);
     message.signed_message !== undefined && (obj.signed_message = message.signed_message);
-    message.aggregate_verification_key !== undefined && (obj.aggregate_verification_key = message.aggregate_verification_key);
+    message.aggregate_verification_key !== undefined &&
+      (obj.aggregate_verification_key = message.aggregate_verification_key);
     message.multi_signature !== undefined && (obj.multi_signature = message.multi_signature);
     message.genesis_signature !== undefined && (obj.genesis_signature = message.genesis_signature);
     return obj;
@@ -971,7 +1218,7 @@ export const MithrilCertificate = {
     message.multi_signature = object.multi_signature ?? "";
     message.genesis_signature = object.genesis_signature ?? "";
     return message;
-  }
+  },
 };
 function createBaseCertificateMetadata(): CertificateMetadata {
   return {
@@ -980,11 +1227,11 @@ function createBaseCertificateMetadata(): CertificateMetadata {
     protocol_parameters: undefined,
     initiated_at: "",
     sealed_at: "",
-    signers: []
+    signers: [],
   };
 }
 export const CertificateMetadata = {
-  typeUrl: "/ibc.clients.mithril.v1.CertificateMetadata",
+  typeUrl: "/ibc.lightclients.mithril.v1.CertificateMetadata",
   encode(message: CertificateMetadata, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.network !== "") {
       writer.uint32(10).string(message.network);
@@ -1042,21 +1289,26 @@ export const CertificateMetadata = {
     const obj = createBaseCertificateMetadata();
     if (isSet(object.network)) obj.network = String(object.network);
     if (isSet(object.protocol_version)) obj.protocol_version = String(object.protocol_version);
-    if (isSet(object.protocol_parameters)) obj.protocol_parameters = MithrilProtocolParameters.fromJSON(object.protocol_parameters);
+    if (isSet(object.protocol_parameters))
+      obj.protocol_parameters = MithrilProtocolParameters.fromJSON(object.protocol_parameters);
     if (isSet(object.initiated_at)) obj.initiated_at = String(object.initiated_at);
     if (isSet(object.sealed_at)) obj.sealed_at = String(object.sealed_at);
-    if (Array.isArray(object?.signers)) obj.signers = object.signers.map((e: any) => SignerWithStake.fromJSON(e));
+    if (Array.isArray(object?.signers))
+      obj.signers = object.signers.map((e: any) => SignerWithStake.fromJSON(e));
     return obj;
   },
   toJSON(message: CertificateMetadata): unknown {
     const obj: any = {};
     message.network !== undefined && (obj.network = message.network);
     message.protocol_version !== undefined && (obj.protocol_version = message.protocol_version);
-    message.protocol_parameters !== undefined && (obj.protocol_parameters = message.protocol_parameters ? MithrilProtocolParameters.toJSON(message.protocol_parameters) : undefined);
+    message.protocol_parameters !== undefined &&
+      (obj.protocol_parameters = message.protocol_parameters
+        ? MithrilProtocolParameters.toJSON(message.protocol_parameters)
+        : undefined);
     message.initiated_at !== undefined && (obj.initiated_at = message.initiated_at);
     message.sealed_at !== undefined && (obj.sealed_at = message.sealed_at);
     if (message.signers) {
-      obj.signers = message.signers.map(e => e ? SignerWithStake.toJSON(e) : undefined);
+      obj.signers = message.signers.map((e) => (e ? SignerWithStake.toJSON(e) : undefined));
     } else {
       obj.signers = [];
     }
@@ -1071,18 +1323,18 @@ export const CertificateMetadata = {
     }
     message.initiated_at = object.initiated_at ?? "";
     message.sealed_at = object.sealed_at ?? "";
-    message.signers = object.signers?.map(e => SignerWithStake.fromPartial(e)) || [];
+    message.signers = object.signers?.map((e) => SignerWithStake.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseSignerWithStake(): SignerWithStake {
   return {
     party_id: "",
-    stake: BigInt(0)
+    stake: BigInt(0),
   };
 }
 export const SignerWithStake = {
-  typeUrl: "/ibc.clients.mithril.v1.SignerWithStake",
+  typeUrl: "/ibc.lightclients.mithril.v1.SignerWithStake",
   encode(message: SignerWithStake, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.party_id !== "") {
       writer.uint32(10).string(message.party_id);
@@ -1131,15 +1383,15 @@ export const SignerWithStake = {
       message.stake = BigInt(object.stake.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseProtocolMessage(): ProtocolMessage {
   return {
-    message_parts: []
+    message_parts: [],
   };
 }
 export const ProtocolMessage = {
-  typeUrl: "/ibc.clients.mithril.v1.ProtocolMessage",
+  typeUrl: "/ibc.lightclients.mithril.v1.ProtocolMessage",
   encode(message: ProtocolMessage, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     for (const v of message.message_parts) {
       MessagePart.encode(v!, writer.uint32(10).fork()).ldelim();
@@ -1165,13 +1417,14 @@ export const ProtocolMessage = {
   },
   fromJSON(object: any): ProtocolMessage {
     const obj = createBaseProtocolMessage();
-    if (Array.isArray(object?.message_parts)) obj.message_parts = object.message_parts.map((e: any) => MessagePart.fromJSON(e));
+    if (Array.isArray(object?.message_parts))
+      obj.message_parts = object.message_parts.map((e: any) => MessagePart.fromJSON(e));
     return obj;
   },
   toJSON(message: ProtocolMessage): unknown {
     const obj: any = {};
     if (message.message_parts) {
-      obj.message_parts = message.message_parts.map(e => e ? MessagePart.toJSON(e) : undefined);
+      obj.message_parts = message.message_parts.map((e) => (e ? MessagePart.toJSON(e) : undefined));
     } else {
       obj.message_parts = [];
     }
@@ -1179,18 +1432,18 @@ export const ProtocolMessage = {
   },
   fromPartial<I extends Exact<DeepPartial<ProtocolMessage>, I>>(object: I): ProtocolMessage {
     const message = createBaseProtocolMessage();
-    message.message_parts = object.message_parts?.map(e => MessagePart.fromPartial(e)) || [];
+    message.message_parts = object.message_parts?.map((e) => MessagePart.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseMessagePart(): MessagePart {
   return {
     protocol_message_part_key: 0,
-    protocol_message_part_value: ""
+    protocol_message_part_value: "",
   };
 }
 export const MessagePart = {
-  typeUrl: "/ibc.clients.mithril.v1.MessagePart",
+  typeUrl: "/ibc.lightclients.mithril.v1.MessagePart",
   encode(message: MessagePart, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.protocol_message_part_key !== 0) {
       writer.uint32(8).int32(message.protocol_message_part_key);
@@ -1208,7 +1461,7 @@ export const MessagePart = {
       const tag = reader.uint32();
       switch (tag >>> 3) {
         case 1:
-          message.protocol_message_part_key = (reader.int32() as any);
+          message.protocol_message_part_key = reader.int32() as any;
           break;
         case 2:
           message.protocol_message_part_value = reader.string();
@@ -1222,14 +1475,18 @@ export const MessagePart = {
   },
   fromJSON(object: any): MessagePart {
     const obj = createBaseMessagePart();
-    if (isSet(object.protocol_message_part_key)) obj.protocol_message_part_key = protocolMessagePartKeyFromJSON(object.protocol_message_part_key);
-    if (isSet(object.protocol_message_part_value)) obj.protocol_message_part_value = String(object.protocol_message_part_value);
+    if (isSet(object.protocol_message_part_key))
+      obj.protocol_message_part_key = protocolMessagePartKeyFromJSON(object.protocol_message_part_key);
+    if (isSet(object.protocol_message_part_value))
+      obj.protocol_message_part_value = String(object.protocol_message_part_value);
     return obj;
   },
   toJSON(message: MessagePart): unknown {
     const obj: any = {};
-    message.protocol_message_part_key !== undefined && (obj.protocol_message_part_key = protocolMessagePartKeyToJSON(message.protocol_message_part_key));
-    message.protocol_message_part_value !== undefined && (obj.protocol_message_part_value = message.protocol_message_part_value);
+    message.protocol_message_part_key !== undefined &&
+      (obj.protocol_message_part_key = protocolMessagePartKeyToJSON(message.protocol_message_part_key));
+    message.protocol_message_part_value !== undefined &&
+      (obj.protocol_message_part_value = message.protocol_message_part_value);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<MessagePart>, I>>(object: I): MessagePart {
@@ -1237,17 +1494,17 @@ export const MessagePart = {
     message.protocol_message_part_key = object.protocol_message_part_key ?? 0;
     message.protocol_message_part_value = object.protocol_message_part_value ?? "";
     return message;
-  }
+  },
 };
 function createBaseMithrilProtocolParameters(): MithrilProtocolParameters {
   return {
     k: BigInt(0),
     m: BigInt(0),
-    phi_f: Fraction.fromPartial({})
+    phi_f: Fraction.fromPartial({}),
   };
 }
 export const MithrilProtocolParameters = {
-  typeUrl: "/ibc.clients.mithril.v1.MithrilProtocolParameters",
+  typeUrl: "/ibc.lightclients.mithril.v1.MithrilProtocolParameters",
   encode(message: MithrilProtocolParameters, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.k !== BigInt(0)) {
       writer.uint32(8).uint64(message.k);
@@ -1297,7 +1554,9 @@ export const MithrilProtocolParameters = {
     message.phi_f !== undefined && (obj.phi_f = message.phi_f ? Fraction.toJSON(message.phi_f) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<MithrilProtocolParameters>, I>>(object: I): MithrilProtocolParameters {
+  fromPartial<I extends Exact<DeepPartial<MithrilProtocolParameters>, I>>(
+    object: I,
+  ): MithrilProtocolParameters {
     const message = createBaseMithrilProtocolParameters();
     if (object.k !== undefined && object.k !== null) {
       message.k = BigInt(object.k.toString());
@@ -1309,15 +1568,15 @@ export const MithrilProtocolParameters = {
       message.phi_f = Fraction.fromPartial(object.phi_f);
     }
     return message;
-  }
+  },
 };
 function createBaseProtocolGenesisSignature(): ProtocolGenesisSignature {
   return {
-    signature: new Uint8Array()
+    signature: new Uint8Array(),
   };
 }
 export const ProtocolGenesisSignature = {
-  typeUrl: "/ibc.clients.mithril.v1.ProtocolGenesisSignature",
+  typeUrl: "/ibc.lightclients.mithril.v1.ProtocolGenesisSignature",
   encode(message: ProtocolGenesisSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.signature.length !== 0) {
       writer.uint32(10).bytes(message.signature);
@@ -1348,25 +1607,30 @@ export const ProtocolGenesisSignature = {
   },
   toJSON(message: ProtocolGenesisSignature): unknown {
     const obj: any = {};
-    message.signature !== undefined && (obj.signature = base64FromBytes(message.signature !== undefined ? message.signature : new Uint8Array()));
+    message.signature !== undefined &&
+      (obj.signature = base64FromBytes(
+        message.signature !== undefined ? message.signature : new Uint8Array(),
+      ));
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<ProtocolGenesisSignature>, I>>(object: I): ProtocolGenesisSignature {
+  fromPartial<I extends Exact<DeepPartial<ProtocolGenesisSignature>, I>>(
+    object: I,
+  ): ProtocolGenesisSignature {
     const message = createBaseProtocolGenesisSignature();
     message.signature = object.signature ?? new Uint8Array();
     return message;
-  }
+  },
 };
 function createBaseSignedEntityType(): SignedEntityType {
   return {
     mithril_stake_distribution: undefined,
     cardano_stake_distribution: undefined,
     cardano_immutable_files_full: undefined,
-    cardano_transactions: undefined
+    cardano_transactions: undefined,
   };
 }
 export const SignedEntityType = {
-  typeUrl: "/ibc.clients.mithril.v1.SignedEntityType",
+  typeUrl: "/ibc.lightclients.mithril.v1.SignedEntityType",
   encode(message: SignedEntityType, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.mithril_stake_distribution !== undefined) {
       MithrilStakeDistribution.encode(message.mithril_stake_distribution, writer.uint32(10).fork()).ldelim();
@@ -1375,7 +1639,10 @@ export const SignedEntityType = {
       CardanoStakeDistribution.encode(message.cardano_stake_distribution, writer.uint32(18).fork()).ldelim();
     }
     if (message.cardano_immutable_files_full !== undefined) {
-      CardanoImmutableFilesFull.encode(message.cardano_immutable_files_full, writer.uint32(26).fork()).ldelim();
+      CardanoImmutableFilesFull.encode(
+        message.cardano_immutable_files_full,
+        writer.uint32(26).fork(),
+      ).ldelim();
     }
     if (message.cardano_transactions !== undefined) {
       CardanoTransactions.encode(message.cardano_transactions, writer.uint32(34).fork()).ldelim();
@@ -1410,44 +1677,68 @@ export const SignedEntityType = {
   },
   fromJSON(object: any): SignedEntityType {
     const obj = createBaseSignedEntityType();
-    if (isSet(object.mithril_stake_distribution)) obj.mithril_stake_distribution = MithrilStakeDistribution.fromJSON(object.mithril_stake_distribution);
-    if (isSet(object.cardano_stake_distribution)) obj.cardano_stake_distribution = CardanoStakeDistribution.fromJSON(object.cardano_stake_distribution);
-    if (isSet(object.cardano_immutable_files_full)) obj.cardano_immutable_files_full = CardanoImmutableFilesFull.fromJSON(object.cardano_immutable_files_full);
-    if (isSet(object.cardano_transactions)) obj.cardano_transactions = CardanoTransactions.fromJSON(object.cardano_transactions);
+    if (isSet(object.mithril_stake_distribution))
+      obj.mithril_stake_distribution = MithrilStakeDistribution.fromJSON(object.mithril_stake_distribution);
+    if (isSet(object.cardano_stake_distribution))
+      obj.cardano_stake_distribution = CardanoStakeDistribution.fromJSON(object.cardano_stake_distribution);
+    if (isSet(object.cardano_immutable_files_full))
+      obj.cardano_immutable_files_full = CardanoImmutableFilesFull.fromJSON(
+        object.cardano_immutable_files_full,
+      );
+    if (isSet(object.cardano_transactions))
+      obj.cardano_transactions = CardanoTransactions.fromJSON(object.cardano_transactions);
     return obj;
   },
   toJSON(message: SignedEntityType): unknown {
     const obj: any = {};
-    message.mithril_stake_distribution !== undefined && (obj.mithril_stake_distribution = message.mithril_stake_distribution ? MithrilStakeDistribution.toJSON(message.mithril_stake_distribution) : undefined);
-    message.cardano_stake_distribution !== undefined && (obj.cardano_stake_distribution = message.cardano_stake_distribution ? CardanoStakeDistribution.toJSON(message.cardano_stake_distribution) : undefined);
-    message.cardano_immutable_files_full !== undefined && (obj.cardano_immutable_files_full = message.cardano_immutable_files_full ? CardanoImmutableFilesFull.toJSON(message.cardano_immutable_files_full) : undefined);
-    message.cardano_transactions !== undefined && (obj.cardano_transactions = message.cardano_transactions ? CardanoTransactions.toJSON(message.cardano_transactions) : undefined);
+    message.mithril_stake_distribution !== undefined &&
+      (obj.mithril_stake_distribution = message.mithril_stake_distribution
+        ? MithrilStakeDistribution.toJSON(message.mithril_stake_distribution)
+        : undefined);
+    message.cardano_stake_distribution !== undefined &&
+      (obj.cardano_stake_distribution = message.cardano_stake_distribution
+        ? CardanoStakeDistribution.toJSON(message.cardano_stake_distribution)
+        : undefined);
+    message.cardano_immutable_files_full !== undefined &&
+      (obj.cardano_immutable_files_full = message.cardano_immutable_files_full
+        ? CardanoImmutableFilesFull.toJSON(message.cardano_immutable_files_full)
+        : undefined);
+    message.cardano_transactions !== undefined &&
+      (obj.cardano_transactions = message.cardano_transactions
+        ? CardanoTransactions.toJSON(message.cardano_transactions)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<SignedEntityType>, I>>(object: I): SignedEntityType {
     const message = createBaseSignedEntityType();
     if (object.mithril_stake_distribution !== undefined && object.mithril_stake_distribution !== null) {
-      message.mithril_stake_distribution = MithrilStakeDistribution.fromPartial(object.mithril_stake_distribution);
+      message.mithril_stake_distribution = MithrilStakeDistribution.fromPartial(
+        object.mithril_stake_distribution,
+      );
     }
     if (object.cardano_stake_distribution !== undefined && object.cardano_stake_distribution !== null) {
-      message.cardano_stake_distribution = CardanoStakeDistribution.fromPartial(object.cardano_stake_distribution);
+      message.cardano_stake_distribution = CardanoStakeDistribution.fromPartial(
+        object.cardano_stake_distribution,
+      );
     }
     if (object.cardano_immutable_files_full !== undefined && object.cardano_immutable_files_full !== null) {
-      message.cardano_immutable_files_full = CardanoImmutableFilesFull.fromPartial(object.cardano_immutable_files_full);
+      message.cardano_immutable_files_full = CardanoImmutableFilesFull.fromPartial(
+        object.cardano_immutable_files_full,
+      );
     }
     if (object.cardano_transactions !== undefined && object.cardano_transactions !== null) {
       message.cardano_transactions = CardanoTransactions.fromPartial(object.cardano_transactions);
     }
     return message;
-  }
+  },
 };
 function createBaseCardanoStakeDistribution(): CardanoStakeDistribution {
   return {
-    epoch: BigInt(0)
+    epoch: BigInt(0),
   };
 }
 export const CardanoStakeDistribution = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoStakeDistribution",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoStakeDistribution",
   encode(message: CardanoStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -1481,21 +1772,23 @@ export const CardanoStakeDistribution = {
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CardanoStakeDistribution>, I>>(object: I): CardanoStakeDistribution {
+  fromPartial<I extends Exact<DeepPartial<CardanoStakeDistribution>, I>>(
+    object: I,
+  ): CardanoStakeDistribution {
     const message = createBaseCardanoStakeDistribution();
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseCardanoImmutableFilesFull(): CardanoImmutableFilesFull {
   return {
-    beacon: undefined
+    beacon: undefined,
   };
 }
 export const CardanoImmutableFilesFull = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoImmutableFilesFull",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoImmutableFilesFull",
   encode(message: CardanoImmutableFilesFull, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.beacon !== undefined) {
       CardanoDbBeacon.encode(message.beacon, writer.uint32(10).fork()).ldelim();
@@ -1526,25 +1819,28 @@ export const CardanoImmutableFilesFull = {
   },
   toJSON(message: CardanoImmutableFilesFull): unknown {
     const obj: any = {};
-    message.beacon !== undefined && (obj.beacon = message.beacon ? CardanoDbBeacon.toJSON(message.beacon) : undefined);
+    message.beacon !== undefined &&
+      (obj.beacon = message.beacon ? CardanoDbBeacon.toJSON(message.beacon) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<CardanoImmutableFilesFull>, I>>(object: I): CardanoImmutableFilesFull {
+  fromPartial<I extends Exact<DeepPartial<CardanoImmutableFilesFull>, I>>(
+    object: I,
+  ): CardanoImmutableFilesFull {
     const message = createBaseCardanoImmutableFilesFull();
     if (object.beacon !== undefined && object.beacon !== null) {
       message.beacon = CardanoDbBeacon.fromPartial(object.beacon);
     }
     return message;
-  }
+  },
 };
 function createBaseCardanoTransactions(): CardanoTransactions {
   return {
     epoch: BigInt(0),
-    block_number: BigInt(0)
+    block_number: BigInt(0),
   };
 }
 export const CardanoTransactions = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoTransactions",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactions",
   encode(message: CardanoTransactions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -1595,17 +1891,17 @@ export const CardanoTransactions = {
       message.block_number = BigInt(object.block_number.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseCardanoDbBeacon(): CardanoDbBeacon {
   return {
     network: "",
     epoch: BigInt(0),
-    immutable_file_number: BigInt(0)
+    immutable_file_number: BigInt(0),
   };
 }
 export const CardanoDbBeacon = {
-  typeUrl: "/ibc.clients.mithril.v1.CardanoDbBeacon",
+  typeUrl: "/ibc.lightclients.mithril.v1.CardanoDbBeacon",
   encode(message: CardanoDbBeacon, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.network !== "") {
       writer.uint32(10).string(message.network);
@@ -1645,14 +1941,16 @@ export const CardanoDbBeacon = {
     const obj = createBaseCardanoDbBeacon();
     if (isSet(object.network)) obj.network = String(object.network);
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
-    if (isSet(object.immutable_file_number)) obj.immutable_file_number = BigInt(object.immutable_file_number.toString());
+    if (isSet(object.immutable_file_number))
+      obj.immutable_file_number = BigInt(object.immutable_file_number.toString());
     return obj;
   },
   toJSON(message: CardanoDbBeacon): unknown {
     const obj: any = {};
     message.network !== undefined && (obj.network = message.network);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
-    message.immutable_file_number !== undefined && (obj.immutable_file_number = (message.immutable_file_number || BigInt(0)).toString());
+    message.immutable_file_number !== undefined &&
+      (obj.immutable_file_number = (message.immutable_file_number || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<CardanoDbBeacon>, I>>(object: I): CardanoDbBeacon {
@@ -1665,16 +1963,16 @@ export const CardanoDbBeacon = {
       message.immutable_file_number = BigInt(object.immutable_file_number.toString());
     }
     return message;
-  }
+  },
 };
 function createBaseFraction(): Fraction {
   return {
     numerator: BigInt(0),
-    denominator: BigInt(0)
+    denominator: BigInt(0),
   };
 }
 export const Fraction = {
-  typeUrl: "/ibc.clients.mithril.v1.Fraction",
+  typeUrl: "/ibc.lightclients.mithril.v1.Fraction",
   encode(message: Fraction, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.numerator !== BigInt(0)) {
       writer.uint32(8).uint64(message.numerator);
@@ -1725,5 +2023,5 @@ export const Fraction = {
       message.denominator = BigInt(object.denominator.toString());
     }
     return message;
-  }
+  },
 };

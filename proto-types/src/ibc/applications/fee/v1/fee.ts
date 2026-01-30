@@ -38,7 +38,7 @@ function createBaseFee(): Fee {
   return {
     recv_fee: [],
     ack_fee: [],
-    timeout_fee: []
+    timeout_fee: [],
   };
 }
 export const Fee = {
@@ -82,23 +82,24 @@ export const Fee = {
     const obj = createBaseFee();
     if (Array.isArray(object?.recv_fee)) obj.recv_fee = object.recv_fee.map((e: any) => Coin.fromJSON(e));
     if (Array.isArray(object?.ack_fee)) obj.ack_fee = object.ack_fee.map((e: any) => Coin.fromJSON(e));
-    if (Array.isArray(object?.timeout_fee)) obj.timeout_fee = object.timeout_fee.map((e: any) => Coin.fromJSON(e));
+    if (Array.isArray(object?.timeout_fee))
+      obj.timeout_fee = object.timeout_fee.map((e: any) => Coin.fromJSON(e));
     return obj;
   },
   toJSON(message: Fee): unknown {
     const obj: any = {};
     if (message.recv_fee) {
-      obj.recv_fee = message.recv_fee.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.recv_fee = message.recv_fee.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.recv_fee = [];
     }
     if (message.ack_fee) {
-      obj.ack_fee = message.ack_fee.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.ack_fee = message.ack_fee.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.ack_fee = [];
     }
     if (message.timeout_fee) {
-      obj.timeout_fee = message.timeout_fee.map(e => e ? Coin.toJSON(e) : undefined);
+      obj.timeout_fee = message.timeout_fee.map((e) => (e ? Coin.toJSON(e) : undefined));
     } else {
       obj.timeout_fee = [];
     }
@@ -106,17 +107,17 @@ export const Fee = {
   },
   fromPartial<I extends Exact<DeepPartial<Fee>, I>>(object: I): Fee {
     const message = createBaseFee();
-    message.recv_fee = object.recv_fee?.map(e => Coin.fromPartial(e)) || [];
-    message.ack_fee = object.ack_fee?.map(e => Coin.fromPartial(e)) || [];
-    message.timeout_fee = object.timeout_fee?.map(e => Coin.fromPartial(e)) || [];
+    message.recv_fee = object.recv_fee?.map((e) => Coin.fromPartial(e)) || [];
+    message.ack_fee = object.ack_fee?.map((e) => Coin.fromPartial(e)) || [];
+    message.timeout_fee = object.timeout_fee?.map((e) => Coin.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBasePacketFee(): PacketFee {
   return {
     fee: Fee.fromPartial({}),
     refund_address: "",
-    relayers: []
+    relayers: [],
   };
 }
 export const PacketFee = {
@@ -168,7 +169,7 @@ export const PacketFee = {
     message.fee !== undefined && (obj.fee = message.fee ? Fee.toJSON(message.fee) : undefined);
     message.refund_address !== undefined && (obj.refund_address = message.refund_address);
     if (message.relayers) {
-      obj.relayers = message.relayers.map(e => e);
+      obj.relayers = message.relayers.map((e) => e);
     } else {
       obj.relayers = [];
     }
@@ -180,13 +181,13 @@ export const PacketFee = {
       message.fee = Fee.fromPartial(object.fee);
     }
     message.refund_address = object.refund_address ?? "";
-    message.relayers = object.relayers?.map(e => e) || [];
+    message.relayers = object.relayers?.map((e) => e) || [];
     return message;
-  }
+  },
 };
 function createBasePacketFees(): PacketFees {
   return {
-    packet_fees: []
+    packet_fees: [],
   };
 }
 export const PacketFees = {
@@ -216,13 +217,14 @@ export const PacketFees = {
   },
   fromJSON(object: any): PacketFees {
     const obj = createBasePacketFees();
-    if (Array.isArray(object?.packet_fees)) obj.packet_fees = object.packet_fees.map((e: any) => PacketFee.fromJSON(e));
+    if (Array.isArray(object?.packet_fees))
+      obj.packet_fees = object.packet_fees.map((e: any) => PacketFee.fromJSON(e));
     return obj;
   },
   toJSON(message: PacketFees): unknown {
     const obj: any = {};
     if (message.packet_fees) {
-      obj.packet_fees = message.packet_fees.map(e => e ? PacketFee.toJSON(e) : undefined);
+      obj.packet_fees = message.packet_fees.map((e) => (e ? PacketFee.toJSON(e) : undefined));
     } else {
       obj.packet_fees = [];
     }
@@ -230,14 +232,14 @@ export const PacketFees = {
   },
   fromPartial<I extends Exact<DeepPartial<PacketFees>, I>>(object: I): PacketFees {
     const message = createBasePacketFees();
-    message.packet_fees = object.packet_fees?.map(e => PacketFee.fromPartial(e)) || [];
+    message.packet_fees = object.packet_fees?.map((e) => PacketFee.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
 function createBaseIdentifiedPacketFees(): IdentifiedPacketFees {
   return {
     packet_id: PacketId.fromPartial({}),
-    packet_fees: []
+    packet_fees: [],
   };
 }
 export const IdentifiedPacketFees = {
@@ -274,14 +276,16 @@ export const IdentifiedPacketFees = {
   fromJSON(object: any): IdentifiedPacketFees {
     const obj = createBaseIdentifiedPacketFees();
     if (isSet(object.packet_id)) obj.packet_id = PacketId.fromJSON(object.packet_id);
-    if (Array.isArray(object?.packet_fees)) obj.packet_fees = object.packet_fees.map((e: any) => PacketFee.fromJSON(e));
+    if (Array.isArray(object?.packet_fees))
+      obj.packet_fees = object.packet_fees.map((e: any) => PacketFee.fromJSON(e));
     return obj;
   },
   toJSON(message: IdentifiedPacketFees): unknown {
     const obj: any = {};
-    message.packet_id !== undefined && (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
+    message.packet_id !== undefined &&
+      (obj.packet_id = message.packet_id ? PacketId.toJSON(message.packet_id) : undefined);
     if (message.packet_fees) {
-      obj.packet_fees = message.packet_fees.map(e => e ? PacketFee.toJSON(e) : undefined);
+      obj.packet_fees = message.packet_fees.map((e) => (e ? PacketFee.toJSON(e) : undefined));
     } else {
       obj.packet_fees = [];
     }
@@ -292,7 +296,7 @@ export const IdentifiedPacketFees = {
     if (object.packet_id !== undefined && object.packet_id !== null) {
       message.packet_id = PacketId.fromPartial(object.packet_id);
     }
-    message.packet_fees = object.packet_fees?.map(e => PacketFee.fromPartial(e)) || [];
+    message.packet_fees = object.packet_fees?.map((e) => PacketFee.fromPartial(e)) || [];
     return message;
-  }
+  },
 };
