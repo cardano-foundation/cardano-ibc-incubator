@@ -1,4 +1,9 @@
 syntax = "proto3";
+// Legacy proto for an older Ouroboros/Cardano light client approach.
+//
+// The production Cosmos-side Cardano client is the Mithril client under
+// `ibc.lightclients.mithril.v1.*`. This proto remains for historical reference
+// and is not used in the relaying path.
 package ibc.clients.cardano.v1;
 
 import "gogoproto/gogo.proto";

@@ -75,7 +75,7 @@ export interface QueryEscrowAddressResponse {
 }
 function createBaseQueryDenomTraceRequest(): QueryDenomTraceRequest {
   return {
-    hash: ""
+    hash: "",
   };
 }
 export const QueryDenomTraceRequest = {
@@ -117,11 +117,11 @@ export const QueryDenomTraceRequest = {
     const message = createBaseQueryDenomTraceRequest();
     message.hash = object.hash ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryDenomTraceResponse(): QueryDenomTraceResponse {
   return {
-    denom_trace: undefined
+    denom_trace: undefined,
   };
 }
 export const QueryDenomTraceResponse = {
@@ -156,7 +156,8 @@ export const QueryDenomTraceResponse = {
   },
   toJSON(message: QueryDenomTraceResponse): unknown {
     const obj: any = {};
-    message.denom_trace !== undefined && (obj.denom_trace = message.denom_trace ? DenomTrace.toJSON(message.denom_trace) : undefined);
+    message.denom_trace !== undefined &&
+      (obj.denom_trace = message.denom_trace ? DenomTrace.toJSON(message.denom_trace) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryDenomTraceResponse>, I>>(object: I): QueryDenomTraceResponse {
@@ -165,11 +166,11 @@ export const QueryDenomTraceResponse = {
       message.denom_trace = DenomTrace.fromPartial(object.denom_trace);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryDenomTracesRequest(): QueryDenomTracesRequest {
   return {
-    pagination: undefined
+    pagination: undefined,
   };
 }
 export const QueryDenomTracesRequest = {
@@ -204,7 +205,8 @@ export const QueryDenomTracesRequest = {
   },
   toJSON(message: QueryDenomTracesRequest): unknown {
     const obj: any = {};
-    message.pagination !== undefined && (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined &&
+      (obj.pagination = message.pagination ? PageRequest.toJSON(message.pagination) : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryDenomTracesRequest>, I>>(object: I): QueryDenomTracesRequest {
@@ -213,12 +215,12 @@ export const QueryDenomTracesRequest = {
       message.pagination = PageRequest.fromPartial(object.pagination);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryDenomTracesResponse(): QueryDenomTracesResponse {
   return {
     denom_traces: [],
-    pagination: undefined
+    pagination: undefined,
   };
 }
 export const QueryDenomTracesResponse = {
@@ -254,28 +256,32 @@ export const QueryDenomTracesResponse = {
   },
   fromJSON(object: any): QueryDenomTracesResponse {
     const obj = createBaseQueryDenomTracesResponse();
-    if (Array.isArray(object?.denom_traces)) obj.denom_traces = object.denom_traces.map((e: any) => DenomTrace.fromJSON(e));
+    if (Array.isArray(object?.denom_traces))
+      obj.denom_traces = object.denom_traces.map((e: any) => DenomTrace.fromJSON(e));
     if (isSet(object.pagination)) obj.pagination = PageResponse.fromJSON(object.pagination);
     return obj;
   },
   toJSON(message: QueryDenomTracesResponse): unknown {
     const obj: any = {};
     if (message.denom_traces) {
-      obj.denom_traces = message.denom_traces.map(e => e ? DenomTrace.toJSON(e) : undefined);
+      obj.denom_traces = message.denom_traces.map((e) => (e ? DenomTrace.toJSON(e) : undefined));
     } else {
       obj.denom_traces = [];
     }
-    message.pagination !== undefined && (obj.pagination = message.pagination ? PageResponse.toJSON(message.pagination) : undefined);
+    message.pagination !== undefined &&
+      (obj.pagination = message.pagination ? PageResponse.toJSON(message.pagination) : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryDenomTracesResponse>, I>>(object: I): QueryDenomTracesResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryDenomTracesResponse>, I>>(
+    object: I,
+  ): QueryDenomTracesResponse {
     const message = createBaseQueryDenomTracesResponse();
-    message.denom_traces = object.denom_traces?.map(e => DenomTrace.fromPartial(e)) || [];
+    message.denom_traces = object.denom_traces?.map((e) => DenomTrace.fromPartial(e)) || [];
     if (object.pagination !== undefined && object.pagination !== null) {
       message.pagination = PageResponse.fromPartial(object.pagination);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryParamsRequest(): QueryParamsRequest {
   return {};
@@ -310,11 +316,11 @@ export const QueryParamsRequest = {
   fromPartial<I extends Exact<DeepPartial<QueryParamsRequest>, I>>(_: I): QueryParamsRequest {
     const message = createBaseQueryParamsRequest();
     return message;
-  }
+  },
 };
 function createBaseQueryParamsResponse(): QueryParamsResponse {
   return {
-    params: undefined
+    params: undefined,
   };
 }
 export const QueryParamsResponse = {
@@ -358,11 +364,11 @@ export const QueryParamsResponse = {
       message.params = Params.fromPartial(object.params);
     }
     return message;
-  }
+  },
 };
 function createBaseQueryDenomHashRequest(): QueryDenomHashRequest {
   return {
-    trace: ""
+    trace: "",
   };
 }
 export const QueryDenomHashRequest = {
@@ -404,11 +410,11 @@ export const QueryDenomHashRequest = {
     const message = createBaseQueryDenomHashRequest();
     message.trace = object.trace ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryDenomHashResponse(): QueryDenomHashResponse {
   return {
-    hash: ""
+    hash: "",
   };
 }
 export const QueryDenomHashResponse = {
@@ -450,12 +456,12 @@ export const QueryDenomHashResponse = {
     const message = createBaseQueryDenomHashResponse();
     message.hash = object.hash ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryEscrowAddressRequest(): QueryEscrowAddressRequest {
   return {
     port_id: "",
-    channel_id: ""
+    channel_id: "",
   };
 }
 export const QueryEscrowAddressRequest = {
@@ -501,16 +507,18 @@ export const QueryEscrowAddressRequest = {
     message.channel_id !== undefined && (obj.channel_id = message.channel_id);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryEscrowAddressRequest>, I>>(object: I): QueryEscrowAddressRequest {
+  fromPartial<I extends Exact<DeepPartial<QueryEscrowAddressRequest>, I>>(
+    object: I,
+  ): QueryEscrowAddressRequest {
     const message = createBaseQueryEscrowAddressRequest();
     message.port_id = object.port_id ?? "";
     message.channel_id = object.channel_id ?? "";
     return message;
-  }
+  },
 };
 function createBaseQueryEscrowAddressResponse(): QueryEscrowAddressResponse {
   return {
-    escrow_address: ""
+    escrow_address: "",
   };
 }
 export const QueryEscrowAddressResponse = {
@@ -548,11 +556,13 @@ export const QueryEscrowAddressResponse = {
     message.escrow_address !== undefined && (obj.escrow_address = message.escrow_address);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<QueryEscrowAddressResponse>, I>>(object: I): QueryEscrowAddressResponse {
+  fromPartial<I extends Exact<DeepPartial<QueryEscrowAddressResponse>, I>>(
+    object: I,
+  ): QueryEscrowAddressResponse {
     const message = createBaseQueryEscrowAddressResponse();
     message.escrow_address = object.escrow_address ?? "";
     return message;
-  }
+  },
 };
 /** Query provides defines the gRPC querier service. */
 export interface Query {
@@ -580,28 +590,30 @@ export class QueryClientImpl implements Query {
   DenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
     const data = QueryDenomTraceRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Query", "DenomTrace", data);
-    return promise.then(data => QueryDenomTraceResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryDenomTraceResponse.decode(new BinaryReader(data)));
   }
-  DenomTraces(request: QueryDenomTracesRequest = {
-    pagination: PageRequest.fromPartial({})
-  }): Promise<QueryDenomTracesResponse> {
+  DenomTraces(
+    request: QueryDenomTracesRequest = {
+      pagination: PageRequest.fromPartial({}),
+    },
+  ): Promise<QueryDenomTracesResponse> {
     const data = QueryDenomTracesRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Query", "DenomTraces", data);
-    return promise.then(data => QueryDenomTracesResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryDenomTracesResponse.decode(new BinaryReader(data)));
   }
   Params(request: QueryParamsRequest = {}): Promise<QueryParamsResponse> {
     const data = QueryParamsRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Query", "Params", data);
-    return promise.then(data => QueryParamsResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryParamsResponse.decode(new BinaryReader(data)));
   }
   DenomHash(request: QueryDenomHashRequest): Promise<QueryDenomHashResponse> {
     const data = QueryDenomHashRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Query", "DenomHash", data);
-    return promise.then(data => QueryDenomHashResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryDenomHashResponse.decode(new BinaryReader(data)));
   }
   EscrowAddress(request: QueryEscrowAddressRequest): Promise<QueryEscrowAddressResponse> {
     const data = QueryEscrowAddressRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.applications.transfer.v1.Query", "EscrowAddress", data);
-    return promise.then(data => QueryEscrowAddressResponse.decode(new BinaryReader(data)));
+    return promise.then((data) => QueryEscrowAddressResponse.decode(new BinaryReader(data)));
   }
 }
