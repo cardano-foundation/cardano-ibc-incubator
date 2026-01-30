@@ -1,26 +1,26 @@
 # Cross-chain Swap
 
-Cross-chain swap is a feature allows us to leverage IBC connections to swap assets on the exchanges of other networks. In this project, we attempt to swap native assets of Cardano on the DEX of Osmosis through an IBC connection with a sidechain.
+Cross-chain swap is a feature allows us to leverage IBC connections to swap assets on the exchanges of other networks. In this project, we attempt to swap native assets of Cardano on the DEX of Osmosis through an IBC connection with a packet-forwarding chain we operate (a Cosmos chain dedicated to bridging).
 
-To support this, the sidechain must implement [Packet Forward Middleware](https://github.com/cosmos/ibc-apps/tree/main/middleware/packet-forward-middleware). This middleware allows messages from Cardano relay to Osmosis without requiring a direct connection between Cardano and Osmosis.
+To support this, the packet-forwarding chain must implement [Packet Forward Middleware](https://github.com/cosmos/ibc-apps/tree/main/middleware/packet-forward-middleware). This middleware allows messages from Cardano relay to Osmosis without requiring a direct connection between Cardano and Osmosis.
 
 Setting up and executing cross-chain swap is a bit complicated, so we written scripts [setup_crosschain_swaps.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/chains/osmosis/scripts/setup_crosschain_swaps.sh) and [swap.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/swap.sh) to automate these processes. This document is based on steps on these scripts, you can refer them for more detail.
 
 ## Setup
 
 Setup cross-chain swap involves these steps: 
-- Create IBC connections `Cardano<=>Sidechain`, `Sidechain<=>Osmosis`.
+- Create IBC connections `Cardano<=>PacketForwardingChain`, `PacketForwardingChain<=>Osmosis`.
 - Transfer tokens from Cardano to Osmosis to provide liquidity.
 - Create swap pools in Osmosis with pairs of transferred tokens and desired tokens.
 - Config the `swap_router` and `crosschain_swap` contract on Osmosis.
 
 ### Create IBC connections
 
-This step includes creating channels on the transfer port among chains, allowing us to transfer and swap tokens on these channels. To create connection between Cardano and sidechain, we use custom `go-relayer` that support Cardano. Connection between sidechain and Osmosis is just a standard Cosmos IBC connection, so we can use any existing relayer like `hermes` or `go-relayer`.
+This step includes creating channels on the transfer port among chains, allowing us to transfer and swap tokens on these channels. To create connection between Cardano and the packet-forwarding chain, we use custom `go-relayer` that supports Cardano. Connection between the packet-forwarding chain and Osmosis is just a standard Cosmos IBC connection, so we can use any existing relayer like `hermes` or `go-relayer`.
 
 ### Transfer tokens from Cardano to Osmosis
 
-After we establish connections, we can transfer assets from Cardano to Osmosis. The transfer message is like a normal one except that an extra field memo is set on FungiblePacketData. This field allows the sidechain's PFM (Packet Forward Middleware) to relay the transfer message to Osmosis.
+After we establish connections, we can transfer assets from Cardano to Osmosis. The transfer message is like a normal one except that an extra field memo is set on FungiblePacketData. This field allows the packet-forwarding chain's PFM (Packet Forward Middleware) to relay the transfer message to Osmosis.
 
 ```
 {
@@ -95,4 +95,3 @@ Similar to the transfer message to provide liquidity mentioned earlier, cross-ch
 ```
 
 With this memo, we can send a transfer message to Cardano and the swap operations are automatically unwrapped and relayed by sidechain and relayers.
-

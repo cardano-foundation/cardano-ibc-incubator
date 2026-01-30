@@ -1,0 +1,13 @@
+# FAQ
+
+## Why can denom trace mapping rely on an indexer, but IBC verification cannot?
+
+Because the verifier and the security goal are different.
+
+For denom trace backfill, we use a node or indexer to learn data for an off-chain convenience mapping from denom trace hashes to human-readable traces. That mapping is not consensus-critical, and it is not what makes vouchers safe. The voucher’s token name already commits to the trace via the hash. An indexer can help reconstruct the full trace by scanning minting transactions and packet data, but if the indexer is wrong or malicious it does not let an attacker forge vouchers or corrupt on-chain state. At worst it produces a wrong reverse lookup table, which can be detected and repaired by recomputing hashes and reindexing from on-chain data.
+
+For IBC verification, the counterparty chain is making state machine decisions (advance clients, connections, channels, packet commitments) and it must do so without trusting the relayer, the Gateway, or any specific node or indexer. Simply querying a node or indexer tells you what that external party claims is the current Cardano state, but it does not provide a cryptographic basis for the counterparty chain to reject stale data, fork data, or fabricated data. In this design, Mithril exists to turn “someone says this transaction/output is on Cardano” into a stake-certified checkpoint plus an inclusion proof that the counterparty chain can verify independently, after which it can safely extract the HostState datum bytes and use standard ICS-23 proofs against the committed `ibc_state_root`.
+
+## Why is Mithril slow? What determines its speed?
+
+Mithril’s original motivation is safe checkpointing for bootstrapping nodes. So a new node can jump close to the chain tip using a certificate and then sync the remaining few blocks normally which is pretty fast. That biases the protocol toward issuing certificates periodically rather than per block, and toward staying some distance behind the tip (a finality buffer) so certificates are not invalidated by short-range rollbacks. Those choices look slow from an IBC perspective but they are safety and performance tradeoffs that are deliberately made by the Mithril team, they are not arbitrary delays or some computation time for example.  In local development we can tune Mithril aggressively because we control the local signers and aggregator, but in production the certificate cadence and finality buffer are properties of the network’s Mithril configuration and cannot be unilaterally sped up by the relayer or the Gateway. We are exploring other options to get transaction times on the order of seconds or less for the production implementation. 
