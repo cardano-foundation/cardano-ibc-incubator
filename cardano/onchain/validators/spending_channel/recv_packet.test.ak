@@ -809,7 +809,7 @@ test recv_packet_non_mock_data() {
 
   let connection_end =
     ConnectionEnd {
-      client_id: "ibc_client-0",
+      client_id: "07-tendermint-0",
       versions: [
         Version {
           identifier: "1",
@@ -818,7 +818,7 @@ test recv_packet_non_mock_data() {
       ],
       state: Open,
       counterparty: Counterparty {
-        client_id: "2000-cardano-mithril-0",
+        client_id: "08-cardano-0",
         connection_id: "connection-0",
         prefix: MerklePrefix { key_prefix: "ibc" },
       },

@@ -3,10 +3,6 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/client/cardano_client/client_state as cardano_client
-use ibc/client/cardano_client/protos/cardano_pb.{
-  AnyCardanoClientState, CardanoClientState,
-}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
 }
@@ -15,6 +11,10 @@ use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
+}
+use ibc/client/mithril_client/client_state as mithril_client_state
+use ibc/client/mithril_client/protos/mithril_pb.{
+  AnyMithrilClientState, MithrilClientState,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -200,7 +200,7 @@ validator mint_connection(
 fn validate_conn_open_try_proof(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
-  counterparty_client_state: CardanoClientState,
+  counterparty_client_state: MithrilClientState,
   proof_init: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
@@ -208,7 +208,7 @@ fn validate_conn_open_try_proof(
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
   let valid_client =
-    cardano_client.validate_self_client(counterparty_client_state)
+    mithril_client_state.validate_self_client(counterparty_client_state)
 
   let expected_counterparty =
     counterparty.new_counterparty(
@@ -254,9 +254,9 @@ fn validate_conn_open_try_proof(
     )
 
   let counterparty_client_state_bz =
-    cardano_pb.marshal_for_any_client_state(
-      AnyCardanoClientState {
-        type_url: "/ibc.clients.cardano.v1.ClientState",
+    mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd

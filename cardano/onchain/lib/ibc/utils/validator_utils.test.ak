@@ -675,7 +675,7 @@ fn setup_validate_referred_client() -> (
       "1",
     )
 
-  let client_id = "ibc_client-0"
+  let client_id = "07-tendermint-0"
 
   let client_minting_policy_id = "mock client policy id"
 

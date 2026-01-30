@@ -119,7 +119,7 @@ fn setup() -> MockData {
   let connection_datum =
     ConnectionDatum {
       state: ConnectionEnd {
-        client_id: "ibc_client-10",
+        client_id: "07-tendermint-10",
         versions: [
           Version {
             identifier: "1",
