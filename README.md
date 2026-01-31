@@ -15,7 +15,7 @@ It follows the [inter-blockchain communication protocol](https://github.com/cosm
 ## Trust Model & Security Considerations
 
 > [!WARNING]
-> **This IBC bridge currently requires trust in Gateway infrastructure for UTxO queries.** While Mithril certificates and transaction inclusion are cryptographically verifiable, UTxO inclusion proofs are not yet possible because Mithril signers cannot guarantee identical UTxO set views due to network propagation delays. Full trustless verification awaits [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083), which will enable Cardano nodes to compute canonical ledger state hashes analogous to Tendermint's `AppHash`. Full parity with Tendermint light client security model—no trust assumptions may not be feasible under current conditions.
+> There are currently consensus-level constraints that prevent Cosmos/IBC-style proofs of on-chain state, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083). Under the current strategy, we do attain similar functionality with a combination of a Mithril light client and an on-chain STT architecture which allows us to have a transaction-inclusion-based avenue into understanding the on-chain IBC host-state of Cardano.
 
 ## Overview
 This repository is divided into five main directories:
