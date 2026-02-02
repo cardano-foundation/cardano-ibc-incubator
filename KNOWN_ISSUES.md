@@ -42,6 +42,12 @@ Finally **#3** (state commitment), there is no simple consensus-authenticated ap
 Now you may even notice that, as a direct result of the conditions just described under **#2**, it is at a consensus level fundamentally impossible for Cardano to provide such a thing as a Tendermint-style state commitment because there's no canonical chain tip like there is on Tendermint. The whole reason we trust an `app_hash` the way we do, and the whole reason IBC exists the way it does, is because (a) there can only be one valid consensus header per height, which is not true for Cardano, and (b) it can't be rolled back, which is also not true for Cardano. 
 Some may object to this previous statement citing something like Mithril in conjunction with our STT architecture, however the key issue there is that this architecture is basically just the best engineering solution we have to get around a fundamental consensus asymmetry. The Mithril + STT solution **fundamentally** can only work if you are willing to lag the chain tip significantly, which heavily constrains IBC transaction latency. Which is just to say, it's not entirely true that we can in some way "change Mithril" to get parity with Cosmos. We can make Mithril a lot faster, we can likely have a Mithril-style network which only modestly lags the chain tip and is more explicitly designed for the sake of an IBC-light-client-style-solution, but the concept of a per-block Tendermint-style `app_hash` is prevented by consensus-level realities as opposed to a lack of tooling.
 
+There are also some open questions about ramifications of the Ourobouros Peras upgrade, which at the time of writing are described as: 
+
+""... after a failed voting round, Peras enters a cooldown period during which voting is suspended and the protocol essentially proceeds as Praos. The length of the cooldown period must be sufficiently long to ensure that any adversarial advantage gained from an unfavorable distribution of votes in the failed round will be neutralized by the end of cooldown. There is a tradeoff between the boost provided by votes and the length of the cooldown period. The higher the boost, the higher the potential damage caused by an unsuccessful voting round, and thus, the longer before voting may be resumed..."
+
+Though at the time of writing it is unclear how to quantify the implications for Cardano IBC, unless the improved settlement times simply translate to direct reductions in Mithril cadence and tip lag.
+
 
 # Asymmetries and Architectural Considerations
 
