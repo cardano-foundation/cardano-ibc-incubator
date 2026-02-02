@@ -2,12 +2,19 @@ import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ou
 import { BlockDto } from '../../query/dtos/block.dto';
 import { BlockHeaderDto } from '../modules/mini-protocals/dtos/block-header.dto';
 
+// Legacy helper for the old Ouroboros/Cardano light client approach.
+// Not part of the current production relaying flow (which uses Mithril headers + ICS-23 proofs).
 export function normalizeBlockDataFromOuroboros(
   blockDataRes: BlockDto,
   blockHeaderDto?: BlockHeaderDto | null,
 ): BlockData {
   const blockdata: BlockData = {
-    /** Block number */
+    /**
+     * IBC height semantics:
+     * - `revision_height` is a Cardano block height (db-sync `block_no`) surfaced as an IBC Height.
+     * - Cardano `slot` is tracked separately; it is not used as the IBC height, but it matters for
+     *   Cardano-specific time/validity and horizon rules (slot-based).
+     */
     height: {
       revision_number: 0,
       /** the height within the given revision */

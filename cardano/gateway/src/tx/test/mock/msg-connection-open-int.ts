@@ -8,7 +8,7 @@ class MsgConnectionOpenInitMockBuilder {
 
   setDefault() {
     this.msg = {
-      client_id: 'ibc_client-0',
+      client_id: '07-tendermint-0',
       counterparty: {
         client_id: '08-cardano-54',
         prefix: { key_prefix: Buffer.from([105, 98, 99]) },

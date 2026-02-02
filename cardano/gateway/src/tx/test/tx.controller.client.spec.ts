@@ -162,7 +162,7 @@ describe.skip('TxController - Client', () => {
       }
     });
     it('should return error if consensus_state can not be decoded', async () => {
-      const expectedMessage = '{"error":"Error decoding consensus state ouroboros:';
+      const expectedMessage = '{"error":"Error decoding consensus state:';
       try {
         const data: MsgCreateClientResponse = await controller.CreateClient({
           ...request,
@@ -387,7 +387,7 @@ describe.skip('TxController - Client', () => {
         });
         it('should return error if clientId is invalid', async () => {
           const expectedMessage =
-            '{"error":"Invalid argument: \\"client_id\\". Please use the prefix \\"ibc_client-\\"","type":"string","exceptionName":"RpcException"}';
+            '{"error":"Invalid argument: \\"client_id\\". Please use the prefix \\"07-tendermint-\\"","type":"string","exceptionName":"RpcException"}';
           try {
             const data: MsgUpdateClientResponse = await controller.UpdateClient(
               request.withClientId('invalidclientid').build(),

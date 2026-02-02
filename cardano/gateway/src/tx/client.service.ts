@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -224,15 +224,16 @@ export class ClientService {
           .validTo(validToTime);
         
         // Return unsigned transaction for Hermes to sign
-        const completedUnsignedTx = await unSignedTxValidTo.complete();
+        const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
+        const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
         this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
         
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
-            value: fromHex(unsignedTxCbor),
+            value: cborHexBytes,
           },
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
@@ -281,15 +282,16 @@ export class ClientService {
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unSignedTxValidTo.complete();
+      const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       
       this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 
       const response: MsgUpdateClientResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
         client_id: parseInt(clientId.toString()),
       } as unknown as MsgUpdateClientResponse;

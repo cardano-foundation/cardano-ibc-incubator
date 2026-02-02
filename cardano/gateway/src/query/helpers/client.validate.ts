@@ -17,9 +17,9 @@ import { CLIENT_ID_PREFIX } from '../../constant';
  * 
  * 2. CONSENSUS HEIGHT (counterparty height / data identifier)
  *    - "Which specific consensus state entry do you want?"
- *    - This IS an explicit field in requests like QueryConsensusStateRequest
+ *    - This IS expressed via explicit fields in requests like QueryConsensusStateRequest
  *    - It identifies a specific piece of data (consensus state at revision X)
- *    - Example: revision_number/revision_height fields
+ *    - Example: revision_number + revision_height (canonical IBC request shape), or latest_height=true
  * 
  * The Gateway implements IBC-compatible behavior:
  * - Query height: Optional, defaults to latest (standard Cosmos/Hermes behavior)
@@ -47,8 +47,11 @@ export function validQueryConsensusStateParam(request: QueryConsensusStateReques
       `Invalid argument: "client_id". Please use the prefix "${CLIENT_ID_PREFIX}-"`,
     );
   }
-  // Note: height (consensus height) is optional here.
-  // If not provided or 0, the service will use the latest consensus state.
+  // Note: In canonical IBC, consensus state selection uses:
+  // - revision_number + revision_height (when latest_height=false)
+  // - latest_height=true to request the latest stored consensus state
+  //
+  // The Gateway may treat missing/zero heights as "latest" depending on the upstream request.
   // This is the "consensus height" (which specific consensus state entry),
   // not the "query height" (which state snapshot to read from).
 

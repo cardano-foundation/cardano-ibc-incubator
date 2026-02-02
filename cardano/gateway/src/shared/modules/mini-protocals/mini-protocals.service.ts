@@ -147,7 +147,17 @@ export class MiniProtocalsService {
       mplexer.send(
         new HandshakeProposeVersion({
           versionTable: {
-            [10]: VersionData.testnet({
+            // Cardano node-to-node protocol version negotiation.
+            //
+            // Our devnet node currently accepts versions 13 and 14. Propose both so the node can
+            // choose the highest mutually supported version.
+            [14]: new VersionData({
+              initiatorOnlyDiffusionMode: false,
+              peerSharing: false,
+              query: false,
+              networkMagic: networkMagic,
+            }),
+            [13]: new VersionData({
               initiatorOnlyDiffusionMode: false,
               peerSharing: false,
               query: false,

@@ -99,9 +99,120 @@ export class DbSyncService {
     );
   }
 
+  async findHostStateUtxoByBlockNo(height: bigint): Promise<UtxoDto> {
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
+
+    const query = `
+      SELECT
+        tx_out.address AS address,
+        generating_tx.hash AS tx_hash,
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index,
+        datum.hash AS datum_hash,
+        datum.bytes AS datum,
+        ma.policy AS assets_policy,
+        ma.name AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE generating_block.block_no = $1
+        AND ma.policy = $2
+        AND ma.name = $3
+      ORDER BY tx_out.index DESC
+      LIMIT 1;
+    `;
+
+    const results = await this.entityManager.query(query, [
+      height.toString(),
+      `\\x${hostStateNFT.policyId}`,
+      `\\x${hostStateNFT.name}`,
+    ]);
+
+    if (results.length <= 0) {
+      throw new GrpcNotFoundException(`Not found: HostState UTxO not found at height ${height.toString()}`);
+    }
+
+    const row = results[0];
+    return <UtxoDto>{
+      address: row.address,
+      txHash: toHexString(row.tx_hash),
+      txId: row.tx_id,
+      outputIndex: row.output_index,
+      datum: toHexString(row.datum),
+      datumHash: toHexString(row.datum_hash),
+      assetsName: toHexString(row.assets_name),
+      assetsPolicy: toHexString(row.assets_policy),
+      blockId: row.block_id,
+      blockNo: row.block_no,
+    };
+  }
+
+  async findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto> {
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
+
+    const query = `
+      SELECT
+        tx_out.address AS address,
+        generating_tx.hash AS tx_hash,
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index,
+        datum.hash AS datum_hash,
+        datum.bytes AS datum,
+        ma.policy AS assets_policy,
+        ma.name AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE generating_block.block_no <= $1
+        AND ma.policy = $2
+        AND ma.name = $3
+      ORDER BY generating_block.block_no DESC, generating_tx.id DESC, tx_out.index DESC
+      LIMIT 1;
+    `;
+
+    const results = await this.entityManager.query(query, [
+      height.toString(),
+      `\\x${hostStateNFT.policyId}`,
+      `\\x${hostStateNFT.name}`,
+    ]);
+
+    if (results.length <= 0) {
+      throw new GrpcNotFoundException(
+        `Not found: HostState UTxO not found at or before height ${height.toString()}`,
+      );
+    }
+
+    const row = results[0];
+    return <UtxoDto>{
+      address: row.address,
+      txHash: toHexString(row.tx_hash),
+      txId: row.tx_id,
+      outputIndex: row.output_index,
+      datum: toHexString(row.datum),
+      datumHash: toHexString(row.datum_hash),
+      assetsName: toHexString(row.assets_name),
+      assetsPolicy: toHexString(row.assets_policy),
+      blockId: row.block_id,
+      blockNo: row.block_no,
+    };
+  }
+
   async findUtxoByPolicyAndTokenNameAndState(policyId: string, tokenName: string, state: string): Promise<UtxoDto> {
-    const mintConnScriptHash = this.configService.get('deployment').validators.mintConnection.scriptHash;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
+    const deploymentConfig = this.configService.get('deployment');
+    const mintConnScriptHash =
+      deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+    const minChannelScriptHash =
+      deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
 
     const query = `
     SELECT 
@@ -178,11 +289,12 @@ export class DbSyncService {
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
-    const mintClientScriptHash = this.configService.get('deployment').validators.mintClient.scriptHash;
-    const clientTokenName = this.lucidService
-      .generateTokenName(handlerAuthToken, CLIENT_PREFIX, BigInt(0))
-      .slice(0, 40);
+    const deploymentConfig = this.configService.get('deployment');
+    const handlerAuthToken = deploymentConfig.handlerAuthToken;
+    const mintClientScriptHash =
+      deploymentConfig.validators.mintClientStt?.scriptHash || deploymentConfig.validators.mintClient.scriptHash;
+    const tokenBase = deploymentConfig.validators.mintClientStt?.scriptHash ? deploymentConfig.hostStateNFT : handlerAuthToken;
+    const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
 
     const query = `
       SELECT 
@@ -230,7 +342,7 @@ export class DbSyncService {
       )
       .filter((utxo) => {
         if ([handlerAuthToken.policyId].includes(utxo.assetsPolicy)) return true;
-        if ([mintClientScriptHash].includes(utxo.assetsPolicy) && utxo.assetsName.startsWith(clientTokenName))
+        if ([mintClientScriptHash].includes(utxo.assetsPolicy) && utxo.assetsName.startsWith(clientTokenNamePrefix))
           return true;
 
         return false;
@@ -238,6 +350,10 @@ export class DbSyncService {
   }
 
   async findBlockByHeight(height: bigint): Promise<BlockDto> {
+    // Height semantics:
+    // - `height` here refers to db-sync `block_no` (Cardano block number), which we map to IBC
+    //   `Height.revision_height` across Gateway/Hermes.
+    // - Cardano `slot_no` is returned separately and should not be confused with the IBC height.
     const query =
       'SELECT block_no as height, slot_no as slot, epoch_no as epoch, id, hash, time FROM block WHERE block_no = $1';
     if (!height) {

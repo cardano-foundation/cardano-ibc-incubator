@@ -13,7 +13,7 @@ class MsgConnectionOpenAckMockBuilder {
       counterparty_connection_id: 'connection-35',
       version: { identifier: '1', features: ['ORDER_ORDERED', 'ORDER_UNORDERED'] },
       client_state: {
-        type_url: '/ibc.clients.cardano.v1.ClientState',
+        type_url: '/ibc.lightclients.mithril.v1.ClientState',
         value: Buffer.from([]),
       },
       proof_height: { revision_number: 0n, revision_height: 224576n },
