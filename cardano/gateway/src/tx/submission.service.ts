@@ -55,41 +55,10 @@ export class SubmissionService {
 
       // Hermes expects a non-empty IBC height string in the form "revisionNumber-revisionHeight".
       // For Cardano devnet we use revisionNumber=0 and revisionHeight=block_no from db-sync.
+      // This is a Cardano block number (db-sync `block_no`), not a slot.
       const confirmedBlockNo = await this.waitForDbSyncTxHeight(txHash);
 
-      let events = this.txEventsService.take(txHash) || [];
-      const hasCreateClient = events.some((e) => e.type === 'create_client');
-
-      // Cosmos SDK always emits a create_client event; mirror that behavior.
-      // If no events were registered (e.g., Hermes signed tx hash differs from the unsigned hash we cached),
-      // or if the create_client event is missing, synthesize it from the HostState datum so Hermes never sees an empty list.
-      if (!hasCreateClient) {
-        try {
-          const hostStateUtxo = await this.kupoService.queryCurrentHostStateUtxo();
-          if (hostStateUtxo?.datum) {
-            const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
-              hostStateUtxo.datum,
-              'host_state',
-            );
-            const createdClientSeq = hostStateDatum.state.next_client_sequence - 1n;
-            const clientId = `ibc_client-${createdClientSeq.toString()}`;
-            events = events.concat({
-              type: 'create_client',
-              attributes: [
-                { key: 'client_id', value: clientId },
-                { key: 'client_type', value: '07-tendermint' },
-                // Use the confirmed block as consensus_height fallback
-                { key: 'consensus_height', value: `0-${confirmedBlockNo}` },
-              ],
-            });
-            this.logger.warn(`Synthesized create_client event for tx ${txHash} (client_id: ${clientId}).`);
-          }
-        } catch (fallbackError) {
-          this.logger.warn(
-            `Failed to synthesize events for tx ${txHash}: ${fallbackError.message || fallbackError}`,
-          );
-        }
-      }
+      const events = this.txEventsService.take(txHash) || [];
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
       
       const response: SubmitSignedTxResponse = {
@@ -109,14 +78,103 @@ export class SubmissionService {
    * Submit signed CBOR transaction to Cardano via Lucid/Ogmios.
    */
   private async submitToCardano(signedTxCbor: string): Promise<string> {
-    try {
-      // Submit the signed transaction directly using Lucid Evolution's wallet submitTx
-      const txHash = await this.lucidService.lucid.wallet().submitTx(signedTxCbor);
-      return txHash;
-    } catch (error) {
-      this.logger.error(`Failed to submit to Cardano: ${error.message}`);
-      throw new GrpcInternalException(`Cardano submission failed: ${error.message}`);
+    // Cardano nodes reject transactions which are "too early" for their validity interval.
+    // This happens in local/devnet setups when:
+    // - the Gateway builds the transaction against wallclock time (Lucid uses `unixTimeToSlot(Date.now())`), but
+    // - the node's ledger tip is still catching up, so its `currentSlot` is behind wallclock.
+    //
+    // Ogmios returns error code 3118 with details like:
+    //   data.currentSlot = 2965
+    //   data.validityInterval.invalidBefore = 2966
+    //
+    // In that case we can safely wait until the node reaches `invalidBefore` and retry submission.
+    const maxRetries = 5;
+    const slotLengthMs = 1000; // Devnet + mainnet are 1s slots in Shelley+ eras.
+    const retryBackoffMs = 250; // Small cushion to avoid edge-of-slot races.
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // Submit the signed transaction directly using Lucid Evolution's wallet submitTx.
+        return await this.lucidService.lucid.wallet().submitTx(signedTxCbor);
+      } catch (error) {
+        const tooEarly = this.parseTxSubmittedTooEarlyError(error);
+        if (!tooEarly) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(`Failed to submit to Cardano: ${message}`);
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+        }
+
+        const { currentSlot, invalidBefore, invalidAfter } = tooEarly;
+        // If we somehow reached here but the tx is already expired, do not retry.
+        if (typeof invalidAfter === 'number' && currentSlot > invalidAfter) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(
+            `Tx rejected as too late (currentSlot=${currentSlot}, invalidAfter=${invalidAfter}): ${message}`,
+          );
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+        }
+
+        // If we have retries left, wait until the lower bound should be satisfied and retry.
+        if (attempt >= maxRetries) {
+          const message = typeof error?.message === 'string' ? error.message : String(error);
+          this.logger.error(
+            `Tx still too early after ${maxRetries} retries (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}): ${message}`,
+          );
+          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+        }
+
+        const waitSlots = Math.max(1, invalidBefore - currentSlot);
+        const waitMs = waitSlots * slotLengthMs + retryBackoffMs;
+
+        this.logger.warn(
+          `Tx rejected as too early (currentSlot=${currentSlot}, invalidBefore=${invalidBefore}); waiting ${waitMs}ms and retrying (attempt ${attempt + 1}/${maxRetries})`,
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
     }
+
+    // Unreachable (loop either returns a tx hash or throws), but keeps TypeScript happy.
+    throw new GrpcInternalException('Cardano submission failed: unexpected retry loop exit');
+  }
+
+  /**
+   * Best-effort detection of Ogmios error code 3118 ("outside of its validity interval") specifically
+   * for the "submitted too early" case. This lets the Gateway wait/retry instead of surfacing a
+   * transient failure to Hermes.
+   */
+  private parseTxSubmittedTooEarlyError(
+    error: unknown,
+  ): { currentSlot: number; invalidBefore: number; invalidAfter?: number } | null {
+    const message = typeof (error as any)?.message === 'string' ? (error as any).message : String(error);
+
+    // Ogmios uses code 3118 for validity interval failures.
+    // We also check the human-readable substring to reduce false positives.
+    const isValidityIntervalError =
+      message.includes('outside of its validity interval') || message.includes('"code":3118') || message.includes('"code\\":3118');
+    if (!isValidityIntervalError) return null;
+
+    const currentSlot = this.extractNumberAfterToken(message, 'currentSlot');
+    const invalidBefore = this.extractNumberAfterToken(message, 'invalidBefore');
+    const invalidAfter = this.extractNumberAfterToken(message, 'invalidAfter');
+
+    if (currentSlot === null || invalidBefore === null) return null;
+
+    // We only treat "too early" as retryable. "too late" must be handled by the caller.
+    if (currentSlot >= invalidBefore) return null;
+
+    return {
+      currentSlot,
+      invalidBefore,
+      invalidAfter: invalidAfter === null ? undefined : invalidAfter,
+    };
+  }
+
+  private extractNumberAfterToken(message: string, token: string): number | null {
+    const match = new RegExp(`${token}[^0-9]*([0-9]+)`).exec(message);
+    if (!match) return null;
+    const value = Number(match[1]);
+    return Number.isFinite(value) ? value : null;
   }
 
   /**

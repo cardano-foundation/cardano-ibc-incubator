@@ -4,7 +4,7 @@ import {
   MithrilStakeDistribution,
   ProtocolMessagePartKey,
   SignedEntityType,
-} from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+} from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { getNanoseconds } from './time';
 import { doubleToFraction } from './number';
 import { convertHex2String } from './hex';
@@ -56,8 +56,8 @@ export function normalizeMithrilStakeDistributionCertificate(
     };
   if (stakeDistributionCertificate.signed_entity_type.hasOwnProperty('CardanoTransactions'))
     stakeDistributionSignedEntityType.cardano_transactions = {
-      epoch: stakeDistributionCertificate.CardanoTransactions[0],
-      block_number: 0n,
+      epoch: BigInt(stakeDistributionCertificate.signed_entity_type.CardanoTransactions?.[0] ?? 0),
+      block_number: BigInt(stakeDistributionCertificate.signed_entity_type.CardanoTransactions?.[1] ?? 0),
     };
   if (stakeDistributionCertificate.signed_entity_type.hasOwnProperty('CardanoImmutableFilesFull'))
     stakeDistributionSignedEntityType.cardano_immutable_files_full = {

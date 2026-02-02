@@ -172,8 +172,12 @@ export function normalizeTxsResultFromClientDatum(
             value: `${CLIENT_ID_PREFIX}-${clientId}`,
           },
           {
+            key: ATTRIBUTE_KEY_CLIENT.CLIENT_TYPE,
+            value: CLIENT_ID_PREFIX,
+          },
+          {
             key: ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT,
-            value: latestHeight.revisionHeight,
+            value: `${latestHeight.revisionNumber}-${latestHeight.revisionHeight}`,
           },
           {
             key: ATTRIBUTE_KEY_CLIENT.HEADER,

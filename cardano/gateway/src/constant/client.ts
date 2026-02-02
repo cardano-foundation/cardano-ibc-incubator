@@ -19,7 +19,9 @@ export const ATTRIBUTE_KEY_CLIENT = {
   UPGRADE_PLAN_HEIGHT: 'upgrade_plan_height',
   title: 'title',
 };
-export const CLIENT_ID_PREFIX = 'ibc_client';
+// Cardano stores Tendermint clients using the canonical IBC client identifier format:
+// `07-tendermint-{sequence}`.
+export const CLIENT_ID_PREFIX = '07-tendermint';
 export const KEY_CLIENT_PREFIX = 'clients';
 export const KEY_CLIENT_STATE = 'clientState';
 

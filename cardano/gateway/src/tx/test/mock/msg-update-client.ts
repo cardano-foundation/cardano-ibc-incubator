@@ -10,7 +10,7 @@ export class MsgUpdateClientMockBuilder {
 
   private setDefault(): void {
     this.msgUpdateClientMock = {
-      client_id: 'ibc_client-1',
+      client_id: '07-tendermint-1',
       client_message: {
         type_url: '',
         value: headerMockBuilder.encode(),

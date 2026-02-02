@@ -24,7 +24,6 @@ import {
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX } from '../../constant';
-import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
@@ -44,8 +43,9 @@ import { convertHex2String, fromHex, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInvalidArgumentException, GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
+import { HostStateDatum } from '../../shared/types/host-state-datum';
 
 @Injectable()
 export class PacketService {
@@ -53,9 +53,38 @@ export class PacketService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @Inject(DbSyncService) private dbService: DbSyncService,
     @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
+
+  private async ensureTreeAligned(): Promise<void> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo?.datum) {
+      throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+    }
+
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+    const onChainRoot = hostStateDatum.state.ibc_state_root;
+
+    if (isTreeAligned(onChainRoot)) return;
+
+    this.logger.warn(`Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`);
+    await alignTreeWithChain();
+  }
+
+  private async getProofHeight(): Promise<bigint> {
+    // IBC queries that return proofs must also return the height of the commitment root those
+    // proofs were built against (`proof_height`).
+    //
+    // In this implementation we use the latest Mithril CardanoTransactions snapshot block number.
+    // This value is a Cardano block height (not a slot), and Hermes may wait until this height is
+    // certified before proceeding with handshake/packet flows.
+    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    const latestSnapshot = snapshots?.[0];
+    if (!latestSnapshot) {
+      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+    }
+    return BigInt(latestSnapshot.block_number);
+  }
 
   async queryPacketAcknowledgement(
     request: QueryPacketAcknowledgementRequest,
@@ -82,12 +111,8 @@ export class PacketService {
     } as unknown as Acknowledgement;
 
     // if (!packetAcknowledgement) throw new GrpcNotFoundException("Not found: 'Packet Acknowledgement' not found");
-
-    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-      minChannelScriptHash,
-      channelTokenName,
-      channelDatumDecoded.state.channel.state,
-    );
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: acks/ports/{portId}/channels/{channelId}/sequences/{sequence}
@@ -110,7 +135,7 @@ export class PacketService {
       proof: ackProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo,
+        revision_height: proofHeight,
       },
     } as unknown as QueryPacketAcknowledgementResponse;
     return response;
@@ -208,12 +233,8 @@ export class PacketService {
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
     // if (!packetCommitment) throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
-
-    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-      minChannelScriptHash,
-      channelTokenName,
-      channelDatumDecoded.state.channel.state,
-    );
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
@@ -236,7 +257,7 @@ export class PacketService {
       proof: commitmentProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo,
+        revision_height: proofHeight,
       },
     } as unknown as QueryPacketCommitmentResponse;
     return response;
@@ -331,12 +352,8 @@ export class PacketService {
     const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
 
     // if (!packetReceipt) throw new GrpcNotFoundException("Not found: 'Packet Receipt' not found");
-
-    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-      minChannelScriptHash,
-      channelTokenName,
-      channelDatumDecoded.state.channel.state,
-    );
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
@@ -366,7 +383,7 @@ export class PacketService {
       proof: receiptProof, // ICS-23 Merkle proof (existence or non-existence)
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo,
+        revision_height: proofHeight,
       },
     } as unknown as QueryPacketReceiptResponse;
     return response;
@@ -484,12 +501,8 @@ export class PacketService {
         `Invalid sequence, sequence ${sequence} already exists in packet_receipt map`,
       );
     }
-
-    const proof = await this.dbService.findUtxoByPolicyAndTokenNameAndState(
-      minChannelScriptHash,
-      channelTokenName,
-      channelDatumDecoded.state.channel.state,
-    );
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
     // if (BigInt(proof.blockNo) > revisionHeight) {
     //   throw new GrpcInvalidArgumentException(
     //     `Invalid proof height, revision height ${revisionHeight} not match with proof height ${proof.blockNo}`,
@@ -517,7 +530,7 @@ export class PacketService {
       proof: unreceivedProof, // ICS-23 non-existence proof
       proof_height: {
         revision_number: 0,
-        revision_height: proof.blockNo,
+        revision_height: proofHeight,
       },
     } as unknown as QueryPacketAcknowledgementResponse;
     return response;
@@ -534,6 +547,9 @@ export class PacketService {
     console.dir({ channelDatum }, { depth: 10 });
 
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
+
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: nextSequenceRecv/ports/{portId}/channels/{channelId}
@@ -556,7 +572,7 @@ export class PacketService {
       proof: nextSeqProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: 0, // TODO: Get actual block height
+        revision_height: proofHeight,
       },
     } as unknown as QueryNextSequenceReceiveResponse;
     return response;
@@ -570,6 +586,9 @@ export class PacketService {
     const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
     const nextSequenceAck = channelDatum.state.next_sequence_ack;
+
+    const proofHeight = await this.getProofHeight();
+    await this.ensureTreeAligned();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: nextSequenceAck/ports/{portId}/channels/{channelId}
@@ -592,7 +611,7 @@ export class PacketService {
       proof: nextAckProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: 0, // TODO: Get actual block height
+        revision_height: proofHeight,
       },
     } as unknown as QueryNextSequenceReceiveResponse;
     return response;

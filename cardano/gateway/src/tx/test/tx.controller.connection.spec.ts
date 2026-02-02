@@ -130,7 +130,7 @@ describe.skip('TxController - Connection', () => {
     });
     it('should return error if client_id is invalid', async () => {
       const expectedMessage =
-        '{"error":"Invalid argument: \\"client_id\\". Please use the prefix \\"ibc_client-\\"","type":"string","exceptionName":"RpcException"}';
+        '{"error":"Invalid argument: \\"client_id\\". Please use the prefix \\"07-tendermint-\\"","type":"string","exceptionName":"RpcException"}';
       try {
         const data: MsgConnectionOpenInitResponse = await controller.ConnectionOpenInit(
           msgConnectionOpenInitMockBuilder.withClientId('invalid-client-id').build(),

@@ -24,6 +24,7 @@ export const grpcClientOptions: GrpcOptions = {
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/core/channel/v1/tx.proto'),
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/applications/transfer/v1/query.proto'),
       join(__dirname, '../../../proto-types/protos/ibc-go/ibc/cardano/v1/tx.proto'),
+      join(__dirname, '../../../proto-types/protos/ibc-go/ibc/cardano/v1/query.proto'),
     ],
     loader: {
       keepCase: true,

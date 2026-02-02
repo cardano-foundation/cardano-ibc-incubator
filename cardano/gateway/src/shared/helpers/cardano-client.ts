@@ -2,6 +2,8 @@ import { ClientState as ClientStateOuroboros } from '@plus/proto-types/build/ibc
 import { CardanoClientState } from '../types/cardano';
 import { convertString2Hex } from './hex';
 
+// Legacy helper for the old Ouroboros/Cardano light client approach.
+// Not part of the current production relaying flow (which uses Mithril on the Cosmos side).
 // Convert client state operator to a structured ClientState object for submit on cardano
 export function initializeCardanoClientState(clientStateMsg: ClientStateOuroboros): CardanoClientState {
   // Helper function to convert numbers to BigInt

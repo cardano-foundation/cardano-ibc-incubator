@@ -11,7 +11,7 @@ const block_results = {
               { key: 'connection_id', value: 'connection-255', index: true },
               {
                 key: 'client_id',
-                value: 'ibc_client-355',
+                value: '07-tendermint-355',
                 index: true,
               },
               {
@@ -49,7 +49,7 @@ const block_results_has_client_event = {
           {
             type: 'update_client',
             event_attribute: [
-              { key: 'client_id', value: 'ibc_client-', index: true },
+              { key: 'client_id', value: '07-tendermint-', index: true },
               {
                 key: 'consensus_height',
                 value: '100970',
@@ -88,7 +88,7 @@ const block_results_has_connection_event = {
               },
               {
                 key: 'client_id',
-                value: 'ibc_client-355',
+                value: '07-tendermint-355',
                 index: true,
               },
               {
@@ -164,7 +164,7 @@ const query_connections_expected = {
   connections: [
     {
       id: 'connection-255',
-      client_id: 'ibc_client-355',
+      client_id: '07-tendermint-355',
       versions: [
         {
           identifier: '1',
@@ -186,7 +186,7 @@ const query_connections_expected = {
 
 const query_connection_expected = {
   connection: {
-    client_id: 'ibc_client-355',
+    client_id: '07-tendermint-355',
     versions: [
       {
         identifier: '1',

@@ -14,7 +14,7 @@ import {
   MsgConnectionOpenTry,
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
-import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/mithril';
+import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ConnectionOpenTryOperator } from '../dto/connection/connection-open-try-operator.dto';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
@@ -115,7 +115,28 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const connectionSequence = data.connection_id.replaceAll(`${CONNECTION_ID_PREFIX}-`, '');
   const decodedProofTryMsg: MerkleProofMsg = decodeMerkleProof(data.proof_try);
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
+
+  // Debug helper: Log the shape of the Any-encoded counterparty client state we received from Hermes.
+  // This is critical for diagnosing proto/type-url mismatches across Hermes ↔ sidechain ↔ Gateway.
+  try {
+    const any = data.client_state as any;
+    const typeUrl = any?.type_url ?? any?.typeUrl;
+    const value = any?.value;
+    const valueLen = value?.length ?? 0;
+    const valueHex = value ? Buffer.from(value).toString('hex') : '';
+    // eslint-disable-next-line no-console
+    console.log(
+      `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
+    );
+  } catch {
+    // Best-effort debug logging only.
+  }
+
   const decodedMithrilClientStateMsg: ClientStateMithrilMsg = decodeClientStateMithril(data.client_state.value);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[DEBUG] ConnOpenAck decoded mithril ClientState: chain_id=${decodedMithrilClientStateMsg.chain_id}, has_latest_height=${!!decodedMithrilClientStateMsg.latest_height}, has_frozen_height=${!!decodedMithrilClientStateMsg.frozen_height}`,
+  );
   let clientState: MithrilClientState = initializeMithrilClientState(decodedMithrilClientStateMsg);
 
   // Prepare the connection open ack operator object

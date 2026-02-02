@@ -1,4 +1,4 @@
-import { fromHex, TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -181,8 +181,9 @@ export class ChannelService {
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
 
       // Hermes expects an ABCI-style event list from the tx submission response.
@@ -207,7 +208,7 @@ export class ChannelService {
         version: data.channel.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenInitResponse;
       return response;
@@ -235,15 +236,16 @@ export class ChannelService {
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open try');
       const response: MsgChannelOpenTryResponse = {
         version: channelOpenTryOperator.version,
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenTryResponse;
       return response;
@@ -275,8 +277,9 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
 
       this.txEventsService.register(unsignedTxHash, [
@@ -297,7 +300,7 @@ export class ChannelService {
       const response: MsgChannelOpenAckResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenAckResponse;
       return response;
@@ -324,14 +327,15 @@ export class ChannelService {
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open confirm');
       const response: MsgChannelOpenConfirmResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelOpenConfirmResponse;
       return response;
@@ -358,14 +362,15 @@ export class ChannelService {
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete();
+      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel close init');
       const response: MsgChannelCloseInitResponse = {
         unsigned_tx: {
           type_url: '',
-          value: fromHex(unsignedTxCbor),
+          value: cborHexBytes,
         },
       } as unknown as MsgChannelCloseInitResponse;
       return response;
@@ -794,8 +799,10 @@ export class ChannelService {
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
 
-    if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight.revisionHeight)) {
-      throw new GrpcInternalException(`Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionHeight}`);
+    if (!isValidProofHeight(heightsArray, channelOpenAckOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelOpenAckOperator.proofHeight.revisionNumber}/${channelOpenAckOperator.proofHeight.revisionHeight}`,
+      );
     }
 
     const updatedChannelDatum: ChannelDatum = {
@@ -867,9 +874,17 @@ export class ChannelService {
     };
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    const [_, consensusState] = [...clientDatum.state.consensusStates.entries()].find(
-      ([key]) => key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelOpenAckOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelOpenAckOperator.proofHeight.revisionHeight,
     );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelOpenAckOperator.proofHeight.revisionNumber}/${channelOpenAckOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
 
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_TRYOPEN,
@@ -888,7 +903,7 @@ export class ChannelService {
         cons_state: consensusState,
         height: channelOpenAckOperator.proofHeight,
         delay_time_period: connectionDatum.state.delay_period,
-        delay_block_period: BigInt(getBlockDelay(connectionDatum.state.delay_period)),
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: channelOpenAckOperator.proofTry,
         path: {
           key_path: [

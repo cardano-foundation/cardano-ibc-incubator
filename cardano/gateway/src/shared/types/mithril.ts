@@ -1,5 +1,7 @@
 export type MithrilClientState = {
   chain_id: string;
+  host_state_nft_policy_id: string;
+  host_state_nft_token_name: string;
   latest_height: MithrilHeight;
   frozen_height: MithrilHeight;
   current_epoch: bigint;

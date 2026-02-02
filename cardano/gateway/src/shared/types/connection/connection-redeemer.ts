@@ -96,7 +96,8 @@ export async function encodeMintConnectionRedeemer(
     revisionHeight: Data.Integer(),
   });
   const MithrilHeightSchema = Data.Object({
-    mithril_height: Data.Integer(),
+    revisionNumber: Data.Integer(),
+    revisionHeight: Data.Integer(),
   });
   const FractionSchema = Data.Object({
     numerator: Data.Integer(),
@@ -115,6 +116,8 @@ export async function encodeMintConnectionRedeemer(
     trusting_period: Data.Integer(),
     protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
+    host_state_nft_policy_id: Data.Bytes(),
+    host_state_nft_token_name: Data.Bytes(),
   });
   const MintConnectionRedeemerSchema = Data.Enum([
     Data.Object({
@@ -166,6 +169,8 @@ export async function encodeSpendConnectionRedeemer(
     trusting_period: Data.Integer(),
     protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
+    host_state_nft_policy_id: Data.Bytes(),
+    host_state_nft_token_name: Data.Bytes(),
   });
   const LeafOpSchema = Data.Object({
     hash: Data.Integer(),
@@ -290,7 +295,8 @@ export function decodeMintConnectionRedeemer(
   });
 
   const MithrilHeightSchema = Data.Object({
-    mithril_height: Data.Integer(),
+    revisionNumber: Data.Integer(),
+    revisionHeight: Data.Integer(),
   });
   const FractionSchema = Data.Object({
     numerator: Data.Integer(),
@@ -309,6 +315,8 @@ export function decodeMintConnectionRedeemer(
     trusting_period: Data.Integer(),
     protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
+    host_state_nft_policy_id: Data.Bytes(),
+    host_state_nft_token_name: Data.Bytes(),
   });
   const HeightSchema = Data.Object({
     revisionNumber: Data.Integer(),
@@ -365,6 +373,8 @@ export function decodeSpendConnectionRedeemer(
     trusting_period: Data.Integer(),
     protocol_parameters: MithrilProtocolParametersSchema,
     upgrade_path: Data.Array(Data.Bytes()),
+    host_state_nft_policy_id: Data.Bytes(),
+    host_state_nft_token_name: Data.Bytes(),
   });
   const LeafOpSchema = Data.Object({
     hash: Data.Integer(),
