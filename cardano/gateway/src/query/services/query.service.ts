@@ -477,8 +477,6 @@ export class QueryService {
     }
     const consensusStateTendermint = normalizeConsensusStateFromDatum(clientDatum.state.consensusStates, heightReq);
     if (!consensusStateTendermint)
-      // TODO(ibc): `caribic test` connection creation currently fails because Hermes queries consensus
-      // states at specific heights (e.g. 46638/47523) that are not present in the stored map.
       throw new GrpcNotFoundException(`Unable to find Consensus State at height ${heightReq}`);
     const consensusStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
