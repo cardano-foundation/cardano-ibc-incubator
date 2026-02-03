@@ -25,13 +25,20 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (
-    data.packet.destination_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
-    data.packet.destination_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT}`
-  )
+  // Hermes (and standard IBC) uses well-known port ids like "transfer".
+  // Older versions of the Gateway used a legacy numeric port scheme (e.g. "port-100").
+  // Accept both for compatibility, but treat "transfer" / "mock" as canonical.
+  const supportedDestinationPorts = new Set([
+    'transfer',
+    'mock',
+    `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`,
+    `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT}`,
+  ]);
+  if (!supportedDestinationPorts.has(data.packet.destination_port)) {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_port" ${data.packet.destination_port} not supported`,
     );
+  }
   const decodedProofCommitment: MerkleProof = decodeMerkleProof(data.proof_commitment);
   // Prepare the Recv packet operator object
 
@@ -145,11 +152,15 @@ export function validateAndFormatAcknowledgementPacketParams(data: MsgAcknowledg
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "source_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  if (
-    data.packet.source_port !== `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}` &&
-    data.packet.destination_port !== `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT}`
-  )
+  const supportedSourcePorts = new Set([
+    'transfer',
+    'mock',
+    `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`,
+    `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT}`,
+  ]);
+  if (!supportedSourcePorts.has(data.packet.source_port)) {
     throw new GrpcInvalidArgumentException(`Invalid argument: "source_port" ${data.packet.source_port} not supported`);
+  }
 
   // Prepare the Recv packet operator object
   const decodedProofAcked: MerkleProof = decodeMerkleProof(data.proof_acked);
