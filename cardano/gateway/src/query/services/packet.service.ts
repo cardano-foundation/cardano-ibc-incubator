@@ -92,16 +92,8 @@ export class PacketService {
     const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketAcknowledgementParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketAcknowledgement');
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetAcknowledgement =
@@ -160,16 +152,8 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
@@ -219,16 +203,8 @@ export class PacketService {
       'QueryPacketCommitmentRequest',
     );
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
@@ -280,16 +256,8 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
@@ -337,16 +305,8 @@ export class PacketService {
     const { channel_id: channelId, port_id: portId, sequence } = validQueryPacketReceiptParam(request);
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketReceiptRequest');
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
@@ -401,16 +361,8 @@ export class PacketService {
       'QueryUnreceivedPacketsRequest',
     );
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
@@ -439,16 +391,8 @@ export class PacketService {
       'QueryUnreceivedAcksRequest',
     );
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
@@ -479,16 +423,8 @@ export class PacketService {
       'QueryProofUnreceivedPacketsRequest',
     );
 
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-    const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-
-    const channelTokenName = this.lucidService.generateTokenName(
-      handlerAuthToken,
-      CHANNEL_TOKEN_PREFIX,
-      BigInt(channelId),
-    );
-
-    const channelTokenUnit = minChannelScriptHash + channelTokenName;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     if (convertHex2String(channelDatumDecoded.port) !== portId) {

@@ -84,7 +84,7 @@ max_block_time = '20000ms'
 # transaction inclusion block number before continuing the handshake/relay.
 #
 # Note: this "height" is a Cardano block number, not a Cardano slot number.
-mithril_certification_timeout = '10m'
+mithril_certification_timeout = '30m'
 mithril_poll_interval = '5s'
 mithril_wait_log_interval = '30s'
 
