@@ -476,6 +476,7 @@ pub async fn run_integration_tests(
     //   - Relay RecvPacket to Cardano and Ack back to Cosmos
     //   - Validate basic token effects and Cardano voucher minting
     logger::log("Test 9: ICS-20 transfer (sidechain -> Cardano)...");
+    let mut transfer_test_passed = false;
 
     if let Some(cardano_channel_id) = &channel_id {
         let sidechain_channel_id = resolve_sidechain_channel_id(project_root, cardano_channel_id)
@@ -551,6 +552,7 @@ pub async fn run_integration_tests(
                     } else {
                         logger::log("PASS Test 9: Transfer relayed and voucher minted\n");
                         results.passed += 1;
+                        transfer_test_passed = true;
                     }
                 }
                 Err(e) => {
@@ -565,6 +567,89 @@ pub async fn run_integration_tests(
         }
     } else {
         logger::log("SKIP Test 9: Skipped because no transfer channel was established\n");
+        results.skipped += 1;
+    }
+
+    // Test 10: Round-trip transfer (Cardano -> Cosmos)
+    //
+    // Send the Cardano voucher back to the packet-forwarding chain and verify:
+    //   - Voucher is burned on Cardano
+    //   - Native token balance is restored on Cosmos (minus fees)
+    logger::log("Test 10: ICS-20 round-trip (Cardano -> sidechain)...");
+    if transfer_test_passed {
+        if let Some(cardano_channel_id) = &channel_id {
+            let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+            let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
+            let cardano_receiver_address =
+                cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+
+            let denom = "stake";
+            // Use the same large amount as Test 9 to keep fee noise well below the transfer value.
+            let amount: u64 = 1_000_000;
+
+            let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
+            let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
+
+            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+            let cardano_voucher_before =
+                query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+
+            // Use a long timeout to ensure the round-trip doesn't accidentally time out while
+            // we wait for Mithril certification.
+            let timeout_height_offset = 100;
+            let timeout_seconds = 600;
+
+            match hermes_ft_transfer(
+                project_root,
+                "cardano-devnet",
+                "sidechain",
+                "transfer",
+                cardano_channel_id,
+                amount,
+                &voucher_denom_path,
+                None,
+                timeout_height_offset,
+                timeout_seconds,
+            ) {
+                Ok(_) => match hermes_clear_packets(project_root, "cardano-devnet", "transfer", cardano_channel_id) {
+                    Ok(_) => {
+                        let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
+                        let cardano_voucher_after =
+                            query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+
+                        if cardano_voucher_after + amount > cardano_voucher_before {
+                            logger::log(&format!(
+                                "FAIL Test 10: Cardano voucher token did not burn as expected (before={}, after={})\n",
+                                cardano_voucher_before, cardano_voucher_after
+                            ));
+                            results.failed += 1;
+                        } else if sidechain_balance_after <= sidechain_balance_before {
+                            logger::log(&format!(
+                                "FAIL Test 10: sidechain balance did not increase after round-trip (before={}, after={})\n",
+                                sidechain_balance_before, sidechain_balance_after
+                            ));
+                            results.failed += 1;
+                        } else {
+                            logger::log("PASS Test 10: Round-trip completed and voucher burned\n");
+                            results.passed += 1;
+                        }
+                    }
+                    Err(e) => {
+                        logger::log(&format!("FAIL Test 10: Failed to relay packets\n{}\n", e));
+                        results.failed += 1;
+                    }
+                },
+                Err(e) => {
+                    logger::log(&format!("FAIL Test 10: hermes tx ft-transfer failed\n{}\n", e));
+                    results.failed += 1;
+                }
+            }
+        } else {
+            logger::log("SKIP Test 10: Skipped because no transfer channel was established\n");
+            results.skipped += 1;
+        }
+    } else {
+        logger::log("SKIP Test 10: Skipped due to Test 9 failure\n");
         results.skipped += 1;
     }
 
