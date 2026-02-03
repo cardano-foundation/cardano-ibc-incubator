@@ -438,7 +438,7 @@ pub async fn run_integration_tests(
     // Status: Depends on Test 7 passing (needs an established connection first).
     logger::log("Test 8: Creating channel via Hermes and verifying root changes...");
     
-    if let Some(conn_id) = connection_id {
+    let channel_id = if let Some(conn_id) = connection_id {
         match create_test_channel(project_root, &conn_id) {
             Ok(channel_id) => {
                 // Wait for transaction confirmation
@@ -451,10 +451,12 @@ pub async fn run_integration_tests(
                 logger::log(&format!("   New root: {}...", &root_after_channel[..16]));
                 logger::log("PASS Test 8: Channel created and root updated\n");
                 results.passed += 1;
+                Some(channel_id)
             }
             Err(e) => {
                 logger::log(&format!("FAIL Test 8: Hermes channel creation failed\n{}\n", e));
                 results.failed += 1;
+                None
             }
         }
     } else {
@@ -463,6 +465,106 @@ pub async fn run_integration_tests(
         } else {
             logger::log("SKIP Test 8: Skipped due to Test 7 failure\n");
         }
+        results.skipped += 1;
+        None
+    };
+
+    // Test 9: ICS-20 transfer (Cosmos -> Cardano) and packet clearing
+    //
+    // This tests the first real packet path:
+    //   - Submit MsgTransfer on the packet-forwarding chain (Cosmos)
+    //   - Relay RecvPacket to Cardano and Ack back to Cosmos
+    //   - Validate basic token effects and Cardano voucher minting
+    logger::log("Test 9: ICS-20 transfer (sidechain -> Cardano)...");
+
+    if let Some(cardano_channel_id) = &channel_id {
+        let sidechain_channel_id = resolve_sidechain_channel_id(project_root, cardano_channel_id)
+            .unwrap_or_else(|| cardano_channel_id.clone());
+
+        let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+        let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
+        let cardano_receiver_address =
+            cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+
+        let denom = "stake";
+        // Use a large enough amount that fee noise cannot mask the balance delta.
+        let amount: u64 = 1_000_000;
+
+        let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
+
+        let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+        let cardano_voucher_before =
+            query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+        let cardano_root_before = query_handler_state_root(project_root)?;
+
+        // The chain rejects packets that have both timeout_height and timeout_timestamp set
+        // to zero, so ensure at least one is populated.
+        let timeout_height_offset = 100;
+        let timeout_seconds = 600;
+
+        logger::verbose(&format!(
+            "   Cardano receiver credential: {}...",
+            &cardano_receiver_credential[..8]
+        ));
+
+        match hermes_ft_transfer(
+            project_root,
+            "sidechain",
+            "cardano-devnet",
+            "transfer",
+            &sidechain_channel_id,
+            amount,
+            denom,
+            Some(&cardano_receiver_credential),
+            timeout_height_offset,
+            timeout_seconds,
+        ) {
+            Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", &sidechain_channel_id) {
+                Ok(_) => {
+                    let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
+                    let cardano_voucher_after =
+                        query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+                    let cardano_root_after = query_handler_state_root(project_root)?;
+
+                    if sidechain_balance_before < sidechain_balance_after
+                        || sidechain_balance_before.saturating_sub(sidechain_balance_after) < amount as u128
+                    {
+                        logger::log(&format!(
+                            "FAIL Test 9: sidechain balance did not decrease as expected (before={}, after={})\n",
+                            sidechain_balance_before, sidechain_balance_after
+                        ));
+                        results.failed += 1;
+                    } else if cardano_voucher_after < cardano_voucher_before + amount {
+                        logger::log(&format!(
+                            "FAIL Test 9: Cardano voucher token was not minted as expected (before={}, after={}, expected >= {})\n",
+                            cardano_voucher_before,
+                            cardano_voucher_after,
+                            cardano_voucher_before + amount
+                        ));
+                        results.failed += 1;
+                    } else if cardano_root_after == cardano_root_before {
+                        logger::log(&format!(
+                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (root={}...)\n",
+                            &cardano_root_after[..16]
+                        ));
+                        results.failed += 1;
+                    } else {
+                        logger::log("PASS Test 9: Transfer relayed and voucher minted\n");
+                        results.passed += 1;
+                    }
+                }
+                Err(e) => {
+                    logger::log(&format!("FAIL Test 9: Failed to relay packets\n{}\n", e));
+                    results.failed += 1;
+                }
+            },
+            Err(e) => {
+                logger::log(&format!("FAIL Test 9: hermes tx ft-transfer failed\n{}\n", e));
+                results.failed += 1;
+            }
+        }
+    } else {
+        logger::log("SKIP Test 9: Skipped because no transfer channel was established\n");
         results.skipped += 1;
     }
 
@@ -1178,4 +1280,535 @@ fn create_test_channel(
     logger::verbose(&format!("   Channel created: {}", channel_id));
     
     Ok(channel_id)
+}
+
+fn read_handler_json_value(
+    project_root: &Path,
+    json_path: &[&str],
+) -> Result<String, Box<dyn std::error::Error>> {
+    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    let deployment_json = std::fs::read_to_string(&deployment_path).map_err(|e| {
+        format!(
+            "Failed to read deployment config at {}: {}",
+            deployment_path.display(),
+            e
+        )
+    })?;
+    let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
+
+    let mut cursor = &deployment;
+    for key in json_path {
+        cursor = cursor.get(*key).ok_or_else(|| {
+            format!(
+                "Deployment config missing key path: {}",
+                json_path.join(".")
+            )
+        })?;
+    }
+
+    cursor
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| format!("Deployment value at {} is not a string", json_path.join(".")))
+        .map_err(Into::into)
+}
+
+fn get_hermes_chain_address(
+    project_root: &Path,
+    chain_id: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(&["keys", "list", "--chain", chain_id])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes keys list failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for token in stdout.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+
+        match chain_id {
+            "sidechain" => {
+                if cleaned.starts_with("cosmos1") {
+                    return Ok(cleaned.to_string());
+                }
+            }
+            "cardano-devnet" => {
+                // Cardano uses a different "address" representation in Hermes: the relayer key is a
+                // hex-encoded enterprise address bytes (constructed from the payment key hash).
+                if cleaned.starts_with("addr_test1") || cleaned.starts_with("addr1") {
+                    return Ok(cleaned.to_string());
+                }
+
+                let looks_like_hex_address = cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
+                if looks_like_hex_address {
+                    // Convert the raw address bytes to bech32 so we can query UTxOs with cardano-cli.
+                    // Note: we pick HRP based on the network id bits in the address header byte.
+                    let address_bytes = decode_hex_bytes(cleaned)?;
+                    let network_id = address_bytes.first().copied().unwrap_or(0) & 0x0f;
+                    let hrp = if network_id == 0 { "addr_test" } else { "addr" };
+                    return Ok(cardano_hex_address_to_bech32(cleaned, hrp)?);
+                }
+            }
+            _ => {
+                if cleaned.starts_with("cosmos1") || cleaned.starts_with("addr_test1") || cleaned.starts_with("addr1") {
+                    return Ok(cleaned.to_string());
+                }
+            }
+        }
+    }
+
+    Err(format!(
+        "Could not parse {} address from Hermes keys list output:\n{}",
+        chain_id,
+        stdout.trim()
+    )
+    .into())
+}
+
+fn get_cardano_payment_credential_hex(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    // Hermes represents the Cardano relayer identity as a hex-encoded enterprise address
+    // (header byte + 28-byte payment key hash). For packet receivers, the Gateway expects the
+    // 28-byte payment credential hash (hex), so we strip the first byte.
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(&["keys", "list", "--chain", "cardano-devnet"])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes keys list failed:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for token in stdout.split_whitespace() {
+        let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+        let looks_like_hex_address = cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
+        if !looks_like_hex_address {
+            continue;
+        }
+
+        let credential = cleaned[2..].to_string();
+        let looks_like_hex_credential = credential.len() == 56 && credential.chars().all(|c| c.is_ascii_hexdigit());
+        if looks_like_hex_credential {
+            return Ok(credential);
+        }
+    }
+
+    Err(format!(
+        "Could not parse Cardano payment credential from Hermes keys list output:\n{}",
+        stdout.trim()
+    )
+    .into())
+}
+
+fn cardano_hex_address_to_bech32(hex_address: &str, hrp: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let bytes = decode_hex_bytes(hex_address)?;
+    Ok(bech32_encode_bytes(hrp, &bytes)?)
+}
+
+fn cardano_enterprise_address_from_payment_credential(
+    project_root: &Path,
+    payment_credential_hex: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // The Gateway expects packet receivers to be a payment credential hash (28 bytes hex),
+    // and then reconstructs an enterprise address from it. For tests, we need to query that
+    // same address to validate voucher minting/burning.
+    //
+    // We pick the network id from the deployed on-chain addresses (handler.json), so this
+    // stays correct if the devnet uses mainnet-style addresses.
+    let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
+    let deployment_json = std::fs::read_to_string(&deployment_path).map_err(|e| {
+        format!(
+            "Failed to read deployment config at {}: {}",
+            deployment_path.display(),
+            e
+        )
+    })?;
+    let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
+    let host_state_address = deployment["validators"]["hostStateStt"]["address"]
+        .as_str()
+        .ok_or("validators.hostStateStt.address not found in deployment")?;
+
+    let (network_id, hrp) = if host_state_address.starts_with("addr_test") {
+        (0u8, "addr_test")
+    } else {
+        (1u8, "addr")
+    };
+
+    let credential_bytes = decode_hex_bytes(payment_credential_hex)?;
+    if credential_bytes.len() != 28 {
+        return Err(format!(
+            "Invalid Cardano payment credential length (expected 28 bytes, got {}): {}",
+            credential_bytes.len(),
+            payment_credential_hex
+        )
+        .into());
+    }
+
+    // Enterprise address header byte:
+    // - upper nibble: address type (0x6 = enterprise)
+    // - lower nibble: network id (0 = testnet, 1 = mainnet)
+    let header = 0x60 | network_id;
+    let mut address_bytes = Vec::with_capacity(1 + credential_bytes.len());
+    address_bytes.push(header);
+    address_bytes.extend_from_slice(&credential_bytes);
+
+    Ok(bech32_encode_bytes(hrp, &address_bytes)?)
+}
+
+fn decode_hex_bytes(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if hex.len() % 2 != 0 {
+        return Err(format!("Invalid hex string length: {}", hex.len()).into());
+    }
+
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    for i in (0..hex.len()).step_by(2) {
+        let byte_str = &hex[i..i + 2];
+        let byte = u8::from_str_radix(byte_str, 16)
+            .map_err(|e| format!("Invalid hex at {}: {} ({})", i, byte_str, e))?;
+        bytes.push(byte);
+    }
+    Ok(bytes)
+}
+
+// Minimal bech32 encoder (BIP-0173) for Cardano addresses.
+//
+// We implement it locally to keep Caribic offline-buildable, since the test suite already runs
+// in environments where fetching new crates can be restricted.
+const BECH32_CHARSET: &[u8; 32] = b"qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const BECH32_GENERATOR: [u32; 5] = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+
+fn bech32_encode_bytes(hrp: &str, data: &[u8]) -> Result<String, Box<dyn std::error::Error>> {
+    // Convert 8-bit bytes into 5-bit groups (with padding), as required by bech32.
+    let data5 = bech32_convert_bits(data, 8, 5, true)?;
+    let checksum = bech32_create_checksum(hrp, &data5);
+
+    let mut combined = Vec::with_capacity(data5.len() + checksum.len());
+    combined.extend_from_slice(&data5);
+    combined.extend_from_slice(&checksum);
+
+    let mut out = String::with_capacity(hrp.len() + 1 + combined.len());
+    out.push_str(&hrp.to_lowercase());
+    out.push('1');
+    for v in combined {
+        let idx = usize::from(v);
+        if idx >= BECH32_CHARSET.len() {
+            return Err(format!("Invalid bech32 value: {}", v).into());
+        }
+        out.push(BECH32_CHARSET[idx] as char);
+    }
+    Ok(out)
+}
+
+fn bech32_hrp_expand(hrp: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(hrp.len() * 2 + 1);
+    for b in hrp.as_bytes() {
+        out.push(b >> 5);
+    }
+    out.push(0);
+    for b in hrp.as_bytes() {
+        out.push(b & 0x1f);
+    }
+    out
+}
+
+fn bech32_polymod(values: &[u8]) -> u32 {
+    let mut chk: u32 = 1;
+    for v in values {
+        let top = chk >> 25;
+        chk = (chk & 0x1ffffff) << 5 ^ u32::from(*v);
+        for (i, g) in BECH32_GENERATOR.iter().enumerate() {
+            if ((top >> i) & 1) != 0 {
+                chk ^= g;
+            }
+        }
+    }
+    chk
+}
+
+fn bech32_create_checksum(hrp: &str, data5: &[u8]) -> [u8; 6] {
+    let mut values = bech32_hrp_expand(&hrp.to_lowercase());
+    values.extend_from_slice(data5);
+    values.extend_from_slice(&[0u8; 6]);
+
+    // Bech32 constant (BIP-0173): polymod(...) ^ 1
+    let polymod = bech32_polymod(&values) ^ 1;
+
+    let mut checksum = [0u8; 6];
+    for i in 0..6 {
+        checksum[i] = ((polymod >> (5 * (5 - i))) & 0x1f) as u8;
+    }
+    checksum
+}
+
+fn bech32_convert_bits(data: &[u8], from: u32, to: u32, pad: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    let maxv: u32 = (1 << to) - 1;
+
+    let mut ret = Vec::new();
+    for value in data {
+        let v = u32::from(*value);
+        if (v >> from) != 0 {
+            return Err(format!("Invalid value {} for {}-bit input", v, from).into());
+        }
+        acc = (acc << from) | v;
+        bits += from;
+        while bits >= to {
+            bits -= to;
+            ret.push(((acc >> bits) & maxv) as u8);
+        }
+    }
+
+    if pad {
+        if bits > 0 {
+            ret.push(((acc << (to - bits)) & maxv) as u8);
+        }
+    } else if bits >= from || ((acc << (to - bits)) & maxv) != 0 {
+        return Err("Invalid padding in bech32 convertbits".into());
+    }
+
+    Ok(ret)
+}
+
+fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -> Option<String> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(&[
+            "query",
+            "channels",
+            "--chain",
+            "sidechain",
+            "--counterparty-chain",
+            "cardano-devnet",
+            "--show-counterparty",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        // We only care about the transfer channel, and we want the one that is paired with the
+        // Cardano channel we created earlier.
+        if !line.contains("transfer") || !line.contains(cardano_channel_id) {
+            continue;
+        }
+
+        let mut channel_ids = Vec::new();
+        for token in line.split_whitespace() {
+            let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+            if cleaned.starts_with("channel-") {
+                channel_ids.push(cleaned.to_string());
+            }
+        }
+
+        if channel_ids.is_empty() {
+            continue;
+        }
+
+        // Prefer the channel ID that is NOT the Cardano end, if present.
+        if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
+            return Some(found.to_string());
+        }
+
+        return Some(channel_ids[0].clone());
+    }
+
+    None
+}
+
+fn query_sidechain_balance(address: &str, denom: &str) -> Result<u128, Box<dyn std::error::Error>> {
+    let url = format!(
+        "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
+        address
+    );
+    let resp: serde_json::Value = reqwest::blocking::get(&url)?.json()?;
+    let balances = resp
+        .get("balances")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    for coin in balances {
+        let coin_denom = coin.get("denom").and_then(|v| v.as_str()).unwrap_or("");
+        if coin_denom == denom {
+            let amount_str = coin.get("amount").and_then(|v| v.as_str()).unwrap_or("0");
+            return Ok(amount_str.parse::<u128>().unwrap_or(0));
+        }
+    }
+
+    Ok(0)
+}
+
+fn query_cardano_policy_total(
+    project_root: &Path,
+    address: &str,
+    policy_id: &str,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .args(&[
+            "compose",
+            "exec",
+            "-T",
+            "cardano-node",
+            "cardano-cli",
+            "query",
+            "utxo",
+            "--address",
+            address,
+            "--testnet-magic",
+            "42",
+            "--out-file",
+            "/dev/stdout",
+        ])
+        .current_dir(&cardano_dir)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query Cardano UTXOs at {}:\n{}",
+            address,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let utxo_json = String::from_utf8(output.stdout)?;
+    let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
+
+    let Some(utxo_map) = utxos.as_object() else {
+        return Ok(0);
+    };
+
+    let mut total: u64 = 0;
+    for (_utxo_ref, utxo_data) in utxo_map {
+        let Some(value) = utxo_data.get("value") else {
+            continue;
+        };
+        let Some(value_obj) = value.as_object() else {
+            continue;
+        };
+        let Some(policy_assets) = value_obj.get(policy_id) else {
+            continue;
+        };
+        let Some(asset_obj) = policy_assets.as_object() else {
+            continue;
+        };
+
+        for (_asset_name, amount_value) in asset_obj {
+            if let Some(n) = amount_value.as_u64() {
+                total = total.saturating_add(n);
+            } else if let Some(s) = amount_value.as_str() {
+                total = total.saturating_add(s.parse::<u64>().unwrap_or(0));
+            }
+        }
+    }
+
+    Ok(total)
+}
+
+fn hermes_ft_transfer(
+    project_root: &Path,
+    src_chain: &str,
+    dst_chain: &str,
+    src_port: &str,
+    src_channel: &str,
+    amount: u64,
+    denom: &str,
+    receiver: Option<&str>,
+    timeout_height_offset: u64,
+    timeout_seconds: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    logger::verbose(&format!(
+        "   Running: hermes tx ft-transfer --src-chain {} --dst-chain {} --src-port {} --src-channel {} --amount {} --denom {}",
+        src_chain, dst_chain, src_port, src_channel, amount, denom
+    ));
+
+    let mut command = Command::new(&hermes_binary);
+    command.args(&[
+        "tx",
+        "ft-transfer",
+        "--src-chain",
+        src_chain,
+        "--dst-chain",
+        dst_chain,
+        "--src-port",
+        src_port,
+        "--src-channel",
+        src_channel,
+        "--amount",
+        &amount.to_string(),
+        "--denom",
+        denom,
+    ]);
+
+    if let Some(receiver) = receiver {
+        command.args(&["--receiver", receiver]);
+    }
+    if timeout_height_offset > 0 {
+        command.args(&["--timeout-height-offset", &timeout_height_offset.to_string()]);
+    }
+    if timeout_seconds > 0 {
+        command.args(&["--timeout-seconds", &timeout_seconds.to_string()]);
+    }
+
+    let output = run_command_streaming(command, "hermes tx ft-transfer")?;
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes ft-transfer failed:\n\
+             stdout: {}\n\
+             stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn hermes_clear_packets(
+    project_root: &Path,
+    chain: &str,
+    port: &str,
+    channel: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    logger::verbose(&format!(
+        "   Running: hermes clear packets --chain {} --port {} --channel {}",
+        chain, port, channel
+    ));
+
+    let mut command = Command::new(&hermes_binary);
+    command.args(&["clear", "packets", "--chain", chain, "--port", port, "--channel", channel]);
+    let output = run_command_streaming(command, "hermes clear packets")?;
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes clear packets failed:\n\
+             stdout: {}\n\
+             stderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    Ok(())
 }
