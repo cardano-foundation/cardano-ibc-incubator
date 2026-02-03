@@ -1,4 +1,5 @@
 use crate::logger::{self, verbose};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -101,6 +102,82 @@ fn run_command_streaming(mut command: Command, label: &str) -> Result<Output, Bo
     })
 }
 
+fn format_duration(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = total_secs % 60;
+
+    if hours > 0 {
+        format!("{hours}h{minutes:02}m{seconds:02}s")
+    } else if minutes > 0 {
+        format!("{minutes}m{seconds:02}s")
+    } else {
+        format!("{seconds}s")
+    }
+}
+
+fn test_progress_style() -> ProgressStyle {
+    ProgressStyle::with_template("{spinner} {msg} (elapsed {elapsed_precise})")
+        .unwrap_or_else(|_| ProgressStyle::default_spinner())
+        .tick_strings(&["-", "\\", "|", "/"])
+}
+
+struct TestTimer {
+    progress_bar: Option<ProgressBar>,
+    started_at: Instant,
+    finished: bool,
+}
+
+impl TestTimer {
+    fn start(message: &str) -> Self {
+        let started_at = Instant::now();
+
+        if logger::is_quite() {
+            logger::log(message);
+            return Self {
+                progress_bar: None,
+                started_at,
+                finished: false,
+            };
+        }
+
+        let progress_bar = ProgressBar::new_spinner();
+        progress_bar.set_style(test_progress_style());
+        progress_bar.set_message(message.to_owned());
+        progress_bar.enable_steady_tick(Duration::from_millis(120));
+
+        Self {
+            progress_bar: Some(progress_bar),
+            started_at,
+            finished: false,
+        }
+    }
+
+    fn finish(&mut self) -> Duration {
+        if self.finished {
+            return Instant::now().duration_since(self.started_at);
+        }
+
+        self.finished = true;
+        if let Some(progress_bar) = self.progress_bar.take() {
+            progress_bar.finish_and_clear();
+        }
+
+        Instant::now().duration_since(self.started_at)
+    }
+}
+
+impl Drop for TestTimer {
+    fn drop(&mut self) {
+        if !self.finished {
+            if let Some(progress_bar) = self.progress_bar.take() {
+                progress_bar.finish_and_clear();
+            }
+        }
+    }
+}
+
 /// Test results summary
 #[derive(Debug)]
 pub struct TestResults {
@@ -153,9 +230,13 @@ pub async fn run_integration_tests(
     let mut results = TestResults::new();
 
     // Test 1: Verify services are running
-    logger::log("Test 1: Verifying services are running...");
+    let mut test_1 = TestTimer::start("Test 1: Verifying services are running...");
     verify_services_running(project_root).await?;
-    logger::log("PASS Test 1: All services are running\n");
+    let elapsed = test_1.finish();
+    logger::log(&format!(
+        "PASS Test 1: All services are running (took {})\n",
+        format_duration(elapsed)
+    ));
     results.passed += 1;
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
@@ -171,14 +252,23 @@ pub async fn run_integration_tests(
     //   - Hermes config (normally at ~/.hermes/config.toml) has grpc_addr = "http://localhost:5001" for cardano-devnet
     //     (can obviously change this setup as needed but I would call this the canonical setup)
     //   - The LatestHeight query should actually return valid data from the Cardano network
-    logger::log("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
+    let mut test_2 = TestTimer::start("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
     match run_hermes_health_check(project_root) {
         Ok(_) => {
-            logger::log("PASS Test 2: Hermes health-check passed, Gateway connectivity verified\n");
+            let elapsed = test_2.finish();
+            logger::log(&format!(
+                "PASS Test 2: Hermes health-check passed, Gateway connectivity verified (took {})\n",
+                format_duration(elapsed)
+            ));
             results.passed += 1;
         }
         Err(e) => {
-            logger::log(&format!("FAIL Test 2: Hermes health-check failed\n{}\n", e));
+            let elapsed = test_2.finish();
+            logger::log(&format!(
+                "FAIL Test 2: Hermes health-check failed (took {})\n{}\n",
+                format_duration(elapsed),
+                e
+            ));
             results.failed += 1;
             // This is a critical failure - if Hermes can't talk to Gateway, later tests will fail
             logger::log("   Aborting remaining tests due to Gateway connectivity failure.\n");
@@ -187,10 +277,11 @@ pub async fn run_integration_tests(
     }
 
     // Test 3: Query Handler UTXO and verify ibc_state_root exists
-    logger::log("Test 3: Verifying Handler UTXO has ibc_state_root field...");
+    let mut test_3 = TestTimer::start("Test 3: Verifying Handler UTXO has ibc_state_root field...");
     let initial_root = query_handler_state_root(project_root)?;
     
     if initial_root.len() != 64 {
+        let _ = test_3.finish();
         return Err(format!(
             "Invalid ibc_state_root length: expected 64 chars (32 bytes hex), got {}",
             initial_root.len()
@@ -199,7 +290,11 @@ pub async fn run_integration_tests(
     }
     
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
-    logger::log("PASS Test 3: Handler UTXO has valid ibc_state_root\n");
+    let elapsed = test_3.finish();
+    logger::log(&format!(
+        "PASS Test 3: Handler UTXO has valid ibc_state_root (took {})\n",
+        format_duration(elapsed)
+    ));
     results.passed += 1;
 
     // [HERMES-GATEWAY-INTEGRATION-TEST]
@@ -229,7 +324,7 @@ pub async fn run_integration_tests(
     //
     // The flow: Hermes -> Gateway (builds tx) -> Hermes (signs) -> Cardano (submits)
 
-    logger::log("Test 4: Creating client via Hermes and verifying root changes...");
+    let mut test_4 = TestTimer::start("Test 4: Creating client via Hermes and verifying root changes...");
     
     let client_id = match create_test_client(project_root) {
         Ok(client_id) => {
@@ -240,20 +335,33 @@ pub async fn run_integration_tests(
             let root_after_client = query_handler_state_root(project_root)?;
             
             if root_after_client == initial_root {
+                let elapsed = test_4.finish();
                 logger::log("   Warning: Root unchanged after client creation");
-                logger::log("FAIL Test 4: Root did not update after client creation\n");
+                logger::log(&format!(
+                    "FAIL Test 4: Root did not update after client creation (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.failed += 1;
                 None
             } else {
+                let elapsed = test_4.finish();
                 logger::log(&format!("   Client ID: {}", client_id));
                 logger::log(&format!("   New root: {}...", &root_after_client[..16]));
-                logger::log("PASS Test 4: Root changed after createClient\n");
+                logger::log(&format!(
+                    "PASS Test 4: Root changed after createClient (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.passed += 1;
                 Some(client_id)
             }
         }
         Err(e) => {
-            logger::log(&format!("FAIL Test 4: Hermes client creation failed\n{}\n", e));
+            let elapsed = test_4.finish();
+            logger::log(&format!(
+                "FAIL Test 4: Hermes client creation failed (took {})\n{}\n",
+                format_duration(elapsed),
+                e
+            ));
             results.failed += 1;
             None
         }
@@ -276,32 +384,48 @@ pub async fn run_integration_tests(
     // at "latest" height without requiring the caller to specify it.
     //
     // Status: May skip due to height parameter requirement - this is a known TODO.
-    logger::log("Test 5: Querying client state via Hermes...");
+    let mut test_5 = TestTimer::start("Test 5: Querying client state via Hermes...");
     
     if let Some(ref cid) = client_id {
         match query_client_state(project_root, cid) {
             Ok(client_state_info) => {
+                let elapsed = test_5.finish();
                 logger::log(&format!("   Chain ID: {}", client_state_info.chain_id));
                 logger::log(&format!("   Latest height: {}", client_state_info.latest_height));
                 logger::log(&format!("   Trust level: {}", client_state_info.trust_level));
-                logger::log("PASS Test 5: Client state queried successfully\n");
+                logger::log(&format!(
+                    "PASS Test 5: Client state queried successfully (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.passed += 1;
             }
             Err(e) => {
+                let elapsed = test_5.finish();
                 let error_str = e.to_string();
                 // Check for known Gateway limitation: requires height parameter
                 if error_str.contains("height") && error_str.contains("must be provided") {
-                    logger::log("SKIP Test 5: Gateway requires height parameter for client queries");
+                    logger::log(&format!(
+                        "SKIP Test 5: Gateway requires height parameter for client queries (took {})",
+                        format_duration(elapsed)
+                    ));
                     logger::log("   This is a known limitation - Gateway needs to support querying at latest height.\n");
                     results.skipped += 1;
                 } else {
-                    logger::log(&format!("FAIL Test 5: Failed to query client state\n{}\n", e));
+                    logger::log(&format!(
+                        "FAIL Test 5: Failed to query client state (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     results.failed += 1;
                 }
             }
         }
     } else {
-        logger::log("SKIP Test 5: Skipped due to Test 4 failure\n");
+        let elapsed = test_5.finish();
+        logger::log(&format!(
+            "SKIP Test 5: Skipped due to Test 4 failure (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
     }
 
@@ -321,7 +445,9 @@ pub async fn run_integration_tests(
     // This is important because it proves we can track the Cosmos chain's progress
     // from Cardano - which is essential for verifying IBC packet proofs later.
     //
-    logger::log("Test 6: Updating client with new headers (exercises Tendermint verification)...");
+    let mut test_6 = TestTimer::start(
+        "Test 6: Updating client with new headers (exercises Tendermint verification)...",
+    );
     
     if let Some(ref cid) = client_id {
         // Wait for new blocks on the Cosmos chain
@@ -330,30 +456,49 @@ pub async fn run_integration_tests(
         
         match update_client(project_root, cid) {
             Ok(_) => {
+                let elapsed = test_6.finish();
                 // Wait for tx confirmation
                 std::thread::sleep(std::time::Duration::from_secs(10));
                 
-                logger::log("PASS Test 6: Client updated successfully (Tendermint header verification passed)\n");
+                logger::log(&format!(
+                    "PASS Test 6: Client updated successfully (Tendermint header verification passed) (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.passed += 1;
             }
             Err(e) => {
+                let elapsed = test_6.finish();
                 let error_str = e.to_string();
                 // Check for known Gateway limitation: requires height parameter
                 if error_str.contains("height") && error_str.contains("must be provided") {
-                    logger::log("SKIP Test 6: Gateway requires height parameter for client queries");
+                    logger::log(&format!(
+                        "SKIP Test 6: Gateway requires height parameter for client queries (took {})",
+                        format_duration(elapsed)
+                    ));
                     logger::log("   Update requires querying current state first, which needs height support.\n");
                     results.skipped += 1;
                 } else if error_str.contains("no need to update") || error_str.contains("already up to date") {
-                    logger::log("SKIP Test 6: No new blocks available to update client\n");
+                    logger::log(&format!(
+                        "SKIP Test 6: No new blocks available to update client (took {})\n",
+                        format_duration(elapsed)
+                    ));
                     results.skipped += 1;
                 } else {
-                    logger::log(&format!("FAIL Test 6: Client update failed\n{}\n", e));
+                    logger::log(&format!(
+                        "FAIL Test 6: Client update failed (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     results.failed += 1;
                 }
             }
         }
     } else {
-        logger::log("SKIP Test 6: Skipped due to Test 4 failure\n");
+        let elapsed = test_6.finish();
+        logger::log(&format!(
+            "SKIP Test 6: Skipped due to Test 4 failure (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
     }
 
@@ -375,7 +520,7 @@ pub async fn run_integration_tests(
     // there is still some uncertainty around Mithril/Ourobouos/STT architecture.
     //
     // Status: May skip - depends on Cardano light client being available on Cosmos.
-    logger::log("Test 7: Creating connection via Hermes and verifying root changes...");
+    let mut test_7 = TestTimer::start("Test 7: Creating connection via Hermes and verifying root changes...");
     
     let mut connection_test_skipped = false;
     let connection_id = if client_id.is_some() {
@@ -387,13 +532,18 @@ pub async fn run_integration_tests(
 
                 let root_after_connection = query_handler_state_root(project_root)?;
                 
+                let elapsed = test_7.finish();
                 logger::log(&format!("   Connection ID: {}", connection_id));
                 logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
-                logger::log("PASS Test 7: Connection created and root updated\n");
+                logger::log(&format!(
+                    "PASS Test 7: Connection created and root updated (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.passed += 1;
                 Some(connection_id)
             }
             Err(e) => {
+                let elapsed = test_7.finish();
                 let error_str = e.to_string();
                 // If we know we're missing the Cardano light client pieces on the Cosmos side,
                 // skip the test rather than failing the full suite.
@@ -402,20 +552,31 @@ pub async fn run_integration_tests(
                     || error_str.contains("Cardano header verification is not implemented")
                     || error_str.contains("/ibc.lightclients.cardano.v1.Header")
                 {
-                    logger::log("SKIP Test 7: Bidirectional connection requires Cardano light client on Cosmos");
+                    logger::log(&format!(
+                        "SKIP Test 7: Bidirectional connection requires Cardano light client on Cosmos (took {})",
+                        format_duration(elapsed)
+                    ));
                     logger::log(&format!("   {}", error_str));
                     logger::log("");
                     results.skipped += 1;
                     connection_test_skipped = true;
                 } else {
-                    logger::log(&format!("FAIL Test 7: Hermes connection creation failed\n{}\n", e));
+                    logger::log(&format!(
+                        "FAIL Test 7: Hermes connection creation failed (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     results.failed += 1;
                 }
                 None
             }
         }
     } else {
-        logger::log("SKIP Test 7: Skipped due to earlier test failure\n");
+        let elapsed = test_7.finish();
+        logger::log(&format!(
+            "SKIP Test 7: Skipped due to earlier test failure (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
         connection_test_skipped = true;
         None
@@ -436,7 +597,7 @@ pub async fn run_integration_tests(
     // Once this works we're ready to test actual token transfers. 
     //
     // Status: Depends on Test 7 passing (needs an established connection first).
-    logger::log("Test 8: Creating channel via Hermes and verifying root changes...");
+    let mut test_8 = TestTimer::start("Test 8: Creating channel via Hermes and verifying root changes...");
     
     let channel_id = if let Some(conn_id) = connection_id {
         match create_test_channel(project_root, &conn_id) {
@@ -447,23 +608,39 @@ pub async fn run_integration_tests(
 
                 let root_after_channel = query_handler_state_root(project_root)?;
                 
+                let elapsed = test_8.finish();
                 logger::log(&format!("   Channel ID: {}", channel_id));
                 logger::log(&format!("   New root: {}...", &root_after_channel[..16]));
-                logger::log("PASS Test 8: Channel created and root updated\n");
+                logger::log(&format!(
+                    "PASS Test 8: Channel created and root updated (took {})\n",
+                    format_duration(elapsed)
+                ));
                 results.passed += 1;
                 Some(channel_id)
             }
             Err(e) => {
-                logger::log(&format!("FAIL Test 8: Hermes channel creation failed\n{}\n", e));
+                let elapsed = test_8.finish();
+                logger::log(&format!(
+                    "FAIL Test 8: Hermes channel creation failed (took {})\n{}\n",
+                    format_duration(elapsed),
+                    e
+                ));
                 results.failed += 1;
                 None
             }
         }
     } else {
+        let elapsed = test_8.finish();
         if connection_test_skipped {
-            logger::log("SKIP Test 8: Skipped because no connection was established\n");
+            logger::log(&format!(
+                "SKIP Test 8: Skipped because no connection was established (took {})\n",
+                format_duration(elapsed)
+            ));
         } else {
-            logger::log("SKIP Test 8: Skipped due to Test 7 failure\n");
+            logger::log(&format!(
+                "SKIP Test 8: Skipped due to Test 7 failure (took {})\n",
+                format_duration(elapsed)
+            ));
         }
         results.skipped += 1;
         None
@@ -475,7 +652,7 @@ pub async fn run_integration_tests(
     //   - Submit MsgTransfer on the packet-forwarding chain (Cosmos)
     //   - Relay RecvPacket to Cardano and Ack back to Cosmos
     //   - Validate basic token effects and Cardano voucher minting
-    logger::log("Test 9: ICS-20 transfer (sidechain -> Cardano)...");
+    let mut test_9 = TestTimer::start("Test 9: ICS-20 transfer (sidechain -> Cardano)...");
     let mut transfer_test_passed = false;
 
     if let Some(cardano_channel_id) = &channel_id {
@@ -530,43 +707,68 @@ pub async fn run_integration_tests(
                     if sidechain_balance_before < sidechain_balance_after
                         || sidechain_balance_before.saturating_sub(sidechain_balance_after) < amount as u128
                     {
+                        let elapsed = test_9.finish();
                         logger::log(&format!(
-                            "FAIL Test 9: sidechain balance did not decrease as expected (before={}, after={})\n",
-                            sidechain_balance_before, sidechain_balance_after
+                            "FAIL Test 9: sidechain balance did not decrease as expected (took {}) (before={}, after={})\n",
+                            format_duration(elapsed),
+                            sidechain_balance_before,
+                            sidechain_balance_after
                         ));
                         results.failed += 1;
                     } else if cardano_voucher_after < cardano_voucher_before + amount {
+                        let elapsed = test_9.finish();
                         logger::log(&format!(
-                            "FAIL Test 9: Cardano voucher token was not minted as expected (before={}, after={}, expected >= {})\n",
+                            "FAIL Test 9: Cardano voucher token was not minted as expected (took {}) (before={}, after={}, expected >= {})\n",
+                            format_duration(elapsed),
                             cardano_voucher_before,
                             cardano_voucher_after,
                             cardano_voucher_before + amount
                         ));
                         results.failed += 1;
                     } else if cardano_root_after == cardano_root_before {
+                        let elapsed = test_9.finish();
                         logger::log(&format!(
-                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (root={}...)\n",
-                            &cardano_root_after[..16]
+                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
+                            format_duration(elapsed),
+                            &cardano_root_after[..16],
                         ));
                         results.failed += 1;
                     } else {
-                        logger::log("PASS Test 9: Transfer relayed and voucher minted\n");
+                        let elapsed = test_9.finish();
+                        logger::log(&format!(
+                            "PASS Test 9: Transfer relayed and voucher minted (took {})\n",
+                            format_duration(elapsed)
+                        ));
                         results.passed += 1;
                         transfer_test_passed = true;
                     }
                 }
                 Err(e) => {
-                    logger::log(&format!("FAIL Test 9: Failed to relay packets\n{}\n", e));
+                    let elapsed = test_9.finish();
+                    logger::log(&format!(
+                        "FAIL Test 9: Failed to relay packets (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     results.failed += 1;
                 }
             },
             Err(e) => {
-                logger::log(&format!("FAIL Test 9: hermes tx ft-transfer failed\n{}\n", e));
+                let elapsed = test_9.finish();
+                logger::log(&format!(
+                    "FAIL Test 9: hermes tx ft-transfer failed (took {})\n{}\n",
+                    format_duration(elapsed),
+                    e
+                ));
                 results.failed += 1;
             }
         }
     } else {
-        logger::log("SKIP Test 9: Skipped because no transfer channel was established\n");
+        let elapsed = test_9.finish();
+        logger::log(&format!(
+            "SKIP Test 9: Skipped because no transfer channel was established (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
     }
 
@@ -575,7 +777,7 @@ pub async fn run_integration_tests(
     // Send the Cardano voucher back to the packet-forwarding chain and verify:
     //   - Voucher is burned on Cardano
     //   - Native token balance is restored on Cosmos (minus fees)
-    logger::log("Test 10: ICS-20 round-trip (Cardano -> sidechain)...");
+    let mut test_10 = TestTimer::start("Test 10: ICS-20 round-trip (Cardano -> sidechain)...");
     if transfer_test_passed {
         if let Some(cardano_channel_id) = &channel_id {
             let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
@@ -618,38 +820,66 @@ pub async fn run_integration_tests(
                             query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
 
                         if cardano_voucher_after + amount > cardano_voucher_before {
+                            let elapsed = test_10.finish();
                             logger::log(&format!(
-                                "FAIL Test 10: Cardano voucher token did not burn as expected (before={}, after={})\n",
-                                cardano_voucher_before, cardano_voucher_after
+                                "FAIL Test 10: Cardano voucher token did not burn as expected (took {}) (before={}, after={})\n",
+                                format_duration(elapsed),
+                                cardano_voucher_before,
+                                cardano_voucher_after
                             ));
                             results.failed += 1;
                         } else if sidechain_balance_after <= sidechain_balance_before {
+                            let elapsed = test_10.finish();
                             logger::log(&format!(
-                                "FAIL Test 10: sidechain balance did not increase after round-trip (before={}, after={})\n",
-                                sidechain_balance_before, sidechain_balance_after
+                                "FAIL Test 10: sidechain balance did not increase after round-trip (took {}) (before={}, after={})\n",
+                                format_duration(elapsed),
+                                sidechain_balance_before,
+                                sidechain_balance_after
                             ));
                             results.failed += 1;
                         } else {
-                            logger::log("PASS Test 10: Round-trip completed and voucher burned\n");
+                            let elapsed = test_10.finish();
+                            logger::log(&format!(
+                                "PASS Test 10: Round-trip completed and voucher burned (took {})\n",
+                                format_duration(elapsed)
+                            ));
                             results.passed += 1;
                         }
                     }
                     Err(e) => {
-                        logger::log(&format!("FAIL Test 10: Failed to relay packets\n{}\n", e));
+                        let elapsed = test_10.finish();
+                        logger::log(&format!(
+                            "FAIL Test 10: Failed to relay packets (took {})\n{}\n",
+                            format_duration(elapsed),
+                            e
+                        ));
                         results.failed += 1;
                     }
                 },
                 Err(e) => {
-                    logger::log(&format!("FAIL Test 10: hermes tx ft-transfer failed\n{}\n", e));
+                    let elapsed = test_10.finish();
+                    logger::log(&format!(
+                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     results.failed += 1;
                 }
             }
         } else {
-            logger::log("SKIP Test 10: Skipped because no transfer channel was established\n");
+            let elapsed = test_10.finish();
+            logger::log(&format!(
+                "SKIP Test 10: Skipped because no transfer channel was established (took {})\n",
+                format_duration(elapsed)
+            ));
             results.skipped += 1;
         }
     } else {
-        logger::log("SKIP Test 10: Skipped due to Test 9 failure\n");
+        let elapsed = test_10.finish();
+        logger::log(&format!(
+            "SKIP Test 10: Skipped due to Test 9 failure (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
     }
 
