@@ -1,4 +1,5 @@
 use crate::logger::{self, verbose};
+use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -650,6 +651,202 @@ pub async fn run_integration_tests(
         }
     } else {
         logger::log("SKIP Test 10: Skipped due to Test 9 failure\n");
+        results.skipped += 1;
+    }
+
+    // Test 11: Transfer Cardano native token (Cardano -> Cosmos)
+    //
+    // Tests the "Cardano is the source chain" path for ICS-20:
+    //   - Cardano escrows a native token (lovelace) in the transfer module
+    //   - Cosmos mints an IBC voucher denom for that token
+    logger::log("Test 11: ICS-20 transfer of Cardano native token (Cardano -> sidechain)...");
+    let mut cardano_native_transfer_passed = false;
+    let mut cardano_native_voucher_denom: Option<String> = None;
+    let mut cardano_native_sidechain_channel_id: Option<String> = None;
+    let mut cardano_native_sender_lovelace_before: Option<u64> = None;
+
+    if let Some(cardano_channel_id) = &channel_id {
+        let sidechain_channel_id = resolve_sidechain_channel_id(project_root, cardano_channel_id)
+            .unwrap_or_else(|| cardano_channel_id.clone());
+
+        let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+        let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
+        let cardano_sender_address =
+            cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+
+        let base_denom = "lovelace";
+        // Use a larger amount to stay well above Cardano min-UTxO and fee noise.
+        let amount: u64 = 20_000_000;
+
+        let sidechain_balances_before = query_sidechain_balances(&sidechain_address)?;
+        let cardano_lovelace_before = query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+        let cardano_root_before = query_handler_state_root(project_root)?;
+
+        match hermes_ft_transfer(
+            project_root,
+            "cardano-devnet",
+            "sidechain",
+            "transfer",
+            cardano_channel_id,
+            amount,
+            base_denom,
+            Some(&sidechain_address),
+            100,
+            600,
+        ) {
+            Ok(_) => match hermes_clear_packets(project_root, "cardano-devnet", "transfer", cardano_channel_id) {
+                Ok(_) => {
+                    let sidechain_balances_after = query_sidechain_balances(&sidechain_address)?;
+                    let cardano_lovelace_after = query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+                    let cardano_root_after = query_handler_state_root(project_root)?;
+
+                    let lovelace_delta = cardano_lovelace_before.saturating_sub(cardano_lovelace_after);
+                    if lovelace_delta < amount {
+                        logger::log(&format!(
+                            "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (before={}, after={}, expected delta >= {})\n",
+                            cardano_lovelace_before, cardano_lovelace_after, amount
+                        ));
+                        results.failed += 1;
+                    } else if cardano_root_after == cardano_root_before {
+                        logger::log(&format!(
+                            "FAIL Test 11: Cardano ibc_state_root did not change after escrow transfer (root={}...)\n",
+                            &cardano_root_after[..16],
+                        ));
+                        results.failed += 1;
+                    } else {
+                        let mut minted_denom: Option<String> = None;
+                        for (balance_denom, after_amount) in &sidechain_balances_after {
+                            if !balance_denom.starts_with("ibc/") {
+                                continue;
+                            }
+                            let before_amount = sidechain_balances_before.get(balance_denom).copied().unwrap_or(0);
+                            if after_amount.saturating_sub(before_amount) >= amount as u128 {
+                                minted_denom = Some(balance_denom.clone());
+                                break;
+                            }
+                        }
+
+                        if let Some(minted_denom) = minted_denom {
+                            logger::log(&format!(
+                                "PASS Test 11: Cardano token escrowed and IBC voucher minted (denom={})\n",
+                                minted_denom
+                            ));
+                            results.passed += 1;
+                            cardano_native_transfer_passed = true;
+                            cardano_native_voucher_denom = Some(minted_denom);
+                            cardano_native_sidechain_channel_id = Some(sidechain_channel_id);
+                            cardano_native_sender_lovelace_before = Some(cardano_lovelace_before);
+                        } else {
+                            logger::log("FAIL Test 11: No new IBC voucher denom minted on sidechain\n");
+                            results.failed += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    logger::log(&format!("FAIL Test 11: Failed to relay packets\n{}\n", e));
+                    results.failed += 1;
+                }
+            },
+            Err(e) => {
+                logger::log(&format!("FAIL Test 11: hermes tx ft-transfer failed\n{}\n", e));
+                results.failed += 1;
+            }
+        }
+    } else {
+        logger::log("SKIP Test 11: Skipped because no transfer channel was established\n");
+        results.skipped += 1;
+    }
+
+    // Test 12: Round-trip Cardano native token (Cosmos -> Cardano)
+    //
+    // Continues from Test 11:
+    //   - Cosmos sends the voucher denom back to Cardano
+    //   - Cosmos voucher is burned on send
+    //   - Escrowed lovelace is released back to the Cardano receiver
+    logger::log("Test 12: ICS-20 round-trip of Cardano native token (sidechain -> Cardano)...");
+    if cardano_native_transfer_passed {
+        if let (Some(voucher_denom), Some(sidechain_channel_id), Some(lovelace_before)) = (
+            &cardano_native_voucher_denom,
+            &cardano_native_sidechain_channel_id,
+            cardano_native_sender_lovelace_before,
+        ) {
+            let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+            let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
+            let cardano_receiver_address =
+                cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+
+            let amount: u64 = 20_000_000;
+            let fee_budget: u64 = 5_000_000;
+
+            let sidechain_voucher_before = query_sidechain_balance(&sidechain_address, voucher_denom)?;
+            let cardano_lovelace_before = query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
+            let cardano_root_before = query_handler_state_root(project_root)?;
+
+            match hermes_ft_transfer(
+                project_root,
+                "sidechain",
+                "cardano-devnet",
+                "transfer",
+                sidechain_channel_id,
+                amount,
+                voucher_denom,
+                Some(&cardano_receiver_credential),
+                100,
+                600,
+            ) {
+                Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", sidechain_channel_id) {
+                    Ok(_) => {
+                        let sidechain_voucher_after = query_sidechain_balance(&sidechain_address, voucher_denom)?;
+                        let cardano_lovelace_after =
+                            query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
+                        let cardano_root_after = query_handler_state_root(project_root)?;
+
+                        let voucher_delta = sidechain_voucher_before.saturating_sub(sidechain_voucher_after);
+                        if voucher_delta < amount as u128 {
+                            logger::log(&format!(
+                                "FAIL Test 12: sidechain voucher did not burn as expected (before={}, after={}, expected delta >= {})\n",
+                                sidechain_voucher_before, sidechain_voucher_after, amount
+                            ));
+                            results.failed += 1;
+                        } else if cardano_root_after == cardano_root_before {
+                            logger::log(&format!(
+                                "FAIL Test 12: Cardano ibc_state_root did not change after unescrow (root={}...)\n",
+                                &cardano_root_after[..16],
+                            ));
+                            results.failed += 1;
+                        } else if cardano_lovelace_after <= cardano_lovelace_before {
+                            logger::log(&format!(
+                                "FAIL Test 12: Cardano lovelace did not increase after return transfer (before={}, after={})\n",
+                                cardano_lovelace_before, cardano_lovelace_after
+                            ));
+                            results.failed += 1;
+                        } else if cardano_lovelace_after.saturating_add(fee_budget) < lovelace_before {
+                            logger::log(&format!(
+                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (before={}, after={}, fee_budget={})\n",
+                                lovelace_before, cardano_lovelace_after, fee_budget
+                            ));
+                            results.failed += 1;
+                        } else {
+                            logger::log("PASS Test 12: Cardano native token round-trip succeeded\n");
+                            results.passed += 1;
+                        }
+                    }
+                    Err(e) => {
+                        logger::log(&format!("FAIL Test 12: Failed to relay packets\n{}\n", e));
+                        results.failed += 1;
+                    }
+                },
+                Err(e) => {
+                    logger::log(&format!("FAIL Test 12: hermes tx ft-transfer failed\n{}\n", e));
+                    results.failed += 1;
+                }
+            }
+        } else {
+            logger::log("SKIP Test 12: Skipped because Test 11 did not produce a voucher denom\n");
+            results.skipped += 1;
+        }
+    } else {
+        logger::log("SKIP Test 12: Skipped due to Test 11 failure\n");
         results.skipped += 1;
     }
 
@@ -1738,6 +1935,91 @@ fn query_sidechain_balance(address: &str, denom: &str) -> Result<u128, Box<dyn s
     }
 
     Ok(0)
+}
+
+fn query_sidechain_balances(address: &str) -> Result<BTreeMap<String, u128>, Box<dyn std::error::Error>> {
+    let url = format!(
+        "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
+        address
+    );
+    let resp: serde_json::Value = reqwest::blocking::get(&url)?.json()?;
+    let balances = resp
+        .get("balances")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut map = BTreeMap::new();
+    for coin in balances {
+        let coin_denom = coin.get("denom").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if coin_denom.is_empty() {
+            continue;
+        }
+        let amount_str = coin.get("amount").and_then(|v| v.as_str()).unwrap_or("0");
+        let amount = amount_str.parse::<u128>().unwrap_or(0);
+        map.insert(coin_denom, amount);
+    }
+
+    Ok(map)
+}
+
+fn query_cardano_lovelace_total(project_root: &Path, address: &str) -> Result<u64, Box<dyn std::error::Error>> {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .args(&[
+            "compose",
+            "exec",
+            "-T",
+            "cardano-node",
+            "cardano-cli",
+            "query",
+            "utxo",
+            "--address",
+            address,
+            "--testnet-magic",
+            "42",
+            "--out-file",
+            "/dev/stdout",
+        ])
+        .current_dir(&cardano_dir)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query Cardano UTXOs at {}:\n{}",
+            address,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let utxo_json = String::from_utf8(output.stdout)?;
+    let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
+
+    let Some(utxo_map) = utxos.as_object() else {
+        return Ok(0);
+    };
+
+    let mut total: u64 = 0;
+    for (_utxo_ref, utxo_data) in utxo_map {
+        let Some(value) = utxo_data.get("value") else {
+            continue;
+        };
+        let Some(value_obj) = value.as_object() else {
+            continue;
+        };
+        let Some(lovelace_value) = value_obj.get("lovelace") else {
+            continue;
+        };
+
+        if let Some(n) = lovelace_value.as_u64() {
+            total = total.saturating_add(n);
+        } else if let Some(s) = lovelace_value.as_str() {
+            total = total.saturating_add(s.parse::<u64>().unwrap_or(0));
+        }
+    }
+
+    Ok(total)
 }
 
 fn query_cardano_policy_total(
