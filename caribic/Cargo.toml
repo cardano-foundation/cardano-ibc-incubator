@@ -7,6 +7,8 @@ edition = "2021"
 clap = { version = "4.5.16", features = ["derive", "string"] }
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 tokio = { version = "1", features = ["full"] }
+tonic = { version = "0.12", features = ["transport"] }
+prost = "0.13"
 zip = "2.1.6"
 indicatif = "0.17.8"
 console = "0.15.8"
