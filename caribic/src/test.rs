@@ -2198,8 +2198,20 @@ fn bech32_convert_bits(data: &[u8], from: u32, to: u32, pad: bool) -> Result<Vec
 
 fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -> Option<String> {
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    // Channel identifiers can differ across chains (e.g. cardano-devnet: channel-0,
+    // sidechain: channel-1). Prefer resolving from the Cardano end because it is
+    // unambiguous given the Cardano channel id from Test 8.
+    let queries: [&[&str]; 2] = [
+        &[
+            "query",
+            "channels",
+            "--chain",
+            "cardano-devnet",
+            "--counterparty-chain",
+            "sidechain",
+            "--show-counterparty",
+        ],
+        &[
             "query",
             "channels",
             "--chain",
@@ -2207,40 +2219,45 @@ fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -
             "--counterparty-chain",
             "cardano-devnet",
             "--show-counterparty",
-        ])
-        .output()
-        .ok()?;
+        ],
+    ];
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        // We only care about the transfer channel, and we want the one that is paired with the
-        // Cardano channel we created earlier.
-        if !line.contains("transfer") || !line.contains(cardano_channel_id) {
+    for query in queries {
+        let output = match Command::new(&hermes_binary).args(query).output() {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
             continue;
         }
 
-        let mut channel_ids = Vec::new();
-        for token in line.split_whitespace() {
-            let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
-            if cleaned.starts_with("channel-") {
-                channel_ids.push(cleaned.to_string());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            // We only care about the transfer channel, and we want the one that is paired with the
+            // Cardano channel we created earlier.
+            if !line.contains("transfer") || !line.contains(cardano_channel_id) {
+                continue;
             }
-        }
 
-        if channel_ids.is_empty() {
-            continue;
-        }
+            let mut channel_ids = Vec::new();
+            for token in line.split_whitespace() {
+                let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+                if cleaned.starts_with("channel-") {
+                    channel_ids.push(cleaned.to_string());
+                }
+            }
 
-        // Prefer the channel ID that is NOT the Cardano end, if present.
-        if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
-            return Some(found.to_string());
-        }
+            if channel_ids.is_empty() {
+                continue;
+            }
 
-        return Some(channel_ids[0].clone());
+            // Prefer the channel ID that is NOT the Cardano end, if present.
+            if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
+                return Some(found.to_string());
+            }
+
+            return Some(channel_ids[0].clone());
+        }
     }
 
     None

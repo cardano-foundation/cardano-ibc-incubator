@@ -148,11 +148,29 @@ pub fn start_relayer(
         }
     }
 
-    // Cardano: Use DEPLOYER_SK from environment (or default test key)
-    // Our modified Hermes CardanoKeyring accepts bech32 private keys (ed25519_sk...)
-    let cardano_key = std::env::var("DEPLOYER_SK").unwrap_or_else(|_| {
-        "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string()
-    });
+    // Cardano: Prefer DEPLOYER_SK if explicitly provided, otherwise fall back to the
+    // devnet-funded deployer key (`chains/cardano/config/credentials/me.sk`).
+    //
+    // This keeps Hermes (sender/signer identity) aligned with the Gateway's Lucid wallet
+    // context and the seeded devnet funds. If we fall back to a random default key, the
+    // test suite will see an unfunded sender and transfers will fail or behave unexpectedly.
+    let project_root = relayer_path
+        .parent()
+        .ok_or("Failed to resolve project root from relayer path")?;
+    let cardano_key = std::env::var("DEPLOYER_SK")
+        .ok()
+        .map(|k| k.trim().to_string())
+        .filter(|k| !k.is_empty())
+        .or_else(|| {
+            let deployer_sk_path = project_root.join("chains/cardano/config/credentials/me.sk");
+            fs::read_to_string(&deployer_sk_path)
+                .ok()
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+        })
+        .unwrap_or_else(|| {
+            "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string()
+        });
     let cardano_key_file = std::env::temp_dir().join("cardano-key.txt");
     fs::write(&cardano_key_file, &cardano_key)
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
