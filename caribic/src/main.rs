@@ -1,5 +1,7 @@
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::time::Instant;
 
 use clap::Parser;
 use clap::Subcommand;
@@ -239,6 +241,23 @@ fn exit_osmosis_demo_with_error(osmosis_dir: &PathBuf, message: &str) {
     std::process::exit(1);
 }
 
+fn format_elapsed_duration(duration: Duration) -> String {
+    let total_seconds = duration.as_secs();
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let seconds = total_seconds % 60;
+
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else if total_seconds > 0 {
+        format!("{seconds}s")
+    } else {
+        format!("{}ms", duration.subsec_millis())
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -413,6 +432,8 @@ async fn main() {
             clean,
             with_mithril,
         } => {
+            let start_elapsed_timer = Instant::now();
+
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
@@ -429,8 +450,8 @@ async fn main() {
             let mut hermes_build_handle = None;
             let mut mithril_genesis_handle = None;
 
-            // Low-hanging parallelism: the Cosmos sidechain boot and Hermes compilation are
-            // independent of Cardano devnet boot, so we overlap them for `caribic start all`.
+            // The Cosmos sidechain boot and Hermes compilation are
+            // independent of Cardano devnet boot, so can start them in parallel for `caribic start all`.
             //
             // We keep the existing (sequential) user-facing status messages, but start the
             // expensive processes early in the background.
@@ -720,6 +741,11 @@ async fn main() {
                     }
                 }
             }
+
+            logger::log(&format!(
+                "\ncaribic start completed in {}",
+                format_elapsed_duration(start_elapsed_timer.elapsed())
+            ));
         }
         Commands::Keys { command } => {
             let project_config = config::get_config();
