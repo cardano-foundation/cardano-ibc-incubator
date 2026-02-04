@@ -542,15 +542,15 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.enable_steady_tick(Duration::from_millis(100));
         progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
+            ProgressStyle::with_template("{prefix:.bold} {spinner} {elapsed_precise}")
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
         progress_bar.set_prefix(
-            "Waiting for the Cosmos sidechain to start (this may take a while) ...".to_owned(),
+            "Waiting for Cosmos Entrypoint chain to start".to_owned(),
         );
     } else {
-        log("Waiting for the Cosmos sidechain to start ...");
+        log("Waiting for Cosmos Entrypoint chain to start ...");
     }
 
     // Wait for health check with fail-fast error detection
