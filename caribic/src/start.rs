@@ -5,10 +5,9 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, diagnose_container_failure, download_file, execute_script,
-    execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists,
-    CardanoQuery, IndicatorMessage,
+    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
+    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids,
+    unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
 };
 use crate::{
     config,
@@ -216,10 +215,52 @@ pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-pub async fn start_local_cardano_network(
+pub fn build_aiken_validators_if_needed(
     project_root_path: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let plutus_json_path = project_root_path.join("cardano").join("plutus.json");
+
+    // When not running with `--clean`, avoid rebuilding validators if we already have a compiled
+    // `plutus.json`. This is the common path during iterative development, and it lets us overlap
+    // startup with other work without doing redundant compilation.
+    //
+    // In verbose mode we intentionally rebuild so Aiken trace flags are applied.
+    if plutus_json_path.exists() && !clean && !is_verbose {
+        return Ok(());
+    }
+
+    let build_args = if is_verbose {
+        vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+    } else {
+        vec!["build"]
+    };
+
+    execute_script(
+        project_root_path.join("cardano").join("onchain").as_path(),
+        "aiken",
+        build_args,
+        None,
+    )?;
+
+    // If the on-chain validators were rebuilt, the off-chain deployment artifacts need to be
+    // regenerated. This clean step is safe to run even if the subsequent deploy step is skipped.
+    let _ = execute_script(
+        project_root_path.join("cardano").join("offchain").as_path(),
+        "deno",
+        Vec::from(["task", "clean"]),
+        None,
+    );
+
+    Ok(())
+}
+
+pub async fn start_local_cardano_network(
+    project_root_path: &Path,
+    clean: bool,
+    with_mithril: bool,
+) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -331,6 +372,35 @@ pub async fn start_local_cardano_network(
         }
     }
 
+    // Start Mithril as early as possible (after the Cardano node is reachable, but before we wait
+    // for the Conway era to seed the devnet).
+    //
+    // The slow part of local Mithril boot is not the `docker compose up` itself; it's the epoch-
+    // based waiting for Cardano immutable files + genesis certificate bootstrap. Starting Mithril
+    // here reduces wall-clock time because those waits can overlap with:
+    // - the remaining "wait for Conway" period,
+    // - the devnet seeding transactions,
+    // - Cosmos chain startup, Hermes build, contract deployment, etc.
+    let mut mithril_genesis_handle = None;
+    if with_mithril {
+        let cardano_epoch_on_mithril_start = start_mithril(project_root_path).await.map_err(|e| {
+            format!(
+                "Failed to start Mithril services for local devnet: {}",
+                e
+            )
+        })?;
+
+        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+
+        let project_root_path = project_root_path.to_path_buf();
+        mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
+            wait_and_start_mithril_genesis(project_root_path.as_path(), cardano_epoch_on_mithril_start)
+                .map_err(|e| e.to_string())
+        }));
+    } else {
+        logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
+    }
+
     // wait until network hard forked into Conway era after 1 epoch
     let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
     let target_epoch: u64 = 1;
@@ -405,12 +475,13 @@ pub async fn start_local_cardano_network(
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
 
-    Ok(())
+    Ok(mithril_genesis_handle)
 }
 
 pub async fn deploy_contracts(
     project_root_path: &Path,
     clean: bool,
+    validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -432,36 +503,7 @@ pub async fn deploy_contracts(
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
     let mut validators_rebuild = false;
 
-    if !project_root_path
-        .join("cardano")
-        .join("plutus.json")
-        .as_path()
-        .exists()
-        || clean
-        || is_verbose
-    {
-        log_or_show_progress(
-            &format!(
-                "{} Building Aiken validators",
-                style("Step 1/2").bold().dim()
-            ),
-            &optional_progress_bar,
-        );
-
-        let build_args = if is_verbose {
-            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-        } else {
-            vec!["build"]
-        };
-
-        execute_script(
-            project_root_path.join("cardano").join("onchain").as_path(),
-            "aiken",
-            build_args,
-            None,
-        )?;
-        validators_rebuild = true;
-    } else {
+    if validators_already_built {
         log_or_show_progress(
             &format!(
                 "{} Aiken validators already built",
@@ -469,6 +511,45 @@ pub async fn deploy_contracts(
             ),
             &optional_progress_bar,
         );
+    } else {
+        if !project_root_path
+            .join("cardano")
+            .join("plutus.json")
+            .as_path()
+            .exists()
+            || clean
+            || is_verbose
+        {
+            log_or_show_progress(
+                &format!(
+                    "{} Building Aiken validators",
+                    style("Step 1/2").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+
+            let build_args = if is_verbose {
+                vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+            } else {
+                vec!["build"]
+            };
+
+            execute_script(
+                project_root_path.join("cardano").join("onchain").as_path(),
+                "aiken",
+                build_args,
+                None,
+            )?;
+            validators_rebuild = true;
+        } else {
+            log_or_show_progress(
+                &format!(
+                    "{} Aiken validators already built",
+                    style("Step 1/2").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+        }
     }
 
     if validators_rebuild {

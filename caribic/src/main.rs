@@ -3,12 +3,12 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use clap::Subcommand;
+use start::build_aiken_validators_if_needed;
 use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
 use start::start_cosmos_sidechain_services;
 use start::start_gateway;
 use start::start_mithril;
-use start::wait_and_start_mithril_genesis;
 use start::wait_for_cosmos_sidechain_ready;
 use start::{
     build_hermes_if_needed, configure_hermes, prepare_osmosis, start_cosmos_sidechain,
@@ -416,8 +416,6 @@ async fn main() {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
-            let mut cardano_current_epoch = 0;
-
             // Determine what to start.
             // - No argument is treated as "all"
             // - We also accept an explicit `all` target for clarity
@@ -426,8 +424,10 @@ async fn main() {
             let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
             let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
+            let mut aiken_build_handle = None;
             let mut cosmos_sidechain_start_handle = None;
             let mut hermes_build_handle = None;
+            let mut mithril_genesis_handle = None;
 
             // Low-hanging parallelism: the Cosmos sidechain boot and Hermes compilation are
             // independent of Cardano devnet boot, so we overlap them for `caribic start all`.
@@ -450,44 +450,36 @@ async fn main() {
                         build_hermes_if_needed(relayer_dir.as_path()).map_err(|e| e.to_string())
                     }));
                 }
+
+                if start_bridge {
+                    let project_root_path = project_root_path.to_path_buf();
+                    let clean = clean;
+                    aiken_build_handle = Some(tokio::task::spawn_blocking(move || {
+                        build_aiken_validators_if_needed(project_root_path.as_path(), clean)
+                            .map_err(|e| e.to_string())
+                    }));
+                }
             }
 
             if start_network {
                 // Start the local Cardano network and its services
-                match start_local_cardano_network(&project_root_path, clean).await {
-                    Ok(_) => logger::log(
+                match start_local_cardano_network(
+                    &project_root_path,
+                    clean,
+                    with_mithril && start_all,
+                )
+                .await
+                {
+                    Ok(handle) => {
+                        mithril_genesis_handle = handle;
+                        logger::log(
                         "PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)",
-                    ),
+                        )
+                    }
                     Err(error) => network_down_with_error(&format!(
                         "ERROR: Failed to start local Cardano network: {}",
                         error
                     )),
-                }
-                // Start Mithril if requested
-                if with_mithril {
-                    if start_all {
-                        match start_mithril(&project_root_path).await {
-                            Ok(current_epoch) => {
-                                cardano_current_epoch = current_epoch;
-                                logger::log(
-                                    "PASS: Mithril services started (1 aggregator, 2 signers)",
-                                )
-                            }
-                            Err(error) => network_down_with_error(&format!(
-                                "ERROR: Failed to start Mithril: {}",
-                                error
-                            )),
-                        }
-                    } else {
-                        // Wait for Mithril to start reading the immutable cardano node files
-                        match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                            Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
-                            Err(error) => {
-                                network_down_with_error(&format!("ERROR: Mithril failed to read the immutable cardano node files: {}", error))
-                        }}
-                    }
-                } else {
-                    logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
                 }
                 logger::log("\nPASS: Cardano Network started successfully");
             }
@@ -556,8 +548,23 @@ async fn main() {
                     &balance.to_string().as_str()
                 ));
 
+                let mut validators_built = false;
+                if let Some(handle) = aiken_build_handle.take() {
+                    match handle.await {
+                        Ok(Ok(())) => validators_built = true,
+                        Ok(Err(error)) => bridge_down_with_error(&format!(
+                            "ERROR: Failed to build Aiken validators: {}",
+                            error
+                        )),
+                        Err(error) => bridge_down_with_error(&format!(
+                            "ERROR: Failed to build Aiken validators: {}",
+                            error
+                        )),
+                    }
+                }
+
                 // Deploy Contracts
-                match deploy_contracts(&project_root_path, clean).await {
+                match deploy_contracts(&project_root_path, clean, validators_built).await {
                     Ok(_) => logger::log("PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)"),
                     Err(error) => bridge_down_with_error(&format!(
                         "ERROR: Failed to deploy Cardano Scripts: {}",
@@ -631,17 +638,22 @@ async fn main() {
                     "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
                 );
                 logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-                // Run the Mithril genesis bootstrap whenever we are "starting everything".
-                //
-                // We treat `caribic start` (no target) and `caribic start all` as equivalent.
-                // The genesis bootstrap is required for a fresh local devnet, otherwise the
-                // aggregator stays "up but not ready" (no certificates/artifacts, empty lists).
-                if with_mithril && start_all {
-                    match wait_and_start_mithril_genesis(&project_root_path, cardano_current_epoch) {
-                    Ok(_) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
-                    Err(error) => {
-                        network_down_with_error(&format!("ERROR: Mithril failed to read the immutable cardano node files: {}", error))
-                        }
+
+                // If we are starting a fresh devnet with Mithril enabled, we already started the
+                // long-running genesis bootstrap wait in the background during Cardano network
+                // startup. Await it here so `caribic start all --with-mithril` only returns once
+                // Mithril is actually able to certify transaction snapshots for this devnet.
+                if let Some(handle) = mithril_genesis_handle.take() {
+                    match handle.await {
+                        Ok(Ok(())) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
+                        Ok(Err(error)) => network_down_with_error(&format!(
+                            "ERROR: Mithril failed to read the immutable cardano node files: {}",
+                            error
+                        )),
+                        Err(error) => network_down_with_error(&format!(
+                            "ERROR: Mithril genesis bootstrap task failed: {}",
+                            error
+                        )),
                     }
                 }
 
