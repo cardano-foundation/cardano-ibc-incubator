@@ -102,13 +102,17 @@ pub fn start_relayer(
     );
 
     // Auto-configure Hermes keys for both chains
-    log_or_show_progress("Setting up Hermes keys for cardano-devnet and sidechain", &optional_progress_bar);
+    log_or_show_progress(
+        "Setting up Hermes keys for cardano-devnet and Cosmos Entrypoint chain",
+        &optional_progress_bar,
+    );
     
-    // Sidechain: Use the pre-funded "relayer" account from cosmos/sidechain/config.yml
+    // Cosmos Entrypoint chain (Hermes chain id: "sidechain"): Use the pre-funded "relayer"
+    // account from cosmos/sidechain/config.yml.
     let sidechain_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let sidechain_mnemonic_file = std::env::temp_dir().join("sidechain-mnemonic.txt");
     fs::write(&sidechain_mnemonic_file, sidechain_mnemonic)
-        .map_err(|e| format!("Failed to write sidechain mnemonic: {}", e))?;
+        .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
     
     let sidechain_key_output = Command::new(&hermes_binary)
         .args(&[
@@ -123,16 +127,16 @@ pub fn start_relayer(
     
     match sidechain_key_output {
         Ok(output) if output.status.success() => {
-            log_or_show_progress("Added key for sidechain", &optional_progress_bar);
+            log_or_show_progress("Added key for Cosmos Entrypoint chain", &optional_progress_bar);
         }
         Ok(output) => {
             verbose(&format!(
-                "Warning: Failed to add sidechain key: {}",
+                "Warning: Failed to add entrypoint chain key: {}",
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
         Err(e) => {
-            verbose(&format!("Warning: Failed to add sidechain key: {}", e));
+            verbose(&format!("Warning: Failed to add entrypoint chain key: {}", e));
         }
     }
     
@@ -480,7 +484,7 @@ pub async fn deploy_contracts(
     }
 }
 
-pub async fn start_cosmos_sidechain_from_repository(
+pub async fn start_cosmos_entrypoint_chain_from_repository(
     download_url: &str,
     chain_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -521,10 +525,12 @@ pub async fn start_cosmos_sidechain_from_repository(
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
 
-    return start_cosmos_sidechain(chain_root_path).await;
+    return start_cosmos_entrypoint_chain(chain_root_path).await;
 }
 
-pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_cosmos_entrypoint_chain(
+    cosmos_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
 
     execute_script(
@@ -602,7 +608,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
                     progress_bar.finish_and_clear();
                 }
                 return Err(format!(
-                    "Cosmos sidechain has unrecoverable errors that require developer intervention:{}",
+                    "Cosmos Entrypoint chain has unrecoverable errors that require developer intervention:{}",
                     diagnostics
                 )
                 .into());
@@ -621,7 +627,7 @@ pub async fn start_cosmos_sidechain(cosmos_dir: &Path) -> Result<(), Box<dyn std
     }
     
     Err(format!(
-        "Health check on {} failed after {} attempts. The Cosmos sidechain may have crashed or is not responding.{}",
+        "Health check on {} failed after {} attempts. The Cosmos Entrypoint chain may have crashed or is not responding.{}",
         url,
         max_retries,
         diagnostics
@@ -880,8 +886,8 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             local_osmosis_client_id
         ));
 
-        // Create sidechain client
-        let create_sidechain_client_output = Command::new("hermes")
+        // Create Cosmos Entrypoint chain client (Hermes chain id: "sidechain")
+        let create_entrypoint_chain_client_output = Command::new("hermes")
             .current_dir(&script_dir)
             .args(&[
                 "create",
@@ -896,10 +902,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             .output()
             .expect("Failed to query clients");
 
-        let sidechain_client_id = extract_tendermint_client_id(create_sidechain_client_output);
+        let entrypoint_chain_client_id =
+            extract_tendermint_client_id(create_entrypoint_chain_client_output);
 
-        if let Some(sidechain_client_id) = sidechain_client_id {
-            verbose(&format!("sidechain_client_id: {}", sidechain_client_id));
+        if let Some(entrypoint_chain_client_id) = entrypoint_chain_client_id {
+            verbose(&format!(
+                "entrypoint_chain_client_id: {}",
+                entrypoint_chain_client_id
+            ));
 
             log_or_show_progress(
                 &format!(
@@ -917,7 +927,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                     "--a-chain",
                     "sidechain",
                     "--a-client",
-                    sidechain_client_id.as_str(),
+                    entrypoint_chain_client_id.as_str(),
                     "--b-client",
                     &local_osmosis_client_id,
                 ])
@@ -970,7 +980,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                 return Err("Failed to get connection_id".into());
             }
         } else {
-            return Err("Failed to get sidechain client_id".into());
+            return Err("Failed to get entrypoint chain client_id".into());
         }
     } else {
         return Err("Failed to get localosmosis client_id".into());
@@ -1908,14 +1918,14 @@ pub fn hermes_keys_list(
             result.push('\n');
         }
         
-        // List for sidechain (local Cosmos chain)
+        // List for Cosmos Entrypoint chain (Hermes chain id: "sidechain")
         let sidechain_output = Command::new(&hermes_binary)
             .args(&["keys", "list", "--chain", "sidechain"])
             .output()?;
         
         if sidechain_output.status.success() {
             let output_str = String::from_utf8_lossy(&sidechain_output.stdout);
-            result.push_str("sidechain:\n");
+            result.push_str("entrypoint-chain (chain id: sidechain):\n");
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
@@ -2125,7 +2135,7 @@ pub fn comprehensive_health_check(
         ("ogmios", "Ogmios (JSON/RPC)"),
         ("mithril", "Mithril (Aggregator + Signers)"),
         ("hermes", "Hermes Relayer Daemon"),
-        ("cosmos", "Cosmos Sidechain (Packet-forwarding)"),
+        ("cosmos", "Cosmos Entrypoint chain (packet-forwarding)"),
     ];
     
     for (service_name, service_label) in services {
@@ -2413,7 +2423,7 @@ fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
     (false, "Daemon not running".to_string())
 }
 
-/// Check Cosmos sidechain health (packet-forwarding chain on port 26657)
+/// Check Cosmos Entrypoint chain health (packet-forwarding chain on port 26657)
 fn check_cosmos_health() -> (bool, String) {
     // Try to connect to the Cosmos RPC port
     let port_check = Command::new("nc")

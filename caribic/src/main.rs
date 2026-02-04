@@ -4,12 +4,12 @@ use std::path::PathBuf;
 use clap::Parser;
 use clap::Subcommand;
 use start::deploy_contracts;
-use start::start_cosmos_sidechain_from_repository;
+use start::start_cosmos_entrypoint_chain_from_repository;
 use start::start_gateway;
 use start::start_mithril;
 use start::wait_and_start_mithril_genesis;
 use start::{
-    configure_hermes, prepare_osmosis, start_cosmos_sidechain, start_local_cardano_network,
+    configure_hermes, prepare_osmosis, start_cosmos_entrypoint_chain, start_local_cardano_network,
     start_osmosis, start_relayer,
 };
 use stop::stop_gateway;
@@ -28,7 +28,7 @@ mod utils;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum DemoType {
-    /// Spawns up a specific Cosmos side chain developed for demonstration purposes
+    /// Spawns up a specific Cosmos Entrypoint chain developed for demonstration purposes
     MessageExchange,
     /// Spawns up a local Osmosis setup developed for demonstrating an interchain swap
     TokenSwap,
@@ -42,7 +42,7 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the Cosmos sidechain (packet-forwarding chain)
+    /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
     Cosmos,
     /// Starts only the Gateway service
     Gateway,
@@ -60,7 +60,7 @@ enum StopTarget {
     Network,
     /// Tears down the gateway and relayer
     Bridge,
-    /// Stops the Cosmos sidechain
+    /// Stops the Cosmos Entrypoint chain
     Cosmos,
     /// Stops the demo services
     Demo,
@@ -272,12 +272,12 @@ async fn main() {
                     ),
                 }
 
-                // Start the Cosmos sidechain
-                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
-                    Ok(_) => logger::log("PASS: Cosmos sidechain up and running"),
+                // Start the Cosmos Entrypoint chain
+                match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path()).await {
+                    Ok(_) => logger::log("PASS: Cosmos Entrypoint chain up and running"),
                     Err(error) => exit_osmosis_demo_with_error(
                         &osmosis_dir,
-                        &format!("ERROR: Failed to start Cosmos sidechain: {}", error),
+                        &format!("ERROR: Failed to start Cosmos Entrypoint chain: {}", error),
                     ),
                 }
 
@@ -315,7 +315,7 @@ async fn main() {
                 }
                 logger::log("\nPASS: Token swap demo services started successfully");
             } else if use_case == DemoType::MessageExchange {
-                // Start the Cosmos sidechain
+                // Start the Cosmos Entrypoint chain
                 let cosmos_chain_repo_url = format!(
                     "{}/archive/refs/heads/{}.zip",
                     project_config.vessel_oracle.repo_base_url,
@@ -323,15 +323,15 @@ async fn main() {
                 );
 
                 let chain_root_path = project_root_path.join("chains/summit-demo/");
-                match start_cosmos_sidechain_from_repository(
+                match start_cosmos_entrypoint_chain_from_repository(
                     &cosmos_chain_repo_url,
                     chain_root_path.as_path(),
                 )
                 .await
                 {
-                    Ok(_) => logger::log("PASS: Cosmos sidechain up and running"),
+                    Ok(_) => logger::log("PASS: Cosmos Entrypoint chain up and running"),
                     Err(error) => bridge_down_with_error(&format!(
-                        "ERROR: Failed to start Cosmos sidechain: {}",
+                        "ERROR: Failed to start Cosmos Entrypoint chain: {}",
                         error
                     )),
                 }
@@ -382,7 +382,7 @@ async fn main() {
                 }
                 Some(StopTarget::Cosmos) => {
                     stop_cosmos(project_root_path.join("cosmos").as_path());
-                    logger::log("\nCosmos sidechain stopped successfully");
+                    logger::log("\nCosmos Entrypoint chain stopped successfully");
                 }
                 Some(StopTarget::Demo) => {
                     stop_cosmos(project_root_path.join("chains/summit-demo/").as_path());
@@ -455,11 +455,11 @@ async fn main() {
             }
 
             if start_cosmos {
-                // Start the Cosmos sidechain (packet-forwarding chain)
-                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
-                    Ok(_) => logger::log("PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)"),
+                // Start the Cosmos Entrypoint chain (packet-forwarding chain)
+                match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path()).await {
+                    Ok(_) => logger::log("PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)"),
                     Err(error) => {
-                        logger::error(&format!("ERROR: Failed to start Cosmos sidechain: {}", error));
+                        logger::error(&format!("ERROR: Failed to start Cosmos Entrypoint chain: {}", error));
                         if start_all {
                             // If starting everything, this is a critical failure
                             std::process::exit(1);
@@ -547,7 +547,7 @@ async fn main() {
                 }
                 
                 logger::log("\nBridge started successfully!");
-                logger::log("Keys have been automatically configured for cardano-devnet and sidechain.");
+                logger::log("Keys have been automatically configured for cardano-devnet and the Cosmos Entrypoint chain.");
                 logger::log("Next steps:");
                 logger::log("   1. Check health: caribic health-check");
                 logger::log("   2. View keys: caribic keys list");
