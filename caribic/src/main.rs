@@ -5,12 +5,14 @@ use clap::Parser;
 use clap::Subcommand;
 use start::deploy_contracts;
 use start::start_cosmos_sidechain_from_repository;
+use start::start_cosmos_sidechain_services;
 use start::start_gateway;
 use start::start_mithril;
 use start::wait_and_start_mithril_genesis;
+use start::wait_for_cosmos_sidechain_ready;
 use start::{
-    configure_hermes, prepare_osmosis, start_cosmos_sidechain, start_local_cardano_network,
-    start_osmosis, start_relayer,
+    build_hermes_if_needed, configure_hermes, prepare_osmosis, start_cosmos_sidechain,
+    start_local_cardano_network, start_osmosis, start_relayer,
 };
 use stop::stop_gateway;
 use stop::stop_mithril;
@@ -157,7 +159,7 @@ enum Commands {
         use_case: DemoType,
     },
     /// Run end-to-end integration tests to verify IBC functionality
-    /// 
+    ///
     /// Prerequisites: All services must be running. Use 'caribic start' first.
     Test,
 }
@@ -240,12 +242,12 @@ fn exit_osmosis_demo_with_error(osmosis_dir: &PathBuf, message: &str) {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
-    
+
     // Only print banner for start commands
     if matches!(args.command, Commands::Start { .. }) {
         utils::print_header();
     }
-    
+
     logger::init(args.verbose);
     config::init(args.config.to_str().unwrap_or_else(|| {
         logger::error("Failed to get configuration file path");
@@ -273,7 +275,8 @@ async fn main() {
                 }
 
                 // Start the Cosmos sidechain
-                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
+                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path(), true).await
+                {
                     Ok(_) => logger::log("PASS: Cosmos sidechain up and running"),
                     Err(error) => exit_osmosis_demo_with_error(
                         &osmosis_dir,
@@ -345,9 +348,10 @@ async fn main() {
                         .as_path(),
                 ) {
                     Ok(_) => logger::log("PASS: Relayer started successfully"),
-                    Err(error) => {
-                        bridge_down_with_error(&format!("ERROR: Failed to start relayer: {}", error))
-                    }
+                    Err(error) => bridge_down_with_error(&format!(
+                        "ERROR: Failed to start relayer: {}",
+                        error
+                    )),
                 }
 
                 logger::log("\nPASS: Message exchange demo services started successfully");
@@ -404,12 +408,16 @@ async fn main() {
                 }
             }
         }
-        Commands::Start { target, clean, with_mithril } => {
+        Commands::Start {
+            target,
+            clean,
+            with_mithril,
+        } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
             let mut cardano_current_epoch = 0;
-            
+
             // Determine what to start.
             // - No argument is treated as "all"
             // - We also accept an explicit `all` target for clarity
@@ -418,10 +426,38 @@ async fn main() {
             let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
             let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
+            let mut cosmos_sidechain_start_handle = None;
+            let mut hermes_build_handle = None;
+
+            // Low-hanging parallelism: the Cosmos sidechain boot and Hermes compilation are
+            // independent of Cardano devnet boot, so we overlap them for `caribic start all`.
+            //
+            // We keep the existing (sequential) user-facing status messages, but start the
+            // expensive processes early in the background.
+            if start_all {
+                if start_cosmos {
+                    let cosmos_dir = project_root_path.join("cosmos");
+                    let clean = clean;
+                    cosmos_sidechain_start_handle = Some(tokio::task::spawn_blocking(move || {
+                        start_cosmos_sidechain_services(cosmos_dir.as_path(), clean)
+                            .map_err(|e| e.to_string())
+                    }));
+                }
+
+                if start_bridge {
+                    let relayer_dir = project_root_path.join("relayer");
+                    hermes_build_handle = Some(tokio::task::spawn_blocking(move || {
+                        build_hermes_if_needed(relayer_dir.as_path()).map_err(|e| e.to_string())
+                    }));
+                }
+            }
+
             if start_network {
                 // Start the local Cardano network and its services
                 match start_local_cardano_network(&project_root_path, clean).await {
-                    Ok(_) => logger::log("PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)"),
+                    Ok(_) => logger::log(
+                        "PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)",
+                    ),
                     Err(error) => network_down_with_error(&format!(
                         "ERROR: Failed to start local Cardano network: {}",
                         error
@@ -433,7 +469,9 @@ async fn main() {
                         match start_mithril(&project_root_path).await {
                             Ok(current_epoch) => {
                                 cardano_current_epoch = current_epoch;
-                                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+                                logger::log(
+                                    "PASS: Mithril services started (1 aggregator, 2 signers)",
+                                )
                             }
                             Err(error) => network_down_with_error(&format!(
                                 "ERROR: Failed to start Mithril: {}",
@@ -455,14 +493,54 @@ async fn main() {
             }
 
             if start_cosmos {
-                // Start the Cosmos sidechain (packet-forwarding chain)
-                match start_cosmos_sidechain(project_root_path.join("cosmos").as_path()).await {
-                    Ok(_) => logger::log("PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)"),
-                    Err(error) => {
-                        logger::error(&format!("ERROR: Failed to start Cosmos sidechain: {}", error));
-                        if start_all {
-                            // If starting everything, this is a critical failure
+                if start_all {
+                    // If we started the sidechain in the background, await the docker-compose
+                    // stage here and then run the readiness check.
+                    if let Some(handle) = cosmos_sidechain_start_handle.take() {
+                        match handle.await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(error)) => {
+                                logger::error(&format!(
+                                    "ERROR: Failed to start Cosmos sidechain: {}",
+                                    error
+                                ));
+                                std::process::exit(1);
+                            }
+                            Err(error) => {
+                                logger::error(&format!(
+                                    "ERROR: Failed to start Cosmos sidechain: {}",
+                                    error
+                                ));
+                                std::process::exit(1);
+                            }
+                        }
+                    }
+
+                    match wait_for_cosmos_sidechain_ready().await {
+                        Ok(_) => logger::log(
+                            "PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)",
+                        ),
+                        Err(error) => {
+                            logger::error(&format!(
+                                "ERROR: Failed to start Cosmos sidechain: {}",
+                                error
+                            ));
                             std::process::exit(1);
+                        }
+                    }
+                } else {
+                    // Start the Cosmos sidechain (packet-forwarding chain)
+                    match start_cosmos_sidechain(project_root_path.join("cosmos").as_path(), clean)
+                        .await
+                    {
+                        Ok(_) => logger::log(
+                            "PASS: Cosmos sidechain started (packet-forwarding chain on port 26657)",
+                        ),
+                        Err(error) => {
+                            logger::error(&format!(
+                                "ERROR: Failed to start Cosmos sidechain: {}",
+                                error
+                            ));
                         }
                     }
                 }
@@ -499,8 +577,25 @@ async fn main() {
                 // Start gateway
                 match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
                     Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
-                    Err(error) => {
-                        bridge_down_with_error(&format!("ERROR: Failed to start gateway: {}", error))
+                    Err(error) => bridge_down_with_error(&format!(
+                        "ERROR: Failed to start gateway: {}",
+                        error
+                    )),
+                }
+
+                // Ensure the parallel Hermes compilation (if any) finished before configuring
+                // the relayer (which expects a ready `target/release/hermes` binary).
+                if let Some(handle) = hermes_build_handle.take() {
+                    match handle.await {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => bridge_down_with_error(&format!(
+                            "ERROR: Failed to build Hermes relayer: {}",
+                            error
+                        )),
+                        Err(error) => bridge_down_with_error(&format!(
+                            "ERROR: Failed to build Hermes relayer: {}",
+                            error
+                        )),
                     }
                 }
 
@@ -509,7 +604,9 @@ async fn main() {
                     project_root_path.join("relayer").as_path(),
                     project_root_path.join("relayer/.env.example").as_path(),
                     project_root_path.join("relayer/examples").as_path(),
-                    project_root_path.join("cardano/offchain/deployments/handler.json").as_path(),
+                    project_root_path
+                        .join("cardano/offchain/deployments/handler.json")
+                        .as_path(),
                 ) {
                     Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
                     Err(error) => bridge_down_with_error(&format!(
@@ -520,7 +617,9 @@ async fn main() {
 
                 // Start Hermes daemon
                 match start::start_hermes_daemon(project_root_path.join("relayer").as_path()) {
-                    Ok(_) => logger::log("PASS: Hermes relayer started (check logs at ~/.hermes/hermes.log)"),
+                    Ok(_) => logger::log(
+                        "PASS: Hermes relayer started (check logs at ~/.hermes/hermes.log)",
+                    ),
                     Err(error) => bridge_down_with_error(&format!(
                         "ERROR: Failed to start Hermes daemon: {}",
                         error
@@ -545,9 +644,11 @@ async fn main() {
                         }
                     }
                 }
-                
+
                 logger::log("\nBridge started successfully!");
-                logger::log("Keys have been automatically configured for cardano-devnet and sidechain.");
+                logger::log(
+                    "Keys have been automatically configured for cardano-devnet and sidechain.",
+                );
                 logger::log("Next steps:");
                 logger::log("   1. Check health: caribic health-check");
                 logger::log("   2. View keys: caribic keys list");
@@ -571,11 +672,16 @@ async fn main() {
                     project_root_path.join("relayer").as_path(),
                     project_root_path.join("relayer/.env.example").as_path(),
                     project_root_path.join("relayer/examples").as_path(),
-                    project_root_path.join("cardano/offchain/deployments/handler.json").as_path(),
+                    project_root_path
+                        .join("cardano/offchain/deployments/handler.json")
+                        .as_path(),
                 ) {
                     Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
                     Err(error) => {
-                        logger::error(&format!("ERROR: Failed to configure Hermes relayer: {}", error));
+                        logger::error(&format!(
+                            "ERROR: Failed to configure Hermes relayer: {}",
+                            error
+                        ));
                         std::process::exit(1);
                     }
                 }
@@ -593,7 +699,9 @@ async fn main() {
             if target == Some(StartTarget::Mithril) {
                 // Start only Mithril services
                 match start_mithril(&project_root_path).await {
-                    Ok(_) => logger::log("PASS: Mithril services started (1 aggregator, 2 signers)"),
+                    Ok(_) => {
+                        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+                    }
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start Mithril: {}", error));
                         std::process::exit(1);
@@ -696,7 +804,8 @@ async fn main() {
             let project_root_path = Path::new(&project_config.project_root);
             let relayer_path = project_root_path.join("relayer");
 
-            match start::hermes_create_channel(&relayer_path, &a_chain, &b_chain, &a_port, &b_port) {
+            match start::hermes_create_channel(&relayer_path, &a_chain, &b_chain, &a_port, &b_port)
+            {
                 Ok(msg) => logger::log(&msg),
                 Err(e) => {
                     logger::error(&format!("Failed to create channel: {}", e));
