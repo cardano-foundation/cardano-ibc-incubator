@@ -5,10 +5,9 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    copy_dir_all, diagnose_container_failure, download_file, execute_script,
-    execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
-    IndicatorMessage,
+    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
+    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids,
+    unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
 };
 use crate::{
     config,
@@ -58,12 +57,15 @@ pub fn start_relayer(
     } else {
         log("Configuring Hermes relayer ...");
     }
-    
+
     // Build Hermes with Cardano support if needed
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        log_or_show_progress("Building Hermes with Cardano support (this may take a few minutes)...", &optional_progress_bar);
+        log_or_show_progress(
+            "Building Hermes with Cardano support (this may take a few minutes)...",
+            &optional_progress_bar,
+        );
         execute_script_with_progress(
             relayer_path,
             "cargo",
@@ -71,18 +73,21 @@ pub fn start_relayer(
             "Building Hermes relayer...",
         )?;
     } else {
-        log_or_show_progress("Hermes binary already built, skipping compilation", &optional_progress_bar);
+        log_or_show_progress(
+            "Hermes binary already built, skipping compilation",
+            &optional_progress_bar,
+        );
     }
-    
+
     // Set up Hermes configuration directory
     log_or_show_progress("Setting up Hermes configuration", &optional_progress_bar);
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_dir = home_path.join(".hermes");
     let hermes_keys_dir = hermes_dir.join("keys");
-    
+
     fs::create_dir_all(&hermes_keys_dir)
         .map_err(|e| format!("Failed to create Hermes keys directory: {}", e))?;
-    
+
     // Copy hermes-config.example.toml to ~/.hermes/config.toml
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
     let caribic_dir = relayer_path.parent().unwrap().join("caribic");
@@ -92,7 +97,7 @@ pub fn start_relayer(
         &options,
     )
     .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
-    
+
     log_or_show_progress(
         &format!(
             "Configuration copied to {}",
@@ -106,25 +111,27 @@ pub fn start_relayer(
         "Setting up Hermes keys for cardano-devnet and Cosmos Entrypoint chain",
         &optional_progress_bar,
     );
-    
+
     // Cosmos Entrypoint chain (Hermes chain id: "sidechain"): Use the pre-funded "relayer"
     // account from cosmos/sidechain/config.yml.
     let sidechain_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let sidechain_mnemonic_file = std::env::temp_dir().join("sidechain-mnemonic.txt");
     fs::write(&sidechain_mnemonic_file, sidechain_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
-    
     let sidechain_key_output = Command::new(&hermes_binary)
         .args(&[
-            "keys", "add",
-            "--chain", "sidechain",
-            "--mnemonic-file", sidechain_mnemonic_file.to_str().unwrap(),
+            "keys",
+            "add",
+            "--chain",
+            "sidechain",
+            "--mnemonic-file",
+            sidechain_mnemonic_file.to_str().unwrap(),
             "--overwrite",
         ])
         .output();
-    
+
     let _ = fs::remove_file(&sidechain_mnemonic_file);
-    
+
     match sidechain_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress("Added key for Cosmos Entrypoint chain", &optional_progress_bar);
@@ -139,26 +146,30 @@ pub fn start_relayer(
             verbose(&format!("Warning: Failed to add entrypoint chain key: {}", e));
         }
     }
-    
+
     // Cardano: Use DEPLOYER_SK from environment (or default test key)
     // Our modified Hermes CardanoKeyring accepts bech32 private keys (ed25519_sk...)
-    let cardano_key = std::env::var("DEPLOYER_SK")
-        .unwrap_or_else(|_| "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string());
+    let cardano_key = std::env::var("DEPLOYER_SK").unwrap_or_else(|_| {
+        "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string()
+    });
     let cardano_key_file = std::env::temp_dir().join("cardano-key.txt");
     fs::write(&cardano_key_file, &cardano_key)
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
-    
+
     let cardano_key_output = Command::new(&hermes_binary)
         .args(&[
-            "keys", "add",
-            "--chain", "cardano-devnet",
-            "--mnemonic-file", cardano_key_file.to_str().unwrap(),
+            "keys",
+            "add",
+            "--chain",
+            "cardano-devnet",
+            "--mnemonic-file",
+            cardano_key_file.to_str().unwrap(),
             "--overwrite",
         ])
         .output();
-    
+
     let _ = fs::remove_file(&cardano_key_file);
-    
+
     match cardano_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress("Added key for cardano-devnet", &optional_progress_bar);
@@ -180,14 +191,76 @@ pub fn start_relayer(
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
-    
+
+    Ok(())
+}
+
+pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let hermes_binary = relayer_path.join("target/release/hermes");
+    if hermes_binary.exists() {
+        return Ok(());
+    }
+
+    // This helper intentionally does not use a progress bar because it is used by
+    // `caribic start` to build Hermes in parallel with other startup tasks.
+    //
+    // Output still becomes visible in higher verbosity modes via `execute_script`.
+    execute_script(
+        relayer_path,
+        "cargo",
+        Vec::from(["build", "--release", "--bin", "hermes"]),
+        None,
+    )?;
+
+    Ok(())
+}
+
+pub fn build_aiken_validators_if_needed(
+    project_root_path: &Path,
+    clean: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let plutus_json_path = project_root_path.join("cardano").join("plutus.json");
+
+    // When not running with `--clean`, avoid rebuilding validators if we already have a compiled
+    // `plutus.json`. This is the common path during iterative development, and it lets us overlap
+    // startup with other work without doing redundant compilation.
+    //
+    // In verbose mode we intentionally rebuild so Aiken trace flags are applied.
+    if plutus_json_path.exists() && !clean && !is_verbose {
+        return Ok(());
+    }
+
+    let build_args = if is_verbose {
+        vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+    } else {
+        vec!["build"]
+    };
+
+    execute_script(
+        project_root_path.join("cardano").join("onchain").as_path(),
+        "aiken",
+        build_args,
+        None,
+    )?;
+
+    // If the on-chain validators were rebuilt, the off-chain deployment artifacts need to be
+    // regenerated. This clean step is safe to run even if the subsequent deploy step is skipped.
+    let _ = execute_script(
+        project_root_path.join("cardano").join("offchain").as_path(),
+        "deno",
+        Vec::from(["task", "clean"]),
+        None,
+    );
+
     Ok(())
 }
 
 pub async fn start_local_cardano_network(
     project_root_path: &Path,
     clean: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+    with_mithril: bool,
+) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -236,7 +309,11 @@ pub async fn start_local_cardano_network(
     if ogmios_connected.is_ok() {
         verbose("Cardano services started successfully");
     } else {
-        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1", "cardano-postgres-1"];
+        let container_names = [
+            "cardano-node",
+            "cardano-cardano-node-ogmios-1",
+            "cardano-postgres-1",
+        ];
         let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
         return Err(format!(
             "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
@@ -249,13 +326,13 @@ pub async fn start_local_cardano_network(
     let mut slot_querried = u64::MAX;
     let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
     let mut retry_count = 0;
-    
+
     while slot_querried == u64::MAX {
         match get_cardano_state(project_root_path, CardanoQuery::Slot) {
             Ok(value) => slot_querried = value,
             Err(_e) => {
                 retry_count += 1;
-                
+
                 // Check container health every 3 retries (15 seconds) to fail fast on unrecoverable errors.
                 // We should NOT continue retrying if we detect issues that require developer intervention:
                 // - Permission errors (requires fixing volume/socket permissions)
@@ -267,7 +344,8 @@ pub async fn start_local_cardano_network(
                 // This approach fails fast for fixable issues while allowing recovery for transient ones.
                 if retry_count % 3 == 0 {
                     let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                    let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
+                    let (diagnostics, should_fail_fast) =
+                        diagnose_container_failure(&container_names);
                     if should_fail_fast {
                         return Err(format!(
                             "Cardano node has unrecoverable errors that require developer intervention:{}",
@@ -276,10 +354,11 @@ pub async fn start_local_cardano_network(
                         .into());
                     }
                 }
-                
+
                 if retry_count >= max_retries {
                     let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+                    let (diagnostics, _should_fail_fast) =
+                        diagnose_container_failure(&container_names);
                     return Err(format!(
                         "Failed to query cardano-node state after {} seconds. The node may have crashed or is not responding.{}",
                         max_retries * 5,
@@ -291,6 +370,35 @@ pub async fn start_local_cardano_network(
                 std::thread::sleep(Duration::from_secs(5))
             }
         }
+    }
+
+    // Start Mithril as early as possible (after the Cardano node is reachable, but before we wait
+    // for the Conway era to seed the devnet).
+    //
+    // The slow part of local Mithril boot is not the `docker compose up` itself; it's the epoch-
+    // based waiting for Cardano immutable files + genesis certificate bootstrap. Starting Mithril
+    // here reduces wall-clock time because those waits can overlap with:
+    // - the remaining "wait for Conway" period,
+    // - the devnet seeding transactions,
+    // - Cosmos chain startup, Hermes build, contract deployment, etc.
+    let mut mithril_genesis_handle = None;
+    if with_mithril {
+        let cardano_epoch_on_mithril_start = start_mithril(project_root_path).await.map_err(|e| {
+            format!(
+                "Failed to start Mithril services for local devnet: {}",
+                e
+            )
+        })?;
+
+        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+
+        let project_root_path = project_root_path.to_path_buf();
+        mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
+            wait_and_start_mithril_genesis(project_root_path.as_path(), cardano_epoch_on_mithril_start)
+                .map_err(|e| e.to_string())
+        }));
+    } else {
+        logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
     }
 
     // wait until network hard forked into Conway era after 1 epoch
@@ -367,12 +475,13 @@ pub async fn start_local_cardano_network(
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
 
-    Ok(())
+    Ok(mithril_genesis_handle)
 }
 
 pub async fn deploy_contracts(
     project_root_path: &Path,
     clean: bool,
+    validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -394,36 +503,7 @@ pub async fn deploy_contracts(
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
     let mut validators_rebuild = false;
 
-    if !project_root_path
-        .join("cardano")
-        .join("plutus.json")
-        .as_path()
-        .exists()
-        || clean
-        || is_verbose
-    {
-        log_or_show_progress(
-            &format!(
-                "{} Building Aiken validators",
-                style("Step 1/2").bold().dim()
-            ),
-            &optional_progress_bar,
-        );
-
-        let build_args = if is_verbose {
-            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-        } else {
-            vec!["build"]
-        };
-
-        execute_script(
-            project_root_path.join("cardano").join("onchain").as_path(),
-            "aiken",
-            build_args,
-            None,
-        )?;
-        validators_rebuild = true;
-    } else {
+    if validators_already_built {
         log_or_show_progress(
             &format!(
                 "{} Aiken validators already built",
@@ -431,6 +511,45 @@ pub async fn deploy_contracts(
             ),
             &optional_progress_bar,
         );
+    } else {
+        if !project_root_path
+            .join("cardano")
+            .join("plutus.json")
+            .as_path()
+            .exists()
+            || clean
+            || is_verbose
+        {
+            log_or_show_progress(
+                &format!(
+                    "{} Building Aiken validators",
+                    style("Step 1/2").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+
+            let build_args = if is_verbose {
+                vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+            } else {
+                vec!["build"]
+            };
+
+            execute_script(
+                project_root_path.join("cardano").join("onchain").as_path(),
+                "aiken",
+                build_args,
+                None,
+            )?;
+            validators_rebuild = true;
+        } else {
+            log_or_show_progress(
+                &format!(
+                    "{} Aiken validators already built",
+                    style("Step 1/2").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+        }
     }
 
     if validators_rebuild {
@@ -525,21 +644,25 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
 
-    return start_cosmos_entrypoint_chain(chain_root_path).await;
+    start_cosmos_entrypoint_chain(chain_root_path, true).await
 }
 
-pub async fn start_cosmos_entrypoint_chain(
+pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
+    clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
 
-    execute_script(
-        cosmos_dir,
-        "docker",
-        Vec::from(["compose", "up", "-d", "--build"]),
-        None,
-    )?;
+    let mut args = vec!["compose", "up", "-d"];
+    if clean {
+        args.push("--build");
+    }
 
+    execute_script(cosmos_dir, "docker", args, None)?;
+    Ok(())
+}
+
+pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -570,10 +693,10 @@ pub async fn start_cosmos_entrypoint_chain(
     let max_retries = 60;
     let interval_ms = 10000; // 10 seconds
     let client = reqwest::Client::builder().no_proxy().build()?;
-    
+
     for retry in 0..max_retries {
         let response = client.get(url).send().await;
-        
+
         match response {
             Ok(resp) if resp.status().is_success() => {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -621,11 +744,11 @@ pub async fn start_cosmos_entrypoint_chain(
     // Final diagnostic check after timeout
     let container_names = ["sidechain-node-prod"];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
-    
+
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
-    
+
     Err(format!(
         "Health check on {} failed after {} attempts. The Cosmos Entrypoint chain may have crashed or is not responding.{}",
         url,
@@ -633,6 +756,14 @@ pub async fn start_cosmos_entrypoint_chain(
         diagnostics
     )
     .into())
+}
+
+pub async fn start_cosmos_entrypoint_chain(
+    cosmos_dir: &Path,
+    clean: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    start_cosmos_entrypoint_chain_services(cosmos_dir, clean)?;
+    wait_for_cosmos_entrypoint_chain_ready().await
 }
 
 pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -994,14 +1125,8 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 }
 
 fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    
     if logger::is_quite() {
-        execute_script(
-            osmosis_dir,
-            "make",
-            Vec::from(["localnet-init"]),
-            None,
-        )?;
+        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None)?;
         Ok(())
     } else {
         execute_script_with_progress(
@@ -1477,37 +1602,46 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         log("Starting Gateway ...");
     }
 
-    log_or_show_progress("Stopping existing Gateway containers", &optional_progress_bar);
+    log_or_show_progress(
+        "Stopping existing Gateway containers",
+        &optional_progress_bar,
+    );
     execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
-    
+
     let mut script_args = vec!["compose", "up", "-d"];
     if clean {
         script_args.push("--build");
-        log_or_show_progress("Building and starting Gateway containers", &optional_progress_bar);
+        log_or_show_progress(
+            "Building and starting Gateway containers",
+            &optional_progress_bar,
+        );
     } else {
         log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
     }
-    
+
     execute_script(&gateway_dir, "docker", script_args, None)?;
 
     // Wait for Gateway gRPC port to be accessible
-    log_or_show_progress("Waiting for Gateway gRPC server to be ready", &optional_progress_bar);
+    log_or_show_progress(
+        "Waiting for Gateway gRPC server to be ready",
+        &optional_progress_bar,
+    );
     let max_retries = 30; // 30 seconds max
     let mut gateway_ready = false;
-    
+
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
         let port_check = Command::new("nc")
             .args(&["-z", "localhost", "5001"])
             .output();
-        
+
         if let Ok(output) = port_check {
             if output.status.success() {
                 gateway_ready = true;
                 break;
             }
         }
-        
+
         if i < max_retries - 1 {
             thread::sleep(Duration::from_secs(1));
             log_or_show_progress(
@@ -1516,20 +1650,20 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
             );
         }
     }
-    
+
     if !gateway_ready {
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
         return Err("Gateway gRPC server (port 5001) did not become ready in time".into());
     }
-    
+
     log_or_show_progress("Gateway gRPC server is ready", &optional_progress_bar);
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
-    
+
     Ok(())
 }
 
@@ -1551,35 +1685,37 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     } else {
         log("Starting Hermes daemon ...");
     }
-    
+
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_log = home_path.join(".hermes/hermes.log");
-    
+
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
     let config_check = Command::new(&hermes_binary)
         .args(&["config", "validate"])
         .output();
-    
+
     if let Ok(output) = config_check {
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "Hermes configuration is invalid:\n{}",
-                error_msg
-            ).into());
+            return Err(format!("Hermes configuration is invalid:\n{}", error_msg).into());
         }
-        log_or_show_progress("Configuration validated successfully", &optional_progress_bar);
+        log_or_show_progress(
+            "Configuration validated successfully",
+            &optional_progress_bar,
+        );
     }
-    
+
     log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
-    
+
     // Start Hermes in background
     let mut child = Command::new(&hermes_binary)
         .arg("start")
@@ -1587,15 +1723,15 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
         .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
         .spawn()
         .map_err(|e| format!("Failed to start Hermes: {}", e))?;
-    
+
     log(&format!("Hermes started (PID: {})", child.id()));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
-    
+
     // Wait briefly to ensure process doesn't immediately crash
     log_or_show_progress("Verifying daemon startup", &optional_progress_bar);
     thread::sleep(Duration::from_millis(1000));
-    
+
     // Check if process is still running
     match child.try_wait() {
         Ok(Some(status)) => {
@@ -1606,8 +1742,13 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
             return Err(format!(
                 "Hermes daemon exited immediately with status {}:\n{}",
                 status,
-                error_content.lines().take(10).collect::<Vec<_>>().join("\n")
-            ).into());
+                error_content
+                    .lines()
+                    .take(10)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+            .into());
         }
         Ok(None) => {
             // Process is still running - success
@@ -1621,7 +1762,7 @@ pub fn start_hermes_daemon(relayer_path: &Path) -> Result<(), Box<dyn std::error
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
     }
-    
+
     Ok(())
 }
 
@@ -1632,14 +1773,14 @@ pub fn configure_hermes_cardano_cheqd(
     cheqd_mnemonic: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     log("Configuring Hermes keys...");
-    
+
     // Add Cardano key
     if let Some(mnemonic) = cardano_mnemonic {
         let mnemonic_file = std::env::temp_dir().join("cardano-mnemonic.txt");
         fs::write(&mnemonic_file, mnemonic)?;
-        
+
         let output = Command::new(&hermes_binary)
             .args(&[
                 "keys",
@@ -1650,24 +1791,25 @@ pub fn configure_hermes_cardano_cheqd(
                 mnemonic_file.to_str().unwrap(),
             ])
             .output()?;
-        
+
         fs::remove_file(&mnemonic_file)?;
-        
+
         if !output.status.success() {
             return Err(format!(
                 "Failed to add Cardano key: {}",
                 String::from_utf8_lossy(&output.stderr)
-            ).into());
+            )
+            .into());
         }
-        
+
         log("Cardano key added");
     }
-    
+
     // Add Cheqd key
     if let Some(mnemonic) = cheqd_mnemonic {
         let mnemonic_file = std::env::temp_dir().join("cheqd-mnemonic.txt");
         fs::write(&mnemonic_file, mnemonic)?;
-        
+
         let output = Command::new(&hermes_binary)
             .args(&[
                 "keys",
@@ -1678,22 +1820,23 @@ pub fn configure_hermes_cardano_cheqd(
                 mnemonic_file.to_str().unwrap(),
             ])
             .output()?;
-        
+
         fs::remove_file(&mnemonic_file)?;
-        
+
         if !output.status.success() {
             return Err(format!(
                 "Failed to add Cheqd key: {}",
                 String::from_utf8_lossy(&output.stderr)
-            ).into());
+            )
+            .into());
         }
-        
+
         log("Cheqd key added");
     }
-    
+
     // Create clients on both chains
     log("Creating IBC clients...");
-    
+
     let create_cardano_client = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -1704,14 +1847,15 @@ pub fn configure_hermes_cardano_cheqd(
             "cheqd-testnet-6",
         ])
         .output()?;
-    
+
     if !create_cardano_client.status.success() {
         return Err(format!(
             "Failed to create Cardano client: {}",
             String::from_utf8_lossy(&create_cardano_client.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let create_cheqd_client = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -1722,19 +1866,20 @@ pub fn configure_hermes_cardano_cheqd(
             "cardano-testnet",
         ])
         .output()?;
-    
+
     if !create_cheqd_client.status.success() {
         return Err(format!(
             "Failed to create Cheqd client: {}",
             String::from_utf8_lossy(&create_cheqd_client.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     log("IBC clients created on both chains");
-    
+
     // Create connection
     log("Creating IBC connection...");
-    
+
     let create_connection = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -1745,19 +1890,20 @@ pub fn configure_hermes_cardano_cheqd(
             "cheqd-testnet-6",
         ])
         .output()?;
-    
+
     if !create_connection.status.success() {
         return Err(format!(
             "Failed to create connection: {}",
             String::from_utf8_lossy(&create_connection.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     log("IBC connection established");
-    
+
     // Create channel
     log("Creating IBC channel...");
-    
+
     let create_channel = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -1772,17 +1918,18 @@ pub fn configure_hermes_cardano_cheqd(
             "transfer",
         ])
         .output()?;
-    
+
     if !create_channel.status.success() {
         return Err(format!(
             "Failed to create channel: {}",
             String::from_utf8_lossy(&create_channel.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     log("IBC channel created");
     log("Hermes configured successfully!");
-    
+
     Ok(())
 }
 
@@ -1795,40 +1942,41 @@ pub fn hermes_keys_add(
     overwrite: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     if !mnemonic_file.exists() {
         return Err(format!("Mnemonic file not found: {}", mnemonic_file.display()).into());
     }
-    
+
     log(&format!("Adding key for chain '{}'...", chain));
-    
+
     let mut args = vec!["keys", "add", "--chain", chain, "--mnemonic-file"];
     args.push(mnemonic_file.to_str().unwrap());
-    
+
     if let Some(name) = key_name {
         args.push("--key-name");
         args.push(name);
     }
-    
+
     if overwrite {
         args.push("--overwrite");
     }
-    
-    let output = Command::new(&hermes_binary)
-        .args(&args)
-        .output()?;
-    
+
+    let output = Command::new(&hermes_binary).args(&args).output()?;
+
     if !output.status.success() {
         return Err(format!(
             "Failed to add key: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("Key added for chain '{}'\n{}", chain, stdout))
 }
@@ -1839,17 +1987,19 @@ fn parse_hermes_key_line(line: &str) -> Option<(String, String)> {
     if !line.starts_with('-') && !line.starts_with("SUCCESS") {
         return None;
     }
-    
+
     // Skip "SUCCESS" lines
     if line.starts_with("SUCCESS") {
         return None;
     }
-    
+
     // Format: "- key_name (address)"
     let line = line.trim_start_matches('-').trim();
     if let Some(paren_pos) = line.find('(') {
         let key_name = line[..paren_pos].trim().to_string();
-        let address = line[paren_pos..].trim_matches(|c| c == '(' || c == ')').to_string();
+        let address = line[paren_pos..]
+            .trim_matches(|c| c == '(' || c == ')')
+            .to_string();
         if !key_name.is_empty() && !address.is_empty() {
             return Some((key_name, address));
         }
@@ -1863,25 +2013,28 @@ pub fn hermes_keys_list(
     chain: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     if let Some(chain_id) = chain {
         log(&format!("Listing keys for chain '{}'...", chain_id));
-        
+
         let output = Command::new(&hermes_binary)
             .args(&["keys", "list", "--chain", chain_id])
             .output()?;
-        
+
         if !output.status.success() {
             return Err(format!(
                 "Failed to list keys: {}",
                 String::from_utf8_lossy(&output.stderr)
-            ).into());
+            )
+            .into());
         }
-        
+
         let output_str = String::from_utf8_lossy(&output.stdout).to_string();
         if output_str.trim().is_empty() {
             Ok(format!("No keys found for chain '{}'.\n\nTo add a key, use:\n  caribic keys add --chain {} --mnemonic-file <path>\n", chain_id, chain_id))
@@ -1891,15 +2044,15 @@ pub fn hermes_keys_list(
     } else {
         // List keys for all configured chains
         log("Listing keys for all chains...");
-        
+
         let mut result = String::new();
         let mut found_any_keys = false;
-        
+
         // List for cardano-devnet
         let cardano_output = Command::new(&hermes_binary)
             .args(&["keys", "list", "--chain", "cardano-devnet"])
             .output()?;
-        
+
         if cardano_output.status.success() {
             let output_str = String::from_utf8_lossy(&cardano_output.stdout);
             result.push_str("cardano-devnet:\n");
@@ -1917,12 +2070,11 @@ pub fn hermes_keys_list(
             }
             result.push('\n');
         }
-        
         // List for Cosmos Entrypoint chain (Hermes chain id: "sidechain")
         let sidechain_output = Command::new(&hermes_binary)
             .args(&["keys", "list", "--chain", "sidechain"])
             .output()?;
-        
+
         if sidechain_output.status.success() {
             let output_str = String::from_utf8_lossy(&sidechain_output.stdout);
             result.push_str("entrypoint-chain (chain id: sidechain):\n");
@@ -1939,12 +2091,12 @@ pub fn hermes_keys_list(
                 found_any_keys = true;
             }
         }
-        
+
         if !found_any_keys {
             result.push_str("\nTo add keys, use:\n");
             result.push_str("  caribic keys add --chain <chain-id> --mnemonic-file <path>\n");
         }
-        
+
         Ok(result)
     }
 }
@@ -1956,33 +2108,34 @@ pub fn hermes_keys_delete(
     key_name: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     log(&format!("Deleting key for chain '{}'...", chain));
-    
+
     let mut args = vec!["keys", "delete", "--chain", chain];
-    
+
     if let Some(name) = key_name {
         args.push("--key-name");
         args.push(name);
     }
-    
+
     args.push("--yes"); // Auto-confirm deletion
-    
-    let output = Command::new(&hermes_binary)
-        .args(&args)
-        .output()?;
-    
+
+    let output = Command::new(&hermes_binary).args(&args).output()?;
+
     if !output.status.success() {
         return Err(format!(
             "Failed to delete key: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     Ok(format!("Key deleted for chain '{}'", chain))
 }
 
@@ -1993,16 +2146,18 @@ pub fn hermes_create_client(
     reference_chain: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     log(&format!(
         "Creating IBC client for '{}' on '{}'...",
         reference_chain, host_chain
     ));
-    
+
     let output = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -2013,14 +2168,15 @@ pub fn hermes_create_client(
             reference_chain,
         ])
         .output()?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Failed to create client: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("IBC client created\n{}", stdout))
 }
@@ -2032,16 +2188,18 @@ pub fn hermes_create_connection(
     b_chain: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     log(&format!(
         "Creating IBC connection between '{}' and '{}'...",
         a_chain, b_chain
     ));
-    
+
     let output = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -2052,14 +2210,15 @@ pub fn hermes_create_connection(
             b_chain,
         ])
         .output()?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Failed to create connection: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("IBC connection created\n{}", stdout))
 }
@@ -2073,16 +2232,18 @@ pub fn hermes_create_channel(
     b_port: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
-    
+
     if !hermes_binary.exists() {
-        return Err("Hermes binary not found. Run 'caribic start bridge' first to build it.".into());
+        return Err(
+            "Hermes binary not found. Run 'caribic start bridge' first to build it.".into(),
+        );
     }
-    
+
     log(&format!(
         "Creating IBC channel between '{}:{}' and '{}:{}'...",
         a_chain, a_port, b_chain, b_port
     ));
-    
+
     let output = Command::new(&hermes_binary)
         .args(&[
             "create",
@@ -2097,14 +2258,15 @@ pub fn hermes_create_channel(
             b_chain,
         ])
         .output()?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Failed to create channel: {}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("IBC channel created\n{}", stdout))
 }
@@ -2118,14 +2280,14 @@ pub fn comprehensive_health_check(
     let gateway_dir = project_root_path.join("cardano/gateway");
     let relayer_path = project_root_path.join("relayer");
     let mithril_dir = project_root_path.join("chains/mithrils");
-    
+
     let mut result = String::new();
     result.push_str("\nBridge Health Check\n");
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
-    
+
     let mut services_checked = 0;
     let mut services_healthy = 0;
-    
+
     // Define services to check
     let services = vec![
         ("gateway", "Gateway (NestJS gRPC Server)"),
@@ -2137,7 +2299,7 @@ pub fn comprehensive_health_check(
         ("hermes", "Hermes Relayer Daemon"),
         ("cosmos", "Cosmos Entrypoint chain (packet-forwarding)"),
     ];
-    
+
     for (service_name, service_label) in services {
         // Skip if filtering and not the requested service
         if let Some(filter) = service_filter {
@@ -2145,9 +2307,9 @@ pub fn comprehensive_health_check(
                 continue;
             }
         }
-        
+
         services_checked += 1;
-        
+
         let (is_healthy, status_msg) = match service_name {
             "gateway" => check_gateway_health(&gateway_dir),
             "cardano" => check_cardano_node_health(&cardano_dir),
@@ -2159,20 +2321,23 @@ pub fn comprehensive_health_check(
             "cosmos" => check_cosmos_health(),
             _ => (false, "Unknown service".to_string()),
         };
-        
+
         if is_healthy {
             services_healthy += 1;
         }
-        
+
         let status_symbol = if is_healthy { "[OK]" } else { "[FAIL]" };
         result.push_str(&format!("{} {}\n", status_symbol, service_label));
         result.push_str(&format!("    {}\n\n", status_msg));
     }
-    
+
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
-    
+
     if services_healthy == services_checked {
-        result.push_str(&format!("All {} service(s) are healthy\n", services_checked));
+        result.push_str(&format!(
+            "All {} service(s) are healthy\n",
+            services_checked
+        ));
     } else {
         result.push_str(&format!(
             "WARNING: {}/{} service(s) healthy, {} need attention\n",
@@ -2181,7 +2346,7 @@ pub fn comprehensive_health_check(
             services_checked - services_healthy
         ));
     }
-    
+
     Ok(result)
 }
 
@@ -2189,9 +2354,15 @@ pub fn comprehensive_health_check(
 fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
     // Check if gateway container is running
     let ps_check = Command::new("docker")
-        .args(&["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=gateway-app",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
@@ -2199,17 +2370,20 @@ fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
             let port_check = Command::new("nc")
                 .args(&["-z", "localhost", "5001"])
                 .output();
-            
+
             if let Ok(port_output) = port_check {
                 if port_output.status.success() {
-                    return (true, "Container running, gRPC port 5001 accessible".to_string());
+                    return (
+                        true,
+                        "Container running, gRPC port 5001 accessible".to_string(),
+                    );
                 }
             }
-            
+
             return (true, "Container running (gRPC not ready yet)".to_string());
         }
     }
-    
+
     (false, "Container not running".to_string())
 }
 
@@ -2217,16 +2391,24 @@ fn check_gateway_health(_gateway_dir: &Path) -> (bool, String) {
 fn check_cardano_node_health(_cardano_dir: &Path) -> (bool, String) {
     // Check using docker ps directly with filter
     let check = Command::new("docker")
-        .args(&["ps", "--filter", "name=cardano-node", "--filter", "status=running", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=cardano-node",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     if let Ok(output) = check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() && stdout.contains("cardano-node") {
             return (true, "Container running".to_string());
         }
     }
-    
+
     (false, "Container not running".to_string())
 }
 
@@ -2234,9 +2416,17 @@ fn check_cardano_node_health(_cardano_dir: &Path) -> (bool, String) {
 fn check_postgres_health(_cardano_dir: &Path) -> (bool, String) {
     // Check if postgres container is running
     let ps_check = Command::new("docker")
-        .args(&["ps", "--filter", "name=cardano-postgres", "--filter", "status=running", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=cardano-postgres",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
@@ -2244,26 +2434,37 @@ fn check_postgres_health(_cardano_dir: &Path) -> (bool, String) {
             let check = Command::new("docker")
                 .args(&["exec", &stdout, "pg_isready", "-U", "postgres"])
                 .output();
-            
+
             if let Ok(ready_output) = check {
                 if ready_output.status.success() {
-                    return (true, "Database accepting connections on port 6432".to_string());
+                    return (
+                        true,
+                        "Database accepting connections on port 6432".to_string(),
+                    );
                 }
             }
-            
+
             return (true, "Container running".to_string());
         }
     }
-    
+
     (false, "Container not running".to_string())
 }
 
 /// Check Kupo health
 fn check_kupo_health(_cardano_dir: &Path) -> (bool, String) {
     let check = Command::new("docker")
-        .args(&["ps", "--filter", "name=cardano-kupo", "--filter", "status=running", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=cardano-kupo",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     if let Ok(output) = check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
@@ -2271,26 +2472,34 @@ fn check_kupo_health(_cardano_dir: &Path) -> (bool, String) {
             let port_check = Command::new("nc")
                 .args(&["-z", "localhost", "1442"])
                 .output();
-            
+
             if let Ok(port_output) = port_check {
                 if port_output.status.success() {
                     return (true, "Running on port 1442".to_string());
                 }
             }
-            
+
             return (true, "Container running".to_string());
         }
     }
-    
+
     (false, "Container not running".to_string())
 }
 
 /// Check Ogmios health
 fn check_ogmios_health(_cardano_dir: &Path) -> (bool, String) {
     let check = Command::new("docker")
-        .args(&["ps", "--filter", "name=ogmios", "--filter", "status=running", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=ogmios",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     if let Ok(output) = check {
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if !stdout.is_empty() {
@@ -2298,17 +2507,17 @@ fn check_ogmios_health(_cardano_dir: &Path) -> (bool, String) {
             let port_check = Command::new("nc")
                 .args(&["-z", "localhost", "1337"])
                 .output();
-            
+
             if let Ok(port_output) = port_check {
                 if port_output.status.success() {
                     return (true, "Running on port 1337".to_string());
                 }
             }
-            
+
             return (true, "Container running".to_string());
         }
     }
-    
+
     (false, "Container not running".to_string())
 }
 
@@ -2383,8 +2592,16 @@ fn check_mithril_health(mithril_dir: &Path) -> (bool, String) {
     } else {
         "not running"
     };
-    let signer_1_status = if signer_1_running { "running" } else { "not running" };
-    let signer_2_status = if signer_2_running { "running" } else { "not running" };
+    let signer_1_status = if signer_1_running {
+        "running"
+    } else {
+        "not running"
+    };
+    let signer_2_status = if signer_2_running {
+        "running"
+    } else {
+        "not running"
+    };
 
     let is_healthy = aggregator_running && signer_1_running && signer_2_running;
     (
@@ -2399,10 +2616,8 @@ fn check_mithril_health(mithril_dir: &Path) -> (bool, String) {
 /// Check Hermes daemon health
 fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
     // Check if Hermes process is running
-    let ps_check = Command::new("ps")
-        .args(&["aux"])
-        .output();
-    
+    let ps_check = Command::new("ps").args(&["aux"]).output();
+
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
@@ -2410,16 +2625,16 @@ fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
                 // Found the process, check if log file exists and has recent activity
                 let home = home_dir().unwrap_or_default();
                 let log_file = home.join(".hermes/hermes.log");
-                
+
                 if log_file.exists() {
                     return (true, "Daemon running".to_string());
                 }
-                
+
                 return (true, "Process running".to_string());
             }
         }
     }
-    
+
     (false, "Daemon not running".to_string())
 }
 
@@ -2429,14 +2644,19 @@ fn check_cosmos_health() -> (bool, String) {
     let port_check = Command::new("nc")
         .args(&["-z", "localhost", "26657"])
         .output();
-    
+
     if let Ok(output) = port_check {
         if output.status.success() {
             // Try to get status from the RPC endpoint
             let status_check = Command::new("curl")
-                .args(&["-s", "--connect-timeout", "3", "http://127.0.0.1:26657/status"])
+                .args(&[
+                    "-s",
+                    "--connect-timeout",
+                    "3",
+                    "http://127.0.0.1:26657/status",
+                ])
                 .output();
-            
+
             if let Ok(status_output) = status_check {
                 if status_output.status.success() {
                     let stdout = String::from_utf8_lossy(&status_output.stdout);
@@ -2445,10 +2665,10 @@ fn check_cosmos_health() -> (bool, String) {
                     }
                 }
             }
-            
+
             return (true, "Port 26657 accessible".to_string());
         }
     }
-    
+
     (false, "Not running (port 26657 not accessible)".to_string())
 }
