@@ -1482,6 +1482,81 @@ pub fn wait_and_start_mithril_genesis(
         mithril_genesis_env.push((key, value.as_str()));
     }
 
+    // Wait for the aggregator to observe and expose the next signers set.
+    //
+    // The genesis bootstrap command requires signers for the *next signer retrieval epoch*.
+    // On fresh devnets this can lag behind the Cardano epoch progression; running bootstrap too
+    // early results in "Missing signers for epoch X".
+    let epoch_settings_url = "http://127.0.0.1:8080/aggregator/epoch-settings";
+    let required_next_signers = 1;
+    let signers_poll_interval = Duration::from_secs(5);
+    let signers_poll_attempts = 240; // 20 minutes
+    let http_client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client for Mithril checks: {e}"))?;
+    let mut last_epoch_settings_error: Option<String> = None;
+    for attempt in 1..=signers_poll_attempts {
+        match http_client.get(epoch_settings_url).send() {
+            Ok(resp) if resp.status().is_success() => match resp.text() {
+                Ok(body) => match serde_json::from_str::<Value>(&body) {
+                    Ok(json) => {
+                        let next_signers_count = json
+                            .get("next_signers")
+                            .and_then(|v| v.as_array())
+                            .map(|v| v.len())
+                            .unwrap_or(0);
+
+                        if next_signers_count >= required_next_signers {
+                            last_epoch_settings_error = None;
+                            break;
+                        }
+
+                        if is_verbose {
+                            verbose(&format!(
+                                "Mithril epoch-settings not ready yet (next_signers={}); retry {}/{}",
+                                next_signers_count, attempt, signers_poll_attempts
+                            ));
+                        }
+                        last_epoch_settings_error = Some(format!(
+                            "next_signers count is {} (expected >= {})",
+                            next_signers_count, required_next_signers
+                        ));
+                    }
+                    Err(err) => {
+                        last_epoch_settings_error =
+                            Some(format!("Failed to parse epoch-settings JSON: {err}"));
+                    }
+                },
+                Err(err) => {
+                    last_epoch_settings_error =
+                        Some(format!("Failed to read epoch-settings response body: {err}"));
+                }
+            },
+            Ok(resp) => {
+                last_epoch_settings_error = Some(format!(
+                    "epoch-settings HTTP status {}",
+                    resp.status()
+                ));
+            }
+            Err(err) => {
+                last_epoch_settings_error = Some(format!(
+                    "Failed to call Mithril epoch-settings endpoint: {err}"
+                ));
+            }
+        }
+
+        std::thread::sleep(signers_poll_interval);
+    }
+    if let Some(error) = last_epoch_settings_error {
+        return Err(format!(
+            "Mithril signers were not ready for genesis bootstrap after {} minutes: {}",
+            (signers_poll_attempts as u64 * signers_poll_interval.as_secs()) / 60,
+            error
+        )
+        .into());
+    }
+
     // Seed the first Mithril certificate chain.
     //
     // If Mithril was previously started with different genesis keys and the data directory was
@@ -1494,6 +1569,23 @@ pub fn wait_and_start_mithril_genesis(
     let mut attempts = 0;
     loop {
         attempts += 1;
+        // The genesis bootstrap job uses the same SQLite store as the running aggregator service.
+        // If the aggregator is running, the store can be locked and bootstrap will fail with
+        // `database is locked (code 5)`. Stop the aggregator while running bootstrap, then start it
+        // again so it picks up the newly-seeded certificate chain.
+        execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec!["compose", "-f", "docker-compose.yaml", "stop", "mithril-aggregator"],
+            Some(mithril_genesis_env.clone()),
+        )
+        .map_err(|e| {
+            format!(
+                "Failed to stop Mithril aggregator before genesis bootstrap attempt {}: {}",
+                attempts, e
+            )
+        })?;
+
         let result = execute_script(
             &mithril_script_dir,
             "docker",
@@ -1509,6 +1601,31 @@ pub fn wait_and_start_mithril_genesis(
             ],
             Some(mithril_genesis_env.clone()),
         );
+
+        // Bring the aggregator back up (best-effort) regardless of bootstrap success.
+        let aggregator_restart_result = execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "--profile",
+                "mithril",
+                "up",
+                "-d",
+                "--no-build",
+                "mithril-aggregator",
+            ],
+            Some(mithril_genesis_env.clone()),
+        );
+        if let Err(err) = aggregator_restart_result {
+            return Err(format!(
+                "Failed to restart Mithril aggregator after genesis bootstrap attempt {}: {}",
+                attempts, err
+            )
+            .into());
+        }
 
         match result {
             Ok(_) => break,
