@@ -56,6 +56,27 @@ export class ConnectionService {
     await alignTreeWithChain();
   }
 
+  private async getQueryHeight(): Promise<bigint> {
+    try {
+      const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+      const latestSnapshot = snapshots?.[0];
+      if (latestSnapshot) {
+        const height = BigInt(latestSnapshot.block_number);
+        return height > 0n ? height : 1n;
+      }
+    } catch {
+      // Ignore and fall back.
+    }
+
+    try {
+      const latestBlockNo = await this.dbService.queryLatestBlockNo();
+      const height = BigInt(latestBlockNo);
+      return height > 0n ? height : 1n;
+    } catch {
+      return 1n;
+    }
+  }
+
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
     this.logger.log('', 'queryConnections');
     const pagination = getPaginationParams(validPagination(request.pagination));
@@ -139,6 +160,7 @@ export class ConnectionService {
       nextKey = to < Object.values(connectionFilters).length ? generatePaginationKey(pageKeyDto) : '';
     }
 
+    const queryHeight = await this.getQueryHeight();
     const response = {
       connections: connections,
       pagination: {
@@ -147,7 +169,7 @@ export class ConnectionService {
       },
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryConnectionsResponse;
 
