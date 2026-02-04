@@ -5,11 +5,11 @@ import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-const sideChainConfig: Chain = {
+const entrypointChainConfig: Chain = {
   chain_name: 'sidechain',
   status: 'active',
   network_type: 'testnet',
-  pretty_name: 'Sidechain Localnet',
+  pretty_name: 'Entrypoint chain Localnet',
   chain_id: 'sidechain',
   bech32_prefix: 'cosmos',
   slip44: 118,
@@ -104,7 +104,10 @@ const localOsmosisChainConfig: Chain = {
   keywords: ['ibc-go'], // Assuming features map to keywords
 };
 
-export const customChains: Chain[] = [sideChainConfig, localOsmosisChainConfig];
+export const customChains: Chain[] = [
+  entrypointChainConfig,
+  localOsmosisChainConfig,
+];
 
 export const isCardanoMainnet =
   process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
@@ -148,11 +151,11 @@ export const CARDANO_LOVELACE_HEX = '6c6f76656c616365';
 
 export const UNKNOWN_TOKEN_IMG = UnknownTokenIcon;
 
-const sideChainAssetList: AssetList = {
+const entrypointChainAssetList: AssetList = {
   chain_name: 'sidechain',
   assets: [
     {
-      description: 'Registered denom token for sidechain testing',
+      description: 'Registered denom token for entrypoint chain testing',
       denom_units: [
         {
           denom: 'token',
@@ -166,7 +169,7 @@ const sideChainAssetList: AssetList = {
       symbol: 'token',
     },
     {
-      description: 'Registered denom token for sidechain testing',
+      description: 'Registered denom token for entrypoint chain testing',
       denom_units: [
         {
           denom: 'stake',
@@ -249,7 +252,7 @@ const cardanoAssetList: AssetList = {
 
 const allAssetsAndChain = [
   ...assets,
-  sideChainAssetList,
+  entrypointChainAssetList,
   localOsmosisAssetList,
   cardanoAssetList,
 ];

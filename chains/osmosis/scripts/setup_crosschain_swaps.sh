@@ -41,15 +41,15 @@ HERMES_SIDECHAIN_NAME="sidechain"
 
 # query channels' id
 cardano_sidechain_conn_id=$($rly config show --json | jq -r --arg path "$RELAYER_PATH" '.paths[$path].src."connection-id"')
-check_string_empty "$cardano_sidechain_conn_id" "Cardano<->Sidechain connection not found. Exiting..."
+check_string_empty "$cardano_sidechain_conn_id" "Cardano<->Entrypoint chain connection not found. Exiting..."
 
 cardano_sidechain_chann_id=$($rly query connection-channels "$CARDANO_CHAIN_NAME" "$cardano_sidechain_conn_id" --reverse --limit 1 | jq -r '.[0].channel_id')
-check_string_empty "$cardano_sidechain_chann_id" "Cardano->Sidechain channel not found. Exiting..."
-echo "Cardano->Sidechain channel id: $cardano_sidechain_chann_id"
+check_string_empty "$cardano_sidechain_chann_id" "Cardano->Entrypoint chain channel not found. Exiting..."
+echo "Cardano->Entrypoint chain channel id: $cardano_sidechain_chann_id"
 
 sidechain_osmosis_chann_id=$(hermes --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" --show-counterparty | jq -r 'select(.result) | .result[-1].channel_b')
-check_string_empty "$sidechain_osmosis_chann_id" "Sidechain->Osmosis channel not found. Exiting..."
-echo "Sidechain->Osmosis channel id: $sidechain_osmosis_chann_id"
+check_string_empty "$sidechain_osmosis_chann_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
+echo "Entrypoint chain->Osmosis channel id: $sidechain_osmosis_chann_id"
 
 memo=$(
   jq -nc \
@@ -137,7 +137,7 @@ check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmo
 echo "crosschain_swaps code id: $crosschain_swaps_code_id"
 
 osmosis_sidechain_chann_id=$(hermes --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" | jq -r 'select(.result) | .result[-1].channel_id')
-echo "Osmosis->Sidechain channel id: $osmosis_sidechain_chann_id"
+echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
 
 # Instantiate crosschain_swaps
 init_crosschain_swaps_msg=$(
