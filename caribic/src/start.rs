@@ -367,7 +367,7 @@ pub async fn start_local_cardano_network(
                     )
                     .into());
                 }
-                log("Waiting for node to start up ...");
+                log_or_show_progress("Waiting for node to start up ...", &optional_progress_bar);
                 std::thread::sleep(Duration::from_secs(5))
             }
         }
@@ -384,14 +384,23 @@ pub async fn start_local_cardano_network(
     // - Cosmos chain startup, Hermes build, contract deployment, etc.
     let mut mithril_genesis_handle = None;
     if with_mithril {
-        let cardano_epoch_on_mithril_start = start_mithril(project_root_path).await.map_err(|e| {
+        let cardano_epoch_on_mithril_start =
+            start_mithril_with_progress(project_root_path, &optional_progress_bar)
+                .await
+                .map_err(|e| {
             format!(
                 "Failed to start Mithril services for local devnet: {}",
                 e
             )
         })?;
 
-        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.suspend(|| {
+                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+            });
+        } else {
+            logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+        }
 
         let project_root_path = project_root_path.to_path_buf();
         mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
@@ -399,7 +408,13 @@ pub async fn start_local_cardano_network(
                 .map_err(|e| e.to_string())
         }));
     } else {
-        logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.suspend(|| {
+                logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)")
+            });
+        } else {
+            logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
+        }
     }
 
     // wait until network hard forked into Conway era after 1 epoch
@@ -1234,6 +1249,25 @@ fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::
 }
 
 pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    let current_cardano_epoch =
+        start_mithril_with_progress(project_root_dir, &optional_progress_bar).await?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
+    Ok(current_cardano_epoch)
+}
+
+async fn start_mithril_with_progress(
+    project_root_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<u64, Box<dyn std::error::Error>> {
     let mithril_dir = project_root_dir.join("chains/mithrils");
     let mithril_data_dir = mithril_dir.join("data");
     let mithril_script_dir = mithril_dir.join("scripts");
@@ -1262,13 +1296,8 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
                     "Unable to download and extract mithril repository: {}",
                     error
                 )
-            })?;
+        })?;
     }
-
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.enable_steady_tick(Duration::from_millis(100));
@@ -1364,10 +1393,6 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
         )
     })?;
 
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
-
     let current_cardano_epoch = get_cardano_state(project_root_dir, CardanoQuery::Epoch)?;
 
     Ok(current_cardano_epoch)
@@ -1405,44 +1430,17 @@ pub fn wait_and_start_mithril_genesis(
     let target_slot = target_epoch * slots_per_epoch;
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-    if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "Mithril needs to wait at least two epochs for the immutable files to be created .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
-        );
-        }
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+    if slots_left > 0 && is_verbose {
+        log("Mithril needs to wait at least two epochs for the immutable files to be created ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
+        if is_verbose {
+            verbose(&format!("Current slot: {}, Slots left: {}", current_slot, slots_left));
         }
         std::thread::sleep(Duration::from_secs(10));
     }
@@ -1520,10 +1518,12 @@ pub fn wait_and_start_mithril_genesis(
                     || err_str.contains("The list of signers must not be empty");
 
                 if retryable && attempts < 10 {
-                    log(&format!(
-                        "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
-                        attempts
-                    ));
+                    if is_verbose {
+                        log(&format!(
+                            "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
+                            attempts
+                        ));
+                    }
                     std::thread::sleep(Duration::from_secs(15));
                     continue;
                 }
@@ -1539,45 +1539,18 @@ pub fn wait_and_start_mithril_genesis(
     let target_slot = target_epoch * slots_per_epoch;
     slots_left = target_slot.saturating_sub(current_slot);
 
-    if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
-        );
-        }
+    if slots_left > 0 && is_verbose {
+        log("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
+        if is_verbose {
+            verbose(&format!("Current slot: {}, Slots left: {}", current_slot, slots_left));
         }
         std::thread::sleep(Duration::from_secs(10));
-    }
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
     }
 
     Ok(())
