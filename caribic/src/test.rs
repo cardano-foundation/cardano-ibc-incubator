@@ -211,7 +211,7 @@ pub async fn run_integration_tests(
     //   - The light client code (Plutus validators that verify Tendermint headers) was
     //     already deployed to Cardano during `caribic start bridge`. That's infrastructure.
     //   - What we're doing here is creating a client INSTANCE - a piece of on-chain state
-    //     that tracks a specific counterparty chain (the sidechain's chain ID, current
+    //     that tracks a specific counterparty chain (the Cosmos Entrypoint chain's chain ID, current
     //     trusted height, validator set hash, etc.) When you call CreateClient that's basically
     //     initializing the first anchor point of trust. Its a state snapshot as opposed to code.
     //
@@ -309,7 +309,7 @@ pub async fn run_integration_tests(
     // Test 6: Update client with new Tendermint headers and verify height advances
     //
     // This is where the Tendermint light client gets exercised. Hermes fetches
-    // new block headers from the Cosmos sidechain and submits them to update the client
+    // new block headers from the Cosmos Entrypoint chain and submits them to update the client
     // on Cardano. The Cardano smart contracts verify the headers are valid (signatures,
     // validator set transitions, etc.) before accepting them.
     //
@@ -325,7 +325,7 @@ pub async fn run_integration_tests(
     
     if let Some(ref cid) = client_id {
         // Wait for new blocks on the Cosmos chain
-        logger::verbose("   Waiting for new blocks on sidechain...");
+        logger::verbose("   Waiting for new blocks on Cosmos Entrypoint chain...");
         std::thread::sleep(std::time::Duration::from_secs(5));
         
         match update_client(project_root, cid) {
@@ -475,7 +475,7 @@ pub async fn run_integration_tests(
     //   - Submit MsgTransfer on the packet-forwarding chain (Cosmos)
     //   - Relay RecvPacket to Cardano and Ack back to Cosmos
     //   - Validate basic token effects and Cardano voucher minting
-    logger::log("Test 9: ICS-20 transfer (sidechain -> Cardano)...");
+    logger::log("Test 9: ICS-20 transfer (Entrypoint chain -> Cardano)...");
     let mut transfer_test_passed = false;
 
     if let Some(cardano_channel_id) = &channel_id {
@@ -531,7 +531,7 @@ pub async fn run_integration_tests(
                         || sidechain_balance_before.saturating_sub(sidechain_balance_after) < amount as u128
                     {
                         logger::log(&format!(
-                            "FAIL Test 9: sidechain balance did not decrease as expected (before={}, after={})\n",
+                            "FAIL Test 9: entrypoint chain balance did not decrease as expected (before={}, after={})\n",
                             sidechain_balance_before, sidechain_balance_after
                         ));
                         results.failed += 1;
@@ -575,7 +575,7 @@ pub async fn run_integration_tests(
     // Send the Cardano voucher back to the packet-forwarding chain and verify:
     //   - Voucher is burned on Cardano
     //   - Native token balance is restored on Cosmos (minus fees)
-    logger::log("Test 10: ICS-20 round-trip (Cardano -> sidechain)...");
+    logger::log("Test 10: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
     if transfer_test_passed {
         if let Some(cardano_channel_id) = &channel_id {
             let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
@@ -625,7 +625,7 @@ pub async fn run_integration_tests(
                             results.failed += 1;
                         } else if sidechain_balance_after <= sidechain_balance_before {
                             logger::log(&format!(
-                                "FAIL Test 10: sidechain balance did not increase after round-trip (before={}, after={})\n",
+                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (before={}, after={})\n",
                                 sidechain_balance_before, sidechain_balance_after
                             ));
                             results.failed += 1;
@@ -1192,7 +1192,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         ).into());
     }
     
-    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain");
+    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain (Cosmos Entrypoint chain)");
     
     let mut command = Command::new(&hermes_binary);
     command.args(&[
@@ -1264,7 +1264,7 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
     // PastHorizon/slot horizon issues, etc).
     let hermes_binary = project_root.join("relayer/target/release/hermes");
 
-    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain");
+    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain (Cosmos Entrypoint chain)");
     
     let mut command = Command::new(&hermes_binary);
     command.args(&[

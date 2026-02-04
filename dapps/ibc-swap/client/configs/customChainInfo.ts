@@ -1,11 +1,11 @@
 import { CARDANO_MAINNET_MAGIC } from '@/constants';
 import { AssetList, Chain } from '@chain-registry/types';
 
-const sideChainConfig: Chain = {
+const entrypointChainConfig: Chain = {
   chain_name: 'sidechain',
   status: 'active',
   network_type: 'testnet',
-  pretty_name: 'Sidechain Localnet',
+  pretty_name: 'Entrypoint chain Localnet',
   chain_id: 'sidechain',
   bech32_prefix: 'cosmos',
   slip44: 118,
@@ -50,11 +50,11 @@ const sideChainConfig: Chain = {
   },
 };
 
-const sideChainAssetList: AssetList = {
+const entrypointChainAssetList: AssetList = {
   chain_name: 'sidechain',
   assets: [
     {
-      description: 'Registered denom token for sidechain testing',
+      description: 'Registered denom token for entrypoint chain testing',
       denom_units: [
         {
           denom: 'token',
@@ -68,7 +68,7 @@ const sideChainAssetList: AssetList = {
       symbol: 'token',
     },
     {
-      description: 'Registered denom token for sidechain testing',
+      description: 'Registered denom token for entrypoint chain testing',
       denom_units: [
         {
           denom: 'stake',
@@ -165,7 +165,10 @@ const localOsmosisAssetList: AssetList = {
   ],
 };
 
-export const customChains: Chain[] = [sideChainConfig, localOsmosisChainConfig];
+export const customChains: Chain[] = [
+  entrypointChainConfig,
+  localOsmosisChainConfig,
+];
 
 const isCardanoMainnet =
   process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
@@ -193,6 +196,6 @@ export const chainsRestEndpoints: { [key: string]: string } =
 
 export const allChains: any[] = [...customChains, cardanoChain];
 export const customChainassets: AssetList[] = [
-  sideChainAssetList,
+  entrypointChainAssetList,
   localOsmosisAssetList,
 ];
