@@ -115,7 +115,7 @@ pub async fn create_config_file(config_path: &str) -> Config {
                         "Enter the target branch you want to fetch the source code from (default: {}):",
                         default_target_branch
                     ));
-    
+
                     let mut target_branch = String::new();
                     stdin().read_line(&mut target_branch).unwrap();
                     let target_branch = if target_branch.trim().is_empty() {
@@ -153,7 +153,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
                 }
 
                 default_config.project_root = project_root.clone();
-                default_config.mithril.cardano_node_dir = format!("{}/chains/cardano/devnet", project_root);
+                default_config.mithril.cardano_node_dir =
+                    format!("{}/chains/cardano/devnet", project_root);
                 verbose(&format!(
                     "Project root path set to: {}",
                     default_config.project_root
@@ -202,7 +203,7 @@ impl Config {
                 cardano_node: true,
                 postgres: true,
             },
-            bootstrap_addresses: vec![                    
+            bootstrap_addresses: vec![
                 BootstrapAddress {
                     address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
                     amount: 60000000000,
@@ -218,7 +219,7 @@ impl Config {
                 BootstrapAddress {
                     address: "addr_test1wzfvnh20kanpp0qppn5a92kaamjdu9jfamt8hxqqrl43t7c2jw6u4".to_string(),
                     amount: 30000000000,
-                }, 
+                },
             ]},
             vessel_oracle: VesselOracle {
                 repo_base_url: "https://github.com/cardano-foundation/cardano-ibc-summit-demo".to_string(),
@@ -232,7 +233,8 @@ impl Config {
                 home_path.as_path().display()
             );
             default_config.project_root = default_project_root.clone();
-            default_config.mithril.cardano_node_dir = format!("{}/chains/cardano/devnet", default_project_root);
+            default_config.mithril.cardano_node_dir =
+                format!("{}/chains/cardano/devnet", default_project_root);
         }
         default_config
     }
