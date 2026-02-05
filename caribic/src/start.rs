@@ -1,5 +1,5 @@
 use crate::check::check_osmosisd;
-use crate::logger::{log_or_show_progress, verbose};
+use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
     prepare_db_sync_and_gateway, seed_cardano_devnet,
@@ -367,7 +367,7 @@ pub async fn start_local_cardano_network(
                     )
                     .into());
                 }
-                log("Waiting for node to start up ...");
+                log_or_show_progress("Waiting for node to start up ...", &optional_progress_bar);
                 std::thread::sleep(Duration::from_secs(5))
             }
         }
@@ -391,7 +391,14 @@ pub async fn start_local_cardano_network(
             )
         })?;
 
-        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+        log_or_print_progress(
+            "PASS: Mithril services started (1 aggregator, 2 signers)",
+            &optional_progress_bar,
+        );
+        log_or_print_progress(
+            "Mithril genesis bootstrap started in background (waiting for immutable files and initial certificate chain)",
+            &optional_progress_bar,
+        );
 
         let project_root_path = project_root_path.to_path_buf();
         mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
@@ -399,7 +406,10 @@ pub async fn start_local_cardano_network(
                 .map_err(|e| e.to_string())
         }));
     } else {
-        logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
+        log_or_print_progress(
+            "Skipping Mithril services (use --with-mithril to enable light client testing)",
+            &optional_progress_bar,
+        );
     }
 
     // wait until network hard forked into Conway era after 1 epoch
@@ -475,6 +485,10 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
 
     Ok(mithril_genesis_handle)
 }
@@ -1405,45 +1419,18 @@ pub fn wait_and_start_mithril_genesis(
     let target_slot = target_epoch * slots_per_epoch;
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
     if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "Mithril needs to wait at least two epochs for the immutable files to be created .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
-        );
-        }
+        verbose("Mithril needs to wait at least two epochs for the immutable files to be created ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
-        }
+        verbose(&format!(
+            "Current slot: {}, Slots left: {}",
+            current_slot, slots_left
+        ));
         std::thread::sleep(Duration::from_secs(10));
     }
 
@@ -1520,7 +1507,7 @@ pub fn wait_and_start_mithril_genesis(
                     || err_str.contains("The list of signers must not be empty");
 
                 if retryable && attempts < 10 {
-                    log(&format!(
+                    verbose(&format!(
                         "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
                         attempts
                     ));
@@ -1540,44 +1527,18 @@ pub fn wait_and_start_mithril_genesis(
     slots_left = target_slot.saturating_sub(current_slot);
 
     if slots_left > 0 {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(current_slot);
-        } else {
-            log(
-            "Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..",
-        );
-        }
+        verbose("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(current_slot, target_slot));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                current_slot, slots_left
-            ));
-        }
+        verbose(&format!(
+            "Current slot: {}, Slots left: {}",
+            current_slot, slots_left
+        ));
         std::thread::sleep(Duration::from_secs(10));
-    }
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
     }
 
     Ok(())
