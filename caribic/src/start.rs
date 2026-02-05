@@ -1553,12 +1553,10 @@ pub fn wait_and_start_mithril_genesis(
                             break;
                         }
 
-                        if is_verbose {
-                            verbose(&format!(
-                                "Mithril epoch-settings not ready yet (next_signers={}); retry {}/{}",
-                                next_signers_count, attempt, signers_poll_attempts
-                            ));
-                        }
+                        verbose(&format!(
+                            "Mithril epoch-settings not ready yet (next_signers={}); retry {}/{}",
+                            next_signers_count, attempt, signers_poll_attempts
+                        ));
                         last_epoch_settings_error = Some(format!(
                             "next_signers count is {} (expected >= {})",
                             next_signers_count, required_next_signers
