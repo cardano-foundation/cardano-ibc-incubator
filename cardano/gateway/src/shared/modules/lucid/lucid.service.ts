@@ -135,8 +135,42 @@ export class LucidService {
   }
   // ========================== Public functions ==========================
   // ========================== UTXO-related methods ==========================
+  private normalizeAddressOrCredential(addressOrCredential: string): string {
+    const normalized = addressOrCredential?.trim();
+    if (!normalized) return normalized;
+
+    const lowered = normalized.toLowerCase();
+    if (lowered.startsWith('addr') || lowered.startsWith('stake')) {
+      return normalized;
+    }
+
+    // Hermes represents Cardano identities as hex-encoded enterprise addresses
+    // (header byte + 28-byte payment key hash). Lucid expects bech32 addresses
+    // for UTxO queries, so convert when possible.
+    const isHex = /^[0-9a-f]+$/.test(lowered);
+    if (!isHex) {
+      return normalized;
+    }
+
+    // Enterprise address bytes (1 byte header + 28 bytes payment hash) -> bech32.
+    if (lowered.length === 58) {
+      const paymentHash = lowered.slice(2);
+      if (/^[0-9a-f]{56}$/.test(paymentHash)) {
+        return this.credentialToAddress(paymentHash);
+      }
+    }
+
+    // Payment credential hash -> bech32.
+    if (lowered.length === 56) {
+      return this.credentialToAddress(lowered);
+    }
+
+    return normalized;
+  }
+
   public async findUtxoAtWithUnit(addressOrCredential: string, unit: string): Promise<UTxO> {
-    const utxos = await this.lucid.utxosAtWithUnit(addressOrCredential, unit);
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    const utxos = await this.lucid.utxosAtWithUnit(normalizedAddress, unit);
 
     if (utxos.length === 0) throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
     return utxos[utxos.length - 1];
@@ -148,7 +182,8 @@ export class LucidService {
     return utxo;
   }
   public async findUtxoAt(addressOrCredential: string): Promise<UTxO[]> {
-    const utxos = await this.lucid.utxosAt(addressOrCredential);
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    const utxos = await this.lucid.utxosAt(normalizedAddress);
     if (utxos.length === 0) throw new GrpcNotFoundException(`Unable to find UTxO at  ${addressOrCredential}`);
     return utxos;
   }

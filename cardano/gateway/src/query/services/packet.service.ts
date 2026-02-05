@@ -86,6 +86,16 @@ export class PacketService {
     return BigInt(latestSnapshot.block_number);
   }
 
+  private async getQueryHeight(): Promise<bigint> {
+    try {
+      const height = await this.getProofHeight();
+      return height > 0n ? height : 1n;
+    } catch {
+      // Avoid returning an invalid IBC height (revision_height=0), which Hermes rejects.
+      return 1n;
+    }
+  }
+
   async queryPacketAcknowledgement(
     request: QueryPacketAcknowledgementRequest,
   ): Promise<QueryPacketAcknowledgementResponse> {
@@ -171,6 +181,7 @@ export class PacketService {
       nextKey = to < packetAcknowledgementSeqs.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
+    const queryHeight = await this.getQueryHeight();
     const response: QueryPacketAcknowledgementsResponse = {
       acknowledgements: packetAckSeqs.map((seq) => ({
         /** channel port identifier. */
@@ -190,7 +201,7 @@ export class PacketService {
       /** query block height */
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryPacketAcknowledgementsResponse;
     return response;
@@ -275,6 +286,7 @@ export class PacketService {
       nextKey = to < packetCommitmentSeqs.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
+    const queryHeight = await this.getQueryHeight();
     const response: QueryPacketCommitmentsResponse = {
       commitments: packetCmmSeqs.map((seq) => ({
         /** channel port identifier. */
@@ -294,7 +306,7 @@ export class PacketService {
       /** query block height */
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryPacketCommitmentsResponse;
     return response;
@@ -368,13 +380,14 @@ export class PacketService {
     const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
     const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
 
+    const queryHeight = await this.getQueryHeight();
     const response: QueryUnreceivedPacketsResponse = {
       /** list of unreceived packet sequences */
       sequences: sequences,
       /** query block height */
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryUnreceivedPacketsResponse;
     return response;
@@ -398,13 +411,14 @@ export class PacketService {
     const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
     const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
 
+    const queryHeight = await this.getQueryHeight();
     const response: QueryUnreceivedAcksResponse = {
       /** list of unreceived packet sequences */
       sequences: sequences,
       /** query block height */
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryUnreceivedAcksResponse;
     return response;
