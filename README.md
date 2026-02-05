@@ -337,6 +337,7 @@ Example:
 #### Using the faucet to create and fund accounts in the test environment
 
 Packet-forwarding chain (Cosmos):
+(The faucet endpoint is bound to localhost by default and is not exposed publicly.)
 ```sh
 curl -X POST "http://localhost:4500/" -H  "accept: application/json" -H  "Content-Type: application/json" -d "{  \"address\": \"cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6\",  \"coins\": [    \"10token\",\"10stake\"  ]}"
 ```
