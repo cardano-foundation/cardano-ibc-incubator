@@ -16,9 +16,9 @@ cd ../
 ${DOCKER_COMPOSE_CMD} stop
 ${DOCKER_COMPOSE_CMD} up -d --build
 
-faucet_url="http://localhost:4500"
+rpc_url="http://localhost:26657/status"
 while true; do
-  response=$(curl -s -o /dev/null -w "%{http_code}" $faucet_url)
+  response=$(curl -s -o /dev/null -w "%{http_code}" "$rpc_url")
 
   if [[ $response == "200" ]]; then
     echo >&2 "Entrypoint chain is ready!"

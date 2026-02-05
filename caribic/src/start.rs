@@ -688,7 +688,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Permission errors (requires fixing volume/socket permissions)
     // - Port conflicts (requires stopping conflicting services)
     // - Disk space errors (requires freeing up disk space)
-    let url = "http://127.0.0.1:4500/";
+    // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
+    // This allows us to keep the faucet non-public while still having a stable readiness signal.
+    let url = "http://127.0.0.1:26657/status";
     let max_retries = 60;
     let interval_ms = 10000; // 10 seconds
     let client = reqwest::Client::builder().no_proxy().build()?;
@@ -697,28 +699,47 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
         let response = client.get(url).send().await;
 
         match response {
-            Ok(resp) if resp.status().is_success() => {
-                if let Some(progress_bar) = &optional_progress_bar {
-                    progress_bar.finish_and_clear();
-                }
-                return Ok(());
-            }
             Ok(resp) => {
-                verbose(&format!(
-                    "Health check {} failed with status: {} on retry {}",
-                    url,
-                    resp.status(),
-                    retry + 1
-                ));
+                let status = resp.status();
+                let body = resp.text().await.unwrap_or_default();
+
+                if status.is_success() {
+                    let latest_height = serde_json::from_str::<Value>(&body)
+                        .ok()
+                        .and_then(|json| {
+                            json["result"]["sync_info"]["latest_block_height"]
+                                .as_str()
+                                .and_then(|s| s.parse::<u64>().ok())
+                                .or_else(|| json["result"]["sync_info"]["latest_block_height"].as_u64())
+                        })
+                        .unwrap_or(0);
+
+                    if latest_height > 0 {
+                        if let Some(progress_bar) = &optional_progress_bar {
+                            progress_bar.finish_and_clear();
+                        }
+                        return Ok(());
+                    }
+
+                    verbose(&format!(
+                        "Cosmos Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
+                        retry + 1
+                    ));
+                } else {
+                    verbose(&format!(
+                        "Health check {} failed with status: {} on retry {}",
+                        url,
+                        status,
+                        retry + 1
+                    ));
+                }
             }
-            Err(e) => {
-                verbose(&format!(
-                    "Failed to send request to {} on retry {}: {}",
-                    url,
-                    retry + 1,
-                    e
-                ));
-            }
+            Err(e) => verbose(&format!(
+                "Failed to send request to {} on retry {}: {}",
+                url,
+                retry + 1,
+                e
+            )),
         }
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
