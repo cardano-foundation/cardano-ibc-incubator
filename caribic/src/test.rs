@@ -655,6 +655,7 @@ pub async fn run_integration_tests(
     //   - Validate basic token effects and Cardano voucher minting
     let mut test_9 = TestTimer::start("Test 9: ICS-20 transfer (Entrypoint chain -> Cardano)...");
     let mut transfer_test_passed = false;
+    let mut stake_voucher_token_hash: Option<String> = None;
 
     if let Some(cardano_channel_id) = &channel_id {
         let sidechain_channel_id = resolve_sidechain_channel_id(project_root, cardano_channel_id)
@@ -669,12 +670,13 @@ pub async fn run_integration_tests(
         // Use a large enough amount that fee noise cannot mask the balance delta.
         let amount: u64 = 1_000_000;
 
-        let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
+	        let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
 
-        let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
-        let cardano_voucher_before =
-            query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-        let cardano_root_before = query_handler_state_root(project_root)?;
+	        let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+	        let cardano_voucher_assets_before =
+	            query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	        let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
+	        let cardano_root_before = query_handler_state_root(project_root)?;
 
         // The chain rejects packets that have both timeout_height and timeout_timestamp set
         // to zero, so ensure at least one is populated.
@@ -698,12 +700,13 @@ pub async fn run_integration_tests(
             timeout_height_offset,
             timeout_seconds,
         ) {
-            Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", &sidechain_channel_id) {
-                Ok(_) => {
-                    let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
-                    let cardano_voucher_after =
-                        query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-                    let cardano_root_after = query_handler_state_root(project_root)?;
+	            Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", &sidechain_channel_id) {
+	                Ok(_) => {
+	                    let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
+	                    let cardano_voucher_assets_after =
+	                        query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	                    let cardano_voucher_after = sum_cardano_policy_assets(&cardano_voucher_assets_after);
+	                    let cardano_root_after = query_handler_state_root(project_root)?;
 
                     if sidechain_balance_before < sidechain_balance_after
                         || sidechain_balance_before.saturating_sub(sidechain_balance_after) < amount as u128
@@ -726,24 +729,59 @@ pub async fn run_integration_tests(
                             cardano_voucher_before + amount
                         ));
                         results.failed += 1;
-                    } else if cardano_root_after == cardano_root_before {
-                        let elapsed = test_9.finish();
-                        logger::log(&format!(
-                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
-                            format_duration(elapsed),
-                            &cardano_root_after[..16],
-                        ));
-                        results.failed += 1;
-                    } else {
-                        let elapsed = test_9.finish();
-                        logger::log(&format!(
-                            "PASS Test 9: Transfer relayed and voucher minted (took {})\n",
-                            format_duration(elapsed)
-                        ));
-                        results.passed += 1;
-                        transfer_test_passed = true;
-                    }
-                }
+	                    } else if cardano_root_after == cardano_root_before {
+	                        let elapsed = test_9.finish();
+	                        logger::log(&format!(
+	                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
+	                            format_duration(elapsed),
+	                            &cardano_root_after[..16],
+	                        ));
+	                        results.failed += 1;
+	                    } else {
+	                        let expected_path = format!("transfer/{}", cardano_channel_id);
+	                        let minted_voucher_hash = match find_policy_asset_with_min_delta(
+	                            &cardano_voucher_assets_before,
+	                            &cardano_voucher_assets_after,
+	                            amount,
+	                        ) {
+	                            Ok(hash) => Some(hash),
+	                            Err(e) => {
+	                                let elapsed = test_9.finish();
+	                                logger::log(&format!(
+	                                    "FAIL Test 9: Could not resolve minted Cardano voucher token name for denom-trace reverse lookup (took {})\n{}\n",
+	                                    format_duration(elapsed),
+	                                    e
+	                                ));
+	                                results.failed += 1;
+	                                None
+	                            }
+	                        };
+
+	                        if let Some(minted_voucher_hash) = minted_voucher_hash {
+	                            match assert_gateway_denom_trace(&minted_voucher_hash, &expected_path, denom).await {
+	                                Ok(()) => {
+	                                    let elapsed = test_9.finish();
+	                                    logger::log(&format!(
+	                                        "PASS Test 9: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
+	                                        format_duration(elapsed)
+	                                    ));
+	                                    results.passed += 1;
+	                                    transfer_test_passed = true;
+	                                    stake_voucher_token_hash = Some(minted_voucher_hash);
+	                                }
+	                                Err(e) => {
+	                                    let elapsed = test_9.finish();
+	                                    logger::log(&format!(
+	                                        "FAIL Test 9: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
+	                                        format_duration(elapsed),
+	                                        e
+	                                    ));
+	                                    results.failed += 1;
+	                                }
+	                            }
+	                        }
+	                    }
+	                }
                 Err(e) => {
                     let elapsed = test_9.finish();
                     logger::log(&format!(
@@ -791,11 +829,12 @@ pub async fn run_integration_tests(
             let amount: u64 = 1_000_000;
 
             let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
-            let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
+	            let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
 
-            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
-            let cardano_voucher_before =
-                query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+	            let cardano_voucher_assets_before =
+	                query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	            let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
 
             // Use a long timeout to ensure the round-trip doesn't accidentally time out while
             // we wait for Mithril certification.
@@ -815,10 +854,11 @@ pub async fn run_integration_tests(
                 timeout_seconds,
             ) {
                 Ok(_) => match hermes_clear_packets(project_root, "cardano-devnet", "transfer", cardano_channel_id) {
-                    Ok(_) => {
-                        let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
-                        let cardano_voucher_after =
-                            query_cardano_policy_total(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	                    Ok(_) => {
+	                        let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
+	                        let cardano_voucher_assets_after =
+	                            query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
+	                        let cardano_voucher_after = sum_cardano_policy_assets(&cardano_voucher_assets_after);
 
                         if cardano_voucher_after + amount > cardano_voucher_before {
                             let elapsed = test_10.finish();
@@ -829,24 +869,53 @@ pub async fn run_integration_tests(
                                 cardano_voucher_after
                             ));
                             results.failed += 1;
-                        } else if sidechain_balance_after <= sidechain_balance_before {
-                            let elapsed = test_10.finish();
-                            logger::log(&format!(
-                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={})\n",
-                                format_duration(elapsed),
-                                sidechain_balance_before,
-                                sidechain_balance_after
-                            ));
-                            results.failed += 1;
-                        } else {
-                            let elapsed = test_10.finish();
-                            logger::log(&format!(
-                                "PASS Test 10: Round-trip completed and voucher burned (took {})\n",
-                                format_duration(elapsed)
-                            ));
-                            results.passed += 1;
-                        }
-                    }
+	                        } else if sidechain_balance_after <= sidechain_balance_before {
+	                            let elapsed = test_10.finish();
+	                            logger::log(&format!(
+	                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={})\n",
+	                                format_duration(elapsed),
+	                                sidechain_balance_before,
+	                                sidechain_balance_after
+	                            ));
+	                            results.failed += 1;
+		                        } else {
+		                            let expected_path = format!("transfer/{}", cardano_channel_id);
+		                            let stake_hash = match stake_voucher_token_hash.as_deref() {
+		                                Some(hash) => Some(hash),
+		                                None => {
+		                                    let elapsed = test_10.finish();
+		                                    logger::log(&format!(
+		                                        "FAIL Test 10: Missing stake voucher hash from Test 9; cannot verify denom-trace reverse lookup (took {})\n",
+		                                        format_duration(elapsed)
+		                                    ));
+		                                    results.failed += 1;
+		                                    None
+		                                }
+		                            };
+
+		                            if let Some(stake_hash) = stake_hash {
+		                                match assert_gateway_denom_trace(stake_hash, &expected_path, denom).await {
+		                                    Ok(()) => {
+		                                        let elapsed = test_10.finish();
+		                                        logger::log(&format!(
+		                                            "PASS Test 10: Round-trip completed, voucher burned, and denom-trace reverse lookup still succeeds (took {})\n",
+		                                            format_duration(elapsed)
+		                                        ));
+		                                        results.passed += 1;
+		                                    }
+		                                    Err(e) => {
+		                                        let elapsed = test_10.finish();
+		                                        logger::log(&format!(
+		                                            "FAIL Test 10: Denom-trace reverse lookup failed after burning voucher (took {})\n{}\n",
+		                                            format_duration(elapsed),
+		                                            e
+		                                        ));
+		                                        results.failed += 1;
+		                                    }
+		                                }
+		                            }
+		                        }
+		                    }
                     Err(e) => {
                         let elapsed = test_10.finish();
                         logger::log(&format!(
@@ -954,22 +1023,39 @@ pub async fn run_integration_tests(
                                 minted_denom = Some(balance_denom.clone());
                                 break;
                             }
-                        }
+	                        }
 
-                        if let Some(minted_denom) = minted_denom {
-                            logger::log(&format!(
-                                "PASS Test 11: Cardano token escrowed and IBC voucher minted (denom={})\n",
-                                minted_denom
-                            ));
-                            results.passed += 1;
-                            cardano_native_transfer_passed = true;
-                            cardano_native_voucher_denom = Some(minted_denom);
-                            cardano_native_sidechain_channel_id = Some(sidechain_channel_id);
-                            cardano_native_sender_lovelace_before = Some(cardano_lovelace_before);
-                        } else {
-                            logger::log("FAIL Test 11: No new IBC voucher denom minted on sidechain\n");
-                            results.failed += 1;
-                        }
+	                        if let Some(minted_denom) = minted_denom {
+	                            let expected_path = format!("transfer/{}", sidechain_channel_id);
+	                            let minted_hash = minted_denom
+	                                .strip_prefix("ibc/")
+	                                .unwrap_or(minted_denom.as_str());
+
+	                            match assert_sidechain_denom_trace(minted_hash, &expected_path, base_denom) {
+	                                Ok(()) => {
+	                                    logger::log(&format!(
+	                                        "PASS Test 11: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (denom={})\n",
+	                                        minted_denom
+	                                    ));
+	                                    results.passed += 1;
+	                                    cardano_native_transfer_passed = true;
+	                                    cardano_native_voucher_denom = Some(minted_denom);
+	                                    cardano_native_sidechain_channel_id = Some(sidechain_channel_id);
+	                                    cardano_native_sender_lovelace_before = Some(cardano_lovelace_before);
+	                                }
+	                                Err(e) => {
+	                                    logger::log(&format!(
+	                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (denom={})\n{}\n",
+	                                        minted_denom,
+	                                        e
+	                                    ));
+	                                    results.failed += 1;
+	                                }
+	                            }
+	                        } else {
+	                            logger::log("FAIL Test 11: No new IBC voucher denom minted on sidechain\n");
+	                            results.failed += 1;
+	                        }
                     }
                 }
                 Err(e) => {
@@ -1050,17 +1136,33 @@ pub async fn run_integration_tests(
                                 cardano_lovelace_before, cardano_lovelace_after
                             ));
                             results.failed += 1;
-                        } else if cardano_lovelace_after.saturating_add(fee_budget) < lovelace_before {
-                            logger::log(&format!(
-                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (before={}, after={}, fee_budget={})\n",
-                                lovelace_before, cardano_lovelace_after, fee_budget
-                            ));
-                            results.failed += 1;
-                        } else {
-                            logger::log("PASS Test 12: Cardano native token round-trip succeeded\n");
-                            results.passed += 1;
-                        }
-                    }
+	                        } else if cardano_lovelace_after.saturating_add(fee_budget) < lovelace_before {
+	                            logger::log(&format!(
+	                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (before={}, after={}, fee_budget={})\n",
+	                                lovelace_before, cardano_lovelace_after, fee_budget
+	                            ));
+	                            results.failed += 1;
+	                        } else {
+	                            let expected_path = format!("transfer/{}", sidechain_channel_id);
+	                            let minted_hash = voucher_denom
+	                                .strip_prefix("ibc/")
+	                                .unwrap_or(voucher_denom.as_str());
+
+	                            match assert_sidechain_denom_trace(minted_hash, &expected_path, "lovelace") {
+	                                Ok(()) => {
+	                                    logger::log("PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds\n");
+	                                    results.passed += 1;
+	                                }
+	                                Err(e) => {
+	                                    logger::log(&format!(
+	                                        "FAIL Test 12: Denom-trace reverse lookup failed for sidechain voucher denom after burn\n{}\n",
+	                                        e
+	                                    ));
+	                                    results.failed += 1;
+	                                }
+	                            }
+	                        }
+	                    }
                     Err(e) => {
                         logger::log(&format!("FAIL Test 12: Failed to relay packets\n{}\n", e));
                         results.failed += 1;
@@ -2096,8 +2198,20 @@ fn bech32_convert_bits(data: &[u8], from: u32, to: u32, pad: bool) -> Result<Vec
 
 fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -> Option<String> {
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    // Channel identifiers can differ across chains (e.g. cardano-devnet: channel-0,
+    // sidechain: channel-1). Prefer resolving from the Cardano end because it is
+    // unambiguous given the Cardano channel id from Test 8.
+    let queries: [&[&str]; 2] = [
+        &[
+            "query",
+            "channels",
+            "--chain",
+            "cardano-devnet",
+            "--counterparty-chain",
+            "sidechain",
+            "--show-counterparty",
+        ],
+        &[
             "query",
             "channels",
             "--chain",
@@ -2105,40 +2219,45 @@ fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -
             "--counterparty-chain",
             "cardano-devnet",
             "--show-counterparty",
-        ])
-        .output()
-        .ok()?;
+        ],
+    ];
 
-    if !output.status.success() {
-        return None;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        // We only care about the transfer channel, and we want the one that is paired with the
-        // Cardano channel we created earlier.
-        if !line.contains("transfer") || !line.contains(cardano_channel_id) {
+    for query in queries {
+        let output = match Command::new(&hermes_binary).args(query).output() {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
             continue;
         }
 
-        let mut channel_ids = Vec::new();
-        for token in line.split_whitespace() {
-            let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
-            if cleaned.starts_with("channel-") {
-                channel_ids.push(cleaned.to_string());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            // We only care about the transfer channel, and we want the one that is paired with the
+            // Cardano channel we created earlier.
+            if !line.contains("transfer") || !line.contains(cardano_channel_id) {
+                continue;
             }
-        }
 
-        if channel_ids.is_empty() {
-            continue;
-        }
+            let mut channel_ids = Vec::new();
+            for token in line.split_whitespace() {
+                let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+                if cleaned.starts_with("channel-") {
+                    channel_ids.push(cleaned.to_string());
+                }
+            }
 
-        // Prefer the channel ID that is NOT the Cardano end, if present.
-        if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
-            return Some(found.to_string());
-        }
+            if channel_ids.is_empty() {
+                continue;
+            }
 
-        return Some(channel_ids[0].clone());
+            // Prefer the channel ID that is NOT the Cardano end, if present.
+            if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
+                return Some(found.to_string());
+            }
+
+            return Some(channel_ids[0].clone());
+        }
     }
 
     None
@@ -2191,6 +2310,101 @@ fn query_sidechain_balances(address: &str) -> Result<BTreeMap<String, u128>, Box
     }
 
     Ok(map)
+}
+
+fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| format!("Failed to build sidechain HTTP client: {}", e))?;
+
+    let candidates = [
+        format!(
+            "http://127.0.0.1:1317/ibc/apps/transfer/v1/denom_traces/{}",
+            hash
+        ),
+        format!(
+            "http://127.0.0.1:1317/ibc/apps/transfer/v1beta1/denom_traces/{}",
+            hash
+        ),
+    ];
+
+    let mut last_err: Option<String> = None;
+    for url in candidates {
+        let resp = match client.get(&url).send() {
+            Ok(resp) => resp,
+            Err(e) => {
+                last_err = Some(format!("Request to {} failed: {}", url, e));
+                continue;
+            }
+        };
+
+        if !resp.status().is_success() {
+            last_err = Some(format!(
+                "Sidechain denom-trace query returned HTTP {} for {}",
+                resp.status(),
+                url
+            ));
+            continue;
+        }
+
+        let json: serde_json::Value = resp
+            .json()
+            .map_err(|e| format!("Failed to parse sidechain denom-trace response JSON: {}", e))?;
+
+        let trace = json
+            .get("denom_trace")
+            .or_else(|| json.get("denomTrace"))
+            .ok_or_else(|| format!("Sidechain denom-trace response missing denom_trace: {}", json))?;
+
+        let path = trace
+            .get("path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("Sidechain denom-trace response missing path: {}", json))?;
+
+        let base_denom = trace
+            .get("base_denom")
+            .or_else(|| trace.get("baseDenom"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| format!("Sidechain denom-trace response missing base_denom: {}", json))?;
+
+        return Ok((path.to_string(), base_denom.to_string()));
+    }
+
+    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
+}
+
+fn assert_sidechain_denom_trace(
+    hash: &str,
+    expected_path: &str,
+    expected_base_denom: &str,
+) -> Result<(), String> {
+    let attempts = 5;
+    let delay = Duration::from_secs(2);
+    let mut last_err: Option<String> = None;
+
+    for attempt in 1..=attempts {
+        match query_sidechain_denom_trace(hash) {
+            Ok((path, base_denom)) => {
+                if path != expected_path || base_denom != expected_base_denom {
+                    return Err(format!(
+                        "Sidechain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
+                        hash, expected_path, expected_base_denom, path, base_denom
+                    ));
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < attempts {
+                    std::thread::sleep(delay);
+                }
+            }
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
 }
 
 fn query_cardano_lovelace_total(project_root: &Path, address: &str) -> Result<u64, Box<dyn std::error::Error>> {
@@ -2252,11 +2466,11 @@ fn query_cardano_lovelace_total(project_root: &Path, address: &str) -> Result<u6
     Ok(total)
 }
 
-fn query_cardano_policy_total(
+fn query_cardano_policy_assets(
     project_root: &Path,
     address: &str,
     policy_id: &str,
-) -> Result<u64, Box<dyn std::error::Error>> {
+) -> Result<BTreeMap<String, u64>, Box<dyn std::error::Error>> {
     let cardano_dir = project_root.join("chains/cardano");
     let output = Command::new("docker")
         .args(&[
@@ -2290,10 +2504,10 @@ fn query_cardano_policy_total(
     let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
 
     let Some(utxo_map) = utxos.as_object() else {
-        return Ok(0);
+        return Ok(BTreeMap::new());
     };
 
-    let mut total: u64 = 0;
+    let mut assets: BTreeMap<String, u64> = BTreeMap::new();
     for (_utxo_ref, utxo_data) in utxo_map {
         let Some(value) = utxo_data.get("value") else {
             continue;
@@ -2308,16 +2522,153 @@ fn query_cardano_policy_total(
             continue;
         };
 
-        for (_asset_name, amount_value) in asset_obj {
-            if let Some(n) = amount_value.as_u64() {
-                total = total.saturating_add(n);
+        for (asset_name, amount_value) in asset_obj {
+            let amount = if let Some(n) = amount_value.as_u64() {
+                n
             } else if let Some(s) = amount_value.as_str() {
-                total = total.saturating_add(s.parse::<u64>().unwrap_or(0));
+                s.parse::<u64>().unwrap_or(0)
+            } else {
+                0
+            };
+
+            if amount == 0 {
+                continue;
+            }
+
+            let entry = assets.entry(asset_name.clone()).or_insert(0);
+            *entry = entry.saturating_add(amount);
+        }
+    }
+
+    Ok(assets)
+}
+
+fn sum_cardano_policy_assets(assets: &BTreeMap<String, u64>) -> u64 {
+    assets
+        .values()
+        .copied()
+        .fold(0u64, |acc, v| acc.saturating_add(v))
+}
+
+fn find_policy_asset_with_min_delta(
+    before: &BTreeMap<String, u64>,
+    after: &BTreeMap<String, u64>,
+    min_delta: u64,
+) -> Result<String, String> {
+    let mut candidates: Vec<(String, u64)> = Vec::new();
+
+    for (asset_name, after_amount) in after {
+        let before_amount = before.get(asset_name).copied().unwrap_or(0);
+        let delta = after_amount.saturating_sub(before_amount);
+        if delta >= min_delta {
+            candidates.push((asset_name.clone(), delta));
+        }
+    }
+
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
+
+    match candidates.as_slice() {
+        [] => Err(format!(
+            "No policy asset increased by at least {} (found {} assets under policy after transfer)",
+            min_delta,
+            after.len()
+        )),
+        [(asset_name, _delta)] => Ok(asset_name.clone()),
+        [(asset_name, _delta), second @ ..] => Err(format!(
+            "Multiple policy assets increased by at least {} (ambiguous minted voucher): first={} (+{}), also matched {} more assets",
+            min_delta,
+            asset_name,
+            candidates[0].1,
+            second.len()
+        )),
+    }
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct QueryDenomTraceRequest {
+    #[prost(string, tag = "1")]
+    hash: String,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct QueryDenomTraceResponse {
+    #[prost(message, optional, tag = "1")]
+    denom_trace: Option<DenomTrace>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct DenomTrace {
+    #[prost(string, tag = "1")]
+    path: String,
+    #[prost(string, tag = "2")]
+    base_denom: String,
+}
+
+async fn query_gateway_denom_trace(hash: &str) -> Result<(String, String), String> {
+    let endpoint = tonic::transport::Endpoint::from_shared("http://localhost:5001".to_string())
+        .map_err(|e| format!("Invalid Gateway gRPC endpoint: {}", e))?
+        .timeout(Duration::from_secs(5));
+
+    let channel = endpoint
+        .connect()
+        .await
+        .map_err(|e| format!("Failed to connect to Gateway gRPC: {}", e))?;
+
+    let mut grpc = tonic::client::Grpc::new(channel);
+    grpc.ready()
+        .await
+        .map_err(|e| format!("Gateway gRPC service not ready: {}", e))?;
+    let request = tonic::Request::new(QueryDenomTraceRequest {
+        hash: hash.to_string(),
+    });
+
+    let path = tonic::codegen::http::uri::PathAndQuery::from_static(
+        "/ibc.applications.transfer.v1.Query/DenomTrace",
+    );
+
+    let response: QueryDenomTraceResponse = grpc
+        .unary(request, path, tonic::codec::ProstCodec::default())
+        .await
+        .map_err(|e| format!("Gateway denom-trace query failed: {}", e))?
+        .into_inner();
+
+    let trace = response
+        .denom_trace
+        .ok_or_else(|| "Gateway denom-trace response missing denom_trace".to_string())?;
+
+    Ok((trace.path, trace.base_denom))
+}
+
+async fn assert_gateway_denom_trace(
+    hash: &str,
+    expected_path: &str,
+    expected_base_denom: &str,
+) -> Result<(), String> {
+    let attempts = 5;
+    let delay = Duration::from_secs(2);
+    let mut last_err: Option<String> = None;
+
+    for attempt in 1..=attempts {
+        match query_gateway_denom_trace(hash).await {
+            Ok((path, base_denom)) => {
+                if path != expected_path || base_denom != expected_base_denom {
+                    return Err(format!(
+                        "Gateway denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
+                        hash, expected_path, expected_base_denom, path, base_denom
+                    ));
+                }
+                return Ok(());
+            }
+            Err(e) => {
+                last_err = Some(e);
+                if attempt < attempts {
+                    tokio::time::sleep(delay).await;
+                }
             }
         }
     }
 
-    Ok(total)
+    Err(last_err.unwrap_or_else(|| "Gateway denom-trace query failed".to_string()))
 }
 
 fn hermes_ft_transfer(

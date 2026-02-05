@@ -65,6 +65,21 @@ export class ChannelService {
     return BigInt(latestSnapshot.block_number);
   }
 
+  private async getQueryHeight(): Promise<bigint> {
+    try {
+      const height = await this.getProofHeight();
+      return height > 0n ? height : 1n;
+    } catch {
+      try {
+        const latestBlockNo = await this.dbService.queryLatestBlockNo();
+        const height = BigInt(latestBlockNo);
+        return height > 0n ? height : 1n;
+      } catch {
+        return 1n;
+      }
+    }
+  }
+
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
     this.logger.log('', 'queryChannels');
     const pagination = getPaginationParams(validPagination(request.pagination));
@@ -146,6 +161,7 @@ export class ChannelService {
       nextKey = to < Object.values(channelFilters).length ? generatePaginationKey(pageKeyDto) : '';
     }
 
+    const queryHeight = await this.getQueryHeight();
     const response = {
       channels: channels,
       pagination: {
@@ -154,7 +170,7 @@ export class ChannelService {
       },
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryChannelsResponse;
 
@@ -311,6 +327,7 @@ export class ChannelService {
       nextKey = to < Object.values(channelFilters).length ? generatePaginationKey(pageKeyDto) : '';
     }
 
+    const queryHeight = await this.getQueryHeight();
     const response = {
       channels: channels,
       pagination: {
@@ -319,7 +336,7 @@ export class ChannelService {
       },
       height: {
         revision_number: BigInt(0), // TODO
-        revision_height: BigInt(0), // TODO
+        revision_height: queryHeight,
       },
     } as unknown as QueryConnectionChannelsResponse;
 
