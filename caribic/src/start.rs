@@ -1,5 +1,5 @@
 use crate::check::check_osmosisd;
-use crate::logger::{log_or_show_progress, verbose};
+use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
     prepare_db_sync_and_gateway, seed_cardano_devnet,
@@ -412,13 +412,14 @@ pub async fn start_local_cardano_network(
             )
         })?;
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.suspend(|| {
-                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
-            });
-        } else {
-            logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
-        }
+        log_or_print_progress(
+            "PASS: Mithril services started (1 aggregator, 2 signers)",
+            &optional_progress_bar,
+        );
+        log_or_print_progress(
+            "Mithril genesis bootstrap started in background (waiting for immutable files and initial certificate chain)",
+            &optional_progress_bar,
+        );
 
         let project_root_path = project_root_path.to_path_buf();
         mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
@@ -426,13 +427,10 @@ pub async fn start_local_cardano_network(
                 .map_err(|e| e.to_string())
         }));
     } else {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.suspend(|| {
-                logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)")
-            });
-        } else {
-            logger::log("Skipping Mithril services (use --with-mithril to enable light client testing)");
-        }
+        log_or_print_progress(
+            "Skipping Mithril services (use --with-mithril to enable light client testing)",
+            &optional_progress_bar,
+        );
     }
 
     // wait until network hard forked into Conway era after 1 epoch
@@ -508,6 +506,10 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
     copy_cardano_env_file(project_root_path.join("cardano").as_path())?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
 
     Ok(mithril_genesis_handle)
 }
@@ -1469,18 +1471,18 @@ pub fn wait_and_start_mithril_genesis(
     let target_slot = target_epoch * slots_per_epoch;
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
-    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
-    if slots_left > 0 && is_verbose {
-        log("Mithril needs to wait at least two epochs for the immutable files to be created ..");
+    if slots_left > 0 {
+        verbose("Mithril needs to wait at least two epochs for the immutable files to be created ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if is_verbose {
-            verbose(&format!("Current slot: {}, Slots left: {}", current_slot, slots_left));
-        }
+        verbose(&format!(
+            "Current slot: {}, Slots left: {}",
+            current_slot, slots_left
+        ));
         std::thread::sleep(Duration::from_secs(10));
     }
 
@@ -1551,12 +1553,10 @@ pub fn wait_and_start_mithril_genesis(
                             break;
                         }
 
-                        if is_verbose {
-                            verbose(&format!(
-                                "Mithril epoch-settings not ready yet (next_signers={}); retry {}/{}",
-                                next_signers_count, attempt, signers_poll_attempts
-                            ));
-                        }
+                        verbose(&format!(
+                            "Mithril epoch-settings not ready yet (next_signers={}); retry {}/{}",
+                            next_signers_count, attempt, signers_poll_attempts
+                        ));
                         last_epoch_settings_error = Some(format!(
                             "next_signers count is {} (expected >= {})",
                             next_signers_count, required_next_signers
@@ -1674,12 +1674,10 @@ pub fn wait_and_start_mithril_genesis(
                     || err_str.contains("The list of signers must not be empty");
 
                 if retryable && attempts < 10 {
-                    if is_verbose {
-                        log(&format!(
-                            "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
-                            attempts
-                        ));
-                    }
+                    verbose(&format!(
+                        "Mithril genesis bootstrap not ready yet (attempt {}/10). Retrying in 15s...",
+                        attempts
+                    ));
                     std::thread::sleep(Duration::from_secs(15));
                     continue;
                 }
@@ -1695,17 +1693,18 @@ pub fn wait_and_start_mithril_genesis(
     let target_slot = target_epoch * slots_per_epoch;
     slots_left = target_slot.saturating_sub(current_slot);
 
-    if slots_left > 0 && is_verbose {
-        log("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
+    if slots_left > 0 {
+        verbose("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
     }
 
     while slots_left > 0 {
         current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
         slots_left = target_slot.saturating_sub(current_slot);
 
-        if is_verbose {
-            verbose(&format!("Current slot: {}, Slots left: {}", current_slot, slots_left));
-        }
+        verbose(&format!(
+            "Current slot: {}, Slots left: {}",
+            current_slot, slots_left
+        ));
         std::thread::sleep(Duration::from_secs(10));
     }
 
