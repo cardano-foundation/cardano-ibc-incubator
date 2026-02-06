@@ -10,7 +10,10 @@ use std::time::{Duration, Instant};
 
 /// Run a command while streaming its stdout/stderr to the user (for long-running steps),
 /// while also capturing the full output for later parsing.
-fn run_command_streaming(mut command: Command, label: &str) -> Result<Output, Box<dyn std::error::Error>> {
+fn run_command_streaming(
+    mut command: Command,
+    label: &str,
+) -> Result<Output, Box<dyn std::error::Error>> {
     enum Stream {
         Stdout,
         Stderr,
@@ -210,7 +213,7 @@ impl TestResults {
 }
 
 /// Run end-to-end integration tests to verify IBC functionality
-/// 
+///
 /// Tests include:
 /// - Services are running
 /// - Gateway connectivity via Hermes health-check
@@ -253,7 +256,8 @@ pub async fn run_integration_tests(
     //   - Hermes config (normally at ~/.hermes/config.toml) has grpc_addr = "http://localhost:5001" for cardano-devnet
     //     (can obviously change this setup as needed but I would call this the canonical setup)
     //   - The LatestHeight query should actually return valid data from the Cardano network
-    let mut test_2 = TestTimer::start("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
+    let mut test_2 =
+        TestTimer::start("Test 2: Verifying Hermes can connect to Gateway (health-check)...");
     match run_hermes_health_check(project_root) {
         Ok(_) => {
             let elapsed = test_2.finish();
@@ -280,7 +284,7 @@ pub async fn run_integration_tests(
     // Test 3: Query Handler UTXO and verify ibc_state_root exists
     let mut test_3 = TestTimer::start("Test 3: Verifying Handler UTXO has ibc_state_root field...");
     let initial_root = query_handler_state_root(project_root)?;
-    
+
     if initial_root.len() != 64 {
         let _ = test_3.finish();
         return Err(format!(
@@ -289,7 +293,7 @@ pub async fn run_integration_tests(
         )
         .into());
     }
-    
+
     logger::log(&format!("   Initial root: {}...", &initial_root[..16]));
     let elapsed = test_3.finish();
     logger::log(&format!(
@@ -325,8 +329,9 @@ pub async fn run_integration_tests(
     //
     // The flow: Hermes -> Gateway (builds tx) -> Hermes (signs) -> Cardano (submits)
 
-    let mut test_4 = TestTimer::start("Test 4: Creating client via Hermes and verifying root changes...");
-    
+    let mut test_4 =
+        TestTimer::start("Test 4: Creating client via Hermes and verifying root changes...");
+
     let client_id = match create_test_client(project_root) {
         Ok(client_id) => {
             // Wait for transaction confirmation
@@ -334,7 +339,7 @@ pub async fn run_integration_tests(
             std::thread::sleep(std::time::Duration::from_secs(10));
 
             let root_after_client = query_handler_state_root(project_root)?;
-            
+
             if root_after_client == initial_root {
                 let elapsed = test_4.finish();
                 logger::log("   Warning: Root unchanged after client creation");
@@ -386,14 +391,20 @@ pub async fn run_integration_tests(
     //
     // Status: May skip due to height parameter requirement - this is a known TODO.
     let mut test_5 = TestTimer::start("Test 5: Querying client state via Hermes...");
-    
+
     if let Some(ref cid) = client_id {
         match query_client_state(project_root, cid) {
             Ok(client_state_info) => {
                 let elapsed = test_5.finish();
                 logger::log(&format!("   Chain ID: {}", client_state_info.chain_id));
-                logger::log(&format!("   Latest height: {}", client_state_info.latest_height));
-                logger::log(&format!("   Trust level: {}", client_state_info.trust_level));
+                logger::log(&format!(
+                    "   Latest height: {}",
+                    client_state_info.latest_height
+                ));
+                logger::log(&format!(
+                    "   Trust level: {}",
+                    client_state_info.trust_level
+                ));
                 logger::log(&format!(
                     "PASS Test 5: Client state queried successfully (took {})\n",
                     format_duration(elapsed)
@@ -449,18 +460,18 @@ pub async fn run_integration_tests(
     let mut test_6 = TestTimer::start(
         "Test 6: Updating client with new headers (exercises Tendermint verification)...",
     );
-    
+
     if let Some(ref cid) = client_id {
         // Wait for new blocks on the Cosmos chain
         logger::verbose("   Waiting for new blocks on Cosmos Entrypoint chain...");
         std::thread::sleep(std::time::Duration::from_secs(5));
-        
+
         match update_client(project_root, cid) {
             Ok(_) => {
                 let elapsed = test_6.finish();
                 // Wait for tx confirmation
                 std::thread::sleep(std::time::Duration::from_secs(10));
-                
+
                 logger::log(&format!(
                     "PASS Test 6: Client updated successfully (Tendermint header verification passed) (took {})\n",
                     format_duration(elapsed)
@@ -478,7 +489,9 @@ pub async fn run_integration_tests(
                     ));
                     logger::log("   Update requires querying current state first, which needs height support.\n");
                     results.skipped += 1;
-                } else if error_str.contains("no need to update") || error_str.contains("already up to date") {
+                } else if error_str.contains("no need to update")
+                    || error_str.contains("already up to date")
+                {
                     logger::log(&format!(
                         "SKIP Test 6: No new blocks available to update client (took {})\n",
                         format_duration(elapsed)
@@ -521,8 +534,9 @@ pub async fn run_integration_tests(
     // there is still some uncertainty around Mithril/Ourobouos/STT architecture.
     //
     // Status: May skip - depends on Cardano light client being available on Cosmos.
-    let mut test_7 = TestTimer::start("Test 7: Creating connection via Hermes and verifying root changes...");
-    
+    let mut test_7 =
+        TestTimer::start("Test 7: Creating connection via Hermes and verifying root changes...");
+
     let mut connection_test_skipped = false;
     let connection_id = if client_id.is_some() {
         match create_test_connection(project_root) {
@@ -532,7 +546,7 @@ pub async fn run_integration_tests(
                 std::thread::sleep(std::time::Duration::from_secs(10));
 
                 let root_after_connection = query_handler_state_root(project_root)?;
-                
+
                 let elapsed = test_7.finish();
                 logger::log(&format!("   Connection ID: {}", connection_id));
                 logger::log(&format!("   New root: {}...", &root_after_connection[..16]));
@@ -595,11 +609,12 @@ pub async fn run_integration_tests(
     //   - The channel is bound to the "transfer" port on both sides
     //   - Channel state is properly stored on Cardano
     //
-    // Once this works we're ready to test actual token transfers. 
+    // Once this works we're ready to test actual token transfers.
     //
     // Status: Depends on Test 7 passing (needs an established connection first).
-    let mut test_8 = TestTimer::start("Test 8: Creating channel via Hermes and verifying root changes...");
-    
+    let mut test_8 =
+        TestTimer::start("Test 8: Creating channel via Hermes and verifying root changes...");
+
     let channel_id = if let Some(conn_id) = connection_id {
         match create_test_channel(project_root, &conn_id) {
             Ok(channel_id) => {
@@ -608,7 +623,7 @@ pub async fn run_integration_tests(
                 std::thread::sleep(std::time::Duration::from_secs(10));
 
                 let root_after_channel = query_handler_state_root(project_root)?;
-                
+
                 let elapsed = test_8.finish();
                 logger::log(&format!("   Channel ID: {}", channel_id));
                 logger::log(&format!("   New root: {}...", &root_after_channel[..16]));
@@ -663,20 +678,26 @@ pub async fn run_integration_tests(
 
         let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
         let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
-        let cardano_receiver_address =
-            cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+        let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
+            project_root,
+            &cardano_receiver_credential,
+        )?;
 
         let denom = "stake";
         // Use a large enough amount that fee noise cannot mask the balance delta.
         let amount: u64 = 1_000_000;
 
-	        let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
+        let voucher_policy_id =
+            read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
 
-	        let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
-	        let cardano_voucher_assets_before =
-	            query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-	        let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
-	        let cardano_root_before = query_handler_state_root(project_root)?;
+        let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+        let cardano_voucher_assets_before = query_cardano_policy_assets(
+            project_root,
+            &cardano_receiver_address,
+            &voucher_policy_id,
+        )?;
+        let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
+        let cardano_root_before = query_handler_state_root(project_root)?;
 
         // The chain rejects packets that have both timeout_height and timeout_timestamp set
         // to zero, so ensure at least one is populated.
@@ -700,16 +721,27 @@ pub async fn run_integration_tests(
             timeout_height_offset,
             timeout_seconds,
         ) {
-	            Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", &sidechain_channel_id) {
-	                Ok(_) => {
-	                    let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
-	                    let cardano_voucher_assets_after =
-	                        query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-	                    let cardano_voucher_after = sum_cardano_policy_assets(&cardano_voucher_assets_after);
-	                    let cardano_root_after = query_handler_state_root(project_root)?;
+            Ok(_) => match hermes_clear_packets(
+                project_root,
+                "sidechain",
+                "transfer",
+                &sidechain_channel_id,
+            ) {
+                Ok(_) => {
+                    let sidechain_balance_after =
+                        query_sidechain_balance(&sidechain_address, denom)?;
+                    let cardano_voucher_assets_after = query_cardano_policy_assets(
+                        project_root,
+                        &cardano_receiver_address,
+                        &voucher_policy_id,
+                    )?;
+                    let cardano_voucher_after =
+                        sum_cardano_policy_assets(&cardano_voucher_assets_after);
+                    let cardano_root_after = query_handler_state_root(project_root)?;
 
                     if sidechain_balance_before < sidechain_balance_after
-                        || sidechain_balance_before.saturating_sub(sidechain_balance_after) < amount as u128
+                        || sidechain_balance_before.saturating_sub(sidechain_balance_after)
+                            < amount as u128
                     {
                         let elapsed = test_9.finish();
                         logger::log(&format!(
@@ -729,59 +761,65 @@ pub async fn run_integration_tests(
                             cardano_voucher_before + amount
                         ));
                         results.failed += 1;
-	                    } else if cardano_root_after == cardano_root_before {
-	                        let elapsed = test_9.finish();
-	                        logger::log(&format!(
+                    } else if cardano_root_after == cardano_root_before {
+                        let elapsed = test_9.finish();
+                        logger::log(&format!(
 	                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
 	                            format_duration(elapsed),
 	                            &cardano_root_after[..16],
 	                        ));
-	                        results.failed += 1;
-	                    } else {
-	                        let expected_path = format!("transfer/{}", cardano_channel_id);
-	                        let minted_voucher_hash = match find_policy_asset_with_min_delta(
-	                            &cardano_voucher_assets_before,
-	                            &cardano_voucher_assets_after,
-	                            amount,
-	                        ) {
-	                            Ok(hash) => Some(hash),
-	                            Err(e) => {
-	                                let elapsed = test_9.finish();
-	                                logger::log(&format!(
+                        results.failed += 1;
+                    } else {
+                        let expected_path = format!("transfer/{}", cardano_channel_id);
+                        let minted_voucher_hash = match find_policy_asset_with_min_delta(
+                            &cardano_voucher_assets_before,
+                            &cardano_voucher_assets_after,
+                            amount,
+                        ) {
+                            Ok(hash) => Some(hash),
+                            Err(e) => {
+                                let elapsed = test_9.finish();
+                                logger::log(&format!(
 	                                    "FAIL Test 9: Could not resolve minted Cardano voucher token name for denom-trace reverse lookup (took {})\n{}\n",
 	                                    format_duration(elapsed),
 	                                    e
 	                                ));
-	                                results.failed += 1;
-	                                None
-	                            }
-	                        };
+                                results.failed += 1;
+                                None
+                            }
+                        };
 
-	                        if let Some(minted_voucher_hash) = minted_voucher_hash {
-	                            match assert_gateway_denom_trace(&minted_voucher_hash, &expected_path, denom).await {
-	                                Ok(()) => {
-	                                    let elapsed = test_9.finish();
-	                                    logger::log(&format!(
+                        if let Some(minted_voucher_hash) = minted_voucher_hash {
+                            match assert_gateway_denom_trace(
+                                &minted_voucher_hash,
+                                &expected_path,
+                                denom,
+                            )
+                            .await
+                            {
+                                Ok(()) => {
+                                    let elapsed = test_9.finish();
+                                    logger::log(&format!(
 	                                        "PASS Test 9: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
 	                                        format_duration(elapsed)
 	                                    ));
-	                                    results.passed += 1;
-	                                    transfer_test_passed = true;
-	                                    stake_voucher_token_hash = Some(minted_voucher_hash);
-	                                }
-	                                Err(e) => {
-	                                    let elapsed = test_9.finish();
-	                                    logger::log(&format!(
+                                    results.passed += 1;
+                                    transfer_test_passed = true;
+                                    stake_voucher_token_hash = Some(minted_voucher_hash);
+                                }
+                                Err(e) => {
+                                    let elapsed = test_9.finish();
+                                    logger::log(&format!(
 	                                        "FAIL Test 9: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
 	                                        format_duration(elapsed),
 	                                        e
 	                                    ));
-	                                    results.failed += 1;
-	                                }
-	                            }
-	                        }
-	                    }
-	                }
+                                    results.failed += 1;
+                                }
+                            }
+                        }
+                    }
+                }
                 Err(e) => {
                     let elapsed = test_9.finish();
                     logger::log(&format!(
@@ -816,25 +854,34 @@ pub async fn run_integration_tests(
     // Send the Cardano voucher back to the packet-forwarding chain and verify:
     //   - Voucher is burned on Cardano
     //   - Native token balance is restored on Cosmos (minus fees)
-    let mut test_10 = TestTimer::start("Test 10: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
+    let mut test_10 =
+        TestTimer::start("Test 10: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
     if transfer_test_passed {
         if let Some(cardano_channel_id) = &channel_id {
             let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
-            let cardano_receiver_address =
-                cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+            let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
+                project_root,
+                &cardano_receiver_credential,
+            )?;
 
             let denom = "stake";
             // Use the same large amount as Test 9 to keep fee noise well below the transfer value.
             let amount: u64 = 1_000_000;
 
-            let voucher_policy_id = read_handler_json_value(project_root, &["validators", "mintVoucher", "scriptHash"])?;
-	            let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
+            let voucher_policy_id = read_handler_json_value(
+                project_root,
+                &["validators", "mintVoucher", "scriptHash"],
+            )?;
+            let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
 
-	            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
-	            let cardano_voucher_assets_before =
-	                query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-	            let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
+            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+            let cardano_voucher_assets_before = query_cardano_policy_assets(
+                project_root,
+                &cardano_receiver_address,
+                &voucher_policy_id,
+            )?;
+            let cardano_voucher_before = sum_cardano_policy_assets(&cardano_voucher_assets_before);
 
             // Use a long timeout to ensure the round-trip doesn't accidentally time out while
             // we wait for Mithril certification.
@@ -853,12 +900,22 @@ pub async fn run_integration_tests(
                 timeout_height_offset,
                 timeout_seconds,
             ) {
-                Ok(_) => match hermes_clear_packets(project_root, "cardano-devnet", "transfer", cardano_channel_id) {
-	                    Ok(_) => {
-	                        let sidechain_balance_after = query_sidechain_balance(&sidechain_address, denom)?;
-	                        let cardano_voucher_assets_after =
-	                            query_cardano_policy_assets(project_root, &cardano_receiver_address, &voucher_policy_id)?;
-	                        let cardano_voucher_after = sum_cardano_policy_assets(&cardano_voucher_assets_after);
+                Ok(_) => match hermes_clear_packets(
+                    project_root,
+                    "cardano-devnet",
+                    "transfer",
+                    cardano_channel_id,
+                ) {
+                    Ok(_) => {
+                        let sidechain_balance_after =
+                            query_sidechain_balance(&sidechain_address, denom)?;
+                        let cardano_voucher_assets_after = query_cardano_policy_assets(
+                            project_root,
+                            &cardano_receiver_address,
+                            &voucher_policy_id,
+                        )?;
+                        let cardano_voucher_after =
+                            sum_cardano_policy_assets(&cardano_voucher_assets_after);
 
                         if cardano_voucher_after + amount > cardano_voucher_before {
                             let elapsed = test_10.finish();
@@ -869,53 +926,55 @@ pub async fn run_integration_tests(
                                 cardano_voucher_after
                             ));
                             results.failed += 1;
-	                        } else if sidechain_balance_after <= sidechain_balance_before {
-	                            let elapsed = test_10.finish();
-	                            logger::log(&format!(
+                        } else if sidechain_balance_after <= sidechain_balance_before {
+                            let elapsed = test_10.finish();
+                            logger::log(&format!(
 	                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={})\n",
 	                                format_duration(elapsed),
 	                                sidechain_balance_before,
 	                                sidechain_balance_after
 	                            ));
-	                            results.failed += 1;
-		                        } else {
-		                            let expected_path = format!("transfer/{}", cardano_channel_id);
-		                            let stake_hash = match stake_voucher_token_hash.as_deref() {
-		                                Some(hash) => Some(hash),
-		                                None => {
-		                                    let elapsed = test_10.finish();
-		                                    logger::log(&format!(
+                            results.failed += 1;
+                        } else {
+                            let expected_path = format!("transfer/{}", cardano_channel_id);
+                            let stake_hash = match stake_voucher_token_hash.as_deref() {
+                                Some(hash) => Some(hash),
+                                None => {
+                                    let elapsed = test_10.finish();
+                                    logger::log(&format!(
 		                                        "FAIL Test 10: Missing stake voucher hash from Test 9; cannot verify denom-trace reverse lookup (took {})\n",
 		                                        format_duration(elapsed)
 		                                    ));
-		                                    results.failed += 1;
-		                                    None
-		                                }
-		                            };
+                                    results.failed += 1;
+                                    None
+                                }
+                            };
 
-		                            if let Some(stake_hash) = stake_hash {
-		                                match assert_gateway_denom_trace(stake_hash, &expected_path, denom).await {
-		                                    Ok(()) => {
-		                                        let elapsed = test_10.finish();
-		                                        logger::log(&format!(
+                            if let Some(stake_hash) = stake_hash {
+                                match assert_gateway_denom_trace(stake_hash, &expected_path, denom)
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        let elapsed = test_10.finish();
+                                        logger::log(&format!(
 		                                            "PASS Test 10: Round-trip completed, voucher burned, and denom-trace reverse lookup still succeeds (took {})\n",
 		                                            format_duration(elapsed)
 		                                        ));
-		                                        results.passed += 1;
-		                                    }
-		                                    Err(e) => {
-		                                        let elapsed = test_10.finish();
-		                                        logger::log(&format!(
+                                        results.passed += 1;
+                                    }
+                                    Err(e) => {
+                                        let elapsed = test_10.finish();
+                                        logger::log(&format!(
 		                                            "FAIL Test 10: Denom-trace reverse lookup failed after burning voucher (took {})\n{}\n",
 		                                            format_duration(elapsed),
 		                                            e
 		                                        ));
-		                                        results.failed += 1;
-		                                    }
-		                                }
-		                            }
-		                        }
-		                    }
+                                        results.failed += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     Err(e) => {
                         let elapsed = test_10.finish();
                         logger::log(&format!(
@@ -970,15 +1029,18 @@ pub async fn run_integration_tests(
 
         let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
         let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
-        let cardano_sender_address =
-            cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+        let cardano_sender_address = cardano_enterprise_address_from_payment_credential(
+            project_root,
+            &cardano_receiver_credential,
+        )?;
 
         let base_denom = "lovelace";
         // Use a larger amount to stay well above Cardano min-UTxO and fee noise.
         let amount: u64 = 20_000_000;
 
         let sidechain_balances_before = query_sidechain_balances(&sidechain_address)?;
-        let cardano_lovelace_before = query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+        let cardano_lovelace_before =
+            query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
         let cardano_root_before = query_handler_state_root(project_root)?;
 
         match hermes_ft_transfer(
@@ -993,13 +1055,20 @@ pub async fn run_integration_tests(
             100,
             600,
         ) {
-            Ok(_) => match hermes_clear_packets(project_root, "cardano-devnet", "transfer", cardano_channel_id) {
+            Ok(_) => match hermes_clear_packets(
+                project_root,
+                "cardano-devnet",
+                "transfer",
+                cardano_channel_id,
+            ) {
                 Ok(_) => {
                     let sidechain_balances_after = query_sidechain_balances(&sidechain_address)?;
-                    let cardano_lovelace_after = query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+                    let cardano_lovelace_after =
+                        query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
                     let cardano_root_after = query_handler_state_root(project_root)?;
 
-                    let lovelace_delta = cardano_lovelace_before.saturating_sub(cardano_lovelace_after);
+                    let lovelace_delta =
+                        cardano_lovelace_before.saturating_sub(cardano_lovelace_after);
                     if lovelace_delta < amount {
                         logger::log(&format!(
                             "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (before={}, after={}, expected delta >= {})\n",
@@ -1018,44 +1087,55 @@ pub async fn run_integration_tests(
                             if !balance_denom.starts_with("ibc/") {
                                 continue;
                             }
-                            let before_amount = sidechain_balances_before.get(balance_denom).copied().unwrap_or(0);
+                            let before_amount = sidechain_balances_before
+                                .get(balance_denom)
+                                .copied()
+                                .unwrap_or(0);
                             if after_amount.saturating_sub(before_amount) >= amount as u128 {
                                 minted_denom = Some(balance_denom.clone());
                                 break;
                             }
-	                        }
+                        }
 
-	                        if let Some(minted_denom) = minted_denom {
-	                            let expected_path = format!("transfer/{}", sidechain_channel_id);
-	                            let minted_hash = minted_denom
-	                                .strip_prefix("ibc/")
-	                                .unwrap_or(minted_denom.as_str());
+                        if let Some(minted_denom) = minted_denom {
+                            let expected_path = format!("transfer/{}", sidechain_channel_id);
+                            let minted_hash = minted_denom
+                                .strip_prefix("ibc/")
+                                .unwrap_or(minted_denom.as_str());
 
-	                            match assert_sidechain_denom_trace(minted_hash, &expected_path, base_denom) {
-	                                Ok(()) => {
-	                                    logger::log(&format!(
+                            match assert_sidechain_denom_trace(
+                                minted_hash,
+                                &expected_path,
+                                base_denom,
+                            ) {
+                                Ok(()) => {
+                                    logger::log(&format!(
 	                                        "PASS Test 11: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (denom={})\n",
 	                                        minted_denom
 	                                    ));
-	                                    results.passed += 1;
-	                                    cardano_native_transfer_passed = true;
-	                                    cardano_native_voucher_denom = Some(minted_denom);
-	                                    cardano_native_sidechain_channel_id = Some(sidechain_channel_id);
-	                                    cardano_native_sender_lovelace_before = Some(cardano_lovelace_before);
-	                                }
-	                                Err(e) => {
-	                                    logger::log(&format!(
+                                    results.passed += 1;
+                                    cardano_native_transfer_passed = true;
+                                    cardano_native_voucher_denom = Some(minted_denom);
+                                    cardano_native_sidechain_channel_id =
+                                        Some(sidechain_channel_id);
+                                    cardano_native_sender_lovelace_before =
+                                        Some(cardano_lovelace_before);
+                                }
+                                Err(e) => {
+                                    logger::log(&format!(
 	                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (denom={})\n{}\n",
 	                                        minted_denom,
 	                                        e
 	                                    ));
-	                                    results.failed += 1;
-	                                }
-	                            }
-	                        } else {
-	                            logger::log("FAIL Test 11: No new IBC voucher denom minted on sidechain\n");
-	                            results.failed += 1;
-	                        }
+                                    results.failed += 1;
+                                }
+                            }
+                        } else {
+                            logger::log(
+                                "FAIL Test 11: No new IBC voucher denom minted on sidechain\n",
+                            );
+                            results.failed += 1;
+                        }
                     }
                 }
                 Err(e) => {
@@ -1064,7 +1144,10 @@ pub async fn run_integration_tests(
                 }
             },
             Err(e) => {
-                logger::log(&format!("FAIL Test 11: hermes tx ft-transfer failed\n{}\n", e));
+                logger::log(&format!(
+                    "FAIL Test 11: hermes tx ft-transfer failed\n{}\n",
+                    e
+                ));
                 results.failed += 1;
             }
         }
@@ -1088,14 +1171,18 @@ pub async fn run_integration_tests(
         ) {
             let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
-            let cardano_receiver_address =
-                cardano_enterprise_address_from_payment_credential(project_root, &cardano_receiver_credential)?;
+            let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
+                project_root,
+                &cardano_receiver_credential,
+            )?;
 
             let amount: u64 = 20_000_000;
             let fee_budget: u64 = 5_000_000;
 
-            let sidechain_voucher_before = query_sidechain_balance(&sidechain_address, voucher_denom)?;
-            let cardano_lovelace_before = query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
+            let sidechain_voucher_before =
+                query_sidechain_balance(&sidechain_address, voucher_denom)?;
+            let cardano_lovelace_before =
+                query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
             let cardano_root_before = query_handler_state_root(project_root)?;
 
             match hermes_ft_transfer(
@@ -1110,14 +1197,21 @@ pub async fn run_integration_tests(
                 100,
                 600,
             ) {
-                Ok(_) => match hermes_clear_packets(project_root, "sidechain", "transfer", sidechain_channel_id) {
+                Ok(_) => match hermes_clear_packets(
+                    project_root,
+                    "sidechain",
+                    "transfer",
+                    sidechain_channel_id,
+                ) {
                     Ok(_) => {
-                        let sidechain_voucher_after = query_sidechain_balance(&sidechain_address, voucher_denom)?;
+                        let sidechain_voucher_after =
+                            query_sidechain_balance(&sidechain_address, voucher_denom)?;
                         let cardano_lovelace_after =
                             query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
                         let cardano_root_after = query_handler_state_root(project_root)?;
 
-                        let voucher_delta = sidechain_voucher_before.saturating_sub(sidechain_voucher_after);
+                        let voucher_delta =
+                            sidechain_voucher_before.saturating_sub(sidechain_voucher_after);
                         if voucher_delta < amount as u128 {
                             logger::log(&format!(
                                 "FAIL Test 12: sidechain voucher did not burn as expected (before={}, after={}, expected delta >= {})\n",
@@ -1136,40 +1230,49 @@ pub async fn run_integration_tests(
                                 cardano_lovelace_before, cardano_lovelace_after
                             ));
                             results.failed += 1;
-	                        } else if cardano_lovelace_after.saturating_add(fee_budget) < lovelace_before {
-	                            logger::log(&format!(
+                        } else if cardano_lovelace_after.saturating_add(fee_budget)
+                            < lovelace_before
+                        {
+                            logger::log(&format!(
 	                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (before={}, after={}, fee_budget={})\n",
 	                                lovelace_before, cardano_lovelace_after, fee_budget
 	                            ));
-	                            results.failed += 1;
-	                        } else {
-	                            let expected_path = format!("transfer/{}", sidechain_channel_id);
-	                            let minted_hash = voucher_denom
-	                                .strip_prefix("ibc/")
-	                                .unwrap_or(voucher_denom.as_str());
+                            results.failed += 1;
+                        } else {
+                            let expected_path = format!("transfer/{}", sidechain_channel_id);
+                            let minted_hash = voucher_denom
+                                .strip_prefix("ibc/")
+                                .unwrap_or(voucher_denom.as_str());
 
-	                            match assert_sidechain_denom_trace(minted_hash, &expected_path, "lovelace") {
-	                                Ok(()) => {
-	                                    logger::log("PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds\n");
-	                                    results.passed += 1;
-	                                }
-	                                Err(e) => {
-	                                    logger::log(&format!(
+                            match assert_sidechain_denom_trace(
+                                minted_hash,
+                                &expected_path,
+                                "lovelace",
+                            ) {
+                                Ok(()) => {
+                                    logger::log("PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds\n");
+                                    results.passed += 1;
+                                }
+                                Err(e) => {
+                                    logger::log(&format!(
 	                                        "FAIL Test 12: Denom-trace reverse lookup failed for sidechain voucher denom after burn\n{}\n",
 	                                        e
 	                                    ));
-	                                    results.failed += 1;
-	                                }
-	                            }
-	                        }
-	                    }
+                                    results.failed += 1;
+                                }
+                            }
+                        }
+                    }
                     Err(e) => {
                         logger::log(&format!("FAIL Test 12: Failed to relay packets\n{}\n", e));
                         results.failed += 1;
                     }
                 },
                 Err(e) => {
-                    logger::log(&format!("FAIL Test 12: hermes tx ft-transfer failed\n{}\n", e));
+                    logger::log(&format!(
+                        "FAIL Test 12: hermes tx ft-transfer failed\n{}\n",
+                        e
+                    ));
                     results.failed += 1;
                 }
             }
@@ -1231,7 +1334,8 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
     //
     // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
     // `/aggregator` endpoint is stable and returns 2xx when the service is up.
-    let mithril_running = check_service_health(&http_client, "http://127.0.0.1:8080/aggregator").await;
+    let mithril_running =
+        check_service_health(&http_client, "http://127.0.0.1:8080/aggregator").await;
     if !mithril_running {
         missing_services.push("Mithril aggregator on :8080");
     } else {
@@ -1297,7 +1401,7 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
 }
 
 /// Run Hermes health-check to verify Gateway connectivity
-/// 
+///
 /// This exercises the Hermes -> Gateway gRPC connection by querying LatestHeight.
 /// It validates that:
 /// - Hermes binary is built and accessible
@@ -1305,29 +1409,30 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
 /// - Gateway is accepting gRPC connections and responding correctly
 fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
+
     if !hermes_binary.exists() {
         return Err(format!(
             "Hermes binary not found at: {}\n\
              Please build Hermes first: cd relayer && cargo build --release",
             hermes_binary.display()
-        ).into());
+        )
+        .into());
     }
-    
+
     verbose("   Running: hermes health-check");
-    
+
     let output = Command::new(&hermes_binary)
         .args(&["health-check"])
         .output()?;
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     verbose(&format!("   stdout: {}", stdout.trim()));
     if !stderr.is_empty() {
         verbose(&format!("   stderr: {}", stderr.trim()));
     }
-    
+
     if !output.status.success() {
         return Err(format!(
             "Hermes health-check failed (exit code: {:?}):\n\
@@ -1341,29 +1446,32 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
             output.status.code(),
             stdout,
             stderr
-        ).into());
+        )
+        .into());
     }
-    
+
     // Check that the Cardano chain is reported as healthy
     // Hermes health-check output typically includes chain status
     let combined_output = format!("{}{}", stdout, stderr);
-    
-    if combined_output.to_lowercase().contains("unhealthy") 
-        || combined_output.to_lowercase().contains("error") 
-        || combined_output.to_lowercase().contains("failed") {
+
+    if combined_output.to_lowercase().contains("unhealthy")
+        || combined_output.to_lowercase().contains("error")
+        || combined_output.to_lowercase().contains("failed")
+    {
         return Err(format!(
             "Hermes health-check reported unhealthy chain(s):\n{}",
             combined_output
-        ).into());
+        )
+        .into());
     }
-    
+
     // Look for cardano-devnet being healthy
     if combined_output.contains("cardano-devnet") {
         if combined_output.contains("healthy") || combined_output.contains("Healthy") {
             verbose("   cardano-devnet chain is healthy");
         }
     }
-    
+
     verbose("   Hermes health-check passed");
 
     Ok(())
@@ -1384,7 +1492,7 @@ fn check_cardano_node_running(project_root: &Path) -> bool {
         .arg("42")
         .current_dir(&cardano_dir)
         .output();
-    
+
     match output {
         Ok(result) => result.status.success(),
         Err(_) => false,
@@ -1394,9 +1502,15 @@ fn check_cardano_node_running(project_root: &Path) -> bool {
 /// Check if Gateway container is running
 fn check_gateway_container_running() -> bool {
     let output = Command::new("docker")
-        .args(&["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
+        .args(&[
+            "ps",
+            "--filter",
+            "name=gateway-app",
+            "--format",
+            "{{.Names}}",
+        ])
         .output();
-    
+
     match output {
         Ok(result) => {
             let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
@@ -1481,39 +1595,50 @@ async fn wait_for_json_array_non_empty(
 fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     // Read deployment info to get the HostState NFT policy ID (STT architecture)
     let deployment_path = project_root.join("cardano/offchain/deployments/handler.json");
-    
+
     if !deployment_path.exists() {
         return Err("Deployment file not found. Please run 'caribic start bridge' first.".into());
     }
 
     let deployment_json = std::fs::read_to_string(&deployment_path)?;
     let deployment: serde_json::Value = serde_json::from_str(&deployment_json)?;
-    
+
     // Use hostStateNFT for STT architecture
     let host_state_nft_policy = deployment["hostStateNFT"]["policyId"]
         .as_str()
         .ok_or("hostStateNFT.policyId not found in deployment")?;
-    
-    verbose(&format!("   HostState NFT policy: {}", host_state_nft_policy));
+
+    verbose(&format!(
+        "   HostState NFT policy: {}",
+        host_state_nft_policy
+    ));
 
     // Query the HostState UTXO using cardano-cli inside the Docker container
     let cardano_dir = project_root.join("chains/cardano");
-    
+
     // Get hostStateStt address from deployment
     let host_state_address = deployment["validators"]["hostStateStt"]["address"]
         .as_str()
         .ok_or("validators.hostStateStt.address not found in deployment")?;
-    
+
     verbose(&format!("   HostState address: {}", host_state_address));
 
     // Query UTXOs at HostState address using docker compose exec
     let output = Command::new("docker")
         .args(&[
-            "compose", "exec", "-T", "cardano-node",
-            "cardano-cli", "query", "utxo",
-            "--address", host_state_address,
-            "--testnet-magic", "42",
-            "--out-file", "/dev/stdout",
+            "compose",
+            "exec",
+            "-T",
+            "cardano-node",
+            "cardano-cli",
+            "query",
+            "utxo",
+            "--address",
+            host_state_address,
+            "--testnet-magic",
+            "42",
+            "--out-file",
+            "/dev/stdout",
         ])
         .current_dir(&cardano_dir)
         .output()?;
@@ -1531,10 +1656,10 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
 
     // Parse UTXO JSON to find the HostState UTXO (the one with the hostStateNFT)
     let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
-    
+
     // Find UTXO with hostStateNFT
     let mut host_state_datum: Option<&serde_json::Value> = None;
-    
+
     for (_utxo_ref, utxo_data) in utxos.as_object().ok_or("Invalid UTXO JSON")? {
         if let Some(value) = utxo_data.get("value") {
             if let Some(tokens) = value.as_object() {
@@ -1556,40 +1681,43 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
          - The devnet was regenerated but contracts weren't redeployed\n\
          - A previous deployment failed partway through\n\
          - The handler.json is from a different devnet instance\n\n\
-         Fix: Run 'caribic start --clean' to reset and redeploy everything."
+         Fix: Run 'caribic start --clean' to reset and redeploy everything.",
     )?;
-    
+
     // Extract the ibc_state_root from the inline datum
     // HostStateDatum structure: {constructor: 0, fields: [state, nft_policy]}
     // HostState structure: {constructor: 0, fields: [version, ibc_state_root, next_client_seq, ...]}
     let inline_datum = host_state_utxo["inlineDatum"]
         .as_object()
         .ok_or("Invalid inlineDatum structure")?;
-    
+
     let outer_fields = inline_datum["fields"]
         .as_array()
         .ok_or("Missing fields in inlineDatum")?;
-    
+
     if outer_fields.is_empty() {
         return Err("Invalid HostStateDatum structure: missing state field".into());
     }
-    
+
     let state_obj = &outer_fields[0];
     let state_fields = state_obj["fields"]
         .as_array()
         .ok_or("Missing fields in HostState")?;
-    
+
     if state_fields.len() < 2 {
         return Err("Invalid HostState: missing ibc_state_root field".into());
     }
-    
+
     // Field 1 (index 1) is ibc_state_root in HostState
     let root_bytes = state_fields[1]["bytes"]
         .as_str()
         .ok_or("ibc_state_root not found or invalid")?;
-    
-    verbose(&format!("   Found ibc_state_root: {}...", &root_bytes[..16.min(root_bytes.len())]));
-    
+
+    verbose(&format!(
+        "   Found ibc_state_root: {}...",
+        &root_bytes[..16.min(root_bytes.len())]
+    ));
+
     Ok(root_bytes.to_string())
 }
 
@@ -1602,32 +1730,43 @@ struct ClientStateInfo {
 }
 
 /// Query client state via Hermes to verify the Tendermint light client is working
-fn query_client_state(project_root: &Path, client_id: &str) -> Result<ClientStateInfo, Box<dyn std::error::Error>> {
+fn query_client_state(
+    project_root: &Path,
+    client_id: &str,
+) -> Result<ClientStateInfo, Box<dyn std::error::Error>> {
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
-    logger::verbose(&format!("   Running: hermes query client state --chain cardano-devnet --client {}", client_id));
-    
+
+    logger::verbose(&format!(
+        "   Running: hermes query client state --chain cardano-devnet --client {}",
+        client_id
+    ));
+
     let output = Command::new(&hermes_binary)
         .args(&[
-            "query", "client", "state",
-            "--chain", "cardano-devnet",
-            "--client", client_id,
+            "query",
+            "client",
+            "state",
+            "--chain",
+            "cardano-devnet",
+            "--client",
+            client_id,
         ])
         .output()?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Failed to query client state:\n{}",
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   Raw output: {}", stdout.trim()));
-    
+
     // Parse the output to extract client state info
     let mut info = ClientStateInfo::default();
-    
+
     for line in stdout.lines() {
         let line = line.trim();
         if line.contains("chain_id:") {
@@ -1642,7 +1781,7 @@ fn query_client_state(project_root: &Path, client_id: &str) -> Result<ClientStat
             }
         }
     }
-    
+
     // If we couldn't parse structured output, try to detect success from raw output
     if info.chain_id.is_empty() && stdout.contains("sidechain") {
         info.chain_id = "sidechain".to_string();
@@ -1659,7 +1798,7 @@ fn query_client_state(project_root: &Path, client_id: &str) -> Result<ClientStat
     if info.trust_level.is_empty() {
         info.trust_level = "1/3".to_string();
     }
-    
+
     Ok(info)
 }
 
@@ -1667,70 +1806,81 @@ fn query_client_state(project_root: &Path, client_id: &str) -> Result<ClientStat
 /// This exercises the Tendermint light client verification on Cardano
 fn update_client(project_root: &Path, client_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
-    logger::verbose(&format!("   Running: hermes update client --host-chain cardano-devnet --client {}", client_id));
-    
+
+    logger::verbose(&format!(
+        "   Running: hermes update client --host-chain cardano-devnet --client {}",
+        client_id
+    ));
+
     let output = Command::new(&hermes_binary)
         .args(&[
-            "update", "client",
-            "--host-chain", "cardano-devnet",
-            "--client", client_id,
+            "update",
+            "client",
+            "--host-chain",
+            "cardano-devnet",
+            "--client",
+            client_id,
         ])
         .output()?;
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     logger::verbose(&format!("   stdout: {}", stdout.trim()));
     if !stderr.is_empty() {
         logger::verbose(&format!("   stderr: {}", stderr.trim()));
     }
-    
+
     if !output.status.success() {
         return Err(format!(
             "Failed to update client:\nstdout: {}\nstderr: {}",
             stdout, stderr
-        ).into());
+        )
+        .into());
     }
-    
+
     // Check for "client already up to date" message which isn't an error
     let combined = format!("{} {}", stdout, stderr);
     if combined.contains("already updated") || combined.contains("no update") {
         return Err("Client already up to date - no new blocks to verify".into());
     }
-    
+
     Ok(())
 }
 
 /// Create a test client using Hermes relayer
-/// 
+///
 /// This uses Hermes CLI to create an IBC client, which:
 /// 1. Calls Gateway to build unsigned transaction
 /// 2. Signs transaction with Hermes keyring
 /// 3. Submits signed transaction to Cardano
 fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating client via Hermes...");
-    
+
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
+
     if !hermes_binary.exists() {
         return Err(format!(
             "Hermes binary not found at: {}\n\
              Please build Hermes first: cd relayer && cargo build --release",
             hermes_binary.display()
-        ).into());
+        )
+        .into());
     }
-    
+
     logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain (Cosmos Entrypoint chain)");
-    
+
     let mut command = Command::new(&hermes_binary);
     command.args(&[
-        "create", "client",
-        "--host-chain", "cardano-devnet",
-        "--reference-chain", "sidechain",
+        "create",
+        "client",
+        "--host-chain",
+        "cardano-devnet",
+        "--reference-chain",
+        "sidechain",
     ]);
     let output = run_command_streaming(command, "hermes create client")?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Hermes client creation failed:\n\
@@ -1742,12 +1892,13 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
              - hermes keys add --chain sidechain --mnemonic-file ~/sidechain.txt",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
-    
+
     // Extract client_id from Hermes output.
     //
     // Hermes prints a multi-line debug representation (not a single stable line), so we scan all
@@ -1760,7 +1911,8 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         .filter_map(|word| {
             // Hermes output often wraps identifiers in quotes and punctuation, e.g. `"07-tendermint-12",`
             // or `id=07-tendermint-12`. Normalize those into a plain identifier.
-            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned =
+                word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
             let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
 
             if cleaned.starts_with("07-tendermint-") || cleaned.starts_with("ibc_client-") {
@@ -1770,15 +1922,20 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
             }
         })
         .next()
-        .ok_or_else(|| format!("Failed to parse client id from Hermes output:\n{}", stdout.trim()))?;
-    
+        .ok_or_else(|| {
+            format!(
+                "Failed to parse client id from Hermes output:\n{}",
+                stdout.trim()
+            )
+        })?;
+
     logger::verbose(&format!("   Client created: {}", client_id));
-    
+
     Ok(client_id)
 }
 
 /// Create a test connection using Hermes relayer
-/// 
+///
 /// Creates a connection between cardano-devnet and the local packet-forwarding chain
 fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating connection via Hermes...");
@@ -1794,15 +1951,18 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
     let hermes_binary = project_root.join("relayer/target/release/hermes");
 
     logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain (Cosmos Entrypoint chain)");
-    
+
     let mut command = Command::new(&hermes_binary);
     command.args(&[
-        "create", "connection",
-        "--a-chain", "cardano-devnet",
-        "--b-chain", "sidechain",
+        "create",
+        "connection",
+        "--a-chain",
+        "cardano-devnet",
+        "--b-chain",
+        "sidechain",
     ]);
     let output = run_command_streaming(command, "hermes create connection")?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Hermes connection creation failed:\n\
@@ -1810,17 +1970,19 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
              stderr: {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
-    
+
     // Extract connection_id from Hermes output.
     let connection_id = stdout
         .split_whitespace()
         .filter_map(|word| {
-            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned =
+                word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
             let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
 
             cleaned
@@ -1834,38 +1996,43 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
                 stdout.trim()
             )
         })?;
-    
+
     logger::verbose(&format!("   Connection created: {}", connection_id));
-    
+
     Ok(connection_id)
 }
 
 /// Create a test channel using Hermes relayer
-/// 
+///
 /// Creates a transfer channel on the specified connection
 fn create_test_channel(
     project_root: &Path,
     connection_id: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating channel via Hermes...");
-    
+
     let hermes_binary = project_root.join("relayer/target/release/hermes");
-    
+
     logger::verbose(&format!(
         "   Running: hermes create channel --a-chain cardano-devnet --a-connection {} --a-port transfer --b-port transfer",
         connection_id
     ));
-    
+
     let mut command = Command::new(&hermes_binary);
     command.args(&[
-        "create", "channel",
-        "--a-chain", "cardano-devnet",
-        "--a-connection", connection_id,
-        "--a-port", "transfer",
-        "--b-port", "transfer",
+        "create",
+        "channel",
+        "--a-chain",
+        "cardano-devnet",
+        "--a-connection",
+        connection_id,
+        "--a-port",
+        "transfer",
+        "--b-port",
+        "transfer",
     ]);
     let output = run_command_streaming(command, "hermes create channel")?;
-    
+
     if !output.status.success() {
         return Err(format!(
             "Hermes channel creation failed:\n\
@@ -1873,26 +2040,33 @@ fn create_test_channel(
              stderr: {}",
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
-        ).into());
+        )
+        .into());
     }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     logger::verbose(&format!("   {}", stdout.trim()));
-    
+
     // Extract channel_id from Hermes output.
     let channel_id = stdout
         .split_whitespace()
         .filter_map(|word| {
-            let cleaned = word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+            let cleaned =
+                word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
             let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
 
             cleaned.starts_with("channel-").then(|| cleaned.to_string())
         })
         .next()
-        .ok_or_else(|| format!("Failed to parse channel id from Hermes output:\n{}", stdout.trim()))?;
-    
+        .ok_or_else(|| {
+            format!(
+                "Failed to parse channel id from Hermes output:\n{}",
+                stdout.trim()
+            )
+        })?;
+
     logger::verbose(&format!("   Channel created: {}", channel_id));
-    
+
     Ok(channel_id)
 }
 
@@ -1923,7 +2097,12 @@ fn read_handler_json_value(
     cursor
         .as_str()
         .map(|s| s.to_string())
-        .ok_or_else(|| format!("Deployment value at {} is not a string", json_path.join(".")))
+        .ok_or_else(|| {
+            format!(
+                "Deployment value at {} is not a string",
+                json_path.join(".")
+            )
+        })
         .map_err(Into::into)
 }
 
@@ -1946,7 +2125,8 @@ fn get_hermes_chain_address(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for token in stdout.split_whitespace() {
-        let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+        let cleaned =
+            token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
 
         match chain_id {
             "sidechain" => {
@@ -1961,7 +2141,8 @@ fn get_hermes_chain_address(
                     return Ok(cleaned.to_string());
                 }
 
-                let looks_like_hex_address = cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
+                let looks_like_hex_address =
+                    cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
                 if looks_like_hex_address {
                     // Convert the raw address bytes to bech32 so we can query UTxOs with cardano-cli.
                     // Note: we pick HRP based on the network id bits in the address header byte.
@@ -1972,7 +2153,10 @@ fn get_hermes_chain_address(
                 }
             }
             _ => {
-                if cleaned.starts_with("cosmos1") || cleaned.starts_with("addr_test1") || cleaned.starts_with("addr1") {
+                if cleaned.starts_with("cosmos1")
+                    || cleaned.starts_with("addr_test1")
+                    || cleaned.starts_with("addr1")
+                {
                     return Ok(cleaned.to_string());
                 }
             }
@@ -1987,7 +2171,9 @@ fn get_hermes_chain_address(
     .into())
 }
 
-fn get_cardano_payment_credential_hex(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
+fn get_cardano_payment_credential_hex(
+    project_root: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
     // Hermes represents the Cardano relayer identity as a hex-encoded enterprise address
     // (header byte + 28-byte payment key hash). For packet receivers, the Gateway expects the
     // 28-byte payment credential hash (hex), so we strip the first byte.
@@ -2006,14 +2192,17 @@ fn get_cardano_payment_credential_hex(project_root: &Path) -> Result<String, Box
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     for token in stdout.split_whitespace() {
-        let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
-        let looks_like_hex_address = cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
+        let cleaned =
+            token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+        let looks_like_hex_address =
+            cleaned.len() == 58 && cleaned.chars().all(|c| c.is_ascii_hexdigit());
         if !looks_like_hex_address {
             continue;
         }
 
         let credential = cleaned[2..].to_string();
-        let looks_like_hex_credential = credential.len() == 56 && credential.chars().all(|c| c.is_ascii_hexdigit());
+        let looks_like_hex_credential =
+            credential.len() == 56 && credential.chars().all(|c| c.is_ascii_hexdigit());
         if looks_like_hex_credential {
             return Ok(credential);
         }
@@ -2026,7 +2215,10 @@ fn get_cardano_payment_credential_hex(project_root: &Path) -> Result<String, Box
     .into())
 }
 
-fn cardano_hex_address_to_bech32(hex_address: &str, hrp: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn cardano_hex_address_to_bech32(
+    hex_address: &str,
+    hrp: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let bytes = decode_hex_bytes(hex_address)?;
     Ok(bech32_encode_bytes(hrp, &bytes)?)
 }
@@ -2166,7 +2358,12 @@ fn bech32_create_checksum(hrp: &str, data5: &[u8]) -> [u8; 6] {
     checksum
 }
 
-fn bech32_convert_bits(data: &[u8], from: u32, to: u32, pad: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn bech32_convert_bits(
+    data: &[u8],
+    from: u32,
+    to: u32,
+    pad: bool,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let mut acc: u32 = 0;
     let mut bits: u32 = 0;
     let maxv: u32 = (1 << to) - 1;
@@ -2252,7 +2449,10 @@ fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -
             }
 
             // Prefer the channel ID that is NOT the Cardano end, if present.
-            if let Some(found) = channel_ids.iter().find(|id| id.as_str() != cardano_channel_id) {
+            if let Some(found) = channel_ids
+                .iter()
+                .find(|id| id.as_str() != cardano_channel_id)
+            {
                 return Some(found.to_string());
             }
 
@@ -2286,7 +2486,9 @@ fn query_sidechain_balance(address: &str, denom: &str) -> Result<u128, Box<dyn s
     Ok(0)
 }
 
-fn query_sidechain_balances(address: &str) -> Result<BTreeMap<String, u128>, Box<dyn std::error::Error>> {
+fn query_sidechain_balances(
+    address: &str,
+) -> Result<BTreeMap<String, u128>, Box<dyn std::error::Error>> {
     let url = format!(
         "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
         address
@@ -2300,7 +2502,11 @@ fn query_sidechain_balances(address: &str) -> Result<BTreeMap<String, u128>, Box
 
     let mut map = BTreeMap::new();
     for coin in balances {
-        let coin_denom = coin.get("denom").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let coin_denom = coin
+            .get("denom")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if coin_denom.is_empty() {
             continue;
         }
@@ -2356,7 +2562,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         let trace = json
             .get("denom_trace")
             .or_else(|| json.get("denomTrace"))
-            .ok_or_else(|| format!("Sidechain denom-trace response missing denom_trace: {}", json))?;
+            .ok_or_else(|| {
+                format!(
+                    "Sidechain denom-trace response missing denom_trace: {}",
+                    json
+                )
+            })?;
 
         let path = trace
             .get("path")
@@ -2367,7 +2578,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
             .get("base_denom")
             .or_else(|| trace.get("baseDenom"))
             .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Sidechain denom-trace response missing base_denom: {}", json))?;
+            .ok_or_else(|| {
+                format!(
+                    "Sidechain denom-trace response missing base_denom: {}",
+                    json
+                )
+            })?;
 
         return Ok((path.to_string(), base_denom.to_string()));
     }
@@ -2407,7 +2623,10 @@ fn assert_sidechain_denom_trace(
     Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
 }
 
-fn query_cardano_lovelace_total(project_root: &Path, address: &str) -> Result<u64, Box<dyn std::error::Error>> {
+fn query_cardano_lovelace_total(
+    project_root: &Path,
+    address: &str,
+) -> Result<u64, Box<dyn std::error::Error>> {
     let cardano_dir = project_root.join("chains/cardano");
     let output = Command::new("docker")
         .args(&[
@@ -2711,7 +2930,10 @@ fn hermes_ft_transfer(
         command.args(&["--receiver", receiver]);
     }
     if timeout_height_offset > 0 {
-        command.args(&["--timeout-height-offset", &timeout_height_offset.to_string()]);
+        command.args(&[
+            "--timeout-height-offset",
+            &timeout_height_offset.to_string(),
+        ]);
     }
     if timeout_seconds > 0 {
         command.args(&["--timeout-seconds", &timeout_seconds.to_string()]);
@@ -2745,7 +2967,16 @@ fn hermes_clear_packets(
     ));
 
     let mut command = Command::new(&hermes_binary);
-    command.args(&["clear", "packets", "--chain", chain, "--port", port, "--channel", channel]);
+    command.args(&[
+        "clear",
+        "packets",
+        "--chain",
+        chain,
+        "--port",
+        port,
+        "--channel",
+        channel,
+    ]);
     let output = run_command_streaming(command, "hermes clear packets")?;
     if !output.status.success() {
         return Err(format!(
