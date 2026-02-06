@@ -616,7 +616,7 @@ pub fn check_container_status(container_name: &str) -> Result<String, Box<dyn Er
     let output = Command::new("docker")
         .args(["inspect", "--format", "{{.State.Status}}", container_name])
         .output()?;
-    
+
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
@@ -629,7 +629,7 @@ pub fn get_container_logs(container_name: &str, lines: usize) -> Result<String, 
     let output = Command::new("docker")
         .args(["logs", "--tail", &lines.to_string(), container_name])
         .output()?;
-    
+
     Ok(String::from_utf8_lossy(&output.stderr).to_string())
 }
 
@@ -638,7 +638,7 @@ pub fn get_container_exit_code(container_name: &str) -> Result<Option<i32>, Box<
     let output = Command::new("docker")
         .args(["inspect", "--format", "{{.State.ExitCode}}", container_name])
         .output()?;
-    
+
     if output.status.success() {
         let exit_code_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if let Ok(code) = exit_code_str.parse::<i32>() {
@@ -665,22 +665,26 @@ fn has_unrecoverable_error(logs: &str) -> bool {
 pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
     let mut diagnostics = String::new();
     let mut should_fail_fast = false;
-    
+
     for container_name in container_names {
         match check_container_status(container_name) {
             Ok(status) => {
                 if status != "running" {
-                    diagnostics.push_str(&format!("\n\nContainer '{}' is not running (status: {})", container_name, status));
-                    
+                    diagnostics.push_str(&format!(
+                        "\n\nContainer '{}' is not running (status: {})",
+                        container_name, status
+                    ));
+
                     // Get exit code if container exited
                     if let Ok(Some(exit_code)) = get_container_exit_code(container_name) {
                         diagnostics.push_str(&format!("\n   Exit code: {}", exit_code));
                     }
-                    
+
                     // Get last 20 lines of logs
                     if let Ok(logs) = get_container_logs(container_name, 20) {
                         // Check for errors that require immediate intervention
-                        if logs.contains("permission denied") || logs.contains("Permission denied") {
+                        if logs.contains("permission denied") || logs.contains("Permission denied")
+                        {
                             diagnostics.push_str("\n   PERMISSION ERROR detected - requires fixing volume/socket permissions");
                             should_fail_fast = true;
                         }
@@ -689,10 +693,12 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                             should_fail_fast = true;
                         }
                         if logs.contains("no space left on device") {
-                            diagnostics.push_str("\n   DISK SPACE ERROR detected - requires freeing up disk space");
+                            diagnostics.push_str(
+                                "\n   DISK SPACE ERROR detected - requires freeing up disk space",
+                            );
                             should_fail_fast = true;
                         }
-                        
+
                         // Determine if we should fail fast based on container state and error type
                         if has_unrecoverable_error(&logs) {
                             // Unrecoverable errors should always fail fast, regardless of container state
@@ -700,11 +706,14 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                             should_fail_fast = true;
                         } else if status == "restarting" {
                             // Container is restarting with transient errors, Docker may recover
-                            diagnostics.push_str("\n   Container is restarting, Docker may recover automatically");
+                            diagnostics.push_str(
+                                "\n   Container is restarting, Docker may recover automatically",
+                            );
                             should_fail_fast = false;
                         }
-                        
-                        diagnostics.push_str(&format!("\n   Last log entries:\n{}", 
+
+                        diagnostics.push_str(&format!(
+                            "\n   Last log entries:\n{}",
                             logs.lines()
                                 .take(10)
                                 .map(|line| format!("   {}", line))
@@ -715,16 +724,22 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                 }
             }
             Err(e) => {
-                diagnostics.push_str(&format!("\n\nFailed to check container '{}': {}", container_name, e));
+                diagnostics.push_str(&format!(
+                    "\n\nFailed to check container '{}': {}",
+                    container_name, e
+                ));
             }
         }
     }
-    
+
     if diagnostics.is_empty() {
-        diagnostics.push_str("\n\nAll containers appear to be running, but services are not responding.");
-        diagnostics.push_str("\n   This might be a network issue or the services need more time to initialize.");
+        diagnostics
+            .push_str("\n\nAll containers appear to be running, but services are not responding.");
+        diagnostics.push_str(
+            "\n   This might be a network issue or the services need more time to initialize.",
+        );
     }
-    
+
     (diagnostics, should_fail_fast)
 }
 

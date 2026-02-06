@@ -100,10 +100,7 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
     let input = input.trim().to_lowercase();
 
     if input == "yes" || input == "y" {
-        println!(
-            "{} Installing osmosisd...",
-            style("Step 1/1").bold().dim()
-        );
+        println!("{} Installing osmosisd...", style("Step 1/1").bold().dim());
 
         Command::new("make")
             .current_dir(osmosis_path)
@@ -629,7 +626,15 @@ pub fn prepare_db_sync_and_gateway(
     for attempt in 1..=30 {
         let health_check = Command::new("docker")
             .current_dir(cardano_dir)
-            .args(&["compose", "exec", "-T", "postgres", "pg_isready", "-U", "postgres"])
+            .args(&[
+                "compose",
+                "exec",
+                "-T",
+                "postgres",
+                "pg_isready",
+                "-U",
+                "postgres",
+            ])
             .output();
 
         if health_check.is_ok() && health_check.unwrap().status.success() {
@@ -689,7 +694,10 @@ pub fn prepare_db_sync_and_gateway(
             ])
             .output()
             .map_err(|error| {
-                format!("Failed to create gateway_app database: {}", error.to_string())
+                format!(
+                    "Failed to create gateway_app database: {}",
+                    error.to_string()
+                )
             })?;
 
         if !create_result.status.success() {
