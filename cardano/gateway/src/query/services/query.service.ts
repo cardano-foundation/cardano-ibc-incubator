@@ -1312,9 +1312,14 @@ export class QueryService {
    * that has been certified by Mithril snapshot inclusion
    * 
    * Architecture:
-   * - Queries Kupo indexer for Handler UTXO at the specified height
-   * - Extracts ibc_state_root from the UTXO datum
-   * - Kupo must have indexed from at least the Handler UTXO deployment block
+   * - Locates the HostState UTxO at or before the requested block height via DbSync
+   * - Extracts ibc_state_root from the inline datum
+   *
+   * IMPORTANT:
+   * - This method is height-specific, but on its own it is NOT an authenticated root source.
+   *   It relies on DbSync being correct and in sync.
+   * - For an authenticated root (bound to Mithril-certified data), use the IBC Header query
+   *   which returns the HostState update tx body + Mithril inclusion proof.
    * 
    * @param height - The Cardano block height to query
    * @returns The IBC state root (32-byte hex string) at the specified height
@@ -1323,23 +1328,31 @@ export class QueryService {
     this.logger.log(`Querying IBC state root at height ${height}`);
     
     try {
-      // TODO(ibc): `queryIBCStateRootAtHeight()` is not truly height-specific today.
-      // It currently falls back to the *current* HostState UTxO because Lucid/Kupo historical
-      // queries are not wired up. That makes this unsuitable as an authenticated root source.
-      //
-      // To make this usable for proof verification:
-      // - implement a real historical lookup (height/slot -> HostState UTxO at that point),
-      // - return (or make queryable) the evidence needed to bind that HostState UTxO/datum
-      //   to Mithril-certified Cardano data at the same point in time.
-      // Query Kupo for the root at the specified height
-      const root = await this.kupoService.queryIBCStateRootAtHeight(height);
+      if (!Number.isFinite(height) || !Number.isInteger(height) || height <= 0) {
+        throw new GrpcInvalidArgumentException('Invalid argument: "height" must be a positive integer');
+      }
+
+      // DbSync can answer "HostState UTxO at or before block height" deterministically.
+      // This supports the common case where the HostState/root is carried forward across blocks.
+      const hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
+      if (!hostStateUtxo?.datum) {
+        throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+      }
+
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+      const root = hostStateDatum.state.ibc_state_root;
       
       return {
         root: root,
-        height: height,
+        // The root is taken from the HostState UTxO that was live at (or before) the requested height.
+        // Return the actual height we sourced it from for transparency.
+        height: hostStateUtxo.blockNo ?? height,
       };
     } catch (error) {
-      this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
+      this.logger.error(`Failed to query IBC state root at height ${height}: ${error?.message ?? error}`);
+      if (error instanceof GrpcNotFoundException || error instanceof GrpcInvalidArgumentException) {
+        throw error;
+      }
       throw new GrpcInternalException(`Failed to query IBC state root: ${error.message}`);
     }
   }
