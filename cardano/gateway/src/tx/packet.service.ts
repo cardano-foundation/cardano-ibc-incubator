@@ -55,6 +55,7 @@ import {
   TimeoutPacketOperator,
   TimeoutRefreshOperator,
 } from './dto';
+import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
@@ -77,6 +78,7 @@ export class PacketService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private denomTraceService: DenomTraceService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
   /**
    * @param data
@@ -150,6 +152,8 @@ export class PacketService {
     hostStateUtxo: UTxO;
     encodedHostStateRedeemer: string;
     encodedUpdatedHostStateDatum: string;
+    newRoot: string;
+    commit: () => void;
   }> {
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
@@ -174,6 +178,7 @@ export class PacketService {
       packetCommitmentSiblings,
       packetReceiptSiblings,
       packetAcknowledgementSiblings,
+      commit,
     } = await computeRootWithHandlePacketUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
@@ -212,6 +217,8 @@ export class PacketService {
       hostStateUtxo,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
+      newRoot,
+      commit,
     };
   }
 
@@ -677,7 +684,7 @@ export class PacketService {
               'channel',
             );
 
-            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
             const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
@@ -703,7 +710,10 @@ export class PacketService {
               verifyProofPolicyId,
               encodedVerifyProofRedeemer,
             };
-            return this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
+            const unsignedTx = this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
+            const unsignedTxHash = unsignedTx.toHash();
+            this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+            return unsignedTx;
           } else {
             // Handle recv packet escrow and voucher mint
             const mintVoucherRedeemer: MintVoucherRedeemer = {
@@ -767,7 +777,7 @@ export class PacketService {
               'channel',
             );
 
-            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+            const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
             const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
@@ -797,7 +807,10 @@ export class PacketService {
               encodedVerifyProofRedeemer,
             };
 
-            return this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
+            const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
+            const unsignedTxHash = unsignedTx.toHash();
+            this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+            return unsignedTx;
           }
         }
       } catch (error) {
@@ -823,7 +836,7 @@ export class PacketService {
       'channel',
     );
 
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
     const unsignedRecvPacketMintParams: UnsignedRecvPacketDto = {
@@ -848,7 +861,10 @@ export class PacketService {
     };
 
     // handle recv packet mint
-    return this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
+    const unsignedTx = this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
   async buildUnsignedTimeoutPacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
@@ -944,7 +960,7 @@ export class PacketService {
       'channel',
     );
 
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, convertHex2String(packet.source_channel));
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       spendTransferModuleRedeemer,
@@ -1034,7 +1050,10 @@ export class PacketService {
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
       };
-      return this.lucidService.createUnsignedTimeoutPacketUnescrowTx(unsignedSendPacketParams);
+      const unsignedTx = this.lucidService.createUnsignedTimeoutPacketUnescrowTx(unsignedSendPacketParams);
+      const unsignedTxHash = unsignedTx.toHash();
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+      return unsignedTx;
     }
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
     // const prefixedDenom = convertString2Hex(sourcePrefix + denom);
@@ -1099,7 +1118,10 @@ export class PacketService {
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
     };
-    return this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
+    const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
 
   async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<TxBuilder> {
@@ -1210,7 +1232,7 @@ export class PacketService {
       'channel',
     );
 
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
     const deploymentConfig = this.configService.get('deployment');
 
@@ -1274,7 +1296,10 @@ export class PacketService {
         channelToken,
       };
 
-      return this.lucidService.createUnsignedSendPacketBurnTx(unsignedSendPacketParams);
+      const unsignedTx = this.lucidService.createUnsignedSendPacketBurnTx(unsignedSendPacketParams);
+      const unsignedTxHash = unsignedTx.toHash();
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+      return unsignedTx;
     }
     // escrow
     this.logger.log('send escrow');
@@ -1306,7 +1331,10 @@ export class PacketService {
       channelToken,
     };
 
-    return this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
+    const unsignedTx = this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
 
   async buildUnsignedAcknowlegementPacketTx(
@@ -1506,7 +1534,7 @@ export class PacketService {
         updatedChannelDatum,
         'channel',
       );
-      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
         await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
       const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
         hostStateUtxo,
@@ -1527,7 +1555,10 @@ export class PacketService {
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
       };
-      return this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
+      const unsignedTx = this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
+      const unsignedTxHash = unsignedTx.toHash();
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+      return unsignedTx;
     }
     if (!('err' in acknowledgementResponse)) {
       throw new GrpcInternalException('Acknowledgement Response invalid: unknown result');
@@ -1561,7 +1592,7 @@ export class PacketService {
         updatedChannelDatum,
         'channel',
       );
-      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
         await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
       const unsignedAckPacketUnescrowParams: UnsignedAckPacketUnescrowDto = {
         hostStateUtxo,
@@ -1588,7 +1619,10 @@ export class PacketService {
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
       };
-      return this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
+      const unsignedTx = this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
+      const unsignedTxHash = unsignedTx.toHash();
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+      return unsignedTx;
     }
 
     // build encode mint voucher redeemer
@@ -1643,7 +1677,7 @@ export class PacketService {
       updatedChannelDatum,
       'channel',
     );
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum } =
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
     const unsignedAckPacketMintParams: UnsignedAckPacketMintDto = {
       hostStateUtxo,
@@ -1676,7 +1710,10 @@ export class PacketService {
     };
 
     // handle recv packet mint
-    return this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
+    const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
   private _hasVoucherPrefix(denom: string, portId: string, channelId: string): boolean {
     const voucherPrefix = getDenomPrefix(portId, channelId);

@@ -58,6 +58,7 @@ import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { TxEventsService } from './tx-events.service';
+import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ConnectionService {
@@ -66,6 +67,7 @@ export class ConnectionService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
   private toUtxoRef(utxo: UTxO | undefined): string {
@@ -213,9 +215,9 @@ export class ConnectionService {
     oldRoot: string,
     connectionId: string,
     connectionEndValue: Buffer,
-  ): { newRoot: string; connectionSiblings: string[] } {
+  ): { newRoot: string; connectionSiblings: string[]; commit: () => void } {
     const result = computeRootWithCreateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue);
-    return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings };
+    return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings, commit: result.commit };
   }
   
   /**
@@ -607,7 +609,7 @@ export class ConnectionService {
       'hex',
     );
 
-    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       connectionEndValue,
@@ -684,6 +686,10 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
+
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+
     return { unsignedTx, connectionId };
   }
 
@@ -742,7 +748,7 @@ export class ConnectionService {
       'hex',
     );
 
-    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       connectionEndValue,
@@ -806,6 +812,9 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
+
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
     return { unsignedTx, connectionId };
   }
 
@@ -921,7 +930,7 @@ export class ConnectionService {
 	    this.logger.log(
 	      `[DEBUG] ConnOpenAck connection_end_value_len=${updatedConnectionEndValue.length} connection_id=${connectionId}`,
 	    );
-	    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+	    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
 	      hostStateDatum.state.ibc_state_root,
 	      connectionId,
 	      updatedConnectionEndValue,
@@ -1145,6 +1154,9 @@ export class ConnectionService {
       encodedVerifyProofRedeemer,
     };
     const unsignedTx = this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
+
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
     return { unsignedTx, clientId, counterpartyClientId, hostStateUtxo, connectionUtxo, clientUtxo };
   }
   /* istanbul ignore next */
@@ -1208,7 +1220,7 @@ export class ConnectionService {
       await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
       'hex',
     );
-    const { newRoot, connectionSiblings } = this.computeRootWithCreateConnectionUpdate(
+    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       updatedConnectionEndValue,
@@ -1253,6 +1265,9 @@ export class ConnectionService {
       encodedUpdatedConnectionDatum,
       constructedAddress,
     );
+
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
     return { unsignedTx, clientId, counterpartyClientId, counterpartyConnectionId };
   }
 }

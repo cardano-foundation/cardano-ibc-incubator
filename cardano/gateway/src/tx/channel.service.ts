@@ -70,6 +70,7 @@ import {
   computeRootWithUpdateChannelUpdate,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
+import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ChannelService {
@@ -78,6 +79,7 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
   /**
@@ -97,6 +99,7 @@ export class ChannelService {
     nextSequenceSendSiblings: string[];
     nextSequenceRecvSiblings: string[];
     nextSequenceAckSiblings: string[];
+    commit: () => void;
   }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
@@ -142,7 +145,7 @@ export class ChannelService {
     portId: string,
     channelId: string,
     channelDatum: ChannelDatum,
-  ): Promise<{ newRoot: string; channelSiblings: string[] }> {
+  ): Promise<{ newRoot: string; channelSiblings: string[]; commit: () => void }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
     const channelValue = Buffer.from(
@@ -476,6 +479,7 @@ export class ChannelService {
       nextSequenceSendSiblings,
       nextSequenceRecvSiblings,
       nextSequenceAckSiblings,
+      commit,
     } = await this.computeRootWithCreateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       channelOpenInitOperator.port_id,
@@ -552,6 +556,9 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
+
+    const unsignedTxHash = unsignedUnorderedChannelTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
     return { unsignedTx: unsignedUnorderedChannelTx, channelId };
   }
   /* istanbul ignore next */
@@ -823,7 +830,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenAckOperator.channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -961,6 +968,9 @@ export class ChannelService {
     };
     const unsignedTx = this.lucidService.createUnsignedChannelOpenAckTransaction(unsignedChannelOpenAckParams);
 
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+
     return {
       unsignedTx,
       event: {
@@ -1030,7 +1040,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenConfirmOperator.channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -1095,8 +1105,7 @@ export class ChannelService {
       newMockModuleDatum,
       'mockModule',
     );
-    // Call createUnsignedChannelOpenConfirmTransaction method with defined parameters
-    return this.lucidService.createUnsignedChannelOpenConfirmTransaction(
+    const unsignedTx = this.lucidService.createUnsignedChannelOpenConfirmTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
@@ -1111,6 +1120,10 @@ export class ChannelService {
       encodedNewMockModuleDatum,
       constructedAddress,
     );
+
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
 
   async buildUnsignedChannelCloseInitTx(
@@ -1178,7 +1191,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -1257,6 +1270,9 @@ export class ChannelService {
       constructedAddress,
     };
 
-    return this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
+    const unsignedTx = this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+    return unsignedTx;
   }
 }

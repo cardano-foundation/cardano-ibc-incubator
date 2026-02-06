@@ -41,6 +41,7 @@ import {
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
 import { TxEventsService } from './tx-events.service';
+import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ClientService {
@@ -49,6 +50,7 @@ export class ClientService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
   /**
@@ -647,7 +649,7 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
       computeRootWithCreateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         clientId,
@@ -730,16 +732,23 @@ export class ClientService {
     
     // Create and return the unsigned transaction for creating new client
     // This will spend the old HostState UTXO and create a new one with the same NFT
+    const unsignedTx = this.lucidService.createUnsignedCreateClientTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      clientAuthTokenUnit,
+      encodedMintClientRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedClientDatum,
+      constructedAddress,
+    );
+
+    // Register a pending in-memory tree update keyed by tx hash.
+    // Apply only after the signed tx is confirmed to avoid stale state on failures.
+    const unsignedTxHash = unsignedTx.toHash();
+    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
+
     return {
-      unsignedTx: this.lucidService.createUnsignedCreateClientTransaction(
-        hostStateUtxo,
-        encodedHostStateRedeemer,
-        clientAuthTokenUnit,
-        encodedMintClientRedeemer,
-        encodedUpdatedHostStateDatum,
-        encodedClientDatum,
-        constructedAddress,
-      ),
+      unsignedTx,
       clientId: hostStateDatum.state.next_client_sequence,
     };
   }
