@@ -55,7 +55,7 @@ import {
   ConnectionOpenTryOperator,
 } from './dto';
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
-import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { TxEventsService } from './tx-events.service';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
@@ -247,7 +247,10 @@ export class ConnectionService {
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
       // DEBUG: emit CBOR and key inputs so we can reproduce Ogmios eval failures
-      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       this.logger.log(
         `[DEBUG] connectionOpenInit unsigned CBOR len=${unsignedTxCbor.length}, head=${unsignedTxCbor.substring(0, 80)}`,
@@ -307,7 +310,10 @@ export class ConnectionService {
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -415,7 +421,10 @@ export class ConnectionService {
       //
       // If you need to fall back to local evaluation during debugging, switch this to:
       //   `.complete({ localUPLCEval: true })`
-      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -502,7 +511,10 @@ export class ConnectionService {
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
