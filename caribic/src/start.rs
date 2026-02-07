@@ -6,8 +6,9 @@ use crate::setup::{
 };
 use crate::utils::{
     diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state, get_user_ids,
-    unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery, IndicatorMessage,
+    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state,
+    get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
+    IndicatorMessage,
 };
 use crate::{
     config,
@@ -111,14 +112,14 @@ pub fn start_relayer(
         "Setting up Hermes keys for cardano-devnet and Cosmos Entrypoint chain",
         &optional_progress_bar,
     );
-    
+
     // Cosmos Entrypoint chain (Hermes chain id: "sidechain"): Use the pre-funded "relayer"
     // account from cosmos/sidechain/config.yml.
     let sidechain_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let sidechain_mnemonic_file = std::env::temp_dir().join("sidechain-mnemonic.txt");
     fs::write(&sidechain_mnemonic_file, sidechain_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
-    
+
     let sidechain_key_output = Command::new(&hermes_binary)
         .args(&[
             "keys",
@@ -135,7 +136,10 @@ pub fn start_relayer(
 
     match sidechain_key_output {
         Ok(output) if output.status.success() => {
-            log_or_show_progress("Added key for Cosmos Entrypoint chain", &optional_progress_bar);
+            log_or_show_progress(
+                "Added key for Cosmos Entrypoint chain",
+                &optional_progress_bar,
+            );
         }
         Ok(output) => {
             verbose(&format!(
@@ -144,7 +148,10 @@ pub fn start_relayer(
             ));
         }
         Err(e) => {
-            verbose(&format!("Warning: Failed to add entrypoint chain key: {}", e));
+            verbose(&format!(
+                "Warning: Failed to add entrypoint chain key: {}",
+                e
+            ));
         }
     }
 
@@ -405,12 +412,7 @@ pub async fn start_local_cardano_network(
         let cardano_epoch_on_mithril_start =
             start_mithril_with_progress(project_root_path, &optional_progress_bar)
                 .await
-                .map_err(|e| {
-            format!(
-                "Failed to start Mithril services for local devnet: {}",
-                e
-            )
-        })?;
+                .map_err(|e| format!("Failed to start Mithril services for local devnet: {}", e))?;
 
         log_or_print_progress(
             "PASS: Mithril services started (1 aggregator, 2 signers)",
@@ -423,8 +425,11 @@ pub async fn start_local_cardano_network(
 
         let project_root_path = project_root_path.to_path_buf();
         mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
-            wait_and_start_mithril_genesis(project_root_path.as_path(), cardano_epoch_on_mithril_start)
-                .map_err(|e| e.to_string())
+            wait_and_start_mithril_genesis(
+                project_root_path.as_path(),
+                cardano_epoch_on_mithril_start,
+            )
+            .map_err(|e| e.to_string())
         }));
     } else {
         log_or_print_progress(
@@ -745,7 +750,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                             json["result"]["sync_info"]["latest_block_height"]
                                 .as_str()
                                 .and_then(|s| s.parse::<u64>().ok())
-                                .or_else(|| json["result"]["sync_info"]["latest_block_height"].as_u64())
+                                .or_else(|| {
+                                    json["result"]["sync_info"]["latest_block_height"].as_u64()
+                                })
                         })
                         .unwrap_or(0);
 
@@ -1337,7 +1344,7 @@ async fn start_mithril_with_progress(
                     "Unable to download and extract mithril repository: {}",
                     error
                 )
-        })?;
+            })?;
     }
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1472,7 +1479,9 @@ pub fn wait_and_start_mithril_genesis(
     let mut slots_left = target_slot.saturating_sub(current_slot);
 
     if slots_left > 0 {
-        verbose("Mithril needs to wait at least two epochs for the immutable files to be created ..");
+        verbose(
+            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
+        );
     }
 
     while slots_left > 0 {
@@ -1568,15 +1577,14 @@ pub fn wait_and_start_mithril_genesis(
                     }
                 },
                 Err(err) => {
-                    last_epoch_settings_error =
-                        Some(format!("Failed to read epoch-settings response body: {err}"));
+                    last_epoch_settings_error = Some(format!(
+                        "Failed to read epoch-settings response body: {err}"
+                    ));
                 }
             },
             Ok(resp) => {
-                last_epoch_settings_error = Some(format!(
-                    "epoch-settings HTTP status {}",
-                    resp.status()
-                ));
+                last_epoch_settings_error =
+                    Some(format!("epoch-settings HTTP status {}", resp.status()));
             }
             Err(err) => {
                 last_epoch_settings_error = Some(format!(
@@ -1615,7 +1623,13 @@ pub fn wait_and_start_mithril_genesis(
         execute_script(
             &mithril_script_dir,
             "docker",
-            vec!["compose", "-f", "docker-compose.yaml", "stop", "mithril-aggregator"],
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "stop",
+                "mithril-aggregator",
+            ],
             Some(mithril_genesis_env.clone()),
         )
         .map_err(|e| {
