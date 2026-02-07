@@ -6,6 +6,9 @@ import { DbSyncService } from '../query/services/db-sync.service';
 import { TxEventsService } from './tx-events.service';
 import { KupoService } from '../shared/modules/kupo/kupo.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
+import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
+import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 
 @Injectable()
 export class SubmissionService {
@@ -16,6 +19,8 @@ export class SubmissionService {
     private readonly dbSyncService: DbSyncService,
     private readonly txEventsService: TxEventsService,
     private readonly kupoService: KupoService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly ibcTreeCacheService: IbcTreeCacheService,
   ) {}
 
   /**
@@ -58,6 +63,8 @@ export class SubmissionService {
       // This is a Cardano block number (db-sync `block_no`), not a slot.
       const confirmedBlockNo = await this.waitForDbSyncTxHeight(txHash);
 
+      await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash);
+
       const events = this.txEventsService.take(txHash) || [];
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
       
@@ -71,6 +78,67 @@ export class SubmissionService {
     } catch (error) {
       this.logger.error(`submitSignedTransaction error: ${error.message}`, error.stack);
       throw new GrpcInternalException(`Failed to submit signed transaction: ${error.message}`);
+    }
+  }
+
+  private async applyPendingIbcTreeUpdate(signedTxCbor: string, txHash: string): Promise<void> {
+    // Tree updates are registered when building unsigned txs and keyed by tx hash.
+    // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
+    let pending = this.ibcTreePendingUpdatesService.take(txHash);
+
+    // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
+    if (!pending) {
+      const fallbackHash = this.computeTxBodyHashHex(signedTxCbor);
+      if (fallbackHash && fallbackHash.toLowerCase() !== txHash.toLowerCase()) {
+        pending = this.ibcTreePendingUpdatesService.take(fallbackHash);
+      }
+    }
+
+    if (!pending) return;
+
+    // Verify on-chain root matches what we computed when building the tx.
+    try {
+      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      if (!hostStateUtxo?.datum) {
+        this.logger.warn(`Skipping tree commit for tx ${txHash}: HostState UTxO datum missing`);
+        return;
+      }
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+      const onChainRoot = hostStateDatum.state.ibc_state_root;
+      if (onChainRoot !== pending.expectedNewRoot) {
+        this.logger.warn(
+          `Skipping tree commit for tx ${txHash}: on-chain root mismatch, expected=${pending.expectedNewRoot.substring(0, 16)}..., onChain=${onChainRoot.substring(0, 16)}...`,
+        );
+        return;
+      }
+    } catch (error) {
+      this.logger.warn(`Skipping tree commit for tx ${txHash}: failed to verify on-chain root, error=${error?.message ?? error}`);
+      return;
+    }
+
+    pending.commit();
+
+    // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
+    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
+    try {
+      await this.ibcTreeCacheService.save(getCurrentTree(), 'current');
+    } catch (error) {
+      this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+    }
+  }
+
+  private computeTxBodyHashHex(txCborHex: string): string | null {
+    try {
+      const { CML } = this.lucidService.LucidImporter;
+      if (!CML?.Transaction?.from_cbor_hex) return null;
+      const parsedTx = CML.Transaction.from_cbor_hex(txCborHex);
+      const body = parsedTx.body();
+      if (typeof CML.hash_transaction === 'function') {
+        return CML.hash_transaction(body).to_hex();
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 
