@@ -4,6 +4,7 @@ import { LucidService } from '../modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { rebuildTreeFromChain, initTreeServices, setCurrentTree } from '../helpers/ibc-state-root';
 import { IbcTreeCacheService } from './ibc-tree-cache.service';
+import { HostStateDatum } from '../types/host-state-datum';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
@@ -45,11 +46,11 @@ export class TreeInitService implements OnModuleInit {
         if (cached) {
           // Verify cached root against the authoritative on-chain HostState commitment.
           const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-          if (!hostStateUtxo?.datum) {
-            throw new Error('HostState UTXO has no datum - cannot verify cached tree');
-          }
-          const hostStateDatum = await this.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
-          const onChainRoot = hostStateDatum.state.ibc_state_root;
+	          if (!hostStateUtxo?.datum) {
+	            throw new Error('HostState UTXO has no datum - cannot verify cached tree');
+	          }
+	          const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+	          const onChainRoot = hostStateDatum.state.ibc_state_root;
 
           if (onChainRoot === cached.root) {
             setCurrentTree(cached.tree);

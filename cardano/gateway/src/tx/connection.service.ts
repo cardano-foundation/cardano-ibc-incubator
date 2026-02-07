@@ -58,7 +58,7 @@ import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { TxEventsService } from './tx-events.service';
-import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ConnectionService {
@@ -239,7 +239,7 @@ export class ConnectionService {
       this.logger.log('Connection Open Init is processing');
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedConnectionOpenInitTx, connectionId } = await this.buildUnsignedConnectionOpenInitTx(
+      const { unsignedTx: unsignedConnectionOpenInitTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
         constructedAddress,
       );
@@ -254,6 +254,9 @@ export class ConnectionService {
       );
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      // Register the pending in-memory tree update keyed by the finalized tx body hash.
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.txEventsService.register(unsignedTxHash, [
         {
@@ -296,7 +299,7 @@ export class ConnectionService {
     try {
       const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedConnectionOpenTryTx, connectionId } = await this.buildUnsignedConnectionOpenTryTx(
+      const { unsignedTx: unsignedConnectionOpenTryTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
         constructedAddress,
       );
@@ -308,6 +311,8 @@ export class ConnectionService {
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.txEventsService.register(unsignedTxHash, [
         {
@@ -355,6 +360,7 @@ export class ConnectionService {
         hostStateUtxo,
         connectionUtxo,
         clientUtxo,
+        pendingTreeUpdate,
       } =
         await this.buildUnsignedConnectionOpenAckTx(
         connectionOpenAckOperator,
@@ -413,6 +419,8 @@ export class ConnectionService {
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       // DEBUG: emit CBOR and input/redeemer mapping so Ogmios failures like Spend[0]
       // can be mapped back to a specific UTxO / validator.
@@ -485,6 +493,7 @@ export class ConnectionService {
         clientId,
         counterpartyClientId,
         counterpartyConnectionId,
+        pendingTreeUpdate,
       } = await this.buildUnsignedConnectionOpenConfirmTx(
         connectionOpenConfirmOperator,
         constructedAddress,
@@ -497,6 +506,8 @@ export class ConnectionService {
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.txEventsService.register(unsignedTxHash, [
         {
@@ -538,7 +549,7 @@ export class ConnectionService {
   async buildUnsignedConnectionOpenInitTx(
     connectionOpenInitOperator: ConnectionOpenInitOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; connectionId: string }> {
+  ): Promise<{ unsignedTx: TxBuilder; connectionId: string; pendingTreeUpdate: PendingTreeUpdate }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -686,18 +697,14 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
-
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-
-    return { unsignedTx, connectionId };
+    return { unsignedTx, connectionId, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
   /* istanbul ignore next */
   public async buildUnsignedConnectionOpenTryTx(
     connectionOpenTryOperator: ConnectionOpenTryOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; connectionId: string }> {
+  ): Promise<{ unsignedTx: TxBuilder; connectionId: string; pendingTreeUpdate: PendingTreeUpdate }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
       hostStateUtxo.datum!,
@@ -812,10 +819,7 @@ export class ConnectionService {
       encodedConnectionDatum,
       constructedAddress,
     );
-
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return { unsignedTx, connectionId };
+    return { unsignedTx, connectionId, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
   private async buildUnsignedConnectionOpenAckTx(
@@ -828,6 +832,7 @@ export class ConnectionService {
     hostStateUtxo: UTxO;
     connectionUtxo: UTxO;
     clientUtxo: UTxO;
+    pendingTreeUpdate: PendingTreeUpdate;
 	  }> {
     const deploymentConfig = this.configService.get('deployment');
     const expectedHostStateAddress = deploymentConfig.validators.hostStateStt.address;
@@ -1154,10 +1159,15 @@ export class ConnectionService {
       encodedVerifyProofRedeemer,
     };
     const unsignedTx = this.lucidService.createUnsignedConnectionOpenAckTransaction(unsignedConnectionOpenAckParams);
-
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return { unsignedTx, clientId, counterpartyClientId, hostStateUtxo, connectionUtxo, clientUtxo };
+    return {
+      unsignedTx,
+      clientId,
+      counterpartyClientId,
+      hostStateUtxo,
+      connectionUtxo,
+      clientUtxo,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
   /* istanbul ignore next */
   async buildUnsignedConnectionOpenConfirmTx(
@@ -1168,6 +1178,7 @@ export class ConnectionService {
     clientId: string;
     counterpartyClientId: string;
     counterpartyConnectionId: string;
+    pendingTreeUpdate: PendingTreeUpdate;
   }> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
@@ -1265,9 +1276,12 @@ export class ConnectionService {
       encodedUpdatedConnectionDatum,
       constructedAddress,
     );
-
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return { unsignedTx, clientId, counterpartyClientId, counterpartyConnectionId };
+    return {
+      unsignedTx,
+      clientId,
+      counterpartyClientId,
+      counterpartyConnectionId,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
 }

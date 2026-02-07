@@ -55,7 +55,7 @@ import {
   TimeoutPacketOperator,
   TimeoutRefreshOperator,
 } from './dto';
-import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
@@ -227,7 +227,7 @@ export class PacketService {
       this.logger.log('RecvPacket data: ', data);
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
       // Build and complete the unsigned transaction
-      const unsignedRecvPacketTx: TxBuilder = await this.buildUnsignedRecvPacketTx(
+      const { unsignedTx: unsignedRecvPacketTx, pendingTreeUpdate } = await this.buildUnsignedRecvPacketTx(
         recvPacketOperator,
         constructedAddress,
       );
@@ -251,6 +251,9 @@ export class PacketService {
       const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for recv packet');
       const response: MsgRecvPacketResponse = {
@@ -276,7 +279,7 @@ export class PacketService {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
 
-      const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedSendPacketTx(sendPacketOperator);
+      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedSendPacketTx(sendPacketOperator);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -290,6 +293,9 @@ export class PacketService {
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for send packet');
       const response: MsgRecvPacketResponse = {
@@ -319,7 +325,7 @@ export class PacketService {
     try {
       this.logger.log('timeoutPacket is processing');
       const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
-      const unsignedSendPacketTx: TxBuilder = await this.buildUnsignedTimeoutPacketTx(
+      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedTimeoutPacketTx(
         timeoutPacketOperator,
         constructedAddress,
       );
@@ -330,6 +336,9 @@ export class PacketService {
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for timeout packet');
       const response: MsgTimeoutResponse = {
@@ -422,7 +431,7 @@ export class PacketService {
       this.logger.log('AcknowledgementPacket ackPacketOperator: ', ackPacketOperator);
 
       // Build and complete the unsigned transaction
-      const unsignedAckPacketTx: TxBuilder = await this.buildUnsignedAcknowlegementPacketTx(
+      const { unsignedTx: unsignedAckPacketTx, pendingTreeUpdate } = await this.buildUnsignedAcknowlegementPacketTx(
         ackPacketOperator,
         constructedAddress,
       );
@@ -433,6 +442,9 @@ export class PacketService {
       const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for ack packet');
       const response: MsgAcknowledgementResponse = {
@@ -485,7 +497,7 @@ export class PacketService {
   async buildUnsignedRecvPacketTx(
     recvPacketOperator: RecvPacketOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence: string = recvPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -711,9 +723,7 @@ export class PacketService {
               encodedVerifyProofRedeemer,
             };
             const unsignedTx = this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
-            const unsignedTxHash = unsignedTx.toHash();
-            this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-            return unsignedTx;
+            return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
           } else {
             // Handle recv packet escrow and voucher mint
             const mintVoucherRedeemer: MintVoucherRedeemer = {
@@ -808,9 +818,7 @@ export class PacketService {
             };
 
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
-            const unsignedTxHash = unsignedTx.toHash();
-            this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-            return unsignedTx;
+            return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
           }
         }
       } catch (error) {
@@ -862,14 +870,12 @@ export class PacketService {
 
     // handle recv packet mint
     const unsignedTx = this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return unsignedTx;
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
   async buildUnsignedTimeoutPacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence = parseChannelSequence(convertHex2String(timeoutPacketOperator.packet.source_channel));
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1051,9 +1057,7 @@ export class PacketService {
         encodedVerifyProofRedeemer,
       };
       const unsignedTx = this.lucidService.createUnsignedTimeoutPacketUnescrowTx(unsignedSendPacketParams);
-      const unsignedTxHash = unsignedTx.toHash();
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-      return unsignedTx;
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
     // const prefixedDenom = convertString2Hex(sourcePrefix + denom);
@@ -1119,12 +1123,12 @@ export class PacketService {
       encodedVerifyProofRedeemer,
     };
     const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return unsignedTx;
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
-  async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<TxBuilder> {
+  async buildUnsignedSendPacketTx(
+    sendPacketOperator: SendPacketOperator,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1297,9 +1301,7 @@ export class PacketService {
       };
 
       const unsignedTx = this.lucidService.createUnsignedSendPacketBurnTx(unsignedSendPacketParams);
-      const unsignedTxHash = unsignedTx.toHash();
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-      return unsignedTx;
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     // escrow
     this.logger.log('send escrow');
@@ -1332,15 +1334,13 @@ export class PacketService {
     };
 
     const unsignedTx = this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return unsignedTx;
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
   async buildUnsignedAcknowlegementPacketTx(
     ackPacketOperator: AckPacketOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const channelSequence: string = ackPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1556,9 +1556,7 @@ export class PacketService {
         encodedVerifyProofRedeemer,
       };
       const unsignedTx = this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
-      const unsignedTxHash = unsignedTx.toHash();
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-      return unsignedTx;
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     if (!('err' in acknowledgementResponse)) {
       throw new GrpcInternalException('Acknowledgement Response invalid: unknown result');
@@ -1620,9 +1618,7 @@ export class PacketService {
         encodedVerifyProofRedeemer,
       };
       const unsignedTx = this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
-      const unsignedTxHash = unsignedTx.toHash();
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-      return unsignedTx;
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
 
     // build encode mint voucher redeemer
@@ -1711,9 +1707,7 @@ export class PacketService {
 
     // handle recv packet mint
     const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
-    const unsignedTxHash = unsignedTx.toHash();
-    this.ibcTreePendingUpdatesService.register(unsignedTxHash, { expectedNewRoot: newRoot, commit });
-    return unsignedTx;
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
   private _hasVoucherPrefix(denom: string, portId: string, channelId: string): boolean {
     const voucherPrefix = getDenomPrefix(portId, channelId);

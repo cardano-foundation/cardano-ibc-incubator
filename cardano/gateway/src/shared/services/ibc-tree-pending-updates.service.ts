@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-type PendingTreeUpdate = {
+export type PendingTreeUpdate = {
   expectedNewRoot: string;
   commit: () => void;
 };
@@ -24,4 +24,3 @@ export class IbcTreePendingUpdatesService {
     return update;
   }
 }
-
