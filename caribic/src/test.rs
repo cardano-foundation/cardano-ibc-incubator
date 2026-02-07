@@ -1074,12 +1074,24 @@ pub async fn run_integration_tests(
                             "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (before={}, after={}, expected delta >= {})\n",
                             cardano_lovelace_before, cardano_lovelace_after, amount
                         ));
+                        dump_test_11_ics20_diagnostics(
+                            project_root,
+                            cardano_channel_id,
+                            &sidechain_channel_id,
+                            &sidechain_address,
+                        );
                         results.failed += 1;
                     } else if cardano_root_after == cardano_root_before {
                         logger::log(&format!(
                             "FAIL Test 11: Cardano ibc_state_root did not change after escrow transfer (root={}...)\n",
                             &cardano_root_after[..16],
                         ));
+                        dump_test_11_ics20_diagnostics(
+                            project_root,
+                            cardano_channel_id,
+                            &sidechain_channel_id,
+                            &sidechain_address,
+                        );
                         results.failed += 1;
                     } else {
                         let mut minted_denom: Option<String> = None;
@@ -1127,6 +1139,12 @@ pub async fn run_integration_tests(
 	                                        minted_denom,
 	                                        e
 	                                    ));
+                                    dump_test_11_ics20_diagnostics(
+                                        project_root,
+                                        cardano_channel_id,
+                                        &sidechain_channel_id,
+                                        &sidechain_address,
+                                    );
                                     results.failed += 1;
                                 }
                             }
@@ -1134,12 +1152,24 @@ pub async fn run_integration_tests(
                             logger::log(
                                 "FAIL Test 11: No new IBC voucher denom minted on sidechain\n",
                             );
+                            dump_test_11_ics20_diagnostics(
+                                project_root,
+                                cardano_channel_id,
+                                &sidechain_channel_id,
+                                &sidechain_address,
+                            );
                             results.failed += 1;
                         }
                     }
                 }
                 Err(e) => {
                     logger::log(&format!("FAIL Test 11: Failed to relay packets\n{}\n", e));
+                    dump_test_11_ics20_diagnostics(
+                        project_root,
+                        cardano_channel_id,
+                        &sidechain_channel_id,
+                        &sidechain_address,
+                    );
                     results.failed += 1;
                 }
             },
@@ -1148,6 +1178,12 @@ pub async fn run_integration_tests(
                     "FAIL Test 11: hermes tx ft-transfer failed\n{}\n",
                     e
                 ));
+                dump_test_11_ics20_diagnostics(
+                    project_root,
+                    cardano_channel_id,
+                    &sidechain_channel_id,
+                    &sidechain_address,
+                );
                 results.failed += 1;
             }
         }
@@ -2990,4 +3026,148 @@ fn hermes_clear_packets(
     }
 
     Ok(())
+}
+
+fn dump_test_11_ics20_diagnostics(
+    project_root: &Path,
+    cardano_channel_id: &str,
+    sidechain_channel_id: &str,
+    sidechain_address: &str,
+) {
+    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> sidechain) ===");
+    logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
+    logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
+    logger::log(&format!("sidechain address:      {}", sidechain_address));
+    logger::log("");
+
+    let hermes_packet_subcmds = ["pending", "commitments", "acks"];
+    for subcmd in hermes_packet_subcmds {
+        let cardano_args = [
+            "query",
+            "packet",
+            subcmd,
+            "--chain",
+            "cardano-devnet",
+            "--port",
+            "transfer",
+            "--channel",
+            cardano_channel_id,
+        ];
+        if let Err(e) = run_hermes_and_print_allow_not_found(
+            project_root,
+            &cardano_args,
+            &format!("hermes query packet {} (cardano-devnet)", subcmd),
+        ) {
+            logger::log(&format!(
+                "(diagnostics) Failed to run hermes query packet {} on cardano-devnet: {}\n",
+                subcmd, e
+            ));
+        }
+
+        let sidechain_args = [
+            "query",
+            "packet",
+            subcmd,
+            "--chain",
+            "sidechain",
+            "--port",
+            "transfer",
+            "--channel",
+            sidechain_channel_id,
+        ];
+        if let Err(e) = run_hermes_and_print_allow_not_found(
+            project_root,
+            &sidechain_args,
+            &format!("hermes query packet {} (sidechain)", subcmd),
+        ) {
+            logger::log(&format!(
+                "(diagnostics) Failed to run hermes query packet {} on sidechain: {}\n",
+                subcmd, e
+            ));
+        }
+    }
+
+    match query_sidechain_balances(sidechain_address) {
+        Ok(balances) => {
+            logger::log("=== sidechain balances (bank) ===");
+            if balances.is_empty() {
+                logger::log("(no balances returned)");
+            } else {
+                for (denom, amount) in &balances {
+                    logger::log(&format!("{}: {}", denom, amount));
+                }
+            }
+            logger::log("");
+
+            let ibc_denoms: Vec<String> = balances
+                .keys()
+                .filter(|d| d.starts_with("ibc/"))
+                .cloned()
+                .collect();
+            if !ibc_denoms.is_empty() {
+                logger::log("=== sidechain denom traces (reverse lookup) ===");
+                for denom in ibc_denoms.into_iter().take(20) {
+                    let hash = denom.strip_prefix("ibc/").unwrap_or(denom.as_str());
+                    match query_sidechain_denom_trace(hash) {
+                        Ok((path, base_denom)) => {
+                            logger::log(&format!("{} -> {}/{}", denom, path, base_denom));
+                        }
+                        Err(e) => {
+                            logger::log(&format!("{} -> (failed to query denom-trace) {}", denom, e));
+                        }
+                    }
+                }
+                logger::log("");
+            }
+        }
+        Err(e) => {
+            logger::log(&format!(
+                "(diagnostics) Failed to query sidechain balances: {}\n",
+                e
+            ));
+        }
+    }
+}
+
+fn run_hermes_and_print_allow_not_found(
+    project_root: &Path,
+    args: &[&str],
+    label: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    run_hermes_and_print_inner(project_root, args, label, true)
+}
+
+fn run_hermes_and_print_inner(
+    project_root: &Path,
+    args: &[&str],
+    label: &str,
+    allow_not_found: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    logger::log(&format!("=== {} ===", label));
+
+    let output = Command::new(&hermes_binary).args(args).output()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !stdout.trim().is_empty() {
+        logger::log(stdout.trim_end());
+    }
+    if !stderr.trim().is_empty() {
+        logger::log(stderr.trim_end());
+    }
+    logger::log("");
+
+    if output.status.success() {
+        return Ok(true);
+    }
+
+    if allow_not_found {
+        let haystack = format!("{}\n{}", stdout, stderr);
+        if haystack.contains("Not found") || haystack.contains("not found") {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
