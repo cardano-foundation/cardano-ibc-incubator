@@ -177,9 +177,19 @@ export class LucidService {
   }
 
   public async findUtxoByUnit(unit: string): Promise<UTxO> {
-    const utxo = await this.lucid.utxoByUnit(unit);
-    if (!utxo) throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
-    return utxo;
+    // Kupo indexing can lag shortly after minting/transfers; retry briefly before failing.
+    const maxAttempts = 10;
+    const retryDelayMs = 1000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const utxo = await this.lucid.utxoByUnit(unit);
+      if (utxo) return utxo;
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
   }
   public async findUtxoAt(addressOrCredential: string): Promise<UTxO[]> {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);

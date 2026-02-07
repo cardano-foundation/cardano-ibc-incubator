@@ -950,9 +950,14 @@ export class QueryService {
     );
     try {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
-      const handlerAuthToken = this.configService.get('deployment').handlerAuthToken as unknown as AuthToken;
-      const minChannelScriptHash = this.configService.get('deployment').validators.mintChannel.scriptHash;
-      const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
+      const deploymentConfig = this.configService.get('deployment');
+      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
+      const tokenBase: AuthToken = deploymentConfig.validators.mintChannelStt?.scriptHash
+        ? deploymentConfig.hostStateNFT
+        : handlerAuthToken;
+      const mintChannelScriptHash =
+        deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
+      const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
           `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
@@ -960,19 +965,19 @@ export class QueryService {
       const channelId = srcChannelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
       const channelTokenName = this.lucidService.generateTokenName(
-        handlerAuthToken,
+        tokenBase,
         CHANNEL_TOKEN_PREFIX,
         BigInt(channelId),
       );
       const utxosOfChannel = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
-        minChannelScriptHash,
+        mintChannelScriptHash,
         channelTokenName,
       );
       let blockResults: ResultBlockSearch[] = await Promise.all(
         utxosOfChannel.map(async (utxo) => {
           let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
             utxo.txId.toString(),
-            minChannelScriptHash,
+            mintChannelScriptHash,
             spendAddress,
           );
           redeemers = redeemers.filter(
