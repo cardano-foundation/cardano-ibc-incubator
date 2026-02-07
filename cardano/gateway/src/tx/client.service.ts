@@ -32,7 +32,7 @@ import {
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
-import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { 
   computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
   computeRootWithCreateClientUpdate,
@@ -123,7 +123,10 @@ export class ClientService {
       
       // Return unsigned transaction for Hermes to sign
       // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
-      const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unSignedTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const unsignedTxHash = completedUnsignedTx.toHash();
 
@@ -230,7 +233,10 @@ export class ClientService {
           .validTo(validToTime);
         
         // Return unsigned transaction for Hermes to sign
-        const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
+        const completedUnsignedTx = await unSignedTxValidTo.complete({
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        });
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
         const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
@@ -288,7 +294,10 @@ export class ClientService {
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unSignedTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       
