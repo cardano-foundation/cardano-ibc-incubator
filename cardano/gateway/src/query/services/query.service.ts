@@ -1307,44 +1307,6 @@ export class QueryService {
   }
 
   /**
-   * Query the IBC state root at a specific height
-   * This is used by the Mithril light client on Cosmos to retrieve the ICS-23 Merkle root
-   * that has been certified by Mithril snapshot inclusion
-   * 
-   * Architecture:
-   * - Queries Kupo indexer for Handler UTXO at the specified height
-   * - Extracts ibc_state_root from the UTXO datum
-   * - Kupo must have indexed from at least the Handler UTXO deployment block
-   * 
-   * @param height - The Cardano block height to query
-   * @returns The IBC state root (32-byte hex string) at the specified height
-   */
-  async queryIBCStateRoot(height: number): Promise<{ root: string, height: number }> {
-    this.logger.log(`Querying IBC state root at height ${height}`);
-    
-    try {
-      // TODO(ibc): `queryIBCStateRootAtHeight()` is not truly height-specific today.
-      // It currently falls back to the *current* HostState UTxO because Lucid/Kupo historical
-      // queries are not wired up. That makes this unsuitable as an authenticated root source.
-      //
-      // To make this usable for proof verification:
-      // - implement a real historical lookup (height/slot -> HostState UTxO at that point),
-      // - return (or make queryable) the evidence needed to bind that HostState UTxO/datum
-      //   to Mithril-certified Cardano data at the same point in time.
-      // Query Kupo for the root at the specified height
-      const root = await this.kupoService.queryIBCStateRootAtHeight(height);
-      
-      return {
-        root: root,
-        height: height,
-      };
-    } catch (error) {
-      this.logger.error(`Failed to query IBC state root at height ${height}: ${error}`);
-      throw new GrpcInternalException(`Failed to query IBC state root: ${error.message}`);
-    }
-  }
-
-  /**
    * Query a denom trace by its hash
    */
   async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
