@@ -1078,6 +1078,16 @@ export function getCurrentTree(): ICS23MerkleTree {
 }
 
 /**
+ * Replace the canonical in-memory tree.
+ *
+ * This is used by startup logic that can hydrate the tree from a persisted cache
+ * (then verify it against the on-chain HostState commitment root).
+ */
+export function setCurrentTree(tree: ICS23MerkleTree): void {
+  currentTree = tree;
+}
+
+/**
  * Get the current root without any computation
  */
 export function getCurrentRoot(): string {

@@ -821,7 +821,7 @@ export class QueryService {
           if (spendRedeemer.hasOwnProperty('RecvPacket') || spendRedeemer.hasOwnProperty('SendPacket')) {
             // find redeemer module recv packet -> get packet ack
             const spendTransferModuleAddress = this.configService.get('deployment').modules.transfer.address;
-            const spendMockModuleAddress = this.configService.get('deployment').modules.mock.address;
+            const spendMockModuleAddress = this.configService.get('deployment').modules?.mock?.address;
             const packetEvent = normalizeTxsResultFromChannelRedeemer(spendRedeemer, channelDatumDecoded);
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
@@ -844,22 +844,24 @@ export class QueryService {
               txsResult.events.push(...writeAckTxsResult.events);
             }
 
-            const mockModuleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-              utxo.txId.toString(),
-              '',
-              spendMockModuleAddress,
-            );
-            if (mockModuleRedeemer.length > 0) {
-              const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
-                mockModuleRedeemer[0].data,
-                this.lucidService.LucidImporter,
+            if (spendMockModuleAddress) {
+              const mockModuleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
+                utxo.txId.toString(),
+                '',
+                spendMockModuleAddress,
               );
-              const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-                mockModuleRedeemerDecoded,
-                spendRedeemer,
-                channelDatumDecoded,
-              );
-              txsResult.events.push(...writeAckTxsResult.events);
+              if (mockModuleRedeemer.length > 0) {
+                const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
+                  mockModuleRedeemer[0].data,
+                  this.lucidService.LucidImporter,
+                );
+                const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                  mockModuleRedeemerDecoded,
+                  spendRedeemer,
+                  channelDatumDecoded,
+                );
+                txsResult.events.push(...writeAckTxsResult.events);
+              }
             }
           }
           if (spendRedeemer.hasOwnProperty('AcknowledgePacket')) {

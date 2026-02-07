@@ -41,6 +41,7 @@ import {
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
 import { TxEventsService } from './tx-events.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ClientService {
@@ -49,6 +50,7 @@ export class ClientService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
   /**
@@ -98,7 +100,7 @@ export class ClientService {
       this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
       // Build unsigned create client transaction
-      const { unsignedTx: unsignedCreateClientTx, clientId } = await this.buildUnsignedCreateClientTx(
+      const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
         clientState,
         consensusState,
         constructedAddress,
@@ -124,6 +126,10 @@ export class ClientService {
       const completedUnsignedTx = await unSignedTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      // Register the pending in-memory tree update keyed by the finalized tx body hash.
+      // We can only compute a stable hash after `.complete()` (fees/inputs are finalized there).
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
       
       // Return the CBOR hex string as bytes for Hermes to parse
       // unsignedTxCbor is a hex string from Lucid's toCBOR()
@@ -598,7 +604,7 @@ export class ClientService {
     clientState: ClientState,
     consensusState: ConsensusState,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; clientId: bigint }> {
+  ): Promise<{ unsignedTx: TxBuilder; clientId: bigint; pendingTreeUpdate: PendingTreeUpdate }> {
     // STT Architecture: Query the HostState UTXO via its unique NFT
     // the NFT serves as a linear threading token -
     // the UTXO set can only contain exactly one unspent output with this NFT at any given slot,
@@ -647,7 +653,7 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, commit } =
       computeRootWithCreateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         clientId,
@@ -730,17 +736,20 @@ export class ClientService {
     
     // Create and return the unsigned transaction for creating new client
     // This will spend the old HostState UTXO and create a new one with the same NFT
+    const unsignedTx = this.lucidService.createUnsignedCreateClientTransaction(
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      clientAuthTokenUnit,
+      encodedMintClientRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedClientDatum,
+      constructedAddress,
+    );
+
     return {
-      unsignedTx: this.lucidService.createUnsignedCreateClientTransaction(
-        hostStateUtxo,
-        encodedHostStateRedeemer,
-        clientAuthTokenUnit,
-        encodedMintClientRedeemer,
-        encodedUpdatedHostStateDatum,
-        encodedClientDatum,
-        constructedAddress,
-      ),
+      unsignedTx,
       clientId: hostStateDatum.state.next_client_sequence,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
   

@@ -112,3 +112,11 @@ pub fn log_or_show_progress(message: &str, optional_progress_bar: &Option<Progre
         log(message);
     }
 }
+
+pub fn log_or_print_progress(message: &str, optional_progress_bar: &Option<ProgressBar>) {
+    if let Some(progress_bar) = optional_progress_bar {
+        progress_bar.println(message.to_owned());
+    } else {
+        log(message);
+    }
+}

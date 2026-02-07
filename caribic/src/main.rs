@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use clap::Parser;
 use clap::Subcommand;
+use indicatif::{ProgressBar, ProgressStyle};
 use start::build_aiken_validators_if_needed;
 use start::build_hermes_if_needed;
 use start::deploy_contracts;
@@ -14,12 +15,8 @@ use start::start_gateway;
 use start::start_mithril;
 use start::wait_for_cosmos_entrypoint_chain_ready;
 use start::{
-    configure_hermes,
-    prepare_osmosis,
-    start_cosmos_entrypoint_chain,
-    start_local_cardano_network,
-    start_osmosis,
-    start_relayer,
+    configure_hermes, prepare_osmosis, start_cosmos_entrypoint_chain, start_local_cardano_network,
+    start_osmosis, start_relayer,
 };
 use stop::stop_gateway;
 use stop::stop_mithril;
@@ -299,8 +296,11 @@ async fn main() {
                 }
 
                 // Start the Cosmos Entrypoint chain
-                match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), true)
-                    .await
+                match start_cosmos_entrypoint_chain(
+                    project_root_path.join("cosmos").as_path(),
+                    true,
+                )
+                .await
                 {
                     Ok(_) => logger::log("PASS: Cosmos Entrypoint chain up and running"),
                     Err(error) => exit_osmosis_demo_with_error(
@@ -468,7 +468,7 @@ async fn main() {
                     cosmos_entrypoint_chain_start_handle =
                         Some(tokio::task::spawn_blocking(move || {
                             start_cosmos_entrypoint_chain_services(cosmos_dir.as_path(), clean)
-                            .map_err(|e| e.to_string())
+                                .map_err(|e| e.to_string())
                         }));
                 }
 
@@ -675,7 +675,38 @@ async fn main() {
                 // startup. Await it here so `caribic start all --with-mithril` only returns once
                 // Mithril is actually able to certify transaction snapshots for this devnet.
                 if let Some(handle) = mithril_genesis_handle.take() {
-                    match handle.await {
+                    let optional_progress_bar = match logger::get_verbosity() {
+                        logger::Verbosity::Verbose => None,
+                        _ => Some(ProgressBar::new_spinner()),
+                    };
+
+                    if let Some(progress_bar) = &optional_progress_bar {
+                        progress_bar.enable_steady_tick(Duration::from_millis(100));
+                        progress_bar.set_style(
+                            ProgressStyle::with_template(
+                                "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
+                            )
+                            .unwrap()
+                            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                        );
+                        progress_bar
+                            .set_prefix("Waiting for Mithril to become ready ...".to_owned());
+                        progress_bar.set_message(
+                            "This can take a few minutes on a fresh devnet".to_owned(),
+                        );
+                    } else {
+                        logger::log(
+                            "Waiting for Mithril to become ready (this can take a few minutes on a fresh devnet) ...",
+                        );
+                    }
+
+                    let result = handle.await;
+
+                    if let Some(progress_bar) = &optional_progress_bar {
+                        progress_bar.finish_and_clear();
+                    }
+
+                    match result {
                         Ok(Ok(())) => logger::log("PASS: Immutable Cardano node files have been created, and Mithril is working as expected"),
                         Ok(Err(error)) => network_down_with_error(&format!(
                             "ERROR: Mithril failed to read the immutable cardano node files: {}",

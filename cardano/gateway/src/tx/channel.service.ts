@@ -70,6 +70,7 @@ import {
   computeRootWithUpdateChannelUpdate,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 
 @Injectable()
 export class ChannelService {
@@ -78,6 +79,7 @@ export class ChannelService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
   /**
@@ -97,6 +99,7 @@ export class ChannelService {
     nextSequenceSendSiblings: string[];
     nextSequenceRecvSiblings: string[];
     nextSequenceAckSiblings: string[];
+    commit: () => void;
   }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
@@ -142,7 +145,7 @@ export class ChannelService {
     portId: string,
     channelId: string,
     channelDatum: ChannelDatum,
-  ): Promise<{ newRoot: string; channelSiblings: string[] }> {
+  ): Promise<{ newRoot: string; channelSiblings: string[]; commit: () => void }> {
     // Encode the exact bytes that the on-chain validator commits to the root.
     // These bytes must match Aiken's `cbor.serialise(...)` output.
     const channelValue = Buffer.from(
@@ -168,7 +171,7 @@ export class ChannelService {
       this.logger.log('Channel Open Init is processing');
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedChannelOpenInitTx, channelId } = await this.buildUnsignedChannelOpenInitTx(
+      const { unsignedTx: unsignedChannelOpenInitTx, channelId, pendingTreeUpdate } = await this.buildUnsignedChannelOpenInitTx(
         channelOpenInitOperator,
         constructedAddress,
       );
@@ -185,6 +188,8 @@ export class ChannelService {
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       // Hermes expects an ABCI-style event list from the tx submission response.
       // Cardano has no native events, so the Gateway synthesizes the equivalent IBC events
@@ -263,7 +268,7 @@ export class ChannelService {
       this.logger.log('Channel Open Ack is processing');
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedChannelOpenAckTx, event: channelOpenAckEvent } =
+      const { unsignedTx: unsignedChannelOpenAckTx, event: channelOpenAckEvent, pendingTreeUpdate } =
         await this.buildUnsignedChannelOpenAckTx(
         channelOpenAckOperator,
         constructedAddress,
@@ -281,6 +286,8 @@ export class ChannelService {
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.txEventsService.register(unsignedTxHash, [
         {
@@ -319,7 +326,7 @@ export class ChannelService {
       this.logger.log('Channel Open Confirm is processing');
       const { constructedAddress, channelOpenConfirmOperator } = validateAndFormatChannelOpenConfirmParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelConfirmInitTx: TxBuilder = await this.buildUnsignedChannelOpenConfirmTx(
+      const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } = await this.buildUnsignedChannelOpenConfirmTx(
         channelOpenConfirmOperator,
         constructedAddress,
       );
@@ -330,6 +337,9 @@ export class ChannelService {
       const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for channel open confirm');
       const response: MsgChannelOpenConfirmResponse = {
@@ -354,7 +364,7 @@ export class ChannelService {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
       // Build and complete the unsigned transaction
-      const unsignedChannelCloseInitTx: TxBuilder = await this.buildUnsignedChannelCloseInitTx(
+      const { unsignedTx: unsignedChannelCloseInitTx, pendingTreeUpdate } = await this.buildUnsignedChannelCloseInitTx(
         channelCloseInitOperator,
         constructedAddress,
       );
@@ -365,6 +375,9 @@ export class ChannelService {
       const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({ localUPLCEval: false });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for channel close init');
       const response: MsgChannelCloseInitResponse = {
@@ -386,7 +399,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenInitTx(
     channelOpenInitOperator: ChannelOpenInitOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; channelId: string }> {
+  ): Promise<{ unsignedTx: TxBuilder; channelId: string; pendingTreeUpdate: PendingTreeUpdate }> {
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     // This datum is the authoritative source of:
     // - `ibc_state_root` (the Merkle commitment root)
@@ -476,6 +489,7 @@ export class ChannelService {
       nextSequenceSendSiblings,
       nextSequenceRecvSiblings,
       nextSequenceAckSiblings,
+      commit,
     } = await this.computeRootWithCreateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       channelOpenInitOperator.port_id,
@@ -552,7 +566,7 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
-    return { unsignedTx: unsignedUnorderedChannelTx, channelId };
+    return { unsignedTx: unsignedUnorderedChannelTx, channelId, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
@@ -755,6 +769,7 @@ export class ChannelService {
       counterparty_port_id: string;
       counterparty_channel_id: string;
     };
+    pendingTreeUpdate: PendingTreeUpdate;
   }> {
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
@@ -823,7 +838,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenAckOperator.channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -970,13 +985,14 @@ export class ChannelService {
         counterparty_port_id: convertHex2String(channelDatum.state.channel.counterparty.port_id),
         counterparty_channel_id: channelOpenAckOperator.counterpartyChannelId || '',
       },
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenConfirmTx(
     channelOpenConfirmOperator: ChannelOpenConfirmOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
       BigInt(channelOpenConfirmOperator.channelSequence),
@@ -1030,7 +1046,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelOpenConfirmOperator.channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -1095,8 +1111,7 @@ export class ChannelService {
       newMockModuleDatum,
       'mockModule',
     );
-    // Call createUnsignedChannelOpenConfirmTransaction method with defined parameters
-    return this.lucidService.createUnsignedChannelOpenConfirmTransaction(
+    const unsignedTx = this.lucidService.createUnsignedChannelOpenConfirmTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
@@ -1111,12 +1126,13 @@ export class ChannelService {
       encodedNewMockModuleDatum,
       constructedAddress,
     );
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
   async buildUnsignedChannelCloseInitTx(
     channelCloseInitOperator: ChannelCloseInitOperator,
     constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     // This datum is the authoritative source of the current commitment root.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
@@ -1178,7 +1194,7 @@ export class ChannelService {
     // Root correctness enforcement: Update the HostState commitment root by applying the channel end update.
     const portId = convertHex2String(channelDatum.port);
     const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelSequence}`;
-    const { newRoot, channelSiblings } = await this.computeRootWithUpdateChannelUpdate(
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
       hostStateDatum.state.ibc_state_root,
       portId,
       channelIdForRoot,
@@ -1257,6 +1273,7 @@ export class ChannelService {
       constructedAddress,
     };
 
-    return this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
+    const unsignedTx = this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 }
