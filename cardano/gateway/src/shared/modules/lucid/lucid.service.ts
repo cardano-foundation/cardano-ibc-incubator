@@ -119,12 +119,12 @@ export class LucidService {
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
-      mintChannel: deploymentConfig.validators.mintChannelStt?.refUtxo || deploymentConfig.validators.mintChannel.refUtxo,
-      mintClient: deploymentConfig.validators.mintClientStt?.refUtxo || deploymentConfig.validators.mintClient.refUtxo,
-      mintConnection: deploymentConfig.validators.mintConnectionStt?.refUtxo || deploymentConfig.validators.mintConnection.refUtxo,
+      mintChannel: deploymentConfig.validators.mintChannelStt.refUtxo,
+      mintClient: deploymentConfig.validators.mintClientStt.refUtxo,
+      mintConnection: deploymentConfig.validators.mintConnectionStt.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
-      hostStateStt: deploymentConfig.validators.hostStateStt?.refUtxo,
+      hostStateStt: deploymentConfig.validators.hostStateStt.refUtxo,
       channelOpenAck: deploymentConfig.validators.spendChannel.refValidator.chan_open_ack.refUtxo,
       channelCloseInit: deploymentConfig.validators.spendChannel.refValidator.chan_close_init.refUtxo,
       receivePacket: deploymentConfig.validators.spendChannel.refValidator.recv_packet.refUtxo,
@@ -243,16 +243,16 @@ export class LucidService {
     );
   }
   public getClientPolicyId(): string {
-    return this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
+    return this.configService.get('deployment').validators.mintClientStt.scriptHash;
   }
   public getConnectionPolicyId(): string {
-    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt.scriptHash;
   }
   public getChannelPolicyId(): string {
-    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt.scriptHash;
   }
   public getClientAuthTokenUnit(handlerDatum: HandlerDatum, clientId: bigint): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt.scriptHash;
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;
     const clientStateTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, clientId);
     return mintClientPolicyId + clientStateTokenName;
@@ -411,7 +411,7 @@ export class LucidService {
   }
 
   public getClientTokenUnit(clientId: string): string {
-    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt?.scriptHash || this.configService.get('deployment').validators.mintClient.scriptHash;
+    const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt.scriptHash;
     const hostStateNFT: AuthToken = this.configService.get('deployment').hostStateNFT;
     const clientTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, BigInt(clientId));
     return mintClientPolicyId + clientTokenName;
@@ -1682,10 +1682,10 @@ export class LucidService {
   // ========================== private functions ==========================
 
   private getMintConnectionScriptHash(): string {
-    return this.configService.get('deployment').validators.mintConnectionStt?.scriptHash || this.configService.get('deployment').validators.mintConnection.scriptHash;
+    return this.configService.get('deployment').validators.mintConnectionStt.scriptHash;
   }
   private getMintChannelScriptHash(): string {
-    return this.configService.get('deployment').validators.mintChannelStt?.scriptHash || this.configService.get('deployment').validators.mintChannel.scriptHash;
+    return this.configService.get('deployment').validators.mintChannelStt.scriptHash;
   }
 
   public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {

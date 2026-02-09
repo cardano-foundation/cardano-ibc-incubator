@@ -13,6 +13,7 @@ import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
 import { HealthModule } from './health/health.module';
+import { requireSttDeploymentConfig } from './config/deployment.validation';
 
 @Module({
   imports: [
@@ -25,6 +26,9 @@ import { HealthModule } from './health/health.module';
           const fs = require('fs');
           const handlerPath = process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json';
           const handlerJson = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
+          // Fail fast if this deployment does not include STT config. Gateway must not
+          // silently fall back to legacy (non-STT) minting policies/base tokens.
+          requireSttDeploymentConfig(handlerJson);
           return { deployment: handlerJson };
         },
       ],
