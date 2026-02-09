@@ -1161,10 +1161,7 @@ export class PacketService {
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
     // build transfer module redeemer
-    const denom =
-      sendPacketOperator.token.denom === LOVELACE
-        ? convertString2Hex(sendPacketOperator.token.denom)
-        : sendPacketOperator.token.denom;
+    const denom = sendPacketOperator.token.denom;
     // fungible token packet data
     const fTokenPacketData: FungibleTokenPacketDatum = {
       denom: denom,
@@ -1265,7 +1262,7 @@ export class PacketService {
         'mintVoucherRedeemer',
       );
 
-      const voucherTokenName = hashSha3_256(sendPacketOperator.token.denom);
+      const voucherTokenName = hashSha3_256(convertString2Hex(sendPacketOperator.token.denom));
       const voucherTokenUnit = deploymentConfig.validators.mintVoucher.scriptHash + voucherTokenName;
       const senderAddress = sendPacketOperator.sender;
 
