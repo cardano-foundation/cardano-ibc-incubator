@@ -103,10 +103,9 @@ export function getDenomPrefix(portId: string, channelId: string): string {
 
 // write function delete key of sort map by typescript
 export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K, V> => {
-  if (inputMap.has(deleteKey)) {
-    inputMap.delete(deleteKey);
-  }
-  return inputMap;
+  const updatedMap = new Map(inputMap);
+  updatedMap.delete(deleteKey);
+  return updatedMap;
 };
 export function sortedStringify(obj) {
   if (typeof obj !== 'object' || obj === null) {
