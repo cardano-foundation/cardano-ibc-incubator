@@ -952,10 +952,11 @@ export class QueryService {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
       const deploymentConfig = this.configService.get('deployment');
       const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
-      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
+      const tokenBase: AuthToken = deploymentConfig.validators.mintChannelStt?.scriptHash
+        ? deploymentConfig.hostStateNFT
+        : handlerAuthToken;
       const mintChannelScriptHash =
         deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
-      const channelBaseToken = deploymentConfig.validators.mintChannelStt?.scriptHash ? hostStateNFT : handlerAuthToken;
       const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
@@ -964,7 +965,7 @@ export class QueryService {
       const channelId = srcChannelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
       const channelTokenName = this.lucidService.generateTokenName(
-        channelBaseToken,
+        tokenBase,
         CHANNEL_TOKEN_PREFIX,
         BigInt(channelId),
       );
