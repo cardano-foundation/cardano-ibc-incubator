@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { LucidService } from '../lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { UTxO } from '@lucid-evolution/lucid';
-import { HostStateDatum } from '../../types/host-state-datum';
 
 /**
  * KupoService - Provides IBC-specific queries to Kupo indexer (STT Architecture)
@@ -124,75 +123,4 @@ export class KupoService {
     }
   }
 
-  /**
-   * Query HostState UTXO at a specific height (STT Architecture)
-   * 
-   * STT Benefits:
-   * - NFT provides unique identifier (no ambiguous UTXOs)
-   * - Can trace complete state history by following NFT
-   * - Historical queries simplified (find NFT at height)
-   * 
-   * NOTE: This requires Kupo to have indexed from the NFT mint block.
-   * Currently returns current HostState UTXO as Lucid doesn't expose
-   * historical query APIs directly.
-   * 
-   * TODO: Implement actual historical queries when Kupo API is integrated
-   * This may require direct HTTP calls to Kupo's REST API:
-   * GET /matches/{nft_policy}/{nft_name}?spent&created_before={slot}
-   * 
-   * @param height - The block height to query
-   * @returns HostState UTXO at that height
-   */
-  async queryHostStateUtxoAtHeight(height: number): Promise<UTxO> {
-    // TODO: Convert height to slot number
-    // TODO: Make direct Kupo API call for historical UTXO
-    // For now, return current UTXO
-    //
-    // TODO(ibc): For IBC proof verification, callers need the HostState UTxO (and its datum)
-    // as it existed at the queried height, not "latest". This requires:
-    // - a deterministic mapping from the requested height to a Cardano slot / point-in-time filter
-    // - a historical query that returns the HostState NFT output that was live at that time
-    // - enough metadata to later prove this output was part of a finalized, certified Cardano view
-    //   (e.g., via Mithril-certified evidence), instead of trusting the indexer.
-    
-    return await this.lucidService.findUtxoAtHostStateNFT();
-  }
-
-  /**
-   * Query the current HostState UTXO (STT Architecture)
-   * 
-   * Convenience wrapper around LucidService.findUtxoAtHostStateNFT()
-   * Provided for consistency with other query methods
-   * 
-   * @returns The current HostState UTXO
-   */
-  async queryCurrentHostStateUtxo(): Promise<UTxO> {
-    return await this.lucidService.findUtxoAtHostStateNFT();
-  }
-
-  /**
-   * Query the IBC state root at a specific height (STT Architecture)
-   * 
-   * Convenience method that combines querying HostState UTXO + extracting root
-   * 
-   * @param height - The block height to query
-   * @returns The IBC state root (32-byte hex string)
-   */
-  async queryIBCStateRootAtHeight(height: number): Promise<string> {
-    // TODO(ibc): This currently returns the root from whatever HostState UTxO is live "now",
-    // because `queryHostStateUtxoAtHeight()` is not actually height-specific yet.
-    //
-    // Once historical HostState queries are implemented, this method should return the root
-    // for the exact HostState datum at the requested height, along with enough information
-    // to tie that datum to certified Cardano data (so the root can be treated as authenticated).
-    const hostStateUtxo = await this.queryHostStateUtxoAtHeight(height);
-    
-    if (!hostStateUtxo.datum) {
-      throw new Error('HostState UTXO has no datum');
-    }
-    
-    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-
-    return hostStateDatum.state.ibc_state_root;
-  }
 }
