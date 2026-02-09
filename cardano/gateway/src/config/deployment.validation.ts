@@ -75,10 +75,9 @@ function requireSpendValidator(value: any, path: string): SpendValidator {
 /**
  * Enforce STT-only deployments.
  *
- * Historically we allowed Gateway to fall back to legacy (non-STT) minting
- * policies + base tokens when STT fields were missing from `handler.json`.
- * This is dangerous because it allows a misconfiguration to silently run
- * against the wrong on-chain contracts.
+ * Gateway now requires an STT deployment config. If `HANDLER_JSON_PATH` points
+ * to an older/partial `handler.json` missing STT fields, we fail fast with a
+ * clear error message.
  */
 export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfigStt {
   assert(deployment && typeof deployment === 'object', 'Invalid deployment config: must be an object');
@@ -103,4 +102,3 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     },
   };
 }
-

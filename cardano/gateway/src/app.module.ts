@@ -26,8 +26,9 @@ import { requireSttDeploymentConfig } from './config/deployment.validation';
           const fs = require('fs');
           const handlerPath = process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json';
           const handlerJson = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
-          // Fail fast if this deployment does not include STT config. Gateway must not
-          // silently fall back to legacy (non-STT) minting policies/base tokens.
+          // Fail fast with a clear error if the deployment config is not STT-enabled.
+          // This avoids confusing runtime failures when `HANDLER_JSON_PATH` points to an
+          // older/partial `handler.json` missing required STT fields.
           requireSttDeploymentConfig(handlerJson);
           return { deployment: handlerJson };
         },
