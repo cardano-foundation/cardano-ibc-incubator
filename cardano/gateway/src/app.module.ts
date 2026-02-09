@@ -13,6 +13,7 @@ import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
 import { HealthModule } from './health/health.module';
+import { requireSttDeploymentConfig } from './config/deployment.validation';
 
 @Module({
   imports: [
@@ -25,6 +26,10 @@ import { HealthModule } from './health/health.module';
           const fs = require('fs');
           const handlerPath = process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json';
           const handlerJson = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
+          // Fail fast with a clear error if the deployment config is not STT-enabled.
+          // This avoids confusing runtime failures when `HANDLER_JSON_PATH` points to an
+          // older/partial `handler.json` missing required STT fields.
+          requireSttDeploymentConfig(handlerJson);
           return { deployment: handlerJson };
         },
       ],

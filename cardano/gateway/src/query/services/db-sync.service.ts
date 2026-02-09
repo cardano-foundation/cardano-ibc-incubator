@@ -209,10 +209,8 @@ export class DbSyncService {
 
   async findUtxoByPolicyAndTokenNameAndState(policyId: string, tokenName: string, state: string): Promise<UtxoDto> {
     const deploymentConfig = this.configService.get('deployment');
-    const mintConnScriptHash =
-      deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
-    const minChannelScriptHash =
-      deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
+    const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
+    const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
 
     const query = `
     SELECT 
@@ -261,7 +259,7 @@ export class DbSyncService {
               if (datumDecoded.state.state === state) return utxo;
               break;
             }
-            case minChannelScriptHash: {
+            case mintChannelScriptHash: {
               const datumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
               if (datumDecoded.state.channel.state === state) return utxo;
               break;
@@ -291,9 +289,8 @@ export class DbSyncService {
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
     const deploymentConfig = this.configService.get('deployment');
     const handlerAuthToken = deploymentConfig.handlerAuthToken;
-    const mintClientScriptHash =
-      deploymentConfig.validators.mintClientStt?.scriptHash || deploymentConfig.validators.mintClient.scriptHash;
-    const tokenBase = deploymentConfig.validators.mintClientStt?.scriptHash ? deploymentConfig.hostStateNFT : handlerAuthToken;
+    const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
+    const tokenBase = deploymentConfig.hostStateNFT;
     const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
 
     const query = `

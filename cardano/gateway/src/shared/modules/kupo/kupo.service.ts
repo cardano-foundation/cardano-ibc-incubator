@@ -40,12 +40,9 @@ export class KupoService {
     
     // Initialize token prefixes for filtering
     // NOTE: `scriptHash` is the Cardano policy id for minting policies.
-    this.clientTokenPrefix =
-      deployment.validators.mintClientStt?.scriptHash || deployment.validators.mintClient.scriptHash;
-    this.connectionTokenPrefix =
-      deployment.validators.mintConnectionStt?.scriptHash || deployment.validators.mintConnection.scriptHash;
-    this.channelTokenPrefix =
-      deployment.validators.mintChannelStt?.scriptHash || deployment.validators.mintChannel.scriptHash;
+    this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
+    this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
+    this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
     
     // Initialize addresses
     this.handlerAddress = deployment.validators.spendHandler.address;

@@ -592,16 +592,13 @@ export class QueryService {
 
     try {
       const deploymentConfig = this.configService.get('deployment');
-      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
-      const mintConnScriptHash =
-        deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
-      const mintChannelScriptHash =
-        deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
+      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
+      const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
 
-      const connectionBaseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
-      const channelBaseToken = deploymentConfig.validators.mintChannelStt?.scriptHash ? hostStateNFT : handlerAuthToken;
+      const connectionBaseToken = hostStateNFT;
+      const channelBaseToken = hostStateNFT;
 
       const totalEventResults: ResponseDeliverTx[] = [];
       for (const blockNo of [height]) {
@@ -895,11 +892,10 @@ export class QueryService {
 
   private async _parseEventClient(utxos: UtxoDto[]): Promise<ResponseDeliverTx[]> {
     const deploymentConfig = this.configService.get('deployment');
-    const mintClientScriptHash =
-      deploymentConfig.validators.mintClientStt?.scriptHash || deploymentConfig.validators.mintClient.scriptHash;
+    const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
     const spendClientAddress = deploymentConfig.validators.spendClient.address;
     const handlerAuthToken = deploymentConfig.handlerAuthToken;
-    const tokenBase = deploymentConfig.validators.mintClientStt?.scriptHash ? deploymentConfig.hostStateNFT : handlerAuthToken;
+    const tokenBase = deploymentConfig.hostStateNFT;
     const hasHandlerUtxo = utxos.find((utxo) => utxo.assetsPolicy === handlerAuthToken.policyId);
 
     const txsResults = await Promise.all(
@@ -951,12 +947,8 @@ export class QueryService {
     try {
       const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
       const deploymentConfig = this.configService.get('deployment');
-      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
-      const tokenBase: AuthToken = deploymentConfig.validators.mintChannelStt?.scriptHash
-        ? deploymentConfig.hostStateNFT
-        : handlerAuthToken;
-      const mintChannelScriptHash =
-        deploymentConfig.validators.mintChannelStt?.scriptHash || deploymentConfig.validators.mintChannel.scriptHash;
+      const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
+      const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
       const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
@@ -965,7 +957,7 @@ export class QueryService {
       const channelId = srcChannelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
 
       const channelTokenName = this.lucidService.generateTokenName(
-        tokenBase,
+        hostStateNFT,
         CHANNEL_TOKEN_PREFIX,
         BigInt(channelId),
       );
