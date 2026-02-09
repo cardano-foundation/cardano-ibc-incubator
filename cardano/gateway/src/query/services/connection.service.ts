@@ -93,9 +93,8 @@ export class ConnectionService {
     const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
     const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
-    const baseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
-    const mintConnScriptHash =
-      deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+    const baseToken = hostStateNFT;
+    const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
 
     const sampleConnectionTokenName = this.lucidService.generateTokenName(baseToken, CONNECTION_TOKEN_PREFIX, 0n);
     const connectionTokenPrefix = sampleConnectionTokenName.slice(0, 48);
@@ -187,9 +186,8 @@ export class ConnectionService {
       const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
-      const baseToken = deploymentConfig.validators.mintConnectionStt?.scriptHash ? hostStateNFT : handlerAuthToken;
-      const mintConnScriptHash =
-        deploymentConfig.validators.mintConnectionStt?.scriptHash || deploymentConfig.validators.mintConnection.scriptHash;
+      const baseToken = hostStateNFT;
+      const mintConnScriptHash = deploymentConfig.validators.mintConnectionStt.scriptHash;
 
       const connectionTokenName = this.lucidService.generateTokenName(
         baseToken,
