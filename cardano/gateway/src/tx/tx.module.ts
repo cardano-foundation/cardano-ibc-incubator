@@ -26,6 +26,6 @@ import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pendin
     IbcTreePendingUpdatesService,
     Logger,
   ],
-  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService],
+  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService],
 })
 export class TxModule {}
