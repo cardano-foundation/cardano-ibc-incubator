@@ -22,9 +22,11 @@ buckets = 10
 
 # REST API configuration
 [rest]
-enabled = true
+# Disabled by default: local dev environments (e.g. Colima/Lima) often reserve or
+# forward common ports like 3000, which can crash Hermes at startup.
+enabled = false
 host = '127.0.0.1'
-port = 3000
+port = 3030
 
 # Mode configuration - which relaying features to enable
 [mode]
