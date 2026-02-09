@@ -7,9 +7,10 @@ import { HttpModule } from '@nestjs/axios';
 import { MiniProtocalsModule } from '@shared/modules/mini-protocals/mini-protocals.module';
 import { PacketService } from '~@/tx/packet.service';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
+import { TxModule } from '~@/tx/tx.module';
 
 @Module({
-  imports: [QueryModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
+  imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [ApiController],
   providers: [ChannelService, PacketService, Logger],
 })
