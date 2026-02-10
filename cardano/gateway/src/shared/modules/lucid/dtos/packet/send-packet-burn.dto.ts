@@ -8,6 +8,7 @@ export type UnsignedSendPacketBurnDto = {
   clientUTxO: UTxO;
   transferModuleUTxO: UTxO;
   senderVoucherTokenUtxo: UTxO;
+  walletUtxos?: UTxO[];
 
   encodedHostStateRedeemer: string;
   encodedUpdatedHostStateDatum: string;

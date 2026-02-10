@@ -188,6 +188,12 @@ export class LucidService {
     return utxos;
   }
 
+  public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
+  }
+
+
   public async findUtxoAtHandlerAuthToken(): Promise<UTxO> {
     const { address: addressOrCredential } = this.configService.get('deployment').validators.spendHandler;
     const handlerAuthTokenConfig = this.configService.get('deployment').handlerAuthToken;
@@ -234,6 +240,10 @@ export class LucidService {
 
   public async getPublicKeyHash(address: string): Promise<string> {
     return getAddressDetails(address).paymentCredential?.hash;
+  }
+
+  public getPaymentCredential(address: string) {
+    return getAddressDetails(address).paymentCredential;
   }
   // ========================== helper ==========================
   public getHandlerTokenUnit(): string {
@@ -1467,8 +1477,14 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    let tx: TxBuilder;
+    if (dto.walletUtxos && dto.walletUtxos.length > 0) {
+      const normalizedAddress = this.normalizeAddressOrCredential(dto.senderAddress);
+      this.lucid.selectWallet.fromAddress(normalizedAddress, dto.walletUtxos);
+      tx = this.lucid.newTx();
+    } else {
+      tx = this.txFromWallet(dto.constructedAddress);
+    }
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
