@@ -888,18 +888,55 @@ pub async fn run_integration_tests(
             let timeout_height_offset = 100;
             let timeout_seconds = 600;
 
-            match hermes_ft_transfer(
-                project_root,
-                "cardano-devnet",
-                "sidechain",
-                "transfer",
-                cardano_channel_id,
-                amount,
-                &voucher_denom_path,
-                None,
-                timeout_height_offset,
-                timeout_seconds,
-            ) {
+            let mut transfer_result: Result<(), Box<dyn std::error::Error>> = Err(
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "hermes ft-transfer not attempted",
+                )
+                .into(),
+            );
+            let transfer_attempts = 5;
+            let transfer_retry_delay = Duration::from_secs(10);
+            for attempt in 1..=transfer_attempts {
+                match hermes_ft_transfer(
+                    project_root,
+                    "cardano-devnet",
+                    "sidechain",
+                    "transfer",
+                    cardano_channel_id,
+                    amount,
+                    &voucher_denom_path,
+                    None,
+                    timeout_height_offset,
+                    timeout_seconds,
+                ) {
+                    Ok(()) => {
+                        transfer_result = Ok(());
+                        break;
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        let retryable = err_str.contains("does not have enough funds")
+                            || err_str.contains("reference scripts")
+                            || err_str.contains("TxBuilderError");
+                        if retryable && attempt < transfer_attempts {
+                            logger::log(&format!(
+                                "Test 10: hermes ft-transfer attempt {}/{} failed due to wallet selection; retrying in {:?}\n{}\n",
+                                attempt,
+                                transfer_attempts,
+                                transfer_retry_delay,
+                                err_str
+                            ));
+                            std::thread::sleep(transfer_retry_delay);
+                            continue;
+                        }
+                        transfer_result = Err(e);
+                        break;
+                    }
+                }
+            }
+
+            match transfer_result {
                 Ok(_) => match hermes_clear_packets(
                     project_root,
                     "cardano-devnet",
@@ -987,10 +1024,25 @@ pub async fn run_integration_tests(
                 },
                 Err(e) => {
                     let elapsed = test_10.finish();
+                    let cardano_lovelace_total = query_cardano_lovelace_total(
+                        project_root,
+                        &cardano_receiver_address,
+                    )
+                    .unwrap_or(0);
+                    let cardano_utxos = query_cardano_utxos_json(
+                        project_root,
+                        &cardano_receiver_address,
+                    )
+                    .unwrap_or_else(|err| format!("Failed to query Cardano UTxOs: {}", err));
                     logger::log(&format!(
-                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n",
+                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> sidechain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n",
                         format_duration(elapsed),
-                        e
+                        e,
+                        cardano_receiver_address,
+                        voucher_policy_id,
+                        cardano_lovelace_total,
+                        cardano_voucher_assets_before,
+                        cardano_utxos
                     ));
                     results.failed += 1;
                 }
@@ -1115,10 +1167,11 @@ pub async fn run_integration_tests(
                                 .strip_prefix("ibc/")
                                 .unwrap_or(minted_denom.as_str());
 
+                            let expected_base_denom = encode_hex_string(base_denom);
                             match assert_sidechain_denom_trace(
                                 minted_hash,
                                 &expected_path,
-                                base_denom,
+                                &expected_base_denom,
                             ) {
                                 Ok(()) => {
                                     logger::log(&format!(
@@ -1280,10 +1333,11 @@ pub async fn run_integration_tests(
                                 .strip_prefix("ibc/")
                                 .unwrap_or(voucher_denom.as_str());
 
+                            let expected_base_denom = encode_hex_string("lovelace");
                             match assert_sidechain_denom_trace(
                                 minted_hash,
                                 &expected_path,
-                                "lovelace",
+                                &expected_base_denom,
                             ) {
                                 Ok(()) => {
                                     logger::log("PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds\n");
@@ -2309,6 +2363,14 @@ fn cardano_enterprise_address_from_payment_credential(
     Ok(bech32_encode_bytes(hrp, &address_bytes)?)
 }
 
+fn encode_hex_string(input: &str) -> String {
+    input
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
+}
+
 fn decode_hex_bytes(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if hex.len() % 2 != 0 {
         return Err(format!("Invalid hex string length: {}", hex.len()).into());
@@ -2721,6 +2783,41 @@ fn query_cardano_lovelace_total(
     Ok(total)
 }
 
+fn query_cardano_utxos_json(
+    project_root: &Path,
+    address: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .args(&[
+            "compose",
+            "exec",
+            "-T",
+            "cardano-node",
+            "cardano-cli",
+            "query",
+            "utxo",
+            "--address",
+            address,
+            "--testnet-magic",
+            "42",
+            "--out-file",
+            "/dev/stdout",
+        ])
+        .current_dir(&cardano_dir)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query Cardano UTXOs at {}:\n{}",
+            address,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    Ok(String::from_utf8(output.stdout)?)
+}
 fn query_cardano_policy_assets(
     project_root: &Path,
     address: &str,
