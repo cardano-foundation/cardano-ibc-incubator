@@ -1760,7 +1760,8 @@ export class PacketService {
       return denom;
     }
     if (this._isHexDenom(denom)) {
-      return denom.toLowerCase();
+      // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
+      throw new GrpcInvalidArgumentException('Denom appears to be already hex-encoded; refusing to hex-encode twice');
     }
     return convertString2Hex(denom);
   }
