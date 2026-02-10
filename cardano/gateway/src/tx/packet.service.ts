@@ -1295,7 +1295,9 @@ export class PacketService {
         if (match) {
           denomForVoucherHash = match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
         } else {
-          this.logger.warn(`IBC denom ${denomForVoucherHash} not found in denom traces; falling back to raw denom hash`);
+          throw new GrpcInvalidArgumentException(
+            `IBC denom ${denomForVoucherHash} not found in denom traces; cannot derive voucher token name`,
+          );
         }
       }
       const voucherTokenName = hashSha3_256(convertString2Hex(denomForVoucherHash));
@@ -1773,7 +1775,8 @@ export class PacketService {
       return denom;
     }
     if (this._isHexDenom(denom)) {
-      return denom.toLowerCase();
+      // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
+      throw new GrpcInvalidArgumentException('Denom appears to be already hex-encoded; refusing to hex-encode twice');
     }
     return convertString2Hex(denom);
   }
@@ -1792,9 +1795,18 @@ export class PacketService {
     if (trimmed.startsWith('addr') || trimmed.startsWith('addr_test')) {
       const credential = this.lucidService.getPaymentCredential(trimmed);
       if (!credential || credential.type !== 'Key') {
-        // Mint vouchers into a plain key UTxO so Hermes/Lucid can spend it without custom coin-selection logic.
-        // This will reject script addresses as voucher receivers (by design). If you need script receivers,
-        // we’d have to implement the more complex coin-selection path instead.
+        // We only support key-payment credentials for voucher receivers.
+        //
+        // Rationale:
+        // - Vouchers minted to a key address are spendable with a normal wallet signature.
+        // - Hermes/Lucid can handle those UTxOs with standard coin-selection and signing.
+        //
+        // Script payment credentials are different:
+        // - Spending requires the validator script, datum, redeemer, and collateral selection.
+        // - Hermes/Lucid do not build those script-spend transactions in this flow.
+        // - So a voucher minted to a script address would be effectively stuck.
+        //
+        // If we want script receivers there would be a more complex coin selection logic, which for now will remain a TO-DO.
         throw new GrpcInvalidArgumentException('Voucher receiver must be a key address (no script/ref-script UTxO)');
       }
       return trimmed;
