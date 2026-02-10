@@ -279,7 +279,8 @@ export class PacketService {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
 
-      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedSendPacketTx(sendPacketOperator);
+      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
+        await this.buildUnsignedSendPacketTx(sendPacketOperator);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -288,6 +289,12 @@ export class PacketService {
       }
 
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
+
+      if (walletOverride) {
+        // Ensure the sender's UTxOs are used right before completion to avoid wallet drift
+        // between build and complete (e.g., concurrent tx builds with different wallets).
+        this.lucidService.selectWalletFromAddress(walletOverride.address, walletOverride.utxos);
+      }
 
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
@@ -790,6 +797,7 @@ export class PacketService {
             const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
+            const receiverAddress = this._resolveVoucherReceiverAddress(fungibleTokenPacketData.receiver);
             const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
               hostStateUtxo,
               channelUtxo,
@@ -807,7 +815,7 @@ export class PacketService {
               channelTokenUnit,
               voucherTokenUnit,
               transferAmount: BigInt(fungibleTokenPacketData.amount),
-              receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
+              receiverAddress,
               constructedAddress,
 
               recvPacketPolicyId,
@@ -1128,7 +1136,7 @@ export class PacketService {
 
   async buildUnsignedSendPacketTx(
     sendPacketOperator: SendPacketOperator,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; walletOverride?: { address: string; utxos: UTxO[] } }> {
     const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1161,13 +1169,15 @@ export class PacketService {
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
     // build transfer module redeemer
-    const denom =
-      sendPacketOperator.token.denom === LOVELACE
-        ? convertString2Hex(sendPacketOperator.token.denom)
-        : sendPacketOperator.token.denom;
+    const tokenDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom);
+    const packetDenom = this._normalizePacketDenom(
+      tokenDenom,
+      sendPacketOperator.sourcePort,
+      sendPacketOperator.sourceChannel,
+    );
     // fungible token packet data
     const fTokenPacketData: FungibleTokenPacketDatum = {
-      denom: denom,
+      denom: packetDenom,
       amount: sendPacketOperator.token.amount.toString(),
       sender: sendPacketOperator.sender,
       receiver: sendPacketOperator.receiver,
@@ -1201,7 +1211,7 @@ export class PacketService {
       Transfer: {
         channel_id: channelId,
         data: {
-          denom: convertString2Hex(denom),
+          denom: convertString2Hex(packetDenom),
           amount: convertString2Hex(sendPacketOperator.token.amount.toString()),
           sender: convertString2Hex(sendPacketOperator.sender),
           receiver: convertString2Hex(sendPacketOperator.receiver),
@@ -1246,13 +1256,7 @@ export class PacketService {
       name: channelTokenName,
     };
 
-    if (
-      this._hasVoucherPrefix(
-        sendPacketOperator.token.denom,
-        sendPacketOperator.sourcePort,
-        sendPacketOperator.sourceChannel,
-      )
-    ) {
+    if (this._hasVoucherPrefix(packetDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel)) {
       this.logger.log('send burn');
       const mintVoucherRedeemer: MintVoucherRedeemer = {
         BurnVoucher: {
@@ -1265,11 +1269,44 @@ export class PacketService {
         'mintVoucherRedeemer',
       );
 
-      const voucherTokenName = hashSha3_256(sendPacketOperator.token.denom);
+      let denomForVoucherHash = sendPacketOperator.token.denom;
+      if (denomForVoucherHash.startsWith('ibc/')) {
+        const denomHash = denomForVoucherHash.slice(4).toLowerCase();
+        const traces = await this.denomTraceService.findAll();
+        const match = traces.find((trace) => {
+          const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
+          return hashSHA256(convertString2Hex(fullPath)).toLowerCase() === denomHash;
+        });
+        if (match) {
+          denomForVoucherHash = match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
+        } else {
+          throw new GrpcInvalidArgumentException(
+            `IBC denom ${denomForVoucherHash} not found in denom traces; cannot derive voucher token name`,
+          );
+        }
+      }
+      const voucherTokenName = hashSha3_256(convertString2Hex(denomForVoucherHash));
       const voucherTokenUnit = deploymentConfig.validators.mintVoucher.scriptHash + voucherTokenName;
       const senderAddress = sendPacketOperator.sender;
 
       const senderVoucherTokenUtxo = await this.lucidService.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
+      let senderUtxos: UTxO[] = [];
+      try {
+        senderUtxos = await this.lucidService.findUtxoAt(senderAddress);
+      } catch (error) {
+        this.logger.warn(
+          `Unable to load sender UTxOs for wallet override; using voucher UTxO only: ${error?.message ?? error}`,
+        );
+      }
+
+      const hasVoucherUtxo = senderUtxos.some(
+        (utxo) =>
+          utxo.txHash === senderVoucherTokenUtxo.txHash &&
+          utxo.outputIndex === senderVoucherTokenUtxo.outputIndex,
+      );
+      if (!hasVoucherUtxo) {
+        senderUtxos.push(senderVoucherTokenUtxo);
+      }
       // send burn
       const unsignedSendPacketParams: UnsignedSendPacketBurnDto = {
         hostStateUtxo,
@@ -1278,6 +1315,7 @@ export class PacketService {
         clientUTxO: clientUtxo,
         transferModuleUTxO: transferModuleUtxo,
         senderVoucherTokenUtxo,
+        walletUtxos: senderUtxos.length > 0 ? senderUtxos : undefined,
 
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -1294,14 +1332,18 @@ export class PacketService {
 
         channelTokenUnit,
         voucherTokenUnit,
-        denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
+        denomToken: tokenDenom,
 
         sendPacketPolicyId,
         channelToken,
       };
 
       const unsignedTx = this.lucidService.createUnsignedSendPacketBurnTx(unsignedSendPacketParams);
-      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+      return {
+        unsignedTx,
+        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+        walletOverride: { address: senderAddress, utxos: senderUtxos },
+      };
     }
     // escrow
     this.logger.log('send escrow');
@@ -1327,7 +1369,7 @@ export class PacketService {
       spendChannelAddress: deploymentConfig.validators.spendChannel.address,
       channelTokenUnit: channelTokenUnit,
       transferModuleAddress: deploymentConfig.modules.transfer.address,
-      denomToken: normalizeDenomTokenTransfer(sendPacketOperator.token.denom),
+      denomToken: tokenDenom,
 
       sendPacketPolicyId,
       channelToken,
@@ -1713,11 +1755,48 @@ export class PacketService {
     const voucherPrefix = getDenomPrefix(portId, channelId);
     return denom.startsWith(voucherPrefix);
   }
+  private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
+    if (this._hasVoucherPrefix(denom, portId, channelId)) {
+      return denom;
+    }
+    if (this._isHexDenom(denom)) {
+      return denom.toLowerCase();
+    }
+    return convertString2Hex(denom);
+  }
+  private _isHexDenom(denom: string): boolean {
+    return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
+  }
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;
   }
   private getMintVoucherScriptHash(): string {
     return this.configService.get('deployment').validators.mintVoucher.scriptHash;
+  }
+
+  private _resolveVoucherReceiverAddress(receiver: string): string {
+    const trimmed = receiver.trim();
+    if (trimmed.startsWith('addr') || trimmed.startsWith('addr_test')) {
+      const credential = this.lucidService.getPaymentCredential(trimmed);
+      if (!credential || credential.type !== 'Key') {
+        // We only support key-payment credentials for voucher receivers.
+        //
+        // Rationale:
+        // - Vouchers minted to a key address are spendable with a normal wallet signature.
+        // - Hermes/Lucid can handle those UTxOs with standard coin-selection and signing.
+        //
+        // Script payment credentials are different:
+        // - Spending requires the validator script, datum, redeemer, and collateral selection.
+        // - Hermes/Lucid do not build those script-spend transactions in this flow.
+        // - So a voucher minted to a script address would be effectively stuck.
+        //
+        // If we want script receivers there would be a more complex coin selection logic, which for now will remain a TO-DO.
+        throw new GrpcInvalidArgumentException('Voucher receiver must be a key address (no script/ref-script UTxO)');
+      }
+      return trimmed;
+    }
+    // Mint vouchers directly to the key address derived from the payment credential (avoids coin-selection overrides).
+    return this.lucidService.credentialToAddress(trimmed);
   }
   private getSpendChannelAddress(): string {
     return this.configService.get('deployment').validators.spendChannel.address;
