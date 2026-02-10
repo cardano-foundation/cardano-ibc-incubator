@@ -692,7 +692,31 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    if clean {
+        execute_script(
+            cosmos_dir,
+            "docker",
+            Vec::from(["compose", "down", "-v", "--remove-orphans"]),
+            None,
+        )?;
+        execute_script(
+            cosmos_dir,
+            "docker",
+            Vec::from([
+                "compose",
+                "run",
+                "--rm",
+                "--entrypoint",
+                "bash",
+                "sidechain-node-prod",
+                "-lc",
+                "rm -rf /root/.sidechain /root/.ignite",
+            ]),
+            None,
+        )?;
+    } else {
+        execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    }
 
     let mut args = vec!["compose", "up", "-d"];
     if clean {
