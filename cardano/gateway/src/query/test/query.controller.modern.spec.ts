@@ -8,33 +8,49 @@ import { DenomTraceService } from '../services/denom-trace.service';
 
 describe('QueryController (modern)', () => {
   let controller: QueryController;
-  let queryServiceMock: {
-    queryNewMithrilClient: jest.Mock;
-    queryIBCHeader: jest.Mock;
-    queryDenomTrace: jest.Mock;
-    latestHeight: jest.Mock;
-  };
-  let connectionServiceMock: {
-    queryConnections: jest.Mock;
-  };
-  let packetServiceMock: {
-    queryPacketAcknowledgement: jest.Mock;
-  };
+  let queryServiceMock: Record<string, jest.Mock>;
+  let connectionServiceMock: Record<string, jest.Mock>;
+  let channelServiceMock: Record<string, jest.Mock>;
+  let packetServiceMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     queryServiceMock = {
-      queryNewMithrilClient: jest.fn(),
-      queryIBCHeader: jest.fn(),
-      queryDenomTrace: jest.fn(),
+      queryClientState: jest.fn(),
+      queryConsensusState: jest.fn(),
+      queryBlockData: jest.fn(),
       latestHeight: jest.fn(),
+      queryNewMithrilClient: jest.fn(),
+      queryBlockResults: jest.fn(),
+      queryBlockSearch: jest.fn(),
+      queryTransactionByHash: jest.fn(),
+      queryIBCHeader: jest.fn(),
+      queryEvents: jest.fn(),
+      queryDenomTrace: jest.fn(),
+      queryDenomTraces: jest.fn(),
     };
 
     connectionServiceMock = {
       queryConnections: jest.fn(),
+      queryConnection: jest.fn(),
+    };
+
+    channelServiceMock = {
+      queryChannels: jest.fn(),
+      queryChannel: jest.fn(),
+      queryConnectionChannels: jest.fn(),
     };
 
     packetServiceMock = {
       queryPacketAcknowledgement: jest.fn(),
+      queryPacketAcknowledgements: jest.fn(),
+      queryPacketCommitment: jest.fn(),
+      queryPacketCommitments: jest.fn(),
+      queryPacketReceipt: jest.fn(),
+      queryUnreceivedPackets: jest.fn(),
+      queryUnreceivedAcks: jest.fn(),
+      queryProofUnreceivedPackets: jest.fn(),
+      queryNextSequenceReceive: jest.fn(),
+      QueryNextSequenceAck: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -42,13 +58,50 @@ describe('QueryController (modern)', () => {
       providers: [
         { provide: QueryService, useValue: queryServiceMock },
         { provide: ConnectionService, useValue: connectionServiceMock },
-        { provide: ChannelService, useValue: {} },
+        { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
         { provide: DenomTraceService, useValue: {} },
       ],
     }).compile();
 
     controller = module.get<QueryController>(QueryController);
+  });
+
+  async function expectDelegation(
+    controllerMethod: string,
+    serviceMock: Record<string, jest.Mock>,
+    serviceMethod: string,
+    request: any,
+    expected: any,
+  ) {
+    serviceMock[serviceMethod].mockResolvedValue(expected);
+
+    const response = await (controller as any)[controllerMethod](request);
+
+    expect(serviceMock[serviceMethod]).toHaveBeenCalledWith(request);
+    expect(response).toBe(expected);
+  }
+
+  it('delegates queryClientState to QueryService', async () => {
+    await expectDelegation('queryClientState', queryServiceMock, 'queryClientState', { client_id: 'c0' }, { ok: 1 });
+  });
+
+  it('delegates queryConsensusState to QueryService', async () => {
+    await expectDelegation(
+      'queryConsensusState',
+      queryServiceMock,
+      'queryConsensusState',
+      { client_id: 'c0', revision_number: 1n, revision_height: 2n },
+      { ok: 1 },
+    );
+  });
+
+  it('delegates queryBlockData to QueryService', async () => {
+    await expectDelegation('queryBlockData', queryServiceMock, 'queryBlockData', { height: 10n }, { ok: 1 });
+  });
+
+  it('delegates LatestHeight to QueryService', async () => {
+    await expectDelegation('LatestHeight', queryServiceMock, 'latestHeight', {}, { height: 777n });
   });
 
   it('delegates NewClient to QueryService and returns its response', async () => {
@@ -72,58 +125,181 @@ describe('QueryController (modern)', () => {
     await expect(controller.NewClient(request)).rejects.toThrow('Not found: "height" 999 not found');
   });
 
-  it('delegates queryIBCHeader to QueryService', async () => {
-    const request = { height: 500n } as any;
-    const expected = { header: { type_url: '/ibc.lightclients.mithril.v1.MithrilHeader', value: Buffer.from([1]) } } as any;
-    queryServiceMock.queryIBCHeader.mockResolvedValue(expected);
-
-    const response = await controller.queryIBCHeader(request);
-
-    expect(queryServiceMock.queryIBCHeader).toHaveBeenCalledWith(request);
-    expect(response).toBe(expected);
-  });
-
-  it('delegates denomTrace to QueryService', async () => {
-    const request = { hash: 'abc123' } as any;
-    const expected = { denom_trace: { path: 'transfer/channel-0', base_denom: 'stake' } } as any;
-    queryServiceMock.queryDenomTrace.mockResolvedValue(expected);
-
-    const response = await controller.denomTrace(request);
-
-    expect(queryServiceMock.queryDenomTrace).toHaveBeenCalledWith(request);
-    expect(response).toBe(expected);
+  it('delegates BlockResults to QueryService', async () => {
+    await expectDelegation('BlockResults', queryServiceMock, 'queryBlockResults', { height: 10n }, { txs_results: [] });
   });
 
   it('delegates queryConnections to ConnectionService', async () => {
-    const request = { pagination: { offset: 0, limit: 10 } } as any;
-    const expected = { connections: [] } as any;
-    connectionServiceMock.queryConnections.mockResolvedValue(expected);
+    await expectDelegation('queryConnections', connectionServiceMock, 'queryConnections', { pagination: {} }, { connections: [] });
+  });
 
-    const response = await controller.queryConnections(request);
+  it('delegates queryConnection to ConnectionService', async () => {
+    await expectDelegation('queryConnection', connectionServiceMock, 'queryConnection', { connection_id: 'connection-0' }, { connection: {} });
+  });
 
-    expect(connectionServiceMock.queryConnections).toHaveBeenCalledWith(request);
-    expect(response).toBe(expected);
+  it('delegates queryChannels to ChannelService', async () => {
+    await expectDelegation('queryChannels', channelServiceMock, 'queryChannels', { pagination: {} }, { channels: [] });
+  });
+
+  it('delegates queryChannel to ChannelService', async () => {
+    await expectDelegation('queryChannel', channelServiceMock, 'queryChannel', { channel_id: 'channel-0' }, { channel: {} });
+  });
+
+  it('delegates queryConnectionChannels to ChannelService', async () => {
+    await expectDelegation(
+      'queryConnectionChannels',
+      channelServiceMock,
+      'queryConnectionChannels',
+      { connection: 'connection-0' },
+      { channels: [] },
+    );
   });
 
   it('delegates queryPacketAcknowledgement to PacketService', async () => {
-    const request = { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n } as any;
-    const expected = { acknowledgement: Buffer.from('ok') } as any;
-    packetServiceMock.queryPacketAcknowledgement.mockResolvedValue(expected);
-
-    const response = await controller.queryPacketAcknowledgement(request);
-
-    expect(packetServiceMock.queryPacketAcknowledgement).toHaveBeenCalledWith(request);
-    expect(response).toBe(expected);
+    await expectDelegation(
+      'queryPacketAcknowledgement',
+      packetServiceMock,
+      'queryPacketAcknowledgement',
+      { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n },
+      { acknowledgement: Buffer.from('ok') },
+    );
   });
 
-  it('delegates LatestHeight to QueryService', async () => {
-    const request = {} as any;
-    const expected = { height: 777n } as any;
-    queryServiceMock.latestHeight.mockResolvedValue(expected);
+  it('delegates queryPacketAcknowledgements to PacketService', async () => {
+    await expectDelegation(
+      'queryPacketAcknowledgements',
+      packetServiceMock,
+      'queryPacketAcknowledgements',
+      { port_id: 'transfer', channel_id: 'channel-0' },
+      { acknowledgements: [] },
+    );
+  });
 
-    const response = await controller.LatestHeight(request);
+  it('delegates queryPacketCommitment to PacketService', async () => {
+    await expectDelegation(
+      'queryPacketCommitment',
+      packetServiceMock,
+      'queryPacketCommitment',
+      { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n },
+      { commitment: Buffer.from('c') },
+    );
+  });
 
-    expect(queryServiceMock.latestHeight).toHaveBeenCalledWith(request);
-    expect(response).toBe(expected);
+  it('delegates queryPacketCommitments to PacketService', async () => {
+    await expectDelegation(
+      'queryPacketCommitments',
+      packetServiceMock,
+      'queryPacketCommitments',
+      { port_id: 'transfer', channel_id: 'channel-0' },
+      { commitments: [] },
+    );
+  });
+
+  it('delegates queryPacketReceipt to PacketService', async () => {
+    await expectDelegation(
+      'queryPacketReceipt',
+      packetServiceMock,
+      'queryPacketReceipt',
+      { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n },
+      { received: true },
+    );
+  });
+
+  it('delegates queryUnreceivedPackets to PacketService', async () => {
+    await expectDelegation(
+      'queryUnreceivedPackets',
+      packetServiceMock,
+      'queryUnreceivedPackets',
+      { port_id: 'transfer', channel_id: 'channel-0', packet_commitment_sequences: [1n, 2n] },
+      { sequences: [2n] },
+    );
+  });
+
+  it('delegates queryUnreceivedAcknowledgements to PacketService', async () => {
+    await expectDelegation(
+      'queryUnreceivedAcknowledgements',
+      packetServiceMock,
+      'queryUnreceivedAcks',
+      { port_id: 'transfer', channel_id: 'channel-0', packet_ack_sequences: [1n] },
+      { sequences: [] },
+    );
+  });
+
+  it('delegates queryBlockSearch to QueryService', async () => {
+    await expectDelegation('queryBlockSearch', queryServiceMock, 'queryBlockSearch', { page: 1n }, { blocks: [] });
+  });
+
+  it('delegates queryTransactionByHash to QueryService', async () => {
+    await expectDelegation(
+      'queryTransactionByHash',
+      queryServiceMock,
+      'queryTransactionByHash',
+      { hash: 'abc123' },
+      { tx: {} },
+    );
+  });
+
+  it('delegates queryProofUnreceivedPackets to PacketService', async () => {
+    await expectDelegation(
+      'queryProofUnreceivedPackets',
+      packetServiceMock,
+      'queryProofUnreceivedPackets',
+      { port_id: 'transfer', channel_id: 'channel-0', packet_commitment_sequences: [1n] },
+      { sequence: 1n, proof: Buffer.from('p') },
+    );
+  });
+
+  it('delegates queryIBCHeader to QueryService', async () => {
+    await expectDelegation(
+      'queryIBCHeader',
+      queryServiceMock,
+      'queryIBCHeader',
+      { height: 500n },
+      { header: { type_url: '/ibc.lightclients.mithril.v1.MithrilHeader', value: Buffer.from([1]) } },
+    );
+  });
+
+  it('delegates queryNextSequenceReceive to PacketService', async () => {
+    await expectDelegation(
+      'queryNextSequenceReceive',
+      packetServiceMock,
+      'queryNextSequenceReceive',
+      { port_id: 'transfer', channel_id: 'channel-0' },
+      { next_sequence_receive: 2n },
+    );
+  });
+
+  it('delegates queryNextSequenceAck to PacketService.QueryNextSequenceAck', async () => {
+    await expectDelegation(
+      'queryNextSequenceAck',
+      packetServiceMock,
+      'QueryNextSequenceAck',
+      { port_id: 'transfer', channel_id: 'channel-0' },
+      { next_sequence_receive: 3n },
+    );
+  });
+
+  it('delegates queryEvents to QueryService', async () => {
+    await expectDelegation('queryEvents', queryServiceMock, 'queryEvents', { key: 'tx.height' }, { events: [] });
+  });
+
+  it('delegates denomTrace to QueryService', async () => {
+    await expectDelegation(
+      'denomTrace',
+      queryServiceMock,
+      'queryDenomTrace',
+      { hash: 'abc123' },
+      { denom_trace: { path: 'transfer/channel-0', base_denom: 'stake' } },
+    );
+  });
+
+  it('delegates denomTraces to QueryService', async () => {
+    await expectDelegation(
+      'denomTraces',
+      queryServiceMock,
+      'queryDenomTraces',
+      { pagination: {} },
+      { denom_traces: [] },
+    );
   });
 });
