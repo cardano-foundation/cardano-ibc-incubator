@@ -98,6 +98,8 @@ export class SubmissionService {
 
     if (!pending) return;
 
+    // Attach tx_hash to traces before commit so mapping rows remain connected to the
+    // submitted transaction even when later steps fail or process restarts occur.
     await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     // Verify on-chain root matches what we computed when building the tx.
@@ -132,6 +134,8 @@ export class SubmissionService {
   }
 
   private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
+    // We treat "missing some expected rows" as an integrity error because partial
+    // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.
     const hashes = Array.from(new Set((traceHashes ?? []).map((hash) => hash.toLowerCase())));
     if (hashes.length === 0) return;
 

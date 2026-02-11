@@ -18,6 +18,9 @@ export class DenomTraceService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    // Make startup idempotent across fresh and existing DBs:
+    // 1) ensure schema/index exists, then
+    // 2) backfill missing derived hashes so indexed lookup is immediately usable.
     await this.ensureSchema();
     const updated = await this.backfillMissingIbcDenomHashes();
     if (updated > 0) {
@@ -26,6 +29,8 @@ export class DenomTraceService implements OnModuleInit {
   }
 
   private async ensureSchema(): Promise<void> {
+    // Keep migration logic embedded here because this service can run in
+    // environments where explicit DB migration steps may be skipped.
     await this.denomTraceRepository.query(`
       CREATE TABLE IF NOT EXISTS denom_traces (
         hash TEXT PRIMARY KEY,
@@ -63,6 +68,27 @@ export class DenomTraceService implements OnModuleInit {
       });
 
       if (existing) {
+        // A hash must always map to one canonical trace tuple.
+        // If the incoming write disagrees with an existing row, fail hard.
+        const conflictingFields: string[] = [];
+        if (trace.path !== undefined && trace.path !== existing.path) {
+          conflictingFields.push(`path(existing=${existing.path}, incoming=${trace.path})`);
+        }
+        if (trace.base_denom !== undefined && trace.base_denom !== existing.base_denom) {
+          conflictingFields.push(`base_denom(existing=${existing.base_denom}, incoming=${trace.base_denom})`);
+        }
+        if (trace.voucher_policy_id !== undefined && trace.voucher_policy_id !== existing.voucher_policy_id) {
+          conflictingFields.push(
+            `voucher_policy_id(existing=${existing.voucher_policy_id}, incoming=${trace.voucher_policy_id})`,
+          );
+        }
+
+        if (conflictingFields.length > 0) {
+          throw new Error(
+            `Conflicting denom trace for hash ${trace.hash}: ${conflictingFields.join(', ')}`,
+          );
+        }
+
         this.logger.log(`Denom trace already exists for hash: ${trace.hash}`);
         this.metricsService?.denomTraceSavesTotal.inc({ status: 'duplicate' });
         return existing;
@@ -220,6 +246,7 @@ export class DenomTraceService implements OnModuleInit {
   async setTxHashForTraces(traceHashes: string[], txHash: string): Promise<number> {
     if (!traceHashes.length) return 0;
 
+    // Normalize/dedupe before UPDATE so callers can pass repeated or mixed-case hashes safely.
     const uniqueHashes = Array.from(new Set(traceHashes.map((hash) => hash.toLowerCase())));
     const result = await this.denomTraceRepository
       .createQueryBuilder()
@@ -255,6 +282,7 @@ export class DenomTraceService implements OnModuleInit {
           params.push(row.hash, this.computeIbcDenomHash(row));
           const hashParam = `$${index * 2 + 1}`;
           const ibcHashParam = `$${index * 2 + 2}`;
+          // Build a parameterized VALUES list so we can update many rows in one query.
           return `(${hashParam}, ${ibcHashParam})`;
         })
         .join(', ');
@@ -281,6 +309,8 @@ export class DenomTraceService implements OnModuleInit {
     if (trace.path === undefined || trace.base_denom === undefined) {
       return trace;
     }
+    // Persist the canonical ibc hash derived from path/base_denom so reverse lookup
+    // does not depend on recomputing against every row.
     const hashInput: Pick<DenomTrace, 'path' | 'base_denom'> = {
       path: trace.path,
       base_denom: trace.base_denom,

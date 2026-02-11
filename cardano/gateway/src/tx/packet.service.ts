@@ -841,6 +841,7 @@ export class PacketService {
               pendingTreeUpdate: {
                 expectedNewRoot: newRoot,
                 commit,
+                // Submission service uses this to attach tx_hash after submit/confirm.
                 denomTraceHashes: [voucherTokenName],
               },
             };
@@ -1149,6 +1150,7 @@ export class PacketService {
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
+        // Carry forward the exact trace row(s) created by this tx build.
         denomTraceHashes: [voucherTokenName],
       },
     };
@@ -1755,6 +1757,7 @@ export class PacketService {
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
+        // Carry forward the exact trace row(s) created by this tx build.
         denomTraceHashes: [voucherTokenName],
       },
     };
@@ -1789,6 +1792,7 @@ export class PacketService {
     if (!denom.startsWith('ibc/')) {
       return denom;
     }
+    // `ibc/<hash>` on-chain denomination -> canonical path/base_denom used for voucher token-name derivation.
     const denomHash = denom.slice(4).toLowerCase();
     const match = await this.denomTraceService.findByIbcDenomHash(denomHash);
     if (!match) {
