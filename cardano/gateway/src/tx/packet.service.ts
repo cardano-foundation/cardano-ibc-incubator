@@ -650,15 +650,19 @@ export class PacketService {
     );
 
     const stringData = convertHex2String(recvPacketOperator.packetData) || '';
-    let jsonData;
 
     if (stringData.startsWith('{') && stringData.endsWith('}')) {
+      let jsonData: unknown;
       try {
         jsonData = JSON.parse(stringData);
+      } catch (error) {
+        this.logger.error('Error in parsing JSON packet data: ' + stringData, error);
+        throw new GrpcInvalidArgumentException(`Invalid JSON packet data: ${error?.message ?? error}`);
+      }
 
-        if (jsonData.denom !== undefined) {
+      if (typeof jsonData === 'object' && jsonData !== null && 'denom' in jsonData && jsonData.denom !== undefined) {
           // Packet data seems to be ICS-20 related. Build transfer module redeemer.
-          const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData;
+          const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData as FungibleTokenPacketDatum;
           const fTokenPacketData: FungibleTokenPacketDatum = {
             denom: convertString2Hex(fungibleTokenPacketData.denom),
             amount: convertString2Hex(fungibleTokenPacketData.amount),
@@ -845,9 +849,6 @@ export class PacketService {
               },
             };
           }
-        }
-      } catch (error) {
-        this.logger.error('Error in parsing JSON packet data: ' + stringData, error);
       }
     }
     // Packet data is not related to an ICS-20 token transfer
