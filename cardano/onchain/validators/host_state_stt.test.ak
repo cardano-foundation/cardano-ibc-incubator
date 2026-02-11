@@ -25,6 +25,160 @@ fn port_commitment_key(port: Int) -> ByteArray {
     |> bytearray.concat(port_id)
 }
 
+const test_nft_policy: PolicyId =
+  #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+
+const test_dummy_script_hash: ByteArray =
+  #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+
+const test_input_tx_id: ByteArray =
+  #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a"
+
+type BindPortFixture {
+  BindPortFixture {
+    nft_policy: PolicyId,
+    dummy_script_hash: ByteArray,
+    address: Address,
+    input_ref: OutputReference,
+    host_input: Input,
+    port: Int,
+    siblings: List<ByteArray>,
+    expected_root: ByteArray,
+  }
+}
+
+fn mk_bind_port_fixture(port: Int) -> BindPortFixture {
+  let address = Address(Script(test_dummy_script_hash), None)
+
+  let old_state =
+    HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    }
+
+  let old_datum =
+    HostStateDatum { state: old_state, nft_policy: test_nft_policy }
+
+  let input_ref =
+    OutputReference {
+      transaction_id: test_input_tx_id,
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address: address,
+        value: from_asset(test_nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(old_datum),
+        reference_script: None,
+      },
+    )
+
+  let siblings =
+    repeat_bytearray(
+      ibc_state_commitment.empty_hash,
+      ibc_state_commitment.merkle_depth_bits,
+    )
+
+  let expected_root =
+    ibc_state_commitment.apply_update(
+      old_state.ibc_state_root,
+      port_commitment_key(port),
+      "",
+      cbor.serialise(port),
+      siblings,
+    )
+
+  BindPortFixture {
+    nft_policy: test_nft_policy,
+    dummy_script_hash: test_dummy_script_hash,
+    address: address,
+    input_ref: input_ref,
+    host_input: host_input,
+    port: port,
+    siblings: siblings,
+    expected_root: expected_root,
+  }
+}
+
+fn mk_bind_port_output(
+  fixture: BindPortFixture,
+  output_address: Address,
+  output_root: ByteArray,
+  bound_port: List<Int>,
+) -> Output {
+  let BindPortFixture { nft_policy, .. } = fixture
+
+  let new_state =
+    HostState {
+      version: 1,
+      ibc_state_root: output_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: bound_port,
+      last_update_time: 0,
+    }
+
+  let new_datum = HostStateDatum { state: new_state, nft_policy: nft_policy }
+
+  Output {
+    address: output_address,
+    value: from_asset(nft_policy, host_state_token_name, 1),
+    datum: InlineDatum(new_datum),
+    reference_script: None,
+  }
+}
+
+fn mk_bind_port_redeemer(
+  port: Int,
+  port_siblings: List<ByteArray>,
+) -> host_state_stt.HostStateRedeemer {
+  host_state_stt.BindPort { port: port, port_siblings: port_siblings }
+}
+
+fn run_bind_port_with_outputs(
+  fixture: BindPortFixture,
+  outputs: List<Output>,
+  redeemer_siblings: List<ByteArray>,
+) -> Bool {
+  let BindPortFixture {
+    nft_policy,
+    dummy_script_hash,
+    input_ref,
+    host_input,
+    port,
+    ..
+  } = fixture
+
+  let redeemer = mk_bind_port_redeemer(port, redeemer_siblings)
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: outputs,
+    }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    redeemer,
+    input_ref,
+    transaction,
+  )
+}
+
 test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Arrange: a starting HostState UTxO with an empty commitment root.
