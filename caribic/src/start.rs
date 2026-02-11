@@ -685,7 +685,7 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
 
-    return start_cosmos_entrypoint_chain(chain_root_path, true).await;
+    start_cosmos_entrypoint_chain(chain_root_path, true).await
 }
 
 pub fn start_cosmos_entrypoint_chain_services(
@@ -740,7 +740,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Waiting for Cosmos Entrypoint chain to start".to_owned());
+        progress_bar.set_prefix(
+            "Waiting for Cosmos Entrypoint chain to start".to_owned(),
+        );
     } else {
         log("Waiting for Cosmos Entrypoint chain to start ...");
     }

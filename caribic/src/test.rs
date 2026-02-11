@@ -1069,7 +1069,9 @@ pub async fn run_integration_tests(
     // Tests the "Cardano is the source chain" path for ICS-20:
     //   - Cardano escrows a native token (lovelace) in the transfer module
     //   - Cosmos mints an IBC voucher denom for that token
-    logger::log("Test 11: ICS-20 transfer of Cardano native token (Cardano -> sidechain)...");
+    let mut test_11 = TestTimer::start(
+        "Test 11: ICS-20 transfer of Cardano native token (Cardano -> Entrypoint chain)...",
+    );
     let mut cardano_native_transfer_passed = false;
     let mut cardano_native_voucher_denom: Option<String> = None;
     let mut cardano_native_sidechain_channel_id: Option<String> = None;
@@ -1122,9 +1124,13 @@ pub async fn run_integration_tests(
                     let lovelace_delta =
                         cardano_lovelace_before.saturating_sub(cardano_lovelace_after);
                     if lovelace_delta < amount {
+                        let elapsed = test_11.finish();
                         logger::log(&format!(
-                            "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (before={}, after={}, expected delta >= {})\n",
-                            cardano_lovelace_before, cardano_lovelace_after, amount
+                            "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (took {}) (before={}, after={}, expected delta >= {})\n",
+                            format_duration(elapsed),
+                            cardano_lovelace_before,
+                            cardano_lovelace_after,
+                            amount
                         ));
                         dump_test_11_ics20_diagnostics(
                             project_root,
@@ -1134,8 +1140,10 @@ pub async fn run_integration_tests(
                         );
                         results.failed += 1;
                     } else if cardano_root_after == cardano_root_before {
+                        let elapsed = test_11.finish();
                         logger::log(&format!(
-                            "FAIL Test 11: Cardano ibc_state_root did not change after escrow transfer (root={}...)\n",
+                            "FAIL Test 11: Cardano ibc_state_root did not change after escrow transfer (took {}) (root={}...)\n",
+                            format_duration(elapsed),
                             &cardano_root_after[..16],
                         ));
                         dump_test_11_ics20_diagnostics(
@@ -1174,10 +1182,12 @@ pub async fn run_integration_tests(
                                 &expected_base_denom,
                             ) {
                                 Ok(()) => {
+                                    let elapsed = test_11.finish();
                                     logger::log(&format!(
-	                                        "PASS Test 11: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (denom={})\n",
-	                                        minted_denom
-	                                    ));
+                                        "PASS Test 11: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (took {}) (denom={})\n",
+                                        format_duration(elapsed),
+                                        minted_denom
+                                    ));
                                     results.passed += 1;
                                     cardano_native_transfer_passed = true;
                                     cardano_native_voucher_denom = Some(minted_denom);
@@ -1187,11 +1197,13 @@ pub async fn run_integration_tests(
                                         Some(cardano_lovelace_before);
                                 }
                                 Err(e) => {
+                                    let elapsed = test_11.finish();
                                     logger::log(&format!(
-	                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (denom={})\n{}\n",
-	                                        minted_denom,
-	                                        e
-	                                    ));
+                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (took {}) (denom={})\n{}\n",
+                                        format_duration(elapsed),
+                                        minted_denom,
+                                        e
+                                    ));
                                     dump_test_11_ics20_diagnostics(
                                         project_root,
                                         cardano_channel_id,
@@ -1202,9 +1214,11 @@ pub async fn run_integration_tests(
                                 }
                             }
                         } else {
-                            logger::log(
-                                "FAIL Test 11: No new IBC voucher denom minted on sidechain\n",
-                            );
+                            let elapsed = test_11.finish();
+                            logger::log(&format!(
+                                "FAIL Test 11: No new IBC voucher denom minted on sidechain (took {})\n",
+                                format_duration(elapsed)
+                            ));
                             dump_test_11_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
@@ -1216,7 +1230,12 @@ pub async fn run_integration_tests(
                     }
                 }
                 Err(e) => {
-                    logger::log(&format!("FAIL Test 11: Failed to relay packets\n{}\n", e));
+                    let elapsed = test_11.finish();
+                    logger::log(&format!(
+                        "FAIL Test 11: Failed to relay packets (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
                     dump_test_11_ics20_diagnostics(
                         project_root,
                         cardano_channel_id,
@@ -1227,8 +1246,10 @@ pub async fn run_integration_tests(
                 }
             },
             Err(e) => {
+                let elapsed = test_11.finish();
                 logger::log(&format!(
-                    "FAIL Test 11: hermes tx ft-transfer failed\n{}\n",
+                    "FAIL Test 11: hermes tx ft-transfer failed (took {})\n{}\n",
+                    format_duration(elapsed),
                     e
                 ));
                 dump_test_11_ics20_diagnostics(
@@ -1241,17 +1262,21 @@ pub async fn run_integration_tests(
             }
         }
     } else {
-        logger::log("SKIP Test 11: Skipped because no transfer channel was established\n");
+        let elapsed = test_11.finish();
+        logger::log(&format!(
+            "SKIP Test 11: Skipped because no transfer channel was established (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
     }
 
     // Test 12: Round-trip Cardano native token (Cosmos -> Cardano)
     //
-    // Continues from Test 11:
-    //   - Cosmos sends the voucher denom back to Cardano
-    //   - Cosmos voucher is burned on send
+    // Send the voucher minted in Test 11 back to Cardano and verify:
+    //   - Voucher is burned on Cosmos
     //   - Escrowed lovelace is released back to the Cardano receiver
-    logger::log("Test 12: ICS-20 round-trip of Cardano native token (sidechain -> Cardano)...");
+    let mut test_12 =
+        TestTimer::start("Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...");
     if cardano_native_transfer_passed {
         if let (Some(voucher_denom), Some(sidechain_channel_id), Some(lovelace_before)) = (
             &cardano_native_voucher_denom,
@@ -1302,30 +1327,41 @@ pub async fn run_integration_tests(
                         let voucher_delta =
                             sidechain_voucher_before.saturating_sub(sidechain_voucher_after);
                         if voucher_delta < amount as u128 {
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-                                "FAIL Test 12: sidechain voucher did not burn as expected (before={}, after={}, expected delta >= {})\n",
-                                sidechain_voucher_before, sidechain_voucher_after, amount
+                                "FAIL Test 12: Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
+                                format_duration(elapsed),
+                                sidechain_voucher_before,
+                                sidechain_voucher_after,
+                                amount
                             ));
                             results.failed += 1;
                         } else if cardano_root_after == cardano_root_before {
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-                                "FAIL Test 12: Cardano ibc_state_root did not change after unescrow (root={}...)\n",
+                                "FAIL Test 12: Cardano ibc_state_root did not change after unescrow (took {}) (root={}...)\n",
+                                format_duration(elapsed),
                                 &cardano_root_after[..16],
                             ));
                             results.failed += 1;
                         } else if cardano_lovelace_after <= cardano_lovelace_before {
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-                                "FAIL Test 12: Cardano lovelace did not increase after return transfer (before={}, after={})\n",
-                                cardano_lovelace_before, cardano_lovelace_after
+                                "FAIL Test 12: Cardano lovelace did not increase after return transfer (took {}) (before={}, after={})\n",
+                                format_duration(elapsed),
+                                cardano_lovelace_before,
+                                cardano_lovelace_after
                             ));
                             results.failed += 1;
-                        } else if cardano_lovelace_after.saturating_add(fee_budget)
-                            < lovelace_before
-                        {
+                        } else if cardano_lovelace_after.saturating_add(fee_budget) < lovelace_before {
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-	                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (before={}, after={}, fee_budget={})\n",
-	                                lovelace_before, cardano_lovelace_after, fee_budget
-	                            ));
+                                "FAIL Test 12: Cardano lovelace did not return close to the pre-escrow balance (took {}) (before={}, after={}, fee_budget={})\n",
+                                format_duration(elapsed),
+                                lovelace_before,
+                                cardano_lovelace_after,
+                                fee_budget
+                            ));
                             results.failed += 1;
                         } else {
                             let expected_path = format!("transfer/{}", sidechain_channel_id);
@@ -1340,40 +1376,61 @@ pub async fn run_integration_tests(
                                 &expected_base_denom,
                             ) {
                                 Ok(()) => {
-                                    logger::log("PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds\n");
+                                    let elapsed = test_12.finish();
+                                    logger::log(&format!(
+                                        "PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds (took {})\n",
+                                        format_duration(elapsed)
+                                    ));
                                     results.passed += 1;
                                 }
                                 Err(e) => {
+                                    let elapsed = test_12.finish();
                                     logger::log(&format!(
-	                                        "FAIL Test 12: Denom-trace reverse lookup failed for sidechain voucher denom after burn\n{}\n",
-	                                        e
-	                                    ));
+                                        "FAIL Test 12: Denom-trace reverse lookup failed for Entrypoint chain voucher denom after burn (took {})\n{}\n",
+                                        format_duration(elapsed),
+                                        e
+                                    ));
                                     results.failed += 1;
                                 }
                             }
                         }
                     }
                     Err(e) => {
-                        logger::log(&format!("FAIL Test 12: Failed to relay packets\n{}\n", e));
+                        let elapsed = test_12.finish();
+                        logger::log(&format!(
+                            "FAIL Test 12: Failed to relay packets (took {})\n{}\n",
+                            format_duration(elapsed),
+                            e
+                        ));
                         results.failed += 1;
                     }
                 },
                 Err(e) => {
+                    let elapsed = test_12.finish();
                     logger::log(&format!(
-                        "FAIL Test 12: hermes tx ft-transfer failed\n{}\n",
+                        "FAIL Test 12: hermes tx ft-transfer failed (took {})\n{}\n",
+                        format_duration(elapsed),
                         e
                     ));
                     results.failed += 1;
                 }
             }
         } else {
-            logger::log("SKIP Test 12: Skipped because Test 11 did not produce a voucher denom\n");
+            let elapsed = test_12.finish();
+            logger::log(&format!(
+                "SKIP Test 12: Skipped because Test 11 did not produce a voucher denom (took {})\n",
+                format_duration(elapsed)
+            ));
             results.skipped += 1;
         }
     } else {
-        logger::log("SKIP Test 12: Skipped due to Test 11 failure\n");
+        let elapsed = test_12.finish();
+        logger::log(&format!(
+            "SKIP Test 12: Skipped due to Test 11 failure (took {})\n",
+            format_duration(elapsed)
+        ));
         results.skipped += 1;
-    }
+    };
 
     Ok(results)
 }
@@ -2754,25 +2811,17 @@ fn query_cardano_lovelace_total(
         .into());
     }
 
-    let utxo_json = String::from_utf8(output.stdout)?;
-    let utxos: serde_json::Value = serde_json::from_str(&utxo_json)?;
-
-    let Some(utxo_map) = utxos.as_object() else {
-        return Ok(0);
-    };
+    let resp: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let utxos = resp.as_object().ok_or("Cardano UTXO response is not an object")?;
 
     let mut total: u64 = 0;
-    for (_utxo_ref, utxo_data) in utxo_map {
-        let Some(value) = utxo_data.get("value") else {
-            continue;
-        };
-        let Some(value_obj) = value.as_object() else {
+    for (_tx_in, entry) in utxos {
+        let Some(value_obj) = entry.get("value") else {
             continue;
         };
         let Some(lovelace_value) = value_obj.get("lovelace") else {
             continue;
         };
-
         if let Some(n) = lovelace_value.as_u64() {
             total = total.saturating_add(n);
         } else if let Some(s) = lovelace_value.as_str() {

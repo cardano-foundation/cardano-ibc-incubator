@@ -456,8 +456,8 @@ async fn main() {
             let mut hermes_build_handle = None;
             let mut mithril_genesis_handle = None;
 
-            // The Cosmos Entrypoint chain boot and Hermes compilation are
-            // independent of Cardano devnet boot, so can start them in parallel for `caribic start all`.
+            // The Cosmos Entrypoint chain boot and Hermes compilation are independent of Cardano
+            // devnet boot, so can start them in parallel for `caribic start all`.
             //
             // We keep the existing (sequential) user-facing status messages, but start the
             // expensive processes early in the background.
@@ -550,7 +550,11 @@ async fn main() {
                     }
                 } else {
                     // Start the Cosmos Entrypoint chain (packet-forwarding chain)
-                    match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean).await
+                    match start_cosmos_entrypoint_chain(
+                        project_root_path.join("cosmos").as_path(),
+                        clean,
+                    )
+                        .await
                     {
                         Ok(_) => logger::log(
                             "PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)",

@@ -16,6 +16,11 @@ pub struct Logger {
     verbosity: Verbosity,
 }
 
+const ANSI_GREEN: &str = "\u{001b}[32m";
+const ANSI_RED: &str = "\u{001b}[31m";
+const ANSI_YELLOW: &str = "\u{001b}[33m";
+const ANSI_RESET: &str = "\u{001b}[0m";
+
 impl Logger {
     pub fn new(verbosity: Verbosity) -> Self {
         Logger { verbosity }
@@ -27,7 +32,8 @@ impl Logger {
 
     pub fn log(&self, message: &str, level: Verbosity) {
         if self.should_log_message(level) {
-            println!("{}", self.remove_trailing_newline(message));
+            let trimmed = self.remove_trailing_newline(message);
+            println!("{}", colorize_status_lines(&trimmed));
         }
     }
 
@@ -50,6 +56,25 @@ impl Logger {
             Verbosity::Verbose => true,
         }
     }
+}
+
+fn colorize_status_lines(message: &str) -> String {
+    message
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("PASS:") || trimmed.starts_with("PASS ") {
+                format!("{ANSI_GREEN}{line}{ANSI_RESET}")
+            } else if trimmed.starts_with("FAIL:") || trimmed.starts_with("FAIL ") {
+                format!("{ANSI_RED}{line}{ANSI_RESET}")
+            } else if trimmed.starts_with("SKIP:") || trimmed.starts_with("SKIP ") {
+                format!("{ANSI_YELLOW}{line}{ANSI_RESET}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 lazy_static! {
