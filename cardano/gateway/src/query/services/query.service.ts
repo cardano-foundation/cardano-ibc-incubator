@@ -1215,20 +1215,18 @@ export class QueryService {
 	    let previousCertificateHash = distributionCertificate.previous_hash;
 	    const maxPreviousCertificates = 20;
 	    for (let depth = 0; depth < maxPreviousCertificates && previousCertificateHash; depth++) {
-	      const previousCertificate = await this.mithrilService.getCertificateByHash(previousCertificateHash);
-	      const previousStakeDistribution = stakeDistributionByCertificateHash.get(previousCertificate.hash);
+      const previousCertificate = await this.mithrilService.getCertificateByHash(previousCertificateHash);
+      const previousStakeDistribution = stakeDistributionByCertificateHash.get(previousCertificate.hash);
 
-	      if (!previousStakeDistribution) {
-	        this.logger.warn(
-	          `Mithril stake distribution artifact missing for certificate ${previousCertificate.hash}; stopping certificate chain construction`,
-	          'queryIBCHeader',
-	        );
-	        break;
-	      }
+      if (!previousStakeDistribution) {
+        throw new GrpcNotFoundException(
+          `Not found: Mithril stake distribution artifact missing for previous certificate ${previousCertificate.hash}`,
+        );
+      }
 
-	      previousMithrilStakeDistributionCertificates.push(
-	        normalizeMithrilStakeDistributionCertificate(previousStakeDistribution, previousCertificate),
-	      );
+      previousMithrilStakeDistributionCertificates.push(
+        normalizeMithrilStakeDistributionCertificate(previousStakeDistribution, previousCertificate),
+      );
 
 	      previousCertificateHash = previousCertificate.previous_hash;
 	    }

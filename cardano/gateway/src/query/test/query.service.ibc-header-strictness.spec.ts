@@ -181,4 +181,57 @@ describe('QueryService IBC header strictness regressions', () => {
     );
     expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
   });
+
+  it('fails hard when previous stake-distribution artifact is missing during certificate-chain construction', async () => {
+    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockReset();
+    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo
+      .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
+      .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 });
+
+    mithrilServiceMock.getProofsCardanoTransactionList.mockReset();
+    mithrilServiceMock.getProofsCardanoTransactionList.mockResolvedValueOnce({
+      latest_block_number: '300',
+      certificate_hash: 'cert-300',
+    });
+
+    mithrilServiceMock.getCertificateByHash.mockReset();
+    mithrilServiceMock.getCertificateByHash.mockImplementation(async (hash: string) => {
+      if (hash === 'cert-300') {
+        return makeCertificate({
+          hash: 'cert-300',
+          previous_hash: 'dist-cert',
+          epoch: '3',
+          signed_entity_type: {
+            CardanoTransactions: ['3', '300'],
+          },
+        });
+      }
+      if (hash === 'dist-cert') {
+        return makeCertificate({
+          hash: 'dist-cert',
+          previous_hash: 'older-cert',
+          epoch: '2',
+          signed_entity_type: {
+            MithrilStakeDistribution: {},
+          },
+        });
+      }
+      if (hash === 'older-cert') {
+        return makeCertificate({
+          hash: 'older-cert',
+          previous_hash: undefined,
+          epoch: '1',
+          signed_entity_type: {
+            MithrilStakeDistribution: {},
+          },
+        });
+      }
+      return makeCertificate({ hash });
+    });
+
+    await expect(service.queryIBCHeader({ height: 250n } as any)).rejects.toThrow(
+      'Mithril stake distribution artifact missing for previous certificate older-cert',
+    );
+    expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
+  });
 });
