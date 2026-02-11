@@ -63,6 +63,25 @@ export class DenomTraceService implements OnModuleInit {
       });
 
       if (existing) {
+        const conflictingFields: string[] = [];
+        if (trace.path !== undefined && trace.path !== existing.path) {
+          conflictingFields.push(`path(existing=${existing.path}, incoming=${trace.path})`);
+        }
+        if (trace.base_denom !== undefined && trace.base_denom !== existing.base_denom) {
+          conflictingFields.push(`base_denom(existing=${existing.base_denom}, incoming=${trace.base_denom})`);
+        }
+        if (trace.voucher_policy_id !== undefined && trace.voucher_policy_id !== existing.voucher_policy_id) {
+          conflictingFields.push(
+            `voucher_policy_id(existing=${existing.voucher_policy_id}, incoming=${trace.voucher_policy_id})`,
+          );
+        }
+
+        if (conflictingFields.length > 0) {
+          throw new Error(
+            `Conflicting denom trace for hash ${trace.hash}: ${conflictingFields.join(', ')}`,
+          );
+        }
+
         this.logger.log(`Denom trace already exists for hash: ${trace.hash}`);
         this.metricsService?.denomTraceSavesTotal.inc({ status: 'duplicate' });
         return existing;

@@ -106,6 +106,27 @@ describe('DenomTraceService', () => {
     expect(repositoryMock.save).not.toHaveBeenCalled();
   });
 
+  it('fails hard when duplicate hash maps to conflicting canonical denom trace data', async () => {
+    const existing = {
+      hash: 'h1',
+      path: 'transfer/channel-0',
+      base_denom: 'stake',
+      voucher_policy_id: 'policy-a',
+    };
+    repositoryMock.findOne.mockResolvedValue(existing);
+
+    await expect(
+      service.saveDenomTrace({
+        hash: 'h1',
+        path: 'transfer/channel-9',
+        base_denom: 'uatom',
+        voucher_policy_id: 'policy-b',
+      }),
+    ).rejects.toThrow('Conflicting denom trace for hash');
+
+    expect(repositoryMock.save).not.toHaveBeenCalled();
+  });
+
   it('applies pagination offset in findAll', async () => {
     queryBuilderMock.getMany.mockResolvedValue([{ hash: 'h1' }]);
 
