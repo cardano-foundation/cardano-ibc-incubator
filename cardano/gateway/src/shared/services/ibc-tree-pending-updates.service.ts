@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 export type PendingTreeUpdate = {
   expectedNewRoot: string;
   commit: () => void;
+  denomTraceHashes?: string[];
 };
 
 @Injectable()
