@@ -1002,6 +1002,7 @@ export class QueryService {
         }),
       );
       blockResults = blockResults.filter((e) => e);
+      const totalCount = blockResults.length;
       let blockResultsResp = blockResults;
       if (blockResults.length > limit) {
         const offset = page <= 0 ? 0 : limit * (page - 1n);
@@ -1012,7 +1013,7 @@ export class QueryService {
 
       const responseBlockSearch: QueryBlockSearchResponse = {
         blocks: blockResultsResp,
-        total_count: blockResultsResp.length,
+        total_count: totalCount,
       } as unknown as QueryBlockSearchResponse;
 
       return responseBlockSearch;

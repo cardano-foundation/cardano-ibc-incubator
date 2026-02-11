@@ -70,6 +70,7 @@ import {
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import { DenomTrace } from '../shared/entities/denom-trace.entity';
 
 @Injectable()
 export class PacketService {
@@ -1284,23 +1285,8 @@ export class PacketService {
         'mintVoucherRedeemer',
       );
 
-      let denomForVoucherHash = sendPacketOperator.token.denom;
-      if (denomForVoucherHash.startsWith('ibc/')) {
-        const denomHash = denomForVoucherHash.slice(4).toLowerCase();
-        const traces = await this.denomTraceService.findAll();
-        const match = traces.find((trace) => {
-          const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
-          return hashSHA256(convertString2Hex(fullPath)).toLowerCase() === denomHash;
-        });
-        if (match) {
-          denomForVoucherHash = match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
-        } else {
-          throw new GrpcInvalidArgumentException(
-            `IBC denom ${denomForVoucherHash} not found in denom traces; cannot derive voucher token name`,
-          );
-        }
-      }
-      const voucherTokenName = hashSha3_256(convertString2Hex(denomForVoucherHash));
+      const denomForVoucherHash = await this._resolveVoucherDenomForBurn(sendPacketOperator.token.denom);
+      const voucherTokenName = this._buildVoucherTokenName(denomForVoucherHash);
       const voucherTokenUnit = deploymentConfig.validators.mintVoucher.scriptHash + voucherTokenName;
       const senderAddress = sendPacketOperator.sender;
 
@@ -1782,6 +1768,31 @@ export class PacketService {
   }
   private _isHexDenom(denom: string): boolean {
     return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
+  }
+  private _buildVoucherTokenName(denom: string): string {
+    // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
+    if (this._isHexDenom(denom)) {
+      throw new GrpcInvalidArgumentException(
+        'Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom',
+      );
+    }
+    return hashSha3_256(convertString2Hex(denom));
+  }
+  private async _resolveVoucherDenomForBurn(denom: string): Promise<string> {
+    if (!denom.startsWith('ibc/')) {
+      return denom;
+    }
+    const denomHash = denom.slice(4).toLowerCase();
+    const traces = await this.denomTraceService.findAll();
+    const match = traces.find((trace) => this._computeDenomHashFromTrace(trace) === denomHash);
+    if (!match) {
+      throw new GrpcInvalidArgumentException(`IBC denom ${denom} not found in denom traces; cannot derive voucher token name`);
+    }
+    return match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
+  }
+  private _computeDenomHashFromTrace(trace: Pick<DenomTrace, 'path' | 'base_denom'>): string {
+    const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
+    return hashSHA256(convertString2Hex(fullPath)).toLowerCase();
   }
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;
