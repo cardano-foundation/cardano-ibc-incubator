@@ -33,6 +33,7 @@ import { decodeConnectionDatum } from '~@/shared/types/connection/connection-dat
 import { decodeChannelDatum } from '~@/shared/types/channel/channel-datum';
 import { decodeMockModuleDatum } from '~@/shared/types/apps/mock/mock-module-datum';
 import { encodeMintChannelRedeemer, MintChannelRedeemer } from '~@/shared/types/channel/channel-redeemer';
+import { IbcTreePendingUpdatesService } from '~@/shared/services/ibc-tree-pending-updates.service';
 
 const clientTokenUnit =
   '2954599599f3200cf37ae003e4775668fd312332675504b1fee7f43694051031ba171ddc7783efe491f76b4d2f1ba640f2c9db64323435';
@@ -252,6 +253,13 @@ describe('TxController - Client', () => {
         },
         {
           provide: TxEventsService,
+          useValue: {
+            register: jest.fn(),
+            take: jest.fn(),
+          },
+        },
+        {
+          provide: IbcTreePendingUpdatesService,
           useValue: {
             register: jest.fn(),
             take: jest.fn(),
