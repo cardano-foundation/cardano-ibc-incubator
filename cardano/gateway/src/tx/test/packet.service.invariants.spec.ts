@@ -14,7 +14,7 @@ describe('PacketService denom invariants', () => {
     credentialToAddress: jest.Mock;
   };
   let denomTraceServiceMock: {
-    findAll: jest.Mock;
+    findByIbcDenomHash: jest.Mock;
   };
 
   beforeEach(() => {
@@ -35,7 +35,7 @@ describe('PacketService denom invariants', () => {
     };
 
     denomTraceServiceMock = {
-      findAll: jest.fn(),
+      findByIbcDenomHash: jest.fn(),
     };
 
     service = new PacketService(
@@ -70,13 +70,13 @@ describe('PacketService denom invariants', () => {
   it('resolves ibc/<hash> to canonical path/base_denom for burn', async () => {
     const fullDenomPath = 'transfer/channel-0/stake';
     const hash = hashSHA256(convertString2Hex(fullDenomPath)).toUpperCase();
-    denomTraceServiceMock.findAll.mockResolvedValue([{ path: 'transfer/channel-0', base_denom: 'stake' }]);
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({ path: 'transfer/channel-0', base_denom: 'stake' });
 
     await expect((service as any)._resolveVoucherDenomForBurn(`ibc/${hash}`)).resolves.toBe(fullDenomPath);
   });
 
   it('fails burn resolution when ibc/<hash> has no trace mapping', async () => {
-    denomTraceServiceMock.findAll.mockResolvedValue([]);
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue(null);
 
     await expect((service as any)._resolveVoucherDenomForBurn('ibc/ABCDEF')).rejects.toThrow(
       GrpcInvalidArgumentException,
@@ -97,7 +97,7 @@ describe('PacketService denom invariants', () => {
   it('produces the same voucher token-name after ibc hash reverse lookup round-trip', async () => {
     const canonicalDenom = 'transfer/channel-0/stake';
     const ibcHash = hashSHA256(convertString2Hex(canonicalDenom)).toLowerCase();
-    denomTraceServiceMock.findAll.mockResolvedValue([{ path: 'transfer/channel-0', base_denom: 'stake' }]);
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({ path: 'transfer/channel-0', base_denom: 'stake' });
 
     const resolvedDenom = await (service as any)._resolveVoucherDenomForBurn(`ibc/${ibcHash}`);
     const tokenNameFromResolved = (service as any)._buildVoucherTokenName(resolvedDenom);

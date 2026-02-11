@@ -242,6 +242,7 @@ describe('TxController - Client', () => {
           provide: DenomTraceService,
           useValue: {
             saveDenomTrace: jest.fn(),
+            findByIbcDenomHash: jest.fn(),
           },
         },
         {

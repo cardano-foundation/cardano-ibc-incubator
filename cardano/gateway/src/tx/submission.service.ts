@@ -9,6 +9,7 @@ import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { DenomTraceService } from '../query/services/denom-trace.service';
 
 @Injectable()
 export class SubmissionService {
@@ -21,6 +22,7 @@ export class SubmissionService {
     private readonly kupoService: KupoService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
+    private readonly denomTraceService: DenomTraceService,
   ) {}
 
   /**
@@ -96,6 +98,8 @@ export class SubmissionService {
 
     if (!pending) return;
 
+    await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
+
     // Verify on-chain root matches what we computed when building the tx.
     try {
       const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
@@ -124,6 +128,26 @@ export class SubmissionService {
       await this.ibcTreeCacheService.save(getCurrentTree(), 'current');
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+    }
+  }
+
+  private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
+    const hashes = Array.from(new Set((traceHashes ?? []).map((hash) => hash.toLowerCase())));
+    if (hashes.length === 0) return;
+
+    let updated = 0;
+    try {
+      updated = await this.denomTraceService.setTxHashForTraces(hashes, txHash);
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to finalize denom trace mappings for tx ${txHash}: ${error?.message ?? error}`,
+      );
+    }
+
+    if (updated !== hashes.length) {
+      throw new GrpcInternalException(
+        `Failed to finalize denom trace mappings for tx ${txHash}: expected ${hashes.length} traces, updated ${updated}`,
+      );
     }
   }
 

@@ -70,7 +70,6 @@ import {
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
-import { DenomTrace } from '../shared/entities/denom-trace.entity';
 
 @Injectable()
 export class PacketService {
@@ -773,24 +772,19 @@ export class PacketService {
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
             
-            // Track denom trace mapping
-            try {
-              const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
-              const pathParts = fullDenomPath.split('/');
-              const baseDenom = pathParts[pathParts.length - 1];
-              const path = pathParts.slice(0, -1).join('/');
-              
-              await this.denomTraceService.saveDenomTrace({
-                hash: voucherTokenName,
-                path: path,
-                base_denom: baseDenom,
-                voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-                tx_hash: null, // Will be filled when tx is submitted
-              });
-            } catch (error) {
-              this.logger.warn(`Failed to save denom trace: ${error.message}`);
-              // Don't fail the transaction if denom trace saving fails
-            }
+            // Track denom trace mapping (required for later ibc/<hash> burn resolution).
+            const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+            const pathParts = fullDenomPath.split('/');
+            const baseDenom = pathParts[pathParts.length - 1];
+            const path = pathParts.slice(0, -1).join('/');
+
+            await this.denomTraceService.saveDenomTrace({
+              hash: voucherTokenName,
+              path: path,
+              base_denom: baseDenom,
+              voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+              tx_hash: null, // Filled after confirmed submission.
+            });
 
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -842,7 +836,14 @@ export class PacketService {
             };
 
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
-            return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+            return {
+              unsignedTx,
+              pendingTreeUpdate: {
+                expectedNewRoot: newRoot,
+                commit,
+                denomTraceHashes: [voucherTokenName],
+              },
+            };
           }
         }
       } catch (error) {
@@ -1095,23 +1096,19 @@ export class PacketService {
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
 
-    // Track denom trace mapping for timeout refund voucher
-    try {
-      const fullDenomPath = convertHex2String(prefixedDenom);
-      const pathParts = fullDenomPath.split('/');
-      const baseDenom = pathParts[pathParts.length - 1];
-      const path = pathParts.slice(0, -1).join('/');
-      
-      await this.denomTraceService.saveDenomTrace({
-        hash: voucherTokenName,
-        path: path,
-        base_denom: baseDenom,
-        voucher_policy_id: this.getMintVoucherScriptHash(),
-        tx_hash: null,
-      });
-    } catch (error) {
-      this.logger.warn(`Failed to save denom trace for timeout: ${error.message}`);
-    }
+    // Track denom trace mapping for timeout refund voucher.
+    const fullDenomPath = convertHex2String(prefixedDenom);
+    const pathParts = fullDenomPath.split('/');
+    const baseDenom = pathParts[pathParts.length - 1];
+    const path = pathParts.slice(0, -1).join('/');
+
+    await this.denomTraceService.saveDenomTrace({
+      hash: voucherTokenName,
+      path: path,
+      base_denom: baseDenom,
+      voucher_policy_id: this.getMintVoucherScriptHash(),
+      tx_hash: null, // Filled after confirmed submission.
+    });
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -1147,7 +1144,14 @@ export class PacketService {
       encodedVerifyProofRedeemer,
     };
     const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
-    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    return {
+      unsignedTx,
+      pendingTreeUpdate: {
+        expectedNewRoot: newRoot,
+        commit,
+        denomTraceHashes: [voucherTokenName],
+      },
+    };
   }
 
   async buildUnsignedSendPacketTx(
@@ -1686,23 +1690,19 @@ export class PacketService {
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
     
-    // Track denom trace mapping for acknowledgement refund voucher
-    try {
-      const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
-      const pathParts = fullDenomPath.split('/');
-      const baseDenom = pathParts[pathParts.length - 1];
-      const path = pathParts.slice(0, -1).join('/');
-      
-      await this.denomTraceService.saveDenomTrace({
-        hash: voucherTokenName,
-        path: path,
-        base_denom: baseDenom,
-        voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-        tx_hash: null,
-      });
-    } catch (error) {
-      this.logger.warn(`Failed to save denom trace for ack: ${error.message}`);
-    }
+    // Track denom trace mapping for acknowledgement refund voucher.
+    const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+    const pathParts = fullDenomPath.split('/');
+    const baseDenom = pathParts[pathParts.length - 1];
+    const path = pathParts.slice(0, -1).join('/');
+
+    await this.denomTraceService.saveDenomTrace({
+      hash: voucherTokenName,
+      path: path,
+      base_denom: baseDenom,
+      voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
+      tx_hash: null, // Filled after confirmed submission.
+    });
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -1750,7 +1750,14 @@ export class PacketService {
 
     // handle recv packet mint
     const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
-    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    return {
+      unsignedTx,
+      pendingTreeUpdate: {
+        expectedNewRoot: newRoot,
+        commit,
+        denomTraceHashes: [voucherTokenName],
+      },
+    };
   }
   private _hasVoucherPrefix(denom: string, portId: string, channelId: string): boolean {
     const voucherPrefix = getDenomPrefix(portId, channelId);
@@ -1783,16 +1790,11 @@ export class PacketService {
       return denom;
     }
     const denomHash = denom.slice(4).toLowerCase();
-    const traces = await this.denomTraceService.findAll();
-    const match = traces.find((trace) => this._computeDenomHashFromTrace(trace) === denomHash);
+    const match = await this.denomTraceService.findByIbcDenomHash(denomHash);
     if (!match) {
       throw new GrpcInvalidArgumentException(`IBC denom ${denom} not found in denom traces; cannot derive voucher token name`);
     }
     return match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
-  }
-  private _computeDenomHashFromTrace(trace: Pick<DenomTrace, 'path' | 'base_denom'>): string {
-    const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
-    return hashSHA256(convertString2Hex(fullPath)).toLowerCase();
   }
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;
