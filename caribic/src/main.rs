@@ -775,8 +775,42 @@ async fn main() {
             if target == Some(StartTarget::Mithril) {
                 // Start only Mithril services
                 match start_mithril(&project_root_path).await {
-                    Ok(_) => {
-                        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)")
+                    Ok(cardano_epoch_on_mithril_start) => {
+                        logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+
+                        // Keep standalone `caribic start mithril` behavior aligned with
+                        // `caribic start --with-mithril`: wait for immutable files and run the
+                        // genesis bootstrap so the aggregator can actually serve non-empty
+                        // certificates/artifacts.
+                        let project_root_path = project_root_path.to_path_buf();
+                        let bootstrap_result = tokio::task::spawn_blocking(move || {
+                            start::wait_and_start_mithril_genesis(
+                                project_root_path.as_path(),
+                                cardano_epoch_on_mithril_start,
+                            )
+                            .map_err(|e| e.to_string())
+                        })
+                        .await;
+
+                        match bootstrap_result {
+                            Ok(Ok(())) => logger::log(
+                                "PASS: Mithril genesis bootstrap completed (certificates/artifacts ready)",
+                            ),
+                            Ok(Err(error)) => {
+                                logger::error(&format!(
+                                    "ERROR: Mithril genesis bootstrap failed: {}",
+                                    error
+                                ));
+                                std::process::exit(1);
+                            }
+                            Err(error) => {
+                                logger::error(&format!(
+                                    "ERROR: Mithril genesis bootstrap task failed: {}",
+                                    error
+                                ));
+                                std::process::exit(1);
+                            }
+                        }
                     }
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start Mithril: {}", error));

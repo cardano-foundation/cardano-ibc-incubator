@@ -1,7 +1,7 @@
 use crate::logger::{self, verbose};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, IsTerminal};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
@@ -137,7 +137,7 @@ impl TestTimer {
     fn start(message: &str) -> Self {
         let started_at = Instant::now();
 
-        if logger::is_quite() {
+        if logger::is_quite() || !std::io::stdout().is_terminal() {
             logger::log(message);
             return Self {
                 progress_bar: None,
@@ -213,6 +213,10 @@ impl TestResults {
 }
 
 const MAX_TEST_INDEX: u8 = 12;
+const MITHRIL_STAKE_DISTRIBUTIONS_URL: &str =
+    "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions";
+const MITHRIL_CARDANO_TRANSACTIONS_URL: &str =
+    "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions";
 
 #[derive(Debug, Clone)]
 struct TestSelection {
@@ -768,7 +772,7 @@ pub async fn run_integration_tests(
         );
 
         connection_id = if client_id.is_some() {
-            match create_test_connection(project_root) {
+            match create_test_connection(project_root).await {
                 Ok(connection_id) => {
                     // Wait for transaction confirmation
                     logger::verbose("   Waiting for transaction confirmation...");
@@ -893,6 +897,16 @@ pub async fn run_integration_tests(
             results.skipped += 1;
             None
         };
+    }
+
+    if channel_id.is_none() && (selection.should_run(9) || selection.should_run(11)) {
+        if let Some(existing_channel_id) = resolve_cardano_transfer_channel_id(project_root) {
+            logger::warn(&format!(
+                "No channel created during this run; reusing existing transfer channel {} for downstream ICS-20 tests.",
+                existing_channel_id
+            ));
+            channel_id = Some(existing_channel_id);
+        }
     }
 
     // Test 9: ICS-20 transfer (Cosmos -> Cardano) and packet clearing
@@ -1973,30 +1987,22 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         // Gateway's `queryNewMithrilClient` requires stake distributions + transaction snapshots.
         // These are produced asynchronously by the local aggregator, so we wait here to avoid
         // flaky failures in later Hermes-driven tests.
-        verbose("   Waiting for Mithril stake distributions ...");
-        let stake_distributions_ready = wait_for_json_array_non_empty(
-            &http_client,
-            "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions",
-            60,
-            Duration::from_secs(5),
-        )
-        .await;
+        let stake_distributions_ready =
+            check_json_array_non_empty(&http_client, MITHRIL_STAKE_DISTRIBUTIONS_URL).await;
         if !stake_distributions_ready {
-            missing_services.push("Mithril stake distributions (not ready)");
+            logger::warn(
+                "Mithril stake distributions are not ready yet; proceeding because they can become available during the test run.",
+            );
         } else {
             verbose("   Mithril stake distributions available");
         }
 
-        verbose("   Waiting for Mithril Cardano transaction snapshots ...");
-        let tx_snapshots_ready = wait_for_json_array_non_empty(
-            &http_client,
-            "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions",
-            60,
-            Duration::from_secs(5),
-        )
-        .await;
+        let tx_snapshots_ready =
+            check_json_array_non_empty(&http_client, MITHRIL_CARDANO_TRANSACTIONS_URL).await;
         if !tx_snapshots_ready {
-            missing_services.push("Mithril Cardano transaction snapshots (not ready)");
+            logger::warn(
+                "Mithril Cardano transaction snapshots are not ready yet; proceeding because the first test transactions can produce them.",
+            );
         } else {
             verbose("   Mithril Cardano transaction snapshots available");
         }
@@ -2201,6 +2207,52 @@ async fn wait_for_json_array_non_empty(
         tokio::time::sleep(interval).await;
     }
     false
+}
+
+fn is_mithril_artifact_readiness_error(error: &str) -> bool {
+    (error.contains("query_new_client") && error.contains("Not found: \"height\""))
+        || error.contains("no Mithril stake distributions available")
+}
+
+async fn wait_for_mithril_artifacts_ready_for_cardano_client(
+    max_attempts: usize,
+    interval: Duration,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let http_client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let start = Instant::now();
+    let mut stake_ready = false;
+    let mut tx_ready = false;
+
+    for attempt in 0..max_attempts {
+        if !stake_ready {
+            stake_ready =
+                check_json_array_non_empty(&http_client, MITHRIL_STAKE_DISTRIBUTIONS_URL).await;
+        }
+        if !tx_ready {
+            tx_ready =
+                check_json_array_non_empty(&http_client, MITHRIL_CARDANO_TRANSACTIONS_URL).await;
+        }
+        if stake_ready && tx_ready {
+            return Ok(true);
+        }
+
+        logger::verbose(&format!(
+            "   Waiting for Mithril artifacts (attempt {}/{}, elapsed {}s, stake_distributions_ready={}, cardano_transactions_ready={})...",
+            attempt + 1,
+            max_attempts,
+            start.elapsed().as_secs(),
+            stake_ready,
+            tx_ready
+        ));
+        tokio::time::sleep(interval).await;
+    }
+
+    Ok(false)
 }
 
 /// Query the current ibc_state_root from the Handler UTXO
@@ -2549,7 +2601,9 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
 /// Create a test connection using Hermes relayer
 ///
 /// Creates a connection between cardano-devnet and the local packet-forwarding chain
-fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
+async fn create_test_connection(
+    project_root: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating connection via Hermes...");
 
     // The connection handshake can legitimately take a few minutes on a local devnet:
@@ -2573,45 +2627,85 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
         "--b-chain",
         "sidechain",
     ]);
-    let output = run_command_streaming(command, "hermes create connection")?;
+    let run_connection_handshake =
+        |hermes_binary: &std::path::Path| -> Result<String, Box<dyn std::error::Error>> {
+            let mut command = Command::new(hermes_binary);
+            command.args(&[
+                "create",
+                "connection",
+                "--a-chain",
+                "cardano-devnet",
+                "--b-chain",
+                "sidechain",
+            ]);
+            let output = run_command_streaming(command, "hermes create connection")?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "Hermes connection creation failed:\n\
-             stdout: {}\n\
-             stderr: {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
+            if !output.status.success() {
+                return Err(format!(
+                    "Hermes connection creation failed:\n\
+                     stdout: {}\n\
+                     stderr: {}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                )
+                .into());
+            }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    logger::verbose(&format!("   {}", stdout.trim()));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            logger::verbose(&format!("   {}", stdout.trim()));
 
-    // Extract connection_id from Hermes output.
-    let connection_id = stdout
-        .split_whitespace()
-        .filter_map(|word| {
-            let cleaned =
-                word.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
-            let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
+            // Extract connection_id from Hermes output.
+            let connection_id = stdout
+                .split_whitespace()
+                .filter_map(|word| {
+                    let cleaned = word
+                        .trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '=');
+                    let cleaned = cleaned.strip_prefix("id=").unwrap_or(cleaned);
 
-            cleaned
-                .starts_with("connection-")
-                .then(|| cleaned.to_string())
-        })
-        .next()
-        .ok_or_else(|| {
-            format!(
-                "Failed to parse connection id from Hermes output:\n{}",
-                stdout.trim()
+                    cleaned
+                        .starts_with("connection-")
+                        .then(|| cleaned.to_string())
+                })
+                .next()
+                .ok_or_else(|| {
+                    format!(
+                        "Failed to parse connection id from Hermes output:\n{}",
+                        stdout.trim()
+                    )
+                })?;
+
+            logger::verbose(&format!("   Connection created: {}", connection_id));
+            Ok(connection_id)
+        };
+
+    match run_connection_handshake(&hermes_binary) {
+        Ok(connection_id) => Ok(connection_id),
+        Err(first_error) => {
+            let first_error_text = first_error.to_string();
+            if !is_mithril_artifact_readiness_error(&first_error_text) {
+                return Err(first_error);
+            }
+
+            logger::warn(
+                "Mithril artifacts are not ready for Cardano light-client query yet; waiting and retrying connection handshake once.",
+            );
+            let artifacts_ready = wait_for_mithril_artifacts_ready_for_cardano_client(
+                36,
+                Duration::from_secs(5),
             )
-        })?;
+            .await?;
 
-    logger::verbose(&format!("   Connection created: {}", connection_id));
+            if !artifacts_ready {
+                return Err(format!(
+                    "{}\n\nMithril artifacts never became ready (stake distributions + cardano transaction snapshots) within 180s.",
+                    first_error_text
+                )
+                .into());
+            }
 
-    Ok(connection_id)
+            run_connection_handshake(&hermes_binary)
+        }
+    }
 }
 
 /// Create a test channel using Hermes relayer
@@ -3077,6 +3171,41 @@ fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -
             }
 
             return Some(channel_ids[0].clone());
+        }
+    }
+
+    None
+}
+
+fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(&[
+            "query",
+            "channels",
+            "--chain",
+            "cardano-devnet",
+            "--counterparty-chain",
+            "sidechain",
+            "--show-counterparty",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if !line.contains("transfer") {
+            continue;
+        }
+        for token in line.split_whitespace() {
+            let cleaned = token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '-');
+            if cleaned.starts_with("channel-") {
+                return Some(cleaned.to_string());
+            }
         }
     }
 
