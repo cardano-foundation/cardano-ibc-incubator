@@ -31,9 +31,8 @@ fn port_commitment_key(port: Int) -> ByteArray {
 
 // Generate a deterministic sequence of ports for property-style tests.
 //
-// We use a fixed range instead of fuzzing because this repository's current
-// Aiken version does not expose `aiken/fuzz`. This still gives us broad,
-// repeatable coverage across many distinct port values.
+// We intentionally use a fixed range to keep this suite deterministic and easy
+// to debug while still exercising many distinct inputs.
 fn generate_ports(from: Int, to: Int) -> List<Int> {
   if from > to {
     []
