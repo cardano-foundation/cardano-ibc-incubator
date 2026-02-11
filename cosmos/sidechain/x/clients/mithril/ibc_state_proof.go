@@ -168,6 +168,23 @@ func verifyCardanoValueMatchesExpected(key []byte, expectedValue []byte, committ
 			return err
 		}
 		return nil
+
+	case strings.HasPrefix(keyStr, "commitments/ports/"),
+		strings.HasPrefix(keyStr, "acks/ports/"),
+		strings.HasPrefix(keyStr, "receipts/ports/"),
+		strings.HasPrefix(keyStr, "nextSequenceRecv/ports/"):
+		// Packet commitments / acknowledgements / receipts are stored on Cosmos chains
+		// as raw bytes (not protobuf-encoded). Cardano commits to the CBOR-serialised
+		// Plutus `ByteArray` for these values, so we need to unwrap the committed
+		// CBOR bytestring and compare the underlying bytes.
+		var committedBytes []byte
+		if err := cbor.Unmarshal(committedValue, &committedBytes); err != nil {
+			return fmt.Errorf("failed to decode committed packet bytes CBOR: %w", err)
+		}
+		if !bytes.Equal(committedBytes, expectedValue) {
+			return fmt.Errorf("existence proof value mismatch")
+		}
+		return nil
 	}
 
 	return fmt.Errorf("existence proof value mismatch")
