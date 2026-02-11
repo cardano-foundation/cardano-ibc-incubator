@@ -127,6 +127,23 @@ describe('DenomTraceService', () => {
     expect(repositoryMock.save).not.toHaveBeenCalled();
   });
 
+  it('fails hard when caller-supplied ibc_denom_hash conflicts with canonical path/base_denom', async () => {
+    repositoryMock.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.saveDenomTrace({
+        hash: 'h2',
+        path: 'transfer/channel-0',
+        base_denom: 'stake',
+        voucher_policy_id: 'policy',
+        ibc_denom_hash: 'deadbeef',
+      } as any),
+    ).rejects.toThrow('Conflicting ibc_denom_hash');
+
+    expect(repositoryMock.create).not.toHaveBeenCalled();
+    expect(repositoryMock.save).not.toHaveBeenCalled();
+  });
+
   it('applies pagination offset in findAll', async () => {
     queryBuilderMock.getMany.mockResolvedValue([{ hash: 'h1' }]);
 

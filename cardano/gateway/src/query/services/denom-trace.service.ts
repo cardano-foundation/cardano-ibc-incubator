@@ -304,10 +304,18 @@ export class DenomTraceService implements OnModuleInit {
       path: trace.path,
       base_denom: trace.base_denom,
     };
+    const computedIbcDenomHash = this.computeIbcDenomHash(hashInput);
+    const providedIbcDenomHash = trace.ibc_denom_hash?.toLowerCase();
+
+    if (providedIbcDenomHash && providedIbcDenomHash !== computedIbcDenomHash) {
+      throw new Error(
+        `Conflicting ibc_denom_hash for hash ${trace.hash}: expected ${computedIbcDenomHash}, incoming ${providedIbcDenomHash}`,
+      );
+    }
 
     return {
       ...trace,
-      ibc_denom_hash: trace.ibc_denom_hash?.toLowerCase() ?? this.computeIbcDenomHash(hashInput),
+      ibc_denom_hash: computedIbcDenomHash,
     };
   }
 
