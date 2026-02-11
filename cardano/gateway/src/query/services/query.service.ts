@@ -1155,8 +1155,10 @@ export class QueryService {
     let hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
     let hostStateTxProof: any;
 
-    // Ensure snapshot/proof/HostState tx are mutually consistent (best-effort, bounded attempts).
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // Ensure snapshot/proof/HostState tx are mutually consistent with strict bounded retries.
+    const maxAlignmentAttempts = 2;
+    let converged = false;
+    for (let attempt = 0; attempt < maxAlignmentAttempts; attempt++) {
       hostStateTxProof = await this.mithrilService.getProofsCardanoTransactionList([hostStateUtxo.txHash]);
       const proofSnapshotHeight = hostStateTxProof?.latest_block_number ?? snapshot.block_number;
       const proofCertificateHash = hostStateTxProof?.certificate_hash;
@@ -1175,9 +1177,16 @@ export class QueryService {
       const hostStateAtSnapshot = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
       if (hostStateAtSnapshot.txHash === hostStateUtxo.txHash) {
         hostStateUtxo = hostStateAtSnapshot;
+        converged = true;
         break;
       }
       hostStateUtxo = hostStateAtSnapshot;
+    }
+
+    if (!converged) {
+      throw new GrpcInternalException(
+        `Failed to converge Mithril snapshot/proof/HostState alignment after ${maxAlignmentAttempts} attempts for requested height ${height.toString()}`,
+      );
     }
 
 	    const snapshotCertificate = await this.mithrilService.getCertificateByHash(snapshot.certificate_hash);
