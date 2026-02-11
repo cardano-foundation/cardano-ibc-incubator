@@ -103,7 +103,6 @@ validator spend_transfer_module(
       Operator(op) ->
         handler_operator(
           op,
-          handler_token,
           host_state_nft,
           spent_output_ref,
           transaction,
@@ -222,7 +221,6 @@ fn handler_callback(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
           host_state_nft,
           outputs,
           port_id,
@@ -246,7 +244,6 @@ fn handler_callback(
           inputs,
           redeemers,
           channel_minting_policy_id,
-          handler_token,
           host_state_nft,
           outputs,
           port_id,
@@ -503,7 +500,6 @@ fn handler_callback(
 
 fn handler_operator(
   op: IBCModuleOperator,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
   transaction: Transaction,
@@ -689,7 +685,6 @@ fn validate_chan_open_ack(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
@@ -737,7 +732,6 @@ fn validate_chan_open_confirm(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,

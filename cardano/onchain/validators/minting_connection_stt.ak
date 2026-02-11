@@ -8,7 +8,6 @@ use cardano/transaction.{InlineDatum, Input, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_state
-use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{
   ConnectionDatum, is_conn_open_init_valid,

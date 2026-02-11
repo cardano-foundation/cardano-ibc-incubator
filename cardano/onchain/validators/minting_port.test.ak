@@ -8,9 +8,7 @@ use cardano/transaction.{
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/handler.{
-  HandlerState, empty_ibc_state_root,
-}
+use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerBindPort}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
