@@ -695,3 +695,18 @@ test prop_host_state_bind_port_rejects_arbitrary_root() {
       !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
     })
 }
+
+test prop_host_state_bind_port_rejects_missing_bound_port_update() {
+  generate_ports(0, 150)
+    |> list.all(fn(port) {
+      let fixture = mk_bind_port_fixture(port)
+      let BindPortFixture { address, expected_root, .. } = fixture
+
+      let output =
+        mk_bind_port_output(fixture, address, expected_root, [])
+
+      // The commitment root is valid, but the state fails to record the newly
+      // bound port.
+      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
+    })
+}
