@@ -96,7 +96,11 @@ export class SubmissionService {
       }
     }
 
-    if (!pending) return;
+    if (!pending) {
+      throw new GrpcInternalException(
+        `Missing pending IBC update for confirmed tx ${txHash}; refusing to skip denom trace/tree finalization`,
+      );
+    }
 
     await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
