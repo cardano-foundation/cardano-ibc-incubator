@@ -1,18 +1,58 @@
-import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DenomTrace } from '../../shared/entities/denom-trace.entity';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { MetricsService } from '../../health/metrics.service';
+import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
 
 @Injectable()
-export class DenomTraceService {
+export class DenomTraceService implements OnModuleInit {
+  private static readonly DEFAULT_BACKFILL_BATCH_SIZE = 500;
+
   constructor(
     private readonly logger: Logger,
     @InjectRepository(DenomTrace, 'gateway')
     private denomTraceRepository: Repository<DenomTrace>,
     @Optional() @Inject(MetricsService) private metricsService?: MetricsService,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Make startup idempotent across fresh and existing DBs:
+    // 1) ensure schema/index exists, then
+    // 2) backfill missing derived hashes so indexed lookup is immediately usable.
+    await this.ensureSchema();
+    const updated = await this.backfillMissingIbcDenomHashes();
+    if (updated > 0) {
+      this.logger.log(`Backfilled ibc_denom_hash for ${updated} denom trace rows`);
+    }
+  }
+
+  private async ensureSchema(): Promise<void> {
+    // Keep migration logic embedded here because this service can run in
+    // environments where explicit DB migration steps may be skipped.
+    await this.denomTraceRepository.query(`
+      CREATE TABLE IF NOT EXISTS denom_traces (
+        hash TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        base_denom TEXT NOT NULL,
+        voucher_policy_id TEXT NOT NULL,
+        ibc_denom_hash TEXT,
+        first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
+        tx_hash TEXT
+      );
+    `);
+
+    await this.denomTraceRepository.query(`
+      ALTER TABLE denom_traces
+      ADD COLUMN IF NOT EXISTS ibc_denom_hash TEXT;
+    `);
+
+    await this.denomTraceRepository.query(`
+      CREATE INDEX IF NOT EXISTS idx_denom_traces_ibc_denom_hash
+      ON denom_traces (ibc_denom_hash);
+    `);
+  }
 
   /**
    * Save or update a denom trace mapping
@@ -28,12 +68,34 @@ export class DenomTraceService {
       });
 
       if (existing) {
+        // A hash must always map to one canonical trace tuple.
+        // If the incoming write disagrees with an existing row, fail hard.
+        const conflictingFields: string[] = [];
+        if (trace.path !== undefined && trace.path !== existing.path) {
+          conflictingFields.push(`path(existing=${existing.path}, incoming=${trace.path})`);
+        }
+        if (trace.base_denom !== undefined && trace.base_denom !== existing.base_denom) {
+          conflictingFields.push(`base_denom(existing=${existing.base_denom}, incoming=${trace.base_denom})`);
+        }
+        if (trace.voucher_policy_id !== undefined && trace.voucher_policy_id !== existing.voucher_policy_id) {
+          conflictingFields.push(
+            `voucher_policy_id(existing=${existing.voucher_policy_id}, incoming=${trace.voucher_policy_id})`,
+          );
+        }
+
+        if (conflictingFields.length > 0) {
+          throw new Error(
+            `Conflicting denom trace for hash ${trace.hash}: ${conflictingFields.join(', ')}`,
+          );
+        }
+
         this.logger.log(`Denom trace already exists for hash: ${trace.hash}`);
         this.metricsService?.denomTraceSavesTotal.inc({ status: 'duplicate' });
         return existing;
       }
 
-      const newTrace = this.denomTraceRepository.create(trace);
+      const traceWithIbcHash = this.withComputedIbcDenomHash(trace);
+      const newTrace = this.denomTraceRepository.create(traceWithIbcHash);
       const saved = await this.denomTraceRepository.save(newTrace);
       this.logger.log(`Saved new denom trace: ${trace.hash} -> ${trace.path}/${trace.base_denom}`);
       
@@ -118,6 +180,30 @@ export class DenomTraceService {
   }
 
   /**
+   * Find a trace by the sha256 hash used in `ibc/<hash>` denoms.
+   * Uses the persisted/indexed `ibc_denom_hash` for O(log N) lookup.
+   */
+  async findByIbcDenomHash(denomHash: string): Promise<DenomTrace | null> {
+    const startTime = Date.now();
+
+    try {
+      return await this.denomTraceRepository.findOne({
+        where: { ibc_denom_hash: denomHash.toLowerCase() },
+        order: { first_seen: 'DESC' },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to find denom trace by ibc hash ${denomHash}: ${error.message}`);
+      throw error;
+    } finally {
+      const duration = (Date.now() - startTime) / 1000;
+      this.metricsService?.denomTraceQueryDuration.observe(
+        { operation: 'findByIbcDenomHash' },
+        duration
+      );
+    }
+  }
+
+  /**
    * Find denom traces by base denomination
    */
   async findByBaseDenom(baseDenom: string): Promise<DenomTrace[]> {
@@ -152,5 +238,100 @@ export class DenomTraceService {
       this.logger.error(`Failed to get denom trace count: ${error.message}`);
       throw error;
     }
+  }
+
+  /**
+   * Attach the confirmed Cardano tx hash to a set of denom traces.
+   */
+  async setTxHashForTraces(traceHashes: string[], txHash: string): Promise<number> {
+    if (!traceHashes.length) return 0;
+
+    // Normalize/dedupe before UPDATE so callers can pass repeated or mixed-case hashes safely.
+    const uniqueHashes = Array.from(new Set(traceHashes.map((hash) => hash.toLowerCase())));
+    const result = await this.denomTraceRepository
+      .createQueryBuilder()
+      .update(DenomTrace)
+      .set({ tx_hash: txHash })
+      .where('hash IN (:...traceHashes)', { traceHashes: uniqueHashes })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
+  async backfillMissingIbcDenomHashes(batchSize = DenomTraceService.DEFAULT_BACKFILL_BATCH_SIZE): Promise<number> {
+    let totalUpdated = 0;
+
+    while (true) {
+      const rows = await this.denomTraceRepository
+        .createQueryBuilder('denom_trace')
+        .select('denom_trace.hash', 'hash')
+        .addSelect('denom_trace.path', 'path')
+        .addSelect('denom_trace.base_denom', 'base_denom')
+        .where('denom_trace.ibc_denom_hash IS NULL')
+        .orderBy('denom_trace.first_seen', 'ASC')
+        .limit(batchSize)
+        .getRawMany<{ hash: string; path: string; base_denom: string }>();
+
+      if (rows.length === 0) {
+        return totalUpdated;
+      }
+
+      const params: string[] = [];
+      const valuesSql = rows
+        .map((row, index) => {
+          params.push(row.hash, this.computeIbcDenomHash(row));
+          const hashParam = `$${index * 2 + 1}`;
+          const ibcHashParam = `$${index * 2 + 2}`;
+          // Build a parameterized VALUES list so we can update many rows in one query.
+          return `(${hashParam}, ${ibcHashParam})`;
+        })
+        .join(', ');
+
+      await this.denomTraceRepository.query(
+        `
+          UPDATE denom_traces AS dt
+          SET ibc_denom_hash = data.ibc_denom_hash
+          FROM (VALUES ${valuesSql}) AS data(hash, ibc_denom_hash)
+          WHERE dt.hash = data.hash;
+        `,
+        params,
+      );
+
+      totalUpdated += rows.length;
+
+      if (rows.length < batchSize) {
+        return totalUpdated;
+      }
+    }
+  }
+
+  private withComputedIbcDenomHash(trace: Partial<DenomTrace>): Partial<DenomTrace> {
+    if (trace.path === undefined || trace.base_denom === undefined) {
+      return trace;
+    }
+    // Persist the canonical ibc hash derived from path/base_denom so reverse lookup
+    // does not depend on recomputing against every row.
+    const hashInput: Pick<DenomTrace, 'path' | 'base_denom'> = {
+      path: trace.path,
+      base_denom: trace.base_denom,
+    };
+    const computedIbcDenomHash = this.computeIbcDenomHash(hashInput);
+    const providedIbcDenomHash = trace.ibc_denom_hash?.toLowerCase();
+
+    if (providedIbcDenomHash && providedIbcDenomHash !== computedIbcDenomHash) {
+      throw new Error(
+        `Conflicting ibc_denom_hash for hash ${trace.hash}: expected ${computedIbcDenomHash}, incoming ${providedIbcDenomHash}`,
+      );
+    }
+
+    return {
+      ...trace,
+      ibc_denom_hash: computedIbcDenomHash,
+    };
+  }
+
+  private computeIbcDenomHash(trace: Pick<DenomTrace, 'path' | 'base_denom'>): string {
+    const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
+    return hashSHA256(convertString2Hex(fullPath)).toLowerCase();
   }
 }
