@@ -152,6 +152,62 @@ export class DbSyncService {
     };
   }
 
+  async findHostStateUtxoByTxHash(txHash: string): Promise<UtxoDto> {
+    const hostStateNFT = this.configService.get('deployment').hostStateNFT;
+
+    // Return the HostState UTxO minted/spent in the exact transaction hash.
+    // This avoids using "closest/latest" state during submission finalization.
+    const query = `
+      SELECT
+        tx_out.address AS address,
+        generating_tx.hash AS tx_hash,
+        generating_tx.id AS tx_id,
+        tx_out.index AS output_index,
+        datum.hash AS datum_hash,
+        datum.bytes AS datum,
+        ma.policy AS assets_policy,
+        ma.name AS assets_name,
+        generating_block.block_no AS block_no,
+        generating_block.id AS block_id
+      FROM tx_out
+      INNER JOIN ma_tx_out mto on mto.tx_out_id = tx_out.id
+      INNER JOIN multi_asset ma on mto.ident = ma.id
+      INNER JOIN datum AS datum on datum.id = tx_out.inline_datum_id
+      INNER JOIN tx AS generating_tx on generating_tx.id = tx_out.tx_id
+      INNER JOIN block AS generating_block on generating_block.id = generating_tx.block_id
+      WHERE generating_tx.hash = $1
+        AND ma.policy = $2
+        AND ma.name = $3
+      -- Keep deterministic selection if a tx ever produced multiple matching outputs.
+      ORDER BY tx_out.index DESC
+      LIMIT 1;
+    `;
+
+    const results = await this.entityManager.query(query, [
+      `\\x${txHash}`,
+      `\\x${hostStateNFT.policyId}`,
+      `\\x${hostStateNFT.name}`,
+    ]);
+
+    if (results.length <= 0) {
+      throw new GrpcNotFoundException(`Not found: HostState UTxO not found in tx ${txHash}`);
+    }
+
+    const row = results[0];
+    return <UtxoDto>{
+      address: row.address,
+      txHash: toHexString(row.tx_hash),
+      txId: row.tx_id,
+      outputIndex: row.output_index,
+      datum: toHexString(row.datum),
+      datumHash: toHexString(row.datum_hash),
+      assetsName: toHexString(row.assets_name),
+      assetsPolicy: toHexString(row.assets_policy),
+      blockId: row.block_id,
+      blockNo: row.block_no,
+    };
+  }
+
   async findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto> {
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;
 

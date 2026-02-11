@@ -108,22 +108,10 @@ export class SubmissionService {
     // submitted transaction even when later steps fail or process restarts occur.
     await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
-    // Verify on-chain root matches what we computed when building the tx.
-    let onChainRoot: string;
-    try {
-      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-      if (!hostStateUtxo?.datum) {
-        throw new GrpcInternalException(
-          `Missing HostState UTxO datum while finalizing tx ${txHash}; refusing to finalize denom traces/tree`,
-        );
-      }
-      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-      onChainRoot = hostStateDatum.state.ibc_state_root;
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to verify on-chain HostState root for tx ${txHash}: ${error?.message ?? error}`,
-      );
-    }
+    // Resolve HostState from the exact confirmed transaction.
+    // We intentionally do not accept "latest HostState" here because that can
+    // mask db-sync/runtime failures and attach traces to the wrong tx context.
+    const onChainRoot = await this.readOnChainRoot(txHash);
 
     if (onChainRoot !== pending.expectedNewRoot) {
       throw new GrpcInternalException(
@@ -144,6 +132,25 @@ export class SubmissionService {
     }
   }
 
+  private async readOnChainRoot(txHash: string): Promise<string> {
+    try {
+      // This lookup is tx-scoped by design: if this fails, finalization must fail.
+      const hostStateAtTx = await this.dbSyncService.findHostStateUtxoByTxHash(txHash);
+      if (!hostStateAtTx?.datum) {
+        throw new GrpcInternalException(
+          `Missing HostState datum in tx ${txHash}; refusing to finalize denom traces/tree`,
+        );
+      }
+      const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateAtTx.datum, 'host_state');
+      return hostStateDatumAtTx.state.ibc_state_root;
+    } catch (error) {
+      // Propagate as a hard failure; callers must never downgrade this into
+      // a "best-effort" path using current/latest state.
+      throw new GrpcInternalException(
+        `Failed to resolve HostState root for tx ${txHash} from db-sync: ${error?.message ?? error}`,
+      );
+    }
+  }
   private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
     // We treat "missing some expected rows" as an integrity error because partial
     // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.
