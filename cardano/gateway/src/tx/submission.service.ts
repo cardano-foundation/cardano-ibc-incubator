@@ -9,6 +9,7 @@ import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { DenomTraceService } from '../query/services/denom-trace.service';
 
 @Injectable()
 export class SubmissionService {
@@ -21,6 +22,7 @@ export class SubmissionService {
     private readonly kupoService: KupoService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
+    private readonly denomTraceService: DenomTraceService,
   ) {}
 
   /**
@@ -55,8 +57,10 @@ export class SubmissionService {
       
       this.logger.log(`Transaction submitted successfully: ${txHash}`);
 
-      // Wait for confirmation (optional - can be made configurable)
-      await this.waitForConfirmation(txHash);
+      const isConfirmed = await this.waitForConfirmation(txHash);
+      if (!isConfirmed) {
+        throw new GrpcInternalException(`Transaction ${txHash} was not confirmed`);
+      }
 
       // Hermes expects a non-empty IBC height string in the form "revisionNumber-revisionHeight".
       // For Cardano devnet we use revisionNumber=0 and revisionHeight=block_no from db-sync.
@@ -94,27 +98,40 @@ export class SubmissionService {
       }
     }
 
-    if (!pending) return;
+    if (!pending) {
+      throw new GrpcInternalException(
+        `Missing pending IBC update for confirmed tx ${txHash}; refusing to skip denom trace/tree finalization`,
+      );
+    }
+
+    // Attach tx_hash to traces before commit so mapping rows remain connected to the
+    // submitted transaction even when later steps fail or process restarts occur.
+    await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     // Verify on-chain root matches what we computed when building the tx.
+    let onChainRoot: string;
     try {
       const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
       if (!hostStateUtxo?.datum) {
-        this.logger.warn(`Skipping tree commit for tx ${txHash}: HostState UTxO datum missing`);
-        return;
+        throw new GrpcInternalException(
+          `Missing HostState UTxO datum while finalizing tx ${txHash}; refusing to finalize denom traces/tree`,
+        );
       }
       const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-      const onChainRoot = hostStateDatum.state.ibc_state_root;
-      if (onChainRoot !== pending.expectedNewRoot) {
-        this.logger.warn(
-          `Skipping tree commit for tx ${txHash}: on-chain root mismatch, expected=${pending.expectedNewRoot.substring(0, 16)}..., onChain=${onChainRoot.substring(0, 16)}...`,
-        );
-        return;
-      }
+      onChainRoot = hostStateDatum.state.ibc_state_root;
     } catch (error) {
-      this.logger.warn(`Skipping tree commit for tx ${txHash}: failed to verify on-chain root, error=${error?.message ?? error}`);
-      return;
+      throw new GrpcInternalException(
+        `Failed to verify on-chain HostState root for tx ${txHash}: ${error?.message ?? error}`,
+      );
     }
+
+    if (onChainRoot !== pending.expectedNewRoot) {
+      throw new GrpcInternalException(
+        `On-chain root mismatch for tx ${txHash}: expected ${pending.expectedNewRoot.substring(0, 16)}..., got ${onChainRoot.substring(0, 16)}...`,
+      );
+    }
+
+    await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     pending.commit();
 
@@ -124,6 +141,28 @@ export class SubmissionService {
       await this.ibcTreeCacheService.save(getCurrentTree(), 'current');
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+    }
+  }
+
+  private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
+    // We treat "missing some expected rows" as an integrity error because partial
+    // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.
+    const hashes = Array.from(new Set((traceHashes ?? []).map((hash) => hash.toLowerCase())));
+    if (hashes.length === 0) return;
+
+    let updated = 0;
+    try {
+      updated = await this.denomTraceService.setTxHashForTraces(hashes, txHash);
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to finalize denom trace mappings for tx ${txHash}: ${error?.message ?? error}`,
+      );
+    }
+
+    if (updated !== hashes.length) {
+      throw new GrpcInternalException(
+        `Failed to finalize denom trace mappings for tx ${txHash}: expected ${hashes.length} traces, updated ${updated}`,
+      );
     }
   }
 
@@ -249,7 +288,7 @@ export class SubmissionService {
    * Wait for transaction confirmation on-chain.
    * Polls Kupo/Ogmios until the transaction appears in a block.
    */
-  private async waitForConfirmation(txHash: string, timeoutMs: number = 60000): Promise<void> {
+  private async waitForConfirmation(txHash: string, timeoutMs: number = 60000): Promise<boolean> {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
     
@@ -259,7 +298,7 @@ export class SubmissionService {
         const isConfirmed = await this.lucidService.lucid.awaitTx(txHash, pollInterval);
         if (isConfirmed) {
           this.logger.log(`Transaction ${txHash} confirmed`);
-          return;
+          return true;
         }
       } catch (error) {
         // awaitTx throws if timeout reached, continue polling
@@ -270,7 +309,7 @@ export class SubmissionService {
     }
     
     this.logger.warn(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
-    // Don't throw - transaction may still be pending, just return
+    throw new GrpcInternalException(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
   }
 
   /**
@@ -293,11 +332,6 @@ export class SubmissionService {
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
-    // Fall back to the latest known block height so Hermes can proceed.
-    const latestBlockNo = await this.dbSyncService.queryLatestBlockNo();
-    this.logger.warn(
-      `db-sync did not return a height for tx ${txHash} within ${timeoutMs}ms; falling back to latest block_no=${latestBlockNo}`,
-    );
-    return latestBlockNo;
+    throw new GrpcInternalException(`db-sync did not return a height for tx ${txHash} within ${timeoutMs}ms`);
   }
 }

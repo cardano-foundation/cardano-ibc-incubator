@@ -3,6 +3,9 @@ import { Injectable } from '@nestjs/common';
 export type PendingTreeUpdate = {
   expectedNewRoot: string;
   commit: () => void;
+  // Optional list of trace hashes created while building this tx.
+  // Submission uses it to set tx_hash on those trace rows after submit.
+  denomTraceHashes?: string[];
 };
 
 @Injectable()

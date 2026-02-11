@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, Index } from 'typeorm';
 
 @Entity('denom_traces')
 export class DenomTrace {
@@ -13,6 +13,10 @@ export class DenomTrace {
 
   @Column()
   voucher_policy_id: string;
+
+  @Index('idx_denom_traces_ibc_denom_hash')
+  @Column({ nullable: true })
+  ibc_denom_hash: string;
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   first_seen: Date;
