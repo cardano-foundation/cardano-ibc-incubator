@@ -216,10 +216,9 @@ export class QueryService {
 	    const mithrilStakeDistributionsList = await this.mithrilService.getMostRecentMithrilStakeDistributions();
 
 	    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-	    const snapshot =
-	      snapshots.find((snapshot) => BigInt(snapshot.block_number) === BigInt(height)) ?? snapshots[0];
+	    const snapshot = snapshots.find((entry) => BigInt(entry.block_number) === BigInt(height));
 	    if (!snapshot) {
-	      throw new GrpcNotFoundException('Not found: no Mithril transaction snapshots available');
+	      throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
 	    }
 
 	    const snapshotCertificate = await this.mithrilService.getCertificateByHash(snapshot.certificate_hash);
