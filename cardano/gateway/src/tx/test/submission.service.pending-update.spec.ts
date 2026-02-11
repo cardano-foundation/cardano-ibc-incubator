@@ -2,6 +2,14 @@ import { SubmissionService } from '../submission.service';
 
 describe('SubmissionService pending update strictness', () => {
   let service: SubmissionService;
+  let lucidServiceMock: {
+    LucidImporter: Record<string, unknown>;
+    findUtxoAtHostStateNFT: jest.Mock;
+    decodeDatum: jest.Mock;
+  };
+  let dbSyncServiceMock: {
+    findHostStateUtxoByTxHash: jest.Mock;
+  };
   let ibcTreePendingUpdatesServiceMock: {
     take: jest.Mock;
     takeByExpectedRoot: jest.Mock;
@@ -20,13 +28,13 @@ describe('SubmissionService pending update strictness', () => {
       setTxHashForTraces: jest.fn(),
     };
 
-    const lucidServiceMock = {
+    lucidServiceMock = {
       LucidImporter: {},
       findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
       decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'root-at-tx' } }),
     };
 
-    const dbSyncServiceMock = {
+    dbSyncServiceMock = {
       findHostStateUtxoByTxHash: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
     };
     const txEventsServiceMock = {};
@@ -50,5 +58,22 @@ describe('SubmissionService pending update strictness', () => {
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
     expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
+  });
+
+  it('fails hard on db-sync runtime error instead of falling back to current HostState', async () => {
+    ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
+      expectedNewRoot: 'fallback-root',
+      commit: jest.fn(),
+      denomTraceHashes: [],
+    });
+    dbSyncServiceMock.findHostStateUtxoByTxHash.mockRejectedValueOnce(new Error('db-sync runtime error'));
+    lucidServiceMock.decodeDatum.mockResolvedValueOnce({
+      state: { ibc_state_root: 'fallback-root' },
+    });
+
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc')).rejects.toThrow(
+      'db-sync runtime error',
+    );
+    expect(lucidServiceMock.findUtxoAtHostStateNFT).not.toHaveBeenCalled();
   });
 });

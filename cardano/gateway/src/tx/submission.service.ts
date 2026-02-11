@@ -152,24 +152,9 @@ export class SubmissionService {
       }
       const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateAtTx.datum, 'host_state');
       return hostStateDatumAtTx.state.ibc_state_root;
-    } catch (dbSyncError) {
-      this.logger.warn(
-        `Failed to resolve HostState root from db-sync tx ${txHash}, falling back to current HostState UTxO: ${dbSyncError?.message ?? dbSyncError}`,
-      );
-    }
-
-    try {
-      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-      if (!hostStateUtxo?.datum) {
-        throw new GrpcInternalException(
-          `Missing HostState UTxO datum while finalizing tx ${txHash}; refusing to finalize denom traces/tree`,
-        );
-      }
-      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-      return hostStateDatum.state.ibc_state_root;
     } catch (error) {
       throw new GrpcInternalException(
-        `Failed to verify on-chain HostState root for tx ${txHash}: ${error?.message ?? error}`,
+        `Failed to resolve HostState root for tx ${txHash} from db-sync: ${error?.message ?? error}`,
       );
     }
   }
