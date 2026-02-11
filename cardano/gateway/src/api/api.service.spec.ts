@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiService } from './api.service';
 
-describe.skip('ApiService', () => {
+describe('ApiService', () => {
   let service: ApiService;
 
   beforeEach(async () => {
@@ -13,6 +13,7 @@ describe.skip('ApiService', () => {
   });
 
   it('should be defined', () => {
+    // Minimal constructor smoke test to confirm DI wiring.
     expect(service).toBeDefined();
   });
 });
