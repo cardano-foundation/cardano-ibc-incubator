@@ -57,8 +57,6 @@ export const ACK_RESULT = 'AQ==';
 
 export const LOVELACE = 'lovelace';
 
-export const EMULATOR_ENV = 'emulator';
-
 export const MAX_EXPECTED_TIME_PER_BLOCK = 4000000000;
 
 export {
