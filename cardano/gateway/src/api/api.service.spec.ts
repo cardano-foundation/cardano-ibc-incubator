@@ -13,6 +13,7 @@ describe('ApiService', () => {
   });
 
   it('should be defined', () => {
+    // Minimal constructor smoke test to confirm DI wiring.
     expect(service).toBeDefined();
   });
 });

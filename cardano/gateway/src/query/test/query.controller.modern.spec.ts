@@ -14,6 +14,8 @@ describe('QueryController (modern)', () => {
   let packetServiceMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
+    // These are controller-level tests: every downstream service is mocked so we
+    // can verify routing/shape behavior without coupling to service internals.
     queryServiceMock = {
       queryClientState: jest.fn(),
       queryConsensusState: jest.fn(),
@@ -67,6 +69,8 @@ describe('QueryController (modern)', () => {
     controller = module.get<QueryController>(QueryController);
   });
 
+  // Shared helper that enforces the same contract for each controller endpoint:
+  // call the expected service method with the raw request and return service output unchanged.
   async function expectDelegation(
     controllerMethod: string,
     serviceMock: Record<string, jest.Mock>,
@@ -216,6 +220,8 @@ describe('QueryController (modern)', () => {
   });
 
   it('delegates queryUnreceivedAcknowledgements to PacketService', async () => {
+    // Controller method name differs from the PacketService method (`queryUnreceivedAcks`);
+    // this test guards that mapping.
     await expectDelegation(
       'queryUnreceivedAcknowledgements',
       packetServiceMock,
