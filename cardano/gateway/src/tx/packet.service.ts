@@ -137,6 +137,33 @@ export class PacketService {
     }
   }
 
+  private dedupeUtxos(utxos: UTxO[]): UTxO[] {
+    // Prefer the *last* occurrence for a given out-ref so callers can append a "canonical" UTxO
+    // (e.g., fetched via `utxosAtWithUnit`) that should be used both for `collectFrom(...)` and
+    // within the wallet UTxO set passed to `fromAddress(...)`.
+    const map = new Map<string, UTxO>();
+    const order: string[] = [];
+
+    for (const utxo of utxos) {
+      const key = `${utxo.txHash}#${utxo.outputIndex}`;
+      if (!map.has(key)) order.push(key);
+      map.set(key, utxo);
+    }
+
+    return order.map((k) => map.get(k)!).filter(Boolean);
+  }
+
+  private sumLovelace(utxos: UTxO[]): bigint {
+    let total = 0n;
+    for (const utxo of utxos) {
+      const lovelace = (utxo.assets as any)?.lovelace;
+      if (typeof lovelace === 'bigint') {
+        total += lovelace;
+      }
+    }
+    return total;
+  }
+
   /**
    * Build the HostState STT update required for any packet-related channel update.
    *
@@ -296,7 +323,18 @@ export class PacketService {
       if (walletOverride) {
         // Ensure the sender's UTxOs are used right before completion to avoid wallet drift
         // between build and complete (e.g., concurrent tx builds with different wallets).
-        this.lucidService.selectWalletFromAddress(walletOverride.address, walletOverride.utxos);
+        const refreshedUtxos = await this.lucidService.tryFindUtxosAt(walletOverride.address, {
+          maxAttempts: 6,
+          retryDelayMs: 1000,
+        });
+        const mergedUtxos = this.dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
+        const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
+        this.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
+        this.logger.log(
+          `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${this.sumLovelace(
+            utxosToUse,
+          )}`,
+        );
       }
 
       // Return unsigned transaction for Hermes to sign
@@ -1296,23 +1334,13 @@ export class PacketService {
       const senderAddress = sendPacketOperator.sender;
 
       const senderVoucherTokenUtxo = await this.lucidService.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
-      let senderUtxos: UTxO[] = [];
-      try {
-        senderUtxos = await this.lucidService.findUtxoAt(senderAddress);
-      } catch (error) {
-        this.logger.warn(
-          `Unable to load sender UTxOs for wallet override; using voucher UTxO only: ${error?.message ?? error}`,
-        );
-      }
+      const senderWalletUtxos = await this.lucidService.tryFindUtxosAt(senderAddress, {
+        maxAttempts: 6,
+        retryDelayMs: 1000,
+      });
+      // Include the concrete voucher UTxO even if indexers lag on `utxosAt`.
+      const walletUtxos = this.dedupeUtxos([...senderWalletUtxos, senderVoucherTokenUtxo]);
 
-      const hasVoucherUtxo = senderUtxos.some(
-        (utxo) =>
-          utxo.txHash === senderVoucherTokenUtxo.txHash &&
-          utxo.outputIndex === senderVoucherTokenUtxo.outputIndex,
-      );
-      if (!hasVoucherUtxo) {
-        senderUtxos.push(senderVoucherTokenUtxo);
-      }
       // send burn
       const unsignedSendPacketParams: UnsignedSendPacketBurnDto = {
         hostStateUtxo,
@@ -1321,7 +1349,7 @@ export class PacketService {
         clientUTxO: clientUtxo,
         transferModuleUTxO: transferModuleUtxo,
         senderVoucherTokenUtxo,
-        walletUtxos: senderUtxos.length > 0 ? senderUtxos : undefined,
+        walletUtxos,
 
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -1348,7 +1376,10 @@ export class PacketService {
       return {
         unsignedTx,
         pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
-        walletOverride: { address: senderAddress, utxos: senderUtxos },
+        walletOverride: {
+          address: senderAddress,
+          utxos: walletUtxos,
+        },
       };
     }
     // escrow

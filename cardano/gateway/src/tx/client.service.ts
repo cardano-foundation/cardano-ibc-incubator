@@ -215,7 +215,7 @@ export class ClientService {
           currentClientUtxo,
         };
 
-        const unsignedUpdateClientTx: TxBuilder =
+        const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
           await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
         const nowMs = Date.now();
         const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
@@ -237,6 +237,8 @@ export class ClientService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         });
+        const unsignedTxHash = completedUnsignedTx.toHash();
+        this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
         const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
@@ -290,7 +292,8 @@ export class ClientService {
         txValidFrom: txValidFromNs,
       };
 
-      const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
+      const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
+        await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
 
       // Return unsigned transaction for Hermes to sign
@@ -298,6 +301,8 @@ export class ClientService {
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxHash = completedUnsignedTx.toHash();
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       
@@ -324,7 +329,7 @@ export class ClientService {
   }
   public async buildUnsignedUpdateOnMisbehaviour(
     updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateOnMisbehaviourOperator.clientDatum.state;
     const clientMessageAny = updateOnMisbehaviourOperator.clientMessage;
     const clientMessage: ClientMessage = getClientMessageFromTendermint(clientMessageAny);
@@ -394,7 +399,7 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
       computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
@@ -425,7 +430,7 @@ export class ClientService {
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    return this.lucidService.createUnsignedUpdateClientTransaction(
+    const unsignedTx = this.lucidService.createUnsignedUpdateClientTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       updateOnMisbehaviourOperator.currentClientUtxo,
@@ -435,12 +440,18 @@ export class ClientService {
       updateOnMisbehaviourOperator.clientTokenUnit,
       updateOnMisbehaviourOperator.constructedAddress,
     );
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
 
   /**
    * Builds an unsigned UpdateClient transaction.
    */
-  public async buildUnsignedUpdateClientTx(updateClientOperator: UpdateClientOperatorDto): Promise<TxBuilder> {
+  public async buildUnsignedUpdateClientTx(
+    updateClientOperator: UpdateClientOperatorDto,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
     const currentClientDatumState = updateClientOperator.clientDatum.state;
     const header = updateClientOperator.header;
     // Create a SpendClientRedeemer using the provided header
@@ -562,7 +573,7 @@ export class ClientService {
       'hex',
     );
 
-    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings } =
+    const { newRoot, clientStateSiblings, consensusStateSiblings, removedConsensusStateSiblings, commit } =
       computeRootWithUpdateClientUpdate(
         hostStateDatum.state.ibc_state_root,
         ibcClientId,
@@ -593,7 +604,7 @@ export class ClientService {
     const encodedNewClientDatum: string = await this.lucidService.encode<ClientDatum>(newClientDatum, 'client');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    return this.lucidService.createUnsignedUpdateClientTransaction(
+    const unsignedTx = this.lucidService.createUnsignedUpdateClientTransaction(
       hostStateUtxo,
       encodedHostStateRedeemer,
       updateClientOperator.currentClientUtxo,
@@ -603,6 +614,10 @@ export class ClientService {
       updateClientOperator.clientTokenUnit,
       updateClientOperator.constructedAddress,
     );
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
   /**
    * Builds an unsigned transaction for creating a new client, incorporating client and consensus state.

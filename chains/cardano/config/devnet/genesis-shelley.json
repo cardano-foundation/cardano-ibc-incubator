@@ -14,7 +14,7 @@
   "networkMagic": 42,
   "protocolParams": {
     "a0": 0.0,
-    "decentralisationParam": 0,
+    "decentralisationParam": 1,
     "eMax": 18,
     "extraEntropy": {
       "tag": "NeutralNonce"

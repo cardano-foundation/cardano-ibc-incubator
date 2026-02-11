@@ -198,6 +198,44 @@ export class LucidService {
     return utxos;
   }
 
+  /**
+   * Best-effort address UTxO lookup with retries.
+   *
+   * This is intended for coin-selection and "wallet override" flows where:
+   * - indexers can lag briefly after mint/transfer,
+   * - transient network/provider errors can occur,
+   * - returning an empty set is preferable to throwing and forcing the caller into a single-UTxO fallback.
+   */
+  public async tryFindUtxosAt(
+    addressOrCredential: string,
+    opts?: { maxAttempts?: number; retryDelayMs?: number },
+  ): Promise<UTxO[]> {
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    const maxAttempts = Math.max(1, opts?.maxAttempts ?? 5);
+    const retryDelayMs = Math.max(0, opts?.retryDelayMs ?? 750);
+
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const utxos = await this.lucid.utxosAt(normalizedAddress);
+        if (utxos.length > 0) {
+          return utxos;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+
+      if (attempt < maxAttempts && retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    // Intentionally swallow errors here; callers can decide how to proceed with an empty UTxO set.
+    // Keep the variable to aid debugging if we later decide to surface it
+    void lastError;
+    return [];
+  }
+
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
@@ -296,8 +334,28 @@ export class LucidService {
   }
   //hex to string
   public credentialToAddress(address: string) {
+    const normalized = address?.trim();
+    if (!normalized) return normalized;
+
+    const lowered = normalized.toLowerCase();
+    if (lowered.startsWith('addr') || lowered.startsWith('stake')) {
+      return normalized;
+    }
+
+    // Hermes can provide enterprise-address bytes (header + key hash) as hex.
+    // Strip the header and use the underlying 28-byte key hash.
+    if (/^[0-9a-f]+$/.test(lowered) && lowered.length === 58) {
+      const paymentHash = lowered.slice(2);
+      if (/^[0-9a-f]{56}$/.test(paymentHash)) {
+        return credentialToAddress(this.lucid.config().network, {
+          hash: paymentHash,
+          type: 'Key',
+        });
+      }
+    }
+
     return credentialToAddress(this.lucid.config().network, {
-      hash: address,
+      hash: lowered,
       type: 'Key',
     });
   }
@@ -1534,12 +1592,9 @@ export class LucidService {
         },
       )
       .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
+        // Burn path: vouchers are retired locally and should not be accumulated
+        // into the transfer module UTxO.
         ...dto.transferModuleUTxO.assets,
-        [dto.voucherTokenUnit]: calculateTransferToken(
-          dto.transferModuleUTxO.assets,
-          BigInt(dto.transferAmount),
-          dto.voucherTokenUnit,
-        ),
       })
       .mintAssets(
         {
