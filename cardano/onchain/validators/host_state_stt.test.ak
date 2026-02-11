@@ -680,3 +680,18 @@ test prop_host_state_bind_port_accepts_valid_transition() {
       run_bind_port_with_outputs(fixture, [output], fixture.siblings)
     })
 }
+
+test prop_host_state_bind_port_rejects_arbitrary_root() {
+  generate_ports(0, 150)
+    |> list.all(fn(port) {
+      let fixture = mk_bind_port_fixture(port)
+      let BindPortFixture { address, port, .. } = fixture
+
+      // Keep all other fields valid, but set a root that does not match the
+      // witness-derived update.
+      let output =
+        mk_bind_port_output(fixture, address, empty_ibc_state_root, [port])
+
+      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
+    })
+}
