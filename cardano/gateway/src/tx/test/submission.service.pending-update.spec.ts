@@ -4,6 +4,7 @@ describe('SubmissionService pending update strictness', () => {
   let service: SubmissionService;
   let ibcTreePendingUpdatesServiceMock: {
     take: jest.Mock;
+    takeByExpectedRoot: jest.Mock;
   };
   let denomTraceServiceMock: {
     setTxHashForTraces: jest.Mock;
@@ -12,6 +13,7 @@ describe('SubmissionService pending update strictness', () => {
   beforeEach(() => {
     ibcTreePendingUpdatesServiceMock = {
       take: jest.fn().mockReturnValue(undefined),
+      takeByExpectedRoot: jest.fn().mockReturnValue(undefined),
     };
 
     denomTraceServiceMock = {
@@ -20,9 +22,13 @@ describe('SubmissionService pending update strictness', () => {
 
     const lucidServiceMock = {
       LucidImporter: {},
+      findUtxoAtHostStateNFT: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
+      decodeDatum: jest.fn().mockResolvedValue({ state: { ibc_state_root: 'root-at-tx' } }),
     };
 
-    const dbSyncServiceMock = {};
+    const dbSyncServiceMock = {
+      findHostStateUtxoByTxHash: jest.fn().mockResolvedValue({ datum: 'host-state-datum' }),
+    };
     const txEventsServiceMock = {};
     const kupoServiceMock = {};
     const ibcTreeCacheServiceMock = {};
@@ -42,6 +48,7 @@ describe('SubmissionService pending update strictness', () => {
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123')).rejects.toThrow();
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
+    expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
     expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
   });
 });

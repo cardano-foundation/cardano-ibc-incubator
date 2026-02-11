@@ -24,4 +24,15 @@ export class IbcTreePendingUpdatesService {
     }
     return update;
   }
+
+  takeByExpectedRoot(expectedNewRoot: string): PendingTreeUpdate | undefined {
+    if (!expectedNewRoot) return undefined;
+    for (const [key, update] of this.pendingByTxHash.entries()) {
+      if (update.expectedNewRoot === expectedNewRoot) {
+        this.pendingByTxHash.delete(key);
+        return update;
+      }
+    }
+    return undefined;
+  }
 }

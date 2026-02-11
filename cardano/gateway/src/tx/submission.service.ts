@@ -89,12 +89,26 @@ export class SubmissionService {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
+    let onChainRoot: string | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
       const fallbackHash = this.computeTxBodyHashHex(signedTxCbor);
       if (fallbackHash && fallbackHash.toLowerCase() !== txHash.toLowerCase()) {
         pending = this.ibcTreePendingUpdatesService.take(fallbackHash);
+      }
+    }
+
+    // Strict fallback: if hash matching fails, resolve the pending update by the resulting
+    // on-chain root. This keeps correctness strict (root must match exactly) while handling
+    // signer/tooling paths that produce a different tx hash key than we recorded pre-signing.
+    if (!pending) {
+      onChainRoot = await this.readOnChainRoot(txHash);
+      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(onChainRoot);
+      if (pending) {
+        this.logger.warn(
+          `Resolved pending IBC update for tx ${txHash} via on-chain root fallback (hash-key lookup missed)`,
+        );
       }
     }
 
@@ -105,20 +119,8 @@ export class SubmissionService {
     }
 
     // Verify on-chain root matches what we computed when building the tx.
-    let onChainRoot: string;
-    try {
-      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-      if (!hostStateUtxo?.datum) {
-        throw new GrpcInternalException(
-          `Missing HostState UTxO datum while finalizing tx ${txHash}; refusing to finalize denom traces/tree`,
-        );
-      }
-      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-      onChainRoot = hostStateDatum.state.ibc_state_root;
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to verify on-chain HostState root for tx ${txHash}: ${error?.message ?? error}`,
-      );
+    if (!onChainRoot) {
+      onChainRoot = await this.readOnChainRoot(txHash);
     }
 
     if (onChainRoot !== pending.expectedNewRoot) {
@@ -137,6 +139,38 @@ export class SubmissionService {
       await this.ibcTreeCacheService.save(getCurrentTree(), 'current');
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+    }
+  }
+
+  private async readOnChainRoot(txHash: string): Promise<string> {
+    try {
+      const hostStateAtTx = await this.dbSyncService.findHostStateUtxoByTxHash(txHash);
+      if (!hostStateAtTx?.datum) {
+        throw new GrpcInternalException(
+          `Missing HostState datum in tx ${txHash}; refusing to finalize denom traces/tree`,
+        );
+      }
+      const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateAtTx.datum, 'host_state');
+      return hostStateDatumAtTx.state.ibc_state_root;
+    } catch (dbSyncError) {
+      this.logger.warn(
+        `Failed to resolve HostState root from db-sync tx ${txHash}, falling back to current HostState UTxO: ${dbSyncError?.message ?? dbSyncError}`,
+      );
+    }
+
+    try {
+      const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+      if (!hostStateUtxo?.datum) {
+        throw new GrpcInternalException(
+          `Missing HostState UTxO datum while finalizing tx ${txHash}; refusing to finalize denom traces/tree`,
+        );
+      }
+      const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+      return hostStateDatum.state.ibc_state_root;
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to verify on-chain HostState root for tx ${txHash}: ${error?.message ?? error}`,
+      );
     }
   }
 

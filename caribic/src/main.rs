@@ -165,7 +165,11 @@ enum Commands {
     /// Run end-to-end integration tests to verify IBC functionality
     ///
     /// Prerequisites: All services must be running. Use 'caribic start' first.
-    Test,
+    Test {
+        /// Optional test selector (examples: "9-12", "6", "5,9-12")
+        #[arg(long)]
+        tests: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -890,11 +894,11 @@ async fn main() {
                 }
             }
         }
-        Commands::Test => {
+        Commands::Test { tests } => {
             let project_config = config::get_config();
             let project_root_path = Path::new(&project_config.project_root);
 
-            match test::run_integration_tests(project_root_path).await {
+            match test::run_integration_tests(project_root_path, tests.as_deref()).await {
                 Ok(results) => {
                     // Print summary
                     logger::log(&format!(

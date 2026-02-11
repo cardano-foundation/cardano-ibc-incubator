@@ -740,9 +740,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix(
-            "Waiting for Cosmos Entrypoint chain to start".to_owned(),
-        );
+        progress_bar.set_prefix("Waiting for Cosmos Entrypoint chain to start".to_owned());
     } else {
         log("Waiting for Cosmos Entrypoint chain to start ...");
     }

@@ -50,6 +50,12 @@ const makeCertificate = (overrides: Record<string, unknown> = {}) => ({
 
 describe('QueryService IBC header strictness regressions', () => {
   let service: QueryService;
+  let loggerMock: {
+    log: jest.Mock;
+    warn: jest.Mock;
+    error: jest.Mock;
+    debug: jest.Mock;
+  };
   let dbServiceMock: {
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
     findBlockByHeight: jest.Mock;
@@ -62,12 +68,12 @@ describe('QueryService IBC header strictness regressions', () => {
   };
 
   beforeEach(() => {
-    const loggerMock = {
+    loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
       debug: jest.fn(),
-    } as unknown as Logger;
+    };
 
     const configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -160,7 +166,7 @@ describe('QueryService IBC header strictness regressions', () => {
     };
 
     service = new QueryService(
-      loggerMock,
+      loggerMock as unknown as Logger,
       configServiceMock,
       {} as LucidService,
       {} as KupoService,
@@ -182,7 +188,7 @@ describe('QueryService IBC header strictness regressions', () => {
     expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
   });
 
-  it('fails hard when previous stake-distribution artifact is missing during certificate-chain construction', async () => {
+  it('truncates previous certificate chain when older stake-distribution artifact is missing', async () => {
     dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockReset();
     dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo
       .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
@@ -229,9 +235,14 @@ describe('QueryService IBC header strictness regressions', () => {
       return makeCertificate({ hash });
     });
 
-    await expect(service.queryIBCHeader({ height: 250n } as any)).rejects.toThrow(
-      'Mithril stake distribution artifact missing for previous certificate older-cert',
+    await expect(service.queryIBCHeader({ height: 250n } as any)).resolves.toMatchObject({
+      header: {
+        type_url: '/ibc.lightclients.mithril.v1.MithrilHeader',
+      },
+    });
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      'Mithril stake distribution artifact missing for previous certificate older-cert; truncating previous certificate chain',
     );
-    expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
+    expect(dbServiceMock.findBlockByHeight).toHaveBeenCalled();
   });
 });

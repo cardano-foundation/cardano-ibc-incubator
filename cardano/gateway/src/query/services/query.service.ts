@@ -1219,9 +1219,10 @@ export class QueryService {
       const previousStakeDistribution = stakeDistributionByCertificateHash.get(previousCertificate.hash);
 
       if (!previousStakeDistribution) {
-        throw new GrpcNotFoundException(
-          `Not found: Mithril stake distribution artifact missing for previous certificate ${previousCertificate.hash}`,
+        this.logger.warn(
+          `Mithril stake distribution artifact missing for previous certificate ${previousCertificate.hash}; truncating previous certificate chain`,
         );
+        break;
       }
 
       previousMithrilStakeDistributionCertificates.push(
