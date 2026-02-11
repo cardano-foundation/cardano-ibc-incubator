@@ -1,5 +1,5 @@
 use aiken/cbor
-use aiken/collection/list
+use aiken/fuzz
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, from_asset}
@@ -29,17 +29,8 @@ fn port_commitment_key(port: Int) -> ByteArray {
     |> bytearray.concat(port_id)
 }
 
-// Generate a deterministic sequence of ports for property-style tests.
-//
-// We intentionally use a fixed range to keep this suite deterministic and easy
-// to debug while still exercising many distinct inputs.
-fn generate_ports(from: Int, to: Int) -> List<Int> {
-  if from > to {
-    []
-  } else {
-    [from, ..generate_ports(from + 1, to)]
-  }
-}
+const any_port: Fuzzer<Int> =
+  fuzz.int_between(0, 10000)
 
 const test_nft_policy: PolicyId =
   #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
@@ -698,92 +689,80 @@ test host_state_bind_port_fails_if_output_missing() fail {
   )
 }
 
-test prop_host_state_bind_port_accepts_valid_transition() {
-  // Property: for a broad range of ports, a correctly constructed transition
-  // should always pass.
-  generate_ports(0, 150)
-    |> list.all(fn(port) {
-      let fixture = mk_bind_port_fixture(port)
-      let BindPortFixture { address, expected_root, port, .. } = fixture
+test prop_host_state_bind_port_accepts_valid_transition(port via any_port) {
+  // Property: for any sampled non-negative port, a correctly constructed
+  // transition should pass.
+  let fixture = mk_bind_port_fixture(port)
+  let BindPortFixture { address, expected_root, .. } = fixture
 
-      // Correct output uses both:
-      // - the exact witness-derived root
-      // - the expected bound_port list containing the new port
-      let output =
-        mk_bind_port_output(fixture, address, expected_root, [port])
+  // Correct output uses both:
+  // - the exact witness-derived root
+  // - the expected bound_port list containing the new port
+  let output =
+    mk_bind_port_output(fixture, address, expected_root, [port])
 
-      // Keep the same witness used to compute `expected_root`.
-      run_bind_port_with_outputs(fixture, [output], fixture.siblings)
-    })
+  // Keep the same witness used to compute `expected_root`.
+  run_bind_port_with_outputs(fixture, [output], fixture.siblings)
 }
 
-test prop_host_state_bind_port_rejects_arbitrary_root() {
+test prop_host_state_bind_port_rejects_arbitrary_root(port via any_port) {
   // Property: if root does not match the witness-derived update, validation
   // must fail even when other fields look valid.
-  generate_ports(0, 150)
-    |> list.all(fn(port) {
-      let fixture = mk_bind_port_fixture(port)
-      let BindPortFixture { address, port, .. } = fixture
+  let fixture = mk_bind_port_fixture(port)
+  let BindPortFixture { address, .. } = fixture
 
-      // Keep all other fields valid, but set a root that does not match the
-      // witness-derived update.
-      let output =
-        mk_bind_port_output(fixture, address, empty_ibc_state_root, [port])
+  // Keep all other fields valid, but set a root that does not match the
+  // witness-derived update.
+  let output =
+    mk_bind_port_output(fixture, address, empty_ibc_state_root, [port])
 
-      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
-    })
+  !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
 }
 
-test prop_host_state_bind_port_rejects_missing_bound_port_update() {
+test prop_host_state_bind_port_rejects_missing_bound_port_update(port via any_port) {
   // Property: even with a correct root, the datum must include the newly bound
   // port in the sorted `bound_port` field.
-  generate_ports(0, 150)
-    |> list.all(fn(port) {
-      let fixture = mk_bind_port_fixture(port)
-      let BindPortFixture { address, expected_root, .. } = fixture
+  let fixture = mk_bind_port_fixture(port)
+  let BindPortFixture { address, expected_root, .. } = fixture
 
-      // Intentionally omit the new port from `bound_port`.
-      let output =
-        mk_bind_port_output(fixture, address, expected_root, [])
+  // Intentionally omit the new port from `bound_port`.
+  let output =
+    mk_bind_port_output(fixture, address, expected_root, [])
 
-      // The commitment root is valid, but the state fails to record the newly
-      // bound port.
-      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
-    })
+  // The commitment root is valid, but the state fails to record the newly
+  // bound port.
+  !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
 }
 
-test prop_host_state_bind_port_rejects_non_incremented_version() {
+test prop_host_state_bind_port_rejects_non_incremented_version(port via any_port) {
   // Property: version monotonicity is mandatory; root correctness alone is not
   // sufficient for a valid transition.
-  generate_ports(0, 150)
-    |> list.all(fn(port) {
-      let fixture = mk_bind_port_fixture(port)
-      let BindPortFixture { nft_policy, address, expected_root, port, .. } = fixture
+  let fixture = mk_bind_port_fixture(port)
+  let BindPortFixture { nft_policy, address, expected_root, .. } = fixture
 
-      // Same root and bound port as a valid transition, but version stays at 0.
-      let stale_state =
-        HostState {
-          version: 0,
-          ibc_state_root: expected_root,
-          next_client_sequence: 0,
-          next_connection_sequence: 0,
-          next_channel_sequence: 0,
-          bound_port: [port],
-          last_update_time: 0,
-        }
+  // Same root and bound port as a valid transition, but version stays at 0.
+  let stale_state =
+    HostState {
+      version: 0,
+      ibc_state_root: expected_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [port],
+      last_update_time: 0,
+    }
 
-      let stale_datum =
-        HostStateDatum { state: stale_state, nft_policy: nft_policy }
+  let stale_datum =
+    HostStateDatum { state: stale_state, nft_policy: nft_policy }
 
-      // Build output manually so the only intended violation is version.
-      let output =
-        Output {
-          address: address,
-          value: from_asset(nft_policy, host_state_token_name, 1),
-          datum: InlineDatum(stale_datum),
-          reference_script: None,
-        }
+  // Build output manually so the only intended violation is version.
+  let output =
+    Output {
+      address: address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: InlineDatum(stale_datum),
+      reference_script: None,
+    }
 
-      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
-    })
+  !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
 }
