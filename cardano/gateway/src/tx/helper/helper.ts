@@ -2,10 +2,6 @@ import { ClientState, ConsensusState, Header } from '@plus/proto-types/build/ibc
 import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
-import {
-  ClientState as ClientStateOuroboros,
-  Misbehaviour,
-} from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
@@ -20,21 +16,6 @@ export function decodeClientState(value: Uint8Array): ClientState {
     return ClientState.decode(value);
   } catch (error) {
     throw new GrpcInvalidArgumentException(`Error decoding client state: ${error}`);
-  }
-}
-
-/**
- * Decodes the legacy Ouroboros/Cardano light client state.
- *
- * This is not part of the current production relaying flow. The Cosmos-side Cardano client is
- * the Mithril client (`/ibc.lightclients.mithril.v1.*`). This decoder is kept only for historical
- * debugging and may be removed once all legacy routes are retired.
- */
-export function decodeClientStateOuroboros(value: Uint8Array): ClientStateOuroboros {
-  try {
-    return ClientStateOuroboros.decode(value);
-  } catch (error) {
-    throw new GrpcInvalidArgumentException(`Error decoding client state ouroboros: ${error}`);
   }
 }
 
