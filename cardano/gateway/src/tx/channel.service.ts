@@ -63,7 +63,7 @@ import {
   UnsignedChannelOpenAckDto,
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
-import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   alignTreeWithChain,
   computeRootWithCreateChannelUpdate,
@@ -184,7 +184,10 @@ export class ChannelService {
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -241,7 +244,10 @@ export class ChannelService {
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
@@ -282,7 +288,10 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -334,7 +343,10 @@ export class ChannelService {
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -372,7 +384,10 @@ export class ChannelService {
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();

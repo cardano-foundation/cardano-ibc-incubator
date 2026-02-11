@@ -47,7 +47,7 @@ import { getBlockDelay } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
+import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   AckPacketOperator,
   RecvPacketOperator,
@@ -248,7 +248,10 @@ export class PacketService {
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -297,7 +300,10 @@ export class PacketService {
       }
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -340,7 +346,10 @@ export class PacketService {
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
@@ -404,7 +413,10 @@ export class PacketService {
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
@@ -446,7 +458,10 @@ export class PacketService {
       const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete({ localUPLCEval: false });
+      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
+      });
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
