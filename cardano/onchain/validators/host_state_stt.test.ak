@@ -20,6 +20,9 @@ fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
 }
 
 fn port_commitment_key(port: Int) -> ByteArray {
+  // This must match the exact ICS-24 path used by HostState BindPort updates:
+  //   ports/{port-id}
+  // where `port-id` is the canonical `port-{n}` format from ICS-005.
   let port_id = port_id_keys.format_port_identifier(port)
   key_port_prefix
     |> bytearray.concat("/")
@@ -27,6 +30,10 @@ fn port_commitment_key(port: Int) -> ByteArray {
 }
 
 // Generate a deterministic sequence of ports for property-style tests.
+//
+// We use a fixed range instead of fuzzing because this repository's current
+// Aiken version does not expose `aiken/fuzz`. This still gives us broad,
+// repeatable coverage across many distinct port values.
 fn generate_ports(from: Int, to: Int) -> List<Int> {
   if from > to {
     []
@@ -46,20 +53,31 @@ const test_input_tx_id: ByteArray =
 
 type BindPortFixture {
   BindPortFixture {
+    // NFT policy that identifies the canonical HostState UTxO.
     nft_policy: PolicyId,
+    // Placeholder script hash required by validator parameters in this context.
     dummy_script_hash: ByteArray,
+    // HostState script address used by both input and valid output.
     address: Address,
+    // Reference of the consumed HostState input.
     input_ref: OutputReference,
+    // Fully built HostState input (contains datum + NFT).
     host_input: Input,
+    // Port value under test.
     port: Int,
+    // Merkle siblings carried in the BindPort redeemer.
     siblings: List<ByteArray>,
+    // Expected post-update ibc_state_root for this port and sibling set.
     expected_root: ByteArray,
   }
 }
 
 fn mk_bind_port_fixture(port: Int) -> BindPortFixture {
+  // Keep all reusable constants centralized so tests only vary one thing: the
+  // transition-specific fields they are trying to validate.
   let address = Address(Script(test_dummy_script_hash), None)
 
+  // Baseline HostState before any port is bound.
   let old_state =
     HostState {
       version: 0,
@@ -74,12 +92,14 @@ fn mk_bind_port_fixture(port: Int) -> BindPortFixture {
   let old_datum =
     HostStateDatum { state: old_state, nft_policy: test_nft_policy }
 
+  // Stable input reference keeps this fixture deterministic.
   let input_ref =
     OutputReference {
       transaction_id: test_input_tx_id,
       output_index: 0,
     }
 
+  // Canonical STT input: one HostState NFT + inline HostState datum.
   let host_input =
     Input(
       input_ref,
@@ -91,12 +111,14 @@ fn mk_bind_port_fixture(port: Int) -> BindPortFixture {
       },
     )
 
+  // For an empty root, each witness level is the empty hash.
   let siblings =
     repeat_bytearray(
       ibc_state_commitment.empty_hash,
       ibc_state_commitment.merkle_depth_bits,
     )
 
+  // Compute the only root that should be accepted for this BindPort action.
   let expected_root =
     ibc_state_commitment.apply_update(
       old_state.ibc_state_root,
@@ -124,8 +146,12 @@ fn mk_bind_port_output(
   output_root: ByteArray,
   bound_port: List<Int>,
 ) -> Output {
+  // The fixture provides the policy context; callers choose the output shape
+  // they want to validate (correct or intentionally malformed).
   let BindPortFixture { nft_policy, .. } = fixture
 
+  // This constructor always models the first state transition version (+1 from
+  // the fixture input), and callers can override root + bound_port content.
   let new_state =
     HostState {
       version: 1,
@@ -151,6 +177,7 @@ fn mk_bind_port_redeemer(
   port: Int,
   port_siblings: List<ByteArray>,
 ) -> host_state_stt.HostStateRedeemer {
+  // BindPort redeemer used by all scenarios in this file.
   host_state_stt.BindPort { port: port, port_siblings: port_siblings }
 }
 
@@ -159,6 +186,8 @@ fn run_bind_port_with_outputs(
   outputs: List<Output>,
   redeemer_siblings: List<ByteArray>,
 ) -> Bool {
+  // This helper runs the actual validator with the given output set and witness.
+  // Property tests call this repeatedly across generated ports.
   let BindPortFixture {
     nft_policy,
     dummy_script_hash,
@@ -170,6 +199,8 @@ fn run_bind_port_with_outputs(
 
   let redeemer = mk_bind_port_redeemer(port, redeemer_siblings)
 
+  // Build the minimal transaction shape the HostState STT validator expects:
+  // one HostState input and caller-defined outputs.
   let transaction =
     Transaction {
       ..placeholder,
@@ -669,19 +700,27 @@ test host_state_bind_port_fails_if_output_missing() fail {
 }
 
 test prop_host_state_bind_port_accepts_valid_transition() {
+  // Property: for a broad range of ports, a correctly constructed transition
+  // should always pass.
   generate_ports(0, 150)
     |> list.all(fn(port) {
       let fixture = mk_bind_port_fixture(port)
       let BindPortFixture { address, expected_root, port, .. } = fixture
 
+      // Correct output uses both:
+      // - the exact witness-derived root
+      // - the expected bound_port list containing the new port
       let output =
         mk_bind_port_output(fixture, address, expected_root, [port])
 
+      // Keep the same witness used to compute `expected_root`.
       run_bind_port_with_outputs(fixture, [output], fixture.siblings)
     })
 }
 
 test prop_host_state_bind_port_rejects_arbitrary_root() {
+  // Property: if root does not match the witness-derived update, validation
+  // must fail even when other fields look valid.
   generate_ports(0, 150)
     |> list.all(fn(port) {
       let fixture = mk_bind_port_fixture(port)
@@ -697,16 +736,55 @@ test prop_host_state_bind_port_rejects_arbitrary_root() {
 }
 
 test prop_host_state_bind_port_rejects_missing_bound_port_update() {
+  // Property: even with a correct root, the datum must include the newly bound
+  // port in the sorted `bound_port` field.
   generate_ports(0, 150)
     |> list.all(fn(port) {
       let fixture = mk_bind_port_fixture(port)
       let BindPortFixture { address, expected_root, .. } = fixture
 
+      // Intentionally omit the new port from `bound_port`.
       let output =
         mk_bind_port_output(fixture, address, expected_root, [])
 
       // The commitment root is valid, but the state fails to record the newly
       // bound port.
+      !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
+    })
+}
+
+test prop_host_state_bind_port_rejects_non_incremented_version() {
+  // Property: version monotonicity is mandatory; root correctness alone is not
+  // sufficient for a valid transition.
+  generate_ports(0, 150)
+    |> list.all(fn(port) {
+      let fixture = mk_bind_port_fixture(port)
+      let BindPortFixture { nft_policy, address, expected_root, port, .. } = fixture
+
+      // Same root and bound port as a valid transition, but version stays at 0.
+      let stale_state =
+        HostState {
+          version: 0,
+          ibc_state_root: expected_root,
+          next_client_sequence: 0,
+          next_connection_sequence: 0,
+          next_channel_sequence: 0,
+          bound_port: [port],
+          last_update_time: 0,
+        }
+
+      let stale_datum =
+        HostStateDatum { state: stale_state, nft_policy: nft_policy }
+
+      // Build output manually so the only intended violation is version.
+      let output =
+        Output {
+          address: address,
+          value: from_asset(nft_policy, host_state_token_name, 1),
+          datum: InlineDatum(stale_datum),
+          reference_script: None,
+        }
+
       !run_bind_port_with_outputs(fixture, [output], fixture.siblings)
     })
 }
