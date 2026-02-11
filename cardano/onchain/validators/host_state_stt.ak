@@ -1,3 +1,4 @@
+use aiken/cbor
 // IBC Host State - Single Token Thread (STT) Validator
 //
 // This validator enforces the Single Token Thread pattern for IBC host state:
@@ -12,119 +13,120 @@
 // - Type safety: Redeemer specifies operation, validator checks validity
 // - Auditability: NFT provides complete state history
 
-	use aiken/collection/list
-	use aiken/collection/pairs
-	use aiken/cbor
-	use aiken/crypto.{Blake2b_224, Hash, Script}
-	use aiken/primitive/bytearray
-	use ibc/auth.{AuthToken}
-	use cardano/assets.{AssetName, PolicyId, quantity_of}
-		use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
-		use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-		use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-		use ibc/client/ics_007_tendermint_client/height.{Height}
-			use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
-			use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-			use ibc/core/ics_004/channel_datum.{ChannelDatum}
-			use ibc/core/ics_004/types/keys as chan_id_keys
-			use ibc/core/ics_005/types/keys as port_id_keys
-			use ibc/core/ics_024_host_requirements/client_keys
-			use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
-			use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
-			use ibc/core/ics_024_host_requirements/packet_keys
-			use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
-			use ibc/core/ics_025_handler_interface/ibc_state_commitment
-			use ibc/core/ics_025_handler_interface/host_state.{
-			  HostState, HostStateDatum, host_state_token_name, validate_bind_port,
-			  validate_create_channel, validate_create_client, validate_create_connection,
-			  validate_update_only_root,
-		}
-		use ibc/utils/string as string_utils
-		use ibc/utils/validator_utils
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script}
+use aiken/primitive/bytearray
+use cardano/assets.{AssetName, PolicyId, quantity_of}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
+use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
+use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
+use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
+use ibc/core/ics_004/channel_datum.{ChannelDatum}
+use ibc/core/ics_004/types/keys as chan_id_keys
+use ibc/core/ics_005/types/keys as port_id_keys
+use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
+use ibc/core/ics_024_host_requirements/client_keys
+use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
+use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
+use ibc/core/ics_025_handler_interface/host_state.{
+  HostState, HostStateDatum, host_state_token_name, validate_bind_port,
+  validate_create_channel, validate_create_client, validate_create_connection,
+  validate_update_only_root,
+}
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/utils/string as string_utils
+use ibc/utils/validator_utils
 
 /// Redeemer for HostState STT operations
-	pub type HostStateRedeemer {
-	  /// Create a new IBC client
-	  CreateClient {
-	    // Sibling hashes for the `clients/{id}/clientState` key update.
-	    client_state_siblings: List<ByteArray>,
-	    // Sibling hashes for the `clients/{id}/consensusStates/{height}` key update.
-	    consensus_state_siblings: List<ByteArray>,
-	  }
-	  /// Create a new IBC connection
-	  CreateConnection {
-	    // Sibling hashes for the `connections/{id}` key update.
-	    connection_siblings: List<ByteArray>,
-	  }
-	  /// Create a new IBC channel
-		  CreateChannel {
-		    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-		    channel_siblings: List<ByteArray>,
-		    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
-		    next_sequence_send_siblings: List<ByteArray>,
-		    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
-		    next_sequence_recv_siblings: List<ByteArray>,
-		    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
-		    next_sequence_ack_siblings: List<ByteArray>,
-		  }
-			  /// Bind a port.
-			  ///
-			  /// This adds a committed `ports/{portId}` entry to the HostState root.
-			  /// The `portId` format is `port-{n}` (see `ics-005/types/keys.ak`).
-			  BindPort {
-			    port: Int,
-			    // Sibling hashes for the `ports/{portId}` key update.
-			    port_siblings: List<ByteArray>,
-			  }
-			  /// Update client state (consensus update, misbehaviour, upgrade)
-			  UpdateClient {
-			    // Sibling hashes for the `clients/{clientId}/clientState` key update.
-			    client_state_siblings: List<ByteArray>,
-		    // Sibling hashes for the `clients/{clientId}/consensusStates/{height}` key update.
-		    //
-		    // This is only used when the UpdateClient transition adds a new consensus state.
-		    // For updates that do not add a consensus state (e.g., misbehaviour), this should
-		    // be an empty list.
-		    consensus_state_siblings: List<ByteArray>,
-		    // Sibling hashes for consensus state deletions.
-		    //
-		    // The spend_client validator may prune or expire old consensus states.
-		    // Each removed consensus state is a deletion in the commitment tree.
-		    //
-		    // This is a list-of-lists:
-		    // - outer list: one entry per removed consensus state (in input order)
-		    // - inner list: the `merkle_depth_bits` sibling hashes for that key update
-		    removed_consensus_state_siblings: List<List<ByteArray>>,
-		  }
-	  /// Update connection state (handshake continuation)
-	  UpdateConnection {
-	    // Sibling hashes for the `connections/{id}` key update.
-	    connection_siblings: List<ByteArray>,
-	  }
-	  /// Update channel state (handshake continuation)
-	  UpdateChannel {
-	    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-	    channel_siblings: List<ByteArray>,
-	  }
-	  /// Send/receive/ack/timeout IBC packets
-	  HandlePacket {
-	    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-	    //
-	    // Most packet operations do not change the channel end, but ordered timeouts do.
-	    channel_siblings: List<ByteArray>,
-	    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
-	    next_sequence_send_siblings: List<ByteArray>,
-	    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
-	    next_sequence_recv_siblings: List<ByteArray>,
-	    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
-	    next_sequence_ack_siblings: List<ByteArray>,
-	    // Sibling hashes for the `commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-	    packet_commitment_siblings: List<ByteArray>,
-	    // Sibling hashes for the `receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-	    packet_receipt_siblings: List<ByteArray>,
-	    // Sibling hashes for the `acks/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-	    packet_acknowledgement_siblings: List<ByteArray>,
-	  }
+pub type HostStateRedeemer {
+  /// Create a new IBC client
+  CreateClient {
+    // Sibling hashes for the `clients/{id}/clientState` key update.
+    client_state_siblings: List<ByteArray>,
+    // Sibling hashes for the `clients/{id}/consensusStates/{height}` key update.
+    consensus_state_siblings: List<ByteArray>,
+  }
+  /// Create a new IBC connection
+  CreateConnection {
+    // Sibling hashes for the `connections/{id}` key update.
+    connection_siblings: List<ByteArray>,
+  }
+  /// Create a new IBC channel
+  CreateChannel {
+    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
+    channel_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_send_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_recv_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_ack_siblings: List<ByteArray>,
+  }
+  /// Bind a port.
+  ///
+  /// This adds a committed `ports/{portId}` entry to the HostState root.
+  /// The `portId` format is `port-{n}` (see `ics-005/types/keys.ak`).
+  BindPort {
+    port: Int,
+    // Sibling hashes for the `ports/{portId}` key update.
+    port_siblings: List<ByteArray>,
+  }
+  /// Update client state (consensus update, misbehaviour, upgrade)
+  UpdateClient {
+    // Sibling hashes for the `clients/{clientId}/clientState` key update.
+    client_state_siblings: List<ByteArray>,
+    // Sibling hashes for the `clients/{clientId}/consensusStates/{height}` key update.
+    //
+    // This is only used when the UpdateClient transition adds a new consensus state.
+    // For updates that do not add a consensus state (e.g., misbehaviour), this should
+    // be an empty list.
+    consensus_state_siblings: List<ByteArray>,
+    // Sibling hashes for consensus state deletions.
+    //
+    // The spend_client validator may prune or expire old consensus states.
+    // Each removed consensus state is a deletion in the commitment tree.
+    //
+    // This is a list-of-lists:
+    // - outer list: one entry per removed consensus state (in input order)
+    // - inner list: the `merkle_depth_bits` sibling hashes for that key update
+    removed_consensus_state_siblings: List<List<ByteArray>>,
+  }
+  /// Update connection state (handshake continuation)
+  UpdateConnection {
+    // Sibling hashes for the `connections/{id}` key update.
+    connection_siblings: List<ByteArray>,
+  }
+  /// Update channel state (handshake continuation)
+  UpdateChannel {
+    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
+    channel_siblings: List<ByteArray>,
+  }
+  /// Send/receive/ack/timeout IBC packets
+  HandlePacket {
+    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
+    //
+    // Most packet operations do not change the channel end, but ordered timeouts do.
+    channel_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_send_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_recv_siblings: List<ByteArray>,
+    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
+    next_sequence_ack_siblings: List<ByteArray>,
+    // Sibling hashes for the `commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
+    packet_commitment_siblings: List<ByteArray>,
+    // Sibling hashes for the `receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
+    packet_receipt_siblings: List<ByteArray>,
+    // Sibling hashes for the `acks/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
+    packet_acknowledgement_siblings: List<ByteArray>,
+  }
 }
 
 /// Find the HostState UTXO input being spent
@@ -138,11 +140,7 @@ fn find_host_state_input(
     inputs,
     fn(input) {
       let quantity =
-        quantity_of(
-          input.output.value,
-          nft_policy,
-          host_state_token_name,
-        )
+        quantity_of(input.output.value, nft_policy, host_state_token_name)
       quantity == 1
     },
   )
@@ -158,9 +156,9 @@ fn find_host_state_output(
   list.find(
     outputs,
     fn(output) {
-          let quantity =
-            quantity_of(output.value, nft_policy, host_state_token_name)
-          quantity == 1
+      let quantity =
+        quantity_of(output.value, nft_policy, host_state_token_name)
+      quantity == 1
     },
   )
 }
@@ -251,14 +249,17 @@ fn validate_create_client_root(
   // This matches the off-chain convention: `07-tendermint-{sequence}`.
   let client_id =
     "07-tendermint-"
-      |> bytearray.concat(string_utils.int_to_string(old_datum.state.next_client_sequence))
+      |> bytearray.concat(
+          string_utils.int_to_string(old_datum.state.next_client_sequence),
+        )
 
   // Commitment keys (IBC paths).
   let client_state_key = client_keys.full_client_state_path(client_id)
 
   // The initial consensus state is stored at the client's latest height.
   let latest_height = client_datum.state.client_state.latest_height
-  let consensus_height = string_utils.int_to_string(latest_height.revision_height)
+  let consensus_height =
+    string_utils.int_to_string(latest_height.revision_height)
   let consensus_state_key =
     client_keys.full_client_consensus_state_path(client_id, consensus_height)
 
@@ -329,7 +330,8 @@ fn apply_removed_consensus_state_updates(
 
       // The ICS-24 key uses only `revision_height` as the path component today.
       let height_str = string_utils.int_to_string(height.revision_height)
-      let consensus_key = client_keys.full_client_consensus_state_path(client_id, height_str)
+      let consensus_key =
+        client_keys.full_client_consensus_state_path(client_id, height_str)
 
       // Commitment values are always CBOR-serialized before being committed.
       let old_value = cbor.serialise(consensus_state)
@@ -344,7 +346,12 @@ fn apply_removed_consensus_state_updates(
           siblings,
         )
 
-      apply_removed_consensus_state_updates(next_root, client_id, rest_pairs, rest_siblings)
+      apply_removed_consensus_state_updates(
+        next_root,
+        client_id,
+        rest_pairs,
+        rest_siblings,
+      )
     }
   }
 }
@@ -392,8 +399,10 @@ fn validate_update_client_root(
   // 1) Apply the clientState update.
   let client_state_key = client_keys.full_client_state_path(client_id)
 
-  let old_client_state_value = cbor.serialise(client_input_datum.state.client_state)
-  let new_client_state_value = cbor.serialise(client_output_datum.state.client_state)
+  let old_client_state_value =
+    cbor.serialise(client_input_datum.state.client_state)
+  let new_client_state_value =
+    cbor.serialise(client_output_datum.state.client_state)
 
   let root_after_client_state =
     ibc_state_commitment.apply_update(
@@ -436,7 +445,8 @@ fn validate_update_client_root(
       [] -> root_after_removed
       [Pair(height, consensus_state)] -> {
         let height_str = string_utils.int_to_string(height.revision_height)
-        let consensus_key = client_keys.full_client_consensus_state_path(client_id, height_str)
+        let consensus_key =
+          client_keys.full_client_consensus_state_path(client_id, height_str)
         let new_value = cbor.serialise(consensus_state)
 
         ibc_state_commitment.apply_update(
@@ -458,12 +468,12 @@ fn validate_update_client_root(
 /// In plain terms:
 /// - The new HostState datum is only accepted if its `ibc_state_root` equals
 ///   the old root with exactly the CreateConnection key update applied.
-	fn validate_create_connection_root(
-	  old_datum: HostStateDatum,
-	  new_datum: HostStateDatum,
-	  outputs: List<Output>,
-	  spend_connection_script_hash: Hash<Blake2b_224, Script>,
-	  connection_siblings: List<ByteArray>,
+fn validate_create_connection_root(
+  old_datum: HostStateDatum,
+  new_datum: HostStateDatum,
+  outputs: List<Output>,
+  spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  connection_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the newly created connection output.
   //
@@ -502,104 +512,107 @@ fn validate_update_client_root(
       connection_siblings,
     )
 
-	  root_after_connection == new_datum.state.ibc_state_root
-	}
+  root_after_connection == new_datum.state.ibc_state_root
+}
 
-	/// Enforce that `ibc_state_root` is updated correctly for CreateChannel.
-	///
-	/// In plain terms:
-	/// - The new HostState datum is only accepted if its `ibc_state_root` equals
-	///   the old root with the CreateChannel key updates applied.
-	fn validate_create_channel_root(
-	  old_datum: HostStateDatum,
-	  new_datum: HostStateDatum,
-	  outputs: List<Output>,
-	  spend_channel_script_hash: Hash<Blake2b_224, Script>,
-	  channel_siblings: List<ByteArray>,
-	  next_sequence_send_siblings: List<ByteArray>,
-	  next_sequence_recv_siblings: List<ByteArray>,
-	  next_sequence_ack_siblings: List<ByteArray>,
-	) -> Bool {
-	  // Find the newly created channel output.
-	  //
-	  // `mint_channel_stt` enforces there is exactly one channel output for CreateChannel,
-	  // so we require exactly one here too.
-	  expect [channel_output] =
-	    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
+/// Enforce that `ibc_state_root` is updated correctly for CreateChannel.
+///
+/// In plain terms:
+/// - The new HostState datum is only accepted if its `ibc_state_root` equals
+///   the old root with the CreateChannel key updates applied.
+fn validate_create_channel_root(
+  old_datum: HostStateDatum,
+  new_datum: HostStateDatum,
+  outputs: List<Output>,
+  spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_siblings: List<ByteArray>,
+  next_sequence_send_siblings: List<ByteArray>,
+  next_sequence_recv_siblings: List<ByteArray>,
+  next_sequence_ack_siblings: List<ByteArray>,
+) -> Bool {
+  // Find the newly created channel output.
+  //
+  // `mint_channel_stt` enforces there is exactly one channel output for CreateChannel,
+  // so we require exactly one here too.
+  expect [channel_output] =
+    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
 
-	  // Decode the channel datum so we can derive the exact state bytes that must be
-	  // committed into the Merkle root.
-	  expect channel_datum: ChannelDatum =
-	    validator_utils.get_inline_datum(channel_output)
+  // Decode the channel datum so we can derive the exact state bytes that must be
+  // committed into the Merkle root.
+  expect channel_datum: ChannelDatum =
+    validator_utils.get_inline_datum(channel_output)
 
-	  // Derive the channel identifier from the HostState sequence.
-	  //
-	  // This matches the off-chain convention: `channel-{sequence}`.
-	  let channel_id =
-	    string_utils.int_to_string(old_datum.state.next_channel_sequence)
-	      |> chan_id_keys.format_channel_identifier()
+  // Derive the channel identifier from the HostState sequence.
+  //
+  // This matches the off-chain convention: `channel-{sequence}`.
+  let channel_id =
+    string_utils.int_to_string(old_datum.state.next_channel_sequence)
+      |> chan_id_keys.format_channel_identifier()
 
-	  // Commitment keys (IBC paths).
-	  let port_id = channel_datum.port_id
-	  let channel_key = host_channel_keys.channel_path(port_id, channel_id)
-	  let next_sequence_send_key = packet_keys.next_sequence_send_path(port_id, channel_id)
-	  let next_sequence_recv_key = packet_keys.next_sequence_recv_path(port_id, channel_id)
-	  let next_sequence_ack_key = packet_keys.next_sequence_ack_path(port_id, channel_id)
+  // Commitment keys (IBC paths).
+  let port_id = channel_datum.port_id
+  let channel_key = host_channel_keys.channel_path(port_id, channel_id)
+  let next_sequence_send_key =
+    packet_keys.next_sequence_send_path(port_id, channel_id)
+  let next_sequence_recv_key =
+    packet_keys.next_sequence_recv_path(port_id, channel_id)
+  let next_sequence_ack_key =
+    packet_keys.next_sequence_ack_path(port_id, channel_id)
 
-	  // Commitment values.
-	  //
-	  // We commit the CBOR serialization of the on-chain types. The Gateway must
-	  // use the same encoding when it computes the update witnesses.
-	  let channel_value = cbor.serialise(channel_datum.state.channel)
-	  let next_sequence_send_value =
-	    cbor.serialise(channel_datum.state.next_sequence_send)
-	  let next_sequence_recv_value =
-	    cbor.serialise(channel_datum.state.next_sequence_recv)
-	  let next_sequence_ack_value =
-	    cbor.serialise(channel_datum.state.next_sequence_ack)
+  // Commitment values.
+  //
+  // We commit the CBOR serialization of the on-chain types. The Gateway must
+  // use the same encoding when it computes the update witnesses.
+  let channel_value = cbor.serialise(channel_datum.state.channel)
+  let next_sequence_send_value =
+    cbor.serialise(channel_datum.state.next_sequence_send)
+  let next_sequence_recv_value =
+    cbor.serialise(channel_datum.state.next_sequence_recv)
+  let next_sequence_ack_value =
+    cbor.serialise(channel_datum.state.next_sequence_ack)
 
-	  // Apply the 4 updates in order, starting from the old root.
-	  //
-	  // For a newly created channel, these keys were previously "empty", so we use
-	  // the empty bytearray as the old value.
-	  let root_after_channel =
-	    ibc_state_commitment.apply_update(
-	      old_datum.state.ibc_state_root,
-	      channel_key,
-	      "",
-	      channel_value,
-	      channel_siblings,
-	    )
+  // Apply the 4 updates in order, starting from the old root.
+  //
+  // For a newly created channel, these keys were previously "empty", so we use
+  // the empty bytearray as the old value.
+  let root_after_channel =
+    ibc_state_commitment.apply_update(
+      old_datum.state.ibc_state_root,
+      channel_key,
+      "",
+      channel_value,
+      channel_siblings,
+    )
 
-	  let root_after_next_sequence_send =
-	    ibc_state_commitment.apply_update(
-	      root_after_channel,
-	      next_sequence_send_key,
-	      "",
-	      next_sequence_send_value,
-	      next_sequence_send_siblings,
-	    )
+  let root_after_next_sequence_send =
+    ibc_state_commitment.apply_update(
+      root_after_channel,
+      next_sequence_send_key,
+      "",
+      next_sequence_send_value,
+      next_sequence_send_siblings,
+    )
 
-	  let root_after_next_sequence_recv =
-	    ibc_state_commitment.apply_update(
-	      root_after_next_sequence_send,
-	      next_sequence_recv_key,
-	      "",
-	      next_sequence_recv_value,
-	      next_sequence_recv_siblings,
-	    )
+  let root_after_next_sequence_recv =
+    ibc_state_commitment.apply_update(
+      root_after_next_sequence_send,
+      next_sequence_recv_key,
+      "",
+      next_sequence_recv_value,
+      next_sequence_recv_siblings,
+    )
 
-	  let root_after_next_sequence_ack =
-	    ibc_state_commitment.apply_update(
-	      root_after_next_sequence_recv,
-	      next_sequence_ack_key,
-	      "",
-	      next_sequence_ack_value,
-	      next_sequence_ack_siblings,
-	    )
+  let root_after_next_sequence_ack =
+    ibc_state_commitment.apply_update(
+      root_after_next_sequence_recv,
+      next_sequence_ack_key,
+      "",
+      next_sequence_ack_value,
+      next_sequence_ack_siblings,
+    )
 
-		  root_after_next_sequence_ack == new_datum.state.ibc_state_root
-		}
+  root_after_next_sequence_ack == new_datum.state.ibc_state_root
+}
 
 /// Enforce that `ibc_state_root` is updated correctly for BindPort.
 ///
@@ -640,10 +653,10 @@ fn validate_bind_port_root(
   root_after_bind == new_datum.state.ibc_state_root
 }
 
-	/// Enforce that `ibc_state_root` is updated correctly for UpdateConnection.
-	///
-	/// In plain terms:
-	/// - The new HostState datum is only accepted if its `ibc_state_root` equals
+/// Enforce that `ibc_state_root` is updated correctly for UpdateConnection.
+///
+/// In plain terms:
+/// - The new HostState datum is only accepted if its `ibc_state_root` equals
 ///   the old root with exactly the `connections/{id}` key update applied.
 fn validate_update_connection_root(
   old_datum: HostStateDatum,
@@ -666,7 +679,8 @@ fn validate_update_connection_root(
   expect connection_output_datum: ConnectionDatum =
     validator_utils.get_inline_datum(connection_output)
 
-  let connection_id = connection_id_from_token_name(connection_output_datum.token.name)
+  let connection_id =
+    connection_id_from_token_name(connection_output_datum.token.name)
   let connection_key = host_connection_keys.connection_path(connection_id)
 
   // Find the input connection UTxO by looking for the same auth token.
@@ -802,9 +816,12 @@ fn validate_handle_packet_root(
 
   // Commitment keys (ICS-24 paths).
   let channel_key = host_channel_keys.channel_path(port_id, channel_id)
-  let next_sequence_send_key = packet_keys.next_sequence_send_path(port_id, channel_id)
-  let next_sequence_recv_key = packet_keys.next_sequence_recv_path(port_id, channel_id)
-  let next_sequence_ack_key = packet_keys.next_sequence_ack_path(port_id, channel_id)
+  let next_sequence_send_key =
+    packet_keys.next_sequence_send_path(port_id, channel_id)
+  let next_sequence_recv_key =
+    packet_keys.next_sequence_recv_path(port_id, channel_id)
+  let next_sequence_ack_key =
+    packet_keys.next_sequence_ack_path(port_id, channel_id)
 
   // Start from the old committed root.
   let root0 = old_datum.state.ibc_state_root
@@ -830,8 +847,10 @@ fn validate_handle_packet_root(
     if channel_input_datum.state.next_sequence_send == channel_output_datum.state.next_sequence_send {
       root1
     } else {
-      let old_value = cbor.serialise(channel_input_datum.state.next_sequence_send)
-      let new_value = cbor.serialise(channel_output_datum.state.next_sequence_send)
+      let old_value =
+        cbor.serialise(channel_input_datum.state.next_sequence_send)
+      let new_value =
+        cbor.serialise(channel_output_datum.state.next_sequence_send)
       ibc_state_commitment.apply_update(
         root1,
         next_sequence_send_key,
@@ -846,8 +865,10 @@ fn validate_handle_packet_root(
     if channel_input_datum.state.next_sequence_recv == channel_output_datum.state.next_sequence_recv {
       root2
     } else {
-      let old_value = cbor.serialise(channel_input_datum.state.next_sequence_recv)
-      let new_value = cbor.serialise(channel_output_datum.state.next_sequence_recv)
+      let old_value =
+        cbor.serialise(channel_input_datum.state.next_sequence_recv)
+      let new_value =
+        cbor.serialise(channel_output_datum.state.next_sequence_recv)
       ibc_state_commitment.apply_update(
         root2,
         next_sequence_recv_key,
@@ -862,8 +883,10 @@ fn validate_handle_packet_root(
     if channel_input_datum.state.next_sequence_ack == channel_output_datum.state.next_sequence_ack {
       root3
     } else {
-      let old_value = cbor.serialise(channel_input_datum.state.next_sequence_ack)
-      let new_value = cbor.serialise(channel_output_datum.state.next_sequence_ack)
+      let old_value =
+        cbor.serialise(channel_input_datum.state.next_sequence_ack)
+      let new_value =
+        cbor.serialise(channel_output_datum.state.next_sequence_ack)
       ibc_state_commitment.apply_update(
         root3,
         next_sequence_ack_key,
@@ -878,17 +901,24 @@ fn validate_handle_packet_root(
   let output_commitments = channel_output_datum.state.packet_commitment
 
   let inserted_commitments =
-    list.filter(output_commitments, fn(pair) { !pairs.has_key(input_commitments, pair.1st) })
+    list.filter(
+      output_commitments,
+      fn(pair) { !pairs.has_key(input_commitments, pair.1st) },
+    )
 
   let removed_commitments =
-    list.filter(input_commitments, fn(pair) { !pairs.has_key(output_commitments, pair.1st) })
+    list.filter(
+      input_commitments,
+      fn(pair) { !pairs.has_key(output_commitments, pair.1st) },
+    )
 
   let root5 =
     if inserted_commitments != [] {
       // Exactly one insertion is expected in a single packet operation.
       expect removed_commitments == []
       expect [Pair(sequence, commitment_bytes)] = inserted_commitments
-      let commitment_key = packet_keys.packet_commitment_path(port_id, channel_id, sequence)
+      let commitment_key =
+        packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(commitment_bytes)
 
       ibc_state_commitment.apply_update(
@@ -901,7 +931,8 @@ fn validate_handle_packet_root(
     } else if removed_commitments != [] {
       // Exactly one deletion is expected in a single packet operation.
       expect [Pair(sequence, commitment_bytes)] = removed_commitments
-      let commitment_key = packet_keys.packet_commitment_path(port_id, channel_id, sequence)
+      let commitment_key =
+        packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let old_value = cbor.serialise(commitment_bytes)
 
       ibc_state_commitment.apply_update(
@@ -920,17 +951,24 @@ fn validate_handle_packet_root(
   let output_receipts = channel_output_datum.state.packet_receipt
 
   let inserted_receipts =
-    list.filter(output_receipts, fn(pair) { !pairs.has_key(input_receipts, pair.1st) })
+    list.filter(
+      output_receipts,
+      fn(pair) { !pairs.has_key(input_receipts, pair.1st) },
+    )
 
   let removed_receipts =
-    list.filter(input_receipts, fn(pair) { !pairs.has_key(output_receipts, pair.1st) })
+    list.filter(
+      input_receipts,
+      fn(pair) { !pairs.has_key(output_receipts, pair.1st) },
+    )
 
   let root6 =
     if inserted_receipts != [] {
       // Receipts should only ever be inserted.
       expect removed_receipts == []
       expect [Pair(sequence, receipt_bytes)] = inserted_receipts
-      let receipt_key = packet_keys.packet_receipt_path(port_id, channel_id, sequence)
+      let receipt_key =
+        packet_keys.packet_receipt_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(receipt_bytes)
 
       ibc_state_commitment.apply_update(
@@ -961,7 +999,8 @@ fn validate_handle_packet_root(
       // Acknowledgements should only ever be inserted.
       expect removed_acks == []
       expect [Pair(sequence, ack_bytes)] = inserted_acks
-      let ack_key = packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
+      let ack_key =
+        packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(ack_bytes)
 
       ibc_state_commitment.apply_update(
@@ -988,12 +1027,12 @@ fn validate_handle_packet_root(
 /// 3. NFT is preserved (not burned or duplicated)
 /// 4. Version increments by 1
 /// 5. State transition is valid for the operation
-	validator host_state_stt(
-	  nft_policy: PolicyId,
-	  spend_client_script_hash: Hash<Blake2b_224, Script>,
-	  spend_connection_script_hash: Hash<Blake2b_224, Script>,
-	  spend_channel_script_hash: Hash<Blake2b_224, Script>,
-	) {
+validator host_state_stt(
+  nft_policy: PolicyId,
+  spend_client_script_hash: Hash<Blake2b_224, Script>,
+  spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  spend_channel_script_hash: Hash<Blake2b_224, Script>,
+) {
   spend(
     datum_opt: Option<HostStateDatum>,
     redeemer: HostStateRedeemer,
@@ -1002,11 +1041,9 @@ fn validate_handle_packet_root(
   ) {
     // 1. Extract transaction fields
     let Transaction { inputs, outputs, .. } = transaction
-    
     // 2. Find input HostState UTXO
     expect Some(host_input) = find_host_state_input(inputs, nft_policy)
     let old_datum = decode_host_state_datum(host_input.output)
-    
     // 3. Find output HostState UTXO
     expect Some(host_output) = find_host_state_output(outputs, nft_policy)
     let new_datum = decode_host_state_datum(host_output)
@@ -1016,11 +1053,9 @@ fn validate_handle_packet_root(
     // In practice, this means the output that carries the NFT must stay at the
     // same address as the spent HostState UTxO.
     expect host_output.address == host_input.output.address
-    
     // 4. Verify NFT policy matches
     expect old_datum.nft_policy == nft_policy
     expect new_datum.nft_policy == nft_policy
-    
     // 5. Verify exactly one output with NFT (no duplication)
     let nft_output_count =
       list.count(
@@ -1032,11 +1067,9 @@ fn validate_handle_packet_root(
         },
       )
     expect nft_output_count == 1
-    
     // 6. Validate state transition based on operation
     when redeemer is {
-      CreateClient { client_state_siblings, consensus_state_siblings } ->
-        and {
+      CreateClient { client_state_siblings, consensus_state_siblings } -> and {
           validate_create_client(old_datum, new_datum),
           validate_create_client_root(
             old_datum,
@@ -1047,9 +1080,7 @@ fn validate_handle_packet_root(
             consensus_state_siblings,
           ),
         }
-      
-      CreateConnection { connection_siblings } ->
-        and {
+      CreateConnection { connection_siblings } -> and {
           validate_create_connection(old_datum, new_datum),
           validate_create_connection_root(
             old_datum,
@@ -1059,39 +1090,33 @@ fn validate_handle_packet_root(
             connection_siblings,
           ),
         }
-      
-	      CreateChannel {
-	        channel_siblings,
-	        next_sequence_send_siblings,
-	        next_sequence_recv_siblings,
-	        next_sequence_ack_siblings,
-	      } ->
-	        and {
-	          validate_create_channel(old_datum, new_datum),
-	          validate_create_channel_root(
-	            old_datum,
-	            new_datum,
-	            outputs,
-	            spend_channel_script_hash,
-	            channel_siblings,
-	            next_sequence_send_siblings,
-	            next_sequence_recv_siblings,
-	            next_sequence_ack_siblings,
-	          ),
-	        }
-	      
-	      BindPort { port, port_siblings } ->
-	        and {
-	          validate_bind_port(old_datum, new_datum, port),
-	          validate_bind_port_root(old_datum, new_datum, port, port_siblings),
-	        }
-	      
-	      UpdateClient {
-	        client_state_siblings,
-	        consensus_state_siblings,
-	        removed_consensus_state_siblings,
-      } ->
-        and {
+      CreateChannel {
+        channel_siblings,
+        next_sequence_send_siblings,
+        next_sequence_recv_siblings,
+        next_sequence_ack_siblings,
+      } -> and {
+          validate_create_channel(old_datum, new_datum),
+          validate_create_channel_root(
+            old_datum,
+            new_datum,
+            outputs,
+            spend_channel_script_hash,
+            channel_siblings,
+            next_sequence_send_siblings,
+            next_sequence_recv_siblings,
+            next_sequence_ack_siblings,
+          ),
+        }
+      BindPort { port, port_siblings } -> and {
+          validate_bind_port(old_datum, new_datum, port),
+          validate_bind_port_root(old_datum, new_datum, port, port_siblings),
+        }
+      UpdateClient {
+        client_state_siblings,
+        consensus_state_siblings,
+        removed_consensus_state_siblings,
+      } -> and {
           // Client updates should not change HostState sequencing, only the root.
           validate_update_only_root(old_datum, new_datum),
           validate_update_client_root(
@@ -1105,34 +1130,29 @@ fn validate_handle_packet_root(
             removed_consensus_state_siblings,
           ),
         }
-      
-      UpdateConnection { connection_siblings } ->
-        and {
+      UpdateConnection { connection_siblings } -> and {
           validate_update_only_root(old_datum, new_datum),
           validate_update_connection_root(
-	            old_datum,
-	            new_datum,
-	            inputs,
-	            outputs,
-	            spend_connection_script_hash,
-	            connection_siblings,
-	          ),
-	        }
-	      
-	      UpdateChannel { channel_siblings } ->
-	        and {
-	          // Channel updates should not change HostState sequencing, only the root.
-	          validate_update_only_root(old_datum, new_datum),
-	          validate_update_channel_root(
-	            old_datum,
-	            new_datum,
-	            inputs,
-	            outputs,
+            old_datum,
+            new_datum,
+            inputs,
+            outputs,
+            spend_connection_script_hash,
+            connection_siblings,
+          ),
+        }
+      UpdateChannel { channel_siblings } -> and {
+          // Channel updates should not change HostState sequencing, only the root.
+          validate_update_only_root(old_datum, new_datum),
+          validate_update_channel_root(
+            old_datum,
+            new_datum,
+            inputs,
+            outputs,
             spend_channel_script_hash,
             channel_siblings,
           ),
         }
-      
       HandlePacket {
         channel_siblings,
         next_sequence_send_siblings,
@@ -1141,8 +1161,7 @@ fn validate_handle_packet_root(
         packet_commitment_siblings,
         packet_receipt_siblings,
         packet_acknowledgement_siblings,
-      } ->
-        and {
+      } -> and {
           // Packet operations should not change HostState sequencing, only the root.
           validate_update_only_root(old_datum, new_datum),
           validate_handle_packet_root(
@@ -1162,7 +1181,7 @@ fn validate_handle_packet_root(
         }
     }
   }
-  
+
   else(_) {
     fail @"HostState STT can only be spent"
   }

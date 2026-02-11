@@ -60,7 +60,10 @@ fn setup() -> MockData {
     }
 
   let host_state_input =
-    Input { output_reference: host_state_output_reference, output: host_state_output }
+    Input {
+      output_reference: host_state_output_reference,
+      output: host_state_output,
+    }
 
   let client_token =
     AuthToken { policy_id: "mock policy_id", name: "mock name" }

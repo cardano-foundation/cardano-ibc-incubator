@@ -467,7 +467,8 @@ test chan_open_ack_succeed() {
 
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 14 }
@@ -694,7 +695,8 @@ test chan_open_confirm_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 16 }
@@ -908,7 +910,8 @@ test recv_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 19 }
@@ -1160,7 +1163,8 @@ test send_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let reference_inputs = [mock_data.connection_input, mock_data.client_input]
@@ -1283,7 +1287,8 @@ test timeout_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -1544,7 +1549,8 @@ test acknowledge_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 20 }

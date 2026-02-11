@@ -7,8 +7,8 @@ use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{InlineDatum, Input, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
-use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
+use ibc/client/ics_007_tendermint_client/client_state
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{
   ConnectionDatum, is_conn_open_init_valid,
@@ -87,12 +87,17 @@ validator mint_connection_stt(
       ) == Active
 
     let id_str = string_utils.int_to_string(connection_id_sequence)
-    let host_state_nft = AuthToken {
-      policy_id: host_state_nft_policy_id,
-      name: host_state_token_name,
-    }
+    let host_state_nft =
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
     let connection_token_name =
-      auth.generate_token_name(host_state_nft, conn_keys.connection_prefix, id_str)
+      auth.generate_token_name(
+        host_state_nft,
+        conn_keys.connection_prefix,
+        id_str,
+      )
     let connection_token =
       AuthToken {
         policy_id: connection_minting_policy_id,

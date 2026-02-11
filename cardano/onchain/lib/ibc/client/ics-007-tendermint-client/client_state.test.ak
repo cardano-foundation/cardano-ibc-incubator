@@ -277,8 +277,7 @@ test new_client_state() {
   let max_clock_drift = 1
   let frozen_height = Height { revision_number: 0, revision_height: 0 }
   let latest_height = Height { revision_number: 0, revision_height: 0 }
-  let proof_specs =
-    []
+  let proof_specs = []
   // Creating the client state using the defined parameters
   let client_state =
     ClientState {
@@ -384,8 +383,7 @@ test status() {
   let frozen_height_zero = Height { revision_number: 0, revision_height: 0 }
   let frozen_height = Height { revision_number: 1, revision_height: 1 }
   let latest_height = Height { revision_number: 0, revision_height: 0 }
-  let proof_specs =
-    []
+  let proof_specs = []
   let test_cases: List<
     (ClientState, Time, Pairs<Height, ConsensusState>, Status),
   > =

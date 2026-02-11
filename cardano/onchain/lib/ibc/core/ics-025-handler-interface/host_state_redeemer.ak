@@ -5,9 +5,7 @@ pub type HostStateRedeemer {
     client_state_siblings: List<ByteArray>,
     consensus_state_siblings: List<ByteArray>,
   }
-  CreateConnection {
-    connection_siblings: List<ByteArray>,
-  }
+  CreateConnection { connection_siblings: List<ByteArray> }
   CreateChannel {
     // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
     channel_siblings: List<ByteArray>,

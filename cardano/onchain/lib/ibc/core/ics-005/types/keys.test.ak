@@ -24,9 +24,7 @@ test parse_port_id_number_transfer_succeed() {
 test test_is_valid_port_id() {
   let test_cases =
     [
-      ("port-123", True),
-      ("transfer", True),
-      ("client-123", True),
+      ("port-123", True), ("transfer", True), ("client-123", True),
       // too short
       ("a", False),
       // invalid character (slash is not allowed in IBC identifiers)

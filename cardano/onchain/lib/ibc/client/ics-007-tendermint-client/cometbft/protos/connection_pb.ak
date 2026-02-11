@@ -107,10 +107,11 @@ pub fn marshal_for_version(version: Version) -> (Int, ByteArray) {
           (0, #[]),
           fn((size, bz1), feature: ByteArray) -> (Int, ByteArray) {
             let l = bytearray.length(feature)
-            let bz2 = l
-                    |> encode_length_varint() 
-                    |> concat(feature) 
-                    |> push(0x12)
+            let bz2 =
+              l
+                |> encode_length_varint()
+                |> concat(feature)
+                |> push(0x12)
             (size + sov_length(l) + l + 1, concat(bz1, bz2))
           },
         ),

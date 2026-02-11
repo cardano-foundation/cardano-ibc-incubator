@@ -136,7 +136,10 @@ fn setup() -> MockData {
 
   let channel_token_name =
     auth.generate_token_name(
-      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      },
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -365,7 +368,8 @@ test on_chan_open_init_succeed() {
   let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -457,7 +461,8 @@ test on_chan_open_try_succeed() {
   let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -510,7 +515,8 @@ test on_chan_open_ack_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -562,7 +568,8 @@ test on_chan_open_confirm_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -610,7 +617,8 @@ test on_recv_packet_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -715,7 +723,13 @@ test on_recv_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -818,7 +832,13 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -1010,7 +1030,13 @@ test transfer_burn_voucher_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1089,7 +1115,8 @@ test on_timeout_packet_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1191,7 +1218,13 @@ test on_timeout_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1266,7 +1299,8 @@ test on_acknowledgement_packet_result_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1352,7 +1386,8 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1464,7 +1499,13 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"

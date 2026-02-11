@@ -267,12 +267,18 @@ fn validate_conn_open_ack_proof(
         expect [item0_prefix, item0_key] = item0.path.key_path
         expect [exp0_prefix, exp0_key] = conn_merkle_path.key_path
 
-        let ok0_path = and { item0_prefix == exp0_prefix, item0_key == exp0_key }
+        let ok0_path = and {
+            item0_prefix == exp0_prefix,
+            item0_key == exp0_key,
+          }
 
         expect [item1_prefix, item1_key] = item1.path.key_path
         expect [exp1_prefix, exp1_key] = client_merkle_path.key_path
 
-        let ok1_path = and { item1_prefix == exp1_prefix, item1_key == exp1_key }
+        let ok1_path = and {
+            item1_prefix == exp1_prefix,
+            item1_key == exp1_key,
+          }
 
         and {
           item0.cs == client_datum_state.client_state,

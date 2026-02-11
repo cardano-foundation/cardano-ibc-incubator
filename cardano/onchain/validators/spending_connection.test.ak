@@ -281,8 +281,7 @@ test conn_open_ack_succeed() {
 
   let conn_input = build_input(input_conn, mock.connection_token)
 
-  let inputs =
-    [conn_input, mock.host_state_input]
+  let inputs = [conn_input, mock.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 0, revision_height: 188485 }
@@ -299,8 +298,7 @@ test conn_open_ack_succeed() {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock.client_input)
 
-  let reference_inputs =
-    [client_input]
+  let reference_inputs = [client_input]
 
   //========================arrange outputs=======================
   let output_conn_datum =
@@ -318,8 +316,7 @@ test conn_open_ack_succeed() {
 
   let conn_output = build_output(output_conn_datum, mock.connection_token)
 
-  let outputs =
-    [conn_output, mock.host_state_output]
+  let outputs = [conn_output, mock.host_state_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock.validity_range
@@ -472,7 +469,6 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 
   // This is the same scenario as `conn_open_ack_succeed`, but without the HostState input/output.
   // It must fail because `spend_connection` requires HostState to be co-spent.
-
   let input_conn =
     ConnectionEnd {
       client_id: mock.client_id,
@@ -491,8 +487,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 
   let conn_input = build_input(input_conn, mock.connection_token)
 
-  let inputs =
-    [conn_input]
+  let inputs = [conn_input]
 
   let proof_height = Height { revision_number: 0, revision_height: 188485 }
 
@@ -508,8 +503,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock.client_input)
 
-  let reference_inputs =
-    [client_input]
+  let reference_inputs = [client_input]
 
   let output_conn_datum =
     ConnectionDatum {
@@ -526,8 +520,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 
   let conn_output = build_output(output_conn_datum, mock.connection_token)
 
-  let outputs =
-    [conn_output]
+  let outputs = [conn_output]
 
   let validity_range = mock.validity_range
 
