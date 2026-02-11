@@ -1,4 +1,5 @@
 use aiken/cbor
+use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, from_asset}
@@ -23,6 +24,15 @@ fn port_commitment_key(port: Int) -> ByteArray {
   key_port_prefix
     |> bytearray.concat("/")
     |> bytearray.concat(port_id)
+}
+
+// Generate a deterministic sequence of ports for property-style tests.
+fn generate_ports(from: Int, to: Int) -> List<Int> {
+  if from > to {
+    []
+  } else {
+    [from, ..generate_ports(from + 1, to)]
+  }
 }
 
 const test_nft_policy: PolicyId =
@@ -656,4 +666,17 @@ test host_state_bind_port_fails_if_output_missing() fail {
     input_ref,
     transaction,
   )
+}
+
+test prop_host_state_bind_port_accepts_valid_transition() {
+  generate_ports(0, 150)
+    |> list.all(fn(port) {
+      let fixture = mk_bind_port_fixture(port)
+      let BindPortFixture { address, expected_root, port, .. } = fixture
+
+      let output =
+        mk_bind_port_output(fixture, address, expected_root, [port])
+
+      run_bind_port_with_outputs(fixture, [output], fixture.siblings)
+    })
 }
