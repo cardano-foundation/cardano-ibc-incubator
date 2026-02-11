@@ -55,3 +55,37 @@ export function encodeMintVoucherRedeemer(
 
   return Data.to(mintVoucherRedeemer, TMintVoucherRedeemer, { canonical: true });
 }
+
+export function decodeMintVoucherRedeemer(
+  mintVoucherRedeemer: string,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): MintVoucherRedeemer {
+  const { Data } = Lucid;
+
+  const MintVoucherRedeemerSchema = Data.Enum([
+    Data.Object({
+      MintVoucher: Data.Object({
+        packet_source_port: Data.Bytes(),
+        packet_source_channel: Data.Bytes(),
+        packet_dest_port: Data.Bytes(),
+        packet_dest_channel: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      BurnVoucher: Data.Object({
+        packet_source_port: Data.Bytes(),
+        packet_source_channel: Data.Bytes(),
+      }),
+    }),
+    Data.Object({
+      RefundVoucher: Data.Object({
+        packet_source_port: Data.Bytes(),
+        packet_source_channel: Data.Bytes(),
+      }),
+    }),
+  ]);
+  type TMintVoucherRedeemer = Data.Static<typeof MintVoucherRedeemerSchema>;
+  const TMintVoucherRedeemer = MintVoucherRedeemerSchema as unknown as MintVoucherRedeemer;
+
+  return Data.from(mintVoucherRedeemer, TMintVoucherRedeemer);
+}
