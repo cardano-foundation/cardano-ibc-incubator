@@ -1977,27 +1977,39 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         //   with the genesis keys from `~/.caribic/config.json`
         // - restart Mithril aggregator + signers so they pick up the seeded certificate chain
 
-        // Gateway's `queryNewMithrilClient` requires stake distributions + transaction snapshots.
-        // These are produced asynchronously by the local aggregator, so we wait here to avoid
-        // flaky failures in later Hermes-driven tests.
+        // Gateway's proof-based queries require both Mithril artifact families:
+        // - stake distributions
+        // - cardano transaction snapshots
+        //
+        // Treat this as a hard readiness gate in Test 1 to avoid flaky downstream
+        // failures in Test 5/6 when snapshots are still empty.
         let stake_distributions_ready =
             check_json_array_non_empty(&http_client, MITHRIL_STAKE_DISTRIBUTIONS_URL).await;
-        if !stake_distributions_ready {
-            logger::warn(
-                "Mithril stake distributions are not ready yet; proceeding because they can become available during the test run.",
-            );
-        } else {
-            verbose("   Mithril stake distributions available");
-        }
-
         let tx_snapshots_ready =
             check_json_array_non_empty(&http_client, MITHRIL_CARDANO_TRANSACTIONS_URL).await;
-        if !tx_snapshots_ready {
-            logger::warn(
-                "Mithril Cardano transaction snapshots are not ready yet; proceeding because the first test transactions can produce them.",
-            );
-        } else {
+
+        if stake_distributions_ready && tx_snapshots_ready {
+            verbose("   Mithril stake distributions available");
             verbose("   Mithril Cardano transaction snapshots available");
+        } else {
+            logger::warn(
+                "Mithril artifacts are not ready yet; waiting up to 180s for stake distributions and cardano-transaction snapshots.",
+            );
+
+            let artifacts_ready = wait_for_mithril_artifacts_ready_for_cardano_client(
+                36,
+                Duration::from_secs(5),
+            )
+            .await?;
+
+            if artifacts_ready {
+                verbose("   Mithril stake distributions available");
+                verbose("   Mithril Cardano transaction snapshots available");
+            } else {
+                missing_services.push(
+                    "Mithril artifacts (stake distributions + cardano-transactions) on :8080",
+                );
+            }
         }
     }
 
