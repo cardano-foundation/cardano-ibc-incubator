@@ -1034,7 +1034,7 @@ validator host_state_stt(
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
 ) {
   spend(
-    datum_opt: Option<HostStateDatum>,
+    _datum_opt: Option<HostStateDatum>,
     redeemer: HostStateRedeemer,
     _spent_output_ref: OutputReference,
     transaction: Transaction,

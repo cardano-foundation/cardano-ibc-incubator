@@ -1,0 +1,40 @@
+Running IBC Integration Tests
+[32mPASS Test 1: All services are running (took 2m35s)[0m
+[32mPASS Test 2: Hermes health-check passed, Gateway connectivity verified (took 0s)[0m
+   Initial root: 0000000000000000...
+[32mPASS Test 3: Handler UTXO has valid ibc_state_root (took 0s)[0m
+   [hermes create client] 2026-02-11T17:12:15.146940Z  INFO ThreadId(24) Building unsigned transaction for message type: /ibc.core.client.v1.MsgCreateClient
+   [hermes create client] 2026-02-11T17:12:17.328879Z  INFO ThreadId(24) Transaction submitted: e523841bf92bc265f28228d487722e60ea679f8a41238e2f374faf36dc4aaa2d at height 0-169
+   [hermes create client] 2026-02-11T17:12:47.397291Z  INFO ThreadId(24) Waiting for Mithril snapshot: need >= 0-169 (missing 20 blocks), have 0-149, elapsed=30s, remaining=1769s
+   [hermes create client] 2026-02-11T17:12:52.409434Z  INFO ThreadId(24) Waiting for Mithril snapshot: need >= 0-169 (missing 5 blocks), have 0-164, elapsed=35s, remaining=1764s
+   [hermes create client] 2026-02-11T17:13:22.483183Z  INFO ThreadId(24) Waiting for Mithril snapshot: need >= 0-169 (missing 5 blocks), have 0-164, elapsed=65s, remaining=1734s
+   [hermes create client] 2026-02-11T17:13:52.557242Z  INFO ThreadId(24) Transaction e523841bf92bc265f28228d487722e60ea679f8a41238e2f374faf36dc4aaa2d inclusion height 0-169 is now certified at 0-179
+   Client ID: 07-tendermint-0
+   New root: ce84552834ac1de2...
+[32mPASS Test 4: Root changed after createClient (took 1m47s)[0m
+   Chain ID: ChainId {
+   Latest height: Height {
+   Trust level: 1/3
+[32mPASS Test 5: Client state queried successfully (took 0s)[0m
+[31mFAIL Test 6: Client update failed (took 11s)[0m
+Failed to update client:
+stdout: ERROR foreign client error: error raised while updating client on chain cardano-devnet: failed sending message to dst chain: send_tx resulted in chain error event: Failed to submit transaction: Gateway client error: {"error":"Failed to submit signed transaction: {\"error\":\"Missing pending IBC update for confirmed tx c0763a595a6c7ac9d8164131c8a87c2e96b33481011cfc2aaf73fedef7e2277b; refusing to skip denom trace/tree finalization\",\"type\":\"string\",\"exceptionName\":\"RpcException\"}","type":"string","exceptionName":"RpcException"}
+
+stderr: 2026-02-11T17:14:07.911677Z  INFO ThreadId(01) using default configuration from '/Users/juliustranquilli/.hermes/config.toml'
+2026-02-11T17:14:07.912406Z  INFO ThreadId(01) running Hermes v1.13.2+71182a8e-dirty
+2026-02-11T17:14:07.912881Z  INFO ThreadId(01) Bootstrapping Cardano chain endpoint
+2026-02-11T17:14:07.912891Z  INFO ThreadId(01) Initializing Cardano endpoint for chain: cardano-devnet, gateway: http://localhost:5001
+2026-02-11T17:14:07.912922Z  INFO ThreadId(01) Connecting to Cardano Gateway at http://localhost:5001
+2026-02-11T17:14:07.916340Z  INFO ThreadId(01) Gateway client initialized successfully
+2026-02-11T17:14:07.916430Z  INFO ThreadId(01) Keyring initialized successfully
+2026-02-11T17:14:07.916438Z  INFO ThreadId(01) Cardano chain endpoint bootstrap complete
+2026-02-11T17:14:08.198427Z ERROR ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}:foreign_client.wait_and_build_update_client_with_trusted{client=sidechain->cardano-devnet:07-tendermint-0 target_height=0-472}: Failed to query consensus state: Gateway client error: {"error":"Unable to find Consensus State at height 472","type":"string","exceptionName":"RpcException"}
+2026-02-11T17:14:08.238568Z  INFO ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}:foreign_client.wait_and_build_update_client_with_trusted{client=sidechain->cardano-devnet:07-tendermint-0 target_height=0-472}:foreign_client.build_update_client_with_trusted{client=sidechain->cardano-devnet:07-tendermint-0 target_height=0-472}:foreign_client.wait_for_header_validation_delay{client=sidechain->cardano-devnet:07-tendermint-0}: Cardano chain at height: 0-179
+2026-02-11T17:14:08.286448Z  INFO ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}: send_messages_and_wait_commit: processing 1 messages
+2026-02-11T17:14:08.286470Z  INFO ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}: Building unsigned transaction for message type: /ibc.core.client.v1.MsgUpdateClient
+2026-02-11T17:14:08.389786Z  INFO ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}: UpdateClient: received unsigned CBOR (length: 12720), client_id: 07-tendermint-0
+2026-02-11T17:14:08.390227Z  INFO ThreadId(13) foreign_client.build_update_client_and_send{client=sidechain->cardano-devnet:07-tendermint-0 target_query_height=latest height}: Submitting signed transaction (CBOR length: 12926)
+   [hermes create connection] 2026-02-11T17:14:14.649836Z  INFO ThreadId(13) foreign_client.create{client=sidechain->cardano-devnet:07-tendermint-0}: Building unsigned transaction for message type: /ibc.core.client.v1.MsgCreateClient
+   [hermes create connection] 2026-02-11T17:14:16.799513Z  INFO ThreadId(13) foreign_client.create{client=sidechain->cardano-devnet:07-tendermint-0}: Transaction submitted: 840f20b993d4d7dc2c6865d694c0dfe63ce1e6f56deb7dc8593e175fd9f0dcea at height 0-200
+   [hermes create connection] 2026-02-11T17:14:46.862809Z  INFO ThreadId(13) foreign_client.create{client=sidechain->cardano-devnet:07-tendermint-0}: Waiting for Mithril snapshot: need >= 0-200 (missing 6 blocks), have 0-194, elapsed=30s, remaining=1769s
+   [hermes create connection] 2026-02-11T17:15:16.913016Z  INFO ThreadId(13) foreign_client.create{client=sidechain->cardano-devnet:07-tendermint-0}: Waiting for Mithril snapshot: need >= 0-200 (missing 6 blocks), have 0-194, elapsed=60s, remaining=1739s

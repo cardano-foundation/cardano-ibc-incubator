@@ -1,5 +1,3 @@
-use aiken/primitive/bytearray
-
 pub type HostStateRedeemer {
   CreateClient {
     client_state_siblings: List<ByteArray>,

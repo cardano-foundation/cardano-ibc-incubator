@@ -1,0 +1,33 @@
+
+ ________  ________  ________  ___  ________  ___  ________     
+|\   ____\|\   __  \|\   __  \|\  \|\   __  \|\  \|\   ____\    
+\ \  \___|\ \  \|\  \ \  \|\  \ \  \ \  \|\ /\ \  \ \  \___|    
+ \ \  \    \ \   __  \ \   _  _\ \  \ \   __  \ \  \ \  \       
+  \ \  \____\ \  \ \  \ \  \\  \\ \  \ \  \|\  \ \  \ \  \____   Cardano IBC
+   \ \_______\ \__\ \__\ \__\\ _\\ \__\ \_______\ \__\ \_______\ PFM IBC CLI
+    \|_______|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|_______| v0.2.0
+    
+Creating gateway_app database...
+Gateway application database created successfully
+[32mPASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)[0m
+
+[32mPASS: Cardano Network started successfully[0m
+[32mPASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)[0m
+[32mPASS: IBC smart contracts deployed (client, connection, channel, packet handlers)[0m
+[32mPASS: Gateway started (NestJS gRPC server on port 5001)[0m
+[32mPASS: Hermes relayer built and configured[0m
+Hermes started (PID: 81216)
+   Logs: /Users/juliustranquilli/.hermes/hermes.log
+   Monitor: tail -f ~/.hermes/hermes.log
+[32mPASS: Hermes relayer started (check logs at ~/.hermes/hermes.log)[0m
+Final balance 29184379664
+[32mPASS: Immutable Cardano node files have been created, and Mithril is working as expected[0m
+
+Bridge started successfully!
+Keys have been automatically configured for cardano-devnet and the Cosmos Entrypoint chain.
+Next steps:
+   1. Check health: caribic health-check
+   2. View keys: caribic keys list
+   3. Run tests: caribic test
+
+caribic start completed in 7m 33s

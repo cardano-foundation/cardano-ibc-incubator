@@ -1,0 +1,4 @@
+Running IBC Integration Tests
+Integration tests failed: Required services not running: Cardano node, Gateway, Packet-forwarding chain (Cosmos) on :26657, Mithril aggregator on :8080.
+
+Please run 'caribic start' first to start all services.

@@ -1,5 +1,4 @@
 use aiken/cbor
-use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, from_asset}

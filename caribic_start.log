@@ -1,0 +1,14 @@
+
+ ________  ________  ________  ___  ________  ___  ________     
+|\   ____\|\   __  \|\   __  \|\  \|\   __  \|\  \|\   ____\    
+\ \  \___|\ \  \|\  \ \  \|\  \ \  \ \  \|\ /\ \  \ \  \___|    
+ \ \  \    \ \   __  \ \   _  _\ \  \ \   __  \ \  \ \  \       
+  \ \  \____\ \  \ \  \ \  \\  \\ \  \ \  \|\  \ \  \ \  \____   Cardano IBC
+   \ \_______\ \__\ \__\ \__\\ _\\ \__\ \_______\ \__\ \_______\ PFM IBC CLI
+    \|_______|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|_______| v0.2.0
+    
+Creating gateway_app database...
+Gateway application database created successfully
+[32mPASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)[0m
+
+[32mPASS: Cardano Network started successfully[0m
