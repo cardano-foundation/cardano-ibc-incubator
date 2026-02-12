@@ -1505,35 +1505,59 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         //   with the genesis keys from `~/.caribic/config.json`
         // - restart Mithril aggregator + signers so they pick up the seeded certificate chain
 
-        // Gateway's `queryNewMithrilClient` requires stake distributions + transaction snapshots.
-        // These are produced asynchronously by the local aggregator, so we wait here to avoid
-        // flaky failures in later Hermes-driven tests.
-        verbose("   Waiting for Mithril stake distributions ...");
-        let stake_distributions_ready = wait_for_json_array_non_empty(
-            &http_client,
-            "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions",
-            60,
-            Duration::from_secs(5),
-        )
-        .await;
-        if !stake_distributions_ready {
-            missing_services.push("Mithril stake distributions (not ready)");
-        } else {
-            verbose("   Mithril stake distributions available");
-        }
+        let stake_distributions_url =
+            "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions";
+        let cardano_transactions_url = "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions";
 
-        verbose("   Waiting for Mithril Cardano transaction snapshots ...");
-        let tx_snapshots_ready = wait_for_json_array_non_empty(
-            &http_client,
-            "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions",
-            60,
-            Duration::from_secs(5),
-        )
-        .await;
-        if !tx_snapshots_ready {
-            missing_services.push("Mithril Cardano transaction snapshots (not ready)");
-        } else {
+        // Gateway's proof-based queries require both Mithril artifact families:
+        // - stake distributions
+        // - cardano transaction snapshots
+        //
+        // Treat this as a hard readiness gate in Test 1 to avoid flaky downstream
+        // failures in Test 5/6 when snapshots are still empty.
+        let stake_distributions_ready =
+            check_json_array_non_empty(&http_client, stake_distributions_url).await;
+        let tx_snapshots_ready = check_json_array_non_empty(&http_client, cardano_transactions_url).await;
+
+        if stake_distributions_ready && tx_snapshots_ready {
+            verbose("   Mithril stake distributions available");
             verbose("   Mithril Cardano transaction snapshots available");
+        } else {
+            logger::warn(
+                "Mithril artifacts are not ready yet; waiting for stake distributions and cardano-transaction snapshots.",
+            );
+
+            let stake_distributions_ready = if stake_distributions_ready {
+                true
+            } else {
+                wait_for_json_array_non_empty(
+                    &http_client,
+                    stake_distributions_url,
+                    36,
+                    Duration::from_secs(5),
+                )
+                .await
+            };
+            let tx_snapshots_ready = if tx_snapshots_ready {
+                true
+            } else {
+                wait_for_json_array_non_empty(
+                    &http_client,
+                    cardano_transactions_url,
+                    36,
+                    Duration::from_secs(5),
+                )
+                .await
+            };
+
+            if stake_distributions_ready && tx_snapshots_ready {
+                verbose("   Mithril stake distributions available");
+                verbose("   Mithril Cardano transaction snapshots available");
+            } else {
+                missing_services.push(
+                    "Mithril artifacts (stake distributions + cardano-transactions) on :8080",
+                );
+            }
         }
     }
 
