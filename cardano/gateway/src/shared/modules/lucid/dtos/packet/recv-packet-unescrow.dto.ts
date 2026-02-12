@@ -15,6 +15,7 @@ export type UnsignedRecvPacketUnescrowDto = {
   channelTokenUnit: string;
   encodedUpdatedChannelDatum: string;
   transferAmount: bigint;
+  denomToken: string;
   receiverAddress: string;
   constructedAddress: string;
 
