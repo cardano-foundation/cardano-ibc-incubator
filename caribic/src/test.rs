@@ -1424,11 +1424,12 @@ pub async fn run_integration_tests(
     // Test 11: Transfer Cardano native token (Cardano -> Cosmos)
     //
     // Tests the "Cardano is the source chain" path for ICS-20:
-    //   - Cardano escrows a native token (lovelace) in the transfer module
+    //   - Cardano escrows a native token in the transfer module
     //   - Cosmos mints an IBC voucher denom for that token
     let mut cardano_native_transfer_passed = false;
     let mut cardano_native_voucher_denom: Option<String> = None;
     let mut cardano_native_sidechain_channel_id: Option<String> = None;
+    let mut cardano_native_base_denom: Option<String> = None;
     if selection.should_run(11) {
         let mut test_11 = TestTimer::start(
             "Test 11: ICS-20 transfer of Cardano native token (Cardano -> Entrypoint chain)...",
@@ -1446,13 +1447,13 @@ pub async fn run_integration_tests(
                 &cardano_receiver_credential,
             )?;
 
-            let base_denom = "lovelace";
-            // Use a larger amount to stay well above Cardano min-UTxO and fee noise.
+            // Use the deployed native mock asset for deterministic round-trip assertions.
+            let base_denom = read_handler_json_value(project_root, &["tokens", "mock"])?;
             let amount: u64 = 20_000_000;
 
             let sidechain_balances_before = query_sidechain_balances(&sidechain_address)?;
-            let cardano_lovelace_before =
-                query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+            let cardano_native_before =
+                query_cardano_asset_total(project_root, &cardano_sender_address, &base_denom)?;
             let cardano_root_before = query_handler_state_root(project_root)?;
 
             // Keep the timeout margin large for Cardano-origin packets to avoid false timeouts
@@ -1467,7 +1468,7 @@ pub async fn run_integration_tests(
                 "transfer",
                 cardano_channel_id,
                 amount,
-                base_denom,
+                &base_denom,
                 Some(&sidechain_address),
                 timeout_height_offset,
                 timeout_seconds,
@@ -1483,19 +1484,22 @@ pub async fn run_integration_tests(
                     Ok(_) => {
                         let sidechain_balances_after =
                             query_sidechain_balances(&sidechain_address)?;
-                        let cardano_lovelace_after =
-                            query_cardano_lovelace_total(project_root, &cardano_sender_address)?;
+                        let cardano_native_after = query_cardano_asset_total(
+                            project_root,
+                            &cardano_sender_address,
+                            &base_denom,
+                        )?;
                         let cardano_root_after = query_handler_state_root(project_root)?;
 
-                        let lovelace_delta =
-                            cardano_lovelace_before.saturating_sub(cardano_lovelace_after);
-                        if lovelace_delta < amount {
+                        let native_token_delta =
+                            cardano_native_before.saturating_sub(cardano_native_after);
+                        if native_token_delta < amount {
                             let elapsed = test_11.finish();
                             logger::log(&format!(
-                            "FAIL Test 11: Cardano lovelace did not decrease by the transfer amount (took {}) (before={}, after={}, expected delta >= {})\n",
+                            "FAIL Test 11: Cardano native token balance did not decrease by the transfer amount (took {}) (before={}, after={}, expected delta >= {})\n",
                             format_duration(elapsed),
-                            cardano_lovelace_before,
-                            cardano_lovelace_after,
+                            cardano_native_before,
+                            cardano_native_after,
                             amount
                         ));
                             dump_test_11_ics20_diagnostics(
@@ -1541,7 +1545,8 @@ pub async fn run_integration_tests(
                                     .strip_prefix("ibc/")
                                     .unwrap_or(minted_denom.as_str());
 
-                                let expected_base_denom = encode_hex_string(base_denom);
+                                let expected_base_denom =
+                                    expected_denom_trace_base_denom(&base_denom);
                                 match assert_sidechain_denom_trace(
                                     minted_hash,
                                     &expected_path,
@@ -1559,6 +1564,7 @@ pub async fn run_integration_tests(
                                         cardano_native_voucher_denom = Some(minted_denom);
                                         cardano_native_sidechain_channel_id =
                                             Some(sidechain_channel_id);
+                                        cardano_native_base_denom = Some(base_denom.clone());
                                     }
                                     Err(e) => {
                                         let elapsed = test_11.finish();
@@ -1661,15 +1667,16 @@ pub async fn run_integration_tests(
     //
     // Send the voucher minted in Test 11 back to Cardano and verify:
     //   - Voucher is burned on Cosmos
-    //   - Escrowed lovelace is released back to the Cardano receiver
+    //   - Escrowed Cardano native token is released back to the Cardano receiver
     if selection.should_run(12) {
         let mut test_12 = TestTimer::start(
             "Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
         );
         if cardano_native_transfer_passed {
-            if let (Some(voucher_denom), Some(sidechain_channel_id)) = (
+            if let (Some(voucher_denom), Some(sidechain_channel_id), Some(base_denom)) = (
                 &cardano_native_voucher_denom,
                 &cardano_native_sidechain_channel_id,
+                &cardano_native_base_denom,
             ) {
                 let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
                 let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
@@ -1682,13 +1689,18 @@ pub async fn run_integration_tests(
 
                 let sidechain_voucher_before =
                     query_sidechain_balance(&sidechain_address, voucher_denom)?;
-                let cardano_lovelace_before =
-                    query_cardano_lovelace_total(project_root, &cardano_receiver_address)?;
+                let cardano_native_before =
+                    query_cardano_asset_total(project_root, &cardano_receiver_address, base_denom)?;
                 let cardano_root_before = query_handler_state_root(project_root)?;
 
                 let cardano_channel_id_for_test_12 = channel_id
                     .as_deref()
                     .unwrap_or(sidechain_channel_id.as_str());
+
+                // Cardano-destination relays can spend significant time in Mithril-certified
+                // client updates; keep timeout generous to avoid false timeout/refund outcomes.
+                let timeout_height_offset = 10_000;
+                let timeout_seconds = 1_800;
 
                 match hermes_ft_transfer(
                     project_root,
@@ -1699,8 +1711,8 @@ pub async fn run_integration_tests(
                     amount,
                     voucher_denom,
                     Some(&cardano_receiver_credential),
-                    100,
-                    600,
+                    timeout_height_offset,
+                    timeout_seconds,
                 ) {
                     Ok(_) => match hermes_clear_packets(
                         project_root,
@@ -1713,9 +1725,10 @@ pub async fn run_integration_tests(
                         Ok(_) => {
                             let sidechain_voucher_after =
                                 query_sidechain_balance(&sidechain_address, voucher_denom)?;
-                            let cardano_lovelace_after = query_cardano_lovelace_total(
+                            let cardano_native_after = query_cardano_asset_total(
                                 project_root,
                                 &cardano_receiver_address,
+                                base_denom,
                             )?;
                             let cardano_root_after = query_handler_state_root(project_root)?;
 
@@ -1761,16 +1774,19 @@ pub async fn run_integration_tests(
                                     );
                                 }
                                 results.failed += 1;
-                            } else if cardano_lovelace_after <= cardano_lovelace_before {
+                            } else if cardano_native_after.saturating_sub(cardano_native_before)
+                                < amount
+                            {
                                 let elapsed = test_12.finish();
                                 let increase =
-                                    cardano_lovelace_after.saturating_sub(cardano_lovelace_before);
+                                    cardano_native_after.saturating_sub(cardano_native_before);
                                 logger::log(&format!(
-                                "FAIL Test 12: Cardano lovelace did not increase after return transfer (took {}) (before={}, after={}, delta={})\n",
+                                "FAIL Test 12: Cardano native token balance did not increase by the returned amount (took {}) (before={}, after={}, delta={}, expected delta >= {})\n",
                                 format_duration(elapsed),
-                                cardano_lovelace_before,
-                                cardano_lovelace_after,
-                                increase
+                                cardano_native_before,
+                                cardano_native_after,
+                                increase,
+                                amount
                             ));
                                 if let Some(cardano_channel_id) = &channel_id {
                                     dump_test_12_ics20_diagnostics(
@@ -1790,7 +1806,8 @@ pub async fn run_integration_tests(
                                     .strip_prefix("ibc/")
                                     .unwrap_or(voucher_denom.as_str());
 
-                                let expected_base_denom = encode_hex_string("lovelace");
+                                let expected_base_denom =
+                                    expected_denom_trace_base_denom(base_denom);
                                 match assert_sidechain_denom_trace(
                                     minted_hash,
                                     &expected_path,
@@ -2963,6 +2980,14 @@ fn encode_hex_string(input: &str) -> String {
         .collect()
 }
 
+fn expected_denom_trace_base_denom(base_denom: &str) -> String {
+    if base_denom.len() % 2 == 0 && base_denom.chars().all(|c| c.is_ascii_hexdigit()) {
+        base_denom.to_string()
+    } else {
+        encode_hex_string(base_denom)
+    }
+}
+
 fn decode_hex_bytes(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     if hex.len() % 2 != 0 {
         return Err(format!("Invalid hex string length: {}", hex.len()).into());
@@ -3515,6 +3540,26 @@ fn query_cardano_policy_assets(
     }
 
     Ok(assets)
+}
+
+fn query_cardano_asset_total(
+    project_root: &Path,
+    address: &str,
+    token_unit: &str,
+) -> Result<u64, Box<dyn std::error::Error>> {
+    let is_hex = token_unit.chars().all(|c| c.is_ascii_hexdigit());
+    if token_unit.len() < 56 || token_unit.len() % 2 != 0 || !is_hex {
+        return Err(format!(
+            "Invalid Cardano token unit '{}': expected hex string with at least 56 chars",
+            token_unit
+        )
+        .into());
+    }
+
+    let policy_id = &token_unit[..56];
+    let asset_name = &token_unit[56..];
+    let assets = query_cardano_policy_assets(project_root, address, policy_id)?;
+    Ok(assets.get(asset_name).copied().unwrap_or(0))
 }
 
 fn sum_cardano_policy_assets(assets: &BTreeMap<String, u64>) -> u64 {
