@@ -1430,7 +1430,11 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    if (!dto.walletUtxos || dto.walletUtxos.length === 0) {
+      throw new GrpcInternalException('Sender wallet UTxOs are required for escrow send packet');
+    }
+    this.selectWalletFromAddress(dto.senderAddress, dto.walletUtxos);
+    const tx: TxBuilder = this.lucid.newTx();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
