@@ -13,10 +13,10 @@ describe('PacketService sender wallet selection for escrow', () => {
     getConnectionTokenUnit: jest.Mock;
     getClientTokenUnit: jest.Mock;
     findUtxoByUnit: jest.Mock;
+    findUtxoAt: jest.Mock;
     decodeDatum: jest.Mock;
     encode: jest.Mock;
     createUnsignedSendPacketEscrowTx: jest.Mock;
-    tryFindUtxosAt: jest.Mock;
   };
 
   beforeEach(() => {
@@ -56,10 +56,10 @@ describe('PacketService sender wallet selection for escrow', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn(),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       createUnsignedSendPacketEscrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-escrow' }),
-      tryFindUtxosAt: jest.fn(),
     };
 
     service = new PacketService(
@@ -117,6 +117,8 @@ describe('PacketService sender wallet selection for escrow', () => {
 
   it('uses sender wallet UTxOs for escrow and returns wallet override', async () => {
     const senderAddress = 'addr_test1sender';
+    // Minimal sender wallet snapshot: one ADA-bearing UTxO is enough to validate
+    // that escrow assembly receives sender-owned coin selection inputs.
     const senderWalletUtxos = [
       {
         txHash: 'sender-utxo-1',
@@ -124,7 +126,7 @@ describe('PacketService sender wallet selection for escrow', () => {
         assets: { lovelace: 4_000_000n },
       },
     ];
-    lucidServiceMock.tryFindUtxosAt.mockResolvedValue(senderWalletUtxos);
+    lucidServiceMock.findUtxoAt.mockResolvedValue(senderWalletUtxos);
 
     const result = await service.buildUnsignedSendPacketTx({
       sourcePort: 'transfer',
@@ -144,10 +146,8 @@ describe('PacketService sender wallet selection for escrow', () => {
       signer: 'addr_test1operator',
     });
 
-    expect(lucidServiceMock.tryFindUtxosAt).toHaveBeenCalledWith(senderAddress, {
-      maxAttempts: 6,
-      retryDelayMs: 1000,
-    });
+    // Assert both assembly-time and completion-time wallet hooks receive sender UTxOs.
+    expect(lucidServiceMock.findUtxoAt).toHaveBeenCalledWith(senderAddress);
     expect(lucidServiceMock.createUnsignedSendPacketEscrowTx).toHaveBeenCalledWith(
       expect.objectContaining({
         senderAddress,
@@ -161,7 +161,8 @@ describe('PacketService sender wallet selection for escrow', () => {
   });
 
   it('fails hard when sender wallet UTxOs cannot be resolved for escrow', async () => {
-    lucidServiceMock.tryFindUtxosAt.mockResolvedValue([]);
+    // No sender UTxOs means we must fail instead of trying to assemble with operator wallet.
+    lucidServiceMock.findUtxoAt.mockResolvedValue([]);
 
     await expect(
       service.buildUnsignedSendPacketTx({

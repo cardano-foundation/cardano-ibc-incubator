@@ -1091,7 +1091,6 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
-    // const prefixedDenom = convertString2Hex(sourcePrefix + denom);
     const prefixedDenom = convertString2Hex(denom);
     const mintVoucherRedeemer: MintVoucherRedeemer = {
       RefundVoucher: {
@@ -1360,14 +1359,12 @@ export class PacketService {
     // escrow
     this.logger.log('send escrow');
     const senderAddress = sendPacketOperator.sender;
-    const senderWalletUtxos = await this.lucidService.tryFindUtxosAt(senderAddress, {
-      maxAttempts: 6,
-      retryDelayMs: 1000,
-    });
+    // Escrow send must be built from the sender's own wallet UTxOs so fees/inputs
+    // come from the user initiating the transfer, not from the operator key.
+    const senderWalletUtxos = await this.lucidService.findUtxoAt(senderAddress);
     if (senderWalletUtxos.length === 0) {
       throw new GrpcInternalException(`No spendable UTxOs found for sender ${senderAddress}`);
     }
-    const walletUtxos = this.dedupeUtxos(senderWalletUtxos);
     const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
       hostStateUtxo,
       channelUTxO: channelUtxo,
@@ -1384,7 +1381,7 @@ export class PacketService {
       transferAmount: BigInt(sendPacketOperator.token.amount),
       senderAddress,
       receiverAddress: sendPacketOperator.receiver,
-      walletUtxos,
+      walletUtxos: senderWalletUtxos,
 
       constructedAddress: sendPacketOperator.signer,
 
@@ -1402,8 +1399,10 @@ export class PacketService {
       unsignedTx,
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
       walletOverride: {
+        // Re-select the same sender wallet just before `complete()` to avoid
+        // cross-request wallet drift in shared Lucid state.
         address: senderAddress,
-        utxos: walletUtxos,
+        utxos: senderWalletUtxos,
       },
     };
   }
@@ -1494,19 +1493,6 @@ export class PacketService {
       spendChannelRedeemer,
       'spendChannelRedeemer',
     );
-
-    // // build update channel datum
-    // const updatedChannelDatum: ChannelDatum = {
-    //   ...channelDatum,
-    //   state: {
-    //     ...channelDatum.state,
-    //     packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-    //   },
-    // };
-    // const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-    //   updatedChannelDatum,
-    //   'channel',
-    // );
 
     // build transfer module redeemer
     const fTokenPacketData: FungibleTokenPacketDatum = {

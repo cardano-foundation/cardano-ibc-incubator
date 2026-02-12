@@ -1430,9 +1430,12 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
+    // Guardrail: escrow path is expected to be user-funded, missing wallet UTxOs
+    // should fail immediately
     if (!dto.walletUtxos || dto.walletUtxos.length === 0) {
       throw new GrpcInternalException('Sender wallet UTxOs are required for escrow send packet');
     }
+    // Build the tx under the sender's address context for deterministic coin selection.
     this.selectWalletFromAddress(dto.senderAddress, dto.walletUtxos);
     const tx: TxBuilder = this.lucid.newTx();
     tx.readFrom([
