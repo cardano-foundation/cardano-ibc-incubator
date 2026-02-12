@@ -1423,7 +1423,14 @@ export class PacketService {
     };
 
     const unsignedTx = this.lucidService.createUnsignedSendPacketEscrowTx(unsignedSendPacketParams);
-    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      walletOverride: {
+        address: senderAddress,
+        utxos: walletUtxos,
+      },
+    };
   }
 
   async buildUnsignedAcknowlegementPacketTx(
