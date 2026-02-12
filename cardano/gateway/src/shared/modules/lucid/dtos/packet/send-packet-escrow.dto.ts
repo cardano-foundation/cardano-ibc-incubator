@@ -17,6 +17,7 @@ export type UnsignedSendPacketEscrowDto = {
   transferAmount: bigint;
   senderAddress: string;
   receiverAddress: string;
+  walletUtxos: UTxO[];
 
   spendChannelAddress: string;
   channelTokenUnit: string;

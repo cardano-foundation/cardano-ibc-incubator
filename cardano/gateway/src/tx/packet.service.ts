@@ -1384,6 +1384,15 @@ export class PacketService {
     }
     // escrow
     this.logger.log('send escrow');
+    const senderAddress = sendPacketOperator.sender;
+    const senderWalletUtxos = await this.lucidService.tryFindUtxosAt(senderAddress, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (senderWalletUtxos.length === 0) {
+      throw new GrpcInternalException(`No spendable UTxOs found for sender ${senderAddress}`);
+    }
+    const walletUtxos = this.dedupeUtxos(senderWalletUtxos);
     const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
       hostStateUtxo,
       channelUTxO: channelUtxo,
@@ -1398,8 +1407,9 @@ export class PacketService {
       encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
       transferAmount: BigInt(sendPacketOperator.token.amount),
-      senderAddress: sendPacketOperator.sender,
+      senderAddress,
       receiverAddress: sendPacketOperator.receiver,
+      walletUtxos,
 
       constructedAddress: sendPacketOperator.signer,
 
