@@ -29,23 +29,12 @@ const sortByNumberKey = <K, V>(map: Map<K, V>, reverse?: boolean): Map<K, V> => 
 };
 
 export const insertSortMap = <K, V>(inputMap: Map<K, V>, newKey: K, newValue: V, reverse?: boolean): Map<K, V> => {
-  // Convert the Map to an array of key-value pairs
-  // const entriesArray: [K, V][] = Array.from(inputMap.entries());
-
-  // // Add the new key-value pair to the array
-  // entriesArray.push([newKey, newValue]);
-
-  // Sort the array based on the keys using the provided comparator function
-  // entriesArray.sort((entry1, entry2) =>
-  //   keyComparator ? keyComparator(entry1[0], entry2[0]) : Number(entry1[0]) - Number(entry2[0]),
-  // );
-
-  // // Create a new Map from the sorted array
-  // const sortedMap = new Map<K, V>(entriesArray);
-  // return sortedMap;
-
-  inputMap.set(newKey, newValue);
-  return sortByKey(inputMap, reverse);
+  // Build a new map so callers can keep using the input snapshot they already hold.
+  const updatedMap = new Map(inputMap);
+  // `set` replaces existing values for `newKey` and inserts when missing.
+  updatedMap.set(newKey, newValue);
+  // Always return a sorted view because downstream code expects deterministic key order.
+  return sortByKey(updatedMap, reverse);
 };
 
 export const insertSortMapWithNumberKey = <K, V>(
@@ -54,23 +43,10 @@ export const insertSortMapWithNumberKey = <K, V>(
   newValue: V,
   reverse?: boolean,
 ): Map<K, V> => {
-  // Convert the Map to an array of key-value pairs
-  // const entriesArray: [K, V][] = Array.from(inputMap.entries());
-
-  // // Add the new key-value pair to the array
-  // entriesArray.push([newKey, newValue]);
-
-  // Sort the array based on the keys using the provided comparator function
-  // entriesArray.sort((entry1, entry2) =>
-  //   keyComparator ? keyComparator(entry1[0], entry2[0]) : Number(entry1[0]) - Number(entry2[0]),
-  // );
-
-  // // Create a new Map from the sorted array
-  // const sortedMap = new Map<K, V>(entriesArray);
-  // return sortedMap;
-
-  inputMap.set(newKey, newValue);
-  return sortByNumberKey(inputMap, reverse);
+  // Same behavior as `insertSortMap`, but with numeric key ordering.
+  const updatedMap = new Map(inputMap);
+  updatedMap.set(newKey, newValue);
+  return sortByNumberKey(updatedMap, reverse);
 };
 
 export const deleteSortMap = <K, V>(
@@ -78,7 +54,7 @@ export const deleteSortMap = <K, V>(
   keyToDelete: K,
   keyComparator?: (a: K, b: K) => number,
 ): Map<K, V> => {
-  // Convert the sorted map to an array of key-value pairs
+  // Work on an array copy to keep this helper independent of map-iterator side effects.
   const entriesArray: [K, V][] = Array.from(sortedMap.entries());
 
   // Find the index of the key to delete
@@ -91,7 +67,7 @@ export const deleteSortMap = <K, V>(
     entriesArray.splice(indexToDelete, 1);
   }
 
-  // Create a new Map from the modified array
+  // Rebuild as a map and return a new instance.
   const updatedMap = new Map<K, V>(entriesArray);
 
   return updatedMap;
@@ -103,6 +79,7 @@ export function getDenomPrefix(portId: string, channelId: string): string {
 
 // write function delete key of sort map by typescript
 export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K, V> => {
+  // Keep deletion immutable for consistency with the insert helpers above.
   const updatedMap = new Map(inputMap);
   updatedMap.delete(deleteKey);
   return updatedMap;

@@ -24,7 +24,14 @@ import { Packet } from 'src/shared/types/channel/packet';
 import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
-import { deleteKeySortMap, deleteSortMap, getDenomPrefix, prependToMap, sortedStringify } from '@shared/helpers/helper';
+import {
+  deleteKeySortMap,
+  deleteSortMap,
+  getDenomPrefix,
+  insertSortMapWithNumberKey,
+  prependToMap,
+  sortedStringify,
+} from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
@@ -232,7 +239,19 @@ export class PacketService {
         constructedAddress,
       );
 
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const nowMs = Date.now();
+      let validToTime = nowMs + TRANSACTION_TIME_TO_LIVE;
+      if (recvPacketOperator.timeoutTimestamp > 0n) {
+        // On-chain requires tx_valid_to * 1_000_000 < packet.timeout_timestamp.
+        // Clamp validTo under packet timeout so recv stays valid even near deadline.
+        const maxValidToMs = recvPacketOperator.timeoutTimestamp / 10n ** 6n - 1n;
+        if (maxValidToMs <= BigInt(nowMs)) {
+          throw new GrpcInternalException('recv packet failed: packet timeout too close or already expired');
+        }
+        if (BigInt(validToTime) > maxValidToMs) {
+          validToTime = Number(maxValidToMs);
+        }
+      }
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
@@ -241,9 +260,9 @@ export class PacketService {
 
       if (
         recvPacketOperator.timeoutTimestamp > 0 &&
-        BigInt(validToTime) * 10n ** 6n > recvPacketOperator.timeoutTimestamp
+        BigInt(validToTime) * 10n ** 6n >= recvPacketOperator.timeoutTimestamp
       ) {
-        throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 < packet.timeout_timestamp');
+        throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 >= packet.timeout_timestamp');
       }
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
       
@@ -588,6 +607,15 @@ export class PacketService {
       timeout_height: recvPacketOperator.timeoutHeight,
       timeout_timestamp: recvPacketOperator.timeoutTimestamp,
     };
+    const isOrderedChannel = ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering] === ChannelOrder.ORDER_ORDERED;
+    // Ordered channels must advance `next_sequence_recv` strictly by one.
+    // Unordered channels keep `next_sequence_recv` unchanged and record per-sequence receipts.
+    const nextSequenceRecv = isOrderedChannel
+      ? channelDatum.state.next_sequence_recv + 1n
+      : channelDatum.state.next_sequence_recv;
+    const packetReceipt = isOrderedChannel
+      ? channelDatum.state.packet_receipt
+      : prependToMap(channelDatum.state.packet_receipt, packet.sequence, '');
 
     // build spend channel redeemer
     const spendChannelRedeemer: SpendChannelRedeemer = {
@@ -711,8 +739,9 @@ export class PacketService {
               ...channelDatum,
               state: {
                 ...channelDatum.state,
-                packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ''),
-                packet_acknowledgement: prependToMap(
+                next_sequence_recv: nextSequenceRecv,
+                packet_receipt: packetReceipt,
+                packet_acknowledgement: insertSortMapWithNumberKey(
                   channelDatum.state.packet_acknowledgement,
                   packet.sequence,
                   '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
@@ -727,6 +756,23 @@ export class PacketService {
 
             const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+            const unescrowDenom = this._unwrapVoucherDenom(
+              fungibleTokenPacketData.denom,
+              convertHex2String(packet.destination_port),
+              convertHex2String(packet.destination_channel),
+            );
+            const transferAmount = BigInt(fungibleTokenPacketData.amount);
+            // Normalize the incoming denom to the exact asset unit key that exists in the transfer-module UTxO.
+            const denomToken = this._resolveAssetUnitFromUtxoAssets(
+              transferModuleUtxo.assets,
+              normalizeDenomTokenTransfer(unescrowDenom),
+            );
+            const escrowedAmount = transferModuleUtxo.assets[denomToken] ?? 0n;
+            if (escrowedAmount < transferAmount) {
+              throw new GrpcInvalidArgumentException(
+                `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
+              );
+            }
 
             const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
               hostStateUtxo,
@@ -741,7 +787,8 @@ export class PacketService {
               encodedSpendTransferModuleRedeemer,
               channelTokenUnit,
               encodedUpdatedChannelDatum,
-              transferAmount: BigInt(fungibleTokenPacketData.amount),
+              transferAmount,
+              denomToken,
               receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
               constructedAddress,
 
@@ -797,8 +844,9 @@ export class PacketService {
               ...channelDatum,
               state: {
                 ...channelDatum.state,
-                packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ''),
-                packet_acknowledgement: prependToMap(
+                next_sequence_recv: nextSequenceRecv,
+                packet_receipt: packetReceipt,
+                packet_acknowledgement: insertSortMapWithNumberKey(
                   channelDatum.state.packet_acknowledgement,
                   packet.sequence,
                   '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
@@ -861,8 +909,9 @@ export class PacketService {
       ...channelDatum,
       state: {
         ...channelDatum.state,
-        packet_receipt: prependToMap(channelDatum.state.packet_receipt, packet.sequence, ''),
-        packet_acknowledgement: prependToMap(
+        next_sequence_recv: nextSequenceRecv,
+        packet_receipt: packetReceipt,
+        packet_acknowledgement: insertSortMapWithNumberKey(
           channelDatum.state.packet_acknowledgement,
           packet.sequence,
           '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
@@ -1264,7 +1313,11 @@ export class PacketService {
       state: {
         ...channelDatum.state,
         next_sequence_send: channelDatum.state.next_sequence_send + 1n,
-        packet_commitment: prependToMap(channelDatum.state.packet_commitment, packet.sequence, commitPacket(packet)),
+        packet_commitment: insertSortMapWithNumberKey(
+          channelDatum.state.packet_commitment,
+          packet.sequence,
+          commitPacket(packet),
+        ),
       },
     };
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
@@ -1774,8 +1827,47 @@ export class PacketService {
     const voucherPrefix = getDenomPrefix(portId, channelId);
     return denom.startsWith(voucherPrefix);
   }
+  private _unwrapVoucherDenom(denom: string, portId: string, channelId: string): string {
+    const voucherPrefix = getDenomPrefix(portId, channelId);
+    // If denom does not start with the current transfer prefix, treat it as already base-denom.
+    if (!denom.startsWith(voucherPrefix)) {
+      return denom;
+    }
+
+    const baseDenom = denom.slice(voucherPrefix.length);
+    if (!baseDenom) {
+      throw new GrpcInvalidArgumentException('Voucher denom is missing base denom after transfer/channel prefix');
+    }
+    return baseDenom;
+  }
+  private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
+    // Token units are hex strings; trim whitespace first because this value can come from packet JSON.
+    const normalized = requestedDenomToken.trim();
+    if (!normalized) {
+      throw new GrpcInvalidArgumentException('Denom token for transfer-module update cannot be empty');
+    }
+
+    // Fast path: exact key match.
+    if (Object.prototype.hasOwnProperty.call(assets, normalized)) {
+      return normalized;
+    }
+
+    // Fallback: normalize case only, because unit casing can vary by source.
+    const normalizedLower = normalized.toLowerCase();
+    const matchedUnit = Object.keys(assets).find((unit) => unit.toLowerCase() === normalizedLower);
+    if (matchedUnit) {
+      return matchedUnit;
+    }
+
+    throw new GrpcInvalidArgumentException(
+      `Denom token ${normalized} not found in transfer-module UTxO assets`,
+    );
+  }
   private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
     if (this._hasVoucherPrefix(denom, portId, channelId)) {
+      return denom;
+    }
+    if (this._isCardanoTokenUnitDenom(denom)) {
       return denom;
     }
     if (this._isHexDenom(denom)) {
@@ -1783,6 +1875,10 @@ export class PacketService {
       throw new GrpcInvalidArgumentException('Denom appears to be already hex-encoded; refusing to hex-encode twice');
     }
     return convertString2Hex(denom);
+  }
+  private _isCardanoTokenUnitDenom(denom: string): boolean {
+    // Cardano token unit = 28-byte policy id (56 hex chars) + optional asset name (0..32 bytes => 0..64 hex chars).
+    return /^[0-9a-fA-F]{56}(?:[0-9a-fA-F]{0,64})$/.test(denom);
   }
   private _isHexDenom(denom: string): boolean {
     return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
