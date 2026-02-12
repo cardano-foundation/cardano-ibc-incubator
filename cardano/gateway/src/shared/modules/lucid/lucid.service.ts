@@ -40,7 +40,7 @@ import {
   decodeMockModuleDatum,
   encodeMockModuleDatum,
 } from '@shared/types/apps/mock/mock-module-datum';
-import { calculateTransferToken } from './helpers/send-packet.helper';
+import { updateTransferModuleAssets } from './helpers/send-packet.helper';
 import {
   MintVoucherRedeemer,
   encodeMintVoucherRedeemer,
@@ -1128,12 +1128,13 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUtxo.assets,
-        lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
-      })
+      .pay.ToContract(
+        deploymentConfig.modules.transfer.address,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+      )
       .pay.ToAddress(dto.receiverAddress, {
-        lovelace: dto.transferAmount,
+        [dto.denomToken]: dto.transferAmount,
       })
       .mintAssets(
         {
@@ -1379,14 +1380,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUtxo.assets,
-        [dto.denomToken]: calculateTransferToken(
-          dto.transferModuleUtxo.assets,
-          0n - BigInt(dto.transferAmount),
-          dto.denomToken,
-        ),
-      })
+      .pay.ToContract(
+        deploymentConfig.modules.transfer.address,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+      )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
       })
@@ -1453,14 +1451,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUtxo.assets,
-        [dto.denomToken]: calculateTransferToken(
-          dto.transferModuleUtxo.assets,
-          0n - BigInt(dto.transferAmount),
-          dto.denomToken,
-        ),
-      })
+      .pay.ToContract(
+        deploymentConfig.modules.transfer.address,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+      )
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
@@ -1523,14 +1518,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(dto.transferModuleAddress, undefined, {
-        ...dto.transferModuleUTxO.assets,
-        [dto.denomToken]: calculateTransferToken(
-          dto.transferModuleUTxO.assets,
-          BigInt(dto.transferAmount),
-          dto.denomToken,
-        ),
-      })
+      .pay.ToContract(
+        dto.transferModuleAddress,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUTxO.assets, dto.transferAmount, dto.denomToken),
+      )
       .mintAssets(
         {
           [dto.sendPacketPolicyId]: 1n,
@@ -1719,14 +1711,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(dto.transferModuleAddress, undefined, {
-        ...dto.transferModuleUtxo.assets,
-        [dto.denomToken]: calculateTransferToken(
-          dto.transferModuleUtxo.assets,
-          0n - BigInt(dto.transferAmount),
-          dto.denomToken,
-        ),
-      })
+      .pay.ToContract(
+        dto.transferModuleAddress,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+      )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
       })
