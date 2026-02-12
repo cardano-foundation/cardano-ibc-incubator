@@ -44,8 +44,9 @@ export const insertSortMap = <K, V>(inputMap: Map<K, V>, newKey: K, newValue: V,
   // const sortedMap = new Map<K, V>(entriesArray);
   // return sortedMap;
 
-  inputMap.set(newKey, newValue);
-  return sortByKey(inputMap, reverse);
+  const updatedMap = new Map(inputMap);
+  updatedMap.set(newKey, newValue);
+  return sortByKey(updatedMap, reverse);
 };
 
 export const insertSortMapWithNumberKey = <K, V>(
@@ -69,8 +70,9 @@ export const insertSortMapWithNumberKey = <K, V>(
   // const sortedMap = new Map<K, V>(entriesArray);
   // return sortedMap;
 
-  inputMap.set(newKey, newValue);
-  return sortByNumberKey(inputMap, reverse);
+  const updatedMap = new Map(inputMap);
+  updatedMap.set(newKey, newValue);
+  return sortByNumberKey(updatedMap, reverse);
 };
 
 export const deleteSortMap = <K, V>(
