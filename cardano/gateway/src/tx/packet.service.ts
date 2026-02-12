@@ -608,6 +608,8 @@ export class PacketService {
       timeout_timestamp: recvPacketOperator.timeoutTimestamp,
     };
     const isOrderedChannel = ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering] === ChannelOrder.ORDER_ORDERED;
+    // Ordered channels must advance `next_sequence_recv` strictly by one.
+    // Unordered channels keep `next_sequence_recv` unchanged and record per-sequence receipts.
     const nextSequenceRecv = isOrderedChannel
       ? channelDatum.state.next_sequence_recv + 1n
       : channelDatum.state.next_sequence_recv;
@@ -760,6 +762,7 @@ export class PacketService {
               convertHex2String(packet.destination_channel),
             );
             const transferAmount = BigInt(fungibleTokenPacketData.amount);
+            // Normalize the incoming denom to the exact asset unit key that exists in the transfer-module UTxO.
             const denomToken = this._resolveAssetUnitFromUtxoAssets(
               transferModuleUtxo.assets,
               normalizeDenomTokenTransfer(unescrowDenom),
@@ -1826,6 +1829,7 @@ export class PacketService {
   }
   private _unwrapVoucherDenom(denom: string, portId: string, channelId: string): string {
     const voucherPrefix = getDenomPrefix(portId, channelId);
+    // If denom does not start with the current transfer prefix, treat it as already base-denom.
     if (!denom.startsWith(voucherPrefix)) {
       return denom;
     }
@@ -1837,15 +1841,18 @@ export class PacketService {
     return baseDenom;
   }
   private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
+    // Token units are hex strings; trim whitespace first because this value can come from packet JSON.
     const normalized = requestedDenomToken.trim();
     if (!normalized) {
       throw new GrpcInvalidArgumentException('Denom token for transfer-module update cannot be empty');
     }
 
+    // Fast path: exact key match.
     if (Object.prototype.hasOwnProperty.call(assets, normalized)) {
       return normalized;
     }
 
+    // Fallback: normalize case only, because unit casing can vary by source.
     const normalizedLower = normalized.toLowerCase();
     const matchedUnit = Object.keys(assets).find((unit) => unit.toLowerCase() === normalizedLower);
     if (matchedUnit) {

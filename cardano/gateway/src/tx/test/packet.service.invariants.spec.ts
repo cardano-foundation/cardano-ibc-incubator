@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { convertString2Hex, hashSHA256, hashSha3_256 } from '@shared/helpers/hex';
+import { insertSortMapWithNumberKey, prependToMap } from '@shared/helpers/helper';
 import { PacketService } from '../packet.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
@@ -67,6 +68,50 @@ describe('PacketService denom invariants', () => {
     );
   });
 
+  it('keeps Cardano token-unit denoms unchanged', () => {
+    const tokenUnit = '465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b';
+    const normalized = (service as any)._normalizePacketDenom(tokenUnit, 'transfer', 'channel-0');
+
+    expect(normalized).toBe(tokenUnit);
+  });
+
+  it('unwraps voucher-prefixed denom to base denom for unescrow', () => {
+    const unwrapped = (service as any)._unwrapVoucherDenom('transfer/channel-0/stake', 'transfer', 'channel-0');
+
+    expect(unwrapped).toBe('stake');
+  });
+
+  it('rejects malformed voucher denom with missing base denom', () => {
+    expect(() => (service as any)._unwrapVoucherDenom('transfer/channel-0/', 'transfer', 'channel-0')).toThrow(
+      GrpcInvalidArgumentException,
+    );
+  });
+
+  it('resolves transfer-module asset unit case-insensitively', () => {
+    const assets = {
+      '465209195F27C99DFEFDCB725E939AD3262339A9B150992B66673BE86D6F636B': 40_000_000n,
+    };
+    const resolved = (service as any)._resolveAssetUnitFromUtxoAssets(
+      assets,
+      '465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b',
+    );
+
+    expect(resolved).toBe('465209195F27C99DFEFDCB725E939AD3262339A9B150992B66673BE86D6F636B');
+  });
+
+  it('rejects transfer-module denom units missing from UTxO assets', () => {
+    const assets = {
+      lovelace: 1_500_000n,
+    };
+
+    expect(() =>
+      (service as any)._resolveAssetUnitFromUtxoAssets(
+        assets,
+        '465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b',
+      ),
+    ).toThrow(GrpcInvalidArgumentException);
+  });
+
   it('resolves ibc/<hash> to canonical path/base_denom for burn', async () => {
     const fullDenomPath = 'transfer/channel-0/stake';
     const hash = hashSHA256(convertString2Hex(fullDenomPath)).toUpperCase();
@@ -123,5 +168,35 @@ describe('PacketService denom invariants', () => {
 
     expect(resolved).toBe('addr_test1qmappedreceiver');
     expect(lucidServiceMock.credentialToAddress).toHaveBeenCalledWith('payment_credential_hex');
+  });
+
+  it('keeps packet acknowledgement map sorted by sequence', () => {
+    const existing = new Map<bigint, string>([
+      [1n, 'ack-1'],
+      [3n, 'ack-3'],
+    ]);
+
+    const updated = insertSortMapWithNumberKey(new Map(existing), 2n, 'ack-2');
+
+    expect([...updated.keys()]).toEqual([1n, 2n, 3n]);
+  });
+
+  it('does not mutate source map while sorting acknowledgement insertions', () => {
+    const source = new Map<bigint, string>([
+      [1n, 'ack-1'],
+      [3n, 'ack-3'],
+    ]);
+
+    const updated = insertSortMapWithNumberKey(new Map(source), 2n, 'ack-2');
+
+    expect([...source.keys()]).toEqual([1n, 3n]);
+    expect([...updated.keys()]).toEqual([1n, 2n, 3n]);
+  });
+
+  it('prepends packet receipt sequence for unordered recv semantics', () => {
+    const existing = new Map<bigint, string>([[1n, '']]);
+    const updated = prependToMap(existing, 2n, '');
+
+    expect([...updated.keys()]).toEqual([2n, 1n]);
   });
 });
