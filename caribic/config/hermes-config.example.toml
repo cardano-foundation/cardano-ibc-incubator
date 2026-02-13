@@ -104,7 +104,6 @@ list = [
 # PACKET-FORWARDING CHAIN (LOCAL COSMOS) CONFIGURATION
 # This is the Cosmos chain we operate locally (repo path cosmos/sidechain) to
 # serve as the IBC entrypoint to the broader ecosystem.
-# Hermes chain id remains `sidechain` for compatibility.
 [[chains]]
 id = 'sidechain'
 type = 'CosmosSdk'
