@@ -1007,24 +1007,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     );
 
     let script_dir = osmosis_dir.join("scripts");
-    if let Some(home_path) = home_dir() {
-        let hermes_dir = home_path.join(".hermes");
-        if !hermes_dir.exists() {
-            fs::create_dir_all(&hermes_dir)?;
-        }
-        let options = fs_extra::file::CopyOptions::new().overwrite(true);
-        verbose(&format!(
-            "Copying Hermes configuration files from {} to {}",
-            script_dir.join("hermes/config.toml").display(),
-            hermes_dir.join("config.toml").display()
-        ));
-        copy(
-            script_dir.join("hermes/config.toml"),
-            hermes_dir.join("config.toml"),
-            &options,
-        )
-        .expect("Failed to copy Hermes configuration file");
-    }
+    ensure_localosmosis_chain_in_hermes_config(script_dir.as_path())?;
 
     execute_script(
         script_dir.as_path(),
@@ -1208,6 +1191,104 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     }
 
     Ok(())
+}
+
+fn ensure_localosmosis_chain_in_hermes_config(
+    script_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let home_path = home_dir().ok_or("Could not determine home directory")?;
+    let hermes_dir = home_path.join(".hermes");
+    if !hermes_dir.exists() {
+        fs::create_dir_all(&hermes_dir)?;
+    }
+
+    let destination_config_path = hermes_dir.join("config.toml");
+    if !destination_config_path.exists() {
+        return Err(format!(
+            "Hermes config not found at {}. Run relayer setup first.",
+            destination_config_path.display()
+        )
+        .into());
+    }
+
+    let mut destination_config = fs::read_to_string(&destination_config_path).map_err(|e| {
+        format!(
+            "Failed to read Hermes config at {}: {}",
+            destination_config_path.display(),
+            e
+        )
+    })?;
+
+    if destination_config.contains("id = 'localosmosis'") {
+        return Ok(());
+    }
+
+    let source_config_path = script_dir.join("hermes/config.toml");
+    let source_config = fs::read_to_string(&source_config_path).map_err(|e| {
+        format!(
+            "Failed to read Osmosis Hermes config at {}: {}",
+            source_config_path.display(),
+            e
+        )
+    })?;
+
+    let localosmosis_block = extract_chain_block(&source_config, "localosmosis").ok_or_else(|| {
+        format!(
+            "Failed to find localosmosis chain block in {}",
+            source_config_path.display()
+        )
+    })?;
+
+    if !destination_config.ends_with('\n') {
+        destination_config.push('\n');
+    }
+    destination_config.push('\n');
+    destination_config.push_str("# Local Osmosis chain used by token-swap demo\n");
+    destination_config.push_str(&localosmosis_block);
+    destination_config.push('\n');
+
+    fs::write(&destination_config_path, destination_config).map_err(|e| {
+        format!(
+            "Failed to update Hermes config at {}: {}",
+            destination_config_path.display(),
+            e
+        )
+    })?;
+
+    verbose(&format!(
+        "Added localosmosis chain to Hermes config at {}",
+        destination_config_path.display()
+    ));
+
+    Ok(())
+}
+
+fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
+    let lines: Vec<&str> = config.lines().collect();
+    let mut index = 0;
+
+    while index < lines.len() {
+        if lines[index].trim() != "[[chains]]" {
+            index += 1;
+            continue;
+        }
+
+        let block_start = index;
+        let mut block_end = index + 1;
+        while block_end < lines.len() && lines[block_end].trim() != "[[chains]]" {
+            block_end += 1;
+        }
+
+        let block_lines = &lines[block_start..block_end];
+        let target_id_line = format!("id = '{}'", target_chain_id);
+        if block_lines.iter().any(|line| line.trim() == target_id_line) {
+            return Some(block_lines.join("\n"));
+        }
+
+        index = block_end;
+    }
+
+    None
 }
 
 fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
