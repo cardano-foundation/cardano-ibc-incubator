@@ -2537,7 +2537,7 @@ pub fn comprehensive_health_check(
         ("ogmios", "Ogmios (JSON/RPC)"),
         ("mithril", "Mithril (Aggregator + Signers)"),
         ("hermes", "Hermes Relayer Daemon"),
-        ("cosmos", "Cosmos Entrypoint chain (packet-forwarding)"),
+        ("cosmos", "Cosmos Entrypoint chain"),
         ("osmosis", "Osmosis appchain"),
         ("redis", "Osmosis Redis sidecar"),
     ];
