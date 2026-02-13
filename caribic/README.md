@@ -28,6 +28,11 @@ caribic start bridge
 caribic start cosmos --clean
 ```
 
+Hermes config note:
+- Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
+- If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
+- `caribic` writes Hermes config during setup and, for `caribic demo token-swap`, augments it with the `localosmosis` chain block before Hermes is used for channel creation.
+
 ### `caribic stop [target]`
 
 Stops services. With no target, it behaves like `all`.

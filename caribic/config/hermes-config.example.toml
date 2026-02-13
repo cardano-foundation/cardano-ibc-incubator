@@ -1,5 +1,6 @@
 # Hermes Configuration Example with Cardano Integration
 # Place this file at ~/.hermes/config.toml
+# Hermes reads this file at startup, so changes require a Hermes restart to take effect.
 
 [global]
 log_level = 'info'
