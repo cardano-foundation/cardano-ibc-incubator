@@ -86,7 +86,7 @@ pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::er
     download_repository(url, osmosis_path, "osmosis").await
 }
 
-pub async fn install_osmosisd(osmosis_path: &Path) {
+pub async fn install_osmosisd(osmosis_path: &Path) -> Result<bool, Box<dyn std::error::Error>> {
     let question = "Do you want to install osmosisd? (yes/no): ";
 
     print!("{}", question);
@@ -102,13 +102,24 @@ pub async fn install_osmosisd(osmosis_path: &Path) {
     if input == "yes" || input == "y" {
         println!("{} Installing osmosisd...", style("Step 1/1").bold().dim());
 
-        Command::new("make")
+        let output = Command::new("make")
             .current_dir(osmosis_path)
             .arg("install")
             .output()
-            .expect("Failed to install osmosisd");
+            .map_err(|error| format!("Failed to run make install for osmosisd: {}", error))?;
+
+        if !output.status.success() {
+            return Err(format!(
+                "Failed to install osmosisd:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            )
+            .into());
+        }
 
         println!("PASS: osmosisd installed successfully");
+        Ok(true)
+    } else {
+        Ok(false)
     }
 }
 

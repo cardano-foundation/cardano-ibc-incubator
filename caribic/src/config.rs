@@ -168,7 +168,7 @@ pub async fn create_config_file(config_path: &str) -> Config {
             process::exit(0);
         }
     } else {
-        error("No config file has been found. Creating a new config does not work with log levels warning, error or quite.");
+        error("No config file has been found. Creating a new config does not work with log levels warning, error or quiet.");
         process::exit(0);
     }
 

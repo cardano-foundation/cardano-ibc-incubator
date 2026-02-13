@@ -2,7 +2,7 @@ use crate::{
     logger,
     setup::{download_osmosis, install_osmosisd},
 };
-use std::{path::Path, process::Command, time::Instant};
+use std::{env, path::{Path, PathBuf}, process::Command, time::Instant};
 
 pub struct AuditReport {
     pub output: String,
@@ -214,7 +214,6 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
 }
 
 pub async fn check_osmosisd(osmosis_dir: &Path) {
-    let osmosisd_check = Command::new("osmosisd").arg("version").output();
     if osmosis_dir.exists() {
         logger::verbose(&format!("Osmosis directory already exists"));
     } else {
@@ -227,25 +226,112 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
         }
     }
 
-    match osmosisd_check {
-        Ok(output) => {
-            if output.status.success() {
-                let version = String::from_utf8_lossy(&output.stderr);
-                if let Some(osmosisd_version) = version.lines().next() {
-                    logger::verbose(&format!("PASS: osmosisd {}", osmosisd_version));
-                }
-            } else {
-                logger::log(&format!(
-                    "ERROR: osomsisd is not installed or not available in the PATH."
-                ));
-                install_osmosisd(osmosis_dir).await;
+    let mut binary = locate_osmosisd_binary();
+    if binary.is_none() {
+        logger::log("ERROR: osmosisd is not installed or not available in the PATH.");
+
+        match install_osmosisd(osmosis_dir).await {
+            Ok(true) => {
+                binary = locate_osmosisd_binary();
+            }
+            Ok(false) => return,
+            Err(error) => {
+                logger::error(&format!("ERROR: Failed to install osmosisd: {}", error));
+                return;
             }
         }
-        Err(_) => {
-            logger::log(&format!(
-                "ERROR: osomsisd is not installed or not available in the PATH."
-            ));
-            install_osmosisd(osmosis_dir).await;
+    }
+
+    if let Some(osmosisd_binary) = binary {
+        match Command::new(&osmosisd_binary).arg("version").output() {
+            Ok(output) if output.status.success() => {
+                let stdout_version = String::from_utf8_lossy(&output.stdout);
+                let stderr_version = String::from_utf8_lossy(&output.stderr);
+                let version_line = stdout_version
+                    .lines()
+                    .next()
+                    .or_else(|| stderr_version.lines().next())
+                    .unwrap_or("version unavailable");
+
+                logger::verbose(&format!(
+                    "PASS: osmosisd {} ({})",
+                    version_line,
+                    osmosisd_binary.display()
+                ));
+
+                if !is_path_visible_binary(&osmosisd_binary) {
+                    logger::warn(&format!(
+                        "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH to avoid repeated install prompts.",
+                        osmosisd_binary.display()
+                    ));
+                }
+            }
+            Ok(output) => {
+                logger::error(&format!(
+                    "ERROR: osmosisd exists at {} but 'osmosisd version' failed (exit code {}).",
+                    osmosisd_binary.display(),
+                    output.status.code().unwrap_or(-1)
+                ));
+            }
+            Err(error) => {
+                logger::error(&format!(
+                    "ERROR: Failed to run osmosisd at {}: {}",
+                    osmosisd_binary.display(),
+                    error
+                ));
+            }
         }
     }
+}
+
+fn locate_osmosisd_binary() -> Option<PathBuf> {
+    find_binary_in_path("osmosisd")
+        .or_else(|| {
+            dirs::home_dir().and_then(|home| {
+                let binary = home.join("go/bin/osmosisd");
+                binary.is_file().then_some(binary)
+            })
+        })
+        .or_else(|| find_go_env_binary("GOBIN"))
+        .or_else(|| find_go_env_binary("GOPATH"))
+}
+
+fn find_binary_in_path(binary_name: &str) -> Option<PathBuf> {
+    let path_var = env::var_os("PATH")?;
+    env::split_paths(&path_var).find_map(|directory| {
+        let candidate = directory.join(binary_name);
+        candidate.is_file().then_some(candidate)
+    })
+}
+
+fn find_go_env_binary(env_name: &str) -> Option<PathBuf> {
+    let output = Command::new("go")
+        .args(["env", env_name])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+
+    if env_name == "GOBIN" {
+        let candidate = PathBuf::from(value).join("osmosisd");
+        candidate.is_file().then_some(candidate)
+    } else {
+        value.split(':').find_map(|entry| {
+            let candidate = PathBuf::from(entry).join("bin").join("osmosisd");
+            candidate.is_file().then_some(candidate)
+        })
+    }
+}
+
+fn is_path_visible_binary(binary_path: &Path) -> bool {
+    if let Some(path_binary) = find_binary_in_path("osmosisd") {
+        return path_binary == binary_path;
+    }
+    false
 }
