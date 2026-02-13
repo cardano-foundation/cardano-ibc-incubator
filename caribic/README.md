@@ -26,6 +26,7 @@ caribic start
 caribic start --clean --with-mithril
 caribic start bridge
 caribic start cosmos --clean
+caribic start osmosis
 ```
 
 Hermes config note:

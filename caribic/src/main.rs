@@ -50,6 +50,8 @@ enum StartTarget {
     Bridge,
     /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
     Cosmos,
+    /// Starts only the local Osmosis appchain
+    Osmosis,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -97,7 +99,7 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -814,6 +816,29 @@ async fn main() {
                     }
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start Mithril: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == Some(StartTarget::Osmosis) {
+                let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+
+                match prepare_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("PASS: Osmosis appchain prepared"),
+                    Err(error) => {
+                        logger::error(&format!(
+                            "ERROR: Failed to prepare Osmosis appchain: {}",
+                            error
+                        ));
+                        std::process::exit(1);
+                    }
+                }
+
+                match start_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("PASS: Osmosis appchain started successfully"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Osmosis: {}", error));
                         std::process::exit(1);
                     }
                 }
