@@ -34,9 +34,9 @@ mod utils;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum DemoType {
-    /// Spawns up a specific Cosmos Entrypoint chain developed for demonstration purposes
+    /// Starts the message-exchange demo preset
     MessageExchange,
-    /// Spawns up a local Osmosis setup developed for demonstrating an interchain swap
+    /// Starts the token-swap demo preset
     TokenSwap,
 }
 
@@ -87,10 +87,10 @@ struct Args {
     /// Subcommand to execute
     #[command(subcommand)]
     command: Commands,
-    /// Verbosity level (0 = quite, 1 = standard, 2 = warning, 3 = error, 4 = info, 5 = verbose)
+    /// Verbosity level (0 = quiet, 1 = standard, 2 = warning, 3 = error, 4 = info, 5 = verbose)
     #[arg(long, default_value_t = 1)]
     verbose: usize,
-    /// Configuration file name. It should be in the root directory of the project
+    /// Path to the Caribic config file (defaults to ~/.caribic/config.json)
     #[arg(short, long, default_value = default_config_path().into_os_string())]
     config: PathBuf,
 }
@@ -159,7 +159,7 @@ enum Commands {
         #[arg(long)]
         b_port: String,
     },
-    /// Starts a demo use case. The use case can be either a token swap or a message exchange.
+    /// Starts a demo preset. Usage: `caribic demo token-swap` or `caribic demo message-exchange`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
