@@ -126,6 +126,8 @@ enum Commands {
         #[arg(long)]
         service: Option<String>,
     },
+    /// Runs security and validator audits (gateway npm, caribic cargo, onchain aiken)
+    Audit,
     /// Create IBC client on target chain
     CreateClient {
         /// Source chain identifier
@@ -903,6 +905,17 @@ async fn main() {
                     logger::error(&format!("Health check failed: {}", e));
                     std::process::exit(1);
                 }
+            }
+        }
+        Commands::Audit => {
+            let project_config = config::get_config();
+            let project_root_path = Path::new(&project_config.project_root);
+            let report = check::run_security_audit(project_root_path);
+            logger::log(&report.output);
+
+            if report.failed > 0 {
+                logger::error("Audit checks failed. Review the output above.");
+                std::process::exit(1);
             }
         }
         Commands::CreateClient {

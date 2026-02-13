@@ -2,7 +2,12 @@ use crate::{
     logger,
     setup::{download_osmosis, install_osmosisd},
 };
-use std::{path::Path, process::Command};
+use std::{path::Path, process::Command, time::Instant};
+
+pub struct AuditReport {
+    pub output: String,
+    pub failed: usize,
+}
 
 pub async fn check_prerequisites() {
     logger::info(&format!("Checking prerequisites..."));
@@ -27,6 +32,151 @@ pub async fn check_prerequisites() {
         "Install Go by following the instructions at https://go.dev/doc/install.",
     );
     check_tool_availability("Hermes", "version", "Install Hermes by following the instructions at https://hermes.informal.systems/quick-start/installation.html#install-by-downloading");
+}
+
+pub fn run_security_audit(project_root_path: &Path) -> AuditReport {
+    let checks = vec![
+        (
+            "Gateway npm audit",
+            project_root_path.join("cardano/gateway"),
+            "npm",
+            vec!["audit"],
+            "Install Node.js and npm to run this check.",
+        ),
+        (
+            "Caribic cargo audit",
+            project_root_path.join("caribic"),
+            "cargo",
+            vec!["audit"],
+            "Install cargo-audit: cargo install cargo-audit.",
+        ),
+        (
+            "Aiken validator check",
+            project_root_path.join("cardano/onchain"),
+            "aiken",
+            vec!["check"],
+            "Install Aiken to run this check.",
+        ),
+    ];
+
+    let mut output = String::new();
+    output.push_str("\nAudit Report\n");
+    output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
+
+    let mut failed = 0;
+
+    for (label, directory, command, args, install_hint) in checks {
+        let started = Instant::now();
+        let command_text = format!("{} {}", command, args.join(" "));
+
+        if !directory.exists() {
+            failed += 1;
+            output.push_str(&format!("[FAIL] {}\n", label));
+            output.push_str(&format!(
+                "    Directory not found: {}\n\n",
+                directory.display()
+            ));
+            continue;
+        }
+
+        let result = Command::new(command)
+            .args(&args)
+            .current_dir(&directory)
+            .output();
+
+        match result {
+            Ok(run_output) if run_output.status.success() => {
+                output.push_str(&format!(
+                    "[OK] {} ({}s)\n",
+                    label,
+                    started.elapsed().as_secs()
+                ));
+                output.push_str(&format!("    {}\n", command_text));
+                output.push_str(&format!("    {}\n\n", directory.display()));
+            }
+            Ok(run_output) => {
+                failed += 1;
+                output.push_str(&format!(
+                    "[FAIL] {} ({}s)\n",
+                    label,
+                    started.elapsed().as_secs()
+                ));
+                output.push_str(&format!("    {}\n", command_text));
+                output.push_str(&format!("    {}\n", directory.display()));
+                output.push_str(&format!(
+                    "    Exit code: {}\n",
+                    run_output.status.code().unwrap_or(-1)
+                ));
+
+                let details = summarize_command_output(&run_output.stdout, &run_output.stderr);
+                if details.is_empty() {
+                    output.push_str("    No command output was captured.\n");
+                } else {
+                    output.push_str(&format!("    {}\n", details.replace('\n', "\n    ")));
+                }
+
+                if should_show_install_hint(&run_output.stdout, &run_output.stderr) {
+                    output.push_str(&format!("    {}\n", install_hint));
+                }
+                output.push('\n');
+            }
+            Err(error) => {
+                failed += 1;
+                output.push_str(&format!(
+                    "[FAIL] {} ({}s)\n",
+                    label,
+                    started.elapsed().as_secs()
+                ));
+                output.push_str(&format!("    {}\n", command_text));
+                output.push_str(&format!("    {}\n", directory.display()));
+                output.push_str(&format!("    Failed to execute command: {}\n", error));
+                output.push_str(&format!("    {}\n\n", install_hint));
+            }
+        }
+    }
+
+    let passed = 3usize.saturating_sub(failed);
+    output.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+    output.push_str(&format!(
+        "Audit checks: 3 total, {} passed, {} failed\n",
+        passed, failed
+    ));
+
+    AuditReport { output, failed }
+}
+
+fn summarize_command_output(stdout: &[u8], stderr: &[u8]) -> String {
+    let stdout_text = String::from_utf8_lossy(stdout).trim().to_string();
+    let stderr_text = String::from_utf8_lossy(stderr).trim().to_string();
+
+    let mut sections = Vec::new();
+    if !stdout_text.is_empty() {
+        sections.push(format!("stdout:\n{}", stdout_text));
+    }
+    if !stderr_text.is_empty() {
+        sections.push(format!("stderr:\n{}", stderr_text));
+    }
+
+    let combined = sections.join("\n");
+    let lines: Vec<&str> = combined.lines().take(20).collect();
+    if combined.lines().count() > lines.len() {
+        format!("{}\n... (truncated)", lines.join("\n"))
+    } else {
+        lines.join("\n")
+    }
+}
+
+fn should_show_install_hint(stdout: &[u8], stderr: &[u8]) -> bool {
+    let combined = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(stdout),
+        String::from_utf8_lossy(stderr)
+    )
+    .to_ascii_lowercase();
+
+    combined.contains("no such command: `audit`")
+        || combined.contains("command not found")
+        || combined.contains("not installed")
 }
 
 fn check_tool_availability(tool: &str, version_flag: &str, install_instructions: &str) {

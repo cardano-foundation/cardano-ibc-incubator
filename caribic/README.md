@@ -56,6 +56,13 @@ caribic health-check
 caribic health-check --service gateway
 ```
 
+### `caribic audit`
+
+Runs three checks and reports a single pass or fail summary:
+- `npm audit` in `cardano/gateway`
+- `cargo audit` in `caribic`
+- `aiken check` in `cardano/onchain`
+
 ### `caribic keys <add|list|delete>`
 
 Convenience wrapper around Hermes keyring operations.
