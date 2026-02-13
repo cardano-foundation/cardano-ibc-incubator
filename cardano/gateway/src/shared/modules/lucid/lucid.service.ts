@@ -1532,14 +1532,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUTxO.assets,
-        [dto.voucherTokenUnit]: calculateTransferToken(
-          dto.transferModuleUTxO.assets,
-          BigInt(dto.transferAmount),
-          dto.voucherTokenUnit,
-        ),
-      })
+      .pay.ToContract(
+        deploymentConfig.modules.transfer.address,
+        undefined,
+        updateTransferModuleAssets(dto.transferModuleUTxO.assets, BigInt(dto.transferAmount), dto.voucherTokenUnit),
+      )
       .mintAssets(
         {
           [dto.sendPacketPolicyId]: 1n,
