@@ -261,7 +261,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
 
                 if !is_path_visible_binary(&osmosisd_binary) {
                     logger::warn(&format!(
-                        "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH to avoid repeated install prompts.",
+                        "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
                         osmosisd_binary.display()
                     ));
                 }
