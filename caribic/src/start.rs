@@ -5,10 +5,10 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    extract_tendermint_client_id, extract_tendermint_connection_id, get_cardano_state,
-    get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists, CardanoQuery,
-    IndicatorMessage,
+    diagnose_container_failure, download_file, execute_script, execute_script_interactive,
+    execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
+    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists,
+    CardanoQuery, IndicatorMessage,
 };
 use crate::{
     config,
@@ -1211,18 +1211,12 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 }
 
 fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if logger::is_quite() {
-        execute_script(osmosis_dir, "make", Vec::from(["localnet-init"]), None)?;
-        Ok(())
-    } else {
-        execute_script_with_progress(
-            osmosis_dir,
-            "make",
-            Vec::from(["localnet-init"]),
-            "Initialize local Osmosis network",
-        )?;
-        Ok(())
+    if !logger::is_quite() {
+        log("Initialize local Osmosis network ...");
     }
+
+    execute_script_interactive(osmosis_dir, "make", Vec::from(["localnet-init"]))?;
+    Ok(())
 }
 
 fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {
