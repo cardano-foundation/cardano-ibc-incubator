@@ -38,13 +38,14 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `cosmos`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
 ```bash
 caribic stop
 caribic stop bridge
+caribic stop osmosis
 ```
 
 ### `caribic health-check [--service <name>]`

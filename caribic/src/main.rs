@@ -70,6 +70,8 @@ enum StopTarget {
     Bridge,
     /// Stops the Cosmos Entrypoint chain
     Cosmos,
+    /// Stops only the local Osmosis appchain
+    Osmosis,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -110,7 +112,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, osmosis, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -429,6 +431,10 @@ async fn main() {
                         "Cosmos Entrypoint chain",
                     );
                     logger::log("\nCosmos Entrypoint chain stopped successfully");
+                }
+                Some(StopTarget::Osmosis) => {
+                    stop_osmosis(osmosis_dir.as_path());
+                    logger::log("\nOsmosis appchain stopped successfully");
                 }
                 Some(StopTarget::Demo) => {
                     stop_cosmos(
