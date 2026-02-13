@@ -3,6 +3,32 @@ check_string_empty() {
   [ -z $1 ] && echo "$2" && exit 1
 }
 
+# Function to resolve the latest transfer channel id between two Hermes chains
+get_latest_transfer_channel_id() {
+  _channel_chain="$1"
+  _counterparty_chain="$2"
+
+  _channel_id=$(
+    hermes --json query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
+      jq -r '
+        select(.result) |
+        (if (.result | type) == "array" then .result[-1] else .result end) |
+        .channel_id // .channel_a // empty
+      ' 2>/dev/null | tail -n 1
+  )
+
+  if [ -z "$_channel_id" ]; then
+    _channel_id=$(
+      hermes query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
+        tr '[:space:]' '\n' |
+        grep '^channel-' |
+        head -n 1
+    )
+  fi
+
+  echo "$_channel_id"
+}
+
 # Function to extract and print txhash from piped input
 log_tx() {
   _log_tx_txhash=$(sed -n 's/^\(txhash: .*\)/\1/p')
@@ -23,31 +49,19 @@ deployer=$(osmosisd keys show deployer --address --keyring-backend test)
 check_string_empty "$deployer" "deployer address not found. Exiting..."
 echo "deployer address $deployer"
 
-#==================================Setup relayer=======================================
-RLY_CONTAINER_NAME="relayer"
-if ! docker ps --format '{{.Names}}' | grep -q "^$RLY_CONTAINER_NAME$"; then
-  echo "Container $RLY_CONTAINER_NAME does not exist. Exiting..."
-  exit 1
-fi
-rly='docker exec -it relayer bin/rly'
-
-RELAYER_PATH="demo"
-CARDANO_CHAIN_NAME="ibc-0"
-SIDECHAIN_CHAIN_NAME="ibc-1"
+#==================================Setup Hermes=======================================
+HERMES_CARDANO_NAME="cardano-devnet"
+HERMES_SIDECHAIN_NAME="sidechain"
+HERMES_OSMOSIS_NAME="localosmosis"
 SENT_AMOUNT="12345678-465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b"
 SIDECHAIN_RECEIVER="pfm"
-HERMES_OSMOSIS_NAME="localosmosis"
-HERMES_SIDECHAIN_NAME="sidechain"
 
 # query channels' id
-cardano_sidechain_conn_id=$($rly config show --json | jq -r --arg path "$RELAYER_PATH" '.paths[$path].src."connection-id"')
-check_string_empty "$cardano_sidechain_conn_id" "Cardano<->Entrypoint chain connection not found. Exiting..."
-
-cardano_sidechain_chann_id=$($rly query connection-channels "$CARDANO_CHAIN_NAME" "$cardano_sidechain_conn_id" --reverse --limit 1 | jq -r '.[0].channel_id')
+cardano_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_SIDECHAIN_NAME")
 check_string_empty "$cardano_sidechain_chann_id" "Cardano->Entrypoint chain channel not found. Exiting..."
 echo "Cardano->Entrypoint chain channel id: $cardano_sidechain_chann_id"
 
-sidechain_osmosis_chann_id=$(hermes --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" --show-counterparty | jq -r 'select(.result) | .result[-1].channel_b')
+sidechain_osmosis_chann_id=$(get_latest_transfer_channel_id "$HERMES_SIDECHAIN_NAME" "$HERMES_OSMOSIS_NAME")
 check_string_empty "$sidechain_osmosis_chann_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
 echo "Entrypoint chain->Osmosis channel id: $sidechain_osmosis_chann_id"
 
@@ -60,8 +74,20 @@ memo=$(
 echo "Send IBC token memo: $memo"
 
 #==================================Send Cardano token to Osmosis=======================================
-$rly transact transfer "$CARDANO_CHAIN_NAME" "$SIDECHAIN_CHAIN_NAME" "$SENT_AMOUNT" "$SIDECHAIN_RECEIVER" "$cardano_sidechain_chann_id" \
-  --path "$RELAYER_PATH" --timeout-time-offset 1h \
+sent_amount="${SENT_AMOUNT%%-*}"
+sent_denom="${SENT_AMOUNT#*-}"
+check_string_empty "$sent_amount" "Transfer amount not found in SENT_AMOUNT. Exiting..."
+check_string_empty "$sent_denom" "Transfer denom not found in SENT_AMOUNT. Exiting..."
+
+hermes tx ft-transfer \
+  --src-chain "$HERMES_CARDANO_NAME" \
+  --dst-chain "$HERMES_SIDECHAIN_NAME" \
+  --src-port transfer \
+  --src-channel "$cardano_sidechain_chann_id" \
+  --amount "$sent_amount" \
+  --denom "$sent_denom" \
+  --receiver "$SIDECHAIN_RECEIVER" \
+  --timeout-seconds 3600 \
   --memo "$memo" ||
   exit 1
 echo "Waiting for transfer tx complete..."
