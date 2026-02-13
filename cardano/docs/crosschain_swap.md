@@ -1,3 +1,6 @@
+
+Julius TO-DO: Update this and make sure it is correct to the implementation once established
+
 # Cross-chain Swap
 
 Cross-chain swap is a feature allows us to leverage IBC connections to swap assets on the exchanges of other networks. In this project, we attempt to swap native assets of Cardano on the DEX of Osmosis through an IBC connection with a packet-forwarding chain we operate (a Cosmos chain dedicated to bridging).
