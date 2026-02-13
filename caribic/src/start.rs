@@ -2457,6 +2457,8 @@ pub fn comprehensive_health_check(
         ("mithril", "Mithril (Aggregator + Signers)"),
         ("hermes", "Hermes Relayer Daemon"),
         ("cosmos", "Cosmos Entrypoint chain (packet-forwarding)"),
+        ("osmosis", "Osmosis appchain"),
+        ("redis", "Osmosis Redis sidecar"),
     ];
 
     for (service_name, service_label) in services {
@@ -2478,6 +2480,8 @@ pub fn comprehensive_health_check(
             "mithril" => check_mithril_health(&mithril_dir),
             "hermes" => check_hermes_daemon_health(&relayer_path),
             "cosmos" => check_cosmos_health(),
+            "osmosis" => check_osmosis_health(),
+            "redis" => check_osmosis_redis_health(),
             _ => (false, "Unknown service".to_string()),
         };
 
@@ -2830,4 +2834,52 @@ fn check_cosmos_health() -> (bool, String) {
     }
 
     (false, "Not running (port 26657 not accessible)".to_string())
+}
+
+/// Check local Osmosis appchain health (RPC on port 26658)
+fn check_osmosis_health() -> (bool, String) {
+    let port_check = Command::new("nc")
+        .args(&["-z", "localhost", "26658"])
+        .output();
+
+    if let Ok(output) = port_check {
+        if output.status.success() {
+            let status_check = Command::new("curl")
+                .args(&[
+                    "-s",
+                    "--connect-timeout",
+                    "3",
+                    "http://127.0.0.1:26658/status",
+                ])
+                .output();
+
+            if let Ok(status_output) = status_check {
+                if status_output.status.success() {
+                    let stdout = String::from_utf8_lossy(&status_output.stdout);
+                    if stdout.contains("result") {
+                        return (true, "Running on port 26658".to_string());
+                    }
+                }
+            }
+
+            return (true, "Port 26658 accessible".to_string());
+        }
+    }
+
+    (false, "Not running (port 26658 not accessible)".to_string())
+}
+
+/// Check local Osmosis Redis sidecar health (Redis on port 6379)
+fn check_osmosis_redis_health() -> (bool, String) {
+    let port_check = Command::new("nc")
+        .args(&["-z", "localhost", "6379"])
+        .output();
+
+    if let Ok(output) = port_check {
+        if output.status.success() {
+            return (true, "Running on port 6379".to_string());
+        }
+    }
+
+    (false, "Not running (port 6379 not accessible)".to_string())
 }
