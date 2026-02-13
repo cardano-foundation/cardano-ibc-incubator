@@ -2188,32 +2188,6 @@ async fn check_json_array_non_empty(client: &reqwest::Client, url: &str) -> bool
     }
 }
 
-async fn wait_for_json_array_non_empty(
-    client: &reqwest::Client,
-    url: &str,
-    max_attempts: usize,
-    interval: Duration,
-) -> bool {
-    // Some services (notably the local Mithril aggregator) intentionally return `[]` until they
-    // have produced their first artifacts. For our readiness checks, "non-empty array" is the
-    // simplest portable signal that the service is usable for subsequent tests.
-    let start = Instant::now();
-    for attempt in 0..max_attempts {
-        if check_json_array_non_empty(client, url).await {
-            return true;
-        }
-        logger::verbose(&format!(
-            "   Waiting for {} (attempt {}/{}, elapsed {}s)...",
-            url,
-            attempt + 1,
-            max_attempts,
-            start.elapsed().as_secs()
-        ));
-        tokio::time::sleep(interval).await;
-    }
-    false
-}
-
 fn is_mithril_artifact_readiness_error(error: &str) -> bool {
     (error.contains("query_new_client") && error.contains("Not found: \"height\""))
         || error.contains("no Mithril stake distributions available")
