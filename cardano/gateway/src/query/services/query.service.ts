@@ -112,6 +112,7 @@ import {
 } from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
 import { DenomTrace } from '@plus/proto-types/build/ibc/applications/transfer/v1/transfer';
 import { DenomTraceService } from './denom-trace.service';
+import { convertHex2String } from '@shared/helpers/hex';
 
 @Injectable()
 export class QueryService {
@@ -940,30 +941,51 @@ export class QueryService {
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
     this.logger.log(
-      `packet_src_channel = ${request.packet_src_channel}, packet_sequence=${request.packet_sequence}`,
+      `packet_src_channel = ${request.packet_src_channel}, packet_dst_channel = ${request.packet_dst_channel}, packet_sequence=${request.packet_sequence}`,
       'QueryBlockSearch',
     );
     try {
-      const { packet_sequence, packet_src_channel: srcChannelId, limit, page } = request;
+      const {
+        packet_sequence,
+        packet_src_channel: srcChannelId,
+        packet_dst_channel: dstChannelId,
+        limit,
+        page,
+      } = request;
       const deploymentConfig = this.configService.get('deployment');
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
       const mintChannelScriptHash = deploymentConfig.validators.mintChannelStt.scriptHash;
       const spendAddress = deploymentConfig.validators.spendChannel.address;
       if (!request.packet_src_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
         throw new GrpcInvalidArgumentException(
-          `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+          `Invalid argument: "packet_src_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
         );
-      const channelId = srcChannelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+      if (!request.packet_dst_channel.startsWith(`${CHANNEL_ID_PREFIX}-`))
+        throw new GrpcInvalidArgumentException(
+          `Invalid argument: "packet_dst_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+        );
 
-      const channelTokenName = this.lucidService.generateTokenName(
-        hostStateNFT,
-        CHANNEL_TOKEN_PREFIX,
-        BigInt(channelId),
+      const candidateChannelIds = Array.from(new Set([srcChannelId, dstChannelId]));
+      const channelTokenNames = candidateChannelIds.map((channelId) =>
+        this.lucidService.generateTokenName(
+          hostStateNFT,
+          CHANNEL_TOKEN_PREFIX,
+          BigInt(channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '')),
+        ),
       );
-      const utxosOfChannel = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
-        mintChannelScriptHash,
-        channelTokenName,
-      );
+
+      const utxosByRef = new Map<string, Awaited<ReturnType<DbSyncService['findUtxosByPolicyIdAndPrefixTokenName']>>[number]>();
+      for (const channelTokenName of channelTokenNames) {
+        const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
+          mintChannelScriptHash,
+          channelTokenName,
+        );
+        for (const utxo of utxos) {
+          utxosByRef.set(`${utxo.txId.toString()}#${utxo.outputIndex ?? ''}`, utxo);
+        }
+      }
+
+      const utxosOfChannel = Array.from(utxosByRef.values());
       let blockResults: ResultBlockSearch[] = await Promise.all(
         utxosOfChannel.map(async (utxo) => {
           let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
@@ -985,7 +1007,16 @@ export class QueryService {
             if (spendRedeemer['TimeoutPacket']) packet = spendRedeemer['TimeoutPacket']?.packet as unknown as Packet;
             if (spendRedeemer['SendPacket']) packet = spendRedeemer['SendPacket']?.packet as unknown as Packet;
             if (!packet) continue;
-            if (packet.sequence === BigInt(packet_sequence)) {
+            const packetSourceChannel = convertHex2String(packet.source_channel);
+            const packetDestinationChannel = convertHex2String(packet.destination_channel);
+            const directChannelMatch =
+              packetSourceChannel === srcChannelId && packetDestinationChannel === dstChannelId;
+            const reverseChannelMatch =
+              packetSourceChannel === dstChannelId && packetDestinationChannel === srcChannelId;
+            if (
+              packet.sequence === BigInt(packet_sequence) &&
+              (directChannelMatch || reverseChannelMatch)
+            ) {
               isMatched = true;
               break;
             }

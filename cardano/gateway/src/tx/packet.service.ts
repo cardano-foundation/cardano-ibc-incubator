@@ -760,13 +760,10 @@ export class PacketService {
             'iBCModuleRedeemer',
           );
 
-          if (
-            this._hasVoucherPrefix(
-              fungibleTokenPacketData.denom,
-              convertHex2String(packet.destination_port),
-              convertHex2String(packet.destination_channel),
-            )
-          ) {
+          const packetSourcePort = convertHex2String(packet.source_port);
+          const packetSourceChannel = convertHex2String(packet.source_channel);
+
+          if (this._hasVoucherPrefix(fungibleTokenPacketData.denom, packetSourcePort, packetSourceChannel)) {
             // Handle recv packet unescrow
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -791,8 +788,8 @@ export class PacketService {
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
             const unescrowDenom = this._unwrapVoucherDenom(
               fungibleTokenPacketData.denom,
-              convertHex2String(packet.destination_port),
-              convertHex2String(packet.destination_channel),
+              packetSourcePort,
+              packetSourceChannel,
             );
             const transferAmount = BigInt(fungibleTokenPacketData.amount);
             const denomToken = this._resolveAssetUnitFromUtxoAssets(
@@ -849,8 +846,8 @@ export class PacketService {
 
             // Add prefix voucher prefix with denom token
             const sourcePrefix = getDenomPrefix(
-              convertHex2String(packet.destination_port),
-              convertHex2String(packet.destination_channel),
+              packetSourcePort,
+              packetSourceChannel,
             );
 
             const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
