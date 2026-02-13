@@ -22,7 +22,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs::{self};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::Duration;
@@ -1008,10 +1008,18 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     let script_dir = osmosis_dir.join("scripts");
     ensure_localosmosis_chain_in_hermes_config(script_dir.as_path())?;
+    let hermes_binary = resolve_local_hermes_binary(osmosis_dir)?;
+    let hermes_binary_str = hermes_binary.to_str().ok_or_else(|| {
+        format!(
+            "Hermes binary path is not valid UTF-8: {}",
+            hermes_binary.display()
+        )
+    })?;
+    verbose(&format!("Using Hermes binary at {}", hermes_binary.display()));
 
     execute_script(
         script_dir.as_path(),
-        "hermes",
+        hermes_binary_str,
         Vec::from([
             "keys",
             "add",
@@ -1026,7 +1034,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     execute_script(
         script_dir.as_path(),
-        "hermes",
+        hermes_binary_str,
         Vec::from([
             "keys",
             "add",
@@ -1050,7 +1058,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     let mut local_osmosis_client_id = None;
     for _ in 0..10 {
         // Try to create osmosis client
-        let hermes_create_client_output = Command::new("hermes")
+        let hermes_create_client_output = Command::new(&hermes_binary)
             .current_dir(&script_dir)
             .args(&[
                 "create",
@@ -1087,7 +1095,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         ));
 
         // Create Cosmos Entrypoint chain client (Hermes chain id: "sidechain")
-        let create_entrypoint_chain_client_output = Command::new("hermes")
+        let create_entrypoint_chain_client_output = Command::new(&hermes_binary)
             .current_dir(&script_dir)
             .args(&[
                 "create",
@@ -1119,7 +1127,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                 &optional_progress_bar,
             );
             // Create connection
-            let create_connection_output = Command::new("hermes")
+            let create_connection_output = Command::new(&hermes_binary)
                 .current_dir(&script_dir)
                 .args(&[
                     "create",
@@ -1151,7 +1159,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                     &format!("{} Create a channel", style("Step 4/4").bold().dim()),
                     &optional_progress_bar,
                 );
-                let create_channel_output = Command::new("hermes")
+                let create_channel_output = Command::new(&hermes_binary)
                     .current_dir(&script_dir)
                     .args(&[
                         "create",
@@ -1191,6 +1199,19 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
     }
 
     Ok(())
+}
+
+fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let mut current = Some(osmosis_dir);
+    while let Some(directory) = current {
+        let candidate = directory.join("relayer/target/release/hermes");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        current = directory.parent();
+    }
+
+    Err("Hermes binary not found at relayer/target/release/hermes. Run 'caribic start relayer' first so the demo uses the local Cardano-enabled Hermes binary.".into())
 }
 
 fn ensure_localosmosis_chain_in_hermes_config(
