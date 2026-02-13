@@ -1,7 +1,17 @@
 #==================================Define util funcions=======================================
 check_string_empty() {
-  [ -z $1 ] && echo "$2" && exit 1
+  [ -z "$1" ] && echo "$2" && exit 1
 }
+
+script_dir=$(dirname "$(realpath "$0")")
+repo_root=$(realpath "$script_dir/../../..")
+HERMES_BIN="$repo_root/relayer/target/release/hermes"
+
+if [ ! -x "$HERMES_BIN" ]; then
+  echo "Local Hermes binary not found at $HERMES_BIN."
+  echo "Run: cd $repo_root/relayer && cargo build --release --bin hermes"
+  exit 1
+fi
 
 # Function to resolve the latest transfer channel id between two Hermes chains
 get_latest_transfer_channel_id() {
@@ -9,7 +19,7 @@ get_latest_transfer_channel_id() {
   _counterparty_chain="$2"
 
   _channel_id=$(
-    hermes --json query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
+    "$HERMES_BIN" --json query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
       jq -r '
         select(.result) |
         (if (.result | type) == "array" then .result[-1] else .result end) |
@@ -19,7 +29,7 @@ get_latest_transfer_channel_id() {
 
   if [ -z "$_channel_id" ]; then
     _channel_id=$(
-      hermes query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
+      "$HERMES_BIN" query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
         tr '[:space:]' '\n' |
         grep '^channel-' |
         head -n 1
@@ -34,12 +44,50 @@ log_tx() {
   _log_tx_txhash=$(sed -n 's/^\(txhash: .*\)/\1/p')
   echo "$_log_tx_txhash"
 }
-#==================================Check required tools=====================================
-osmosisd_location=$(which osmosisd)
-check_string_empty "$osmosisd_location" "osmosisd not found. Exiting..."
 
-osmosisd_location=$(which hermes)
-check_string_empty "$osmosisd_location" "hermes not found. Exiting..."
+print_transfer_diagnostics() {
+  echo "=== Diagnostics: packet pending on Cardano->Entrypoint channel ==="
+  "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id" || true
+
+  echo "=== Diagnostics: packet pending on Entrypoint->Osmosis channel ==="
+  "$HERMES_BIN" query packet pending --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id" || true
+}
+
+wait_for_osmosis_ibc_denom() {
+  _receiver="$1"
+  _timeout_seconds="${2:-600}"
+  _poll_interval="${3:-10}"
+  _start_epoch=$(date +%s)
+  _attempt=1
+
+  while true; do
+    _denom=$(osmosisd query bank balances "$_receiver" $QUERY_FLAGS | jq -r '.balances[]? | select(.denom | startswith("ibc/")) | .denom' | head -n 1)
+    if [ -n "$_denom" ] && [ "$_denom" != "null" ]; then
+      echo "$_denom"
+      return 0
+    fi
+
+    _elapsed=$(( $(date +%s) - _start_epoch ))
+    if [ "$_elapsed" -ge "$_timeout_seconds" ]; then
+      echo "Timed out after ${_timeout_seconds}s while waiting for IBC voucher on Osmosis receiver ${_receiver}."
+      print_transfer_diagnostics
+      return 1
+    fi
+
+    if [ $(( _attempt % 6 )) -eq 0 ]; then
+      echo "Still waiting for IBC voucher on Osmosis (${_elapsed}s elapsed)..."
+      print_transfer_diagnostics
+    fi
+
+    sleep "$_poll_interval"
+    _attempt=$(( _attempt + 1 ))
+  done
+}
+#==================================Check required tools=====================================
+if ! command -v osmosisd >/dev/null 2>&1; then
+  echo "osmosisd not found. Exiting..."
+  exit 1
+fi
 
 #==================================Setup deployer key=======================================
 echo "quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty" |
@@ -55,6 +103,7 @@ HERMES_SIDECHAIN_NAME="sidechain"
 HERMES_OSMOSIS_NAME="localosmosis"
 SENT_AMOUNT="12345678-465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b"
 SIDECHAIN_RECEIVER="pfm"
+QUERY_FLAGS="--node http://localhost:26658 --output json"
 
 # query channels' id
 cardano_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_SIDECHAIN_NAME")
@@ -79,7 +128,7 @@ sent_denom="${SENT_AMOUNT#*-}"
 check_string_empty "$sent_amount" "Transfer amount not found in SENT_AMOUNT. Exiting..."
 check_string_empty "$sent_denom" "Transfer denom not found in SENT_AMOUNT. Exiting..."
 
-hermes tx ft-transfer \
+"$HERMES_BIN" tx ft-transfer \
   --src-chain "$HERMES_CARDANO_NAME" \
   --dst-chain "$HERMES_SIDECHAIN_NAME" \
   --src-port transfer \
@@ -90,13 +139,9 @@ hermes tx ft-transfer \
   --timeout-seconds 3600 \
   --memo "$memo" ||
   exit 1
-echo "Waiting for transfer tx complete..."
-sleep 600
-
-QUERY_FLAGS="--node http://localhost:26658 --output json"
-
-denom=$(osmosisd query bank balances "$deployer" $QUERY_FLAGS | jq -r '.balances[] | select(.denom | contains("ibc")) | .denom')
-check_string_empty "$denom" "IBC token on Osmosis not found. Exiting..."
+echo "Waiting for IBC voucher to arrive on Osmosis..."
+denom=$(wait_for_osmosis_ibc_denom "$deployer" 600 10) || exit 1
+check_string_empty "$denom" "IBC token on Osmosis not found after waiting. Exiting..."
 echo "Sent IBC Denom: $denom"
 
 #==================================Create Osmosis swap pool=======================================
@@ -120,8 +165,6 @@ check_string_empty "$pool_id" "Pool ID on Osmosis not found. Exiting..."
 echo "Created Pool ID: $pool_id"
 
 #==================================Setup swaprouter contract=======================================
-script_dir=$(dirname $(realpath $0))
-
 # Store the swaprouter contract
 osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
 sleep 6
@@ -162,7 +205,7 @@ crosschain_swaps_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.
 check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
 echo "crosschain_swaps code id: $crosschain_swaps_code_id"
 
-osmosis_sidechain_chann_id=$(hermes --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" | jq -r 'select(.result) | .result[-1].channel_id')
+osmosis_sidechain_chann_id=$("$HERMES_BIN" --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" | jq -r 'select(.result) | .result[-1].channel_id')
 echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
 
 # Instantiate crosschain_swaps
