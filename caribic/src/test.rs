@@ -1035,7 +1035,7 @@ pub async fn run_integration_tests(
                     )
                     .unwrap_or_else(|err| format!("Failed to query Cardano UTxOs: {}", err));
                     logger::log(&format!(
-                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> sidechain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n",
+                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n",
                         format_duration(elapsed),
                         e,
                         cardano_receiver_address,
@@ -1202,7 +1202,7 @@ pub async fn run_integration_tests(
                                 Err(e) => {
                                     let elapsed = test_11.finish();
                                     logger::log(&format!(
-                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (took {}) (denom={})\n{}\n",
+                                        "FAIL Test 11: Denom-trace reverse lookup failed for Entrypoint chain voucher denom (took {}) (denom={})\n{}\n",
                                         format_duration(elapsed),
                                         minted_denom,
                                         e
@@ -1219,7 +1219,7 @@ pub async fn run_integration_tests(
                         } else {
                             let elapsed = test_11.finish();
                             logger::log(&format!(
-                                "FAIL Test 11: No new IBC voucher denom minted on sidechain (took {})\n",
+                                "FAIL Test 11: No new IBC voucher denom minted on Entrypoint chain (took {})\n",
                                 format_duration(elapsed)
                             ));
                             dump_test_11_ics20_diagnostics(
@@ -2039,7 +2039,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         .into());
     }
 
-    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain (Cosmos Entrypoint chain; Hermes id: sidechain)");
 
     let mut command = Command::new(&hermes_binary);
     command.args(&[
@@ -2121,7 +2121,7 @@ fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::er
     // PastHorizon/slot horizon issues, etc).
     let hermes_binary = project_root.join("relayer/target/release/hermes");
 
-    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain (Cosmos Entrypoint chain; Hermes id: sidechain)");
 
     let mut command = Command::new(&hermes_binary);
     command.args(&[
@@ -2710,7 +2710,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         .no_proxy()
         .timeout(Duration::from_secs(3))
         .build()
-        .map_err(|e| format!("Failed to build sidechain HTTP client: {}", e))?;
+        .map_err(|e| format!("Failed to build Entrypoint chain HTTP client: {}", e))?;
 
     let candidates = [
         format!(
@@ -2735,7 +2735,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
 
         if !resp.status().is_success() {
             last_err = Some(format!(
-                "Sidechain denom-trace query returned HTTP {} for {}",
+                "Entrypoint chain denom-trace query returned HTTP {} for {}",
                 resp.status(),
                 url
             ));
@@ -2744,14 +2744,14 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
 
         let json: serde_json::Value = resp
             .json()
-            .map_err(|e| format!("Failed to parse sidechain denom-trace response JSON: {}", e))?;
+            .map_err(|e| format!("Failed to parse Entrypoint chain denom-trace response JSON: {}", e))?;
 
         let trace = json
             .get("denom_trace")
             .or_else(|| json.get("denomTrace"))
             .ok_or_else(|| {
                 format!(
-                    "Sidechain denom-trace response missing denom_trace: {}",
+                    "Entrypoint chain denom-trace response missing denom_trace: {}",
                     json
                 )
             })?;
@@ -2759,7 +2759,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         let path = trace
             .get("path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Sidechain denom-trace response missing path: {}", json))?;
+            .ok_or_else(|| format!("Entrypoint chain denom-trace response missing path: {}", json))?;
 
         let base_denom = trace
             .get("base_denom")
@@ -2767,7 +2767,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
                 format!(
-                    "Sidechain denom-trace response missing base_denom: {}",
+                    "Entrypoint chain denom-trace response missing base_denom: {}",
                     json
                 )
             })?;
@@ -2775,7 +2775,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         return Ok((path.to_string(), base_denom.to_string()));
     }
 
-    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
+    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
 }
 
 fn assert_sidechain_denom_trace(
@@ -2792,7 +2792,7 @@ fn assert_sidechain_denom_trace(
             Ok((path, base_denom)) => {
                 if path != expected_path || base_denom != expected_base_denom {
                     return Err(format!(
-                        "Sidechain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
+                        "Entrypoint chain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
                         hash, expected_path, expected_base_denom, path, base_denom
                     ));
                 }
@@ -2807,7 +2807,7 @@ fn assert_sidechain_denom_trace(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
+    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
 }
 
 fn query_cardano_lovelace_total(
@@ -3232,10 +3232,10 @@ fn dump_test_11_ics20_diagnostics(
     sidechain_channel_id: &str,
     sidechain_address: &str,
 ) {
-    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> sidechain) ===");
+    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
-    logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
-    logger::log(&format!("sidechain address:      {}", sidechain_address));
+    logger::log(&format!("entrypoint channel:     {}", sidechain_channel_id));
+    logger::log(&format!("entrypoint address:     {}", sidechain_address));
     logger::log("");
 
     let hermes_packet_subcmds = ["pending", "commitments", "acks"];
@@ -3276,10 +3276,10 @@ fn dump_test_11_ics20_diagnostics(
         if let Err(e) = run_hermes_and_print_allow_not_found(
             project_root,
             &sidechain_args,
-            &format!("hermes query packet {} (sidechain)", subcmd),
+            &format!("hermes query packet {} (entrypoint chain)", subcmd),
         ) {
             logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on sidechain: {}\n",
+                "(diagnostics) Failed to run hermes query packet {} on entrypoint chain: {}\n",
                 subcmd, e
             ));
         }
@@ -3287,7 +3287,7 @@ fn dump_test_11_ics20_diagnostics(
 
     match query_sidechain_balances(sidechain_address) {
         Ok(balances) => {
-            logger::log("=== sidechain balances (bank) ===");
+            logger::log("=== entrypoint chain balances (bank) ===");
             if balances.is_empty() {
                 logger::log("(no balances returned)");
             } else {
@@ -3303,7 +3303,7 @@ fn dump_test_11_ics20_diagnostics(
                 .cloned()
                 .collect();
             if !ibc_denoms.is_empty() {
-                logger::log("=== sidechain denom traces (reverse lookup) ===");
+                logger::log("=== entrypoint chain denom traces (reverse lookup) ===");
                 for denom in ibc_denoms.into_iter().take(20) {
                     let hash = denom.strip_prefix("ibc/").unwrap_or(denom.as_str());
                     match query_sidechain_denom_trace(hash) {
@@ -3320,7 +3320,7 @@ fn dump_test_11_ics20_diagnostics(
         }
         Err(e) => {
             logger::log(&format!(
-                "(diagnostics) Failed to query sidechain balances: {}\n",
+                "(diagnostics) Failed to query entrypoint chain balances: {}\n",
                 e
             ));
         }

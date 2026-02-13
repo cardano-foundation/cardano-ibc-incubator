@@ -995,9 +995,10 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix("Asking Hermes to connect Osmosis and Cosmos ...".to_owned());
+        progress_bar
+            .set_prefix("Asking Hermes to connect Osmosis and the Entrypoint chain ...".to_owned());
     } else {
-        log("Asking Hermes to connect Osmosis and Cosmos ...");
+        log("Asking Hermes to connect Osmosis and the Entrypoint chain ...");
     }
 
     log_or_show_progress(
@@ -1028,6 +1029,8 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
         .expect("Failed to copy Hermes configuration file");
     }
 
+    // NOTE: Hermes chain id remains `sidechain` for compatibility, but this is our
+    // Cosmos Entrypoint chain.
     execute_script(
         script_dir.as_path(),
         "hermes",
@@ -2244,7 +2247,7 @@ pub fn hermes_keys_list(
 
         if sidechain_output.status.success() {
             let output_str = String::from_utf8_lossy(&sidechain_output.stdout);
-            result.push_str("entrypoint-chain (chain id: sidechain):\n");
+            result.push_str("entrypoint-chain (Hermes chain id: sidechain):\n");
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
