@@ -26,6 +26,50 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## SendPacket Escrow Flow
+
+This sequence shows the user-funded escrow transfer path from request to on-chain submission.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant F as Frontend
+  participant T as Gateway Tx Service
+  participant L as Lucid Service
+  participant W as User Wallet
+  participant H as Hermes
+  participant N as Cardano Node
+  participant K as Kupo
+  participant D as db-sync
+
+  U->>F: Enter amount and destination
+  F->>T: MsgTransfer request
+  T->>L: build unsigned sendPacket (escrow)
+  L-->>T: channel/client/module UTxOs
+  T->>L: find sender UTxOs
+  alt sender UTxOs missing
+    T-->>F: error (fail immediately)
+  else sender UTxOs found
+    T->>L: create unsigned escrow tx using sender UTxOs
+    L-->>T: unsigned tx
+    T-->>F: unsigned tx bytes
+    F->>W: request signature
+    W-->>F: signed tx bytes
+    F->>H: hand off signed tx
+    H->>N: submit signed tx
+    N-->>H: tx hash
+    N-->>K: new UTxOs indexed
+    N-->>D: tx and block indexed
+  end
+```
+
+Related diagrams:
+
+- System architecture: `../../README.md#architecture-at-a-glance`
+- Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
+- Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
+
 ## Installation
 
 ```bash
