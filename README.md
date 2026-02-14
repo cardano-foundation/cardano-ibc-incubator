@@ -24,6 +24,88 @@ This repository is divided into five main directories:
 - `relayer`: A fork of [Hermes](https://hermes.informal.systems/) (Rust IBC relayer) with Cardano integration. This replaces the deprecated Go relayer and provides native `ChainEndpoint` implementation for Cardano chains.
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
 
+## Architecture At A Glance
+
+```mermaid
+flowchart LR
+  subgraph Client["Client Layer"]
+    UI["Frontend UI"]
+    UW["User Wallet"]
+  end
+
+  subgraph Gateway["Cardano Gateway"]
+    TX["Tx Service"]
+    QUERY["Query Service"]
+    LUCID["Lucid Service"]
+    TRACE["Denom Trace Service"]
+  end
+
+  subgraph OnChain["On-Chain Validators"]
+    HOST["host_state_stt.ak"]
+    CH_SEND["spending_channel/<br/>send_packet.ak"]
+    CH_RECV["spending_channel/<br/>recv_packet.ak"]
+    CH_ACK["spending_channel/<br/>acknowledge_packet.ak"]
+    CH_TIMEOUT["spending_channel/<br/>timeout_packet.ak"]
+    TRANSFER["spending_transfer_module.ak"]
+    VOUCHER["minting_voucher.ak"]
+  end
+
+  subgraph CardanoInfra["Cardano Infrastructure"]
+    NODE["cardano-node"]
+    KUPO["Kupo"]
+    DBSYNC["db-sync + Postgres"]
+    MITHRIL["Mithril Snapshot<br/>+ Proof APIs"]
+  end
+
+  subgraph Relay["Relay and Counterparty"]
+    HERMES["Hermes Relayer"]
+    COSMOS["Counterparty Chain"]
+  end
+
+  UI -->|"build unsigned transfer request"| TX
+  UW -->|"sign unsigned tx"| UI
+  TX -->|"assemble tx body"| LUCID
+  LUCID -->|"uses validators in tx scripts"| HOST
+  LUCID -->|"send-packet validation"| CH_SEND
+  LUCID -->|"recv-packet validation"| CH_RECV
+  LUCID -->|"ack-packet validation"| CH_ACK
+  LUCID -->|"timeout-packet validation"| CH_TIMEOUT
+  LUCID -->|"uses validators in tx scripts"| TRANSFER
+  LUCID -->|"uses validators in tx scripts"| VOUCHER
+
+  HERMES -->|"submit signed tx"| NODE
+  HERMES -->|"recv/ack/timeout calls"| TX
+  HERMES <-->|"IBC packets and proofs"| COSMOS
+
+  QUERY -->|"UTxO and datum reads"| KUPO
+  QUERY -->|"indexed tx/block queries"| DBSYNC
+  QUERY -->|"snapshot and proof queries"| MITHRIL
+  TX -->|"denom trace writes<br/>and updates"| TRACE
+  TRACE -->|"persist trace rows"| DBSYNC
+
+  NODE -->|"chain indexing feed"| KUPO
+  NODE -->|"chain indexing feed"| DBSYNC
+
+  classDef client fill:#e8f1ff,stroke:#2b5cab,color:#0f172a
+  classDef gateway fill:#e9f8ee,stroke:#2f7d4a,color:#0b1f14
+  classDef onchain fill:#fff4e5,stroke:#a05a00,color:#2b1a00
+  classDef infra fill:#f2f4f7,stroke:#4a5568,color:#111827
+  classDef relay fill:#fdecef,stroke:#b4233d,color:#3a0f16
+
+  class UI,UW client
+  class TX,QUERY,LUCID,TRACE gateway
+  class HOST,CH_SEND,CH_RECV,CH_ACK,CH_TIMEOUT,TRANSFER,VOUCHER onchain
+  class NODE,KUPO,DBSYNC,MITHRIL infra
+  class HERMES,COSMOS relay
+```
+
+Additional architecture diagrams:
+
+- Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
+- Denom trace lifecycle: `docs/denom-trace-mapping.md`
+- Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
+- Diagram index: `docs/architecture-overview.md`
+
 ### Relayer Implementation (Hermes)
 
 This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support. The relayer is integrated as a **git submodule** pointing to:
