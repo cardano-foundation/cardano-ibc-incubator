@@ -371,6 +371,32 @@ pub fn execute_script(
     Ok(output)
 }
 
+/// Runs a command in the foreground so interactive prompts render directly in the terminal.
+pub fn execute_script_interactive(
+    script_dir: &Path,
+    script_name: &str,
+    script_args: Vec<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_args_display = script_args.join(" ");
+    let status = Command::new(script_name)
+        .current_dir(script_dir)
+        .args(&script_args)
+        .status()?;
+
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Command failed (status={}): {} {}",
+                status, script_name, script_args_display
+            ),
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 pub fn execute_script_with_progress(
     script_dir: &Path,
     script_name: &str,
@@ -557,29 +583,6 @@ pub fn extract_tendermint_connection_id(output: Output) -> Option<String> {
         }
     }
     None
-}
-
-pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<()> {
-    fs::create_dir_all(dst.as_ref()).expect("failed to create target folder");
-
-    // Iterate through the entries in the source directory
-    for entry in fs::read_dir(src)? {
-        let entry = entry?;
-        let file_type = entry.file_type()?;
-
-        // Get the source and destination paths
-        let src_path = entry.path();
-        let dst_path = dst.as_ref().join(entry.file_name());
-
-        // If it's a directory, recursively copy it
-        if file_type.is_dir() {
-            copy_dir_all(&src_path, &dst_path)?;
-        } else {
-            // If it's a file, just copy it
-            fs::copy(&src_path, &dst_path)?;
-        }
-    }
-    Ok(())
 }
 
 pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {

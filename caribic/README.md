@@ -26,24 +26,26 @@ caribic start
 caribic start --clean --with-mithril
 caribic start bridge
 caribic start cosmos --clean
+caribic start osmosis
 ```
 
 ### `caribic stop [target]`
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `cosmos`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
 ```bash
 caribic stop
 caribic stop bridge
+caribic stop osmosis
 ```
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos). Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis). Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check
