@@ -50,6 +50,8 @@ enum StartTarget {
     Bridge,
     /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
     Cosmos,
+    /// Starts only the local Osmosis appchain
+    Osmosis,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -68,6 +70,8 @@ enum StopTarget {
     Bridge,
     /// Stops the Cosmos Entrypoint chain
     Cosmos,
+    /// Stops only the local Osmosis appchain
+    Osmosis,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -97,7 +101,7 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -108,7 +112,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, osmosis, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -120,7 +124,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, hermes)
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis)
         #[arg(long)]
         service: Option<String>,
     },
@@ -421,6 +425,10 @@ async fn main() {
                         "Cosmos Entrypoint chain",
                     );
                     logger::log("\nCosmos Entrypoint chain stopped successfully");
+                }
+                Some(StopTarget::Osmosis) => {
+                    stop_osmosis(osmosis_dir.as_path());
+                    logger::log("\nOsmosis appchain stopped successfully");
                 }
                 Some(StopTarget::Demo) => {
                     stop_cosmos(
@@ -791,6 +799,29 @@ async fn main() {
                     }
                     Err(error) => {
                         logger::error(&format!("ERROR: Failed to start Mithril: {}", error));
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            if target == Some(StartTarget::Osmosis) {
+                let osmosis_dir = utils::get_osmosis_dir(project_root_path);
+
+                match prepare_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("PASS: Osmosis appchain prepared"),
+                    Err(error) => {
+                        logger::error(&format!(
+                            "ERROR: Failed to prepare Osmosis appchain: {}",
+                            error
+                        ));
+                        std::process::exit(1);
+                    }
+                }
+
+                match start_osmosis(osmosis_dir.as_path()).await {
+                    Ok(_) => logger::log("PASS: Osmosis appchain started successfully"),
+                    Err(error) => {
+                        logger::error(&format!("ERROR: Failed to start Osmosis: {}", error));
                         std::process::exit(1);
                     }
                 }

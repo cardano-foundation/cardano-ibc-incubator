@@ -371,6 +371,32 @@ pub fn execute_script(
     Ok(output)
 }
 
+/// Runs a command in the foreground so interactive prompts render directly in the terminal.
+pub fn execute_script_interactive(
+    script_dir: &Path,
+    script_name: &str,
+    script_args: Vec<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_args_display = script_args.join(" ");
+    let status = Command::new(script_name)
+        .current_dir(script_dir)
+        .args(&script_args)
+        .status()?;
+
+    if !status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Command failed (status={}): {} {}",
+                status, script_name, script_args_display
+            ),
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 pub fn execute_script_with_progress(
     script_dir: &Path,
     script_name: &str,

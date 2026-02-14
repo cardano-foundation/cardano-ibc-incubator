@@ -888,13 +888,12 @@ pub async fn run_integration_tests(
             let timeout_height_offset = 100;
             let timeout_seconds = 600;
 
-            let mut transfer_result: Result<(), Box<dyn std::error::Error>> = Err(
-                std::io::Error::new(
+            let mut transfer_result: Result<(), Box<dyn std::error::Error>> =
+                Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "hermes ft-transfer not attempted",
                 )
-                .into(),
-            );
+                .into());
             let transfer_attempts = 5;
             let transfer_retry_delay = Duration::from_secs(10);
             for attempt in 1..=transfer_attempts {
@@ -1024,16 +1023,14 @@ pub async fn run_integration_tests(
                 },
                 Err(e) => {
                     let elapsed = test_10.finish();
-                    let cardano_lovelace_total = query_cardano_lovelace_total(
-                        project_root,
-                        &cardano_receiver_address,
-                    )
-                    .unwrap_or(0);
-                    let cardano_utxos = query_cardano_utxos_json(
-                        project_root,
-                        &cardano_receiver_address,
-                    )
-                    .unwrap_or_else(|err| format!("Failed to query Cardano UTxOs: {}", err));
+                    let cardano_lovelace_total =
+                        query_cardano_lovelace_total(project_root, &cardano_receiver_address)
+                            .unwrap_or(0);
+                    let cardano_utxos =
+                        query_cardano_utxos_json(project_root, &cardano_receiver_address)
+                            .unwrap_or_else(|err| {
+                                format!("Failed to query Cardano UTxOs: {}", err)
+                            });
                     logger::log(&format!(
                         "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n",
                         format_duration(elapsed),
@@ -1122,11 +1119,15 @@ pub async fn run_integration_tests(
             ) {
                 Ok(_) => {
                     let sidechain_balances_after = query_sidechain_balances(&sidechain_address)?;
-                    let cardano_native_after =
-                        query_cardano_asset_total(project_root, &cardano_sender_address, &base_denom)?;
+                    let cardano_native_after = query_cardano_asset_total(
+                        project_root,
+                        &cardano_sender_address,
+                        &base_denom,
+                    )?;
                     let cardano_root_after = query_handler_state_root(project_root)?;
 
-                    let native_token_delta = cardano_native_before.saturating_sub(cardano_native_after);
+                    let native_token_delta =
+                        cardano_native_before.saturating_sub(cardano_native_after);
                     if native_token_delta < amount {
                         let elapsed = test_11.finish();
                         logger::log(&format!(
@@ -1278,8 +1279,9 @@ pub async fn run_integration_tests(
     // Send the voucher minted in Test 11 back to Cardano and verify:
     //   - Voucher is burned on Cosmos
     //   - Escrowed Cardano native token is released back to the Cardano receiver
-    let mut test_12 =
-        TestTimer::start("Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...");
+    let mut test_12 = TestTimer::start(
+        "Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
+    );
     if cardano_native_transfer_passed {
         if let (Some(voucher_denom), Some(sidechain_channel_id), Some(base_denom)) = (
             &cardano_native_voucher_denom,
@@ -1327,8 +1329,11 @@ pub async fn run_integration_tests(
                     Ok(_) => {
                         let sidechain_voucher_after =
                             query_sidechain_balance(&sidechain_address, voucher_denom)?;
-                        let cardano_native_after =
-                            query_cardano_asset_total(project_root, &cardano_receiver_address, base_denom)?;
+                        let cardano_native_after = query_cardano_asset_total(
+                            project_root,
+                            &cardano_receiver_address,
+                            base_denom,
+                        )?;
                         let cardano_root_after = query_handler_state_root(project_root)?;
 
                         let voucher_delta =
@@ -1351,9 +1356,12 @@ pub async fn run_integration_tests(
                                 &cardano_root_after[..16],
                             ));
                             results.failed += 1;
-                        } else if cardano_native_after.saturating_sub(cardano_native_before) < amount {
+                        } else if cardano_native_after.saturating_sub(cardano_native_before)
+                            < amount
+                        {
                             let elapsed = test_12.finish();
-                            let increase = cardano_native_after.saturating_sub(cardano_native_before);
+                            let increase =
+                                cardano_native_after.saturating_sub(cardano_native_before);
                             logger::log(&format!(
                                 "FAIL Test 12: Cardano native token balance did not increase by the returned amount (took {}) (before={}, after={}, delta={}, expected delta >= {})\n",
                                 format_duration(elapsed),
@@ -1507,7 +1515,8 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
 
         let stake_distributions_url =
             "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions";
-        let cardano_transactions_url = "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions";
+        let cardano_transactions_url =
+            "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions";
 
         // Gateway's proof-based queries require both Mithril artifact families:
         // - stake distributions
@@ -1517,7 +1526,8 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         // failures in Test 5/6 when snapshots are still empty.
         let stake_distributions_ready =
             check_json_array_non_empty(&http_client, stake_distributions_url).await;
-        let tx_snapshots_ready = check_json_array_non_empty(&http_client, cardano_transactions_url).await;
+        let tx_snapshots_ready =
+            check_json_array_non_empty(&http_client, cardano_transactions_url).await;
 
         if stake_distributions_ready && tx_snapshots_ready {
             verbose("   Mithril stake distributions available");
@@ -2742,9 +2752,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
             continue;
         }
 
-        let json: serde_json::Value = resp
-            .json()
-            .map_err(|e| format!("Failed to parse Entrypoint chain denom-trace response JSON: {}", e))?;
+        let json: serde_json::Value = resp.json().map_err(|e| {
+            format!(
+                "Failed to parse Entrypoint chain denom-trace response JSON: {}",
+                e
+            )
+        })?;
 
         let trace = json
             .get("denom_trace")
@@ -2756,10 +2769,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
                 )
             })?;
 
-        let path = trace
-            .get("path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Entrypoint chain denom-trace response missing path: {}", json))?;
+        let path = trace.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+            format!(
+                "Entrypoint chain denom-trace response missing path: {}",
+                json
+            )
+        })?;
 
         let base_denom = trace
             .get("base_denom")
@@ -2844,7 +2859,9 @@ fn query_cardano_lovelace_total(
     }
 
     let resp: serde_json::Value = serde_json::from_slice(&output.stdout)?;
-    let utxos = resp.as_object().ok_or("Cardano UTXO response is not an object")?;
+    let utxos = resp
+        .as_object()
+        .ok_or("Cardano UTXO response is not an object")?;
 
     let mut total: u64 = 0;
     for (_tx_in, entry) in utxos {
@@ -3311,7 +3328,10 @@ fn dump_test_11_ics20_diagnostics(
                             logger::log(&format!("{} -> {}/{}", denom, path, base_denom));
                         }
                         Err(e) => {
-                            logger::log(&format!("{} -> (failed to query denom-trace) {}", denom, e));
+                            logger::log(&format!(
+                                "{} -> (failed to query denom-trace) {}",
+                                denom, e
+                            ));
                         }
                     }
                 }
