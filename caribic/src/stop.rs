@@ -218,10 +218,14 @@ fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -
 
     if let Some(path) = expected_binary_path {
         if normalized_command.starts_with(path) {
+            // This is the strongest match because it ties the process to this repo's
+            // Hermes binary, not just any `hermes` executable on the machine.
             return normalized_command.ends_with(" start");
         }
     }
 
+    // Fallback only when we cannot match the absolute binary path, still requiring
+    // daemon invocation shape so we do not kill unrelated Hermes commands.
     normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 

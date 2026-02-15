@@ -177,7 +177,7 @@ export class LucidService {
   }
 
   public async findUtxoByUnit(unit: string): Promise<UTxO> {
-    // Kupo indexing can lag shortly after minting/transfers; retry briefly before failing.
+    // Kupo indexing can lag shortly after minting or transfers, retry briefly before failing.
     const maxAttempts = 10;
     const retryDelayMs = 1000;
 
@@ -211,6 +211,9 @@ export class LucidService {
       return [];
     }
 
+    // `utxosAt` can return stale references during short indexer lag windows.
+    // Re-query by out-ref and keep only live entries so wallet selection does not
+    // attempt to spend outputs that are already consumed.
     const outRefs = utxos.map((utxo) => ({
       txHash: utxo.txHash,
       outputIndex: utxo.outputIndex,
@@ -252,6 +255,8 @@ export class LucidService {
       try {
         const utxos = await this.lucid.utxosAt(normalizedAddress);
         if (utxos.length > 0) {
+          // A non-empty list is not enough on its own, we still verify liveness
+          // before returning these outputs to coin selection.
           const liveUtxos = await this.filterLiveUtxos(utxos);
           if (liveUtxos.length > 0) {
             return liveUtxos;
@@ -266,7 +271,7 @@ export class LucidService {
       }
     }
 
-    // Intentionally swallow errors here; callers can decide how to proceed with an empty UTxO set.
+    // Intentionally swallow errors here, callers can decide how to proceed with an empty UTxO set.
     // Keep the variable to aid debugging if we later decide to surface it
     void lastError;
     return [];

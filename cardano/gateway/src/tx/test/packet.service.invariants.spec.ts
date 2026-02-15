@@ -118,6 +118,24 @@ describe('PacketService denom invariants', () => {
     ).toThrow(GrpcInvalidArgumentException);
   });
 
+  it('does not fall back from escrow denom to voucher token units', () => {
+    const inputDenom = 'def68337867cb4f1f95b6b811fedbfcdd7780d10a95cc072077088ea6d6f636b';
+    const resolvedDenom = inputDenom;
+    const unrelatedVoucherTokenUnit = `voucherpolicy${hashSha3_256(convertString2Hex('transfer/channel-0/stake'))}`;
+    const senderWalletUtxos = [
+      {
+        assets: {
+          lovelace: 2_000_000n,
+          [unrelatedVoucherTokenUnit]: 10n,
+        },
+      },
+    ];
+
+    expect(() =>
+      (service as any)._resolveEscrowDenomToken(inputDenom, resolvedDenom, senderWalletUtxos),
+    ).toThrow(GrpcInvalidArgumentException);
+  });
+
   it('resolves ibc/<hash> to canonical path/base_denom for burn', async () => {
     const fullDenomPath = 'transfer/channel-0/stake';
     const hash = hashSHA256(convertString2Hex(fullDenomPath)).toUpperCase();

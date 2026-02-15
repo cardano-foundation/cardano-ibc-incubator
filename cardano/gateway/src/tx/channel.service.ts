@@ -31,6 +31,7 @@ import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import { TxEventsService } from './tx-events.service';
@@ -82,17 +83,6 @@ export class ChannelService {
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
-  private sumLovelace(utxos: UTxO[]): bigint {
-    let total = 0n;
-    for (const utxo of utxos) {
-      const lovelace = (utxo.assets as any)?.lovelace;
-      if (typeof lovelace === 'bigint') {
-        total += lovelace;
-      }
-    }
-    return total;
-  }
-
   private async refreshWalletContext(address: string, context: string): Promise<void> {
     const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
       maxAttempts: 6,
@@ -103,7 +93,7 @@ export class ChannelService {
     }
     this.lucidService.selectWalletFromAddress(address, walletUtxos);
     this.logger.log(
-      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${this.sumLovelace(walletUtxos)}`,
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
     );
   }
 

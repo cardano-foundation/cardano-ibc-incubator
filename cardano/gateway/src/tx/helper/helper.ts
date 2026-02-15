@@ -1,3 +1,4 @@
+import { UTxO } from '@lucid-evolution/lucid';
 import { ClientState, ConsensusState, Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
@@ -26,6 +27,19 @@ export function mapLovelaceDenom(
 
   return lowerDenom === lovelacePacketDenom || lowerDenom === LOVELACE ? LOVELACE : normalizedDenom;
 }
+
+// Sum lovelace across wallet UTxOs so wallet-context logs can show available ADA.
+export function sumLovelaceFromUtxos(utxos: UTxO[]): bigint {
+  let total = 0n;
+  for (const utxo of utxos) {
+    const lovelace = (utxo.assets as any)?.lovelace;
+    if (typeof lovelace === 'bigint') {
+      total += lovelace;
+    }
+  }
+  return total;
+}
+
 export function decodeClientState(value: Uint8Array): ClientState {
   try {
     return ClientState.decode(value);
