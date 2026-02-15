@@ -77,6 +77,7 @@ import {
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 
 @Injectable()
 export class PacketService {
@@ -952,14 +953,12 @@ export class PacketService {
             
             // Track denom trace mapping (required for later ibc/<hash> burn resolution).
             const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
-            const pathParts = fullDenomPath.split('/');
-            const baseDenom = pathParts[pathParts.length - 1];
-            const path = pathParts.slice(0, -1).join('/');
+            const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'recv_mint');
 
             await this.denomTraceService.saveDenomTrace({
               hash: voucherTokenName,
-              path: path,
-              base_denom: baseDenom,
+              path: trace.path,
+              base_denom: trace.baseDenom,
               voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
               tx_hash: null, // Filled after confirmed submission.
             });
@@ -1275,14 +1274,12 @@ export class PacketService {
 
     // Track denom trace mapping for timeout refund voucher.
     const fullDenomPath = convertHex2String(prefixedDenom);
-    const pathParts = fullDenomPath.split('/');
-    const baseDenom = pathParts[pathParts.length - 1];
-    const path = pathParts.slice(0, -1).join('/');
+    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'timeout_refund');
 
     await this.denomTraceService.saveDenomTrace({
       hash: voucherTokenName,
-      path: path,
-      base_denom: baseDenom,
+      path: trace.path,
+      base_denom: trace.baseDenom,
       voucher_policy_id: this.getMintVoucherScriptHash(),
       tx_hash: null, // Filled after confirmed submission.
     });
@@ -1898,14 +1895,12 @@ export class PacketService {
 
     // Track denom trace mapping for acknowledgement refund voucher.
     const fullDenomPath = denomToHash;
-    const pathParts = fullDenomPath.split('/');
-    const baseDenom = pathParts[pathParts.length - 1];
-    const path = pathParts.slice(0, -1).join('/');
+    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'ack_refund');
 
     await this.denomTraceService.saveDenomTrace({
       hash: voucherTokenName,
-      path: path,
-      base_denom: baseDenom,
+      path: trace.path,
+      base_denom: trace.baseDenom,
       voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
       tx_hash: null, // Filled after confirmed submission.
     });
@@ -1980,6 +1975,25 @@ export class PacketService {
       throw new GrpcInvalidArgumentException('Voucher denom is missing base denom after transfer/channel prefix');
     }
     return baseDenom;
+  }
+  /**
+   * Convert a full denom trace string into `(path, baseDenom)` for persistence.
+   *
+   * We intentionally use a dedicated parser instead of `split('/') + last-segment`.
+   * Base denoms can contain `/` on Cosmos chains, so last-segment parsing silently corrupts
+   * stored trace rows and breaks semantic round-tripping for denom queries and reverse lookup.
+   */
+  private _splitDenomTraceForPersistence(
+    fullDenomPath: string,
+    context: 'recv_mint' | 'timeout_refund' | 'ack_refund',
+  ): { path: string; baseDenom: string } {
+    try {
+      return splitFullDenomTrace(fullDenomPath);
+    } catch (error) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid denom trace for ${context}: ${fullDenomPath}. ${error instanceof Error ? error.message : error}`,
+      );
+    }
   }
   private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
     const normalized = requestedDenomToken.trim();
