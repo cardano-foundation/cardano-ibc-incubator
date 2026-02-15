@@ -29,6 +29,11 @@ caribic start cosmos --clean
 caribic start osmosis
 ```
 
+Hermes config note:
+- Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
+- If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
+- `caribic` writes Hermes config during setup and, for `caribic demo token-swap`, augments it with the `localosmosis` chain block before Hermes is used for channel creation.
+
 ### `caribic stop [target]`
 
 Stops services. With no target, it behaves like `all`.
@@ -52,6 +57,13 @@ caribic health-check
 caribic health-check --service gateway
 ```
 
+### `caribic audit`
+
+Runs three checks and reports a single pass or fail summary:
+- `npm audit` in `cardano/gateway`
+- `cargo audit` in `caribic`
+- `aiken check` in `cardano/onchain`
+
 ### `caribic keys <add|list|delete>`
 
 Convenience wrapper around Hermes keyring operations.
@@ -74,7 +86,8 @@ caribic create-channel --a-chain cardano-devnet --b-chain sidechain --a-port tra
 
 ### `caribic demo <message-exchange|token-swap>`
 
-Starts a demo use case (the exact behavior depends on the use case).
+Starts a demo setup step on top of already running services.
+`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 
 ## `caribic test`
 

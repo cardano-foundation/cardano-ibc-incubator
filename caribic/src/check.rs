@@ -8,6 +8,7 @@ use std::{
     process::Command,
 };
 
+/// Checks whether required local tools are installed and callable.
 pub async fn check_prerequisites() {
     logger::info(&format!("Checking prerequisites..."));
     check_tool_availability(
@@ -33,6 +34,7 @@ pub async fn check_prerequisites() {
     check_tool_availability("Hermes", "version", "Install Hermes by following the instructions at https://hermes.informal.systems/quick-start/installation.html#install-by-downloading");
 }
 
+/// Runs `<tool> <version_flag>` and reports a pass or install guidance.
 fn check_tool_availability(tool: &str, version_flag: &str, install_instructions: &str) {
     let tool_check = Command::new(tool.to_ascii_lowercase())
         .arg(version_flag)
@@ -67,6 +69,7 @@ fn check_tool_availability(tool: &str, version_flag: &str, install_instructions:
     }
 }
 
+/// Ensures `osmosisd` is available and executable, installing it when needed.
 pub async fn check_osmosisd(osmosis_dir: &Path) {
     if osmosis_dir.exists() {
         logger::verbose(&format!("Osmosis directory already exists"));
@@ -96,7 +99,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
         }
     }
 
-    if let Some((osmosisd_binary, in_path)) = binary {
+    if let Some((osmosisd_binary, path_visible)) = binary {
         match Command::new(&osmosisd_binary).arg("version").output() {
             Ok(output) if output.status.success() => {
                 let stdout_version = String::from_utf8_lossy(&output.stdout);
@@ -113,7 +116,7 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
                     osmosisd_binary.display()
                 ));
 
-                if !in_path {
+                if !path_visible {
                     logger::warn(&format!(
                         "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
                         osmosisd_binary.display()
@@ -138,25 +141,27 @@ pub async fn check_osmosisd(osmosis_dir: &Path) {
     }
 }
 
-/// Locates osmosisd and marks whether it is directly available from PATH.
+/// Resolves `osmosisd` from PATH, then falls back to `$HOME/go/bin/osmosisd`.
+///
+/// Returns:
+/// - the resolved path
+/// - whether resolution came directly from PATH
 fn locate_osmosisd_binary() -> Option<(PathBuf, bool)> {
-    if let Some(path_binary) = find_binary_in_path("osmosisd") {
-        return Some((path_binary, true));
+    if let Some(path_var) = env::var_os("PATH") {
+        for directory in env::split_paths(&path_var) {
+            let candidate = directory.join("osmosisd");
+            if candidate.is_file() {
+                return Some((candidate, true));
+            }
+        }
     }
 
-    let home_fallback = dirs::home_dir()?.join("go/bin/osmosisd");
-    if home_fallback.is_file() {
-        return Some((home_fallback, false));
-    }
-
-    None
-}
-
-/// Looks for a named binary in the current PATH entries.
-fn find_binary_in_path(binary_name: &str) -> Option<PathBuf> {
-    let path_var = env::var_os("PATH")?;
-    env::split_paths(&path_var).find_map(|directory| {
-        let candidate = directory.join(binary_name);
-        candidate.is_file().then_some(candidate)
+    dirs::home_dir().and_then(|home| {
+        let candidate = home.join("go/bin/osmosisd");
+        if candidate.is_file() {
+            Some((candidate, false))
+        } else {
+            None
+        }
     })
 }
