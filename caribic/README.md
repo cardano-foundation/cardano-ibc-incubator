@@ -86,7 +86,8 @@ caribic create-channel --a-chain cardano-devnet --b-chain sidechain --a-port tra
 
 ### `caribic demo <message-exchange|token-swap>`
 
-Starts a demo use case (the exact behavior depends on the use case).
+Starts a demo setup step on top of already running services.
+`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 
 ## `caribic test`
 

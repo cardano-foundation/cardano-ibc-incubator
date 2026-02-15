@@ -2,7 +2,12 @@ use crate::{
     logger,
     setup::{download_osmosis, install_osmosisd},
 };
-use std::{env, path::{Path, PathBuf}, process::Command, time::Instant};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Instant,
+};
 
 pub struct AuditReport {
     pub output: String,
@@ -305,10 +310,7 @@ fn find_binary_in_path(binary_name: &str) -> Option<PathBuf> {
 }
 
 fn find_go_env_binary(env_name: &str) -> Option<PathBuf> {
-    let output = Command::new("go")
-        .args(["env", env_name])
-        .output()
-        .ok()?;
+    let output = Command::new("go").args(["env", env_name]).output().ok()?;
     if !output.status.success() {
         return None;
     }

@@ -20,6 +20,7 @@ fn run_command_streaming(
     }
 
     let verbosity = logger::get_verbosity();
+    let command_started = Instant::now();
     let mut last_progress_line: Option<String> = None;
     let mut last_progress_at = Instant::now()
         .checked_sub(Duration::from_secs(60))
@@ -98,6 +99,46 @@ fn run_command_streaming(
     let status = child.wait()?;
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
+    let elapsed = command_started.elapsed();
+
+    logger::verbose(&format!(
+        "   [{}] completed in {:.2}s (success={})",
+        label,
+        elapsed.as_secs_f32(),
+        status.success()
+    ));
+
+    if !status.success() && logger::get_verbosity() != logger::Verbosity::Quite {
+        let tail_preview = |text: &str| -> String {
+            let lines: Vec<&str> = text.lines().collect();
+            let start = lines.len().saturating_sub(20);
+            if lines.is_empty() {
+                String::new()
+            } else {
+                lines[start..]
+                    .iter()
+                    .map(|line| format!("   [tail] {line}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
+
+        let stdout_tail = tail_preview(&stdout_buf);
+        let stderr_tail = tail_preview(&stderr_buf);
+
+        logger::warn(&format!(
+            "   [{}] command failed after {:.2}s with exit code {:?}",
+            label,
+            elapsed.as_secs_f32(),
+            status
+        ));
+        if !stdout_tail.is_empty() {
+            logger::warn(&format!("   [{}] stdout tail:\n{}", label, stdout_tail));
+        }
+        if !stderr_tail.is_empty() {
+            logger::warn(&format!("   [{}] stderr tail:\n{}", label, stderr_tail));
+        }
+    }
 
     Ok(Output {
         status,
@@ -1877,10 +1918,12 @@ pub async fn run_integration_tests(
                                 );
                             }
                             results.failed += 1;
-                        } else if cardano_native_after.saturating_sub(cardano_native_before) < amount
+                        } else if cardano_native_after.saturating_sub(cardano_native_before)
+                            < amount
                         {
                             let elapsed = test_12.finish();
-                            let increase = cardano_native_after.saturating_sub(cardano_native_before);
+                            let increase =
+                                cardano_native_after.saturating_sub(cardano_native_before);
                             logger::log(&format!(
                             "FAIL Test 12: Cardano native token balance did not increase by the returned amount (took {}) (before={}, after={}, delta={}, expected delta >= {})\n",
                             format_duration(elapsed),
@@ -2082,11 +2125,9 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
                 "Mithril artifacts are not ready yet; waiting up to 180s for stake distributions and cardano-transaction snapshots.",
             );
 
-            let artifacts_ready = wait_for_mithril_artifacts_ready_for_cardano_client(
-                36,
-                Duration::from_secs(5),
-            )
-            .await?;
+            let artifacts_ready =
+                wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
+                    .await?;
 
             if artifacts_ready {
                 verbose("   Mithril stake distributions available");
@@ -2670,9 +2711,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
 /// Create a test connection using Hermes relayer
 ///
 /// Creates a connection between cardano-devnet and the local packet-forwarding chain
-async fn create_test_connection(
-    project_root: &Path,
-) -> Result<String, Box<dyn std::error::Error>> {
+async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating connection via Hermes...");
 
     // The connection handshake can legitimately take a few minutes on a local devnet:
@@ -2755,11 +2794,9 @@ async fn create_test_connection(
                 logger::warn(
                     "Mithril artifacts are not ready for Cardano light-client query yet; waiting and retrying connection handshake once.",
                 );
-                let artifacts_ready = wait_for_mithril_artifacts_ready_for_cardano_client(
-                    36,
-                    Duration::from_secs(5),
-                )
-                .await?;
+                let artifacts_ready =
+                    wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
+                        .await?;
 
                 if !artifacts_ready {
                     return Err(format!(
@@ -3344,7 +3381,9 @@ fn resolve_sidechain_channel_id_with_retries(
     retry_delay: Duration,
 ) -> Option<String> {
     for attempt in 1..=max_attempts {
-        if let Some(sidechain_channel_id) = resolve_sidechain_channel_id(project_root, cardano_channel_id) {
+        if let Some(sidechain_channel_id) =
+            resolve_sidechain_channel_id(project_root, cardano_channel_id)
+        {
             return Some(sidechain_channel_id);
         }
 

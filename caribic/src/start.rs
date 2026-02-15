@@ -993,9 +993,12 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix("Asking Hermes to connect Osmosis and Cosmos ...".to_owned());
+        progress_bar.set_prefix(
+            "Configuring Hermes for Cardano↔Entrypoint and Entrypoint↔Osmosis channels ..."
+                .to_owned(),
+        );
     } else {
-        log("Asking Hermes to connect Osmosis and Cosmos ...");
+        log("Configuring Hermes for Cardano↔Entrypoint and Entrypoint↔Osmosis channels ...");
     }
 
     log_or_show_progress(
@@ -1015,7 +1018,10 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             hermes_binary.display()
         )
     })?;
-    verbose(&format!("Using Hermes binary at {}", hermes_binary.display()));
+    verbose(&format!(
+        "Using Hermes binary at {}",
+        hermes_binary.display()
+    ));
 
     execute_script(
         script_dir.as_path(),
@@ -1253,12 +1259,13 @@ fn ensure_localosmosis_chain_in_hermes_config(
         )
     })?;
 
-    let localosmosis_block = extract_chain_block(&source_config, "localosmosis").ok_or_else(|| {
-        format!(
-            "Failed to find localosmosis chain block in {}",
-            source_config_path.display()
-        )
-    })?;
+    let localosmosis_block =
+        extract_chain_block(&source_config, "localosmosis").ok_or_else(|| {
+            format!(
+                "Failed to find localosmosis chain block in {}",
+                source_config_path.display()
+            )
+        })?;
 
     if !destination_config.ends_with('\n') {
         destination_config.push('\n');
@@ -2365,16 +2372,37 @@ pub fn hermes_create_channel(
     Ok(format!("IBC channel created\n{}", stdout))
 }
 
-/// Comprehensive health check for all bridge services
-pub fn comprehensive_health_check(
+pub fn check_service_health(
     project_root_path: &Path,
-    service_filter: Option<&str>,
-) -> Result<String, Box<dyn std::error::Error>> {
+    service_name: &str,
+) -> Result<(bool, String), Box<dyn std::error::Error>> {
     let cardano_dir = project_root_path.join("cardano");
     let gateway_dir = project_root_path.join("cardano/gateway");
     let relayer_path = project_root_path.join("relayer");
     let mithril_dir = project_root_path.join("chains/mithrils");
 
+    let status = match service_name {
+        "gateway" => Ok(check_gateway_health(&gateway_dir)),
+        "cardano" => Ok(check_cardano_node_health(&cardano_dir)),
+        "postgres" => Ok(check_postgres_health(&cardano_dir)),
+        "kupo" => Ok(check_kupo_health(&cardano_dir)),
+        "ogmios" => Ok(check_ogmios_health(&cardano_dir)),
+        "mithril" => Ok(check_mithril_health(&mithril_dir)),
+        "hermes" => Ok(check_hermes_daemon_health(&relayer_path)),
+        "cosmos" => Ok(check_cosmos_health()),
+        "osmosis" => Ok(check_osmosis_health()),
+        "redis" => Ok(check_osmosis_redis_health()),
+        _ => Err(format!("Unknown service: {service_name}")),
+    }?;
+
+    Ok(status)
+}
+
+/// Comprehensive health check for all bridge services
+pub fn comprehensive_health_check(
+    project_root_path: &Path,
+    service_filter: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
     let mut result = String::new();
     result.push_str("\nBridge Health Check\n");
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
@@ -2406,19 +2434,7 @@ pub fn comprehensive_health_check(
 
         services_checked += 1;
 
-        let (is_healthy, status_msg) = match service_name {
-            "gateway" => check_gateway_health(&gateway_dir),
-            "cardano" => check_cardano_node_health(&cardano_dir),
-            "postgres" => check_postgres_health(&cardano_dir),
-            "kupo" => check_kupo_health(&cardano_dir),
-            "ogmios" => check_ogmios_health(&cardano_dir),
-            "mithril" => check_mithril_health(&mithril_dir),
-            "hermes" => check_hermes_daemon_health(&relayer_path),
-            "cosmos" => check_cosmos_health(),
-            "osmosis" => check_osmosis_health(),
-            "redis" => check_osmosis_redis_health(),
-            _ => (false, "Unknown service".to_string()),
-        };
+        let (is_healthy, status_msg) = check_service_health(project_root_path, service_name)?;
 
         if is_healthy {
             services_healthy += 1;
@@ -2719,7 +2735,11 @@ fn check_hermes_daemon_health(_relayer_path: &Path) -> (bool, String) {
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
-            if line.contains("hermes start") && !line.contains("grep") {
+            if line.contains("hermes")
+                && line.contains(" --config ")
+                && line.contains("start")
+                && !line.contains("grep")
+            {
                 // Found the process, check if log file exists and has recent activity
                 let home = home_dir().unwrap_or_default();
                 let log_file = home.join(".hermes/hermes.log");
