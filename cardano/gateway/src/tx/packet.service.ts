@@ -1938,8 +1938,6 @@ export class PacketService {
       transferAmount: BigInt(fungibleTokenPacketData.amount),
       senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
 
-      denomToken: normalizeDenomTokenTransfer(fungibleTokenPacketData.denom),
-
       constructedAddress,
 
       ackPacketPolicyId,

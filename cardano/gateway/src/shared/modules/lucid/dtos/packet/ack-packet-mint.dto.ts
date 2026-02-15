@@ -19,7 +19,6 @@ export type UnsignedAckPacketMintDto = {
   voucherTokenUnit: string;
   transferAmount: bigint;
   senderAddress: string;
-  denomToken: string;
   constructedAddress: string;
 
   ackPacketPolicyId: PolicyId;

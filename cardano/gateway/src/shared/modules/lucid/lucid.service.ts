@@ -1469,7 +1469,14 @@ export class LucidService {
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         undefined,
-        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+        {
+          // Voucher refund in acknowledgement error flow must keep transfer module value unchanged.
+          // The on-chain transfer module validator checks this branch with assets.zero delta.
+          // Subtracting assets from transfer module here breaks that invariant and the spend is rejected.
+          // We also intentionally do not interpret packet denom as a Cardano asset unit in this path.
+          // Voucher denoms are IBC traces and are not valid ledger asset unit keys.
+          ...dto.transferModuleUtxo.assets,
+        },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -1668,8 +1675,11 @@ export class LucidService {
         },
       )
       .pay.ToContract(dto.transferModuleAddress, undefined, {
+        // Voucher refund in timeout flow must keep transfer module value unchanged.
+        // The validator enforces zero delta for transfer module value in refund voucher paths.
+        // transferAmount is token quantity from packet data and must never be treated as lovelace.
+        // Subtracting lovelace here can underfund the output and violates on-chain refund rules.
         ...dto.transferModuleUtxo.assets,
-        lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
       })
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
