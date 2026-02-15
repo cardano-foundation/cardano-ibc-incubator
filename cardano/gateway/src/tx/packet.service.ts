@@ -1541,6 +1541,7 @@ export class PacketService {
       throw new GrpcInternalException(`No spendable UTxOs found for sender ${senderAddress}`);
     }
     const walletUtxos = this.dedupeUtxos(senderWalletUtxos);
+    const denomToken = this._resolveEscrowDenomToken(inputDenom, resolvedDenom, walletUtxos);
     const unsignedSendPacketParams: UnsignedSendPacketEscrowDto = {
       hostStateUtxo,
       channelUTxO: channelUtxo,
@@ -1564,7 +1565,7 @@ export class PacketService {
       spendChannelAddress: deploymentConfig.validators.spendChannel.address,
       channelTokenUnit: channelTokenUnit,
       transferModuleAddress: deploymentConfig.modules.transfer.address,
-      denomToken: inputDenom,
+      denomToken,
 
       sendPacketPolicyId,
       channelToken,
@@ -1986,18 +1987,59 @@ export class PacketService {
       throw new GrpcInvalidArgumentException('Denom token for transfer-module update cannot be empty');
     }
 
+    const matchedUnit = this._tryResolveAssetUnitFromAssets(assets, normalized);
+    if (matchedUnit !== null) {
+      return matchedUnit;
+    }
+
+    throw new GrpcInvalidArgumentException(
+      `Denom token ${normalized} not found in transfer-module UTxO assets`,
+    );
+  }
+  private _tryResolveAssetUnitFromAssets(assets: Record<string, bigint>, requestedDenomToken: string): string | null {
+    const normalized = requestedDenomToken.trim();
+    if (!normalized) {
+      return null;
+    }
+
     if (Object.prototype.hasOwnProperty.call(assets, normalized)) {
       return normalized;
     }
 
     const normalizedLower = normalized.toLowerCase();
     const matchedUnit = Object.keys(assets).find((unit) => unit.toLowerCase() === normalizedLower);
-    if (matchedUnit) {
-      return matchedUnit;
+    return matchedUnit ?? null;
+  }
+  private _sumAssetsFromUtxos(utxos: UTxO[]): Record<string, bigint> {
+    const summedAssets: Record<string, bigint> = {};
+    for (const utxo of utxos) {
+      for (const [assetUnit, amount] of Object.entries(utxo.assets)) {
+        summedAssets[assetUnit] = (summedAssets[assetUnit] ?? 0n) + amount;
+      }
+    }
+    return summedAssets;
+  }
+  private _resolveEscrowDenomToken(inputDenom: string, resolvedDenom: string, senderWalletUtxos: UTxO[]): string {
+    const senderAssets = this._sumAssetsFromUtxos(senderWalletUtxos);
+
+    const directInputMatch = this._tryResolveAssetUnitFromAssets(senderAssets, inputDenom);
+    if (directInputMatch !== null) {
+      return directInputMatch;
+    }
+
+    const directResolvedMatch = this._tryResolveAssetUnitFromAssets(senderAssets, resolvedDenom);
+    if (directResolvedMatch !== null) {
+      return directResolvedMatch;
+    }
+
+    const voucherUnitFromResolvedDenom = this.getMintVoucherScriptHash() + this._buildVoucherTokenName(resolvedDenom);
+    const voucherUnitMatch = this._tryResolveAssetUnitFromAssets(senderAssets, voucherUnitFromResolvedDenom);
+    if (voucherUnitMatch !== null) {
+      return voucherUnitMatch;
     }
 
     throw new GrpcInvalidArgumentException(
-      `Denom token ${normalized} not found in transfer-module UTxO assets`,
+      `Unable to resolve escrow asset unit for denom ${inputDenom} (resolved as ${resolvedDenom})`,
     );
   }
   private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
