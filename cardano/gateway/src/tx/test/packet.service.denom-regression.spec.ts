@@ -333,9 +333,10 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedAckPacketMintTx).toHaveBeenCalledWith(
       expect.objectContaining({
         voucherTokenUnit: `mint-voucher-policy-id${expectedTokenName}`,
-        denomToken: canonicalDenom,
       }),
     );
+    const ackMintDto = lucidServiceMock.createUnsignedAckPacketMintTx.mock.calls[0]?.[0];
+    expect(ackMintDto).not.toHaveProperty('denomToken');
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
