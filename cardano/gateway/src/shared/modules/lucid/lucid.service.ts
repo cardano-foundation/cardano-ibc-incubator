@@ -183,7 +183,21 @@ export class LucidService {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const utxo = await this.lucid.utxoByUnit(unit);
-      if (utxo) return utxo;
+      if (utxo) {
+        try {
+          const liveUtxos = await this.lucid.utxosByOutRef([
+            {
+              txHash: utxo.txHash,
+              outputIndex: utxo.outputIndex,
+            },
+          ]);
+          if (liveUtxos.length > 0) {
+            return liveUtxos[0];
+          }
+        } catch {
+          // Retry until the provider view converges to a live out-ref.
+        }
+      }
       if (attempt < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
@@ -191,6 +205,25 @@ export class LucidService {
 
     throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
   }
+
+  private async filterLiveUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+    if (utxos.length === 0) {
+      return [];
+    }
+
+    const outRefs = utxos.map((utxo) => ({
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    }));
+    const liveUtxos = await this.lucid.utxosByOutRef(outRefs);
+    if (liveUtxos.length === 0) {
+      return [];
+    }
+
+    const liveRefs = new Set(liveUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`));
+    return utxos.filter((utxo) => liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`));
+  }
+
   public async findUtxoAt(addressOrCredential: string): Promise<UTxO[]> {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     const utxos = await this.lucid.utxosAt(normalizedAddress);
@@ -219,7 +252,10 @@ export class LucidService {
       try {
         const utxos = await this.lucid.utxosAt(normalizedAddress);
         if (utxos.length > 0) {
-          return utxos;
+          const liveUtxos = await this.filterLiveUtxos(utxos);
+          if (liveUtxos.length > 0) {
+            return liveUtxos;
+          }
         }
       } catch (err) {
         lastError = err;
@@ -713,7 +749,7 @@ export class LucidService {
   }
   public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress, true);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
