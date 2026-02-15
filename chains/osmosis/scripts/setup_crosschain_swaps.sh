@@ -65,12 +65,10 @@ log_tx() {
   echo "$_log_tx_txhash"
 }
 
-# Runs an Osmosis query and always returns JSON output from the configured local node.
 osmosis_query_json() {
   "$OSMOSISD_BIN" query "$@" --node "$OSMOSIS_NODE" --output json 2>&1
 }
 
-# Polls until a wasm code id is available so contract setup does not rely on fixed sleeps.
 wait_for_wasm_code_id() {
   _timeout_seconds="${1:-120}"
   _poll_interval="${2:-2}"
@@ -98,7 +96,6 @@ wait_for_wasm_code_id() {
   done
 }
 
-# Polls for the most recently instantiated contract address for a given code id.
 wait_for_contract_address() {
   _code_id="$1"
   _timeout_seconds="${2:-120}"
@@ -130,7 +127,6 @@ wait_for_contract_address() {
   done
 }
 
-# Polls for the crosschain-swaps contract address and unwraps the latest list result.
 wait_for_crosschain_address() {
   _code_id="$1"
   _timeout_seconds="${2:-120}"
@@ -165,7 +161,6 @@ wait_for_crosschain_address() {
   done
 }
 
-# Prints Hermes packet-pending state for the Cardano to Entrypoint to Osmosis legs.
 print_transfer_diagnostics() {
   echo "=== Diagnostics: packet pending on Cardano->Entrypoint channel ==="
   "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id" || true
@@ -174,13 +169,11 @@ print_transfer_diagnostics() {
   "$HERMES_BIN" query packet pending --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id" || true
 }
 
-# Triggers Hermes packet clearing on both transfer hops used by the setup flow.
 clear_swap_packets() {
   run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id"
   run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id"
 }
 
-# Runs a command with a watchdog timeout so clear operations cannot hang forever.
 run_with_timeout() {
   local _rwto_seconds="$1"
   shift
@@ -195,7 +188,6 @@ run_with_timeout() {
   kill "$_watchdog_pid" >/dev/null 2>&1 || true
 }
 
-# Waits for the incoming IBC voucher denom to appear on the target Osmosis account.
 wait_for_osmosis_ibc_denom() {
   _receiver="$1"
   _timeout_seconds="${2:-600}"
@@ -236,7 +228,6 @@ if [ -z "$OSMOSISD_BIN" ] || [ ! -x "$OSMOSISD_BIN" ]; then
   exit 1
 fi
 
-# Reads the deployed mock token unit from handler.json so transfer denom matches deployment state.
 get_mock_token_denom() {
   local _handler_file="$1"
 

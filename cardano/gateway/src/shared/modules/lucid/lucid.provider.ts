@@ -5,6 +5,68 @@ import { writeFileSync } from 'fs';
 export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
+const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
+
+function toSafeCostModelInteger(value: unknown): number {
+  let parsedValue: number;
+
+  if (typeof value === 'number') {
+    parsedValue = value;
+  } else if (typeof value === 'bigint') {
+    parsedValue = Number(value);
+  } else if (typeof value === 'string') {
+    parsedValue = Number(value);
+  } else {
+    throw new Error(`Unsupported cost model value type: ${typeof value}`);
+  }
+
+  if (!Number.isFinite(parsedValue)) {
+    throw new Error(`Invalid non-finite cost model value: ${String(value)}`);
+  }
+
+  if (!Number.isInteger(parsedValue)) {
+    parsedValue = Math.trunc(parsedValue);
+  }
+
+  if (!Number.isSafeInteger(parsedValue)) {
+    return parsedValue > 0 ? MAX_SAFE_COST_MODEL_VALUE : -MAX_SAFE_COST_MODEL_VALUE;
+  }
+
+  return parsedValue;
+}
+
+function sanitizeProtocolParameters(protocolParameters: any): any {
+  if (!protocolParameters?.costModels) {
+    return protocolParameters;
+  }
+
+  let sanitizedEntries = 0;
+  const sanitizedCostModels: Record<string, Record<string, number>> = {};
+
+  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, Record<string, unknown>>)) {
+    const sanitizedModel: Record<string, number> = {};
+    for (const [index, value] of Object.entries(model ?? {})) {
+      const sanitized = toSafeCostModelInteger(value);
+      if (sanitized !== value) {
+        sanitizedEntries += 1;
+      }
+      sanitizedModel[index] = sanitized;
+    }
+    sanitizedCostModels[version] = sanitizedModel;
+  }
+
+  if (sanitizedEntries > 0) {
+    console.warn(
+      `Normalized ${sanitizedEntries} cost model value(s) to safe integers before Lucid initialization.`,
+    );
+  }
+
+  return {
+    ...protocolParameters,
+    costModels: sanitizedCostModels,
+  };
+}
+
 export const LucidClient = {
   provide: LUCID_CLIENT,
   useFactory: async (configService: ConfigService) => {
@@ -154,7 +216,10 @@ export const LucidClient = {
     }
 
     const network = configService.get('cardanoNetwork') as Network;
-    const lucid = await Lucid.Lucid(provider, network);
+    const protocolParameters = sanitizeProtocolParameters(await provider.getProtocolParameters());
+    const lucid = await Lucid.Lucid(provider, network, {
+      presetProtocolParameters: protocolParameters,
+    } as any);
 
     const chainZeroTime = await querySystemStart(configService.get('ogmiosEndpoint'));
     Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = chainZeroTime;

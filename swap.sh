@@ -43,7 +43,6 @@ get_latest_transfer_channel_id() {
     echo "$_channel_id"
 }
 
-# Prints per-hop packet diagnostics to help debug stalled swap settlement.
 print_swap_diagnostics() {
     echo "=== Diagnostics: Cardano->Entrypoint packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id" || true
@@ -58,7 +57,6 @@ print_swap_diagnostics() {
     "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id" || true
 }
 
-# Runs a command with a timeout so Hermes clear operations cannot block indefinitely.
 run_with_timeout() {
     local _rwto_seconds="$1"
     shift
@@ -73,7 +71,6 @@ run_with_timeout() {
     kill "$_watchdog_pid" >/dev/null 2>&1 || true
 }
 
-# Clears packet queues across all swap path channels before or during settlement checks.
 clear_swap_packets() {
     run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id"
     run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_cardano_chann_id"
@@ -81,7 +78,6 @@ clear_swap_packets() {
     run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id"
 }
 
-# Returns whether packet commitments are empty for a specific chain and channel.
 channel_commitments_cleared() {
     _chain="$1"
     _channel="$2"
@@ -110,7 +106,6 @@ channel_commitments_cleared() {
     return 2
 }
 
-# Waits until packet commitments are cleared on all hops or returns detailed diagnostics on timeout.
 wait_for_swap_settlement() {
     _timeout_seconds="${1:-600}"
     _poll_interval="${2:-10}"
