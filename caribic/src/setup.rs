@@ -86,7 +86,6 @@ pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::er
     download_repository(url, osmosis_path, "osmosis").await
 }
 
-/// Optionally installs osmosisd from the local Osmosis source tree.
 pub async fn install_osmosisd(osmosis_path: &Path) -> Result<bool, Box<dyn std::error::Error>> {
     let question = "Do you want to install osmosisd? (yes/no): ";
 

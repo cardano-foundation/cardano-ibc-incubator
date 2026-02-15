@@ -63,11 +63,20 @@ fn colorize_status_lines(message: &str) -> String {
         .lines()
         .map(|line| {
             let trimmed = line.trim_start();
-            if trimmed.starts_with("PASS:") || trimmed.starts_with("PASS ") {
+            if trimmed.starts_with("PASS:")
+                || trimmed.starts_with("PASS ")
+                || trimmed.starts_with("[OK]")
+            {
                 format!("{ANSI_GREEN}{line}{ANSI_RESET}")
-            } else if trimmed.starts_with("FAIL:") || trimmed.starts_with("FAIL ") {
+            } else if trimmed.starts_with("FAIL:")
+                || trimmed.starts_with("FAIL ")
+                || trimmed.starts_with("[FAIL]")
+            {
                 format!("{ANSI_RED}{line}{ANSI_RESET}")
-            } else if trimmed.starts_with("SKIP:") || trimmed.starts_with("SKIP ") {
+            } else if trimmed.starts_with("SKIP:")
+                || trimmed.starts_with("SKIP ")
+                || trimmed.starts_with("[WARN]")
+            {
                 format!("{ANSI_YELLOW}{line}{ANSI_RESET}")
             } else {
                 line.to_string()
