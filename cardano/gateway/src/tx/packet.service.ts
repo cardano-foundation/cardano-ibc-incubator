@@ -171,6 +171,94 @@ export class PacketService {
     return total;
   }
 
+  private async refreshWalletContext(
+    address: string,
+    context: string,
+    options?: { excludeAssetUnit?: string },
+  ): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+
+    const excludeAssetUnit = options?.excludeAssetUnit?.trim();
+    const selectableWalletUtxos = excludeAssetUnit
+      ? walletUtxos.filter((utxo) => {
+          const assetAmount = (utxo.assets as Record<string, unknown>)[excludeAssetUnit];
+          if (assetAmount === undefined || assetAmount === null) {
+            return true;
+          }
+          if (typeof assetAmount === 'bigint') {
+            return assetAmount === 0n;
+          }
+          if (typeof assetAmount === 'number') {
+            return assetAmount === 0;
+          }
+          if (typeof assetAmount === 'string') {
+            try {
+              return BigInt(assetAmount) === 0n;
+            } catch {
+              return false;
+            }
+          }
+          return false;
+        })
+      : walletUtxos;
+
+    if (selectableWalletUtxos.length === 0) {
+      throw new GrpcInternalException(
+        `${context} failed: no spendable UTxOs found for ${address} after excluding asset ${excludeAssetUnit}`,
+      );
+    }
+
+    if (excludeAssetUnit) {
+      const walletSelectionView = walletUtxos.map((utxo) => {
+        const assetAmount = (utxo.assets as Record<string, unknown>)[excludeAssetUnit];
+        const amountString =
+          typeof assetAmount === 'bigint' ? assetAmount.toString() : assetAmount === undefined ? 'none' : String(assetAmount);
+        return `${utxo.txHash}#${utxo.outputIndex}:${amountString}`;
+      });
+      this.logger.log(
+        `[walletContext] ${context} exclude_asset=${excludeAssetUnit} candidates=${walletSelectionView.join(', ')}`,
+      );
+    }
+
+    this.lucidService.selectWalletFromAddress(address, selectableWalletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${selectableWalletUtxos.length}/${walletUtxos.length}, lovelace_total=${this.sumLovelace(selectableWalletUtxos)}`,
+    );
+  }
+
+  private extractAcknowledgementResult(acknowledgementResponse: unknown): string | null {
+    if (!acknowledgementResponse || typeof acknowledgementResponse !== 'object') {
+      return null;
+    }
+    const result = (acknowledgementResponse as Record<string, unknown>).result;
+    if (typeof result !== 'string' || result.length === 0) {
+      return null;
+    }
+    return result;
+  }
+
+  private extractAcknowledgementError(acknowledgementResponse: unknown): string | null {
+    if (!acknowledgementResponse || typeof acknowledgementResponse !== 'object') {
+      return null;
+    }
+    const parsed = acknowledgementResponse as Record<string, unknown>;
+    const err = parsed.err;
+    if (typeof err === 'string' && err.length > 0) {
+      return err;
+    }
+    const error = parsed.error;
+    if (typeof error === 'string' && error.length > 0) {
+      return error;
+    }
+    return null;
+  }
+
   /**
    * Build the HostState STT update required for any packet-related channel update.
    *
@@ -292,6 +380,8 @@ export class PacketService {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 >= packet.timeout_timestamp');
       }
       const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
+
+      await this.refreshWalletContext(constructedAddress, 'recvPacket');
       
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({
@@ -402,6 +492,8 @@ export class PacketService {
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
 
+      await this.refreshWalletContext(constructedAddress, 'timeoutPacket');
+
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({
         localUPLCEval: false,
@@ -468,6 +560,8 @@ export class PacketService {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
       const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
+
+      await this.refreshWalletContext(constructedAddress, 'timeoutRefresh');
 
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete({
@@ -1271,10 +1365,17 @@ export class PacketService {
     // channel id
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
-    // build transfer module redeemer
-    const tokenDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom);
+    // Use one canonical denom representation for packet construction, branch selection,
+    // and voucher token-name hashing so the send path does not diverge across formats.
+    const inputDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom);
+    const resolvedDenom = await this._resolvePacketDenomForSend(inputDenom);
     const packetDenom = this._normalizePacketDenom(
-      tokenDenom,
+      resolvedDenom,
+      sendPacketOperator.sourcePort,
+      sendPacketOperator.sourceChannel,
+    );
+    const isVoucher = this._hasVoucherPrefix(
+      resolvedDenom,
       sendPacketOperator.sourcePort,
       sendPacketOperator.sourceChannel,
     );
@@ -1363,7 +1464,7 @@ export class PacketService {
       name: channelTokenName,
     };
 
-    if (this._hasVoucherPrefix(packetDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel)) {
+    if (isVoucher) {
       this.logger.log('send burn');
       const mintVoucherRedeemer: MintVoucherRedeemer = {
         BurnVoucher: {
@@ -1376,8 +1477,7 @@ export class PacketService {
         'mintVoucherRedeemer',
       );
 
-      const denomForVoucherHash = await this._resolveVoucherDenomForBurn(sendPacketOperator.token.denom);
-      const voucherTokenName = this._buildVoucherTokenName(denomForVoucherHash);
+      const voucherTokenName = this._buildVoucherTokenName(resolvedDenom);
       const voucherTokenUnit = deploymentConfig.validators.mintVoucher.scriptHash + voucherTokenName;
       const senderAddress = sendPacketOperator.sender;
 
@@ -1414,7 +1514,7 @@ export class PacketService {
 
         channelTokenUnit,
         voucherTokenUnit,
-        denomToken: tokenDenom,
+        denomToken: inputDenom,
 
         sendPacketPolicyId,
         channelToken,
@@ -1464,7 +1564,7 @@ export class PacketService {
       spendChannelAddress: deploymentConfig.validators.spendChannel.address,
       channelTokenUnit: channelTokenUnit,
       transferModuleAddress: deploymentConfig.modules.transfer.address,
-      denomToken: tokenDenom,
+      denomToken: inputDenom,
 
       sendPacketPolicyId,
       channelToken,
@@ -1485,6 +1585,8 @@ export class PacketService {
     ackPacketOperator: AckPacketOperator,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    await this.refreshWalletContext(constructedAddress, 'acknowledgementPacket');
+
     const channelSequence: string = ackPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1590,7 +1692,7 @@ export class PacketService {
       memo: convertString2Hex(fungibleTokenPacketData.memo),
     };
 
-    const acknowledgementResponse: any = JSON.parse(convertHex2String(ackPacketOperator.acknowledgement));
+    const acknowledgementResponse: unknown = JSON.parse(convertHex2String(ackPacketOperator.acknowledgement));
     // Function to create IBCModuleRedeemer object
     const createIBCModuleRedeemer = (
       channelId: string,
@@ -1656,13 +1758,13 @@ export class PacketService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
-    // Check the type of acknowledgementResponse using discriminant property pattern
-    if ('result' in acknowledgementResponse) {
+    const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
+    if (acknowledgementResult) {
       // build update channel datum
       const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
         createIBCModuleRedeemer(channelId, fTokenPacketData, {
           AcknowledgementResult: {
-            result: convertString2Hex(acknowledgementResponse.result as string),
+            result: convertString2Hex(acknowledgementResult),
           },
         }),
         'iBCModuleRedeemer',
@@ -1702,13 +1804,21 @@ export class PacketService {
       const unsignedTx = this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
-    if (!('err' in acknowledgementResponse)) {
-      throw new GrpcInternalException('Acknowledgement Response invalid: unknown result');
+
+    const acknowledgementError = this.extractAcknowledgementError(acknowledgementResponse);
+    if (!acknowledgementError) {
+      const acknowledgementResponseKeys =
+        acknowledgementResponse && typeof acknowledgementResponse === 'object'
+          ? Object.keys(acknowledgementResponse as Record<string, unknown>).join(',')
+          : '';
+      throw new GrpcInternalException(
+        `Acknowledgement Response invalid: unknown result (keys=${acknowledgementResponseKeys})`,
+      );
     }
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       createIBCModuleRedeemer(channelId, fTokenPacketData, {
         AcknowledgementError: {
-          err: convertString2Hex(acknowledgementResponse.err as string),
+          err: convertString2Hex(acknowledgementError),
         },
       }),
       'iBCModuleRedeemer',
@@ -1722,6 +1832,10 @@ export class PacketService {
       )
     ) {
       this.logger.log('AckPacketUnescrow');
+      const denomToken = normalizeDenomTokenTransfer(fungibleTokenPacketData.denom);
+      await this.refreshWalletContext(constructedAddress, 'acknowledgementPacket(unescrow)', {
+        excludeAssetUnit: denomToken,
+      });
       // build update channel datum
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
@@ -1752,7 +1866,7 @@ export class PacketService {
         transferAmount: BigInt(fungibleTokenPacketData.amount),
         senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
 
-        denomToken: normalizeDenomTokenTransfer(fungibleTokenPacketData.denom),
+        denomToken,
         constructedAddress,
 
         ackPacketPolicyId,
@@ -1777,18 +1891,12 @@ export class PacketService {
       'mintVoucherRedeemer',
     );
 
-    // add prefix voucher prefix with denom token
-    const sourcePrefix = getDenomPrefix(
-      convertHex2String(packet.source_port),
-      convertHex2String(packet.source_channel),
-    );
-
-    const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
-    const voucherTokenName = hashSha3_256(prefixedDenom);
+    const denomToHash = fungibleTokenPacketData.denom;
+    const voucherTokenName = this._buildVoucherTokenName(denomToHash);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
-    
+
     // Track denom trace mapping for acknowledgement refund voucher.
-    const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+    const fullDenomPath = denomToHash;
     const pathParts = fullDenomPath.split('/');
     const baseDenom = pathParts[pathParts.length - 1];
     const path = pathParts.slice(0, -1).join('/');
@@ -1896,6 +2004,11 @@ export class PacketService {
     if (this._hasVoucherPrefix(denom, portId, channelId)) {
       return denom;
     }
+    if (denom.startsWith('ibc/')) {
+      throw new GrpcInvalidArgumentException(
+        `IBC hash denom ${denom} must be reverse-resolved to a full denom trace before packet normalization`,
+      );
+    }
     if (this._isCardanoTokenUnitDenom(denom)) {
       return denom;
     }
@@ -1913,6 +2026,11 @@ export class PacketService {
     return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
   }
   private _buildVoucherTokenName(denom: string): string {
+    if (denom.startsWith('ibc/')) {
+      throw new GrpcInvalidArgumentException(
+        `IBC hash denom ${denom} must be reverse-resolved before voucher token-name hashing`,
+      );
+    }
     // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
     if (this._isHexDenom(denom)) {
       throw new GrpcInvalidArgumentException(
@@ -1931,6 +2049,9 @@ export class PacketService {
       throw new GrpcInvalidArgumentException(`IBC denom ${denom} not found in denom traces; cannot derive voucher token name`);
     }
     return match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
+  }
+  private async _resolvePacketDenomForSend(denom: string): Promise<string> {
+    return this._resolveVoucherDenomForBurn(denom);
   }
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;

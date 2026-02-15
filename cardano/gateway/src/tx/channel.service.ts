@@ -82,6 +82,31 @@ export class ChannelService {
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
+  private sumLovelace(utxos: UTxO[]): bigint {
+    let total = 0n;
+    for (const utxo of utxos) {
+      const lovelace = (utxo.assets as any)?.lovelace;
+      if (typeof lovelace === 'bigint') {
+        total += lovelace;
+      }
+    }
+    return total;
+  }
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${this.sumLovelace(walletUtxos)}`,
+    );
+  }
+
   /**
    * Compute the new IBC state root for CreateChannel, and also return the per-key witnesses.
    *
@@ -184,6 +209,7 @@ export class ChannelService {
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenInit');
       const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -244,6 +270,7 @@ export class ChannelService {
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenTry');
       const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -288,6 +315,7 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenAck');
       const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -343,6 +371,7 @@ export class ChannelService {
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenConfirm');
       const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -384,6 +413,7 @@ export class ChannelService {
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelCloseInit');
       const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,

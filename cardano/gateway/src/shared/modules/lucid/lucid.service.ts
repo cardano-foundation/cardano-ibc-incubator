@@ -655,7 +655,7 @@ export class LucidService {
   }
   public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress, true);
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
@@ -1717,11 +1717,11 @@ export class LucidService {
     return fullName;
   };
 
-  private txFromWallet(constructedAddress: string): TxBuilder {
+  private txFromWallet(constructedAddress: string, preserveSelectedWallet = false): TxBuilder {
     // Use the deployer's private key to build transactions
     // Hermes must be configured with the same key (DEPLOYER_SK) to sign correctly
     const deployerSk = this.configService.get('deployerSk');
-    if (deployerSk) {
+    if (deployerSk && !preserveSelectedWallet) {
       this.lucid.selectWallet.fromPrivateKey(deployerSk);
     }
     return this.lucid.newTx();
