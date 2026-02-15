@@ -32,6 +32,7 @@ import {
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { 
   computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
@@ -52,6 +53,20 @@ export class ClientService {
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   /**
    * Computes the new IBC state root after client update
@@ -120,6 +135,8 @@ export class ClientService {
       const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx
         .validFrom(validFromTimestamp)
         .validTo(validToTimestamp);
+
+      await this.refreshWalletContext(constructedAddress, 'createClient');
       
       // Return unsigned transaction for Hermes to sign
       // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
@@ -231,6 +248,8 @@ export class ClientService {
         const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
           .validFrom(validFromTimeMs)
           .validTo(validToTime);
+
+        await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviour');
         
         // Return unsigned transaction for Hermes to sign
         const completedUnsignedTx = await unSignedTxValidTo.complete({
@@ -292,6 +311,8 @@ export class ClientService {
 
       const unsignedUpdateClientTx: TxBuilder = await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
       const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
+
+      await this.refreshWalletContext(constructedAddress, 'updateClient');
 
       // Return unsigned transaction for Hermes to sign
       const completedUnsignedTx = await unSignedTxValidTo.complete({

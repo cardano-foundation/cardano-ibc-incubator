@@ -31,6 +31,7 @@ import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import { TxEventsService } from './tx-events.service';
@@ -81,6 +82,20 @@ export class ChannelService {
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   /**
    * Compute the new IBC state root for CreateChannel, and also return the per-key witnesses.
@@ -184,6 +199,7 @@ export class ChannelService {
       const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenInit');
       const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -244,6 +260,7 @@ export class ChannelService {
       const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenTry');
       const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -288,6 +305,7 @@ export class ChannelService {
       const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenAck');
       const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -343,6 +361,7 @@ export class ChannelService {
       const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenConfirm');
       const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -384,6 +403,7 @@ export class ChannelService {
       const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
 
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelCloseInit');
       const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,

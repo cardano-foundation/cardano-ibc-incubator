@@ -177,13 +177,27 @@ export class LucidService {
   }
 
   public async findUtxoByUnit(unit: string): Promise<UTxO> {
-    // Kupo indexing can lag shortly after minting/transfers; retry briefly before failing.
+    // Kupo indexing can lag shortly after minting or transfers, retry briefly before failing.
     const maxAttempts = 10;
     const retryDelayMs = 1000;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const utxo = await this.lucid.utxoByUnit(unit);
-      if (utxo) return utxo;
+      if (utxo) {
+        try {
+          const liveUtxos = await this.lucid.utxosByOutRef([
+            {
+              txHash: utxo.txHash,
+              outputIndex: utxo.outputIndex,
+            },
+          ]);
+          if (liveUtxos.length > 0) {
+            return liveUtxos[0];
+          }
+        } catch {
+          // Retry until the provider view converges to a live out-ref.
+        }
+      }
       if (attempt < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
@@ -191,6 +205,28 @@ export class LucidService {
 
     throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
   }
+
+  private async filterLiveUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+    if (utxos.length === 0) {
+      return [];
+    }
+
+    // `utxosAt` can return stale references during short indexer lag windows.
+    // Re-query by out-ref and keep only live entries so wallet selection does not
+    // attempt to spend outputs that are already consumed.
+    const outRefs = utxos.map((utxo) => ({
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    }));
+    const liveUtxos = await this.lucid.utxosByOutRef(outRefs);
+    if (liveUtxos.length === 0) {
+      return [];
+    }
+
+    const liveRefs = new Set(liveUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`));
+    return utxos.filter((utxo) => liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`));
+  }
+
   public async findUtxoAt(addressOrCredential: string): Promise<UTxO[]> {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     const utxos = await this.lucid.utxosAt(normalizedAddress);
@@ -198,6 +234,48 @@ export class LucidService {
     return utxos;
   }
 
+  /**
+   * Best-effort address UTxO lookup with retries.
+   *
+   * This is intended for coin-selection and "wallet override" flows where:
+   * - indexers can lag briefly after mint/transfer,
+   * - transient network/provider errors can occur,
+   * - returning an empty set is preferable to throwing and forcing the caller into a single-UTxO fallback.
+   */
+  public async tryFindUtxosAt(
+    addressOrCredential: string,
+    opts?: { maxAttempts?: number; retryDelayMs?: number },
+  ): Promise<UTxO[]> {
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    const maxAttempts = Math.max(1, opts?.maxAttempts ?? 5);
+    const retryDelayMs = Math.max(0, opts?.retryDelayMs ?? 750);
+
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const utxos = await this.lucid.utxosAt(normalizedAddress);
+        if (utxos.length > 0) {
+          // A non-empty list is not enough on its own, we still verify liveness
+          // before returning these outputs to coin selection.
+          const liveUtxos = await this.filterLiveUtxos(utxos);
+          if (liveUtxos.length > 0) {
+            return liveUtxos;
+          }
+        }
+      } catch (err) {
+        lastError = err;
+      }
+
+      if (attempt < maxAttempts && retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    // Intentionally swallow errors here, callers can decide how to proceed with an empty UTxO set.
+    // Keep the variable to aid debugging if we later decide to surface it
+    void lastError;
+    return [];
+  }
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
@@ -1396,7 +1474,14 @@ export class LucidService {
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         undefined,
-        updateTransferModuleAssets(dto.transferModuleUtxo.assets, -dto.transferAmount, dto.denomToken),
+        {
+          // Voucher refund in acknowledgement error flow must keep transfer module value unchanged.
+          // The on-chain transfer module validator checks this branch with assets.zero delta.
+          // Subtracting assets from transfer module here breaks that invariant and the spend is rejected.
+          // We also intentionally do not interpret packet denom as a Cardano asset unit in this path.
+          // Voucher denoms are IBC traces and are not valid ledger asset unit keys.
+          ...dto.transferModuleUtxo.assets,
+        },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -1595,8 +1680,11 @@ export class LucidService {
         },
       )
       .pay.ToContract(dto.transferModuleAddress, undefined, {
+        // Voucher refund in timeout flow must keep transfer module value unchanged.
+        // The validator enforces zero delta for transfer module value in refund voucher paths.
+        // transferAmount is token quantity from packet data and must never be treated as lovelace.
+        // Subtracting lovelace here can underfund the output and violates on-chain refund rules.
         ...dto.transferModuleUtxo.assets,
-        lovelace: dto.transferModuleUtxo.assets.lovelace - dto.transferAmount,
       })
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
@@ -1717,11 +1805,11 @@ export class LucidService {
     return fullName;
   };
 
-  private txFromWallet(constructedAddress: string): TxBuilder {
+  private txFromWallet(constructedAddress: string, preserveSelectedWallet = false): TxBuilder {
     // Use the deployer's private key to build transactions
     // Hermes must be configured with the same key (DEPLOYER_SK) to sign correctly
     const deployerSk = this.configService.get('deployerSk');
-    if (deployerSk) {
+    if (deployerSk && !preserveSelectedWallet) {
       this.lucid.selectWallet.fromPrivateKey(deployerSk);
     }
     return this.lucid.newTx();

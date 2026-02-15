@@ -573,22 +573,6 @@ export class QueryService {
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
-    // const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
-
-    // const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
-    // if (!listBlockNo.length) {
-    //   // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
-    //   return {
-    //     block_results: {
-    //       height: {
-    //         revision_height: request.height,
-    //         revision_number: BigInt(0),
-    //       },
-    //       txs_results: [],
-    //     },
-    //   } as unknown as QueryBlockResultsResponse;
-    // }
-
     try {
       const deploymentConfig = this.configService.get('deployment');
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
@@ -1311,17 +1295,21 @@ export class QueryService {
   }
 
   /**
-   * Query a denom trace by its hash
+   * Query a denom trace by the standard ICS-20 hash input.
+   *
+   * The protobuf request field is named `hash` and Cosmos tooling typically sends either:
+   * - raw 64-char hex hash
+   * - `ibc/<hash>`
+   *
+   * We normalize both forms into the same lowercase hash and always query by
+   * `ibc_denom_hash` so the endpoint stays compatible with standard denom-trace clients.
    */
   async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
     this.logger.log(`Querying denom trace for hash: ${request.hash}`);
     
     try {
-      if (!request.hash) {
-        throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
-      }
-
-      const denomTrace = await this.denomTraceService.findByHash(request.hash);
+      const ibcDenomHash = this.normalizeIbcDenomHashInput(request.hash);
+      const denomTrace = await this.denomTraceService.findByIbcDenomHash(ibcDenomHash);
       
       if (!denomTrace) {
         throw new GrpcNotFoundException(`Denom trace not found for hash: ${request.hash}`);
@@ -1342,6 +1330,28 @@ export class QueryService {
       }
       throw new GrpcInternalException(`Failed to query denom trace: ${error.message}`);
     }
+  }
+
+  private normalizeIbcDenomHashInput(input: string | undefined): string {
+    // Keep this parser strict so invalid inputs fail fast at the API boundary.
+    // Accepting non-standard forms here makes lookups ambiguous and can hide caller errors.
+    const normalizedInput = input?.trim();
+    if (!normalizedInput) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+    }
+
+    const withoutPrefix = normalizedInput.toLowerCase().startsWith('ibc/')
+      ? normalizedInput.slice(4)
+      : normalizedInput;
+    const candidateHash = withoutPrefix.trim();
+
+    if (!/^[0-9a-fA-F]{64}$/.test(candidateHash)) {
+      throw new GrpcInvalidArgumentException(
+        'Invalid argument: "hash" must be a 64-character hex hash or ibc/<hash>',
+      );
+    }
+
+    return candidateHash.toLowerCase();
   }
 
   /**

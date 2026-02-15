@@ -3,4 +3,4 @@ export const TRANSACTION_TIME_TO_LIVE = 120_000; // 2 minutes
 
 // Target collateral (lovelace) used by Lucid during tx completion.
 // This must be comfortably above the ledger-required collateral for Plutus scripts.
-export const TRANSACTION_SET_COLLATERAL = 10_000_000n; // 10 ADA
+export const TRANSACTION_SET_COLLATERAL = 20_000_000n; // 20 ADA

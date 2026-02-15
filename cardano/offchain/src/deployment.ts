@@ -513,6 +513,8 @@ async function mintMockToken(lucid: LucidEvolution) {
 
   const tokenUnit = mintMockTokenPolicyId + tokenName;
 
+  const walletAddress = await lucid.wallet().address();
+
   const tx = lucid
     .newTx()
     .attach.MintingPolicy(mintMockTokenValidator)
@@ -523,7 +525,7 @@ async function mintMockToken(lucid: LucidEvolution) {
       Data.void()
     )
     .pay.ToAddress(
-      "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql",
+      walletAddress,
       {
         [tokenUnit]: 999999999n,
       }

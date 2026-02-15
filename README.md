@@ -317,6 +317,14 @@ Example:
 > Use case under construction:  
 > We are currently refactoring the code, so this use case might not work properly.
 
+From this repo, you can run the full flow with:
+
+```sh
+caribic demo token-swap
+```
+
+That command expects the bridge and osmosis services to already be running. It validates those services, prepares Hermes, sets up swap contracts, and executes the Cardano-to-Osmosis swap path end-to-end.
+
 1. Run:
   ```sh
   chains/osmosis/osmosis/scripts/setup_crosschain_swaps.sh

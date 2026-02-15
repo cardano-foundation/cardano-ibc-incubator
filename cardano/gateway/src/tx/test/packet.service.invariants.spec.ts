@@ -68,6 +68,12 @@ describe('PacketService denom invariants', () => {
     );
   });
 
+  it('rejects unresolved ibc/<hash> denoms in packet normalization', () => {
+    expect(() => (service as any)._normalizePacketDenom('ibc/ABCDEF', 'transfer', 'channel-0')).toThrow(
+      GrpcInvalidArgumentException,
+    );
+  });
+
   it('keeps Cardano token-unit denoms unchanged', () => {
     const tokenUnit = '465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b';
     const normalized = (service as any)._normalizePacketDenom(tokenUnit, 'transfer', 'channel-0');
@@ -112,12 +118,38 @@ describe('PacketService denom invariants', () => {
     ).toThrow(GrpcInvalidArgumentException);
   });
 
+  it('does not fall back from escrow denom to voucher token units', () => {
+    const inputDenom = 'def68337867cb4f1f95b6b811fedbfcdd7780d10a95cc072077088ea6d6f636b';
+    const resolvedDenom = inputDenom;
+    const unrelatedVoucherTokenUnit = `voucherpolicy${hashSha3_256(convertString2Hex('transfer/channel-0/stake'))}`;
+    const senderWalletUtxos = [
+      {
+        assets: {
+          lovelace: 2_000_000n,
+          [unrelatedVoucherTokenUnit]: 10n,
+        },
+      },
+    ];
+
+    expect(() =>
+      (service as any)._resolveEscrowDenomToken(inputDenom, resolvedDenom, senderWalletUtxos),
+    ).toThrow(GrpcInvalidArgumentException);
+  });
+
   it('resolves ibc/<hash> to canonical path/base_denom for burn', async () => {
     const fullDenomPath = 'transfer/channel-0/stake';
     const hash = hashSHA256(convertString2Hex(fullDenomPath)).toUpperCase();
     denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({ path: 'transfer/channel-0', base_denom: 'stake' });
 
     await expect((service as any)._resolveVoucherDenomForBurn(`ibc/${hash}`)).resolves.toBe(fullDenomPath);
+  });
+
+  it('resolves ibc/<hash> to canonical path/base_denom for send-path denom handling', async () => {
+    const fullDenomPath = 'transfer/channel-0/stake';
+    const hash = hashSHA256(convertString2Hex(fullDenomPath)).toUpperCase();
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({ path: 'transfer/channel-0', base_denom: 'stake' });
+
+    await expect((service as any)._resolvePacketDenomForSend(`ibc/${hash}`)).resolves.toBe(fullDenomPath);
   });
 
   it('fails burn resolution when ibc/<hash> has no trace mapping', async () => {
@@ -132,11 +164,24 @@ describe('PacketService denom invariants', () => {
     expect(() => (service as any)._buildVoucherTokenName('0123abcd')).toThrow(GrpcInvalidArgumentException);
   });
 
+  it('rejects voucher token-name hashing when denom is unresolved ibc/<hash>', () => {
+    expect(() => (service as any)._buildVoucherTokenName('ibc/ABCDEF')).toThrow(GrpcInvalidArgumentException);
+  });
+
   it('hashes voucher token-name from canonical non-hex denom', () => {
     const canonicalDenom = 'transfer/channel-0/stake';
     const tokenName = (service as any)._buildVoucherTokenName(canonicalDenom);
 
     expect(tokenName).toBe(hashSha3_256(convertString2Hex(canonicalDenom)));
+  });
+
+  it('does not apply an extra prefix when hashing refund voucher denoms', () => {
+    const canonicalDenom = 'transfer/channel-0/transfer/channel-1/stake';
+    const doublePrefixedDenom = `transfer/channel-0/${canonicalDenom}`;
+    const tokenName = (service as any)._buildVoucherTokenName(canonicalDenom);
+
+    expect(tokenName).toBe(hashSha3_256(convertString2Hex(canonicalDenom)));
+    expect(tokenName).not.toBe(hashSha3_256(convertString2Hex(doublePrefixedDenom)));
   });
 
   it('produces the same voucher token-name after ibc hash reverse lookup round-trip', async () => {
