@@ -1,4 +1,5 @@
 import { REDEEMER_TYPE } from '../constant/redeemer';
+import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { convertHex2String, convertString2Hex, hashSha3_256 } from '../shared/helpers/hex';
 import { getDenomPrefix } from '../shared/helpers/helper';
 import { decodeSpendChannelRedeemer, SpendChannelRedeemer } from '../shared/types/channel/channel-redeemer';
@@ -153,13 +154,11 @@ export function deriveVoucherTraceCandidatesForTx(
 }
 
 export function splitTracePath(fullDenomPath: string): { path: string; baseDenom: string } | null {
-  const parts = fullDenomPath.split('/');
-  const baseDenom = parts.pop();
-  if (!baseDenom) return null;
-  return {
-    path: parts.join('/'),
-    baseDenom,
-  };
+  try {
+    return splitFullDenomTrace(fullDenomPath);
+  } catch {
+    return null;
+  }
 }
 
 function extractPacketContext(spendRedeemer: SpendChannelRedeemer): PacketContext | null {
@@ -208,4 +207,3 @@ function tryDecodeMintVoucherRedeemer(
 function equalHex(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
 }
-

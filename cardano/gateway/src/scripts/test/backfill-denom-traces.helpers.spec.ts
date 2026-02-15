@@ -160,10 +160,19 @@ describe('backfill-denom-traces.helpers', () => {
       path: 'transfer/channel-0',
       baseDenom: 'uatom',
     });
+    expect(splitTracePath('transfer/channel-0/gamm/pool/1')).toEqual({
+      path: 'transfer/channel-0',
+      baseDenom: 'gamm/pool/1',
+    });
+    expect(splitTracePath('transfer/channel-0/transfer/channel-9/factory/osmo1abcd/mytoken')).toEqual({
+      path: 'transfer/channel-0/transfer/channel-9',
+      baseDenom: 'factory/osmo1abcd/mytoken',
+    });
     expect(splitTracePath('lovelace')).toEqual({
       path: '',
       baseDenom: 'lovelace',
     });
+    expect(splitTracePath('transfer/channel-0/')).toBeNull();
   });
 });
 
@@ -199,4 +208,3 @@ function buildPacket(
     timeout_timestamp: 0n,
   };
 }
-
