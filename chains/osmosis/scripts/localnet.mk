@@ -55,7 +55,14 @@ localnet-stop:
 	@STATE="" docker compose -f tests/localosmosis/docker-compose.yml down
 
 localnet-clean:
-	sudo rm -rf $(HOME)/.osmosisd-local/
+	@if [ -d "$(HOME)/.osmosisd-local" ]; then \
+		echo "Cleaning $(HOME)/.osmosisd-local/"; \
+		if rm -rf "$(HOME)/.osmosisd-local/" 2>/dev/null; then \
+			echo "Removed existing local Osmosis state"; \
+		else \
+			echo "Could not remove $(HOME)/.osmosisd-local/ without elevated permissions, continuing with existing state"; \
+		fi; \
+	fi
 
 # create 100 concentrated-liquidity positions in localosmosis at pool id 1
 localnet-cl-create-positions:
