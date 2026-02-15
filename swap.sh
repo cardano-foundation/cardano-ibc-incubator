@@ -17,25 +17,53 @@ if [ ! -x "$HERMES_BIN" ]; then
     exit 1
 fi
 
-# Function to resolve the latest transfer channel id between two Hermes chains
+# Returns the counterparty channel id for one transfer channel end.
+extract_counterparty_channel_id() {
+    _chain="$1"
+    _channel="$2"
+
+    "$HERMES_BIN" query channel end --chain "$_chain" --port transfer --channel "$_channel" 2>/dev/null |
+        sed -n '/channel_id: Some(/,/),/p' |
+        sed -n 's/.*"\(channel-[0-9][0-9]*\)".*/\1/p' |
+        head -n 1
+}
+
+# Resolve a transfer channel id that has a valid, symmetric counterparty channel end.
 get_latest_transfer_channel_id() {
     _channel_chain="$1"
     _counterparty_chain="$2"
 
-    _channel_id=$(
+    _channel_candidates=$(
         "$HERMES_BIN" --json query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
             jq -r '
                 select(.result) |
-                (if (.result | type) == "array" then .result[-1] else .result end) |
+                (if (.result | type) == "array" then .result[] else .result end) |
                 .channel_id // .channel_a // empty
-            ' 2>/dev/null | tail -n 1
+            ' 2>/dev/null |
+            sort -t- -k2,2nr
     )
+
+    while IFS= read -r _candidate_channel_id; do
+        [ -z "$_candidate_channel_id" ] && continue
+        _counterparty_channel_id=$(extract_counterparty_channel_id "$_channel_chain" "$_candidate_channel_id")
+        [ -z "$_counterparty_channel_id" ] && continue
+        _reverse_counterparty_channel_id=$(extract_counterparty_channel_id "$_counterparty_chain" "$_counterparty_channel_id")
+        if [ "$_reverse_counterparty_channel_id" = "$_candidate_channel_id" ]; then
+            echo "$_candidate_channel_id"
+            return 0
+        fi
+    done <<EOF
+$_channel_candidates
+EOF
+
+    _channel_id=$(printf '%s\n' "$_channel_candidates" | head -n 1)
 
     if [ -z "$_channel_id" ]; then
         _channel_id=$(
             "$HERMES_BIN" query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
                 tr '[:space:]' '\n' |
                 grep '^channel-' |
+                sort -t- -k2,2nr |
                 head -n 1
         )
     fi
@@ -57,6 +85,15 @@ print_swap_diagnostics() {
     "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id" || true
 }
 
+print_settlement_progress() {
+    _cardano_now=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id")
+    _sidechain_osmosis_now=$(current_max_commitment_seq "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id")
+
+    echo "Settlement progress (current max commitment seq / baseline):"
+    echo "  ${HERMES_CARDANO_NAME}/${cardano_sidechain_chann_id}: ${_cardano_now}/${baseline_cardano_sidechain_seq}"
+    echo "  ${HERMES_SIDECHAIN_NAME}/${sidechain_osmosis_chann_id}: ${_sidechain_osmosis_now}/${baseline_sidechain_osmosis_seq}"
+}
+
 run_with_timeout() {
     local _rwto_seconds="$1"
     shift
@@ -72,15 +109,30 @@ run_with_timeout() {
 }
 
 clear_swap_packets() {
-    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id"
-    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_cardano_chann_id"
-    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id"
-    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id"
+    clear_channel_packets_since_baseline "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id" "$baseline_cardano_sidechain_seq"
+    clear_channel_packets_since_baseline "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id" "$baseline_sidechain_osmosis_seq"
+}
+
+clear_channel_packets_since_baseline() {
+    _chain="$1"
+    _channel="$2"
+    _baseline_max_seq="$3"
+
+    _current_max_seq=$(current_max_commitment_seq "$_chain" "$_channel")
+    if [ "$_current_max_seq" -le "$_baseline_max_seq" ]; then
+        return 0
+    fi
+
+    _from_seq=$(( _baseline_max_seq + 1 ))
+    _sequence_range="${_from_seq}..${_current_max_seq}"
+    echo "Clearing packet commitments on ${_chain}/${_channel} for new sequence range ${_sequence_range}"
+    run_with_timeout 180 "$HERMES_BIN" clear packets --chain "$_chain" --port transfer --channel "$_channel" --packet-sequences "$_sequence_range"
 }
 
 channel_commitments_cleared() {
     _chain="$1"
     _channel="$2"
+    _baseline_max_seq="$3"
 
     _out=$("$HERMES_BIN" query packet commitments --chain "$_chain" --port transfer --channel "$_channel" 2>&1)
     _status=$?
@@ -89,21 +141,46 @@ channel_commitments_cleared() {
         return 2
     fi
 
-    if printf '%s\n' "$_out" | grep -Eq 'seqs:[[:space:]]*\[[[:space:]]*\]'; then
+    _current_max_seq=0
+    while IFS= read -r _range; do
+        [ -z "$_range" ] && continue
+        _range_end="${_range##*..=}"
+        if [ "$_range_end" -gt "$_current_max_seq" ]; then
+            _current_max_seq="$_range_end"
+        fi
+    done <<EOF
+$(printf '%s\n' "$_out" | grep -Eo '[0-9]+\.\.=[0-9]+')
+EOF
+
+    if [ "$_current_max_seq" -le "$_baseline_max_seq" ]; then
         return 0
     fi
+    return 1
+}
 
-    if printf '%s\n' "$_out" | grep -qi 'no packet commitments found'; then
-        return 0
-    fi
-
-    if printf '%s\n' "$_out" | grep -Eq 'seqs:[[:space:]]*\['; then
+current_max_commitment_seq() {
+    _chain="$1"
+    _channel="$2"
+    _out=$("$HERMES_BIN" query packet commitments --chain "$_chain" --port transfer --channel "$_channel" 2>&1)
+    _status=$?
+    if [ "$_status" -ne 0 ]; then
+        echo "0"
         return 1
     fi
 
-    echo "Unexpected packet commitments output for chain=${_chain}, channel=${_channel}:" >&2
-    echo "$_out" >&2
-    return 2
+    _max_seq=0
+    while IFS= read -r _range; do
+        [ -z "$_range" ] && continue
+        _range_end="${_range##*..=}"
+        if [ "$_range_end" -gt "$_max_seq" ]; then
+            _max_seq="$_range_end"
+        fi
+    done <<EOF
+$(printf '%s\n' "$_out" | grep -Eo '[0-9]+\.\.=[0-9]+')
+EOF
+
+    echo "$_max_seq"
+    return 0
 }
 
 wait_for_swap_settlement() {
@@ -116,23 +193,17 @@ wait_for_swap_settlement() {
         _pending=0
         _unknown=0
 
-        channel_commitments_cleared "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id"; _result=$?
+        channel_commitments_cleared "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id" "$baseline_cardano_sidechain_seq"; _result=$?
         [ "$_result" -eq 1 ] && _pending=1
         [ "$_result" -eq 2 ] && _unknown=1
 
-        channel_commitments_cleared "$HERMES_SIDECHAIN_NAME" "$sidechain_cardano_chann_id"; _result=$?
-        [ "$_result" -eq 1 ] && _pending=1
-        [ "$_result" -eq 2 ] && _unknown=1
-
-        channel_commitments_cleared "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id"; _result=$?
-        [ "$_result" -eq 1 ] && _pending=1
-        [ "$_result" -eq 2 ] && _unknown=1
-
-        channel_commitments_cleared "$HERMES_OSMOSIS_NAME" "$osmosis_sidechain_chann_id"; _result=$?
+        channel_commitments_cleared "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id" "$baseline_sidechain_osmosis_seq"; _result=$?
         [ "$_result" -eq 1 ] && _pending=1
         [ "$_result" -eq 2 ] && _unknown=1
 
         if [ "$_pending" -eq 0 ] && [ "$_unknown" -eq 0 ]; then
+            # Reverse legs can keep packet commitments with async forwarding acknowledgements.
+            # For demo completion we only block on forward legs from Cardano to Osmosis.
             echo "All transfer packet commitments are cleared."
             return 0
         fi
@@ -150,6 +221,7 @@ wait_for_swap_settlement() {
 
         if [ $(( _attempt % 6 )) -eq 0 ]; then
             echo "Still waiting for transfer settlement (${_elapsed}s elapsed)..."
+            print_settlement_progress
             print_swap_diagnostics
         fi
 
@@ -179,6 +251,9 @@ echo "Entrypoint chain->Osmosis channel id: $sidechain_osmosis_chann_id"
 osmosis_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_SIDECHAIN_NAME")
 check_string_empty "$osmosis_sidechain_chann_id" "Osmosis->Entrypoint chain channel not found. Exiting..."
 echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
+
+baseline_cardano_sidechain_seq=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id")
+baseline_sidechain_osmosis_seq=$(current_max_commitment_seq "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id")
 
 memo=$(
     jq -nc \

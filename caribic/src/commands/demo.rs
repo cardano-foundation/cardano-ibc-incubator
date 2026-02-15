@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     logger,
     start::{self, configure_hermes, run_hermes_command},
-    stop::stop_osmosis,
+    stop::{stop_osmosis, stop_relayer},
     utils::{
         execute_script, get_osmosis_dir, parse_tendermint_client_id, parse_tendermint_connection_id,
     },
@@ -41,6 +41,16 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
     logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
     wait_for_mithril_artifacts_for_demo().await?;
 
+    let relayer_path = project_root_path.join("relayer");
+    let mut restart_relayer_after_setup = false;
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+        logger::verbose(
+            "Stopping Hermes daemon during token-swap setup to avoid account sequence contention",
+        );
+        stop_relayer(relayer_path.as_path());
+        restart_relayer_after_setup = true;
+    }
+
     if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
         return fail_with_cleanup(
             osmosis_dir.as_path(),
@@ -61,6 +71,18 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
         }
     }
 
+    if restart_relayer_after_setup {
+        match start::start_hermes_daemon() {
+            Ok(_) => logger::log("PASS: Hermes daemon restarted for token relay"),
+            Err(error) => {
+                return fail_with_cleanup(
+                    osmosis_dir.as_path(),
+                    &format!("ERROR: Failed to restart Hermes daemon: {}", error),
+                )
+            }
+        }
+    }
+
     let setup_script_path = osmosis_dir
         .join("scripts")
         .join("setup_crosschain_swaps.sh");
@@ -68,7 +90,12 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
         .to_str()
         .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
-    let setup_output = match execute_script(project_root_path, setup_script, Vec::new(), None) {
+    let setup_output = match execute_script(
+        project_root_path,
+        setup_script,
+        Vec::new(),
+        Some(vec![("CARIBIC_CLEAR_SWAP_PACKETS", "true")]),
+    ) {
         Ok(output) => {
             logger::log("\nPASS: Token swap demo setup script completed");
             output
