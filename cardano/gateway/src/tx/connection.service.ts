@@ -83,6 +83,31 @@ export class ConnectionService {
     return a.outputIndex - b.outputIndex;
   }
 
+  private sumLovelace(utxos: UTxO[]): bigint {
+    let total = 0n;
+    for (const utxo of utxos) {
+      const lovelace = (utxo.assets as any)?.lovelace;
+      if (typeof lovelace === 'bigint') {
+        total += lovelace;
+      }
+    }
+    return total;
+  }
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${this.sumLovelace(walletUtxos)}`,
+    );
+  }
+
   /**
    * Best-effort mapping for ledger-style redeemer pointers like `Spend[0]`.
    *
@@ -247,6 +272,7 @@ export class ConnectionService {
       const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
 
       // DEBUG: emit CBOR and key inputs so we can reproduce Ogmios eval failures
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenInit');
       const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -310,6 +336,7 @@ export class ConnectionService {
       const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
       
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenTry');
       const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -421,6 +448,7 @@ export class ConnectionService {
       //
       // If you need to fall back to local evaluation during debugging, switch this to:
       //   `.complete({ localUPLCEval: true })`
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenAck');
       const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -509,8 +537,9 @@ export class ConnectionService {
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
-
+      
       // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenConfirm');
       const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete({
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
