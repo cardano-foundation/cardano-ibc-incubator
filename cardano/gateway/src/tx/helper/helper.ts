@@ -11,6 +11,21 @@ export function normalizeDenomTokenTransfer(denom: string): string {
 
   return result;
 }
+
+export function mapLovelaceDenom(
+  denom: string,
+  direction: 'asset_to_packet' | 'packet_to_asset',
+): string {
+  const normalizedDenom = normalizeDenomTokenTransfer(denom);
+  const lowerDenom = normalizedDenom.toLowerCase();
+  const lovelacePacketDenom = Buffer.from(LOVELACE, 'utf8').toString('hex');
+
+  if (direction === 'asset_to_packet') {
+    return lowerDenom === LOVELACE ? lovelacePacketDenom : normalizedDenom;
+  }
+
+  return lowerDenom === lovelacePacketDenom || lowerDenom === LOVELACE ? LOVELACE : normalizedDenom;
+}
 export function decodeClientState(value: Uint8Array): ClientState {
   try {
     return ClientState.decode(value);

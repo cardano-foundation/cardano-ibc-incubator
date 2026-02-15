@@ -35,7 +35,7 @@ import {
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
-import { normalizeDenomTokenTransfer } from './helper/helper';
+import { mapLovelaceDenom, normalizeDenomTokenTransfer } from './helper/helper';
 import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
@@ -396,13 +396,13 @@ export class PacketService {
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for recv packet');
-      const response: MsgRecvPacketResponse = {
+      const response: MsgTransferResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
           value: cborHexBytes,
         },
-      } as unknown as MsgRecvPacketResponse;
+      };
       return response;
     } catch (error) {
       this.logger.error(`recvPacket: ${error}`);
@@ -459,13 +459,13 @@ export class PacketService {
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for send packet');
-      const response: MsgRecvPacketResponse = {
+      const response: MsgTransferResponse = {
         result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
         unsigned_tx: {
           type_url: '',
           value: cborHexBytes,
         },
-      } as unknown as MsgRecvPacketResponse;
+      };
       return response;
     } catch (error) {
       console.error(error);
@@ -889,7 +889,7 @@ export class PacketService {
             const transferAmount = BigInt(fungibleTokenPacketData.amount);
             const denomToken = this._resolveAssetUnitFromUtxoAssets(
               transferModuleUtxo.assets,
-              normalizeDenomTokenTransfer(unescrowDenom),
+              mapLovelaceDenom(unescrowDenom, 'packet_to_asset'),
             );
             const escrowedAmount = transferModuleUtxo.assets[denomToken] ?? 0n;
             if (escrowedAmount < transferAmount) {
@@ -1133,10 +1133,7 @@ export class PacketService {
     const { transferModuleUtxo, transferModuleAddress, spendChannelAddress } = await this.getTransferModuleDetails();
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
-    const denom =
-      timeoutPacketOperator.fungibleTokenPacketData.denom === convertString2Hex(LOVELACE)
-        ? convertHex2String(timeoutPacketOperator.fungibleTokenPacketData.denom)
-        : timeoutPacketOperator.fungibleTokenPacketData.denom;
+    const denom = mapLovelaceDenom(timeoutPacketOperator.fungibleTokenPacketData.denom, 'packet_to_asset');
     const spendTransferModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
@@ -1830,10 +1827,16 @@ export class PacketService {
       )
     ) {
       this.logger.log('AckPacketUnescrow');
-      const denomToken = normalizeDenomTokenTransfer(fungibleTokenPacketData.denom);
-      await this.refreshWalletContext(constructedAddress, 'acknowledgementPacket(unescrow)', {
-        excludeAssetUnit: denomToken,
-      });
+      const denomToken = mapLovelaceDenom(fungibleTokenPacketData.denom, 'packet_to_asset');
+      await this.refreshWalletContext(
+        constructedAddress,
+        'acknowledgementPacket(unescrow)',
+        denomToken === LOVELACE
+          ? undefined
+          : {
+              excludeAssetUnit: denomToken,
+            },
+      );
       // build update channel datum
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
@@ -2055,22 +2058,28 @@ export class PacketService {
     );
   }
   private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
-    if (this._hasVoucherPrefix(denom, portId, channelId)) {
-      return denom;
+    const normalizedDenom = normalizeDenomTokenTransfer(denom).trim();
+    const packetMappedDenom = mapLovelaceDenom(normalizedDenom, 'asset_to_packet');
+    if (packetMappedDenom !== normalizedDenom) {
+      return packetMappedDenom;
     }
-    if (denom.startsWith('ibc/')) {
+
+    if (this._hasVoucherPrefix(normalizedDenom, portId, channelId)) {
+      return normalizedDenom;
+    }
+    if (normalizedDenom.startsWith('ibc/')) {
       throw new GrpcInvalidArgumentException(
-        `IBC hash denom ${denom} must be reverse-resolved to a full denom trace before packet normalization`,
+        `IBC hash denom ${normalizedDenom} must be reverse-resolved to a full denom trace before packet normalization`,
       );
     }
-    if (this._isCardanoTokenUnitDenom(denom)) {
-      return denom;
+    if (this._isCardanoTokenUnitDenom(normalizedDenom)) {
+      return normalizedDenom;
     }
-    if (this._isHexDenom(denom)) {
+    if (this._isHexDenom(normalizedDenom)) {
       // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
       throw new GrpcInvalidArgumentException('Denom appears to be already hex-encoded; refusing to hex-encode twice');
     }
-    return convertString2Hex(denom);
+    return convertString2Hex(normalizedDenom);
   }
   private _isCardanoTokenUnitDenom(denom: string): boolean {
     // Cardano token unit = 28-byte policy id (56 hex chars) + optional asset name (0..32 bytes => 0..64 hex chars).

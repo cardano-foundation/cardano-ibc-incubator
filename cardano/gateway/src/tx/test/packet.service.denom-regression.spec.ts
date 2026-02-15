@@ -348,4 +348,162 @@ describe('PacketService denom regression coverage', () => {
       }),
     );
   });
+
+  it('maps packet denom hex(lovelace) back to lovelace asset unit in acknowledgement unescrow', async () => {
+    const loggerMock = {
+      log: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    } as unknown as Logger;
+
+    const configServiceMock = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key !== 'deployment') return undefined;
+        return {
+          validators: {
+            spendChannel: {
+              refValidator: {
+                acknowledge_packet: {
+                  scriptHash: 'ack-packet-policy-id',
+                },
+              },
+            },
+            verifyProof: {
+              scriptHash: 'verify-proof-policy-id',
+            },
+            mintVoucher: {
+              scriptHash: 'mint-voucher-policy-id',
+            },
+          },
+          modules: {
+            transfer: {
+              identifier: 'transfer-module-identifier',
+            },
+          },
+        };
+      }),
+    } as unknown as ConfigService;
+
+    const lucidServiceMock = {
+      getChannelTokenUnit: jest.fn().mockReturnValue(['channel-policy-id', 'channel-token-name']),
+      getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
+      getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
+      findUtxoByUnit: jest.fn(),
+      decodeDatum: jest.fn(),
+      encode: jest.fn().mockResolvedValue('encoded'),
+      credentialToAddress: jest.fn().mockReturnValue('addr_test1senderresolved'),
+      createUnsignedAckPacketMintTx: jest.fn().mockReturnValue({ tag: 'unsigned-ack-mint' }),
+      createUnsignedAckPacketUnescrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-ack-unescrow' }),
+      createUnsignedAckPacketSucceedTx: jest.fn().mockReturnValue({ tag: 'unsigned-ack-succeed' }),
+      LucidImporter: {},
+    };
+
+    const denomTraceServiceMock = {
+      saveDenomTrace: jest.fn().mockResolvedValue({}),
+      findByIbcDenomHash: jest.fn(),
+    };
+
+    const service = new PacketService(
+      loggerMock,
+      configServiceMock,
+      lucidServiceMock as unknown as LucidService,
+      denomTraceServiceMock as unknown as DenomTraceService,
+      {} as IbcTreePendingUpdatesService,
+    );
+
+    const refreshWalletContextSpy = jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
+      hostStateUtxo: { txHash: 'host', outputIndex: 0, assets: {} },
+      encodedHostStateRedeemer: 'encoded-host-state-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-updated-host-state-datum',
+      newRoot: 'new-root',
+      commit: jest.fn(),
+    });
+
+    const packetSequence = 9n;
+    const channelDatum = {
+      port: convertString2Hex('transfer'),
+      state: {
+        channel: {
+          state: 'Open',
+          connection_hops: [convertString2Hex('connection-0')],
+          counterparty: {
+            port_id: convertString2Hex('transfer'),
+            channel_id: convertString2Hex('channel-44'),
+          },
+        },
+        packet_commitment: new Map<bigint, string>([[packetSequence, 'commitment']]),
+      },
+    };
+    const connectionDatum = {
+      state: {
+        client_id: convertString2Hex('07-tendermint-0'),
+        delay_period: 0n,
+        counterparty: {
+          prefix: {
+            key_prefix: convertString2Hex('ibc'),
+          },
+        },
+      },
+    };
+    const proofHeight = {
+      revisionNumber: 0n,
+      revisionHeight: 10n,
+    };
+    const clientDatum = {
+      state: {
+        clientState: {
+          chainId: '',
+        },
+        consensusStates: new Map([[proofHeight, { timestamp: 0n }]]),
+      },
+    };
+
+    lucidServiceMock.findUtxoByUnit
+      .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'transfer', outputIndex: 0, datum: 'transfer-datum', assets: {} });
+    lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
+      if (type === 'channel') return channelDatum;
+      if (type === 'connection') return connectionDatum;
+      if (type === 'client') return clientDatum;
+      return {};
+    });
+
+    await service.buildUnsignedAcknowlegementPacketTx(
+      {
+        channelId: 'channel-7',
+        packetSequence,
+        packetData: convertString2Hex(
+          JSON.stringify({
+            denom: convertString2Hex('lovelace'),
+            amount: '10',
+            sender: 'sender-credential',
+            receiver: 'receiver-credential',
+            memo: '',
+          }),
+        ),
+        proofHeight,
+        proofAcked: { proofs: [] } as any,
+        acknowledgement: convertString2Hex(JSON.stringify({ error: 'refund on source chain' })),
+        timeoutHeight: {
+          revisionNumber: 0n,
+          revisionHeight: 0n,
+        },
+        timeoutTimestamp: 0n,
+      },
+      'addr_test1operator',
+    );
+
+    expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        denomToken: 'lovelace',
+      }),
+    );
+    expect(refreshWalletContextSpy).toHaveBeenNthCalledWith(2, 'addr_test1operator', 'acknowledgementPacket(unescrow)', undefined);
+    expect(lucidServiceMock.createUnsignedAckPacketMintTx).not.toHaveBeenCalled();
+    expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
+  });
 });
