@@ -401,7 +401,7 @@ pub async fn start_local_cardano_network(
     // Start Mithril as early as possible (after the Cardano node is reachable, but before we wait
     // for the Conway era to seed the devnet).
     //
-    // The slow part of local Mithril boot is not the `docker compose up` itself; it's the epoch-
+    // The slow part of local Mithril boot is not the `docker compose up` itself, it is the epoch-
     // based waiting for Cardano immutable files + genesis certificate bootstrap. Starting Mithril
     // here reduces wall-clock time because those waits can overlap with:
     // - the remaining "wait for Conway" period,
@@ -1070,7 +1070,8 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
 
     let mut local_osmosis_client_id = None;
     for _ in 0..10 {
-        // Try to create osmosis client
+        // Client creation can fail transiently while localosmosis RPC is still warming up.
+        // Retry here so `caribic demo token-swap` is resilient on fresh boots.
         let hermes_create_client_output = Command::new(&hermes_binary)
             .current_dir(&script_dir)
             .args(&[
@@ -1167,7 +1168,9 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             if let Some(connection_id) = connection_id {
                 verbose(&format!("connection_id: {}", connection_id));
 
-                // Create channel
+                // Build transfer channel on the connection we just negotiated.
+                // We use explicit `--a-connection` so channel creation is pinned to a known
+                // open connection instead of relying on implicit connection discovery.
                 log_or_show_progress(
                     &format!("{} Create a channel", style("Step 4/4").bold().dim()),
                     &optional_progress_bar,
@@ -1665,7 +1668,7 @@ pub fn wait_and_start_mithril_genesis(
     // Mithril has two practical prerequisites on a fresh local Cardano devnet:
     //
     // 1) Cardano immutable files must exist.
-    //    The aggregator/signer timepoint logic reads immutable files; if started too early it can
+    //    The aggregator or signer timepoint logic reads immutable files, if started too early it can
     //    error with messages like "no immutable file was returned".
     //
     // 2) A genesis certificate chain must exist.
@@ -1747,7 +1750,7 @@ pub fn wait_and_start_mithril_genesis(
     // Wait for the aggregator to observe and expose the next signers set.
     //
     // The genesis bootstrap command requires signers for the *next signer retrieval epoch*.
-    // On fresh devnets this can lag behind the Cardano epoch progression; running bootstrap too
+    // On fresh devnets this can lag behind the Cardano epoch progression, running bootstrap too
     // early results in "Missing signers for epoch X".
     let epoch_settings_url = "http://127.0.0.1:8080/aggregator/epoch-settings";
     let required_next_signers = 1;
