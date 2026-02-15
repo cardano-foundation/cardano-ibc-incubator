@@ -1359,8 +1359,14 @@ export class PacketService {
     // channel id
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
-    // Use one canonical denom representation for packet construction, branch selection,
-    // and voucher token-name hashing so the send path does not diverge across formats.
+    // Normalize the incoming denom once and carry that canonical representation through the
+    // entire send path. This keeps the packet denom, branch decision, and voucher token-name
+    // hashing aligned even when callers pass different user-facing formats.
+    //
+    // In practice this means:
+    // - `ibc/<hash>` is resolved to its full trace before any branching
+    // - voucher detection uses the resolved trace, not the raw input
+    // - packet data and transfer redeemer use the same final denom string
     const inputDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom);
     const resolvedDenom = await this._resolvePacketDenomForSend(inputDenom);
     const packetDenom = this._normalizePacketDenom(
@@ -1480,7 +1486,9 @@ export class PacketService {
         maxAttempts: 6,
         retryDelayMs: 1000,
       });
-      // Include the concrete voucher UTxO even if indexers lag on `utxosAt`.
+      // Keep the explicit voucher UTxO in the wallet set.
+      // Indexers can lag right after recent transactions, so this guarantees coin selection
+      // can still see the token we intend to burn in this transaction.
       const walletUtxos = this.dedupeUtxos([...senderWalletUtxos, senderVoucherTokenUtxo]);
 
       // send burn
@@ -1892,6 +1900,9 @@ export class PacketService {
       'mintVoucherRedeemer',
     );
 
+    // RefundVoucher token name must hash exactly the denom carried by packet data.
+    // We do not prepend an extra source prefix here because packet data already carries
+    // the canonical trace string for this refund path.
     const denomToHash = fungibleTokenPacketData.denom;
     const voucherTokenName = this._buildVoucherTokenName(denomToHash);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;

@@ -155,8 +155,8 @@ export class DbSyncService {
   async findHostStateUtxoByTxHash(txHash: string): Promise<UtxoDto> {
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;
 
-    // Return the HostState UTxO minted or spent in the exact transaction hash.
-    // This avoids using "closest or latest" state during submission finalization.
+    // Return the HostState UTxO minted/spent in the exact transaction hash.
+    // This avoids using "closest/latest" state during submission finalization.
     const query = `
       SELECT
         tx_out.address AS address,

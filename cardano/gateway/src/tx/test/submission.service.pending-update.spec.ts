@@ -61,12 +61,16 @@ describe('SubmissionService pending update strictness', () => {
   });
 
   it('fails hard on db-sync runtime error instead of falling back to current HostState', async () => {
+    // Simulate a real pending update that would otherwise be eligible to commit.
     ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
       expectedNewRoot: 'fallback-root',
       commit: jest.fn(),
       denomTraceHashes: [],
     });
+    // Simulate db-sync/runtime failure when reading tx-scoped HostState.
     dbSyncServiceMock.findHostStateUtxoByTxHash.mockRejectedValueOnce(new Error('db-sync runtime error'));
+    // Even if a hypothetical fallback path could decode a matching root, the
+    // service must reject and never use current/latest HostState for this tx.
     lucidServiceMock.decodeDatum.mockResolvedValueOnce({
       state: { ibc_state_root: 'fallback-root' },
     });
