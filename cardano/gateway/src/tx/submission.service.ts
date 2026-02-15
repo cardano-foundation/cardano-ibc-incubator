@@ -118,6 +118,11 @@ export class SubmissionService {
       );
     }
 
+    // Attach tx_hash to traces before commit so mapping rows remain connected to the
+    // submitted transaction even when later steps fail or process restarts occur.
+    // Resolve HostState from the exact confirmed transaction.
+    // We intentionally do not accept "latest HostState" here because that can
+    // mask db-sync/runtime failures and attach traces to the wrong tx context.
     // Verify on-chain root matches what we computed when building the tx.
     if (!onChainRoot) {
       onChainRoot = await this.readOnChainRoot(txHash);
@@ -144,6 +149,7 @@ export class SubmissionService {
 
   private async readOnChainRoot(txHash: string): Promise<string> {
     try {
+      // This lookup is tx-scoped by design: if this fails, finalization must fail.
       const hostStateAtTx = await this.dbSyncService.findHostStateUtxoByTxHash(txHash);
       if (!hostStateAtTx?.datum) {
         throw new GrpcInternalException(
@@ -153,6 +159,8 @@ export class SubmissionService {
       const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateAtTx.datum, 'host_state');
       return hostStateDatumAtTx.state.ibc_state_root;
     } catch (error) {
+      // Propagate as a hard failure; callers must never downgrade this into
+      // a "best-effort" path using current/latest state.
       throw new GrpcInternalException(
         `Failed to resolve HostState root for tx ${txHash} from db-sync: ${error?.message ?? error}`,
       );
@@ -160,6 +168,8 @@ export class SubmissionService {
   }
 
   private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
+    // We treat "missing some expected rows" as an integrity error because partial
+    // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.
     const hashes = Array.from(new Set((traceHashes ?? []).map((hash) => hash.toLowerCase())));
     if (hashes.length === 0) return;
 

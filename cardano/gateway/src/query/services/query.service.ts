@@ -1343,7 +1343,14 @@ export class QueryService {
   }
 
   /**
-   * Query a denom trace by its hash
+   * Query a denom trace by the standard ICS-20 hash input.
+   *
+   * The protobuf request field is named `hash` and Cosmos tooling typically sends either:
+   * - raw 64-char hex hash
+   * - `ibc/<hash>`
+   *
+   * We normalize both forms into the same lowercase hash and always query by
+   * `ibc_denom_hash` so the endpoint stays compatible with standard denom-trace clients.
    */
   async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
     this.logger.log(`Querying denom trace for hash: ${request.hash}`);
@@ -1374,6 +1381,8 @@ export class QueryService {
   }
 
   private normalizeIbcDenomHashInput(input: string | undefined): string {
+    // Keep this parser strict so invalid inputs fail fast at the API boundary.
+    // Accepting non-standard forms here makes lookups ambiguous and can hide caller errors.
     const normalizedInput = input?.trim();
     if (!normalizedInput) {
       throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');

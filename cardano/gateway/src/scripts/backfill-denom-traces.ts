@@ -94,6 +94,7 @@ async function bootstrap() {
         continue;
       }
 
+      // Group by tx because one tx can mint multiple voucher token names.
       const group = mintsByTxId.get(txId) ?? { txHash, tokenNames: new Set<string>() };
       group.tokenNames.add(tokenName.toLowerCase());
       mintsByTxId.set(txId, group);
@@ -132,6 +133,7 @@ async function bootstrap() {
         const candidates = deriveVoucherTraceCandidatesForTx(redeemers, Lucid);
         const candidatesByHash = new Map<string, Set<string>>();
         for (const candidate of candidates) {
+          // Keep all candidate paths per token hash so we can detect ambiguity explicitly.
           const key = candidate.voucherTokenName.toLowerCase();
           const paths = candidatesByHash.get(key) ?? new Set<string>();
           paths.add(candidate.fullDenomPath);
@@ -173,6 +175,7 @@ async function bootstrap() {
             tx_hash: txGroup.txHash,
           });
 
+          // Existing rows must match the newly derived canonical trace exactly.
           if (persisted.path !== trace.path || persisted.base_denom !== trace.baseDenom) {
             conflictingExistingRows++;
             logger.error(
@@ -181,6 +184,7 @@ async function bootstrap() {
             continue;
           }
 
+          // Fill tx_hash on older rows that predate current persistence behavior.
           if (!persisted.tx_hash) {
             await denomTraceService.setTxHashForTraces([tokenName], txGroup.txHash);
           }
@@ -208,6 +212,7 @@ async function bootstrap() {
     logger.log(`Conflicting existing rows: ${conflictingExistingRows}`);
     logger.log(`Hard errors: ${hardErrors}`);
 
+    // Any unresolved/ambiguous/conflicting result is a failing run.
     if (unresolvedTokenMints > 0 || ambiguousTokenMints > 0 || conflictingExistingRows > 0 || hardErrors > 0) {
       throw new Error(
         `Strict backfill failed integrity checks (unresolved=${unresolvedTokenMints}, ambiguous=${ambiguousTokenMints}, conflicts=${conflictingExistingRows}, errors=${hardErrors})`,

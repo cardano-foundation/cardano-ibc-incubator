@@ -41,6 +41,8 @@ describe('QueryService new client height strictness', () => {
     } as unknown as ConfigService;
 
     mithrilServiceMock = {
+      // Keep the fixture intentionally small: the gateway only "knows" about height 100.
+      // The test will request a different height and we expect an immediate hard failure.
       getMostRecentMithrilStakeDistributions: jest.fn().mockResolvedValue([]),
       getCardanoTransactionsSetSnapshot: jest.fn().mockResolvedValue([
         {
@@ -51,6 +53,7 @@ describe('QueryService new client height strictness', () => {
           created_at: '2026-01-01T00:00:00Z',
         },
       ]),
+      // If this is ever called in this test, it means we did not fail early enough.
       getCertificateByHash: jest.fn().mockRejectedValue(new Error('must not be called for unknown height')),
     };
 
@@ -70,7 +73,9 @@ describe('QueryService new client height strictness', () => {
   });
 
   it('fails hard when requested new-client height is missing, without falling back to latest snapshot', async () => {
+    // Request a height that is not present in the snapshot list.
     await expect(service.queryNewMithrilClient({ height: 999n } as any)).rejects.toThrow(GrpcNotFoundException);
+    // Guard against regressions where code silently substitutes "latest" and continues.
     expect(mithrilServiceMock.getCertificateByHash).not.toHaveBeenCalled();
   });
 });

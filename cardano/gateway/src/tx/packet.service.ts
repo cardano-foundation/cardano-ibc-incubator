@@ -35,7 +35,7 @@ import {
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
-import { mapLovelaceDenom, normalizeDenomTokenTransfer } from './helper/helper';
+import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
 import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
@@ -161,17 +161,6 @@ export class PacketService {
     return order.map((k) => map.get(k)!).filter(Boolean);
   }
 
-  private sumLovelace(utxos: UTxO[]): bigint {
-    let total = 0n;
-    for (const utxo of utxos) {
-      const lovelace = (utxo.assets as any)?.lovelace;
-      if (typeof lovelace === 'bigint') {
-        total += lovelace;
-      }
-    }
-    return total;
-  }
-
   private async refreshWalletContext(
     address: string,
     context: string,
@@ -229,7 +218,7 @@ export class PacketService {
 
     this.lucidService.selectWalletFromAddress(address, selectableWalletUtxos);
     this.logger.log(
-      `[walletContext] ${context} selecting wallet from ${address}, utxos=${selectableWalletUtxos.length}/${walletUtxos.length}, lovelace_total=${this.sumLovelace(selectableWalletUtxos)}`,
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${selectableWalletUtxos.length}/${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(selectableWalletUtxos)}`,
     );
   }
 
@@ -441,7 +430,7 @@ export class PacketService {
         const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
         this.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
         this.logger.log(
-          `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${this.sumLovelace(
+          `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(
             utxosToUse,
           )}`,
         );
@@ -1258,7 +1247,6 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
-    // const prefixedDenom = convertString2Hex(sourcePrefix + denom);
     const prefixedDenom = convertString2Hex(denom);
     const mintVoucherRedeemer: MintVoucherRedeemer = {
       RefundVoucher: {
@@ -1359,8 +1347,14 @@ export class PacketService {
     // channel id
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
 
-    // Use one canonical denom representation for packet construction, branch selection,
-    // and voucher token-name hashing so the send path does not diverge across formats.
+    // Normalize the incoming denom once and carry that canonical representation through the
+    // entire send path. This keeps the packet denom, branch decision, and voucher token-name
+    // hashing aligned even when callers pass different user-facing formats.
+    //
+    // In practice this means:
+    // - `ibc/<hash>` is resolved to its full trace before any branching
+    // - voucher detection uses the resolved trace, not the raw input
+    // - packet data and transfer redeemer use the same final denom string
     const inputDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom);
     const resolvedDenom = await this._resolvePacketDenomForSend(inputDenom);
     const packetDenom = this._normalizePacketDenom(
@@ -1480,7 +1474,9 @@ export class PacketService {
         maxAttempts: 6,
         retryDelayMs: 1000,
       });
-      // Include the concrete voucher UTxO even if indexers lag on `utxosAt`.
+      // Keep the explicit voucher UTxO in the wallet set.
+      // Indexers can lag right after recent transactions, so this guarantees coin selection
+      // can still see the token we intend to burn in this transaction.
       const walletUtxos = this.dedupeUtxos([...senderWalletUtxos, senderVoucherTokenUtxo]);
 
       // send burn
@@ -1664,19 +1660,6 @@ export class PacketService {
       spendChannelRedeemer,
       'spendChannelRedeemer',
     );
-
-    // // build update channel datum
-    // const updatedChannelDatum: ChannelDatum = {
-    //   ...channelDatum,
-    //   state: {
-    //     ...channelDatum.state,
-    //     packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-    //   },
-    // };
-    // const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-    //   updatedChannelDatum,
-    //   'channel',
-    // );
 
     // build transfer module redeemer
     const fTokenPacketData: FungibleTokenPacketDatum = {
@@ -1892,6 +1875,9 @@ export class PacketService {
       'mintVoucherRedeemer',
     );
 
+    // RefundVoucher token name must hash exactly the denom carried by packet data.
+    // We do not prepend an extra source prefix here because packet data already carries
+    // the canonical trace string for this refund path.
     const denomToHash = fungibleTokenPacketData.denom;
     const voucherTokenName = this._buildVoucherTokenName(denomToHash);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
@@ -2034,6 +2020,13 @@ export class PacketService {
     }
     return summedAssets;
   }
+  /**
+   * Resolve the ledger asset unit to use for escrow spends from sender wallet assets.
+   *
+   * We check both input and resolved forms because callers may submit either a direct
+   * Cardano asset unit or a denomination that was normalized earlier in the send flow.
+   * This keeps lookup strict while still accepting the valid external input forms.
+   */
   private _resolveEscrowDenomToken(inputDenom: string, resolvedDenom: string, senderWalletUtxos: UTxO[]): string {
     const senderAssets = this._sumAssetsFromUtxos(senderWalletUtxos);
 
@@ -2051,6 +2044,19 @@ export class PacketService {
       `Escrow asset unit not found in sender wallet UTxOs for denom ${inputDenom} (resolved as ${resolvedDenom})`,
     );
   }
+  /**
+   * Convert a local denom representation into packet-denom representation.
+   *
+   * Rules:
+   * - lovelace is mapped to its packet wire representation
+   * - voucher traces already prefixed for this hop are preserved
+   * - cardano token units are preserved
+   * - plain denoms are hex-encoded for packet data
+   *
+   * Guardrails:
+   * - `ibc/<hash>` must already be resolved before this stage
+   * - pre-hex input is rejected to avoid double encoding
+   */
   private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
     const normalizedDenom = normalizeDenomTokenTransfer(denom).trim();
     const packetMappedDenom = mapLovelaceDenom(normalizedDenom, 'asset_to_packet');
@@ -2096,6 +2102,13 @@ export class PacketService {
     }
     return hashSha3_256(convertString2Hex(denom));
   }
+  /**
+   * Resolve `ibc/<hash>` into a full denom trace before voucher burn hashing.
+   *
+   * Burn token names are computed from the full trace string, not the short hash form.
+   * If mapping is missing we fail explicitly because a fallback would risk burning or
+   * routing the wrong asset.
+   */
   private async _resolveVoucherDenomForBurn(denom: string): Promise<string> {
     if (!denom.startsWith('ibc/')) {
       return denom;
@@ -2107,6 +2120,10 @@ export class PacketService {
     }
     return match.path ? `${match.path}/${match.base_denom}` : match.base_denom;
   }
+  /**
+   * Resolve the send denom into the canonical representation used by packet construction.
+   * This currently delegates to voucher reverse lookup for `ibc/<hash>` inputs.
+   */
   private async _resolvePacketDenomForSend(denom: string): Promise<string> {
     return this._resolveVoucherDenomForBurn(denom);
   }

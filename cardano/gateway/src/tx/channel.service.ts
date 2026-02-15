@@ -41,6 +41,7 @@ import {
   validateAndFormatChannelOpenTryParams,
   validateAndFormatChannelCloseInitParams,
 } from './helper/channel.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '~@/shared/helpers/verify';
 import { channelPath } from '~@/shared/helpers/channel';
@@ -82,17 +83,6 @@ export class ChannelService {
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
-  private sumLovelace(utxos: UTxO[]): bigint {
-    let total = 0n;
-    for (const utxo of utxos) {
-      const lovelace = (utxo.assets as any)?.lovelace;
-      if (typeof lovelace === 'bigint') {
-        total += lovelace;
-      }
-    }
-    return total;
-  }
-
   private async refreshWalletContext(address: string, context: string): Promise<void> {
     const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
       maxAttempts: 6,
@@ -103,7 +93,7 @@ export class ChannelService {
     }
     this.lucidService.selectWalletFromAddress(address, walletUtxos);
     this.logger.log(
-      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${this.sumLovelace(walletUtxos)}`,
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
     );
   }
 

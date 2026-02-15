@@ -32,6 +32,7 @@ import {
 import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { 
   computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
@@ -53,17 +54,6 @@ export class ClientService {
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
   ) {}
 
-  private sumLovelace(utxos: UTxO[]): bigint {
-    let total = 0n;
-    for (const utxo of utxos) {
-      const lovelace = (utxo.assets as any)?.lovelace;
-      if (typeof lovelace === 'bigint') {
-        total += lovelace;
-      }
-    }
-    return total;
-  }
-
   private async refreshWalletContext(address: string, context: string): Promise<void> {
     const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
       maxAttempts: 6,
@@ -74,7 +64,7 @@ export class ClientService {
     }
     this.lucidService.selectWalletFromAddress(address, walletUtxos);
     this.logger.log(
-      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${this.sumLovelace(walletUtxos)}`,
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
     );
   }
 

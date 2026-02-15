@@ -28,6 +28,7 @@ export function encodeMintVoucherRedeemer(
 ) {
   const { Data } = Lucid;
 
+  // Keep constructor order stable across encode/decode to match on-chain datum/redeemer constructors.
   const MintVoucherRedeemerSchema = Data.Enum([
     Data.Object({
       MintVoucher: Data.Object({
@@ -62,6 +63,7 @@ export function decodeMintVoucherRedeemer(
 ): MintVoucherRedeemer {
   const { Data } = Lucid;
 
+  // Decode with the same constructor ordering used in encodeMintVoucherRedeemer.
   const MintVoucherRedeemerSchema = Data.Enum([
     Data.Object({
       MintVoucher: Data.Object({

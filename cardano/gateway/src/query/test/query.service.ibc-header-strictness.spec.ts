@@ -8,6 +8,8 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 
+// We only care that queryIBCHeader reaches "header build" paths.
+// The exact protobuf bytes are not relevant for these failure-path regressions.
 jest.mock('@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril', () => {
   const actual = jest.requireActual('@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril');
   return {
@@ -21,6 +23,8 @@ jest.mock('@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril', () => {
   };
 });
 
+// Helper to create minimally valid certificate-like fixtures while overriding
+// only the fields that matter to each scenario.
 const makeCertificate = (overrides: Record<string, unknown> = {}) => ({
   hash: 'cert-default',
   previous_hash: undefined,
@@ -91,14 +95,19 @@ describe('QueryService IBC header strictness regressions', () => {
     } as unknown as ConfigService;
 
     dbServiceMock = {
+      // Sequence chosen to force non-convergence in test #1:
+      // start at tx-A (block 300), then tx-B (block 200), then tx-C (block 100).
+      // With only two alignment attempts, the loop cannot settle on a stable tx hash.
       findHostStateUtxoAtOrBeforeBlockNo: jest
         .fn()
         .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
         .mockResolvedValueOnce({ txHash: 'tx-B', blockNo: 200, outputIndex: 1 })
         .mockResolvedValueOnce({ txHash: 'tx-C', blockNo: 100, outputIndex: 2 }),
+      // Should never be reached in failure-first tests below.
       findBlockByHeight: jest.fn().mockResolvedValue({ hash: 'block-100', slot: 123 }),
     };
 
+    // Snapshot index the service can search by block number and/or certificate hash.
     const snapshots = [
       {
         block_number: '300',
@@ -136,6 +145,8 @@ describe('QueryService IBC header strictness regressions', () => {
         },
       ]),
       getCardanoTransactionsSetSnapshot: jest.fn().mockResolvedValue(snapshots),
+      // Also chosen to force non-convergence in test #1:
+      // first proof points at snapshot 200, second proof points at snapshot 100.
       getProofsCardanoTransactionList: jest
         .fn()
         .mockResolvedValueOnce({ latest_block_number: '200', certificate_hash: 'cert-200' })
@@ -182,24 +193,35 @@ describe('QueryService IBC header strictness regressions', () => {
   });
 
   it('fails hard when snapshot/proof/HostState alignment cannot converge in bounded attempts', async () => {
+    // Height is intentionally between known snapshots so the code must align
+    // snapshot/proof/host-state context instead of using a direct exact match.
     await expect(service.queryIBCHeader({ height: 250n } as any)).rejects.toThrow(
       'Failed to converge Mithril snapshot/proof/HostState alignment',
     );
+    // Hard failure must happen before block-body fetch / header materialization.
     expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
   });
 
   it('truncates previous certificate chain when older stake-distribution artifact is missing', async () => {
+    // Reconfigure host-state lookup so alignment converges immediately (tx-A -> tx-A).
+    // This isolates the test to the certificate-chain failure only.
     dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockReset();
     dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo
       .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
       .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 });
 
+    // Proof also points at snapshot 300 so there is no alignment ambiguity.
     mithrilServiceMock.getProofsCardanoTransactionList.mockReset();
     mithrilServiceMock.getProofsCardanoTransactionList.mockResolvedValueOnce({
       latest_block_number: '300',
       certificate_hash: 'cert-300',
     });
 
+    // Build a certificate chain where:
+    // cert-300 -> dist-cert -> older-cert
+    // but only "dist-cert" exists in the stake-distribution artifact list.
+    // That should now be a hard error instead of "warn and continue with partial chain".
+    // Current behavior intentionally warns and truncates previous chain material.
     mithrilServiceMock.getCertificateByHash.mockReset();
     mithrilServiceMock.getCertificateByHash.mockImplementation(async (hash: string) => {
       if (hash === 'cert-300') {
@@ -243,6 +265,9 @@ describe('QueryService IBC header strictness regressions', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'Mithril stake distribution artifact missing for previous certificate older-cert; truncating previous certificate chain',
     );
+    // Again, fail before trying to build the final block/header payload.
+    // Current behavior intentionally materializes the header payload.
+    // Unlike the fail-hard case, this path still materializes the header payload.
     expect(dbServiceMock.findBlockByHeight).toHaveBeenCalled();
   });
 });
