@@ -183,7 +183,21 @@ export class LucidService {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const utxo = await this.lucid.utxoByUnit(unit);
-      if (utxo) return utxo;
+      if (utxo) {
+        try {
+          const liveUtxos = await this.lucid.utxosByOutRef([
+            {
+              txHash: utxo.txHash,
+              outputIndex: utxo.outputIndex,
+            },
+          ]);
+          if (liveUtxos.length > 0) {
+            return liveUtxos[0];
+          }
+        } catch {
+          // Retry until the provider view converges to a live out-ref.
+        }
+      }
       if (attempt < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
@@ -191,6 +205,25 @@ export class LucidService {
 
     throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
   }
+
+  private async filterLiveUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+    if (utxos.length === 0) {
+      return [];
+    }
+
+    const outRefs = utxos.map((utxo) => ({
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    }));
+    const liveUtxos = await this.lucid.utxosByOutRef(outRefs);
+    if (liveUtxos.length === 0) {
+      return [];
+    }
+
+    const liveRefs = new Set(liveUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`));
+    return utxos.filter((utxo) => liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`));
+  }
+
   public async findUtxoAt(addressOrCredential: string): Promise<UTxO[]> {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     const utxos = await this.lucid.utxosAt(normalizedAddress);
@@ -198,6 +231,46 @@ export class LucidService {
     return utxos;
   }
 
+  /**
+   * Best-effort address UTxO lookup with retries.
+   *
+   * This is intended for coin-selection and "wallet override" flows where:
+   * - indexers can lag briefly after mint/transfer,
+   * - transient network/provider errors can occur,
+   * - returning an empty set is preferable to throwing and forcing the caller into a single-UTxO fallback.
+   */
+  public async tryFindUtxosAt(
+    addressOrCredential: string,
+    opts?: { maxAttempts?: number; retryDelayMs?: number },
+  ): Promise<UTxO[]> {
+    const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
+    const maxAttempts = Math.max(1, opts?.maxAttempts ?? 5);
+    const retryDelayMs = Math.max(0, opts?.retryDelayMs ?? 750);
+
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const utxos = await this.lucid.utxosAt(normalizedAddress);
+        if (utxos.length > 0) {
+          const liveUtxos = await this.filterLiveUtxos(utxos);
+          if (liveUtxos.length > 0) {
+            return liveUtxos;
+          }
+        }
+      } catch (err) {
+        lastError = err;
+      }
+
+      if (attempt < maxAttempts && retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    // Intentionally swallow errors here; callers can decide how to proceed with an empty UTxO set.
+    // Keep the variable to aid debugging if we later decide to surface it
+    void lastError;
+    return [];
+  }
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
@@ -655,7 +728,7 @@ export class LucidService {
   }
   public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress, true);
+    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
