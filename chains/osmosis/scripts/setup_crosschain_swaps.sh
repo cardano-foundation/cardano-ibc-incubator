@@ -27,14 +27,26 @@ if [ ! -x "$HERMES_BIN" ]; then
 fi
 
 # Returns the counterparty channel id for one transfer channel end.
-extract_counterparty_channel_id() {
+extract_channel_end_json_field() {
   _chain="$1"
   _channel="$2"
+  _jq_expression="$3"
 
-  "$HERMES_BIN" query channel end --chain "$_chain" --port transfer --channel "$_channel" 2>/dev/null |
-    sed -n '/channel_id: Some(/,/),/p' |
-    sed -n 's/.*"\(channel-[0-9][0-9]*\)".*/\1/p' |
+  "$HERMES_BIN" --json query channel end --chain "$_chain" --port transfer --channel "$_channel" 2>/dev/null |
+    jq -r "select(.result) | ${_jq_expression} // empty" 2>/dev/null |
     head -n 1
+}
+
+extract_counterparty_channel_id() {
+  extract_channel_end_json_field "$1" "$2" '.result.remote.channel_id'
+}
+
+extract_channel_end_state() {
+  extract_channel_end_json_field "$1" "$2" '.result.state'
+}
+
+is_open_channel_state() {
+  [ "${1,,}" = "open" ]
 }
 
 # Resolve a transfer channel id that has a valid, symmetric counterparty channel end.
@@ -54,8 +66,19 @@ get_latest_transfer_channel_id() {
 
   while IFS= read -r _candidate_channel_id; do
     [ -z "$_candidate_channel_id" ] && continue
+    # Token-swap transfers require a fully open channel end.
+    # We intentionally skip stale ids in Init or TryOpen state.
+    _candidate_state=$(extract_channel_end_state "$_channel_chain" "$_candidate_channel_id")
+    if ! is_open_channel_state "$_candidate_state"; then
+      continue
+    fi
     _counterparty_channel_id=$(extract_counterparty_channel_id "$_channel_chain" "$_candidate_channel_id")
     [ -z "$_counterparty_channel_id" ] && continue
+    # Both ends must be open before we treat this channel pair as usable.
+    _counterparty_state=$(extract_channel_end_state "$_counterparty_chain" "$_counterparty_channel_id")
+    if ! is_open_channel_state "$_counterparty_state"; then
+      continue
+    fi
     _reverse_counterparty_channel_id=$(extract_counterparty_channel_id "$_counterparty_chain" "$_counterparty_channel_id")
     if [ "$_reverse_counterparty_channel_id" = "$_candidate_channel_id" ]; then
       echo "$_candidate_channel_id"
@@ -64,22 +87,9 @@ get_latest_transfer_channel_id() {
   done <<EOF
 $_channel_candidates
 EOF
-
-  _channel_id=$(
-    printf '%s\n' "$_channel_candidates" | head -n 1
-  )
-
-  if [ -z "$_channel_id" ]; then
-    _channel_id=$(
-      "$HERMES_BIN" query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
-        tr '[:space:]' '\n' |
-        grep '^channel-' |
-        sort -t- -k2,2nr |
-        head -n 1
-    )
-  fi
-
-  echo "$_channel_id"
+  # Return empty when no open symmetric channel exists.
+  # Callers handle this as a hard prerequisite failure.
+  echo ""
 }
 
 # Function to extract and print txhash from piped input
@@ -449,7 +459,8 @@ set_route_msg=$(jq -n --arg denom "$denom" --arg pool_id "$pool_id" \
   check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
   echo "crosschain_swaps code id: $crosschain_swaps_code_id"
 
-osmosis_sidechain_chann_id=$("$HERMES_BIN" --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" | jq -r 'select(.result) | .result[-1].channel_id')
+osmosis_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_SIDECHAIN_NAME")
+check_string_empty "$osmosis_sidechain_chann_id" "Osmosis->Entrypoint chain channel not found in Open state. Exiting..."
 echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
 
 # Instantiate crosschain_swaps

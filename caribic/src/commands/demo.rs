@@ -305,6 +305,166 @@ fn extract_transfer_channel_id(entry: &Value) -> Option<String> {
     }
 }
 
+#[derive(Debug, Clone)]
+struct TransferChannelEndStatus {
+    state: String,
+    remote_channel_id: Option<String>,
+    remote_port_id: Option<String>,
+}
+
+fn parse_channel_sequence(channel_id: &str) -> Option<u64> {
+    channel_id.strip_prefix("channel-")?.parse::<u64>().ok()
+}
+
+/// Queries a transfer channel end and returns only the fields needed for open-state validation.
+///
+/// This is intentionally stricter than "channel exists":
+/// token swap transfers can only run on fully open channels, and stale Init/TryOpen channels
+/// frequently remain in local dev environments after interrupted handshakes.
+fn query_transfer_channel_end_status(
+    chain_id: &str,
+    channel_id: &str,
+) -> Result<Option<TransferChannelEndStatus>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "channel",
+        "end",
+        "--chain",
+        chain_id,
+        "--port",
+        "transfer",
+        "--channel",
+        channel_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        logger::verbose(&format!(
+            "Hermes query channel end failed for chain={chain_id}, channel={channel_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+        return Ok(None);
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+    let Some(result) = parsed_lines
+        .iter()
+        .filter_map(|entry| entry.get("result"))
+        .next_back()
+    else {
+        logger::verbose(&format!(
+            "Hermes query channel end returned no result object for chain={chain_id}, channel={channel_id}",
+        ));
+        return Ok(None);
+    };
+
+    let state = result
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if state.is_empty() {
+        logger::verbose(&format!(
+            "Hermes query channel end returned empty state for chain={chain_id}, channel={channel_id}",
+        ));
+        return Ok(None);
+    }
+
+    let remote = result.get("remote");
+    let remote_channel_id = remote
+        .and_then(|remote| remote.get("channel_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let remote_port_id = remote
+        .and_then(|remote| remote.get("port_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Ok(Some(TransferChannelEndStatus {
+        state,
+        remote_channel_id,
+        remote_port_id,
+    }))
+}
+
+fn is_open_transfer_state(state: &str) -> bool {
+    state.eq_ignore_ascii_case("open")
+}
+
+/// Verifies that a Cardano transfer channel is truly usable for swaps.
+///
+/// Validation rules:
+/// - Cardano side must be `Open`
+/// - Counterparty channel id must exist
+/// - Sidechain counterparty must be `Open`
+/// - Counterparty channel must point back to the same Cardano channel id
+/// - Both ends must use transfer port routing
+///
+/// This prevents selecting stale channel ids that exist but are not open.
+fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Result<bool, String> {
+    let Some(cardano_end) = query_transfer_channel_end_status("cardano-devnet", cardano_channel_id)?
+    else {
+        return Ok(false);
+    };
+
+    if !is_open_transfer_state(&cardano_end.state) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: state={} (expected Open)",
+            cardano_end.state
+        ));
+        return Ok(false);
+    }
+
+    if cardano_end.remote_port_id.as_deref() != Some("transfer") {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not transfer",
+        ));
+        return Ok(false);
+    }
+
+    let Some(sidechain_channel_id) = cardano_end.remote_channel_id else {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: missing counterparty channel id",
+        ));
+        return Ok(false);
+    };
+
+    let Some(sidechain_end) = query_transfer_channel_end_status("sidechain", sidechain_channel_id.as_str())?
+    else {
+        return Ok(false);
+    };
+
+    if !is_open_transfer_state(&sidechain_end.state) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} is {} (expected Open)",
+            sidechain_channel_id, sidechain_end.state
+        ));
+        return Ok(false);
+    }
+
+    if sidechain_end.remote_port_id.as_deref() != Some("transfer") {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} port is not transfer",
+            sidechain_channel_id
+        ));
+        return Ok(false);
+    }
+
+    if sidechain_end.remote_channel_id.as_deref() != Some(cardano_channel_id) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} does not point back to it",
+            sidechain_channel_id
+        ));
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
 /// Queries Hermes for the latest Cardano to Entrypoint transfer channel id.
 fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
     let output = run_hermes_command(&[
@@ -349,8 +509,26 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
     }
 
     if let Some(channels) = chain_channels {
-        for entry in channels.iter().rev() {
-            if let Some(channel_id) = extract_transfer_channel_id(entry) {
+        // Important: channel existence is not enough for token transfers.
+        // Interrupted handshakes leave stale channel ids in Init/TryOpen state.
+        // We collect every transfer channel candidate first, then validate each one
+        // against both chain ends and only accept channels that are Open on both sides.
+        let mut candidate_channel_ids: Vec<String> = channels
+            .iter()
+            .filter_map(extract_transfer_channel_id)
+            .collect();
+
+        // Prefer newer channel ids first because local dev runs often create multiple
+        // channels over time after resets, failed handshakes, or interrupted demos.
+        candidate_channel_ids.sort_by(|left, right| {
+            let left_seq = parse_channel_sequence(left).unwrap_or(0);
+            let right_seq = parse_channel_sequence(right).unwrap_or(0);
+            right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
+        });
+        candidate_channel_ids.dedup();
+
+        for channel_id in candidate_channel_ids {
+            if is_open_cardano_entrypoint_transfer_channel(channel_id.as_str())? {
                 return Ok(Some(channel_id));
             }
         }
@@ -361,13 +539,15 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
 fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
-    if query_cardano_entrypoint_channel()?.is_some() {
-        logger::log("PASS: Cardano->Entrypoint transfer channel already exists");
+    if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
+        logger::log(&format!(
+            "PASS: Cardano->Entrypoint transfer channel already exists and is open ({open_channel_id})"
+        ));
         return Ok(());
     }
 
-    logger::log("No Cardano->Entrypoint transfer channel detected. Creating one now.");
-    logger::verbose("No Cardano->Entrypoint transfer channel exists. Creating one now.");
+    logger::log("No open Cardano->Entrypoint transfer channel detected. Creating one now.");
+    logger::verbose("No open Cardano->Entrypoint transfer channel exists. Creating one now.");
     logger::verbose("Creating Cardano-devnet client with sidechain reference");
 
     let create_cardano_client_output = run_hermes_command(&[
@@ -480,7 +660,17 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         ));
     }
 
-    logger::log("PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo");
+    // Validate post-creation state explicitly so we fail fast with a clear reason
+    // instead of continuing into the swap script with a non-open channel id.
+    let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+        return Err(
+            "Created Cardano↔Entrypoint channel artifacts but no open transfer channel is currently usable".to_string(),
+        );
+    };
+
+    logger::log(&format!(
+        "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+    ));
     Ok(())
 }
 
