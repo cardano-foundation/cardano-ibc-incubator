@@ -16,6 +16,8 @@ describe('TxController - Connection (modern)', () => {
   };
 
   beforeEach(async () => {
+    // Only the connection service is relevant in this suite; all other services
+    // are inert placeholders to keep DI minimal and explicit.
     connectionServiceMock = {
       connectionOpenInit: jest.fn(),
       connectionOpenTry: jest.fn(),
@@ -71,6 +73,7 @@ describe('TxController - Connection (modern)', () => {
   });
 
   it('propagates ConnectionOpenAck errors from ConnectionService', async () => {
+    // We expect raw validation failures to bubble up for caller visibility.
     const request = { connection_id: 'invalid-connection-id' } as any;
     connectionServiceMock.connectionOpenAck.mockRejectedValue(
       new Error('Invalid argument: "connection_id". Please use the prefix "connection-"'),

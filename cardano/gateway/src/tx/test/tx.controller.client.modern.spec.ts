@@ -14,6 +14,8 @@ describe('TxController - Client (modern)', () => {
   };
 
   beforeEach(async () => {
+    // Keep these tests at the controller boundary: we only assert delegation and
+    // error propagation, not client-service business logic.
     clientServiceMock = {
       createClient: jest.fn(),
       updateClient: jest.fn(),
@@ -45,6 +47,7 @@ describe('TxController - Client (modern)', () => {
   });
 
   it('propagates CreateClient errors from ClientService', async () => {
+    // A failed service call must surface as-is so callers can debug the real cause.
     const request = { signer: '' } as any;
     clientServiceMock.createClient.mockRejectedValue(new Error('Invalid constructed address: Signer is not valid'));
 
@@ -65,6 +68,7 @@ describe('TxController - Client (modern)', () => {
   });
 
   it('propagates UpdateClient errors from ClientService', async () => {
+    // Same contract as CreateClient: controller should not swallow or rewrite service errors.
     const request = { client_id: 'invalid-client-id' } as any;
     clientServiceMock.updateClient.mockRejectedValue(
       new Error('Invalid argument: "client_id". Please use the prefix "07-tendermint-"'),

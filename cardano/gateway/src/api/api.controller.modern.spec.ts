@@ -14,6 +14,8 @@ describe('ApiController (modern)', () => {
   };
 
   beforeEach(async () => {
+    // API controller tests assert request/response shaping only.
+    // Channel/packet services are mocked so external IBC logic is out of scope here.
     channelServiceMock = {
       queryChannels: jest.fn(),
     };
@@ -33,6 +35,7 @@ describe('ApiController (modern)', () => {
   });
 
   it('delegates getChannels to ChannelService and maps pagination/height to strings', async () => {
+    // Public API contract uses stringified bigint fields and base64 for bytes.
     channelServiceMock.queryChannels.mockResolvedValue({
       channels: [],
       pagination: { next_key: Buffer.from('next'), total: 10n },
@@ -56,6 +59,7 @@ describe('ApiController (modern)', () => {
   });
 
   it('delegates buildTransferMsg to PacketService and base64-encodes unsigned tx bytes', async () => {
+    // DTO -> MsgTransfer mapping should preserve transfer semantics while normalizing output bytes.
     packetServiceMock.sendPacket.mockResolvedValue({
       result: 1,
       unsigned_tx: {

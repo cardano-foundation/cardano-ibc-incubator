@@ -20,6 +20,8 @@ describe('TxController - Packet (modern)', () => {
   };
 
   beforeEach(async () => {
+    // Packet endpoints share one controller, but map to two services:
+    // PacketService for packet flows and ChannelService for channel close init.
     packetServiceMock = {
       recvPacket: jest.fn(),
       sendPacket: jest.fn(),
@@ -58,6 +60,7 @@ describe('TxController - Packet (modern)', () => {
   });
 
   it('propagates RecvPacket errors from PacketService', async () => {
+    // Error passthrough is intentional: upstream callers need exact failure detail.
     const request = { signer: '' } as any;
     packetServiceMock.recvPacket.mockRejectedValue(new Error('Invalid constructed address: Signer is not valid'));
 

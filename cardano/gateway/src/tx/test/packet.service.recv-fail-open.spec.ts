@@ -183,6 +183,8 @@ describe('PacketService recv packet fail-open regression', () => {
       (service as any).buildUnsignedRecvPacketTx(recvPacketOperator, 'addr_test1constructed'),
     ).rejects.toThrow();
 
+    // If either of these is called, malformed ICS-20 JSON was incorrectly treated
+    // as a non-ICS20 packet (the exact fail-open behavior this test guards against).
     expect(lucidServiceMock.createUnsignedRecvPacketTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedRecvPacketMintTx).not.toHaveBeenCalled();
   });

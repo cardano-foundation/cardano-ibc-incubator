@@ -43,6 +43,7 @@ export function parseIcs20DenomFromPacketData(packetDataHex: string): string | n
   if (typeof parsed !== 'object' || parsed === null) return null;
   const maybePacket = parsed as Partial<Record<'denom' | 'amount' | 'sender' | 'receiver' | 'memo', unknown>>;
   const requiredKeys: Array<keyof typeof maybePacket> = ['denom', 'amount', 'sender', 'receiver', 'memo'];
+  // Only treat payload as ICS-20 when all required string fields are present.
   const isIcs20Packet = requiredKeys.every((key) => typeof maybePacket[key] === 'string');
   if (!isIcs20Packet) return null;
 
@@ -60,6 +61,7 @@ export function deriveVoucherTraceCandidatesForTx(
     if (!redeemer.redeemerHex) continue;
 
     if (redeemer.purpose === REDEEMER_TYPE.SPEND) {
+      // Spend redeemers contain packet data (the ICS-20 denom candidate lives here).
       const spendRedeemer = tryDecodeSpendChannelRedeemer(redeemer.redeemerHex, Lucid);
       if (!spendRedeemer) continue;
 
@@ -69,6 +71,7 @@ export function deriveVoucherTraceCandidatesForTx(
     }
 
     if (redeemer.purpose === REDEEMER_TYPE.MINT) {
+      // Mint redeemers indicate whether this tx path is MintVoucher or RefundVoucher.
       const mintVoucherRedeemer = tryDecodeMintVoucherRedeemer(redeemer.redeemerHex, Lucid);
       if (!mintVoucherRedeemer || typeof mintVoucherRedeemer !== 'object' || mintVoucherRedeemer === null) continue;
 
@@ -86,6 +89,7 @@ export function deriveVoucherTraceCandidatesForTx(
   for (const mintCase of voucherMints) {
     if (mintCase.type === 'mint' && 'MintVoucher' in mintCase.redeemer) {
       const mint = mintCase.redeemer.MintVoucher;
+      // MintVoucher must match recv packet endpoints exactly.
       const recvMatches = packetContexts.filter(
         (context) =>
           context.kind === 'recv' &&
@@ -96,12 +100,14 @@ export function deriveVoucherTraceCandidatesForTx(
       );
 
       for (const context of recvMatches) {
+        // Recv mint denom is destination-prefixed before token-name hashing.
         const prefix = getDenomPrefix(
           convertHex2String(context.packet.destination_port),
           convertHex2String(context.packet.destination_channel),
         );
         const fullDenomPath = `${prefix}${context.denom}`;
         const voucherTokenName = hashSha3_256(convertString2Hex(fullDenomPath));
+        // Include derivation in key so duplicate redeemers collapse without mixing variants.
         const key = `${voucherTokenName}|${fullDenomPath}|recv_mint`;
         candidates.set(key, {
           voucherTokenName,
@@ -114,6 +120,7 @@ export function deriveVoucherTraceCandidatesForTx(
 
     if (mintCase.type === 'refund' && 'RefundVoucher' in mintCase.redeemer) {
       const refund = mintCase.redeemer.RefundVoucher;
+      // RefundVoucher can correspond to ack or timeout spend paths.
       const refundMatches = packetContexts.filter(
         (context) =>
           (context.kind === 'ack' || context.kind === 'timeout') &&
@@ -123,6 +130,7 @@ export function deriveVoucherTraceCandidatesForTx(
 
       for (const context of refundMatches) {
         if (context.kind === 'ack') {
+          // Ack refund re-applies source prefix before hashing.
           const prefix = getDenomPrefix(
             convertHex2String(context.packet.source_port),
             convertHex2String(context.packet.source_channel),
@@ -138,6 +146,7 @@ export function deriveVoucherTraceCandidatesForTx(
           continue;
         }
 
+        // Timeout refund hashes the packet denom directly.
         const fullDenomPath = context.denom;
         const voucherTokenName = hashSha3_256(convertString2Hex(fullDenomPath));
         const key = `${voucherTokenName}|${fullDenomPath}|timeout_refund`;

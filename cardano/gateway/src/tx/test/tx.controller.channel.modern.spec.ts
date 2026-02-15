@@ -17,6 +17,8 @@ describe('TxController - Channel (modern)', () => {
   };
 
   beforeEach(async () => {
+    // This suite verifies that channel endpoints are pure controller pass-throughs:
+    // request in -> matching ChannelService call -> unchanged response out.
     channelServiceMock = {
       channelOpenInit: jest.fn(),
       channelOpenTry: jest.fn(),
@@ -51,6 +53,7 @@ describe('TxController - Channel (modern)', () => {
   });
 
   it('propagates ChannelOpenInit errors from ChannelService', async () => {
+    // Controller should preserve service-side validation messages.
     const request = { signer: '' } as any;
     channelServiceMock.channelOpenInit.mockRejectedValue(
       new Error('Invalid constructed address: Signer is not valid'),
@@ -62,6 +65,7 @@ describe('TxController - Channel (modern)', () => {
   });
 
   it('delegates ChannelOpenTry to ChannelService', async () => {
+    // `ChannelChannelOpenTry` is the concrete controller method name.
     const request = { port_id: 'transfer' } as any;
     const expected = { unsigned_tx: Buffer.from([2]) } as any;
     channelServiceMock.channelOpenTry.mockResolvedValue(expected);
