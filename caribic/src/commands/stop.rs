@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{logger, stop, utils, StopTarget};
 
+/// Stops the requested service group and keeps stop ordering consistent.
 pub fn run_stop(target: Option<StopTarget>) -> Result<(), String> {
     let project_config = crate::config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
@@ -70,6 +71,7 @@ pub fn run_stop(target: Option<StopTarget>) -> Result<(), String> {
     Ok(())
 }
 
+/// Stops the local Cardano network and Mithril services.
 fn network_down(project_root_path: &Path) {
     // Stop local cardano network
     stop::stop_cardano_network(project_root_path);
@@ -78,6 +80,7 @@ fn network_down(project_root_path: &Path) {
     stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
 }
 
+/// Stops bridge-facing components that are safe to restart independently.
 fn bridge_down(project_root_path: &Path) {
     // Stop Relayer
     stop::stop_relayer(project_root_path.join("relayer").as_path());

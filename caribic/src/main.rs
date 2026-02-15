@@ -197,22 +197,29 @@ enum KeysCommand {
 
 #[tokio::main]
 async fn main() {
+    // Parse CLI arguments first so log/config setup can follow user-selected options.
     let args = Args::parse();
 
+    // Show the banner only for startup flows to keep other commands quiet and script-friendly.
     if matches!(args.command, Commands::Start { .. }) {
         utils::print_header();
     }
 
+    // Initialize logger before any config work so setup errors are visible immediately.
     logger::init(args.verbose);
+
+    // Load config from the selected path or create defaults if missing.
     config::init(args.config.to_str().unwrap_or_else(|| {
         logger::error("Failed to get configuration file path");
         panic!("Failed to get configuration file path");
     }))
     .await;
 
+    // Resolve the workspace root once and pass it to command handlers that need filesystem access.
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
 
+    // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
         Commands::Check => commands::run_check().await,
         Commands::Demo { use_case } => commands::run_demo(use_case, project_root_path).await,
@@ -252,6 +259,7 @@ async fn main() {
         }
     };
 
+    // Standardized non-zero exit on command failure.
     if let Err(error) = command_result {
         logger::error(&error);
         std::process::exit(1);

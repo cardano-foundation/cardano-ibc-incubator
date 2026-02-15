@@ -5,6 +5,7 @@ use crate::{
     test::{self, TestResults},
 };
 
+/// Runs integration tests and returns an error if any test fails.
 pub async fn run_tests(project_root_path: &Path, tests: Option<&str>) -> Result<(), String> {
     let results = match test::run_integration_tests(project_root_path, tests).await {
         Ok(results) => results,
@@ -19,6 +20,7 @@ pub async fn run_tests(project_root_path: &Path, tests: Option<&str>) -> Result<
     Ok(())
 }
 
+/// Prints a concise final summary for pass, skip, and fail counts.
 fn print_summary(results: &TestResults) {
     logger::log(&format!(
         "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nTest Summary: {} total\n  ✓ {} passed\n  ⊘ {} skipped\n  ✗ {} failed\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",

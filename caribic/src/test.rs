@@ -254,10 +254,6 @@ impl TestResults {
 }
 
 const MAX_TEST_INDEX: u8 = 12;
-const MITHRIL_STAKE_DISTRIBUTIONS_URL: &str =
-    "http://127.0.0.1:8080/aggregator/artifact/mithril-stake-distributions";
-const MITHRIL_CARDANO_TRANSACTIONS_URL: &str =
-    "http://127.0.0.1:8080/aggregator/artifact/cardano-transactions";
 
 #[derive(Debug, Clone)]
 struct TestSelection {
@@ -1092,6 +1088,7 @@ pub async fn run_integration_tests(
                     &sidechain_channel_id,
                     "cardano-devnet",
                     cardano_channel_id,
+                    None,
                 ) {
                     Ok(_) => {
                         let sidechain_balance_after =
@@ -1406,6 +1403,7 @@ pub async fn run_integration_tests(
                         cardano_channel_id,
                         "sidechain",
                         &sidechain_channel_id,
+                        None,
                     ) {
                         Ok(_) => {
                             let sidechain_balance_after =
@@ -1612,6 +1610,7 @@ pub async fn run_integration_tests(
                     cardano_channel_id,
                     "sidechain",
                     &sidechain_channel_id,
+                    None,
                 ) {
                     Ok(_) => {
                         let sidechain_balances_after =
@@ -1850,15 +1849,14 @@ pub async fn run_integration_tests(
                     Ok(_) => {
                         // Cardano ack proofs can lag and keep one unrelated packet sequence pending.
                         // Bound the clear loop for this test and validate the transfer end-state directly.
-                        let clear_packets_result = hermes_clear_packets_with_retry_limit(
+                        let clear_packets_result = hermes_clear_packets(
                             project_root,
                             "sidechain",
                             "transfer",
                             sidechain_channel_id,
                             "cardano-devnet",
                             cardano_channel_id_for_test_12,
-                            3,
-                            Duration::from_secs(10),
+                            Some(3),
                         );
                         if let Err(error) = &clear_packets_result {
                             logger::warn(&format!(
@@ -2082,8 +2080,22 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
     //
     // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
     // `/aggregator` endpoint is stable and returns 2xx when the service is up.
-    let mithril_running =
-        check_service_health(&http_client, "http://127.0.0.1:8080/aggregator").await;
+    let mithril_aggregator_base_url = crate::config::get_config()
+        .mithril
+        .aggregator_url
+        .trim_end_matches('/')
+        .to_string();
+    let mithril_aggregator_url = format!("{}/aggregator", mithril_aggregator_base_url);
+    let stake_distributions_url = format!(
+        "{}/aggregator/artifact/mithril-stake-distributions",
+        mithril_aggregator_base_url
+    );
+    let cardano_transactions_url = format!(
+        "{}/aggregator/artifact/cardano-transactions",
+        mithril_aggregator_base_url
+    );
+
+    let mithril_running = check_service_health(&http_client, mithril_aggregator_url.as_str()).await;
     if !mithril_running {
         missing_services.push("Mithril aggregator on :8080");
     } else {
@@ -2113,9 +2125,9 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         // Treat this as a hard readiness gate in Test 1 to avoid flaky downstream
         // failures in Test 5/6 when snapshots are still empty.
         let stake_distributions_ready =
-            check_json_array_non_empty(&http_client, MITHRIL_STAKE_DISTRIBUTIONS_URL).await;
+            check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
         let tx_snapshots_ready =
-            check_json_array_non_empty(&http_client, MITHRIL_CARDANO_TRANSACTIONS_URL).await;
+            check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
 
         if stake_distributions_ready && tx_snapshots_ready {
             verbose("   Mithril stake distributions available");
@@ -2328,6 +2340,19 @@ async fn wait_for_mithril_artifacts_ready_for_cardano_client(
     max_attempts: usize,
     interval: Duration,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    let mithril_aggregator_base_url = crate::config::get_config()
+        .mithril
+        .aggregator_url
+        .trim_end_matches('/')
+        .to_string();
+    let stake_distributions_url = format!(
+        "{}/aggregator/artifact/mithril-stake-distributions",
+        mithril_aggregator_base_url
+    );
+    let cardano_transactions_url = format!(
+        "{}/aggregator/artifact/cardano-transactions",
+        mithril_aggregator_base_url
+    );
     let http_client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(3))
@@ -2341,11 +2366,11 @@ async fn wait_for_mithril_artifacts_ready_for_cardano_client(
     for attempt in 0..max_attempts {
         if !stake_ready {
             stake_ready =
-                check_json_array_non_empty(&http_client, MITHRIL_STAKE_DISTRIBUTIONS_URL).await;
+                check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
         }
         if !tx_ready {
             tx_ready =
-                check_json_array_non_empty(&http_client, MITHRIL_CARDANO_TRANSACTIONS_URL).await;
+                check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
         }
         if stake_ready && tx_ready {
             return Ok(true);
@@ -4013,23 +4038,23 @@ fn hermes_run_clear_packets(
     Ok(())
 }
 
-fn hermes_clear_packets_with_retry_limit(
+fn hermes_clear_packets(
     project_root: &Path,
     primary_chain: &str,
     port: &str,
     primary_channel: &str,
     counterparty_chain: &str,
     counterparty_channel: &str,
-    max_attempts: usize,
-    retry_delay: Duration,
+    max_attempts_override: Option<usize>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let max_attempts = max_attempts_override.unwrap_or(10);
+    let retry_delay = Duration::from_secs(10);
     if max_attempts == 0 {
         return Err("max_attempts must be greater than zero".into());
     }
 
     for attempt in 1..=max_attempts {
-        // Relay both directions each cycle so acks/unreceived packets don't get stuck on the
-        // opposite chain while we only clear one side.
+        // Relay both directions each cycle so acks and unreceived packets do not get stuck on the opposite chain.
         hermes_run_clear_packets(project_root, primary_chain, port, primary_channel)?;
         hermes_run_clear_packets(project_root, counterparty_chain, port, counterparty_channel)?;
 
@@ -4074,46 +4099,25 @@ fn hermes_clear_packets_with_retry_limit(
                 counterparty_pending_output.replace('\n', " | ")
             ));
             std::thread::sleep(retry_delay);
-        } else {
-            return Err(format!(
-                "Hermes clear packets left pending packets after {} attempts.\n\
-                 Pending output for {} ({}):\n{}\n\n\
-                 Pending output for {} ({}):\n{}",
-                max_attempts,
-                primary_chain,
-                primary_channel,
-                primary_pending_output,
-                counterparty_chain,
-                counterparty_channel,
-                counterparty_pending_output
-            )
-            .into());
+            continue;
         }
+
+        return Err(format!(
+            "Hermes clear packets left pending packets after {} attempts.\n\
+             Pending output for {} ({}):\n{}\n\n\
+             Pending output for {} ({}):\n{}",
+            max_attempts,
+            primary_chain,
+            primary_channel,
+            primary_pending_output,
+            counterparty_chain,
+            counterparty_channel,
+            counterparty_pending_output
+        )
+        .into());
     }
 
     Ok(())
-}
-
-fn hermes_clear_packets(
-    project_root: &Path,
-    primary_chain: &str,
-    port: &str,
-    primary_channel: &str,
-    counterparty_chain: &str,
-    counterparty_channel: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Cardano-side packet relays can transiently fail while Hermes retries trusted consensus heights.
-    // Keep retrying longer before failing the integration test.
-    hermes_clear_packets_with_retry_limit(
-        project_root,
-        primary_chain,
-        port,
-        primary_channel,
-        counterparty_chain,
-        counterparty_channel,
-        10,
-        Duration::from_secs(10),
-    )
 }
 
 fn hermes_query_packet_pending(
@@ -4204,96 +4208,16 @@ fn dump_test_11_ics20_diagnostics(
     logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
     logger::log(&format!("sidechain address:      {}", sidechain_address));
     logger::log("");
+    dump_packet_queries_for_transfer_channels(
+        project_root,
+        &[
+            ("cardano-devnet", cardano_channel_id),
+            ("sidechain", sidechain_channel_id),
+        ],
+    );
 
-    let hermes_packet_subcmds = ["pending", "commitments", "acks"];
-    for subcmd in hermes_packet_subcmds {
-        let cardano_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "cardano-devnet",
-            "--port",
-            "transfer",
-            "--channel",
-            cardano_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &cardano_args,
-            &format!("hermes query packet {} (cardano-devnet)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on cardano-devnet: {}\n",
-                subcmd, e
-            ));
-        }
-
-        let sidechain_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "sidechain",
-            "--port",
-            "transfer",
-            "--channel",
-            sidechain_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &sidechain_args,
-            &format!("hermes query packet {} (sidechain)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on sidechain: {}\n",
-                subcmd, e
-            ));
-        }
-    }
-
-    match query_sidechain_balances(sidechain_address) {
-        Ok(balances) => {
-            logger::log("=== sidechain balances (bank) ===");
-            if balances.is_empty() {
-                logger::log("(no balances returned)");
-            } else {
-                for (denom, amount) in &balances {
-                    logger::log(&format!("{}: {}", denom, amount));
-                }
-            }
-            logger::log("");
-
-            let ibc_denoms: Vec<String> = balances
-                .keys()
-                .filter(|d| d.starts_with("ibc/"))
-                .cloned()
-                .collect();
-            if !ibc_denoms.is_empty() {
-                logger::log("=== sidechain denom traces (reverse lookup) ===");
-                for denom in ibc_denoms.into_iter().take(20) {
-                    let hash = denom.strip_prefix("ibc/").unwrap_or(denom.as_str());
-                    match query_sidechain_denom_trace(hash) {
-                        Ok((path, base_denom)) => {
-                            logger::log(&format!("{} -> {}/{}", denom, path, base_denom));
-                        }
-                        Err(e) => {
-                            logger::log(&format!(
-                                "{} -> (failed to query denom-trace) {}",
-                                denom, e
-                            ));
-                        }
-                    }
-                }
-                logger::log("");
-            }
-        }
-        Err(e) => {
-            logger::log(&format!(
-                "(diagnostics) Failed to query sidechain balances: {}\n",
-                e
-            ));
-        }
+    if let Some(balances) = dump_sidechain_balances_section(sidechain_address) {
+        dump_denom_traces_for_sidechain_ibc_denoms(&balances, 20);
     }
 }
 
@@ -4326,73 +4250,14 @@ fn dump_test_9_ics20_diagnostics(
         )),
     }
     logger::log("");
-
-    let hermes_packet_subcmds = ["pending", "commitments", "acks"];
-    for subcmd in hermes_packet_subcmds {
-        let sidechain_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "sidechain",
-            "--port",
-            "transfer",
-            "--channel",
-            sidechain_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &sidechain_args,
-            &format!("hermes query packet {} (sidechain)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on sidechain: {}\n",
-                subcmd, e
-            ));
-        }
-
-        let cardano_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "cardano-devnet",
-            "--port",
-            "transfer",
-            "--channel",
-            cardano_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &cardano_args,
-            &format!("hermes query packet {} (cardano-devnet)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on cardano-devnet: {}\n",
-                subcmd, e
-            ));
-        }
-    }
-
-    match query_sidechain_balances(sidechain_address) {
-        Ok(balances) => {
-            logger::log("=== sidechain balances (bank) ===");
-            if balances.is_empty() {
-                logger::log("(no balances returned)");
-            } else {
-                for (denom, amount) in &balances {
-                    logger::log(&format!("{}: {}", denom, amount));
-                }
-            }
-            logger::log("");
-        }
-        Err(e) => {
-            logger::log(&format!(
-                "(diagnostics) Failed to query sidechain balances: {}\n",
-                e
-            ));
-        }
-    }
+    dump_packet_queries_for_transfer_channels(
+        project_root,
+        &[
+            ("sidechain", sidechain_channel_id),
+            ("cardano-devnet", cardano_channel_id),
+        ],
+    );
+    let _ = dump_sidechain_balances_section(sidechain_address);
 
     match query_cardano_lovelace_total(project_root, cardano_receiver_address) {
         Ok(total) => {
@@ -4471,73 +4336,14 @@ fn dump_test_12_ics20_diagnostics(
         )),
     }
     logger::log("");
-
-    let hermes_packet_subcmds = ["pending", "commitments", "acks"];
-    for subcmd in hermes_packet_subcmds {
-        let sidechain_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "sidechain",
-            "--port",
-            "transfer",
-            "--channel",
-            sidechain_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &sidechain_args,
-            &format!("hermes query packet {} (sidechain)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on sidechain: {}\n",
-                subcmd, e
-            ));
-        }
-
-        let cardano_args = [
-            "query",
-            "packet",
-            subcmd,
-            "--chain",
-            "cardano-devnet",
-            "--port",
-            "transfer",
-            "--channel",
-            cardano_channel_id,
-        ];
-        if let Err(e) = run_hermes_and_print_allow_not_found(
-            project_root,
-            &cardano_args,
-            &format!("hermes query packet {} (cardano-devnet)", subcmd),
-        ) {
-            logger::log(&format!(
-                "(diagnostics) Failed to run hermes query packet {} on cardano-devnet: {}\n",
-                subcmd, e
-            ));
-        }
-    }
-
-    match query_sidechain_balances(sidechain_address) {
-        Ok(balances) => {
-            logger::log("=== sidechain balances (bank) ===");
-            if balances.is_empty() {
-                logger::log("(no balances returned)");
-            } else {
-                for (denom, amount) in &balances {
-                    logger::log(&format!("{}: {}", denom, amount));
-                }
-            }
-            logger::log("");
-        }
-        Err(e) => {
-            logger::log(&format!(
-                "(diagnostics) Failed to query sidechain balances: {}\n",
-                e
-            ));
-        }
-    }
+    dump_packet_queries_for_transfer_channels(
+        project_root,
+        &[
+            ("sidechain", sidechain_channel_id),
+            ("cardano-devnet", cardano_channel_id),
+        ],
+    );
+    let _ = dump_sidechain_balances_section(sidechain_address);
 
     if voucher_denom.starts_with("ibc/") {
         let hash = voucher_denom.strip_prefix("ibc/").unwrap_or(voucher_denom);
@@ -4577,6 +4383,79 @@ fn dump_test_12_ics20_diagnostics(
             e
         )),
     }
+}
+
+fn dump_packet_queries_for_transfer_channels(project_root: &Path, chain_channels: &[(&str, &str)]) {
+    for subcmd in ["pending", "commitments", "acks"] {
+        for (chain, channel_id) in chain_channels.iter().copied() {
+            let args = [
+                "query",
+                "packet",
+                subcmd,
+                "--chain",
+                chain,
+                "--port",
+                "transfer",
+                "--channel",
+                channel_id,
+            ];
+            if let Err(e) = run_hermes_and_print_allow_not_found(
+                project_root,
+                &args,
+                &format!("hermes query packet {} ({})", subcmd, chain),
+            ) {
+                logger::log(&format!(
+                    "(diagnostics) Failed to run hermes query packet {} on {}: {}\n",
+                    subcmd, chain, e
+                ));
+            }
+        }
+    }
+}
+
+fn dump_sidechain_balances_section(sidechain_address: &str) -> Option<BTreeMap<String, u128>> {
+    match query_sidechain_balances(sidechain_address) {
+        Ok(balances) => {
+            logger::log("=== sidechain balances (bank) ===");
+            if balances.is_empty() {
+                logger::log("(no balances returned)");
+            } else {
+                for (denom, amount) in &balances {
+                    logger::log(&format!("{}: {}", denom, amount));
+                }
+            }
+            logger::log("");
+            Some(balances)
+        }
+        Err(e) => {
+            logger::log(&format!(
+                "(diagnostics) Failed to query sidechain balances: {}\n",
+                e
+            ));
+            None
+        }
+    }
+}
+
+fn dump_denom_traces_for_sidechain_ibc_denoms(balances: &BTreeMap<String, u128>, max_items: usize) {
+    let mut ibc_denoms: Vec<&str> = balances
+        .keys()
+        .filter_map(|denom| denom.starts_with("ibc/").then_some(denom.as_str()))
+        .collect();
+    if ibc_denoms.is_empty() {
+        return;
+    }
+
+    ibc_denoms.sort_unstable();
+    logger::log("=== sidechain denom traces (reverse lookup) ===");
+    for denom in ibc_denoms.into_iter().take(max_items) {
+        let hash = denom.strip_prefix("ibc/").unwrap_or(denom);
+        match query_sidechain_denom_trace(hash) {
+            Ok((path, base_denom)) => logger::log(&format!("{} -> {}/{}", denom, path, base_denom)),
+            Err(e) => logger::log(&format!("{} -> (failed to query denom-trace) {}", denom, e)),
+        }
+    }
+    logger::log("");
 }
 
 fn run_hermes_and_print_allow_not_found(

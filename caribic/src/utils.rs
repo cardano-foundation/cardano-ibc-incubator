@@ -554,32 +554,32 @@ pub fn get_osmosis_dir(project_root: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-// return Some(
-//     String::from_utf8_lossy(&output.stdout)
-//         .split(' ')
-//         .collect::<Vec<_>>()[1]
-//         .to_string(),
-// );
+/// Parses a Tendermint client id from Hermes output text.
+pub fn parse_tendermint_client_id(output: &str) -> Option<String> {
+    let regex = Regex::new(r#"client_id:\s*ClientId\(\s*"([^"]+)""#).ok()?;
+    let captures = regex.captures(output)?;
+    Some(captures.get(1)?.as_str().to_string())
+}
+
+/// Parses a Tendermint connection id from Hermes output text.
+pub fn parse_tendermint_connection_id(output: &str) -> Option<String> {
+    let regex = Regex::new(r#"\s*(connection-\d+)"#).ok()?;
+    let captures = regex.captures(output)?;
+    Some(captures.get(1)?.as_str().to_string())
+}
+
+/// Parses a Tendermint client id from Hermes process output.
 pub fn extract_tendermint_client_id(output: Output) -> Option<String> {
     if output.status.success() {
-        let regex = Regex::new(r#"client_id:\s*ClientId\(\s*"([^"]+)""#).unwrap();
-        if let Some(results) = regex.captures(String::from_utf8_lossy(&output.stdout).as_ref()) {
-            if let Some(result) = results.get(1) {
-                return Some(result.as_str().to_string());
-            }
-        }
+        return parse_tendermint_client_id(String::from_utf8_lossy(&output.stdout).as_ref());
     }
     None
 }
 
+/// Parses a Tendermint connection id from Hermes process output.
 pub fn extract_tendermint_connection_id(output: Output) -> Option<String> {
     if output.status.success() {
-        let regex = Regex::new(r#"\s*(connection-\d+)"#).unwrap();
-        if let Some(results) = regex.captures(String::from_utf8_lossy(&output.stdout).as_ref()) {
-            if let Some(result) = results.get(1) {
-                return Some(result.as_str().to_string());
-            }
-        }
+        return parse_tendermint_connection_id(String::from_utf8_lossy(&output.stdout).as_ref());
     }
     None
 }

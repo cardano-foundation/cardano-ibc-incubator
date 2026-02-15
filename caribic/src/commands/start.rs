@@ -16,6 +16,7 @@ use crate::{
     StartTarget, StopTarget,
 };
 
+/// Starts the requested target and orchestrates startup dependencies for network and bridge components.
 pub async fn run_start(
     target: Option<StartTarget>,
     clean: bool,
@@ -90,7 +91,7 @@ pub async fn run_start(
             }
         };
 
-        match start_hermes_daemon(project_root_path.join("relayer").as_path()) {
+        match start_hermes_daemon() {
             Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
             Err(error) => return Err(format!("ERROR: Failed to start Hermes daemon: {}", error)),
         };
@@ -182,8 +183,9 @@ pub async fn run_start(
                 );
             }
             Err(error) => {
-                return stop_partial_network(
+                return fail_and_stop_started_services(
                     project_root_path,
+                    StopTarget::Network,
                     &format!("ERROR: Failed to start local Cardano network: {}", error),
                 );
             }
@@ -254,14 +256,16 @@ pub async fn run_start(
             match handle.await {
                 Ok(Ok(())) => validators_built = true,
                 Ok(Err(error)) => {
-                    return stop_partial_bridge(
+                    return fail_and_stop_started_services(
                         project_root_path,
+                        StopTarget::Bridge,
                         &format!("ERROR: Failed to build Aiken validators: {}", error),
                     )
                 }
                 Err(error) => {
-                    return stop_partial_bridge(
+                    return fail_and_stop_started_services(
                         project_root_path,
+                        StopTarget::Bridge,
                         &format!("ERROR: Failed to build Aiken validators: {}", error),
                     )
                 }
@@ -273,8 +277,9 @@ pub async fn run_start(
                 "PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)",
             ),
             Err(error) => {
-                return stop_partial_bridge(
+                return fail_and_stop_started_services(
                     project_root_path,
+                    StopTarget::Bridge,
                     &format!("ERROR: Failed to deploy Cardano Scripts: {}", error),
                 )
             }
@@ -292,8 +297,9 @@ pub async fn run_start(
         match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => {
-                return stop_partial_bridge(
+                return fail_and_stop_started_services(
                     project_root_path,
+                    StopTarget::Bridge,
                     &format!("ERROR: Failed to start gateway: {}", error),
                 )
             }
@@ -303,14 +309,16 @@ pub async fn run_start(
             match handle.await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
-                    return stop_partial_bridge(
+                    return fail_and_stop_started_services(
                         project_root_path,
+                        StopTarget::Bridge,
                         &format!("ERROR: Failed to build Hermes relayer: {}", error),
                     )
                 }
                 Err(error) => {
-                    return stop_partial_bridge(
+                    return fail_and_stop_started_services(
                         project_root_path,
+                        StopTarget::Bridge,
                         &format!("ERROR: Failed to build Hermes relayer: {}", error),
                     )
                 }
@@ -327,20 +335,22 @@ pub async fn run_start(
         ) {
             Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
             Err(error) => {
-                return stop_partial_bridge(
+                return fail_and_stop_started_services(
                     project_root_path,
+                    StopTarget::Bridge,
                     &format!("ERROR: Failed to configure Hermes relayer: {}", error),
                 )
             }
         }
 
-        match start_hermes_daemon(project_root_path.join("relayer").as_path()) {
+        match start_hermes_daemon() {
             Ok(_) => {
                 logger::log("PASS: Hermes relayer started (check logs at ~/.hermes/hermes.log)")
             }
             Err(error) => {
-                return stop_partial_bridge(
+                return fail_and_stop_started_services(
                     project_root_path,
+                    StopTarget::Bridge,
                     &format!("ERROR: Failed to start Hermes daemon: {}", error),
                 )
             }
@@ -387,13 +397,13 @@ pub async fn run_start(
                     "PASS: Immutable Cardano node files have been created, and Mithril is working as expected",
                 ),
                 Ok(Err(error)) => {
-                    return stop_partial_bridge(project_root_path, &format!(
+                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
                         "ERROR: Mithril failed to read the immutable cardano node files: {}",
                         error
                     ))
                 }
                 Err(error) => {
-                    return stop_partial_bridge(project_root_path, &format!(
+                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
                         "ERROR: Mithril genesis bootstrap task failed: {}",
                         error
                     ))
@@ -416,20 +426,19 @@ pub async fn run_start(
     Ok(())
 }
 
-fn stop_partial_network(_project_root_path: &Path, message: &str) -> Result<(), String> {
+/// Logs a startup failure, stops the requested service group, and returns the same error.
+fn fail_and_stop_started_services(
+    _project_root_path: &Path,
+    stop_target: StopTarget,
+    message: &str,
+) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    crate::commands::stop::run_stop(Some(StopTarget::Network)).unwrap_or_default();
+    crate::commands::stop::run_stop(Some(stop_target)).unwrap_or_default();
     Err(message.to_string())
 }
 
-fn stop_partial_bridge(_project_root_path: &Path, message: &str) -> Result<(), String> {
-    logger::error(message);
-    logger::log("Stopping services...");
-    crate::commands::stop::run_stop(Some(StopTarget::Bridge)).unwrap_or_default();
-    Err(message.to_string())
-}
-
+/// Formats elapsed time in human readable units for user-facing logs.
 fn format_elapsed_duration(duration: Duration) -> String {
     let total_seconds = duration.as_secs();
     let hours = total_seconds / 3600;
