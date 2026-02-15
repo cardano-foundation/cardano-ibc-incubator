@@ -1,7 +1,7 @@
 #==================================Assign contract address=======================================
-CROSSCHAIN_SWAPS_ADDRESS=""
+CROSSCHAIN_SWAPS_ADDRESS="${CROSSCHAIN_SWAPS_ADDRESS:-}"
 [ -z "$CROSSCHAIN_SWAPS_ADDRESS" ] && echo "crosschain_swaps contract address not specified!" && exit 1
-CARDANO_RECEIVER="247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8"
+CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8}"
 #==================================Define util funcions=======================================
 check_string_empty() {
   [ -z "$1" ] && echo "$2" && exit 1
@@ -55,6 +55,27 @@ print_swap_diagnostics() {
 
     echo "=== Diagnostics: Osmosis->Entrypoint packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id" || true
+}
+
+run_with_timeout() {
+    local _rwto_seconds="$1"
+    shift
+    "$@" >/dev/null 2>&1 &
+    local _cmd_pid=$!
+    (
+        sleep "$_rwto_seconds"
+        kill "$_cmd_pid" >/dev/null 2>&1 || true
+    ) &
+    local _watchdog_pid=$!
+    wait "$_cmd_pid" >/dev/null 2>&1 || true
+    kill "$_watchdog_pid" >/dev/null 2>&1 || true
+}
+
+clear_swap_packets() {
+    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id"
+    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_cardano_chann_id"
+    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id"
+    run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id"
 }
 
 channel_commitments_cleared() {
@@ -114,6 +135,10 @@ wait_for_swap_settlement() {
         if [ "$_pending" -eq 0 ] && [ "$_unknown" -eq 0 ]; then
             echo "All transfer packet commitments are cleared."
             return 0
+        fi
+
+        if [ "$_pending" -eq 1 ] && [ "$_unknown" -eq 0 ] && [ $(( _attempt % 3 )) -eq 0 ]; then
+            clear_swap_packets
         fi
 
         _elapsed=$(( $(date +%s) - _start_epoch ))
@@ -210,5 +235,6 @@ check_string_empty "$sent_denom" "Transfer denom not found in SENT_AMOUNT. Exiti
     --memo "$memo" ||
     exit 1
 echo "Waiting for transfer acknowledgements and commitment clearing..."
+clear_swap_packets
 wait_for_swap_settlement 600 10 || exit 1
 echo "Crosschain swap tx done!"

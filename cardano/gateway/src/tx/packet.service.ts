@@ -844,19 +844,20 @@ export class PacketService {
               'mintVoucherRedeemer',
             );
 
-            // Add prefix voucher prefix with denom token
-            const sourcePrefix = getDenomPrefix(
-              packetSourcePort,
-              packetSourceChannel,
+            // MintVoucher validator computes token name from destination port/channel + packet denom
+            // Use the same prefix here so voucher hash stays consistent even when channel ids differ by side
+            const destPrefix = getDenomPrefix(
+              convertHex2String(packet.destination_port),
+              convertHex2String(packet.destination_channel),
             );
 
-            const prefixedDenom = convertString2Hex(sourcePrefix + fungibleTokenPacketData.denom);
+            const prefixedDenom = convertString2Hex(destPrefix + fungibleTokenPacketData.denom);
             const voucherTokenName = hashSha3_256(prefixedDenom);
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
             
             // Track denom trace mapping (required for later ibc/<hash> burn resolution).
-            const fullDenomPath = sourcePrefix + fungibleTokenPacketData.denom;
+            const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
             const pathParts = fullDenomPath.split('/');
             const baseDenom = pathParts[pathParts.length - 1];
             const path = pathParts.slice(0, -1).join('/');

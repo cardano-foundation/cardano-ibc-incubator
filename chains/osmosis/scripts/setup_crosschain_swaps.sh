@@ -1,11 +1,24 @@
+#!/usr/bin/env bash
+set -o pipefail
+
 #==================================Define util funcions=======================================
 check_string_empty() {
   [ -z "$1" ] && echo "$2" && exit 1
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root=$(realpath "$script_dir/../../..")
+repo_root=$(
+  if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
+    git -C "$script_dir" rev-parse --show-toplevel
+  else
+    realpath "$script_dir/../../../.."
+  fi
+)
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
+OSMOSISD_BIN="${OSMOSISD_BIN:-$(command -v osmosisd || true)}"
+if [ -z "$OSMOSISD_BIN" ] && [ -x "$HOME/go/bin/osmosisd" ]; then
+  OSMOSISD_BIN="$HOME/go/bin/osmosisd"
+fi
 
 if [ ! -x "$HERMES_BIN" ]; then
   echo "Local Hermes binary not found at $HERMES_BIN."
@@ -41,8 +54,111 @@ get_latest_transfer_channel_id() {
 
 # Function to extract and print txhash from piped input
 log_tx() {
-  _log_tx_txhash=$(sed -n 's/^\(txhash: .*\)/\1/p')
+  _raw_output="$(cat)"
+  _log_tx_txhash=$(printf '%s\n' "$_raw_output" | sed -n 's/^\(txhash: .*\)/\1/p')
+  if [ -z "$_log_tx_txhash" ]; then
+    _log_tx_txhash=$(printf '%s\n' "$_raw_output" | jq -r '.txhash // empty' 2>/dev/null | head -n 1)
+    if [ -n "$_log_tx_txhash" ]; then
+      _log_tx_txhash="txhash: $_log_tx_txhash"
+    fi
+  fi
   echo "$_log_tx_txhash"
+}
+
+osmosis_query_json() {
+  "$OSMOSISD_BIN" query "$@" --node "$OSMOSIS_NODE" --output json 2>&1
+}
+
+wait_for_wasm_code_id() {
+  _timeout_seconds="${1:-120}"
+  _poll_interval="${2:-2}"
+  _start_epoch=$(date +%s)
+  _latest_code_id=""
+
+  while true; do
+    _latest_code_id=$(
+      osmosis_query_json wasm list-code |
+      jq -r '.code_infos[-1].code_id // empty' |
+      head -n 1
+    )
+    if [ -n "$_latest_code_id" ] && [ "$_latest_code_id" != "null" ]; then
+      echo "$_latest_code_id"
+      return 0
+    fi
+
+    _elapsed=$(( $(date +%s) - _start_epoch ))
+    if [ "$_elapsed" -ge "$_timeout_seconds" ]; then
+      echo ""
+      return 1
+    fi
+
+    sleep "$_poll_interval"
+  done
+}
+
+wait_for_contract_address() {
+  _code_id="$1"
+  _timeout_seconds="${2:-120}"
+  _poll_interval="${3:-2}"
+  _start_epoch=$(date +%s)
+
+  if [ -z "$_code_id" ]; then
+    echo ""
+    return 1
+  fi
+
+  while true; do
+    _latest_contract_address=$(
+      osmosis_query_json wasm list-contract-by-code "$_code_id" |
+      jq -r '.contracts | [last][0] // empty'
+    )
+    if [ -n "$_latest_contract_address" ] && [ "$_latest_contract_address" != "null" ]; then
+      echo "$_latest_contract_address"
+      return 0
+    fi
+
+    _elapsed=$(( $(date +%s) - _start_epoch ))
+    if [ "$_elapsed" -ge "$_timeout_seconds" ]; then
+      echo ""
+      return 1
+    fi
+
+    sleep "$_poll_interval"
+  done
+}
+
+wait_for_crosschain_address() {
+  _code_id="$1"
+  _timeout_seconds="${2:-120}"
+  _poll_interval="${3:-2}"
+  _start_epoch=$(date +%s)
+
+  if [ -z "$_code_id" ]; then
+    echo ""
+    return 1
+  fi
+
+  while true; do
+    _latest_contract_address=$(
+      osmosis_query_json wasm list-contract-by-code "$_code_id" |
+      jq -r '.contracts | [last] // empty'
+    )
+    if [ -n "$_latest_contract_address" ] && [ "$_latest_contract_address" != "null" ] && [ "$_latest_contract_address" != "[]" ]; then
+      _latest_contract_address=$(echo "$_latest_contract_address" | jq -r '.[0]')
+      if [ -n "$_latest_contract_address" ] && [ "$_latest_contract_address" != "null" ]; then
+        echo "$_latest_contract_address"
+        return 0
+      fi
+    fi
+
+    _elapsed=$(( $(date +%s) - _start_epoch ))
+    if [ "$_elapsed" -ge "$_timeout_seconds" ]; then
+      echo ""
+      return 1
+    fi
+
+    sleep "$_poll_interval"
+  done
 }
 
 print_transfer_diagnostics() {
@@ -53,6 +169,25 @@ print_transfer_diagnostics() {
   "$HERMES_BIN" query packet pending --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id" || true
 }
 
+clear_swap_packets() {
+  run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id"
+  run_with_timeout 120 "$HERMES_BIN" clear packets --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id"
+}
+
+run_with_timeout() {
+  local _rwto_seconds="$1"
+  shift
+  "$@" >/dev/null 2>&1 &
+  local _cmd_pid=$!
+  (
+    sleep "$_rwto_seconds"
+    kill "$_cmd_pid" >/dev/null 2>&1 || true
+  ) &
+  local _watchdog_pid=$!
+  wait "$_cmd_pid" >/dev/null 2>&1 || true
+  kill "$_watchdog_pid" >/dev/null 2>&1 || true
+}
+
 wait_for_osmosis_ibc_denom() {
   _receiver="$1"
   _timeout_seconds="${2:-600}"
@@ -61,7 +196,11 @@ wait_for_osmosis_ibc_denom() {
   _attempt=1
 
   while true; do
-    _denom=$(osmosisd query bank balances "$_receiver" $QUERY_FLAGS | jq -r '.balances[]? | select(.denom | startswith("ibc/")) | .denom' | head -n 1)
+    _denom=$(
+      osmosis_query_json bank balances "$_receiver" |
+      jq -r '.balances[]? | select(.denom | startswith("ibc/")) | .denom' |
+      head -n 1
+    )
     if [ -n "$_denom" ] && [ "$_denom" != "null" ]; then
       echo "$_denom"
       return 0
@@ -84,16 +223,35 @@ wait_for_osmosis_ibc_denom() {
   done
 }
 #==================================Check required tools=====================================
-if ! command -v osmosisd >/dev/null 2>&1; then
+if [ -z "$OSMOSISD_BIN" ] || [ ! -x "$OSMOSISD_BIN" ]; then
   echo "osmosisd not found. Exiting..."
   exit 1
 fi
 
+get_mock_token_denom() {
+  local _handler_file="$1"
+
+  if [ ! -f "$_handler_file" ]; then
+    echo ""
+    return 1
+  fi
+
+  local _denom
+  _denom="$(jq -r '.tokens.mock // empty' "$_handler_file" 2>/dev/null)"
+  if [ -n "$_denom" ] && [ "$_denom" != "null" ]; then
+    echo "$_denom"
+    return 0
+  fi
+
+  echo ""
+  return 1
+}
+
 #==================================Setup deployer key=======================================
 echo "quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty" |
-  osmosisd --keyring-backend test keys add deployer --recover || echo "Deployer key already existed"
+  "$OSMOSISD_BIN" --keyring-backend test keys add deployer --recover || echo "Deployer key already existed"
 
-deployer=$(osmosisd keys show deployer --address --keyring-backend test)
+deployer=$("$OSMOSISD_BIN" keys show deployer --address --keyring-backend test)
 check_string_empty "$deployer" "deployer address not found. Exiting..."
 echo "deployer address $deployer"
 
@@ -101,9 +259,15 @@ echo "deployer address $deployer"
 HERMES_CARDANO_NAME="cardano-devnet"
 HERMES_SIDECHAIN_NAME="sidechain"
 HERMES_OSMOSIS_NAME="localosmosis"
-SENT_AMOUNT="12345678-465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b"
+SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345678}"
+HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
+SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
+if [ -z "$SENT_DENOM" ]; then
+  check_string_empty "" "Could not resolve mock token denom from handler.json. Please ensure the handler deployment file is present and up to date."
+fi
+SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 SIDECHAIN_RECEIVER="pfm"
-QUERY_FLAGS="--node http://localhost:26658 --output json"
+OSMOSIS_NODE="http://localhost:26658"
 
 # query channels' id
 cardano_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_SIDECHAIN_NAME")
@@ -140,13 +304,21 @@ check_string_empty "$sent_denom" "Transfer denom not found in SENT_AMOUNT. Exiti
   --memo "$memo" ||
   exit 1
 echo "Waiting for IBC voucher to arrive on Osmosis..."
+if [ "${CARIBIC_CLEAR_SWAP_PACKETS:-false}" = "true" ]; then
+  clear_swap_packets
+fi
 denom=$(wait_for_osmosis_ibc_denom "$deployer" 600 10) || exit 1
 check_string_empty "$denom" "IBC token on Osmosis not found after waiting. Exiting..."
 echo "Sent IBC Denom: $denom"
 
 #==================================Create Osmosis swap pool=======================================
 
-TX_FLAGS="--node http://localhost:26658 --keyring-backend test --from deployer --chain-id localosmosis --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 --yes"
+TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from deployer --chain-id localosmosis --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 --yes)
+sample_pool_file="$(mktemp)"
+cleanup_sample_pool_file() {
+  rm -f "$sample_pool_file"
+}
+trap cleanup_sample_pool_file EXIT
 
 # Create the sample_pool.json file
 jq -n --arg denom "$denom" '{
@@ -155,30 +327,30 @@ jq -n --arg denom "$denom" '{
   "swap-fee": "0.01",
   "exit-fee": "0.01",
   "future-governor": "168h"
-}' >sample_pool.json
+}' >"$sample_pool_file"
 
 # Create pool
-osmosisd tx gamm create-pool --pool-file sample_pool.json $TX_FLAGS | log_tx || exit 1
-sleep 6
-pool_id=$(osmosisd query gamm pools $QUERY_FLAGS | jq -r '.pools[-1].id')
+  "$OSMOSISD_BIN" tx gamm create-pool --pool-file "$sample_pool_file" "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  pool_id=$(
+    osmosis_query_json gamm pools |
+    jq -r '.pools[-1].id'
+  )
 check_string_empty "$pool_id" "Pool ID on Osmosis not found. Exiting..."
 echo "Created Pool ID: $pool_id"
 
 #==================================Setup swaprouter contract=======================================
 # Store the swaprouter contract
-osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/swaprouter.wasm $TX_FLAGS | log_tx || exit 1
-sleep 6
-swaprouter_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
-check_string_empty "$swaprouter_code_id" "swaprouter code id on Osmosis not found. Exiting..."
-echo "swaprouter code id: $swaprouter_code_id"
+  "$OSMOSISD_BIN" tx wasm store $script_dir/../osmosis/cosmwasm/wasm/swaprouter.wasm "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  swaprouter_code_id=$(wait_for_wasm_code_id 180 4)
+  check_string_empty "$swaprouter_code_id" "swaprouter code id on Osmosis not found. Exiting..."
+  echo "swaprouter code id: $swaprouter_code_id"
 
 # Instantiate the swaprouter contract
 init_swap_router_msg=$(jq -n --arg owner "$deployer" '{owner: $owner}')
-osmosisd tx wasm instantiate "$swaprouter_code_id" "$init_swap_router_msg" --admin "$deployer" --label swaprouter $TX_FLAGS | log_tx || exit 1
-sleep 6
-swaprouter_address=$(osmosisd query wasm list-contract-by-code "$swaprouter_code_id" $QUERY_FLAGS | jq -r '.contracts | [last][0]')
-check_string_empty "$swaprouter_address" "swaprouter address on Osmosis not found. Exiting..."
-echo "swaprouter address: $swaprouter_address"
+  "$OSMOSISD_BIN" tx wasm instantiate "$swaprouter_code_id" "$init_swap_router_msg" --admin "$deployer" --label swaprouter "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  swaprouter_address=$(wait_for_contract_address "$swaprouter_code_id" 180 4)
+  check_string_empty "$swaprouter_address" "swaprouter address on Osmosis not found. Exiting..."
+  echo "swaprouter address: $swaprouter_address"
 
 # configure the swaprouter
 set_route_msg=$(jq -n --arg denom "$denom" --arg pool_id "$pool_id" \
@@ -194,16 +366,15 @@ set_route_msg=$(jq -n --arg denom "$denom" --arg pool_id "$pool_id" \
     ]
   }
 }')
-osmosisd tx wasm execute "$swaprouter_address" "$set_route_msg" $TX_FLAGS | log_tx || exit 1
-sleep 6
-echo "swaprouter set_route executed!"
+  "$OSMOSISD_BIN" tx wasm execute "$swaprouter_address" "$set_route_msg" "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  sleep 6
+  echo "swaprouter set_route executed!"
 
 #==================================Setup crosschain_swaps contract=======================================
-osmosisd tx wasm store $script_dir/../osmosis/cosmwasm/wasm/crosschain_swaps.wasm $TX_FLAGS | log_tx || exit 1
-sleep 6
-crosschain_swaps_code_id=$(osmosisd query wasm list-code $QUERY_FLAGS | jq -r '.code_infos[-1].code_id')
-check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
-echo "crosschain_swaps code id: $crosschain_swaps_code_id"
+  "$OSMOSISD_BIN" tx wasm store $script_dir/../osmosis/cosmwasm/wasm/crosschain_swaps.wasm "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  crosschain_swaps_code_id=$(wait_for_wasm_code_id 180 4)
+  check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
+  echo "crosschain_swaps code id: $crosschain_swaps_code_id"
 
 osmosis_sidechain_chann_id=$("$HERMES_BIN" --json query channels --chain "$HERMES_OSMOSIS_NAME" --counterparty-chain "$HERMES_SIDECHAIN_NAME" | jq -r 'select(.result) | .result[-1].channel_id')
 echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
@@ -220,8 +391,7 @@ init_crosschain_swaps_msg=$(
     channels: [["cosmos", $channel_id]]
   }'
 )
-osmosisd tx wasm instantiate "$crosschain_swaps_code_id" "$init_crosschain_swaps_msg" --label "crosschain_swaps" --admin "$deployer" $TX_FLAGS | log_tx || exit 1
-sleep 6
-crosschain_swaps_address=$(osmosisd query wasm list-contract-by-code "$crosschain_swaps_code_id" $QUERY_FLAGS | jq -r '.contracts[-1]')
-check_string_empty "$crosschain_swaps_address" "crosschain_swaps address on Osmosis not found. Exiting..."
+  "$OSMOSISD_BIN" tx wasm instantiate "$crosschain_swaps_code_id" "$init_crosschain_swaps_msg" --label "crosschain_swaps" --admin "$deployer" "${TX_FLAGS[@]}" 2>&1 | log_tx || exit 1
+  crosschain_swaps_address=$(wait_for_crosschain_address "$crosschain_swaps_code_id" 180 4)
+  check_string_empty "$crosschain_swaps_address" "crosschain_swaps address on Osmosis not found. Exiting..."
 echo "crosschain_swaps address: $crosschain_swaps_address"
