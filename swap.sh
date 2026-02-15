@@ -7,6 +7,25 @@ check_string_empty() {
   [ -z "$1" ] && echo "$2" && exit 1
 }
 
+get_mock_token_denom() {
+  local _handler_file="$1"
+
+  if [ ! -f "$_handler_file" ]; then
+    echo ""
+    return 1
+  fi
+
+  local _denom
+  _denom="$(jq -r '.tokens.mock // empty' "$_handler_file" 2>/dev/null)"
+  if [ -n "$_denom" ] && [ "$_denom" != "null" ]; then
+    echo "$_denom"
+    return 0
+  fi
+
+  echo ""
+  return 1
+}
+
 script_dir=$(dirname "$(realpath "$0")")
 repo_root="$script_dir"
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
@@ -233,7 +252,11 @@ wait_for_swap_settlement() {
 HERMES_CARDANO_NAME="cardano-devnet"
 HERMES_SIDECHAIN_NAME="sidechain"
 HERMES_OSMOSIS_NAME="localosmosis"
-SENT_AMOUNT="12345-465209195f27c99dfefdcb725e939ad3262339a9b150992b66673be86d6f636b"
+SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"
+HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
+SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
+check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json. Please ensure the handler deployment file is present and up to date."
+SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 SIDECHAIN_RECEIVER="pfm"
 
 cardano_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_SIDECHAIN_NAME")

@@ -2047,14 +2047,8 @@ export class PacketService {
       return directResolvedMatch;
     }
 
-    const voucherUnitFromResolvedDenom = this.getMintVoucherScriptHash() + this._buildVoucherTokenName(resolvedDenom);
-    const voucherUnitMatch = this._tryResolveAssetUnitFromAssets(senderAssets, voucherUnitFromResolvedDenom);
-    if (voucherUnitMatch !== null) {
-      return voucherUnitMatch;
-    }
-
     throw new GrpcInvalidArgumentException(
-      `Unable to resolve escrow asset unit for denom ${inputDenom} (resolved as ${resolvedDenom})`,
+      `Escrow asset unit not found in sender wallet UTxOs for denom ${inputDenom} (resolved as ${resolvedDenom})`,
     );
   }
   private _normalizePacketDenom(denom: string, portId: string, channelId: string): string {
