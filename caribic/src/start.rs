@@ -1228,7 +1228,7 @@ fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn st
     Err("Hermes binary not found at relayer/target/release/hermes. Run 'caribic start relayer' first so the demo uses the local Cardano-enabled Hermes binary.".into())
 }
 
-/// Appends one `[[chains]]` block from the source Hermes config into `~/.hermes/config.toml` when missing.
+/// Ensures one `[[chains]]` block from the source Hermes config exists and stays up to date in `~/.hermes/config.toml`.
 fn ensure_chain_in_hermes_config(
     script_dir: &Path,
     chain_id: &str,
@@ -1257,11 +1257,14 @@ fn ensure_chain_in_hermes_config(
         )
     })?;
 
-    if extract_chain_block(&destination_config, chain_id).is_some() {
-        return Ok(());
-    }
-
-    let source_config_path = script_dir.join("hermes/config.toml");
+    let source_config_path = {
+        let canonical_source = script_dir.join("../../configuration/hermes/config.toml");
+        if canonical_source.exists() {
+            canonical_source
+        } else {
+            script_dir.join("hermes/config.toml")
+        }
+    };
     let source_config = fs::read_to_string(&source_config_path).map_err(|e| {
         format!(
             "Failed to read Osmosis Hermes config at {}: {}",
@@ -1277,6 +1280,37 @@ fn ensure_chain_in_hermes_config(
             source_config_path.display()
         )
     })?;
+
+    if let Some(existing_block) = extract_chain_block(&destination_config, chain_id) {
+        if existing_block.trim() == chain_block.trim() {
+            return Ok(());
+        }
+
+        destination_config = replace_chain_block(&destination_config, chain_id, &chain_block)
+            .ok_or_else(|| {
+                format!(
+                    "Failed to update chain '{}' block in {}",
+                    chain_id,
+                    destination_config_path.display()
+                )
+            })?;
+
+        fs::write(&destination_config_path, destination_config).map_err(|e| {
+            format!(
+                "Failed to update Hermes config at {}: {}",
+                destination_config_path.display(),
+                e
+            )
+        })?;
+
+        verbose(&format!(
+            "Updated '{}' chain block in Hermes config at {}",
+            chain_id,
+            destination_config_path.display(),
+        ));
+
+        return Ok(());
+    }
 
     if !destination_config.ends_with('\n') {
         destination_config.push('\n');
@@ -1305,9 +1339,34 @@ fn ensure_chain_in_hermes_config(
     Ok(())
 }
 
-/// Extracts one `[[chains]]` TOML block by matching the requested chain id.
-fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
+/// Replaces an existing chain block in a TOML config string.
+fn replace_chain_block(
+    config: &str,
+    target_chain_id: &str,
+    replacement_block: &str,
+) -> Option<String> {
     let lines: Vec<&str> = config.lines().collect();
+    let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
+
+    let mut updated_lines: Vec<&str> = Vec::with_capacity(
+        lines.len() - (block_end - block_start) + replacement_block.lines().count(),
+    );
+    updated_lines.extend_from_slice(&lines[..block_start]);
+    updated_lines.extend(replacement_block.lines());
+    updated_lines.extend_from_slice(&lines[block_end..]);
+
+    let mut updated = updated_lines.join("\n");
+    if !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+
+    Some(updated)
+}
+
+/// Finds the start/end line indices for one `[[chains]]` block.
+fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usize, usize)> {
+    let target_id_single_quote = format!("id = '{}'", target_chain_id);
+    let target_id_double_quote = format!("id = \"{}\"", target_chain_id);
     let mut index = 0;
 
     while index < lines.len() {
@@ -1323,15 +1382,24 @@ fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
         }
 
         let block_lines = &lines[block_start..block_end];
-        let target_id_line = format!("id = '{}'", target_chain_id);
-        if block_lines.iter().any(|line| line.trim() == target_id_line) {
-            return Some(block_lines.join("\n"));
+        if block_lines.iter().any(|line| {
+            let line = line.trim();
+            line == target_id_single_quote || line == target_id_double_quote
+        }) {
+            return Some((block_start, block_end));
         }
 
         index = block_end;
     }
 
     None
+}
+
+/// Extracts one `[[chains]]` TOML block by matching the requested chain id.
+fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
+    let lines: Vec<&str> = config.lines().collect();
+    let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
+    Some(lines[block_start..block_end].join("\n"))
 }
 
 /// Runs local Osmosis network initialization in interactive mode.
@@ -2028,11 +2096,17 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_log = home_path.join(".hermes/hermes.log");
+    let hermes_config = home_path.join(".hermes/config.toml");
 
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
     let config_check = Command::new(&hermes_binary)
-        .args(&["config", "validate"])
+        .args(&[
+            "--config",
+            hermes_config.to_str().ok_or("Invalid Hermes config path")?,
+            "config",
+            "validate",
+        ])
         .output();
 
     if let Ok(output) = config_check {
@@ -2050,6 +2124,8 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     // Start Hermes in background
     let mut child = Command::new(&hermes_binary)
+        .arg("--config")
+        .arg(hermes_config.to_str().ok_or("Invalid Hermes config path")?)
         .arg("start")
         .stdout(std::fs::File::create(&hermes_log)?)
         .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
@@ -2702,11 +2778,7 @@ fn check_hermes_daemon_service() -> (bool, String) {
     if let Ok(output) = ps_check {
         let stdout = String::from_utf8_lossy(&output.stdout);
         for line in stdout.lines() {
-            if line.contains("hermes")
-                && line.contains(" --config ")
-                && line.contains("start")
-                && !line.contains("grep")
-            {
+            if line.contains("hermes") && line.contains("start") && !line.contains("grep") {
                 let home = home_dir().unwrap_or_default();
                 let log_file = home.join(".hermes/hermes.log");
 
