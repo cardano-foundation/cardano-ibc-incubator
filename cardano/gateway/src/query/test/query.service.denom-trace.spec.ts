@@ -12,7 +12,7 @@ import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 describe('QueryService denom trace queries', () => {
   let service: QueryService;
   let denomTraceServiceMock: {
-    findByHash: jest.Mock;
+    findByIbcDenomHash: jest.Mock;
     findAll: jest.Mock;
     getCount: jest.Mock;
   };
@@ -30,7 +30,7 @@ describe('QueryService denom trace queries', () => {
     } as unknown as ConfigService;
 
     denomTraceServiceMock = {
-      findByHash: jest.fn(),
+      findByIbcDenomHash: jest.fn(),
       findAll: jest.fn(),
       getCount: jest.fn(),
     };
@@ -51,19 +51,27 @@ describe('QueryService denom trace queries', () => {
     await expect(service.queryDenomTrace({ hash: '' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
   });
 
-  it('returns not found when denom trace hash does not exist', async () => {
-    denomTraceServiceMock.findByHash.mockResolvedValue(null);
-
-    await expect(service.queryDenomTrace({ hash: 'abcd' } as any)).rejects.toThrow(GrpcNotFoundException);
+  it('rejects queryDenomTrace when hash is not a 64-character hex value', async () => {
+    await expect(service.queryDenomTrace({ hash: 'abcd' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
+    expect(denomTraceServiceMock.findByIbcDenomHash).not.toHaveBeenCalled();
   });
 
-  it('returns denom trace for a known hash', async () => {
-    denomTraceServiceMock.findByHash.mockResolvedValue({
+  it('normalizes ibc/<hash> input and returns not found when denom trace does not exist', async () => {
+    const upperHash = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue(null);
+
+    await expect(service.queryDenomTrace({ hash: `ibc/${upperHash}` } as any)).rejects.toThrow(GrpcNotFoundException);
+    expect(denomTraceServiceMock.findByIbcDenomHash).toHaveBeenCalledWith(upperHash.toLowerCase());
+  });
+
+  it('returns denom trace for raw 64-character hash input', async () => {
+    const mixedCaseHash = 'AaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa';
+    denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({
       path: 'transfer/channel-0',
       base_denom: 'stake',
     });
 
-    const response = await service.queryDenomTrace({ hash: 'abcd' } as any);
+    const response = await service.queryDenomTrace({ hash: mixedCaseHash } as any);
 
     expect(response).toEqual({
       denom_trace: {
@@ -71,6 +79,7 @@ describe('QueryService denom trace queries', () => {
         base_denom: 'stake',
       },
     });
+    expect(denomTraceServiceMock.findByIbcDenomHash).toHaveBeenCalledWith(mixedCaseHash.toLowerCase());
   });
 
   it('returns denom traces and total count for pagination', async () => {

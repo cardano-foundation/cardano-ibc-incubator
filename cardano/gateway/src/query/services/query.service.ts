@@ -1317,11 +1317,8 @@ export class QueryService {
     this.logger.log(`Querying denom trace for hash: ${request.hash}`);
     
     try {
-      if (!request.hash) {
-        throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
-      }
-
-      const denomTrace = await this.denomTraceService.findByHash(request.hash);
+      const ibcDenomHash = this.normalizeIbcDenomHashInput(request.hash);
+      const denomTrace = await this.denomTraceService.findByIbcDenomHash(ibcDenomHash);
       
       if (!denomTrace) {
         throw new GrpcNotFoundException(`Denom trace not found for hash: ${request.hash}`);
@@ -1342,6 +1339,26 @@ export class QueryService {
       }
       throw new GrpcInternalException(`Failed to query denom trace: ${error.message}`);
     }
+  }
+
+  private normalizeIbcDenomHashInput(input: string | undefined): string {
+    const normalizedInput = input?.trim();
+    if (!normalizedInput) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+    }
+
+    const withoutPrefix = normalizedInput.toLowerCase().startsWith('ibc/')
+      ? normalizedInput.slice(4)
+      : normalizedInput;
+    const candidateHash = withoutPrefix.trim();
+
+    if (!/^[0-9a-fA-F]{64}$/.test(candidateHash)) {
+      throw new GrpcInvalidArgumentException(
+        'Invalid argument: "hash" must be a 64-character hex hash or ibc/<hash>',
+      );
+    }
+
+    return candidateHash.toLowerCase();
   }
 
   /**
