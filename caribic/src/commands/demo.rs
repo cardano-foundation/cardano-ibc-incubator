@@ -316,6 +316,21 @@ fn parse_channel_sequence(channel_id: &str) -> Option<u64> {
     channel_id.strip_prefix("channel-")?.parse::<u64>().ok()
 }
 
+#[derive(Debug, Clone)]
+struct ConnectionEndStatus {
+    state: String,
+    client_id: Option<String>,
+    remote_client_id: Option<String>,
+    remote_connection_id: Option<String>,
+}
+
+fn parse_connection_sequence(connection_id: &str) -> Option<u64> {
+    connection_id
+        .strip_prefix("connection-")?
+        .parse::<u64>()
+        .ok()
+}
+
 /// Queries a transfer channel end and returns only the fields needed for open-state validation.
 ///
 /// This is intentionally stricter than "channel exists":
@@ -393,6 +408,218 @@ fn query_transfer_channel_end_status(
 
 fn is_open_transfer_state(state: &str) -> bool {
     state.eq_ignore_ascii_case("open")
+}
+
+/// Queries all connection ids known by Hermes for one chain.
+fn query_connection_ids_for_chain(chain_id: &str) -> Result<Vec<String>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "connections",
+        "--chain",
+        chain_id,
+    ])
+    .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes query connections failed for chain={chain_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+
+    let mut connection_ids = Vec::new();
+    for result in parsed_lines.iter().filter_map(|entry| entry.get("result")) {
+        if let Some(array) = result.as_array() {
+            for item in array {
+                if let Some(connection_id) = item.as_str() {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                    continue;
+                }
+                if let Some(connection_id) = item.get("connection_id").and_then(Value::as_str) {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        if let Some(array) = result.get("connections").and_then(Value::as_array) {
+            for item in array {
+                if let Some(connection_id) = item.get("connection_id").and_then(Value::as_str) {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    connection_ids.sort_by(|left, right| {
+        let left_seq = parse_connection_sequence(left).unwrap_or(0);
+        let right_seq = parse_connection_sequence(right).unwrap_or(0);
+        right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
+    });
+    connection_ids.dedup();
+    Ok(connection_ids)
+}
+
+/// Queries one connection end and extracts only the fields required for deterministic validation.
+fn query_connection_end_status(
+    chain_id: &str,
+    connection_id: &str,
+) -> Result<Option<ConnectionEndStatus>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "connection",
+        "end",
+        "--chain",
+        chain_id,
+        "--connection",
+        connection_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        logger::verbose(&format!(
+            "Hermes query connection end failed for chain={chain_id}, connection={connection_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+        return Ok(None);
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+    let Some(result) = parsed_lines
+        .iter()
+        .filter_map(|entry| entry.get("result"))
+        .next_back()
+    else {
+        logger::verbose(&format!(
+            "Hermes query connection end returned no result object for chain={chain_id}, connection={connection_id}",
+        ));
+        return Ok(None);
+    };
+
+    let state = result
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if state.is_empty() {
+        logger::verbose(&format!(
+            "Hermes query connection end returned empty state for chain={chain_id}, connection={connection_id}",
+        ));
+        return Ok(None);
+    }
+
+    let client_id = result
+        .get("client_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let counterparty = result.get("counterparty");
+    let remote_client_id = counterparty
+        .and_then(|value| value.get("client_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let remote_connection_id = counterparty
+        .and_then(|value| value.get("connection_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Ok(Some(ConnectionEndStatus {
+        state,
+        client_id,
+        remote_client_id,
+        remote_connection_id,
+    }))
+}
+
+/// Verifies that a Cardano connection is fully open and symmetric with the sidechain.
+///
+/// This check is intentionally strict:
+/// - Both ends must be Open
+/// - Counterparty connection ids must point back to each other
+/// - Client ids must be present on both ends
+///
+/// Using only fully-open symmetric connections avoids non-deterministic behavior where
+/// partially-created handshakes remain in state and break later channel operations.
+fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<bool, String> {
+    let Some(cardano_end) =
+        query_connection_end_status("cardano-devnet", cardano_connection_id)?
+    else {
+        return Ok(false);
+    };
+    if !is_open_transfer_state(&cardano_end.state) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet connection {cardano_connection_id}: state={} (expected Open)",
+            cardano_end.state
+        ));
+        return Ok(false);
+    }
+
+    let Some(sidechain_connection_id) = cardano_end.remote_connection_id.as_deref() else {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet connection {cardano_connection_id}: missing counterparty connection id"
+        ));
+        return Ok(false);
+    };
+    let Some(sidechain_end) = query_connection_end_status("sidechain", sidechain_connection_id)?
+    else {
+        return Ok(false);
+    };
+    if !is_open_transfer_state(&sidechain_end.state) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet connection {cardano_connection_id}: sidechain counterparty {} is {} (expected Open)",
+            sidechain_connection_id, sidechain_end.state
+        ));
+        return Ok(false);
+    }
+    if sidechain_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet connection {cardano_connection_id}: sidechain counterparty {} does not point back to it",
+            sidechain_connection_id
+        ));
+        return Ok(false);
+    }
+    if cardano_end.client_id.is_none()
+        || cardano_end.remote_client_id.is_none()
+        || sidechain_end.client_id.is_none()
+        || sidechain_end.remote_client_id.is_none()
+    {
+        logger::verbose(&format!(
+            "Skipping cardano-devnet connection {cardano_connection_id}: missing client identifiers on one or both ends"
+        ));
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// Selects the newest fully-open Cardano↔Entrypoint connection, if one exists.
+fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> {
+    let candidate_connection_ids = query_connection_ids_for_chain("cardano-devnet")?;
+    logger::verbose(&format!(
+        "Hermes query returned {} cardano-devnet connection candidates",
+        candidate_connection_ids.len()
+    ));
+
+    for connection_id in candidate_connection_ids {
+        if is_open_cardano_entrypoint_connection(connection_id.as_str())? {
+            return Ok(Some(connection_id));
+        }
+    }
+
+    Ok(None)
 }
 
 /// Verifies that a Cardano transfer channel is truly usable for swaps.
@@ -537,6 +764,36 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
     Ok(None)
 }
 
+fn create_cardano_entrypoint_transfer_channel_on_connection(
+    connection_id: &str,
+) -> Result<(), String> {
+    logger::verbose("Creating transfer channel on the Cardano↔Entrypoint connection");
+    logger::verbose(&format!(
+        "Creating transfer channel on connection {connection_id} (Cardano↔Entrypoint)"
+    ));
+    let create_channel_output = run_hermes_command(&[
+        "create",
+        "channel",
+        "--a-chain",
+        "cardano-devnet",
+        "--a-connection",
+        connection_id,
+        "--a-port",
+        "transfer",
+        "--b-port",
+        "transfer",
+    ])
+    .map_err(|error| error.to_string())?;
+    if !create_channel_output.status.success() {
+        return Err(format!(
+            "Failed to create Cardano-Entrypoint transfer channel on connection {}: {}",
+            connection_id,
+            String::from_utf8_lossy(&create_channel_output.stderr)
+        ));
+    }
+    Ok(())
+}
+
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
 fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
     if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
@@ -548,6 +805,25 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
 
     logger::log("No open Cardano->Entrypoint transfer channel detected. Creating one now.");
     logger::verbose("No open Cardano->Entrypoint transfer channel exists. Creating one now.");
+
+    if let Some(existing_open_connection_id) = query_cardano_entrypoint_open_connection()? {
+        logger::verbose(&format!(
+            "Found existing open Cardano↔Entrypoint connection {}; creating transfer channel on it",
+            existing_open_connection_id
+        ));
+        create_cardano_entrypoint_transfer_channel_on_connection(existing_open_connection_id.as_str())?;
+
+        let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+            return Err(
+                "Created transfer channel on an open Cardano↔Entrypoint connection, but no open transfer channel is currently usable".to_string(),
+            );
+        };
+        logger::log(&format!(
+            "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+        ));
+        return Ok(());
+    }
+
     logger::verbose("Creating Cardano-devnet client with sidechain reference");
 
     let create_cardano_client_output = run_hermes_command(&[
@@ -636,29 +912,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         })?;
     logger::verbose(&format!("Parsed connection id: {connection_id}"));
 
-    logger::verbose("Creating transfer channel on the Cardano↔Entrypoint connection");
-    logger::verbose(&format!(
-        "Creating transfer channel on connection {connection_id} (Cardano↔Entrypoint)"
-    ));
-    let create_channel_output = run_hermes_command(&[
-        "create",
-        "channel",
-        "--a-chain",
-        "cardano-devnet",
-        "--a-connection",
-        connection_id.as_str(),
-        "--a-port",
-        "transfer",
-        "--b-port",
-        "transfer",
-    ])
-    .map_err(|error| error.to_string())?;
-    if !create_channel_output.status.success() {
-        return Err(format!(
-            "Failed to create Cardano-Entrypoint transfer channel: {}",
-            String::from_utf8_lossy(&create_channel_output.stderr)
-        ));
-    }
+    create_cardano_entrypoint_transfer_channel_on_connection(connection_id.as_str())?;
 
     // Validate post-creation state explicitly so we fail fast with a clear reason
     // instead of continuing into the swap script with a non-open channel id.
