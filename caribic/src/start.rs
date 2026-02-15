@@ -2773,25 +2773,65 @@ fn check_mithril_service(mithril_dir: &Path) -> (bool, String) {
 }
 
 fn check_hermes_daemon_service() -> (bool, String) {
-    let ps_check = Command::new("ps").args(&["aux"]).output();
+    let expected_binary =
+        Path::new(config::get_config().project_root.as_str()).join("relayer/target/release/hermes");
 
-    if let Ok(output) = ps_check {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.contains("hermes") && line.contains("start") && !line.contains("grep") {
-                let home = home_dir().unwrap_or_default();
-                let log_file = home.join(".hermes/hermes.log");
+    let daemon_running = find_running_hermes_daemon(expected_binary.to_str());
+    if daemon_running {
+        let home = home_dir().unwrap_or_default();
+        let log_file = home.join(".hermes/hermes.log");
 
-                if log_file.exists() {
-                    return (true, "Daemon running".to_string());
-                }
-
-                return (true, "Process running".to_string());
-            }
+        if log_file.exists() {
+            return (true, "Daemon running".to_string());
         }
+
+        return (true, "Process running".to_string());
     }
 
     (false, "Daemon not running".to_string())
+}
+
+fn find_running_hermes_daemon(expected_binary_path: Option<&str>) -> bool {
+    let ps_output = Command::new("ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+
+    match ps_output {
+        Ok(output) => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(parse_pid_and_command)
+            .any(|(_, command)| is_hermes_daemon_command(command.as_str(), expected_binary_path)),
+        Err(_) => false,
+    }
+}
+
+fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let pid_str = parts.next()?;
+    let command = parts.next().unwrap_or("").trim_start().to_string();
+    let pid = pid_str.parse::<u32>().ok()?;
+
+    Some((pid, command))
+}
+
+fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -> bool {
+    let normalized_command = command.trim();
+    if normalized_command.is_empty() || !normalized_command.contains("--config") {
+        return false;
+    }
+
+    if let Some(path) = expected_binary_path {
+        if normalized_command.starts_with(path) {
+            return normalized_command.ends_with(" start");
+        }
+    }
+
+    normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 
 fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {

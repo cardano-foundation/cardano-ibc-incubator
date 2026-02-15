@@ -1,5 +1,7 @@
 use std::path::Path;
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use crate::{
     config,
@@ -106,22 +108,121 @@ pub fn stop_osmosis(osmosis_path: &Path) {
     }
 }
 
-pub fn stop_relayer(_relayer_path: &Path) {
-    // Stop Hermes daemon by finding and killing the process
-    let pkill_result = Command::new("pkill").args(&["-f", "hermes start"]).output();
+pub fn stop_relayer(relayer_path: &Path) {
+    // Stop Hermes daemon by targeting the exact local relayer binary process that caribic starts:
+    //   <project>/relayer/target/release/hermes --config ... start
+    // Matching on "hermes start" is not reliable because "--config" sits between those tokens.
+    let running_pids = find_running_hermes_daemon_pids(relayer_path);
+    if running_pids.is_empty() {
+        log("Hermes relayer was not running");
+        return;
+    }
 
-    match pkill_result {
-        Ok(output) => {
-            if output.status.success() {
-                log("Hermes relayer stopped successfully");
-            } else {
-                log("Hermes relayer was not running");
-            }
-        }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop Hermes relayer: {}", e));
+    for pid in &running_pids {
+        if let Err(kill_error) = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .output()
+        {
+            error(&format!(
+                "ERROR: Failed to send SIGTERM to Hermes relayer pid {}: {}",
+                pid, kill_error
+            ));
         }
     }
+
+    thread::sleep(Duration::from_millis(500));
+
+    let remaining_pids: Vec<u32> = running_pids
+        .into_iter()
+        .filter(|pid| is_process_alive(*pid))
+        .collect();
+
+    for pid in &remaining_pids {
+        if let Err(kill_error) = Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .output()
+        {
+            error(&format!(
+                "ERROR: Failed to send SIGKILL to Hermes relayer pid {}: {}",
+                pid, kill_error
+            ));
+        }
+    }
+
+    if remaining_pids.is_empty() {
+        log("Hermes relayer stopped successfully");
+    } else {
+        log(&format!(
+            "Hermes relayer stop requested; forced kill attempted for remaining pids: {}",
+            remaining_pids
+                .iter()
+                .map(|pid| pid.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+}
+
+fn is_process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn find_running_hermes_daemon_pids(relayer_path: &Path) -> Vec<u32> {
+    let expected_binary = relayer_path.join("target/release/hermes");
+    let expected_binary_str = expected_binary.to_str();
+
+    let ps_output = Command::new("ps")
+        .args(["-ax", "-o", "pid=,command="])
+        .output();
+
+    match ps_output {
+        Ok(output) => String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| parse_pid_and_command(line))
+            .filter_map(|(pid, command)| {
+                if is_hermes_daemon_command(command.as_str(), expected_binary_str) {
+                    Some(pid)
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
+    let trimmed = line.trim_start();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let pid_str = parts.next()?;
+    let command = parts.next().unwrap_or("").trim_start().to_string();
+    let pid = pid_str.parse::<u32>().ok()?;
+
+    Some((pid, command))
+}
+
+fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -> bool {
+    let normalized_command = command.trim();
+
+    if normalized_command.is_empty() || !normalized_command.contains("--config") {
+        return false;
+    }
+
+    if let Some(path) = expected_binary_path {
+        if normalized_command.starts_with(path) {
+            return normalized_command.ends_with(" start");
+        }
+    }
+
+    normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 
 pub fn stop_mithril(mithril_path: &Path) {
