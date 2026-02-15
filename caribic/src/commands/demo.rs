@@ -39,6 +39,9 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
     logger::log("PASS: Required token-swap services are running");
 
     logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+    // Hermes client creation against Cardano depends on Mithril artifact availability.
+    // Running this check up front gives a deterministic failure reason instead of
+    // failing later deep inside channel setup.
     wait_for_mithril_artifacts_for_demo().await?;
 
     let relayer_path = project_root_path.join("relayer");
@@ -90,6 +93,9 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
         .to_str()
         .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
+    // First stage script wires Osmosis-side contracts and creates the incoming routing path
+    // for Cardano vouchers. We parse its stdout to recover the deployed contract address
+    // needed by the final swap trigger script.
     let setup_output = match execute_script(
         project_root_path,
         setup_script,
@@ -133,6 +139,8 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
         .to_str()
         .ok_or_else(|| "ERROR: Invalid swap.sh path".to_string())?;
 
+    // Second stage script actually submits the swap transfer using the contract address
+    // returned by setup. Passing it as an env var avoids brittle parsing in the shell layer.
     execute_script(
         project_root_path,
         swap_script,
