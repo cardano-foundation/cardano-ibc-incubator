@@ -28,6 +28,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
 
+const ENTRYPOINT_CHAIN_ID: &str = "sidechain";
+const ENTRYPOINT_CONTAINER_NAME: &str = "sidechain-node-prod";
+const ENTRYPOINT_HOME_DIR: &str = "/root/.sidechain";
+
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
 /// - Linux: Uses actual user UID/GID
@@ -113,8 +117,7 @@ pub fn start_relayer(
         &optional_progress_bar,
     );
 
-    // Cosmos Entrypoint chain (Hermes chain id is currently "sidechain"): Use the pre-funded "relayer"
-    // account from cosmos/sidechain/config.yml.
+    // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
     let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
@@ -125,7 +128,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            "sidechain",
+            ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -708,9 +711,9 @@ pub fn start_cosmos_entrypoint_chain_services(
                 "--rm",
                 "--entrypoint",
                 "bash",
-                "sidechain-node-prod",
+                ENTRYPOINT_CONTAINER_NAME,
                 "-lc",
-                "rm -rf /root/.sidechain /root/.ignite",
+                &format!("rm -rf {} /root/.ignite", ENTRYPOINT_HOME_DIR),
             ]),
             None,
         )?;
@@ -810,7 +813,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let container_names = ["sidechain-node-prod"];
+            let container_names = [ENTRYPOINT_CONTAINER_NAME];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -828,7 +831,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let container_names = ["sidechain-node-prod"];
+    let container_names = [ENTRYPOINT_CONTAINER_NAME];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1038,7 +1041,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             "add",
             "--overwrite",
             "--chain",
-            "sidechain",
+            ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             osmosis_dir.join("scripts/hermes/cosmos").to_str().unwrap(),
         ]),
@@ -1080,7 +1083,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                 "--host-chain",
                 "localosmosis",
                 "--reference-chain",
-                "sidechain",
+                ENTRYPOINT_CHAIN_ID,
             ])
             .output()
             .expect("Failed to create osmosis client");
@@ -1108,14 +1111,14 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             local_osmosis_client_id
         ));
 
-        // Create Cosmos Entrypoint chain client (Hermes chain id is currently "sidechain")
+        // Create Cosmos Entrypoint chain client.
         let create_entrypoint_chain_client_output = Command::new(&hermes_binary)
             .current_dir(&script_dir)
             .args(&[
                 "create",
                 "client",
                 "--host-chain",
-                "sidechain",
+                ENTRYPOINT_CHAIN_ID,
                 "--reference-chain",
                 "localosmosis",
                 "--trusting-period",
@@ -1147,7 +1150,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                     "create",
                     "connection",
                     "--a-chain",
-                    "sidechain",
+                    ENTRYPOINT_CHAIN_ID,
                     "--a-client",
                     entrypoint_chain_client_id.as_str(),
                     "--b-client",
@@ -1181,7 +1184,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
                         "create",
                         "channel",
                         "--a-chain",
-                        "sidechain",
+                        ENTRYPOINT_CHAIN_ID,
                         "--a-connection",
                         &connection_id,
                         "--a-port",
@@ -2290,12 +2293,16 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             }
             result.push('\n');
         }
-        // List for Cosmos Entrypoint chain (Hermes chain id is currently "sidechain")
-        let entrypoint_output = run_hermes_command(&["keys", "list", "--chain", "sidechain"])?;
+        // List for Cosmos Entrypoint chain.
+        let entrypoint_output =
+            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
-            result.push_str("entrypoint-chain (Hermes chain id: sidechain):\n");
+            result.push_str(&format!(
+                "entrypoint-chain (Hermes chain id: {}):\n",
+                ENTRYPOINT_CHAIN_ID
+            ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {

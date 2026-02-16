@@ -11,7 +11,7 @@ class ClientStateTendermintMockBuilder {
   }
   private setDefault(): void {
     this.clientState = {
-      chain_id: 'sidechain',
+      chain_id: 'entrypoint',
       trust_level: { numerator: 1n, denominator: 3n },
       trusting_period: { seconds: 86400n, nanos: 0 },
       unbonding_period: { seconds: 1814400n, nanos: 0 },

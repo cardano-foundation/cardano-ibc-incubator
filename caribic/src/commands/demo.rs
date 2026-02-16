@@ -13,6 +13,8 @@ use crate::{
     DemoType,
 };
 
+const ENTRYPOINT_CHAIN_ID: &str = "sidechain";
+
 /// Dispatches demo execution to token swap or message exchange flows.
 pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {
     match use_case {
@@ -583,7 +585,7 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
         return Ok(false);
     };
     let Some(entrypoint_end) =
-        query_connection_end_status("sidechain", entrypoint_connection_id)?
+        query_connection_end_status(ENTRYPOINT_CHAIN_ID, entrypoint_connection_id)?
     else {
         return Ok(false);
     };
@@ -669,8 +671,10 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     };
 
-    let Some(entrypoint_end) =
-        query_transfer_channel_end_status("sidechain", entrypoint_channel_id.as_str())?
+    let Some(entrypoint_end) = query_transfer_channel_end_status(
+        ENTRYPOINT_CHAIN_ID,
+        entrypoint_channel_id.as_str(),
+    )?
     else {
         return Ok(false);
     };
@@ -711,7 +715,7 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
         "--chain",
         "cardano-devnet",
         "--counterparty-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
 
@@ -842,7 +846,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "--host-chain",
         "cardano-devnet",
         "--reference-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
@@ -869,7 +873,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
         "--reference-chain",
         "cardano-devnet",
     ])

@@ -16,8 +16,6 @@ Create `.env` files with the following variables:
 | REACT_APP_LOCALOSMOIS_RPC_ENDPOINT  | RPC end-point of local Osmosis       | Default: http://localhost:26658                                          |
 | REACT_APP_LOCALOSMOIS_REST_ENDPOINT | Rest end-point of local Osmosis      | Default: http://localhost:1318                                           |
 
-Legacy compatibility: `REACT_APP_SIDECHAIN_RPC_ENDPOINT` and `REACT_APP_SIDECHAIN_REST_ENDPOINT` are still accepted as fallbacks.
-
 ## Running
 After set up the `.env`, run:
 ```bash

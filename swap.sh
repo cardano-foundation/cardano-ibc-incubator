@@ -250,7 +250,7 @@ wait_for_swap_settlement() {
 }
 
 HERMES_CARDANO_NAME="cardano-devnet"
-# Entrypoint chain currently keeps Hermes chain id `sidechain` for compatibility.
+# Entrypoint chain currently keeps a legacy Hermes chain id for compatibility.
 HERMES_ENTRYPOINT_NAME="sidechain"
 HERMES_OSMOSIS_NAME="localosmosis"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"

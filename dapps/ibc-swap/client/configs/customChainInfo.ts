@@ -4,14 +4,10 @@ import { AssetList, Chain } from '@chain-registry/types';
 const ENTRYPOINT_CHAIN_ID = 'sidechain';
 
 const getEntrypointRpcEndpoint = () =>
-  process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT ||
-  process.env.NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT ||
-  '';
+  process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT || '';
 
 const getEntrypointRestEndpoint = () =>
-  process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT ||
-  process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT ||
-  '';
+  process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT || '';
 
 const entrypointChainConfig: Chain = {
   chain_name: ENTRYPOINT_CHAIN_ID,

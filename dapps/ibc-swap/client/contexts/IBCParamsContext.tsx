@@ -99,8 +99,7 @@ export const IBCParamsProvider = ({
 
   const fetchRawChannelsMapping = async () => {
     const entrypointRestEndpoint =
-      process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT ||
-      process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!;
+      process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT!;
     fetchAllChannels(
       ENTRYPOINT_CHAIN_ID,
       entrypointRestEndpoint,

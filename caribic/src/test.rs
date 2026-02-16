@@ -254,6 +254,7 @@ impl TestResults {
 }
 
 const MAX_TEST_INDEX: u8 = 12;
+const ENTRYPOINT_CHAIN_ID: &str = "sidechain";
 
 #[derive(Debug, Clone)]
 struct TestSelection {
@@ -447,16 +448,22 @@ mod test_selection_tests {
 
     #[test]
     fn extract_channel_ids_parses_transfer_channel_tokens() {
-        let line = "cardano-devnet: transfer/channel-1 --- sidechain: transfer/channel-2";
+        let line = &format!(
+            "cardano-devnet: transfer/channel-1 --- {}: transfer/channel-2",
+            ENTRYPOINT_CHAIN_ID
+        );
         let channel_ids = extract_channel_ids_from_line(line);
         assert_eq!(channel_ids, vec!["channel-1", "channel-2"]);
     }
 
     #[test]
     fn parse_hermes_channel_pair_line_extracts_chain_and_channel_ids() {
-        let line = "sidechain: transfer/channel-3 --- cardano-devnet: transfer/channel-2";
+        let line = &format!(
+            "{}: transfer/channel-3 --- cardano-devnet: transfer/channel-2",
+            ENTRYPOINT_CHAIN_ID
+        );
         let pair = parse_hermes_channel_pair_line(line).expect("pair should parse");
-        assert_eq!(pair.local_chain, "sidechain");
+        assert_eq!(pair.local_chain, ENTRYPOINT_CHAIN_ID);
         assert_eq!(pair.local_channel, "channel-3");
         assert_eq!(pair.counterparty_chain, "cardano-devnet");
         assert_eq!(pair.counterparty_channel, "channel-2");
@@ -464,18 +471,19 @@ mod test_selection_tests {
 
     #[test]
     fn resolve_counterparty_channel_from_output_matches_chain_side() {
-        let output = "\
-SUCCESS 
-sidechain: transfer/channel-1 --- cardano-devnet: transfer/channel-0
-sidechain: transfer/channel-2 --- cardano-devnet: transfer/channel-1
-sidechain: transfer/channel-3 --- cardano-devnet: transfer/channel-2
-";
+        let output = format!(
+            "SUCCESS \n\
+{}: transfer/channel-1 --- cardano-devnet: transfer/channel-0\n\
+{}: transfer/channel-2 --- cardano-devnet: transfer/channel-1\n\
+{}: transfer/channel-3 --- cardano-devnet: transfer/channel-2\n",
+            ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CHAIN_ID
+        );
 
         let resolved = resolve_counterparty_channel_from_query_output(
-            output,
+            &output,
             "cardano-devnet",
             "channel-2",
-            "sidechain",
+            ENTRYPOINT_CHAIN_ID,
         )
         .expect("counterparty channel should resolve");
 
@@ -1020,7 +1028,7 @@ pub async fn run_integration_tests(
             TestTimer::start("Test 9: ICS-20 transfer (Entrypoint chain -> Cardano)...");
 
         if let Some(cardano_channel_id) = &channel_id {
-            let sidechain_channel_id = resolve_sidechain_channel_id_with_retries(
+            let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
                 project_root,
                 cardano_channel_id,
                 120,
@@ -1028,13 +1036,13 @@ pub async fn run_integration_tests(
             )
             .unwrap_or_else(|| {
                 logger::warn(&format!(
-                    "Could not resolve sidechain counterparty channel for {}; falling back to same channel id",
+                    "Could not resolve entrypoint counterparty channel for {}; falling back to same channel id",
                     cardano_channel_id
                 ));
                 cardano_channel_id.clone()
             });
 
-            let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+            let entrypoint_address = get_hermes_chain_address(project_root, ENTRYPOINT_CHAIN_ID)?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
             let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                 project_root,
@@ -1050,7 +1058,7 @@ pub async fn run_integration_tests(
                 &["validators", "mintVoucher", "scriptHash"],
             )?;
 
-            let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+            let entrypoint_balance_before = query_entrypoint_balance(&entrypoint_address, denom)?;
             let cardano_voucher_assets_before = query_cardano_policy_assets(
                 project_root,
                 &cardano_receiver_address,
@@ -1071,10 +1079,10 @@ pub async fn run_integration_tests(
 
             match hermes_ft_transfer(
                 project_root,
-                "sidechain",
+                ENTRYPOINT_CHAIN_ID,
                 "cardano-devnet",
                 "transfer",
-                &sidechain_channel_id,
+                &entrypoint_channel_id,
                 amount,
                 denom,
                 Some(&cardano_receiver_credential),
@@ -1083,16 +1091,16 @@ pub async fn run_integration_tests(
             ) {
                 Ok(_) => match hermes_clear_packets(
                     project_root,
-                    "sidechain",
+                    ENTRYPOINT_CHAIN_ID,
                     "transfer",
-                    &sidechain_channel_id,
+                    &entrypoint_channel_id,
                     "cardano-devnet",
                     cardano_channel_id,
                     None,
                 ) {
                     Ok(_) => {
-                        let sidechain_balance_after =
-                            query_sidechain_balance(&sidechain_address, denom)?;
+                        let entrypoint_balance_after =
+                            query_entrypoint_balance(&entrypoint_address, denom)?;
                         let cardano_voucher_assets_after = query_cardano_policy_assets(
                             project_root,
                             &cardano_receiver_address,
@@ -1101,28 +1109,28 @@ pub async fn run_integration_tests(
                         let cardano_voucher_after =
                             sum_cardano_policy_assets(&cardano_voucher_assets_after);
                         let cardano_root_after = query_handler_state_root(project_root)?;
-                        let sidechain_delta =
-                            sidechain_balance_before.saturating_sub(sidechain_balance_after);
+                        let entrypoint_delta =
+                            entrypoint_balance_before.saturating_sub(entrypoint_balance_after);
                         let voucher_delta =
                             cardano_voucher_after.saturating_sub(cardano_voucher_before);
 
-                        if sidechain_balance_before < sidechain_balance_after
-                            || sidechain_delta < amount as u128
+                        if entrypoint_balance_before < entrypoint_balance_after
+                            || entrypoint_delta < amount as u128
                         {
                             let elapsed = test_9.finish();
                             logger::log(&format!(
                             "FAIL Test 9: entrypoint chain balance did not decrease as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
                             format_duration(elapsed),
-                            sidechain_balance_before,
-                            sidechain_balance_after,
-                            sidechain_delta,
+                            entrypoint_balance_before,
+                            entrypoint_balance_after,
+                            entrypoint_delta,
                             amount
                         ));
                             dump_test_9_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                &sidechain_channel_id,
-                                &sidechain_address,
+                                &entrypoint_channel_id,
+                                &entrypoint_address,
                                 denom,
                                 amount,
                                 &cardano_receiver_address,
@@ -1142,8 +1150,8 @@ pub async fn run_integration_tests(
                             dump_test_9_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                &sidechain_channel_id,
-                                &sidechain_address,
+                                &entrypoint_channel_id,
+                                &entrypoint_address,
                                 denom,
                                 amount,
                                 &cardano_receiver_address,
@@ -1160,8 +1168,8 @@ pub async fn run_integration_tests(
                             dump_test_9_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                &sidechain_channel_id,
-                                &sidechain_address,
+                                &entrypoint_channel_id,
+                                &entrypoint_address,
                                 denom,
                                 amount,
                                 &cardano_receiver_address,
@@ -1186,8 +1194,8 @@ pub async fn run_integration_tests(
                                     dump_test_9_ics20_diagnostics(
                                         project_root,
                                         cardano_channel_id,
-                                        &sidechain_channel_id,
-                                        &sidechain_address,
+                                        &entrypoint_channel_id,
+                                        &entrypoint_address,
                                         denom,
                                         amount,
                                         &cardano_receiver_address,
@@ -1226,8 +1234,8 @@ pub async fn run_integration_tests(
                                         dump_test_9_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
-                                            &sidechain_channel_id,
-                                            &sidechain_address,
+                                            &entrypoint_channel_id,
+                                            &entrypoint_address,
                                             denom,
                                             amount,
                                             &cardano_receiver_address,
@@ -1249,8 +1257,8 @@ pub async fn run_integration_tests(
                         dump_test_9_ics20_diagnostics(
                             project_root,
                             cardano_channel_id,
-                            &sidechain_channel_id,
-                            &sidechain_address,
+                            &entrypoint_channel_id,
+                            &entrypoint_address,
                             denom,
                             amount,
                             &cardano_receiver_address,
@@ -1269,8 +1277,8 @@ pub async fn run_integration_tests(
                     dump_test_9_ics20_diagnostics(
                         project_root,
                         cardano_channel_id,
-                        &sidechain_channel_id,
-                        &sidechain_address,
+                        &entrypoint_channel_id,
+                        &entrypoint_address,
                         denom,
                         amount,
                         &cardano_receiver_address,
@@ -1299,7 +1307,7 @@ pub async fn run_integration_tests(
             TestTimer::start("Test 10: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
         if transfer_test_passed {
             if let Some(cardano_channel_id) = &channel_id {
-                let sidechain_channel_id = resolve_sidechain_channel_id_with_retries(
+                let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
                     project_root,
                     cardano_channel_id,
                     120,
@@ -1307,13 +1315,14 @@ pub async fn run_integration_tests(
                 )
                 .unwrap_or_else(|| {
                     logger::warn(&format!(
-                        "Could not resolve sidechain counterparty channel for {}; falling back to same channel id",
+                        "Could not resolve entrypoint counterparty channel for {}; falling back to same channel id",
                         cardano_channel_id
                     ));
                     cardano_channel_id.clone()
                 });
 
-                let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+                let entrypoint_address =
+                    get_hermes_chain_address(project_root, ENTRYPOINT_CHAIN_ID)?;
                 let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
                 let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                     project_root,
@@ -1331,7 +1340,7 @@ pub async fn run_integration_tests(
                 )?;
                 let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
 
-                let sidechain_balance_before = query_sidechain_balance(&sidechain_address, denom)?;
+                let entrypoint_balance_before = query_entrypoint_balance(&entrypoint_address, denom)?;
                 let cardano_voucher_assets_before = query_cardano_policy_assets(
                     project_root,
                     &cardano_receiver_address,
@@ -1359,7 +1368,7 @@ pub async fn run_integration_tests(
                     match hermes_ft_transfer(
                         project_root,
                         "cardano-devnet",
-                        "sidechain",
+                        ENTRYPOINT_CHAIN_ID,
                         "transfer",
                         cardano_channel_id,
                         amount,
@@ -1401,13 +1410,13 @@ pub async fn run_integration_tests(
                         "cardano-devnet",
                         "transfer",
                         cardano_channel_id,
-                        "sidechain",
-                        &sidechain_channel_id,
+                        ENTRYPOINT_CHAIN_ID,
+                        &entrypoint_channel_id,
                         None,
                     ) {
                         Ok(_) => {
-                            let sidechain_balance_after =
-                                query_sidechain_balance(&sidechain_address, denom)?;
+                            let entrypoint_balance_after =
+                                query_entrypoint_balance(&entrypoint_address, denom)?;
                             let cardano_voucher_assets_after = query_cardano_policy_assets(
                                 project_root,
                                 &cardano_receiver_address,
@@ -1415,8 +1424,8 @@ pub async fn run_integration_tests(
                             )?;
                             let cardano_voucher_after =
                                 sum_cardano_policy_assets(&cardano_voucher_assets_after);
-                            let sidechain_delta =
-                                sidechain_balance_after.saturating_sub(sidechain_balance_before);
+                            let entrypoint_delta =
+                                entrypoint_balance_after.saturating_sub(entrypoint_balance_before);
                             let voucher_delta =
                                 cardano_voucher_before.saturating_sub(cardano_voucher_after);
 
@@ -1431,14 +1440,14 @@ pub async fn run_integration_tests(
                                 amount
                             ));
                                 results.failed += 1;
-                            } else if sidechain_balance_after <= sidechain_balance_before {
+                            } else if entrypoint_balance_after <= entrypoint_balance_before {
                                 let elapsed = test_10.finish();
                                 logger::log(&format!(
 	                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={}, delta={}, expected_delta > 0)\n",
 	                                format_duration(elapsed),
-	                                sidechain_balance_before,
-	                                sidechain_balance_after,
-	                                sidechain_delta
+	                                entrypoint_balance_before,
+	                                entrypoint_balance_after,
+	                                entrypoint_delta
 	                            ));
                                 results.failed += 1;
                             } else {
@@ -1506,20 +1515,20 @@ pub async fn run_integration_tests(
                                     format!("Failed to query Cardano UTxOs: {}", err)
                                 });
                         logger::log(&format!(
-                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> sidechain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 10 transfer attempt errors (most recent last) ===\n{}\n",
-                        format_duration(elapsed),
-                        e,
-                        cardano_receiver_address,
-                        voucher_policy_id,
-                        cardano_lovelace_total,
-                        cardano_voucher_assets_before,
-                        cardano_utxos,
-                        if transfer_attempt_errors.is_empty() {
-                            "(no attempt errors recorded)".to_string()
-                        } else {
-                            transfer_attempt_errors.join("\n---\n")
-                        }
-                    ));
+                            "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 10 transfer attempt errors (most recent last) ===\n{}\n",
+                            format_duration(elapsed),
+                            e,
+                            cardano_receiver_address,
+                            voucher_policy_id,
+                            cardano_lovelace_total,
+                            cardano_voucher_assets_before,
+                            cardano_utxos,
+                            if transfer_attempt_errors.is_empty() {
+                                "(no attempt errors recorded)".to_string()
+                            } else {
+                                transfer_attempt_errors.join("\n---\n")
+                            }
+                        ));
                         results.failed += 1;
                     }
                 }
@@ -1548,7 +1557,7 @@ pub async fn run_integration_tests(
     //   - Cosmos mints an IBC voucher denom for that token
     let mut cardano_native_transfer_passed = false;
     let mut cardano_native_voucher_denom: Option<String> = None;
-    let mut cardano_native_sidechain_channel_id: Option<String> = None;
+    let mut cardano_native_entrypoint_channel_id: Option<String> = None;
     let mut cardano_native_base_denom: Option<String> = None;
     if selection.should_run(11) {
         let mut test_11 = TestTimer::start(
@@ -1556,7 +1565,7 @@ pub async fn run_integration_tests(
         );
 
         if let Some(cardano_channel_id) = &channel_id {
-            let sidechain_channel_id = resolve_sidechain_channel_id_with_retries(
+            let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
                 project_root,
                 cardano_channel_id,
                 120,
@@ -1564,13 +1573,13 @@ pub async fn run_integration_tests(
             )
             .unwrap_or_else(|| {
                 logger::warn(&format!(
-                    "Could not resolve sidechain counterparty channel for {}; falling back to same channel id",
+                    "Could not resolve entrypoint counterparty channel for {}; falling back to same channel id",
                     cardano_channel_id
                 ));
                 cardano_channel_id.clone()
             });
 
-            let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+            let entrypoint_address = get_hermes_chain_address(project_root, ENTRYPOINT_CHAIN_ID)?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
             let cardano_sender_address = cardano_enterprise_address_from_payment_credential(
                 project_root,
@@ -1581,7 +1590,7 @@ pub async fn run_integration_tests(
             let base_denom = read_handler_json_value(project_root, &["tokens", "mock"])?;
             let amount: u64 = 20_000_000;
 
-            let sidechain_balances_before = query_sidechain_balances(&sidechain_address)?;
+            let entrypoint_balances_before = query_entrypoint_balances(&entrypoint_address)?;
             let cardano_native_before =
                 query_cardano_asset_total(project_root, &cardano_sender_address, &base_denom)?;
             let cardano_root_before = query_handler_state_root(project_root)?;
@@ -1594,12 +1603,12 @@ pub async fn run_integration_tests(
             match hermes_ft_transfer(
                 project_root,
                 "cardano-devnet",
-                "sidechain",
+                ENTRYPOINT_CHAIN_ID,
                 "transfer",
                 cardano_channel_id,
                 amount,
                 &base_denom,
-                Some(&sidechain_address),
+                Some(&entrypoint_address),
                 timeout_height_offset,
                 timeout_seconds,
             ) {
@@ -1608,13 +1617,13 @@ pub async fn run_integration_tests(
                     "cardano-devnet",
                     "transfer",
                     cardano_channel_id,
-                    "sidechain",
-                    &sidechain_channel_id,
+                    ENTRYPOINT_CHAIN_ID,
+                    &entrypoint_channel_id,
                     None,
                 ) {
                     Ok(_) => {
-                        let sidechain_balances_after =
-                            query_sidechain_balances(&sidechain_address)?;
+                        let entrypoint_balances_after =
+                            query_entrypoint_balances(&entrypoint_address)?;
                         let cardano_native_after = query_cardano_asset_total(
                             project_root,
                             &cardano_sender_address,
@@ -1636,8 +1645,8 @@ pub async fn run_integration_tests(
                             dump_test_11_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                &sidechain_channel_id,
-                                &sidechain_address,
+                                &entrypoint_channel_id,
+                                &entrypoint_address,
                             );
                             results.failed += 1;
                         } else if cardano_root_after == cardano_root_before {
@@ -1650,17 +1659,17 @@ pub async fn run_integration_tests(
                             dump_test_11_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                &sidechain_channel_id,
-                                &sidechain_address,
+                                &entrypoint_channel_id,
+                                &entrypoint_address,
                             );
                             results.failed += 1;
                         } else {
                             let mut minted_denom: Option<String> = None;
-                            for (balance_denom, after_amount) in &sidechain_balances_after {
+                            for (balance_denom, after_amount) in &entrypoint_balances_after {
                                 if !balance_denom.starts_with("ibc/") {
                                     continue;
                                 }
-                                let before_amount = sidechain_balances_before
+                                let before_amount = entrypoint_balances_before
                                     .get(balance_denom)
                                     .copied()
                                     .unwrap_or(0);
@@ -1671,14 +1680,14 @@ pub async fn run_integration_tests(
                             }
 
                             if let Some(minted_denom) = minted_denom {
-                                let expected_path = format!("transfer/{}", sidechain_channel_id);
+                                let expected_path = format!("transfer/{}", entrypoint_channel_id);
                                 let minted_hash = minted_denom
                                     .strip_prefix("ibc/")
                                     .unwrap_or(minted_denom.as_str());
 
                                 let expected_base_denom =
                                     expected_denom_trace_base_denom(&base_denom);
-                                match assert_sidechain_denom_trace(
+                                match assert_entrypoint_denom_trace(
                                     minted_hash,
                                     &expected_path,
                                     &expected_base_denom,
@@ -1693,14 +1702,14 @@ pub async fn run_integration_tests(
                                         results.passed += 1;
                                         cardano_native_transfer_passed = true;
                                         cardano_native_voucher_denom = Some(minted_denom);
-                                        cardano_native_sidechain_channel_id =
-                                            Some(sidechain_channel_id);
+                                        cardano_native_entrypoint_channel_id =
+                                            Some(entrypoint_channel_id);
                                         cardano_native_base_denom = Some(base_denom.clone());
                                     }
                                     Err(e) => {
                                         let elapsed = test_11.finish();
                                         logger::log(&format!(
-                                        "FAIL Test 11: Denom-trace reverse lookup failed for sidechain voucher denom (took {}) (denom={})\n{}\n",
+                                        "FAIL Test 11: Denom-trace reverse lookup failed for entrypoint voucher denom (took {}) (denom={})\n{}\n",
                                         format_duration(elapsed),
                                         minted_denom,
                                         e
@@ -1708,8 +1717,8 @@ pub async fn run_integration_tests(
                                         dump_test_11_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
-                                            &sidechain_channel_id,
-                                            &sidechain_address,
+                                            &entrypoint_channel_id,
+                                            &entrypoint_address,
                                         );
                                         results.failed += 1;
                                     }
@@ -1717,11 +1726,11 @@ pub async fn run_integration_tests(
                             } else {
                                 let elapsed = test_11.finish();
                                 let mut ibc_deltas: Vec<(String, u128)> = Vec::new();
-                                for (balance_denom, after_amount) in &sidechain_balances_after {
+                                for (balance_denom, after_amount) in &entrypoint_balances_after {
                                     if !balance_denom.starts_with("ibc/") {
                                         continue;
                                     }
-                                    let before_amount = sidechain_balances_before
+                                    let before_amount = entrypoint_balances_before
                                         .get(balance_denom)
                                         .copied()
                                         .unwrap_or(0);
@@ -1732,7 +1741,7 @@ pub async fn run_integration_tests(
                                 }
                                 ibc_deltas.sort_by(|a, b| b.1.cmp(&a.1));
                                 logger::log(&format!(
-                                "FAIL Test 11: No new IBC voucher denom minted on sidechain (took {})\n",
+                                "FAIL Test 11: No new IBC voucher denom minted on entrypoint chain (took {})\n",
                                 format_duration(elapsed)
                             ));
                                 if !ibc_deltas.is_empty() {
@@ -1745,8 +1754,8 @@ pub async fn run_integration_tests(
                                 dump_test_11_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
-                                    &sidechain_channel_id,
-                                    &sidechain_address,
+                                    &entrypoint_channel_id,
+                                    &entrypoint_address,
                                 );
                                 results.failed += 1;
                             }
@@ -1762,8 +1771,8 @@ pub async fn run_integration_tests(
                         dump_test_11_ics20_diagnostics(
                             project_root,
                             cardano_channel_id,
-                            &sidechain_channel_id,
-                            &sidechain_address,
+                            &entrypoint_channel_id,
+                            &entrypoint_address,
                         );
                         results.failed += 1;
                     }
@@ -1778,8 +1787,8 @@ pub async fn run_integration_tests(
                     dump_test_11_ics20_diagnostics(
                         project_root,
                         cardano_channel_id,
-                        &sidechain_channel_id,
-                        &sidechain_address,
+                        &entrypoint_channel_id,
+                        &entrypoint_address,
                     );
                     results.failed += 1;
                 }
@@ -1804,12 +1813,13 @@ pub async fn run_integration_tests(
             "Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
         );
         if cardano_native_transfer_passed {
-            if let (Some(voucher_denom), Some(sidechain_channel_id), Some(base_denom)) = (
+            if let (Some(voucher_denom), Some(entrypoint_channel_id), Some(base_denom)) = (
                 &cardano_native_voucher_denom,
-                &cardano_native_sidechain_channel_id,
+                &cardano_native_entrypoint_channel_id,
                 &cardano_native_base_denom,
             ) {
-                let sidechain_address = get_hermes_chain_address(project_root, "sidechain")?;
+                let entrypoint_address =
+                    get_hermes_chain_address(project_root, ENTRYPOINT_CHAIN_ID)?;
                 let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
                 let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                     project_root,
@@ -1818,15 +1828,15 @@ pub async fn run_integration_tests(
 
                 let amount: u64 = 20_000_000;
 
-                let sidechain_voucher_before =
-                    query_sidechain_balance(&sidechain_address, voucher_denom)?;
+                let entrypoint_voucher_before =
+                    query_entrypoint_balance(&entrypoint_address, voucher_denom)?;
                 let cardano_native_before =
                     query_cardano_asset_total(project_root, &cardano_receiver_address, base_denom)?;
                 let cardano_root_before = query_handler_state_root(project_root)?;
 
                 let cardano_channel_id_for_test_12 = channel_id
                     .as_deref()
-                    .unwrap_or(sidechain_channel_id.as_str());
+                    .unwrap_or(entrypoint_channel_id.as_str());
 
                 // Cardano-destination relays can spend significant time in Mithril-certified
                 // client updates. Keep timeout very large to avoid timeout/refund during long
@@ -1836,10 +1846,10 @@ pub async fn run_integration_tests(
 
                 match hermes_ft_transfer(
                     project_root,
-                    "sidechain",
+                    ENTRYPOINT_CHAIN_ID,
                     "cardano-devnet",
                     "transfer",
-                    sidechain_channel_id,
+                    entrypoint_channel_id,
                     amount,
                     voucher_denom,
                     Some(&cardano_receiver_credential),
@@ -1851,9 +1861,9 @@ pub async fn run_integration_tests(
                         // Bound the clear loop for this test and validate the transfer end-state directly.
                         let clear_packets_result = hermes_clear_packets(
                             project_root,
-                            "sidechain",
+                            ENTRYPOINT_CHAIN_ID,
                             "transfer",
-                            sidechain_channel_id,
+                            entrypoint_channel_id,
                             "cardano-devnet",
                             cardano_channel_id_for_test_12,
                             Some(3),
@@ -1865,8 +1875,8 @@ pub async fn run_integration_tests(
                             ));
                         }
 
-                        let sidechain_voucher_after =
-                            query_sidechain_balance(&sidechain_address, voucher_denom)?;
+                        let entrypoint_voucher_after =
+                            query_entrypoint_balance(&entrypoint_address, voucher_denom)?;
                         let cardano_native_after = query_cardano_asset_total(
                             project_root,
                             &cardano_receiver_address,
@@ -1875,22 +1885,22 @@ pub async fn run_integration_tests(
                         let cardano_root_after = query_handler_state_root(project_root)?;
 
                         let voucher_delta =
-                            sidechain_voucher_before.saturating_sub(sidechain_voucher_after);
+                            entrypoint_voucher_before.saturating_sub(entrypoint_voucher_after);
                         if voucher_delta < amount as u128 {
                             let elapsed = test_12.finish();
                             logger::log(&format!(
                             "FAIL Test 12: Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
                             format_duration(elapsed),
-                            sidechain_voucher_before,
-                            sidechain_voucher_after,
+                            entrypoint_voucher_before,
+                            entrypoint_voucher_after,
                             amount
                         ));
                             if let Some(cardano_channel_id) = &channel_id {
                                 dump_test_12_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
-                                    sidechain_channel_id,
-                                    &sidechain_address,
+                                    entrypoint_channel_id,
+                                    &entrypoint_address,
                                     voucher_denom,
                                     amount,
                                     &cardano_receiver_address,
@@ -1908,8 +1918,8 @@ pub async fn run_integration_tests(
                                 dump_test_12_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
-                                    sidechain_channel_id,
-                                    &sidechain_address,
+                                    entrypoint_channel_id,
+                                    &entrypoint_address,
                                     voucher_denom,
                                     amount,
                                     &cardano_receiver_address,
@@ -1934,8 +1944,8 @@ pub async fn run_integration_tests(
                                 dump_test_12_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
-                                    sidechain_channel_id,
-                                    &sidechain_address,
+                                    entrypoint_channel_id,
+                                    &entrypoint_address,
                                     voucher_denom,
                                     amount,
                                     &cardano_receiver_address,
@@ -1943,13 +1953,13 @@ pub async fn run_integration_tests(
                             }
                             results.failed += 1;
                         } else {
-                            let expected_path = format!("transfer/{}", sidechain_channel_id);
+                            let expected_path = format!("transfer/{}", entrypoint_channel_id);
                             let minted_hash = voucher_denom
                                 .strip_prefix("ibc/")
                                 .unwrap_or(voucher_denom.as_str());
 
                             let expected_base_denom = expected_denom_trace_base_denom(base_denom);
-                            match assert_sidechain_denom_trace(
+                            match assert_entrypoint_denom_trace(
                                 minted_hash,
                                 &expected_path,
                                 &expected_base_denom,
@@ -1980,8 +1990,8 @@ pub async fn run_integration_tests(
                                         dump_test_12_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
-                                            sidechain_channel_id,
-                                            &sidechain_address,
+                                            entrypoint_channel_id,
+                                            &entrypoint_address,
                                             voucher_denom,
                                             amount,
                                             &cardano_receiver_address,
@@ -2003,8 +2013,8 @@ pub async fn run_integration_tests(
                             dump_test_12_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
-                                sidechain_channel_id,
-                                &sidechain_address,
+                                entrypoint_channel_id,
+                                &entrypoint_address,
                                 voucher_denom,
                                 amount,
                                 &cardano_receiver_address,
@@ -2582,8 +2592,8 @@ fn query_client_state(
     }
 
     // If we couldn't parse structured output, try to detect success from raw output
-    if info.chain_id.is_empty() && stdout.contains("sidechain") {
-        info.chain_id = "sidechain".to_string();
+    if info.chain_id.is_empty() && stdout.contains(ENTRYPOINT_CHAIN_ID) {
+        info.chain_id = ENTRYPOINT_CHAIN_ID.to_string();
     }
     if info.latest_height.is_empty() {
         // Try to extract any number that looks like a height
@@ -2667,7 +2677,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         .into());
     }
 
-    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain sidechain (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain entrypoint (Cosmos Entrypoint chain)");
 
     let mut command = Command::new(&hermes_binary);
     command.args(&[
@@ -2676,7 +2686,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         "--host-chain",
         "cardano-devnet",
         "--reference-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ]);
     let output = run_command_streaming(command, "hermes create client")?;
 
@@ -2688,7 +2698,8 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
              \n\
              Ensure Hermes is configured and keys are added:\n\
              - hermes keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt\n\
-             - hermes keys add --chain sidechain --mnemonic-file ~/sidechain.txt",
+             - hermes keys add --chain entrypoint --mnemonic-file ~/entrypoint.txt (Hermes chain id: {})",
+            ENTRYPOINT_CHAIN_ID,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         )
@@ -2749,7 +2760,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
     // PastHorizon/slot horizon issues, etc).
     let hermes_binary = project_root.join("relayer/target/release/hermes");
 
-    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain sidechain (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain entrypoint (Cosmos Entrypoint chain)");
 
     let mut command = Command::new(&hermes_binary);
     command.args(&[
@@ -2758,7 +2769,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
         "--a-chain",
         "cardano-devnet",
         "--b-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ]);
     let run_connection_handshake =
         |hermes_binary: &std::path::Path| -> Result<String, Box<dyn std::error::Error>> {
@@ -2769,7 +2780,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
                 "--a-chain",
                 "cardano-devnet",
                 "--b-chain",
-                "sidechain",
+                ENTRYPOINT_CHAIN_ID,
             ]);
             let output = run_command_streaming(command, "hermes create connection")?;
 
@@ -2974,7 +2985,7 @@ fn get_hermes_chain_address(
             token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
 
         match chain_id {
-            "sidechain" => {
+            ENTRYPOINT_CHAIN_ID => {
                 if cleaned.starts_with("cosmos1") {
                     return Ok(cleaned.to_string());
                 }
@@ -3367,7 +3378,7 @@ fn parse_counterparty_channel_from_channel_end_output(output: &str) -> Option<St
     None
 }
 
-fn resolve_sidechain_channel_id_from_cardano_channel_end(
+fn resolve_entrypoint_channel_id_from_cardano_channel_end(
     project_root: &Path,
     cardano_channel_id: &str,
 ) -> Option<String> {
@@ -3395,21 +3406,21 @@ fn resolve_sidechain_channel_id_from_cardano_channel_end(
     parse_counterparty_channel_from_channel_end_output(&stdout)
 }
 
-fn resolve_sidechain_channel_id(project_root: &Path, cardano_channel_id: &str) -> Option<String> {
-    resolve_sidechain_channel_id_from_cardano_channel_end(project_root, cardano_channel_id)
+fn resolve_entrypoint_channel_id(project_root: &Path, cardano_channel_id: &str) -> Option<String> {
+    resolve_entrypoint_channel_id_from_cardano_channel_end(project_root, cardano_channel_id)
 }
 
-fn resolve_sidechain_channel_id_with_retries(
+fn resolve_entrypoint_channel_id_with_retries(
     project_root: &Path,
     cardano_channel_id: &str,
     max_attempts: usize,
     retry_delay: Duration,
 ) -> Option<String> {
     for attempt in 1..=max_attempts {
-        if let Some(sidechain_channel_id) =
-            resolve_sidechain_channel_id(project_root, cardano_channel_id)
+        if let Some(entrypoint_channel_id) =
+            resolve_entrypoint_channel_id(project_root, cardano_channel_id)
         {
-            return Some(sidechain_channel_id);
+            return Some(entrypoint_channel_id);
         }
 
         if attempt < max_attempts {
@@ -3429,7 +3440,7 @@ fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
             "--chain",
             "cardano-devnet",
             "--counterparty-chain",
-            "sidechain",
+            ENTRYPOINT_CHAIN_ID,
             "--show-counterparty",
         ])
         .output()
@@ -3457,12 +3468,12 @@ fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
     None
 }
 
-fn query_sidechain_balance(address: &str, denom: &str) -> Result<u128, Box<dyn std::error::Error>> {
+fn query_entrypoint_balance(address: &str, denom: &str) -> Result<u128, Box<dyn std::error::Error>> {
     let url = format!(
         "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
         address
     );
-    let resp = query_sidechain_json(&url, 5).map_err(std::io::Error::other)?;
+    let resp = query_entrypoint_json(&url, 5).map_err(std::io::Error::other)?;
     let balances = resp
         .get("balances")
         .and_then(|v| v.as_array())
@@ -3480,14 +3491,14 @@ fn query_sidechain_balance(address: &str, denom: &str) -> Result<u128, Box<dyn s
     Ok(0)
 }
 
-fn query_sidechain_balances(
+fn query_entrypoint_balances(
     address: &str,
 ) -> Result<BTreeMap<String, u128>, Box<dyn std::error::Error>> {
     let url = format!(
         "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
         address
     );
-    let resp = query_sidechain_json(&url, 5).map_err(std::io::Error::other)?;
+    let resp = query_entrypoint_json(&url, 5).map_err(std::io::Error::other)?;
     let balances = resp
         .get("balances")
         .and_then(|v| v.as_array())
@@ -3512,7 +3523,7 @@ fn query_sidechain_balances(
     Ok(map)
 }
 
-fn query_sidechain_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
+fn query_entrypoint_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
     let output = Command::new("curl")
         .args(["-sS", "--max-time", &timeout_secs.to_string(), url])
         .output()
@@ -3532,7 +3543,7 @@ fn query_sidechain_json(url: &str, timeout_secs: u64) -> Result<serde_json::Valu
         .map_err(|e| format!("Failed to parse JSON from {}: {}", url, e))
 }
 
-fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
+fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> {
     let candidates = [
         format!(
             "http://127.0.0.1:1317/ibc/apps/transfer/v1/denom_traces/{}",
@@ -3546,7 +3557,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
 
     let mut last_err: Option<String> = None;
     for url in candidates {
-        let json = match query_sidechain_json(&url, 3) {
+        let json = match query_entrypoint_json(&url, 3) {
             Ok(json) => json,
             Err(e) => {
                 last_err = Some(e);
@@ -3559,7 +3570,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
             .or_else(|| json.get("denomTrace"))
             .ok_or_else(|| {
                 format!(
-                    "Sidechain denom-trace response missing denom_trace: {}",
+                    "Entrypoint chain denom-trace response missing denom_trace: {}",
                     json
                 )
             })?;
@@ -3567,7 +3578,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         let path = trace
             .get("path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| format!("Sidechain denom-trace response missing path: {}", json))?;
+            .ok_or_else(|| {
+                format!(
+                    "Entrypoint chain denom-trace response missing path: {}",
+                    json
+                )
+            })?;
 
         let base_denom = trace
             .get("base_denom")
@@ -3575,7 +3591,7 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
             .and_then(|v| v.as_str())
             .ok_or_else(|| {
                 format!(
-                    "Sidechain denom-trace response missing base_denom: {}",
+                    "Entrypoint chain denom-trace response missing base_denom: {}",
                     json
                 )
             })?;
@@ -3583,10 +3599,12 @@ fn query_sidechain_denom_trace(hash: &str) -> Result<(String, String), String> {
         return Ok((path.to_string(), base_denom.to_string()));
     }
 
-    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
+    Err(last_err.unwrap_or_else(|| {
+        "Entrypoint chain denom-trace query failed".to_string()
+    }))
 }
 
-fn assert_sidechain_denom_trace(
+fn assert_entrypoint_denom_trace(
     hash: &str,
     expected_path: &str,
     expected_base_denom: &str,
@@ -3596,11 +3614,11 @@ fn assert_sidechain_denom_trace(
     let mut last_err: Option<String> = None;
 
     for attempt in 1..=attempts {
-        match query_sidechain_denom_trace(hash) {
+        match query_entrypoint_denom_trace(hash) {
             Ok((path, base_denom)) => {
                 if path != expected_path || base_denom != expected_base_denom {
                     return Err(format!(
-                        "Sidechain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
+                        "Entrypoint chain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
                         hash, expected_path, expected_base_denom, path, base_denom
                     ));
                 }
@@ -3615,7 +3633,9 @@ fn assert_sidechain_denom_trace(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| "Sidechain denom-trace query failed".to_string()))
+    Err(last_err.unwrap_or_else(|| {
+        "Entrypoint chain denom-trace query failed".to_string()
+    }))
 }
 
 fn query_cardano_lovelace_total(
@@ -4200,41 +4220,41 @@ fn hermes_query_packet_pending(
 fn dump_test_11_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
-    sidechain_channel_id: &str,
-    sidechain_address: &str,
+    entrypoint_channel_id: &str,
+    entrypoint_address: &str,
 ) {
-    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> sidechain) ===");
+    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
-    logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
-    logger::log(&format!("sidechain address:      {}", sidechain_address));
+    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
+    logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log("");
     dump_packet_queries_for_transfer_channels(
         project_root,
         &[
             ("cardano-devnet", cardano_channel_id),
-            ("sidechain", sidechain_channel_id),
+            (ENTRYPOINT_CHAIN_ID, entrypoint_channel_id),
         ],
     );
 
-    if let Some(balances) = dump_sidechain_balances_section(sidechain_address) {
-        dump_denom_traces_for_sidechain_ibc_denoms(&balances, 20);
+    if let Some(balances) = dump_entrypoint_balances_section(entrypoint_address) {
+        dump_denom_traces_for_entrypoint_ibc_denoms(&balances, 20);
     }
 }
 
 fn dump_test_9_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
-    sidechain_channel_id: &str,
-    sidechain_address: &str,
+    entrypoint_channel_id: &str,
+    entrypoint_address: &str,
     denom: &str,
     amount: u64,
     cardano_receiver_address: &str,
     voucher_policy_id: &str,
 ) {
-    logger::log("=== Test 9 diagnostics (ICS-20 sidechain -> Cardano) ===");
-    logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
+    logger::log("=== Test 9 diagnostics (ICS-20 Entrypoint chain -> Cardano) ===");
+    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
-    logger::log(&format!("sidechain address:      {}", sidechain_address));
+    logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log(&format!(
         "cardano address:        {}",
         cardano_receiver_address
@@ -4253,11 +4273,11 @@ fn dump_test_9_ics20_diagnostics(
     dump_packet_queries_for_transfer_channels(
         project_root,
         &[
-            ("sidechain", sidechain_channel_id),
+            (ENTRYPOINT_CHAIN_ID, entrypoint_channel_id),
             ("cardano-devnet", cardano_channel_id),
         ],
     );
-    let _ = dump_sidechain_balances_section(sidechain_address);
+    let _ = dump_entrypoint_balances_section(entrypoint_address);
 
     match query_cardano_lovelace_total(project_root, cardano_receiver_address) {
         Ok(total) => {
@@ -4312,16 +4332,16 @@ fn dump_test_9_ics20_diagnostics(
 fn dump_test_12_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
-    sidechain_channel_id: &str,
-    sidechain_address: &str,
+    entrypoint_channel_id: &str,
+    entrypoint_address: &str,
     voucher_denom: &str,
     amount: u64,
     cardano_receiver_address: &str,
 ) {
-    logger::log("=== Test 12 diagnostics (ICS-20 sidechain -> Cardano, Cardano native round-trip return) ===");
-    logger::log(&format!("sidechain channel:      {}", sidechain_channel_id));
+    logger::log("=== Test 12 diagnostics (ICS-20 Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
+    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
-    logger::log(&format!("sidechain address:      {}", sidechain_address));
+    logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log(&format!(
         "cardano address:        {}",
         cardano_receiver_address
@@ -4339,16 +4359,16 @@ fn dump_test_12_ics20_diagnostics(
     dump_packet_queries_for_transfer_channels(
         project_root,
         &[
-            ("sidechain", sidechain_channel_id),
+            (ENTRYPOINT_CHAIN_ID, entrypoint_channel_id),
             ("cardano-devnet", cardano_channel_id),
         ],
     );
-    let _ = dump_sidechain_balances_section(sidechain_address);
+    let _ = dump_entrypoint_balances_section(entrypoint_address);
 
     if voucher_denom.starts_with("ibc/") {
         let hash = voucher_denom.strip_prefix("ibc/").unwrap_or(voucher_denom);
-        logger::log("=== sidechain denom trace (reverse lookup) ===");
-        match query_sidechain_denom_trace(hash) {
+        logger::log("=== entrypoint denom trace (reverse lookup) ===");
+        match query_entrypoint_denom_trace(hash) {
             Ok((path, base_denom)) => {
                 logger::log(&format!("{} -> {}/{}", voucher_denom, path, base_denom))
             }
@@ -4413,10 +4433,10 @@ fn dump_packet_queries_for_transfer_channels(project_root: &Path, chain_channels
     }
 }
 
-fn dump_sidechain_balances_section(sidechain_address: &str) -> Option<BTreeMap<String, u128>> {
-    match query_sidechain_balances(sidechain_address) {
+fn dump_entrypoint_balances_section(entrypoint_address: &str) -> Option<BTreeMap<String, u128>> {
+    match query_entrypoint_balances(entrypoint_address) {
         Ok(balances) => {
-            logger::log("=== sidechain balances (bank) ===");
+            logger::log("=== entrypoint balances (bank) ===");
             if balances.is_empty() {
                 logger::log("(no balances returned)");
             } else {
@@ -4429,7 +4449,7 @@ fn dump_sidechain_balances_section(sidechain_address: &str) -> Option<BTreeMap<S
         }
         Err(e) => {
             logger::log(&format!(
-                "(diagnostics) Failed to query sidechain balances: {}\n",
+                "(diagnostics) Failed to query entrypoint balances: {}\n",
                 e
             ));
             None
@@ -4437,7 +4457,7 @@ fn dump_sidechain_balances_section(sidechain_address: &str) -> Option<BTreeMap<S
     }
 }
 
-fn dump_denom_traces_for_sidechain_ibc_denoms(balances: &BTreeMap<String, u128>, max_items: usize) {
+fn dump_denom_traces_for_entrypoint_ibc_denoms(balances: &BTreeMap<String, u128>, max_items: usize) {
     let mut ibc_denoms: Vec<&str> = balances
         .keys()
         .filter_map(|denom| denom.starts_with("ibc/").then_some(denom.as_str()))
@@ -4447,10 +4467,10 @@ fn dump_denom_traces_for_sidechain_ibc_denoms(balances: &BTreeMap<String, u128>,
     }
 
     ibc_denoms.sort_unstable();
-    logger::log("=== sidechain denom traces (reverse lookup) ===");
+    logger::log("=== entrypoint denom traces (reverse lookup) ===");
     for denom in ibc_denoms.into_iter().take(max_items) {
         let hash = denom.strip_prefix("ibc/").unwrap_or(denom);
-        match query_sidechain_denom_trace(hash) {
+        match query_entrypoint_denom_trace(hash) {
             Ok((path, base_denom)) => logger::log(&format!("{} -> {}/{}", denom, path, base_denom)),
             Err(e) => logger::log(&format!("{} -> (failed to query denom-trace) {}", denom, e)),
         }
