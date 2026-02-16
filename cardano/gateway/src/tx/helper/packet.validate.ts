@@ -78,13 +78,17 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
   if (!data.signer) {
     throw new GrpcInvalidArgumentException('Invalid constructed address: signer is not valid');
   }
+  const tokenDenom = data.token?.denom?.trim();
+  if (!tokenDenom) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "token.denom" is required');
+  }
 
   // Prepare the Recv packet operator object
   const sendPacketOperator: SendPacketOperator = {
     sourcePort: data.source_port,
     sourceChannel: data.source_channel,
     token: {
-      denom: data.token.denom,
+      denom: tokenDenom,
       amount: data.token.amount,
     },
     sender: data.sender,
