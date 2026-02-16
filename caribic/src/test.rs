@@ -1022,7 +1022,7 @@ pub async fn run_integration_tests(
     //   - Relay RecvPacket to Cardano and Ack back to Cosmos
     //   - Validate basic token effects and Cardano voucher minting
     let mut transfer_test_passed = false;
-    let mut stake_voucher_token_hash: Option<String> = None;
+    let mut stake_denom_trace_hash: Option<String> = None;
     if selection.should_run(9) {
         let mut test_9 =
             TestTimer::start("Test 9: ICS-20 transfer (Entrypoint chain -> Cardano)...");
@@ -1206,28 +1206,51 @@ pub async fn run_integration_tests(
                                 }
                             };
 
-                            if let Some(minted_voucher_hash) = minted_voucher_hash {
-                                match assert_gateway_denom_trace(
-                                    &minted_voucher_hash,
-                                    &expected_path,
-                                    denom,
-                                )
-                                .await
-                                {
-                                    Ok(()) => {
-                                        let elapsed = test_9.finish();
-                                        logger::log(&format!(
-	                                        "PASS Test 9: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
-	                                        format_duration(elapsed)
-	                                    ));
-                                        results.passed += 1;
-                                        transfer_test_passed = true;
-                                        stake_voucher_token_hash = Some(minted_voucher_hash);
+                            if let Some(_minted_voucher_hash) = minted_voucher_hash {
+                                match ibc_denom_trace_hash(&expected_path, denom) {
+                                    Ok(denom_trace_hash) => {
+                                        match assert_gateway_denom_trace(
+                                            &denom_trace_hash,
+                                            &expected_path,
+                                            denom,
+                                        )
+                                        .await
+                                        {
+                                            Ok(()) => {
+                                                let elapsed = test_9.finish();
+                                                logger::log(&format!(
+	                                                "PASS Test 9: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
+	                                                format_duration(elapsed)
+	                                            ));
+                                                results.passed += 1;
+                                                transfer_test_passed = true;
+                                                stake_denom_trace_hash = Some(denom_trace_hash);
+                                            }
+                                            Err(e) => {
+                                                let elapsed = test_9.finish();
+                                                logger::log(&format!(
+	                                                "FAIL Test 9: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
+	                                                format_duration(elapsed),
+	                                                e
+	                                            ));
+                                                dump_test_9_ics20_diagnostics(
+                                                    project_root,
+                                                    cardano_channel_id,
+                                                    &entrypoint_channel_id,
+                                                    &entrypoint_address,
+                                                    denom,
+                                                    amount,
+                                                    &cardano_receiver_address,
+                                                    &voucher_policy_id,
+                                                );
+                                                results.failed += 1;
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         let elapsed = test_9.finish();
                                         logger::log(&format!(
-	                                        "FAIL Test 9: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
+	                                        "FAIL Test 9: Could not compute IBC denom-trace hash (took {})\n{}\n",
 	                                        format_duration(elapsed),
 	                                        e
 	                                    ));
@@ -1452,7 +1475,7 @@ pub async fn run_integration_tests(
                                 results.failed += 1;
                             } else {
                                 let expected_path = format!("transfer/{}", cardano_channel_id);
-                                let stake_hash = match stake_voucher_token_hash.as_deref() {
+                                let stake_hash = match stake_denom_trace_hash.as_deref() {
                                     Some(hash) => Some(hash),
                                     None => {
                                         let elapsed = test_10.finish();
@@ -3885,6 +3908,51 @@ struct DenomTrace {
     path: String,
     #[prost(string, tag = "2")]
     base_denom: String,
+}
+
+fn ibc_denom_trace_hash(path: &str, base_denom: &str) -> Result<String, String> {
+    let full_denom_trace = if path.is_empty() {
+        base_denom.to_string()
+    } else {
+        format!("{}/{}", path.trim_end_matches('/'), base_denom)
+    };
+
+    let mut command = Command::new("shasum");
+    command.arg("-a").arg("256");
+    command.stdin(Stdio::piped()).stdout(Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("Failed to spawn shasum for denom trace hashing: {}", e))?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        use std::io::Write;
+        stdin
+            .write_all(full_denom_trace.as_bytes())
+            .map_err(|e| format!("Failed to write denom trace into shasum stdin: {}", e))?;
+    } else {
+        return Err("Failed to open shasum stdin".to_string());
+    }
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("Failed to read shasum output: {}", e))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "shasum failed while hashing denom trace '{}': {}",
+            full_denom_trace,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let hash = stdout
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| format!("Failed to parse shasum output: {}", stdout))?;
+
+    Ok(hash.to_string())
 }
 
 async fn query_gateway_denom_trace(hash: &str) -> Result<(String, String), String> {
