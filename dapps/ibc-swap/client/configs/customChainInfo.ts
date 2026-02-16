@@ -1,6 +1,13 @@
 import { CARDANO_MAINNET_MAGIC } from '@/constants';
 import { AssetList, Chain } from '@chain-registry/types';
 
+const ENTRYPOINT_CHAIN_ID = 'entrypoint';
+
+const getEntrypointRpcEndpoint = () =>
+  process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT || '';
+
+const getEntrypointRestEndpoint = () =>
+  process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT || '';
 const entrypointChainConfig: Chain = {
   chain_name: 'sidechain',
   status: 'active',

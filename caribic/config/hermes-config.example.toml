@@ -106,7 +106,7 @@ list = [
 # This is the Cosmos chain we operate locally (repo path cosmos/sidechain) to
 # serve as the IBC entrypoint to the broader ecosystem.
 [[chains]]
-id = 'sidechain'
+id = 'entrypoint'
 type = 'CosmosSdk'
 rpc_addr = 'http://127.0.0.1:26657'
 grpc_addr = 'http://127.0.0.1:9090'
