@@ -574,22 +574,6 @@ export class QueryService {
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
-    // const listBlockNo = await this.dbService.queryListBlockByImmutableFileNo(Number(height));
-
-    // const blockDto: BlockDto = await this.dbService.findBlockByHeight(request.height);
-    // if (!listBlockNo.length) {
-    //   // throw new GrpcNotFoundException(`Not found: "height" ${request.height} not found`);
-    //   return {
-    //     block_results: {
-    //       height: {
-    //         revision_height: request.height,
-    //         revision_number: BigInt(0),
-    //       },
-    //       txs_results: [],
-    //     },
-    //   } as unknown as QueryBlockResultsResponse;
-    // }
-
     try {
       const deploymentConfig = this.configService.get('deployment');
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;

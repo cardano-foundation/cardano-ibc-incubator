@@ -31,6 +31,7 @@ import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import { TxEventsService } from './tx-events.service';
@@ -41,7 +42,6 @@ import {
   validateAndFormatChannelOpenTryParams,
   validateAndFormatChannelCloseInitParams,
 } from './helper/channel.validate';
-import { sumLovelaceFromUtxos } from './helper/helper';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '~@/shared/helpers/verify';
 import { channelPath } from '~@/shared/helpers/channel';

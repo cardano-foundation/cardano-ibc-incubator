@@ -1,9 +1,9 @@
 #!/usr/bin/env ts-node
 /**
- * Strict Historical Backfill Script for Denom Trace Mappings
+ * Historical Backfill Script for Denom Trace Mappings
  *
  * This script scans historical voucher-mint transactions and backfills
- * denom traces using strict decoding/validation only.
+ * denom traces using deterministic decoding/validation only.
  *
  * Usage:
  *   ts-node backfill-denom-traces.ts
@@ -203,7 +203,7 @@ async function bootstrap() {
       }
     }
 
-    logger.log('=== Strict Backfill Complete ===');
+    logger.log('=== Backfill Complete ===');
     logger.log(`Transactions processed: ${txProcessed}`);
     logger.log(`Voucher mints processed: ${tokenMintsProcessed}`);
     logger.log(`Traces saved: ${tracesSaved}`);
@@ -215,7 +215,7 @@ async function bootstrap() {
     // Any unresolved/ambiguous/conflicting result is a failing run.
     if (unresolvedTokenMints > 0 || ambiguousTokenMints > 0 || conflictingExistingRows > 0 || hardErrors > 0) {
       throw new Error(
-        `Strict backfill failed integrity checks (unresolved=${unresolvedTokenMints}, ambiguous=${ambiguousTokenMints}, conflicts=${conflictingExistingRows}, errors=${hardErrors})`,
+        `Backfill failed integrity checks (unresolved=${unresolvedTokenMints}, ambiguous=${ambiguousTokenMints}, conflicts=${conflictingExistingRows}, errors=${hardErrors})`,
       );
     }
   } catch (error) {

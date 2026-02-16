@@ -143,7 +143,6 @@ describe('DenomTraceService', () => {
     expect(repositoryMock.create).not.toHaveBeenCalled();
     expect(repositoryMock.save).not.toHaveBeenCalled();
   });
-
   it('applies pagination offset in findAll', async () => {
     queryBuilderMock.getMany.mockResolvedValue([{ hash: 'h1' }]);
 

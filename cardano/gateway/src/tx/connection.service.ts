@@ -26,9 +26,9 @@ import { MintConnectionRedeemer, SpendConnectionRedeemer } from '@shared/types/c
 import { ConfigService } from '@nestjs/config';
 import { parseClientSequence } from 'src/shared/helpers/sequence';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
-import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import {
   validateAndFormatConnectionOpenAckParams,
   validateAndFormatConnectionOpenConfirmParams,
