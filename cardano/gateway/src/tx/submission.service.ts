@@ -134,6 +134,8 @@ export class SubmissionService {
       );
     }
 
+    // Only attach tx_hash after root verification so denom trace rows are never
+    // finalized against a transaction that resolved to a different HostState root.
     await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     pending.commit();

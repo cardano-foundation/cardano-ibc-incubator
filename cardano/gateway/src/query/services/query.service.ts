@@ -949,6 +949,8 @@ export class QueryService {
           `Invalid argument: "packet_dst_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
         );
 
+      // A packet for this path can be emitted from either channel side depending on the
+      // operation type, so load both channel UTxO sets up front.
       const candidateChannelIds = Array.from(new Set([srcChannelId, dstChannelId]));
       const channelTokenNames = candidateChannelIds.map((channelId) =>
         this.lucidService.generateTokenName(
@@ -958,6 +960,7 @@ export class QueryService {
         ),
       );
 
+      // The same tx output can appear while scanning each side, so dedupe by out-ref.
       const utxosByRef = new Map<string, Awaited<ReturnType<DbSyncService['findUtxosByPolicyIdAndPrefixTokenName']>>[number]>();
       for (const channelTokenName of channelTokenNames) {
         const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
@@ -993,6 +996,8 @@ export class QueryService {
             if (!packet) continue;
             const packetSourceChannel = convertHex2String(packet.source_channel);
             const packetDestinationChannel = convertHex2String(packet.destination_channel);
+            // Match either orientation because db-sync scanning is channel-centric and can
+            // surface redeemers from sends, receives, acks, or timeouts across both ends.
             const directChannelMatch =
               packetSourceChannel === srcChannelId && packetDestinationChannel === dstChannelId;
             const reverseChannelMatch =

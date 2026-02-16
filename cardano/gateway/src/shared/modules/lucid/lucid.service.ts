@@ -378,6 +378,7 @@ export class LucidService {
     const normalized = address?.trim();
     if (!normalized) return normalized;
 
+    // Preserve bech32 addresses as-is and only normalize raw hash material.
     const lowered = normalized.toLowerCase();
     if (lowered.startsWith('addr') || lowered.startsWith('stake')) {
       return normalized;

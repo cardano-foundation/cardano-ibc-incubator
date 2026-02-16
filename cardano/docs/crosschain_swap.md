@@ -1,115 +1,99 @@
 # Cross-chain Swap
 
-This document describes the current Cardano to Osmosis demo flow in this repository.
+Cross-chain swap is a feature that uses IBC connections to swap assets on other networks. In this project, we swap Cardano-native assets on Osmosis through an IBC path that includes our packet-forwarding Cosmos Entrypoint chain.
 
-The swap path is:
+To support this, the packet-forwarding chain must implement [Packet Forward Middleware](https://github.com/cosmos/ibc-apps/tree/main/middleware/packet-forward-middleware). This middleware allows messages from Cardano relay to Osmosis without requiring a direct connection between Cardano and Osmosis.
 
-1. Cardano -> Cosmos Entrypoint chain
-2. Cosmos Entrypoint chain -> Osmosis (via Packet Forward Middleware memo)
-3. Swap on Osmosis through `crosschain_swaps` + `swaprouter`
-4. Forward result back toward Cardano
+Setting up and executing cross-chain swap is a bit complicated, so we written scripts [setup_crosschain_swaps.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/chains/osmosis/scripts/setup_crosschain_swaps.sh) and [swap.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/swap.sh) to automate these processes. This document is based on steps on these scripts, you can refer them for more detail.
 
-In Hermes config and scripts, the Cosmos Entrypoint chain is still referenced by the chain id `sidechain` for compatibility.
-
-## Current expected usage
-
-The supported entrypoint is:
-
-```bash
-caribic demo token-swap
-```
-
-This command assumes services are already running. It does not boot the whole stack itself.
-
-### Prerequisites
-
-Run these first:
+## Quick run (current flow)
 
 ```bash
 caribic start --clean --with-mithril
 caribic start osmosis
-```
-
-Then run:
-
-```bash
 caribic demo token-swap
 ```
 
-## What `caribic demo token-swap` does
+`caribic demo token-swap` runs the setup script, extracts the `crosschain_swaps` address, and then executes the swap script.
 
-`caribic demo token-swap` performs the full setup and execution flow:
+## Setup
 
-- verifies required services are healthy (`gateway`, Cardano node stack, Hermes, Mithril, Entrypoint, Osmosis, Redis)
-- waits for Mithril artifacts required by Cardano-facing Hermes operations
-- temporarily stops Hermes during setup steps to avoid account sequence contention, then restarts it
-- ensures an open transfer channel exists between Cardano and the Entrypoint chain
-- configures Hermes for Entrypoint <-> Osmosis transfer path
-- runs `chains/osmosis/osmosis/scripts/setup_crosschain_swaps.sh`
-- extracts the deployed `crosschain_swaps` address from setup output
-- runs `swap.sh` with `CROSSCHAIN_SWAPS_ADDRESS` injected
+Setup cross-chain swap involves these steps: 
+- Create IBC connections `Cardano<=>PacketForwardingChain`, `PacketForwardingChain<=>Osmosis`.
+- Transfer tokens from Cardano to Osmosis to provide liquidity.
+- Create swap pools in Osmosis with pairs of transferred tokens and desired tokens.
+- Config the `swap_router` and `crosschain_swap` contract on Osmosis.
 
-On success, the command executes a full Cardano -> Osmosis swap demo path end to end.
+### Create IBC connections
 
-## Scripts used by the demo
+This step includes creating channels on the transfer port among chains, allowing us to transfer and swap tokens on these channels. In this repository, both `Cardano<=>Entrypoint` and `Entrypoint<=>Osmosis` are configured with the Cardano-enabled Hermes binary built at `relayer/target/release/hermes`.
 
-The demo is built on:
+### Transfer tokens from Cardano to Osmosis
 
-- `chains/osmosis/osmosis/scripts/setup_crosschain_swaps.sh`
-- `swap.sh`
+After we establish connections, we can transfer assets from Cardano to Osmosis. The transfer message is like a normal one except that an extra field memo is set on FungiblePacketData. This field allows the packet-forwarding chain's PFM (Packet Forward Middleware) to relay the transfer message to Osmosis.
 
-Both scripts use the local Hermes binary at:
-
-`relayer/target/release/hermes`
-
-They do not rely on a random Hermes binary from `PATH`.
-
-## Token and amount inputs
-
-The Cardano token used in this demo is read from:
-
-`cardano/offchain/deployments/handler.json` -> `tokens.mock`
-
-The transfer amount can be overridden with:
-
-`CARIBIC_TOKEN_SWAP_AMOUNT`
-
-If not set, each script uses its own default.
-
-## Manual flow (if needed)
-
-If you need to run steps manually:
-
-1. Run `setup_crosschain_swaps.sh`
-2. Read the printed `crosschain_swaps address`
-3. Run `swap.sh` with `CROSSCHAIN_SWAPS_ADDRESS=<address>`
-
-`caribic demo token-swap` already performs these steps automatically, so manual execution is mainly for debugging.
-
-## Memo shape used for swap forwarding
-
-The swap transfer uses PFM + IBC hooks memo routing. The outer shape is:
-
-```json
+```
 {
   "forward": {
-    "receiver": "<crosschain_swaps_address>",
+    "receiver": "osmo1receiver",
     "port": "transfer",
-    "channel": "<entrypoint_to_osmosis_channel>",
+    "channel": "sidechain-to-osmosis-channel-id"
+  }
+}
+```
+
+### Create swap pool
+
+With Cardano token transferred to Osmosis, we can use it as liquidity to create swap pool on Osmosis. Pool is created by using Osmosis `GAMM` module with a desired token pair.
+
+Config file for pool:
+```
+{
+ "weights": "1ibc/transferred-cardano-token,5uosmo",
+ "initial-deposit": "1000000ibc/transferred-cardano-token,1000000uosmo",
+ "swap-fee": "0.01",
+ "exit-fee": "0.01",
+ "future-governor": ""
+}
+```
+
+Command to create pool with `osmosisd`:
+```
+osmosisd tx gamm create-pool [config-file] --from --chain-id
+```
+
+### Config contracts
+
+There are 2 versions of cross-chain swap on Osmosis. Since V2 requires chains to have direct connections to Osmosis, we use V1 so that we can manually set the swap routes and destinations of swaps.
+
+With cross-chain swap V1, there are 2 contracts we must deploy and configure: swaprouter and crosschain_swaps. Configuring them involves many operations, so you can refer to [this link](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/chains/osmosis/scripts/setup_crosschain_swaps.sh) for more detail. After configuring, we should save the address of the `crosschain_swaps` contract because we need to call it when executing swap messages.
+
+## Execute cross-chain swap
+
+Similar to the transfer message to provide liquidity mentioned earlier, cross-chain swap messages have additional information in `memo` field. Besides the forward to Osmosis part, the memo also contains details about triggering [IBC Hook](https://github.com/cosmos/ibc-apps/blob/main/modules/ibc-hooks/README.md) to the crosschain_swaps contract and another forward part to transfer the swapped token back from the sidechain to Cardano. Here is a sample memo for a cross-chain swap message:
+
+```
+{
+  "forward": {
+    "receiver": "crosschain_swaps address",
+    "port": "transfer",
+    "channel": "sidechain_to_osmosis_channel_id",
     "next": {
       "wasm": {
-        "contract": "<crosschain_swaps_address>",
+        "contract": "crosschain_swaps address",
         "msg": {
           "osmosis_swap": {
             "output_denom": "uosmo",
-            "slippage": { "min_output_amount": "1" },
-            "receiver": "<cosmos_receiver>",
+            "slippage": {
+              "min_output_amount": "1"
+            },
+            "receiver": "cosmos1receiver",
             "on_failed_delivery": "do_nothing",
             "next_memo": {
               "forward": {
-                "receiver": "<cardano_receiver_pkh>",
+                "receiver": "cardano receiver public key hash",
                 "port": "transfer",
-                "channel": "<entrypoint_to_cardano_channel>"
+                "channel": "sidechain_to_cardano_channel_id"
               }
             }
           }
@@ -119,3 +103,5 @@ The swap transfer uses PFM + IBC hooks memo routing. The outer shape is:
   }
 }
 ```
+
+With this memo, we can send a transfer message to Cardano and the swap operations are automatically unwrapped and relayed by sidechain and relayers.

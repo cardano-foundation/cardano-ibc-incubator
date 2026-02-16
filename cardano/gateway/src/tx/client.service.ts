@@ -256,6 +256,8 @@ export class ClientService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         });
+        // Register after complete because the finalized tx hash is only stable once
+        // balancing and fee selection have finished.
         const unsignedTxHash = completedUnsignedTx.toHash();
         this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
         const unsignedTxCbor = completedUnsignedTx.toCBOR();
@@ -322,6 +324,8 @@ export class ClientService {
         localUPLCEval: false,
         setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      // Register after complete because the finalized tx hash is only stable once
+      // balancing and fee selection have finished.
       const unsignedTxHash = completedUnsignedTx.toHash();
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
