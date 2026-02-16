@@ -9,11 +9,11 @@ const getEntrypointRpcEndpoint = () =>
 const getEntrypointRestEndpoint = () =>
   process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT || '';
 const entrypointChainConfig: Chain = {
-  chain_name: 'sidechain',
+  chain_name: ENTRYPOINT_CHAIN_ID,
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Entrypoint chain Localnet',
-  chain_id: 'sidechain',
+  chain_id: ENTRYPOINT_CHAIN_ID,
   bech32_prefix: 'cosmos',
   slip44: 118,
   fees: {
@@ -40,13 +40,13 @@ const entrypointChainConfig: Chain = {
   apis: {
     rpc: [
       {
-        address: process.env.NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT || '',
+        address: getEntrypointRpcEndpoint(),
         provider: 'local',
       },
     ],
     rest: [
       {
-        address: process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT || '',
+        address: getEntrypointRestEndpoint(),
         provider: 'local',
       },
     ],
@@ -58,7 +58,7 @@ const entrypointChainConfig: Chain = {
 };
 
 const entrypointChainAssetList: AssetList = {
-  chain_name: 'sidechain',
+  chain_name: ENTRYPOINT_CHAIN_ID,
   assets: [
     {
       description: 'Registered denom token for entrypoint chain testing',

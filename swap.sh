@@ -92,25 +92,25 @@ EOF
 
 print_swap_diagnostics() {
     echo "=== Diagnostics: Cardano->Entrypoint packet pending ==="
-    "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_sidechain_chann_id" || true
+    "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_entrypoint_channel_id" || true
 
     echo "=== Diagnostics: Entrypoint->Cardano packet pending ==="
-    "$HERMES_BIN" query packet pending --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_cardano_chann_id" || true
+    "$HERMES_BIN" query packet pending --chain "$HERMES_ENTRYPOINT_NAME" --port transfer --channel "$entrypoint_cardano_channel_id" || true
 
     echo "=== Diagnostics: Entrypoint->Osmosis packet pending ==="
-    "$HERMES_BIN" query packet pending --chain "$HERMES_SIDECHAIN_NAME" --port transfer --channel "$sidechain_osmosis_chann_id" || true
+    "$HERMES_BIN" query packet pending --chain "$HERMES_ENTRYPOINT_NAME" --port transfer --channel "$entrypoint_osmosis_channel_id" || true
 
     echo "=== Diagnostics: Osmosis->Entrypoint packet pending ==="
-    "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_sidechain_chann_id" || true
+    "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_entrypoint_channel_id" || true
 }
 
 print_settlement_progress() {
-    _cardano_now=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id")
-    _sidechain_osmosis_now=$(current_max_commitment_seq "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id")
+    _cardano_now=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_entrypoint_channel_id")
+    _entrypoint_osmosis_now=$(current_max_commitment_seq "$HERMES_ENTRYPOINT_NAME" "$entrypoint_osmosis_channel_id")
 
     echo "Settlement progress (current max commitment seq / baseline):"
-    echo "  ${HERMES_CARDANO_NAME}/${cardano_sidechain_chann_id}: ${_cardano_now}/${baseline_cardano_sidechain_seq}"
-    echo "  ${HERMES_SIDECHAIN_NAME}/${sidechain_osmosis_chann_id}: ${_sidechain_osmosis_now}/${baseline_sidechain_osmosis_seq}"
+    echo "  ${HERMES_CARDANO_NAME}/${cardano_entrypoint_channel_id}: ${_cardano_now}/${baseline_cardano_entrypoint_seq}"
+    echo "  ${HERMES_ENTRYPOINT_NAME}/${entrypoint_osmosis_channel_id}: ${_entrypoint_osmosis_now}/${baseline_entrypoint_osmosis_seq}"
 }
 
 run_with_timeout() {
@@ -128,8 +128,8 @@ run_with_timeout() {
 }
 
 clear_swap_packets() {
-    clear_channel_packets_since_baseline "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id" "$baseline_cardano_sidechain_seq"
-    clear_channel_packets_since_baseline "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id" "$baseline_sidechain_osmosis_seq"
+    clear_channel_packets_since_baseline "$HERMES_CARDANO_NAME" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq"
+    clear_channel_packets_since_baseline "$HERMES_ENTRYPOINT_NAME" "$entrypoint_osmosis_channel_id" "$baseline_entrypoint_osmosis_seq"
 }
 
 clear_channel_packets_since_baseline() {
@@ -212,11 +212,11 @@ wait_for_swap_settlement() {
         _pending=0
         _unknown=0
 
-        channel_commitments_cleared "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id" "$baseline_cardano_sidechain_seq"; _result=$?
+        channel_commitments_cleared "$HERMES_CARDANO_NAME" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq"; _result=$?
         [ "$_result" -eq 1 ] && _pending=1
         [ "$_result" -eq 2 ] && _unknown=1
 
-        channel_commitments_cleared "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id" "$baseline_sidechain_osmosis_seq"; _result=$?
+        channel_commitments_cleared "$HERMES_ENTRYPOINT_NAME" "$entrypoint_osmosis_channel_id" "$baseline_entrypoint_osmosis_seq"; _result=$?
         [ "$_result" -eq 1 ] && _pending=1
         [ "$_result" -eq 2 ] && _unknown=1
 
@@ -257,33 +257,33 @@ HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
 check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json. Please ensure the handler deployment file is present and up to date."
 SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
-SIDECHAIN_RECEIVER="pfm"
+ENTRYPOINT_RECEIVER="pfm"
 
-cardano_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_SIDECHAIN_NAME")
-check_string_empty "$cardano_sidechain_chann_id" "Cardano->Entrypoint chain channel not found. Exiting..."
-echo "Cardano->Entrypoint chain channel id: $cardano_sidechain_chann_id"
+cardano_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_ENTRYPOINT_NAME")
+check_string_empty "$cardano_entrypoint_channel_id" "Cardano->Entrypoint chain channel not found. Exiting..."
+echo "Cardano->Entrypoint chain channel id: $cardano_entrypoint_channel_id"
 
-sidechain_cardano_chann_id=$(get_latest_transfer_channel_id "$HERMES_SIDECHAIN_NAME" "$HERMES_CARDANO_NAME")
-check_string_empty "$sidechain_cardano_chann_id" "Entrypoint chain->Cardano channel not found. Exiting..."
-echo "Entrypoint chain->Cardano channel id: $sidechain_cardano_chann_id"
+entrypoint_cardano_channel_id=$(get_latest_transfer_channel_id "$HERMES_ENTRYPOINT_NAME" "$HERMES_CARDANO_NAME")
+check_string_empty "$entrypoint_cardano_channel_id" "Entrypoint chain->Cardano channel not found. Exiting..."
+echo "Entrypoint chain->Cardano channel id: $entrypoint_cardano_channel_id"
 
-sidechain_osmosis_chann_id=$(get_latest_transfer_channel_id "$HERMES_SIDECHAIN_NAME" "$HERMES_OSMOSIS_NAME")
-check_string_empty "$sidechain_osmosis_chann_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
-echo "Entrypoint chain->Osmosis channel id: $sidechain_osmosis_chann_id"
+entrypoint_osmosis_channel_id=$(get_latest_transfer_channel_id "$HERMES_ENTRYPOINT_NAME" "$HERMES_OSMOSIS_NAME")
+check_string_empty "$entrypoint_osmosis_channel_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
+echo "Entrypoint chain->Osmosis channel id: $entrypoint_osmosis_channel_id"
 
-osmosis_sidechain_chann_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_SIDECHAIN_NAME")
-check_string_empty "$osmosis_sidechain_chann_id" "Osmosis->Entrypoint chain channel not found. Exiting..."
-echo "Osmosis->Entrypoint chain channel id: $osmosis_sidechain_chann_id"
+osmosis_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_ENTRYPOINT_NAME")
+check_string_empty "$osmosis_entrypoint_channel_id" "Osmosis->Entrypoint chain channel not found. Exiting..."
+echo "Osmosis->Entrypoint chain channel id: $osmosis_entrypoint_channel_id"
 
-baseline_cardano_sidechain_seq=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_sidechain_chann_id")
-baseline_sidechain_osmosis_seq=$(current_max_commitment_seq "$HERMES_SIDECHAIN_NAME" "$sidechain_osmosis_chann_id")
+baseline_cardano_entrypoint_seq=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_entrypoint_channel_id")
+baseline_entrypoint_osmosis_seq=$(current_max_commitment_seq "$HERMES_ENTRYPOINT_NAME" "$entrypoint_osmosis_channel_id")
 
 memo=$(
     jq -nc \
         --arg receiver "$CROSSCHAIN_SWAPS_ADDRESS" \
-        --arg so_channel "$sidechain_osmosis_chann_id" \
+        --arg so_channel "$entrypoint_osmosis_channel_id" \
         --arg cardano_receiver "$CARDANO_RECEIVER" \
-        --arg sc_channel "$sidechain_cardano_chann_id" \
+        --arg sc_channel "$entrypoint_cardano_channel_id" \
         '{forward: {
             receiver: $receiver,
             port: "transfer",
@@ -323,12 +323,12 @@ check_string_empty "$sent_denom" "Transfer denom not found in SENT_AMOUNT. Exiti
 
 "$HERMES_BIN" tx ft-transfer \
     --src-chain "$HERMES_CARDANO_NAME" \
-    --dst-chain "$HERMES_SIDECHAIN_NAME" \
+    --dst-chain "$HERMES_ENTRYPOINT_NAME" \
     --src-port transfer \
-    --src-channel "$cardano_sidechain_chann_id" \
+    --src-channel "$cardano_entrypoint_channel_id" \
     --amount "$sent_amount" \
     --denom "$sent_denom" \
-    --receiver "$SIDECHAIN_RECEIVER" \
+    --receiver "$ENTRYPOINT_RECEIVER" \
     --timeout-seconds 3600 \
     --memo "$memo" ||
     exit 1
