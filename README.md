@@ -129,7 +129,7 @@ The Cardano implementation follows the same architectural patterns as Cosmos and
 
 ```bash
 # Initial clone (includes submodule)
-git clone --recurse-submodules https://github.com/webisoftSoftware/cardano-ibc-official.git
+git clone --recurse-submodules https://github.com/cardano-foundation/cardano-ibc-incubator.git
 
 # Or if already cloned, initialize the submodule
 git submodule update --init --recursive
