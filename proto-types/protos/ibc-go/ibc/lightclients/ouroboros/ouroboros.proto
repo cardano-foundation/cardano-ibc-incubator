@@ -9,7 +9,7 @@ package ibc.clients.cardano.v1;
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
 
-option go_package = "sidechain/x/clients/cardano";
+option go_package = "entrypoint/x/clients/cardano";
 message TokenConfigs {
   option (gogoproto.goproto_getters) = false;
  

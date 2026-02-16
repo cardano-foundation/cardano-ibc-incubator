@@ -1,6 +1,6 @@
 services:
-  sidechain-node-prod:
-    container_name: sidechain-node-prod
+  entrypoint-node-prod:
+    container_name: entrypoint-node-prod
     build:
       context: .
       dockerfile: Dockerfile

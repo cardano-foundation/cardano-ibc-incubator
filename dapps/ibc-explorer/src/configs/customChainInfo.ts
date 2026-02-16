@@ -5,7 +5,7 @@ import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-const ENTRYPOINT_CHAIN_ID = 'sidechain';
+const ENTRYPOINT_CHAIN_ID = 'entrypoint';
 
 const getEntrypointRpcEndpoint = () =>
   process.env.REACT_APP_ENTRYPOINT_RPC_ENDPOINT || '';

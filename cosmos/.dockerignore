@@ -14,4 +14,4 @@ haskell-part/dist-newstyle/
 go/libcardano-ibc-helper.so
 
 #openapi
-sidechain/docs/static/openapi.yml
+entrypoint/docs/static/openapi.yml

@@ -13,7 +13,7 @@ use crate::{
     DemoType,
 };
 
-const ENTRYPOINT_CHAIN_ID: &str = "sidechain";
+const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 
 /// Dispatches demo execution to token swap or message exchange flows.
 pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {

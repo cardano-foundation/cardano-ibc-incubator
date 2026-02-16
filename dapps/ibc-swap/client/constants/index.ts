@@ -5,7 +5,7 @@ export const THEME_MODE = {
   DARK: 'dark',
 };
 
-export const ENTRYPOINT_CHAIN_ID = 'sidechain';
+export const ENTRYPOINT_CHAIN_ID = 'entrypoint';
 export const defaultChainName = ENTRYPOINT_CHAIN_ID;
 
 export const FROM_TO = {
