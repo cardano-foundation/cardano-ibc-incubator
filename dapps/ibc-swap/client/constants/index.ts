@@ -5,7 +5,8 @@ export const THEME_MODE = {
   DARK: 'dark',
 };
 
-export const defaultChainName = 'sidechain';
+export const ENTRYPOINT_CHAIN_ID = 'sidechain';
+export const defaultChainName = ENTRYPOINT_CHAIN_ID;
 
 export const FROM_TO = {
   FROM: 'From',
@@ -52,5 +53,5 @@ export const sqsQueryPoolsUrl = '/pools';
 export const osmosisEstimateSwapWithPoolId =
   '/osmosis/poolmanager/v1beta1/1/estimate/swap_exact_amount_in_with_primitive_types';
 
-export const cosmosChainsSupported = ['localosmosis', 'sidechain'];
+export const cosmosChainsSupported = ['localosmosis', ENTRYPOINT_CHAIN_ID];
 export const OSMOSIS_CHAIN_ID = 'localosmosis';

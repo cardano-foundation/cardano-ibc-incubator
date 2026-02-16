@@ -113,28 +113,28 @@ pub fn start_relayer(
         &optional_progress_bar,
     );
 
-    // Cosmos Entrypoint chain (Hermes chain id: "sidechain"): Use the pre-funded "relayer"
+    // Cosmos Entrypoint chain (Hermes chain id is currently "sidechain"): Use the pre-funded "relayer"
     // account from cosmos/sidechain/config.yml.
-    let sidechain_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
-    let sidechain_mnemonic_file = std::env::temp_dir().join("sidechain-mnemonic.txt");
-    fs::write(&sidechain_mnemonic_file, sidechain_mnemonic)
+    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+    let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
+    fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
 
-    let sidechain_key_output = Command::new(&hermes_binary)
+    let entrypoint_key_output = Command::new(&hermes_binary)
         .args(&[
             "keys",
             "add",
             "--chain",
             "sidechain",
             "--mnemonic-file",
-            sidechain_mnemonic_file.to_str().unwrap(),
+            entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
         ])
         .output();
 
-    let _ = fs::remove_file(&sidechain_mnemonic_file);
+    let _ = fs::remove_file(&entrypoint_mnemonic_file);
 
-    match sidechain_key_output {
+    match entrypoint_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress(
                 "Added key for Cosmos Entrypoint chain",
@@ -1108,7 +1108,7 @@ pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Er
             local_osmosis_client_id
         ));
 
-        // Create Cosmos Entrypoint chain client (Hermes chain id: "sidechain")
+        // Create Cosmos Entrypoint chain client (Hermes chain id is currently "sidechain")
         let create_entrypoint_chain_client_output = Command::new(&hermes_binary)
             .current_dir(&script_dir)
             .args(&[
@@ -2290,12 +2290,12 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             }
             result.push('\n');
         }
-        // List for Cosmos Entrypoint chain (Hermes chain id: "sidechain")
-        let sidechain_output = run_hermes_command(&["keys", "list", "--chain", "sidechain"])?;
+        // List for Cosmos Entrypoint chain (Hermes chain id is currently "sidechain")
+        let entrypoint_output = run_hermes_command(&["keys", "list", "--chain", "sidechain"])?;
 
-        if sidechain_output.status.success() {
-            let output_str = String::from_utf8_lossy(&sidechain_output.stdout);
-            result.push_str("entrypoint-chain (chain id: sidechain):\n");
+        if entrypoint_output.status.success() {
+            let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
+            result.push_str("entrypoint-chain (Hermes chain id: sidechain):\n");
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {

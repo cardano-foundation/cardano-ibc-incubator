@@ -37,7 +37,7 @@ After we establish connections, we can transfer assets from Cardano to Osmosis. 
   "forward": {
     "receiver": "osmo1receiver",
     "port": "transfer",
-    "channel": "sidechain-to-osmosis-channel-id"
+    "channel": "entrypoint-to-osmosis-channel-id"
   }
 }
 ```
@@ -70,14 +70,14 @@ With cross-chain swap V1, there are 2 contracts we must deploy and configure: sw
 
 ## Execute cross-chain swap
 
-Similar to the transfer message to provide liquidity mentioned earlier, cross-chain swap messages have additional information in `memo` field. Besides the forward to Osmosis part, the memo also contains details about triggering [IBC Hook](https://github.com/cosmos/ibc-apps/blob/main/modules/ibc-hooks/README.md) to the crosschain_swaps contract and another forward part to transfer the swapped token back from the sidechain to Cardano. Here is a sample memo for a cross-chain swap message:
+Similar to the transfer message to provide liquidity mentioned earlier, cross-chain swap messages have additional information in `memo` field. Besides the forward to Osmosis part, the memo also contains details about triggering [IBC Hook](https://github.com/cosmos/ibc-apps/blob/main/modules/ibc-hooks/README.md) to the crosschain_swaps contract and another forward part to transfer the swapped token back from the Entrypoint chain to Cardano. Here is a sample memo for a cross-chain swap message:
 
 ```
 {
   "forward": {
     "receiver": "crosschain_swaps address",
     "port": "transfer",
-    "channel": "sidechain_to_osmosis_channel_id",
+    "channel": "entrypoint_to_osmosis_channel_id",
     "next": {
       "wasm": {
         "contract": "crosschain_swaps address",
@@ -93,7 +93,7 @@ Similar to the transfer message to provide liquidity mentioned earlier, cross-ch
               "forward": {
                 "receiver": "cardano receiver public key hash",
                 "port": "transfer",
-                "channel": "sidechain_to_cardano_channel_id"
+                "channel": "entrypoint_to_cardano_channel_id"
               }
             }
           }
@@ -104,4 +104,4 @@ Similar to the transfer message to provide liquidity mentioned earlier, cross-ch
 }
 ```
 
-With this memo, we can send a transfer message to Cardano and the swap operations are automatically unwrapped and relayed by sidechain and relayers.
+With this memo, we can send a transfer message to Cardano and the swap operations are automatically unwrapped and relayed by the Entrypoint chain and relayers.

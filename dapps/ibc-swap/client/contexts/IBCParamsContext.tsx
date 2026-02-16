@@ -21,7 +21,7 @@ import {
   fetchPacketForwardFee,
 } from '@/services/CommonCosmosServices';
 import BigNumber from 'bignumber.js';
-import { DEFAULT_PFM_FEE } from '@/constants';
+import { DEFAULT_PFM_FEE, ENTRYPOINT_CHAIN_ID } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import { getPathTrace } from '@/utils/string';
 import { findRouteAndPools } from '@/services/Common';
@@ -98,9 +98,12 @@ export const IBCParamsProvider = ({
   };
 
   const fetchRawChannelsMapping = async () => {
+    const entrypointRestEndpoint =
+      process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT ||
+      process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!;
     fetchAllChannels(
-      'sidechain',
-      process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!,
+      ENTRYPOINT_CHAIN_ID,
+      entrypointRestEndpoint,
     ).then((res: any) => {
       setRawChannelMappings(res.bestChannel);
       setAllChannelMappings(res.channelsMap);
