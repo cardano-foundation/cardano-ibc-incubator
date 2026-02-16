@@ -276,6 +276,7 @@ export class LucidService {
     void lastError;
     return [];
   }
+
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
@@ -374,8 +375,29 @@ export class LucidService {
   }
   //hex to string
   public credentialToAddress(address: string) {
+    const normalized = address?.trim();
+    if (!normalized) return normalized;
+
+    // Preserve bech32 addresses as-is and only normalize raw hash material.
+    const lowered = normalized.toLowerCase();
+    if (lowered.startsWith('addr') || lowered.startsWith('stake')) {
+      return normalized;
+    }
+
+    // Hermes can provide enterprise-address bytes (header + key hash) as hex.
+    // Strip the header and use the underlying 28-byte key hash.
+    if (/^[0-9a-f]+$/.test(lowered) && lowered.length === 58) {
+      const paymentHash = lowered.slice(2);
+      if (/^[0-9a-f]{56}$/.test(paymentHash)) {
+        return credentialToAddress(this.lucid.config().network, {
+          hash: paymentHash,
+          type: 'Key',
+        });
+      }
+    }
+
     return credentialToAddress(this.lucid.config().network, {
-      hash: address,
+      hash: lowered,
       type: 'Key',
     });
   }
@@ -1617,11 +1639,11 @@ export class LucidService {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        deploymentConfig.modules.transfer.address,
-        undefined,
-        updateTransferModuleAssets(dto.transferModuleUTxO.assets, BigInt(dto.transferAmount), dto.voucherTokenUnit),
-      )
+      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
+        // Burn path: vouchers are retired locally and should not be accumulated
+        // into the transfer module UTxO.
+        ...dto.transferModuleUTxO.assets,
+      })
       .mintAssets(
         {
           [dto.sendPacketPolicyId]: 1n,

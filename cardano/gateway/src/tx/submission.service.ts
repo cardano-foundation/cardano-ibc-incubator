@@ -89,12 +89,26 @@ export class SubmissionService {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
+    let onChainRoot: string | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
       const fallbackHash = this.computeTxBodyHashHex(signedTxCbor);
       if (fallbackHash && fallbackHash.toLowerCase() !== txHash.toLowerCase()) {
         pending = this.ibcTreePendingUpdatesService.take(fallbackHash);
+      }
+    }
+
+    // Strict fallback: if hash matching fails, resolve the pending update by the resulting
+    // on-chain root. This keeps correctness strict (root must match exactly) while handling
+    // signer/tooling paths that produce a different tx hash key than we recorded pre-signing.
+    if (!pending) {
+      onChainRoot = await this.readOnChainRoot(txHash);
+      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(onChainRoot);
+      if (pending) {
+        this.logger.warn(
+          `Resolved pending IBC update for tx ${txHash} via on-chain root fallback (hash-key lookup missed)`,
+        );
       }
     }
 
@@ -106,12 +120,13 @@ export class SubmissionService {
 
     // Attach tx_hash to traces before commit so mapping rows remain connected to the
     // submitted transaction even when later steps fail or process restarts occur.
-    await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
-
     // Resolve HostState from the exact confirmed transaction.
     // We intentionally do not accept "latest HostState" here because that can
     // mask db-sync/runtime failures and attach traces to the wrong tx context.
-    const onChainRoot = await this.readOnChainRoot(txHash);
+    // Verify on-chain root matches what we computed when building the tx.
+    if (!onChainRoot) {
+      onChainRoot = await this.readOnChainRoot(txHash);
+    }
 
     if (onChainRoot !== pending.expectedNewRoot) {
       throw new GrpcInternalException(
@@ -119,6 +134,8 @@ export class SubmissionService {
       );
     }
 
+    // Only attach tx_hash after root verification so denom trace rows are never
+    // finalized against a transaction that resolved to a different HostState root.
     await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     pending.commit();
@@ -151,6 +168,7 @@ export class SubmissionService {
       );
     }
   }
+
   private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
     // We treat "missing some expected rows" as an integrity error because partial
     // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.

@@ -26,4 +26,18 @@ export class IbcTreePendingUpdatesService {
     }
     return update;
   }
+
+  takeByExpectedRoot(expectedNewRoot: string): PendingTreeUpdate | undefined {
+    if (!expectedNewRoot) return undefined;
+    // Hash-based lookup can miss when external signers alter final body shape.
+    // Root matching remains strict because expectedNewRoot is derived from the
+    // exact in-memory tree mutation we prepared before signing.
+    for (const [key, update] of this.pendingByTxHash.entries()) {
+      if (update.expectedNewRoot === expectedNewRoot) {
+        this.pendingByTxHash.delete(key);
+        return update;
+      }
+    }
+    return undefined;
+  }
 }
