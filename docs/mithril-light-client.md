@@ -28,6 +28,33 @@ High-level workflow reference:
 
 _Caption: Diagram adapted from [IOG “Mithril nears mainnet release”](https://www.iog.io/news/mithril-nears-mainnet-release)._
 
+## Mithril Proof Flow For Relaying
+
+This sequence shows how the gateway builds Mithril-based proof material for relaying.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant H as Hermes
+  participant Q as Gateway Query Service
+  participant M as Mithril APIs
+  participant D as db-sync
+  participant K as Kupo
+  participant C as Counterparty Chain
+
+  H->>Q: Request client update at Cardano height H
+  Q->>M: Get snapshots
+  alt requested height missing
+    Q-->>H: error (height not found)
+  else snapshot exists
+    Q->>M: Get certificate + transaction proof
+    Q->>D: Resolve tx/block context
+    Q->>K: Read HostState output/datum
+    Q-->>H: Return Mithril header and proof data
+    H->>C: Submit update message with proof data
+  end
+```
+
 The on-chain state is split into client state and consensus state. 
 
 Client state tracks the chain identifier, latest height, frozen height, trusting period, current Mithril epoch, the Mithril protocol parameters needed for certificate verification, and the HostState NFT identity (policy id and token name) used to find the correct Cardano output when extracting the `ibc_state_root`. 
