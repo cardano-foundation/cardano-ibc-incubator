@@ -6,11 +6,11 @@ import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/comm
 import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
-  denom = denom.trim();
-  let result = denom;
-  if (!denom) result = LOVELACE;
-
-  return result;
+  const normalizedDenom = denom?.trim();
+  if (!normalizedDenom) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "token.denom" is required');
+  }
+  return normalizedDenom;
 }
 
 export function mapLovelaceDenom(
