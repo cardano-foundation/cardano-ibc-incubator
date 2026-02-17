@@ -1,3 +1,4 @@
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{self, verbose};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
@@ -254,7 +255,6 @@ impl TestResults {
 }
 
 const MAX_TEST_INDEX: u8 = 12;
-const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 
 #[derive(Debug, Clone)]
 struct TestSelection {

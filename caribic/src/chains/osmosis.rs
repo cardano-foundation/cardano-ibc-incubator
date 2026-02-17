@@ -16,6 +16,7 @@ use crate::chains::{
     ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 use crate::config;
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
 use crate::utils::{
@@ -27,7 +28,6 @@ pub struct OsmosisChainAdapter;
 
 pub static OSMOSIS_CHAIN_ADAPTER: OsmosisChainAdapter = OsmosisChainAdapter;
 
-const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 const OSMOSIS_TESTNET_STATUS_URL: &str = "https://rpc-test.osmosis.zone/status";
 const OSMOSIS_SOURCE_ZIP_URL: &str =
     "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";
@@ -40,7 +40,7 @@ const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [
     },
     ChainNetwork {
         name: "testnet",
-        description: "Public Osmosis testnet endpoint (external process)",
+        description: "Public Osmosis testnet endpoint",
         managed_by_caribic: false,
     },
 ];
