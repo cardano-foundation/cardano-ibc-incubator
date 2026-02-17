@@ -1363,7 +1363,8 @@ pub async fn run_integration_tests(
                 )?;
                 let voucher_denom_path = format!("transfer/{}/{}", cardano_channel_id, denom);
 
-                let entrypoint_balance_before = query_entrypoint_balance(&entrypoint_address, denom)?;
+                let entrypoint_balance_before =
+                    query_entrypoint_balance(&entrypoint_address, denom)?;
                 let cardano_voucher_assets_before = query_cardano_policy_assets(
                     project_root,
                     &cardano_receiver_address,
@@ -3491,7 +3492,10 @@ fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
     None
 }
 
-fn query_entrypoint_balance(address: &str, denom: &str) -> Result<u128, Box<dyn std::error::Error>> {
+fn query_entrypoint_balance(
+    address: &str,
+    denom: &str,
+) -> Result<u128, Box<dyn std::error::Error>> {
     let url = format!(
         "http://127.0.0.1:1317/cosmos/bank/v1beta1/balances/{}",
         address
@@ -3598,15 +3602,12 @@ fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> 
                 )
             })?;
 
-        let path = trace
-            .get("path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                format!(
-                    "Entrypoint chain denom-trace response missing path: {}",
-                    json
-                )
-            })?;
+        let path = trace.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+            format!(
+                "Entrypoint chain denom-trace response missing path: {}",
+                json
+            )
+        })?;
 
         let base_denom = trace
             .get("base_denom")
@@ -3622,9 +3623,7 @@ fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> 
         return Ok((path.to_string(), base_denom.to_string()));
     }
 
-    Err(last_err.unwrap_or_else(|| {
-        "Entrypoint chain denom-trace query failed".to_string()
-    }))
+    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
 }
 
 fn assert_entrypoint_denom_trace(
@@ -3656,9 +3655,7 @@ fn assert_entrypoint_denom_trace(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| {
-        "Entrypoint chain denom-trace query failed".to_string()
-    }))
+    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
 }
 
 fn query_cardano_lovelace_total(
@@ -4293,7 +4290,10 @@ fn dump_test_11_ics20_diagnostics(
 ) {
     logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
-    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
+    logger::log(&format!(
+        "entrypoint channel:     {}",
+        entrypoint_channel_id
+    ));
     logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log("");
     dump_packet_queries_for_transfer_channels(
@@ -4320,7 +4320,10 @@ fn dump_test_9_ics20_diagnostics(
     voucher_policy_id: &str,
 ) {
     logger::log("=== Test 9 diagnostics (ICS-20 Entrypoint chain -> Cardano) ===");
-    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
+    logger::log(&format!(
+        "entrypoint channel:     {}",
+        entrypoint_channel_id
+    ));
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
     logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log(&format!(
@@ -4407,7 +4410,10 @@ fn dump_test_12_ics20_diagnostics(
     cardano_receiver_address: &str,
 ) {
     logger::log("=== Test 12 diagnostics (ICS-20 Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
-    logger::log(&format!("entrypoint channel:     {}", entrypoint_channel_id));
+    logger::log(&format!(
+        "entrypoint channel:     {}",
+        entrypoint_channel_id
+    ));
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
     logger::log(&format!("entrypoint address:     {}", entrypoint_address));
     logger::log(&format!(
@@ -4525,7 +4531,10 @@ fn dump_entrypoint_balances_section(entrypoint_address: &str) -> Option<BTreeMap
     }
 }
 
-fn dump_denom_traces_for_entrypoint_ibc_denoms(balances: &BTreeMap<String, u128>, max_items: usize) {
+fn dump_denom_traces_for_entrypoint_ibc_denoms(
+    balances: &BTreeMap<String, u128>,
+    max_items: usize,
+) {
     let mut ibc_denoms: Vec<&str> = balances
         .keys()
         .filter_map(|denom| denom.starts_with("ibc/").then_some(denom.as_str()))
