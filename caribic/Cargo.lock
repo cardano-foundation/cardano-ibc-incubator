@@ -256,6 +256,7 @@ dependencies = [
 name = "caribic"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "chrono",
  "clap",
  "console",
