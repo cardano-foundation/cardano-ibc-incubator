@@ -94,20 +94,6 @@ pub fn stop_cosmos(cosmos_path: &Path, chain_name: &str) {
     }
 }
 
-pub fn stop_osmosis(osmosis_path: &Path) {
-    // Osmosis uses make instead of docker compose, harder to check if running
-    // Just attempt to stop and let make handle it gracefully
-    let osmosis_result = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
-    match osmosis_result {
-        Ok(_) => {
-            // make localnet-stop doesn't tell us if it was running, so be quiet
-        }
-        Err(_) => {
-            // Silently ignore errors - osmosis might not be set up
-        }
-    }
-}
-
 pub fn stop_relayer(relayer_path: &Path) {
     // Stop Hermes daemon by targeting the exact local relayer binary process that caribic starts:
     //   <project>/relayer/target/release/hermes --config ... start

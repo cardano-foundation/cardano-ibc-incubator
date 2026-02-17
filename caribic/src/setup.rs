@@ -9,7 +9,6 @@ use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
 use serde_json::Value;
-use std::io::{self, Write};
 use std::process::Output;
 use std::thread;
 use std::time::Duration;
@@ -79,48 +78,6 @@ pub async fn download_repository(
 pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2437.1.zip";
     download_repository(url, mithril_path, "mithril").await
-}
-
-pub async fn download_osmosis(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let url = "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";
-    download_repository(url, osmosis_path, "osmosis").await
-}
-
-pub async fn install_osmosisd(osmosis_path: &Path) -> Result<bool, Box<dyn std::error::Error>> {
-    let question = "Do you want to install osmosisd? (yes/no): ";
-
-    print!("{}", question);
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read input");
-
-    let input = input.trim().to_lowercase();
-
-    if input == "yes" || input == "y" {
-        println!("{} Installing osmosisd...", style("Step 1/1").bold().dim());
-
-        let output = Command::new("make")
-            .current_dir(osmosis_path)
-            .arg("install")
-            .output()
-            .map_err(|error| format!("Failed to run make install for osmosisd: {}", error))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to install osmosisd:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
-
-        println!("PASS: osmosisd installed successfully");
-        Ok(true)
-    } else {
-        Ok(false)
-    }
 }
 
 pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {

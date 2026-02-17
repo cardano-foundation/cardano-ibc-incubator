@@ -10,9 +10,9 @@ pub fn run_stop(
 ) -> Result<(), String> {
     let project_config = crate::config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-    let stop_osmosis_only = target == Some(StopTarget::Osmosis);
+    let stop_optional_chain_target = target == Some(StopTarget::Osmosis);
 
-    if !stop_osmosis_only && (network.is_some() || !chain_flags.is_empty()) {
+    if !stop_optional_chain_target && (network.is_some() || !chain_flags.is_empty()) {
         return Err(
             "ERROR: --network and --chain-flag are only supported with `caribic stop osmosis` or `caribic chain stop ...`"
                 .to_string(),
@@ -29,7 +29,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_registered_osmosis(project_root_path, None, Vec::new())?;
+            stop_optional_chain(project_root_path, None, Vec::new())?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -50,7 +50,7 @@ pub fn run_stop(
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
         Some(StopTarget::Osmosis) => {
-            stop_registered_osmosis(project_root_path, network, chain_flags)?;
+            stop_optional_chain(project_root_path, network, chain_flags)?;
             logger::log("\nOsmosis stopped successfully");
         }
         Some(StopTarget::Demo) => {
@@ -62,7 +62,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_registered_osmosis(project_root_path, None, Vec::new())?;
+            stop_optional_chain(project_root_path, None, Vec::new())?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -82,7 +82,7 @@ pub fn run_stop(
     Ok(())
 }
 
-fn stop_registered_osmosis(
+fn stop_optional_chain(
     project_root_path: &Path,
     network: Option<String>,
     chain_flags: Vec<String>,

@@ -546,14 +546,6 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
     Ok(())
 }
 
-pub fn get_osmosis_dir(project_root: &Path) -> PathBuf {
-    project_root
-        .join("chains")
-        .join("osmosis")
-        .join("osmosis")
-        .to_path_buf()
-}
-
 /// Parses a Tendermint client id from Hermes output text.
 pub fn parse_tendermint_client_id(output: &str) -> Option<String> {
     let regex = Regex::new(r#"client_id:\s*ClientId\(\s*"([^"]+)""#).ok()?;
