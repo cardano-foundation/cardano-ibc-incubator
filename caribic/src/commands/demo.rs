@@ -5,14 +5,13 @@ use serde_json::Value;
 
 use crate::{
     chains::osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
+    constants::ENTRYPOINT_CHAIN_ID,
     logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
     DemoType,
 };
-
-const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 
 /// Dispatches demo execution to token swap or message exchange flows.
 pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {

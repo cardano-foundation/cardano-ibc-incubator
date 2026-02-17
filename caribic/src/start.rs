@@ -1,3 +1,4 @@
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -25,7 +26,6 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
 
-const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
 
