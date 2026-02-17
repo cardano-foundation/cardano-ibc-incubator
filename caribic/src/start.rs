@@ -10,7 +10,7 @@ use crate::utils::{
     CardanoQuery, IndicatorMessage,
 };
 use crate::{
-    config,
+    chains, config,
     logger::{self, log},
 };
 use console::style;
@@ -1829,7 +1829,7 @@ pub fn hermes_create_channel(
 }
 
 #[derive(Copy, Clone)]
-enum HealthCheckType {
+enum CoreHealthCheckType {
     Gateway,
     CardanoNode,
     Postgres,
@@ -1838,69 +1838,64 @@ enum HealthCheckType {
     Mithril,
     HermesDaemon,
     Cosmos,
-    Osmosis,
-    Redis,
 }
 
 #[derive(Copy, Clone)]
-struct HealthService {
+struct CoreHealthService {
     name: &'static str,
     label: &'static str,
-    check_type: HealthCheckType,
+    check_type: CoreHealthCheckType,
 }
 
-const HEALTH_SERVICES: [HealthService; 10] = [
-    HealthService {
+const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
+    CoreHealthService {
         name: "gateway",
         label: "Gateway (NestJS gRPC Server)",
-        check_type: HealthCheckType::Gateway,
+        check_type: CoreHealthCheckType::Gateway,
     },
-    HealthService {
+    CoreHealthService {
         name: "cardano",
         label: "Cardano Node",
-        check_type: HealthCheckType::CardanoNode,
+        check_type: CoreHealthCheckType::CardanoNode,
     },
-    HealthService {
+    CoreHealthService {
         name: "postgres",
         label: "PostgreSQL (db-sync)",
-        check_type: HealthCheckType::Postgres,
+        check_type: CoreHealthCheckType::Postgres,
     },
-    HealthService {
+    CoreHealthService {
         name: "kupo",
         label: "Kupo (Chain Indexer)",
-        check_type: HealthCheckType::Kupo,
+        check_type: CoreHealthCheckType::Kupo,
     },
-    HealthService {
+    CoreHealthService {
         name: "ogmios",
         label: "Ogmios (JSON/RPC)",
-        check_type: HealthCheckType::Ogmios,
+        check_type: CoreHealthCheckType::Ogmios,
     },
-    HealthService {
+    CoreHealthService {
         name: "mithril",
         label: "Mithril (Aggregator + Signers)",
-        check_type: HealthCheckType::Mithril,
+        check_type: CoreHealthCheckType::Mithril,
     },
-    HealthService {
+    CoreHealthService {
         name: "hermes",
         label: "Hermes Relayer Daemon",
-        check_type: HealthCheckType::HermesDaemon,
+        check_type: CoreHealthCheckType::HermesDaemon,
     },
-    HealthService {
+    CoreHealthService {
         name: "cosmos",
         label: "Cosmos Entrypoint chain",
-        check_type: HealthCheckType::Cosmos,
-    },
-    HealthService {
-        name: "osmosis",
-        label: "Osmosis appchain",
-        check_type: HealthCheckType::Osmosis,
-    },
-    HealthService {
-        name: "redis",
-        label: "Osmosis Redis sidecar",
-        check_type: HealthCheckType::Redis,
+        check_type: CoreHealthCheckType::Cosmos,
     },
 ];
+
+struct HealthServiceStatus {
+    name: String,
+    label: String,
+    healthy: bool,
+    status: String,
+}
 
 struct HealthContext {
     mithril_dir: PathBuf,
@@ -1912,47 +1907,105 @@ fn build_health_context(project_root_path: &Path) -> HealthContext {
     }
 }
 
-fn find_health_service(service_name: &str) -> Option<HealthService> {
-    HEALTH_SERVICES
+fn find_core_health_service(service_name: &str) -> Option<CoreHealthService> {
+    CORE_HEALTH_SERVICES
         .iter()
         .copied()
         .find(|service| service.name == service_name)
 }
 
-fn run_health_check(check_type: HealthCheckType, context: &HealthContext) -> (bool, String) {
+fn run_core_health_check(
+    check_type: CoreHealthCheckType,
+    context: &HealthContext,
+) -> (bool, String) {
     match check_type {
-        HealthCheckType::Gateway => check_container_with_optional_port(
+        CoreHealthCheckType::Gateway => check_container_with_optional_port(
             "gateway-app",
             5001,
             "Container running, gRPC port 5001 accessible",
             "Container running (gRPC not ready yet)",
         ),
-        HealthCheckType::CardanoNode => check_container_only("cardano-node"),
-        HealthCheckType::Postgres => check_postgres_service(),
-        HealthCheckType::Kupo => check_container_with_optional_port(
+        CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
+        CoreHealthCheckType::Postgres => check_postgres_service(),
+        CoreHealthCheckType::Kupo => check_container_with_optional_port(
             "cardano-kupo",
             1442,
             "Running on port 1442",
             "Container running",
         ),
-        HealthCheckType::Ogmios => check_container_with_optional_port(
+        CoreHealthCheckType::Ogmios => check_container_with_optional_port(
             "ogmios",
             1337,
             "Running on port 1337",
             "Container running",
         ),
-        HealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
-        HealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        HealthCheckType::Cosmos => check_rpc_service(
+        CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
+        CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+        CoreHealthCheckType::Cosmos => check_rpc_service(
             config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),
-        HealthCheckType::Osmosis => check_rpc_service(
-            config::get_config().health.osmosis_status_url.as_str(),
-            26658,
-        ),
-        HealthCheckType::Redis => check_port_only_service(6379, "6379"),
     }
+}
+
+fn collect_health_statuses(
+    project_root_path: &Path,
+    context: &HealthContext,
+) -> Vec<HealthServiceStatus> {
+    let mut statuses = CORE_HEALTH_SERVICES
+        .iter()
+        .map(|service| {
+            let (healthy, status) = run_core_health_check(service.check_type, context);
+            HealthServiceStatus {
+                name: service.name.to_string(),
+                label: service.label.to_string(),
+                healthy,
+                status,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    statuses.extend(collect_optional_chain_health_statuses(project_root_path));
+    statuses
+}
+
+fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<HealthServiceStatus> {
+    let mut optional_statuses = Vec::new();
+
+    for adapter in chains::registered_chain_adapters() {
+        let network = adapter.default_network();
+        let flags = chains::ChainFlags::new();
+        match adapter.health(project_root_path, network, &flags) {
+            Ok(statuses) => {
+                for status in statuses {
+                    optional_statuses.push(HealthServiceStatus {
+                        name: status.id.to_string(),
+                        label: status.label.to_string(),
+                        healthy: status.healthy,
+                        status: status.status,
+                    });
+                }
+            }
+            Err(error) => {
+                optional_statuses.push(HealthServiceStatus {
+                    name: adapter.id().to_string(),
+                    label: format!("{} (optional chain)", adapter.display_name()),
+                    healthy: false,
+                    status: format!("Failed to run adapter health check: {}", error),
+                });
+            }
+        }
+    }
+
+    optional_statuses
+}
+
+fn available_health_service_names(project_root_path: &Path, context: &HealthContext) -> String {
+    collect_health_statuses(project_root_path, context)
+        .into_iter()
+        .map(|service| service.name)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn check_service_health(
@@ -1960,9 +2013,23 @@ pub fn check_service_health(
     service_name: &str,
 ) -> Result<(bool, String), Box<dyn std::error::Error>> {
     let context = build_health_context(project_root_path);
-    let service = find_health_service(service_name)
-        .ok_or_else(|| format!("Unknown service: {service_name}"))?;
-    Ok(run_health_check(service.check_type, &context))
+    if let Some(service) = find_core_health_service(service_name) {
+        return Ok(run_core_health_check(service.check_type, &context));
+    }
+
+    if let Some(optional_status) = collect_optional_chain_health_statuses(project_root_path)
+        .into_iter()
+        .find(|status| status.name == service_name)
+    {
+        return Ok((optional_status.healthy, optional_status.status));
+    }
+
+    Err(format!(
+        "Unknown service: {}. Supported services: {}",
+        service_name,
+        available_health_service_names(project_root_path, &context)
+    )
+    .into())
 }
 
 /// Comprehensive health check for all bridge services
@@ -1971,30 +2038,35 @@ pub fn comprehensive_health_check(
     service_filter: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let context = build_health_context(project_root_path);
+    let mut services = collect_health_statuses(project_root_path, &context);
+
+    if let Some(filter) = service_filter {
+        services.retain(|service| service.name == filter);
+        if services.is_empty() {
+            return Err(format!(
+                "Unknown service: {}. Supported services: {}",
+                filter,
+                available_health_service_names(project_root_path, &context)
+            )
+            .into());
+        }
+    }
+
     let mut result = String::new();
     result.push_str("\nBridge Health Check\n");
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    let mut services_checked = 0;
+    let services_checked = services.len();
     let mut services_healthy = 0;
 
-    for service in HEALTH_SERVICES {
-        if let Some(filter) = service_filter {
-            if filter != service.name {
-                continue;
-            }
-        }
-
-        services_checked += 1;
-        let (is_healthy, status_msg) = run_health_check(service.check_type, &context);
-
-        if is_healthy {
+    for service in services {
+        if service.healthy {
             services_healthy += 1;
         }
 
-        let status_symbol = if is_healthy { "[OK]" } else { "[FAIL]" };
+        let status_symbol = if service.healthy { "[OK]" } else { "[FAIL]" };
         result.push_str(&format!("{} {}\n", status_symbol, service.label));
-        result.push_str(&format!("    {}\n\n", status_msg));
+        result.push_str(&format!("    {}\n\n", service.status));
     }
 
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
@@ -2236,16 +2308,5 @@ fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
         (true, format!("Running on port {}", port_label))
     } else {
         (true, format!("Port {} accessible", port_label))
-    }
-}
-
-fn check_port_only_service(port: u16, port_label: &str) -> (bool, String) {
-    if is_port_accessible(port) {
-        (true, format!("Running on port {}", port_label))
-    } else {
-        (
-            false,
-            format!("Not running (port {} not accessible)", port_label),
-        )
     }
 }

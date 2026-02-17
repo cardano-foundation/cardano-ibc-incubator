@@ -10,11 +10,11 @@ pub fn run_stop(
 ) -> Result<(), String> {
     let project_config = crate::config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-    let stop_optional_chain_target = target == Some(StopTarget::Osmosis);
+    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
 
-    if !stop_optional_chain_target && (network.is_some() || !chain_flags.is_empty()) {
+    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
         return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic stop osmosis` or `caribic chain stop ...`"
+            "ERROR: --network and --chain-flag are only supported with `caribic stop <optional-chain-alias>` or `caribic chain stop ...`"
                 .to_string(),
         );
     }
@@ -29,7 +29,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, None, Vec::new())?;
+            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -50,8 +50,13 @@ pub fn run_stop(
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
         Some(StopTarget::Osmosis) => {
-            stop_optional_chain(project_root_path, network, chain_flags)?;
-            logger::log("\nOsmosis stopped successfully");
+            stop_optional_chain(
+                project_root_path,
+                optional_chain_alias.unwrap_or("osmosis"),
+                network,
+                chain_flags,
+            )?;
+            logger::log("\nOptional chain stopped successfully");
         }
         Some(StopTarget::Demo) => {
             stop::stop_cosmos(
@@ -62,7 +67,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, None, Vec::new())?;
+            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -84,14 +89,27 @@ pub fn run_stop(
 
 fn stop_optional_chain(
     project_root_path: &Path,
+    chain_id: &str,
     network: Option<String>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
-    let adapter = chains::get_chain_adapter("osmosis")
-        .ok_or_else(|| "ERROR: Osmosis chain adapter is not registered".to_string())?;
+    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
+        format!(
+            "ERROR: Optional chain adapter '{}' is not registered",
+            chain_id
+        )
+    })?;
     let resolved_network = adapter.resolve_network(network.as_deref())?;
     let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
     adapter.stop(project_root_path, resolved_network.as_str(), &parsed_flags)
+}
+
+/// Returns the optional-chain alias handled by `caribic stop <target>` aliases.
+fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
+    match target {
+        Some(StopTarget::Osmosis) => Some("osmosis"),
+        _ => None,
+    }
 }
 
 /// Stops the local Cardano network and Mithril services.

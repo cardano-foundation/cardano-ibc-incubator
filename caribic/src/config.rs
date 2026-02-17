@@ -17,7 +17,6 @@ pub struct Config {
     pub mithril: Mithril,
     #[serde(default)]
     pub health: Health,
-    pub local_osmosis: bool,
     pub cardano: Cardano,
     pub vessel_oracle: VesselOracle,
 }
@@ -45,23 +44,16 @@ fn default_mithril_aggregator_url() -> String {
 pub struct Health {
     #[serde(default = "default_cosmos_status_url")]
     pub cosmos_status_url: String,
-    #[serde(default = "default_osmosis_status_url")]
-    pub osmosis_status_url: String,
 }
 
 fn default_cosmos_status_url() -> String {
     "http://127.0.0.1:26657/status".to_string()
 }
 
-fn default_osmosis_status_url() -> String {
-    "http://127.0.0.1:26658/status".to_string()
-}
-
 impl Default for Health {
     fn default() -> Self {
         Health {
             cosmos_status_url: default_cosmos_status_url(),
-            osmosis_status_url: default_osmosis_status_url(),
         }
     }
 }
@@ -229,7 +221,6 @@ impl Config {
                 }
             },
             health: Health::default(),
-            local_osmosis: true,
             cardano: Cardano {
             services: Services {
                 db_sync: true,
