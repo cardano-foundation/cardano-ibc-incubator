@@ -34,11 +34,11 @@ pub async fn run_start(
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
-    let start_optional_chain_target = target == Some(StartTarget::Osmosis);
+    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
 
-    if !start_optional_chain_target && (network.is_some() || !chain_flags.is_empty()) {
+    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
         return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic start osmosis` or `caribic chain start ...`"
+            "ERROR: --network and --chain-flag are only supported with `caribic start <optional-chain-alias>` or `caribic chain start ...`"
                 .to_string(),
         );
     }
@@ -154,9 +154,13 @@ pub async fn run_start(
         return Ok(());
     }
 
-    if start_optional_chain_target {
-        let chain_adapter = chains::get_chain_adapter("osmosis")
-            .ok_or_else(|| "ERROR: Osmosis chain adapter is not registered".to_string())?;
+    if let Some(optional_chain_id) = optional_chain_alias {
+        let chain_adapter = chains::get_chain_adapter(optional_chain_id).ok_or_else(|| {
+            format!(
+                "ERROR: Optional chain adapter '{}' is not registered",
+                optional_chain_id
+            )
+        })?;
         let resolved_network = chain_adapter.resolve_network(network.as_deref())?;
         let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
         chain_adapter.validate_flags(resolved_network.as_str(), &parsed_flags)?;
@@ -168,10 +172,17 @@ pub async fn run_start(
         chain_adapter
             .start(project_root_path, &request)
             .await
-            .map_err(|error| format!("ERROR: Failed to start Osmosis: {}", error))?;
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to start {}: {}",
+                    chain_adapter.display_name(),
+                    error
+                )
+            })?;
         logger::log(&format!(
-            "PASS: Osmosis started successfully (network: {})",
-            resolved_network
+            "PASS: {} started successfully (network: {})",
+            chain_adapter.display_name(),
+            resolved_network,
         ));
 
         logger::log(&format!(
@@ -437,6 +448,14 @@ pub async fn run_start(
         format_elapsed_duration(start_elapsed_timer.elapsed())
     ));
     Ok(())
+}
+
+/// Returns the optional-chain alias handled by `caribic start <target>` aliases.
+fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static str> {
+    match target {
+        Some(StartTarget::Osmosis) => Some("osmosis"),
+        _ => None,
+    }
 }
 
 /// Logs a startup failure, stops the requested service group, and returns the same error.

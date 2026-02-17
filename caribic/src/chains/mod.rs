@@ -30,6 +30,7 @@ pub struct ChainStartRequest<'a> {
 }
 
 pub struct ChainHealthStatus {
+    pub id: &'static str,
     pub label: &'static str,
     pub healthy: bool,
     pub status: String,
@@ -205,7 +206,7 @@ pub fn parse_bool_flag(
     }
 }
 
-pub fn check_port_health(port: u16, label: &'static str) -> ChainHealthStatus {
+pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> ChainHealthStatus {
     let is_healthy = Command::new("nc")
         .args(["-z", "localhost", &port.to_string()])
         .output()
@@ -214,12 +215,14 @@ pub fn check_port_health(port: u16, label: &'static str) -> ChainHealthStatus {
 
     if is_healthy {
         ChainHealthStatus {
+            id,
             label,
             healthy: true,
             status: format!("Running on port {}", port),
         }
     } else {
         ChainHealthStatus {
+            id,
             label,
             healthy: false,
             status: format!("Not running (port {} not accessible)", port),
@@ -227,13 +230,18 @@ pub fn check_port_health(port: u16, label: &'static str) -> ChainHealthStatus {
     }
 }
 
-pub fn check_rpc_health(url: &str, default_port: u16, label: &'static str) -> ChainHealthStatus {
+pub fn check_rpc_health(
+    id: &'static str,
+    url: &str,
+    default_port: u16,
+    label: &'static str,
+) -> ChainHealthStatus {
     let parsed_port = reqwest::Url::parse(url)
         .ok()
         .and_then(|parsed_url| parsed_url.port_or_known_default())
         .unwrap_or(default_port);
 
-    let port_status = check_port_health(parsed_port, label);
+    let port_status = check_port_health(id, parsed_port, label);
     if !port_status.healthy {
         return port_status;
     }
@@ -248,12 +256,14 @@ pub fn check_rpc_health(url: &str, default_port: u16, label: &'static str) -> Ch
 
     if rpc_response_ok {
         ChainHealthStatus {
+            id,
             label,
             healthy: true,
             status: format!("Running on port {}", parsed_port),
         }
     } else {
         ChainHealthStatus {
+            id,
             label,
             healthy: true,
             status: format!(

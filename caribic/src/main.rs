@@ -10,6 +10,7 @@ mod check;
 mod commands;
 mod config;
 mod constants;
+mod demos;
 mod logger;
 mod setup;
 mod start;
