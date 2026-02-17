@@ -4,7 +4,7 @@ use std::process::Command;
 
 use async_trait::async_trait;
 
-mod osmosis;
+pub mod osmosis;
 
 pub use osmosis::OSMOSIS_CHAIN_ADAPTER;
 

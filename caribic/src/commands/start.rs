@@ -34,9 +34,9 @@ pub async fn run_start(
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
-    let start_osmosis_only = target == Some(StartTarget::Osmosis);
+    let start_optional_chain_target = target == Some(StartTarget::Osmosis);
 
-    if !start_osmosis_only && (network.is_some() || !chain_flags.is_empty()) {
+    if !start_optional_chain_target && (network.is_some() || !chain_flags.is_empty()) {
         return Err(
             "ERROR: --network and --chain-flag are only supported with `caribic start osmosis` or `caribic chain start ...`"
                 .to_string(),
@@ -154,18 +154,18 @@ pub async fn run_start(
         return Ok(());
     }
 
-    if start_osmosis_only {
-        let osmosis_adapter = chains::get_chain_adapter("osmosis")
+    if start_optional_chain_target {
+        let chain_adapter = chains::get_chain_adapter("osmosis")
             .ok_or_else(|| "ERROR: Osmosis chain adapter is not registered".to_string())?;
-        let resolved_network = osmosis_adapter.resolve_network(network.as_deref())?;
+        let resolved_network = chain_adapter.resolve_network(network.as_deref())?;
         let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
-        osmosis_adapter.validate_flags(resolved_network.as_str(), &parsed_flags)?;
+        chain_adapter.validate_flags(resolved_network.as_str(), &parsed_flags)?;
         let request = ChainStartRequest {
             network: resolved_network.as_str(),
             flags: &parsed_flags,
         };
 
-        osmosis_adapter
+        chain_adapter
             .start(project_root_path, &request)
             .await
             .map_err(|error| format!("ERROR: Failed to start Osmosis: {}", error))?;

@@ -4,16 +4,16 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::{
+    chains::osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     logger,
-    start::{self, configure_hermes, run_hermes_command},
-    stop::{stop_osmosis, stop_relayer},
-    utils::{
-        execute_script, get_osmosis_dir, parse_tendermint_client_id, parse_tendermint_connection_id,
-    },
+    start::{self, run_hermes_command},
+    stop::stop_relayer,
+    utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
     DemoType,
 };
 
 const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
+
 /// Dispatches demo execution to token swap or message exchange flows.
 pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {
     match use_case {
@@ -24,7 +24,7 @@ pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<()
 
 /// Runs the full token swap demo and validates required services before execution.
 async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
-    let osmosis_dir = get_osmosis_dir(project_root_path);
+    let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
@@ -65,7 +65,7 @@ async fn run_token_swap(project_root_path: &Path) -> Result<(), String> {
         );
     }
 
-    match configure_hermes(osmosis_dir.as_path()) {
+    match configure_hermes_for_demo(osmosis_dir.as_path()) {
         Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
         Err(error) => {
             return fail_with_cleanup(
@@ -421,14 +421,8 @@ fn is_open_transfer_state(state: &str) -> bool {
 
 /// Queries all connection ids known by Hermes for one chain.
 fn query_connection_ids_for_chain(chain_id: &str) -> Result<Vec<String>, String> {
-    let output = run_hermes_command(&[
-        "--json",
-        "query",
-        "connections",
-        "--chain",
-        chain_id,
-    ])
-    .map_err(|error| error.to_string())?;
+    let output = run_hermes_command(&["--json", "query", "connections", "--chain", chain_id])
+        .map_err(|error| error.to_string())?;
     if !output.status.success() {
         return Err(format!(
             "Hermes query connections failed for chain={chain_id}: {}",
@@ -564,8 +558,7 @@ fn query_connection_end_status(
 /// Using only fully-open symmetric connections avoids non-deterministic behavior where
 /// partially-created handshakes remain in state and break later channel operations.
 fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<bool, String> {
-    let Some(cardano_end) =
-        query_connection_end_status("cardano-devnet", cardano_connection_id)?
+    let Some(cardano_end) = query_connection_end_status("cardano-devnet", cardano_connection_id)?
     else {
         return Ok(false);
     };
@@ -584,7 +577,7 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
         return Ok(false);
     };
     let Some(entrypoint_end) =
-        query_connection_end_status("sidechain", entrypoint_connection_id)?
+        query_connection_end_status(ENTRYPOINT_CHAIN_ID, entrypoint_connection_id)?
     else {
         return Ok(false);
     };
@@ -643,7 +636,8 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
 ///
 /// This prevents selecting stale channel ids that exist but are not open.
 fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Result<bool, String> {
-    let Some(cardano_end) = query_transfer_channel_end_status("cardano-devnet", cardano_channel_id)?
+    let Some(cardano_end) =
+        query_transfer_channel_end_status("cardano-devnet", cardano_channel_id)?
     else {
         return Ok(false);
     };
@@ -671,7 +665,7 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
     };
 
     let Some(entrypoint_end) =
-        query_transfer_channel_end_status("sidechain", entrypoint_channel_id.as_str())?
+        query_transfer_channel_end_status(ENTRYPOINT_CHAIN_ID, entrypoint_channel_id.as_str())?
     else {
         return Ok(false);
     };
@@ -712,7 +706,7 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
         "--chain",
         "cardano-devnet",
         "--counterparty-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
 
@@ -822,7 +816,9 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
             "Found existing open Cardano↔Entrypoint connection {}; creating transfer channel on it",
             existing_open_connection_id
         ));
-        create_cardano_entrypoint_transfer_channel_on_connection(existing_open_connection_id.as_str())?;
+        create_cardano_entrypoint_transfer_channel_on_connection(
+            existing_open_connection_id.as_str(),
+        )?;
 
         let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
             return Err(
@@ -843,7 +839,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "--host-chain",
         "cardano-devnet",
         "--reference-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
@@ -870,7 +866,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        "sidechain",
+        ENTRYPOINT_CHAIN_ID,
         "--reference-chain",
         "cardano-devnet",
     ])
@@ -943,6 +939,6 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
 fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    stop_osmosis(osmosis_dir);
+    stop_local(osmosis_dir);
     Err(message.to_string())
 }
