@@ -254,6 +254,7 @@ impl TestResults {
 }
 
 const MAX_TEST_INDEX: u8 = 12;
+const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 
 #[derive(Debug, Clone)]
 struct TestSelection {

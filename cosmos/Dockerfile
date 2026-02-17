@@ -17,13 +17,13 @@ RUN bash -c "curl https://get.ignite.com/cli@v28.11.2! | bash"
 RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
 RUN bash -c "source $HOME/.bashrc"
 
-RUN bash -c "mkdir -p /root/sidechain/workspace/sidechain"
-COPY "./sidechain" "/root/sidechain/workspace/sidechain"
-WORKDIR "/root/sidechain/workspace/sidechain"
+RUN bash -c "mkdir -p /root/entrypoint/workspace/entrypoint"
+COPY "./entrypoint" "/root/entrypoint/workspace/entrypoint"
+WORKDIR "/root/entrypoint/workspace/entrypoint"
 
 COPY "./entrypoint.sh" "/entrypoint.sh"
 RUN chmod +x /entrypoint.sh
-# RUN bash -c "cd /root/sidechain/workspace2/sidechain && DO_NOT_TRACK=1 ignite chain serve"
+# RUN bash -c "cd /root/entrypoint/workspace2/entrypoint && DO_NOT_TRACK=1 ignite chain serve"
 
 EXPOSE 26657
 EXPOSE 26656

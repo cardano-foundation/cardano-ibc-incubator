@@ -13,6 +13,7 @@ use crate::{
     DemoType,
 };
 
+const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 /// Dispatches demo execution to token swap or message exchange flows.
 pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {
     match use_case {
@@ -553,7 +554,7 @@ fn query_connection_end_status(
     }))
 }
 
-/// Verifies that a Cardano connection is fully open and symmetric with the sidechain.
+/// Verifies that a Cardano connection is fully open and symmetric with the Entrypoint chain.
 ///
 /// This check is intentionally strict:
 /// - Both ends must be Open
@@ -576,34 +577,35 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
         return Ok(false);
     }
 
-    let Some(sidechain_connection_id) = cardano_end.remote_connection_id.as_deref() else {
+    let Some(entrypoint_connection_id) = cardano_end.remote_connection_id.as_deref() else {
         logger::verbose(&format!(
             "Skipping cardano-devnet connection {cardano_connection_id}: missing counterparty connection id"
         ));
         return Ok(false);
     };
-    let Some(sidechain_end) = query_connection_end_status("sidechain", sidechain_connection_id)?
+    let Some(entrypoint_end) =
+        query_connection_end_status("sidechain", entrypoint_connection_id)?
     else {
         return Ok(false);
     };
-    if !is_open_transfer_state(&sidechain_end.state) {
+    if !is_open_transfer_state(&entrypoint_end.state) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: sidechain counterparty {} is {} (expected Open)",
-            sidechain_connection_id, sidechain_end.state
+            "Skipping cardano-devnet connection {cardano_connection_id}: entrypoint counterparty {} is {} (expected Open)",
+            entrypoint_connection_id, entrypoint_end.state
         ));
         return Ok(false);
     }
-    if sidechain_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
+    if entrypoint_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: sidechain counterparty {} does not point back to it",
-            sidechain_connection_id
+            "Skipping cardano-devnet connection {cardano_connection_id}: entrypoint counterparty {} does not point back to it",
+            entrypoint_connection_id
         ));
         return Ok(false);
     }
     if cardano_end.client_id.is_none()
         || cardano_end.remote_client_id.is_none()
-        || sidechain_end.client_id.is_none()
-        || sidechain_end.remote_client_id.is_none()
+        || entrypoint_end.client_id.is_none()
+        || entrypoint_end.remote_client_id.is_none()
     {
         logger::verbose(&format!(
             "Skipping cardano-devnet connection {cardano_connection_id}: missing client identifiers on one or both ends"
@@ -635,7 +637,7 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
 /// Validation rules:
 /// - Cardano side must be `Open`
 /// - Counterparty channel id must exist
-/// - Sidechain counterparty must be `Open`
+/// - Entrypoint counterparty must be `Open`
 /// - Counterparty channel must point back to the same Cardano channel id
 /// - Both ends must use transfer port routing
 ///
@@ -661,38 +663,39 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     }
 
-    let Some(sidechain_channel_id) = cardano_end.remote_channel_id else {
+    let Some(entrypoint_channel_id) = cardano_end.remote_channel_id else {
         logger::verbose(&format!(
             "Skipping cardano-devnet channel {cardano_channel_id}: missing counterparty channel id",
         ));
         return Ok(false);
     };
 
-    let Some(sidechain_end) = query_transfer_channel_end_status("sidechain", sidechain_channel_id.as_str())?
+    let Some(entrypoint_end) =
+        query_transfer_channel_end_status("sidechain", entrypoint_channel_id.as_str())?
     else {
         return Ok(false);
     };
 
-    if !is_open_transfer_state(&sidechain_end.state) {
+    if !is_open_transfer_state(&entrypoint_end.state) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} is {} (expected Open)",
-            sidechain_channel_id, sidechain_end.state
+            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} is {} (expected Open)",
+            entrypoint_channel_id, entrypoint_end.state
         ));
         return Ok(false);
     }
 
-    if sidechain_end.remote_port_id.as_deref() != Some("transfer") {
+    if entrypoint_end.remote_port_id.as_deref() != Some("transfer") {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} port is not transfer",
-            sidechain_channel_id
+            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not transfer",
+            entrypoint_channel_id
         ));
         return Ok(false);
     }
 
-    if sidechain_end.remote_channel_id.as_deref() != Some(cardano_channel_id) {
+    if entrypoint_end.remote_channel_id.as_deref() != Some(cardano_channel_id) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: sidechain counterparty {} does not point back to it",
-            sidechain_channel_id
+            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} does not point back to it",
+            entrypoint_channel_id
         ));
         return Ok(false);
     }
@@ -736,11 +739,11 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 
     if let Some(channels) = chain_channels {
         logger::verbose(&format!(
-            "Hermes query returned {} chain channels on cardano-devnet↔sidechain",
+            "Hermes query returned {} chain channels on cardano-devnet↔entrypoint",
             channels.len()
         ));
     } else {
-        logger::verbose("Hermes query returned no channel list for cardano-devnet↔sidechain");
+        logger::verbose("Hermes query returned no channel list for cardano-devnet↔entrypoint");
     }
 
     if let Some(channels) = chain_channels {
@@ -832,7 +835,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         return Ok(());
     }
 
-    logger::verbose("Creating Cardano-devnet client with sidechain reference");
+    logger::verbose("Creating Cardano-devnet client with entrypoint reference");
 
     let create_cardano_client_output = run_hermes_command(&[
         "create",
@@ -845,7 +848,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for cardano-devnet->sidechain: {}",
+            "Failed to create client for cardano-devnet->entrypoint: {}",
             String::from_utf8_lossy(&create_cardano_client_output.stderr)
         ));
     }
@@ -862,7 +865,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "Parsed cardano-devnet client id: {cardano_client_id}"
     ));
 
-    logger::verbose("Creating sidechain client with cardano-devnet reference");
+    logger::verbose("Creating entrypoint client with cardano-devnet reference");
     let create_entrypoint_client_output = run_hermes_command(&[
         "create",
         "client",
@@ -874,7 +877,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
     .map_err(|error| error.to_string())?;
     if !create_entrypoint_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for sidechain->cardano-devnet: {}",
+            "Failed to create client for entrypoint->cardano-devnet: {}",
             String::from_utf8_lossy(&create_entrypoint_client_output.stderr)
         ));
     }
@@ -888,7 +891,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
             )
         })?;
     logger::verbose(&format!(
-        "Parsed sidechain client id: {entrypoint_client_id}"
+        "Parsed entrypoint client id: {entrypoint_client_id}"
     ));
 
     logger::verbose("Creating Cardano<->Entrypoint connection");
