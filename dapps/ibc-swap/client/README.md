@@ -21,6 +21,8 @@ Create `.env` files with the following variables:
 | NEXT_PUBLIC_SWAP_ROUTER_ADDRESS         | Cross-chain swap router address on local Osmosis                                                                                        | You will get this after run `setup_crosschain_swaps.sh`                  |
 | NEXT_PUBLIC_FORWARD_TIMEOUT             | Timeout for packet forwarding                                                                                                           | Default: "60m"                                                           |
 
+Legacy compatibility: `NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT` and `NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT` are still accepted as fallbacks.
+
 ## Running
 After set up the `.env`, run:
 ```bash
