@@ -1,23 +1,27 @@
 # Project's name, as {organisation}/{project}
 name = "cardanofoundation/cardano-ibc"
- 
+
 # Project's version, we recommend semantic versioning for libraries
 version = "0.2.0"
- 
+
 # One or more license(s); we recommend Apache-2.0 or MPL-2.0 for open source
 # projects.
 licences = ["Apache-2.0"]
- 
+
+# Compiler and ledger target.
+compiler = "v1.1.21"
+plutus = "v3"
+
 # An informative albeit short description of the project.
 description = "The project involves implementing the Inter-Blockchain Communication (IBC) protocol on the Cardano main chain using Aiken."
- 
+
 # Optional section, gives additional structured information on a project to
 # show in generated documentation.
 [repository]
 platform = "gitlab"   # Platform type, `github`, `gitlab` or `bitbucket`
 user = "aiken-lang"   # Username or organisation on that platform
 project = "cardano-ibc"    # Repository or project on that platform
- 
+
 # A list of dependencies
 #
 # Leave as:
@@ -31,3 +35,10 @@ project = "cardano-ibc"    # Repository or project on that platform
 name = "aiken-lang/stdlib"   # Project's name
 version = "2.1.0"            # Version, as a branch or git commit hash
 source = "github"            # Platform type, `github`, `gitlab` or `bitbucket`
+
+[[dependencies]]
+name = "aiken-lang/fuzz"     # Property-based testing helpers
+version = "2.2.0"
+source = "github"
+
+[config]
