@@ -5,12 +5,12 @@ use std::time::Instant;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
+    chains::{self, ChainStartRequest},
     config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
-        prepare_osmosis, start_cosmos_entrypoint_chain, start_cosmos_entrypoint_chain_services,
-        start_gateway, start_hermes_daemon, start_mithril, start_osmosis, start_relayer,
-        wait_for_cosmos_entrypoint_chain_ready,
+        start_cosmos_entrypoint_chain, start_cosmos_entrypoint_chain_services, start_gateway,
+        start_hermes_daemon, start_mithril, start_relayer, wait_for_cosmos_entrypoint_chain_ready,
     },
     utils::query_balance,
     StartTarget, StopTarget,
@@ -21,6 +21,8 @@ pub async fn run_start(
     target: Option<StartTarget>,
     clean: bool,
     with_mithril: bool,
+    network: Option<String>,
+    chain_flags: Vec<String>,
 ) -> Result<(), String> {
     let start_elapsed_timer = Instant::now();
 
@@ -32,6 +34,14 @@ pub async fn run_start(
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
+    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
+
+    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
+        return Err(
+            "ERROR: --network and --chain-flag are only supported with `caribic start <optional-chain-alias>` or `caribic chain start ...`"
+                .to_string(),
+        );
+    }
 
     let mut aiken_build_handle = None;
     let mut cosmos_entrypoint_chain_start_handle = None;
@@ -144,22 +154,36 @@ pub async fn run_start(
         return Ok(());
     }
 
-    if target == Some(StartTarget::Osmosis) {
-        let osmosis_dir = crate::utils::get_osmosis_dir(project_root_path);
-        match prepare_osmosis(osmosis_dir.as_path()).await {
-            Ok(_) => logger::log("PASS: Osmosis appchain prepared"),
-            Err(error) => {
-                return Err(format!(
-                    "ERROR: Failed to prepare Osmosis appchain: {}",
-                    error
-                ))
-            }
-        }
+    if let Some(optional_chain_id) = optional_chain_alias {
+        let chain_adapter = chains::get_chain_adapter(optional_chain_id).ok_or_else(|| {
+            format!(
+                "ERROR: Optional chain adapter '{}' is not registered",
+                optional_chain_id
+            )
+        })?;
+        let resolved_network = chain_adapter.resolve_network(network.as_deref())?;
+        let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
+        chain_adapter.validate_flags(resolved_network.as_str(), &parsed_flags)?;
+        let request = ChainStartRequest {
+            network: resolved_network.as_str(),
+            flags: &parsed_flags,
+        };
 
-        match start_osmosis(osmosis_dir.as_path()).await {
-            Ok(_) => logger::log("PASS: Osmosis appchain started successfully"),
-            Err(error) => return Err(format!("ERROR: Failed to start Osmosis: {}", error)),
-        }
+        chain_adapter
+            .start(project_root_path, &request)
+            .await
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to start {}: {}",
+                    chain_adapter.display_name(),
+                    error
+                )
+            })?;
+        logger::log(&format!(
+            "PASS: {} started successfully (network: {})",
+            chain_adapter.display_name(),
+            resolved_network,
+        ));
 
         logger::log(&format!(
             "\ncaribic start completed in {}",
@@ -426,6 +450,14 @@ pub async fn run_start(
     Ok(())
 }
 
+/// Returns the optional-chain alias handled by `caribic start <target>` aliases.
+fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static str> {
+    match target {
+        Some(StartTarget::Osmosis) => Some("osmosis"),
+        _ => None,
+    }
+}
+
 /// Logs a startup failure, stops the requested service group, and returns the same error.
 fn fail_and_stop_started_services(
     _project_root_path: &Path,
@@ -434,7 +466,7 @@ fn fail_and_stop_started_services(
 ) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    crate::commands::stop::run_stop(Some(stop_target)).unwrap_or_default();
+    crate::commands::stop::run_stop(Some(stop_target), None, Vec::new()).unwrap_or_default();
     Err(message.to_string())
 }
 

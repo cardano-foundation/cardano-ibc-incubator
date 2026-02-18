@@ -141,7 +141,7 @@ pub fn is_quite() -> bool {
 
 pub fn log_or_show_progress(message: &str, optional_progress_bar: &Option<ProgressBar>) {
     if let Some(progress_bar) = optional_progress_bar {
-        progress_bar.set_message(message.to_owned());
+        progress_bar.set_message(colorize_status_lines(message.trim_end_matches('\n')));
     } else {
         log(message);
     }
@@ -149,7 +149,7 @@ pub fn log_or_show_progress(message: &str, optional_progress_bar: &Option<Progre
 
 pub fn log_or_print_progress(message: &str, optional_progress_bar: &Option<ProgressBar>) {
     if let Some(progress_bar) = optional_progress_bar {
-        progress_bar.println(message.to_owned());
+        progress_bar.println(colorize_status_lines(message.trim_end_matches('\n')));
     } else {
         log(message);
     }

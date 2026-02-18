@@ -1,22 +1,20 @@
-use crate::check::check_osmosisd;
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    diagnose_container_failure, download_file, execute_script, execute_script_interactive,
-    execute_script_with_progress, extract_tendermint_client_id, extract_tendermint_connection_id,
+    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
     get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists,
     CardanoQuery, IndicatorMessage,
 };
 use crate::{
-    config,
-    logger::{self, error, log},
+    chains, config,
+    logger::{self, log},
 };
 use console::style;
 use dirs::home_dir;
-use fs_extra::copy_items;
 use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
@@ -28,9 +26,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
 
-const ENTRYPOINT_CHAIN_ID: &str = "entrypoint";
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
+
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
 /// - Linux: Uses actual user UID/GID
@@ -116,8 +114,7 @@ pub fn start_relayer(
         &optional_progress_bar,
     );
 
-    // Cosmos Entrypoint chain (Hermes chain id is currently "sidechain"): Use the pre-funded "relayer"
-    // account from cosmos/sidechain/config.yml.
+    // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
     let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
@@ -128,7 +125,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            "sidechain",
+            ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -711,9 +708,9 @@ pub fn start_cosmos_entrypoint_chain_services(
                 "--rm",
                 "--entrypoint",
                 "bash",
-                "sidechain-node-prod",
+                ENTRYPOINT_CONTAINER_NAME,
                 "-lc",
-                "rm -rf /root/.sidechain /root/.ignite",
+                &format!("rm -rf {} /root/.ignite", ENTRYPOINT_HOME_DIR),
             ]),
             None,
         )?;
@@ -813,7 +810,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let container_names = ["sidechain-node-prod"];
+            let container_names = [ENTRYPOINT_CONTAINER_NAME];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -831,7 +828,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let container_names = ["sidechain-node-prod"];
+    let container_names = [ENTRYPOINT_CONTAINER_NAME];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -888,629 +885,6 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
         script_start_args,
         Some(docker_env_refs),
     )?;
-    Ok(())
-}
-
-/// Starts local Osmosis containers and waits until RPC health checks succeed.
-pub async fn start_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix("Starting Osmosis appchain ...".to_owned());
-    } else {
-        log("Starting Osmosis appchain ...");
-    }
-
-    let status = execute_script(
-        osmosis_dir,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "tests/localosmosis/docker-compose.yml",
-            "up",
-            "-d",
-        ]),
-        Some(Vec::from([(
-            "OSMOSISD_CONTAINER_NAME",
-            "localosmosis-osmosisd-1",
-        )])),
-    );
-
-    if status.is_ok() {
-        log_or_show_progress(
-            "Waiting for the Osmosis appchain to become healthy ...",
-            &optional_progress_bar,
-        );
-
-        let osmosis_status_url = config::get_config().health.osmosis_status_url;
-        let is_healthy = wait_for_health_check(
-            osmosis_status_url.as_str(),
-            30,
-            3000,
-            Some(|response_body: &String| {
-                let json: Value = serde_json::from_str(&response_body).unwrap_or_default();
-
-                if let Some(height) = json["result"]["sync_info"]["latest_block_height"]
-                    .as_str()
-                    .and_then(|h| h.parse::<u64>().ok())
-                {
-                    verbose(&format!("Current block height: {}", height));
-                    return height > 0;
-                }
-
-                verbose(&format!(
-                    "Failed to get the current block height from the response {}",
-                    response_body,
-                ));
-
-                false
-            }),
-        )
-        .await;
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-        if is_healthy.is_ok() {
-            Ok(())
-        } else {
-            Err(format!("Run into timeout while checking {}", osmosis_status_url).into())
-        }
-    } else {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-
-        Err(status.unwrap_err().into())
-    }
-}
-
-/// Prepares Osmosis local files and initializes the local network data directory.
-pub async fn prepare_osmosis(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    check_osmosisd(osmosis_dir).await;
-
-    match copy_osmosis_config_files(osmosis_dir) {
-        Ok(_) => {
-            verbose("PASS: Osmosis configuration files copied successfully");
-            init_local_network(osmosis_dir)?;
-            Ok(())
-        }
-        Err(e) => {
-            error(&format!(
-                "ERROR: Failed to copy Osmosis configuration files: {}",
-                e
-            ));
-            Err(e.into())
-        }
-    }
-}
-
-/// Configures Hermes keys and channels needed for Entrypoint and local Osmosis routing.
-pub fn configure_hermes(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix(
-            "Configuring Hermes for Cardano↔Entrypoint and Entrypoint↔Osmosis channels ..."
-                .to_owned(),
-        );
-    } else {
-        log("Configuring Hermes for Cardano↔Entrypoint and Entrypoint↔Osmosis channels ...");
-    }
-
-    log_or_show_progress(
-        &format!(
-            "{} Prepare hermes configuration files and keys",
-            style("Step 1/4").bold().dim()
-        ),
-        &optional_progress_bar,
-    );
-
-    let script_dir = osmosis_dir.join("scripts");
-    ensure_chain_in_hermes_config(
-        script_dir.as_path(),
-        "localosmosis",
-        "Local Osmosis chain used by token-swap demo",
-    )?;
-    let hermes_binary = resolve_local_hermes_binary(osmosis_dir)?;
-    let hermes_binary_str = hermes_binary.to_str().ok_or_else(|| {
-        format!(
-            "Hermes binary path is not valid UTF-8: {}",
-            hermes_binary.display()
-        )
-    })?;
-    verbose(&format!(
-        "Using Hermes binary at {}",
-        hermes_binary.display()
-    ));
-
-    execute_script(
-        script_dir.as_path(),
-        hermes_binary_str,
-        Vec::from([
-            "keys",
-            "add",
-            "--overwrite",
-            "--chain",
-            "sidechain",
-            "--mnemonic-file",
-            osmosis_dir.join("scripts/hermes/cosmos").to_str().unwrap(),
-        ]),
-        None,
-    )?;
-
-    execute_script(
-        script_dir.as_path(),
-        hermes_binary_str,
-        Vec::from([
-            "keys",
-            "add",
-            "--overwrite",
-            "--chain",
-            "localosmosis",
-            "--mnemonic-file",
-            osmosis_dir.join("scripts/hermes/osmosis").to_str().unwrap(),
-        ]),
-        None,
-    )?;
-
-    log_or_show_progress(
-        &format!(
-            "{} Setup clients on both chains",
-            style("Step 2/4").bold().dim()
-        ),
-        &optional_progress_bar,
-    );
-
-    let mut local_osmosis_client_id = None;
-    for _ in 0..10 {
-        // Client creation can fail transiently while localosmosis RPC is still warming up.
-        // Retry here so `caribic demo token-swap` is resilient on fresh boots.
-        let hermes_create_client_output = Command::new(&hermes_binary)
-            .current_dir(&script_dir)
-            .args(&[
-                "create",
-                "client",
-                "--host-chain",
-                "localosmosis",
-                "--reference-chain",
-                "sidechain",
-            ])
-            .output()
-            .expect("Failed to create osmosis client");
-
-        verbose(&format!(
-            "status: {}, stdout: {}, stderr: {}",
-            hermes_create_client_output.status,
-            String::from_utf8_lossy(&hermes_create_client_output.stdout),
-            String::from_utf8_lossy(&hermes_create_client_output.stderr)
-        ));
-
-        local_osmosis_client_id = extract_tendermint_client_id(hermes_create_client_output);
-
-        if local_osmosis_client_id.is_none() {
-            verbose("Failed to create client. Retrying in 5 seconds...");
-            std::thread::sleep(std::time::Duration::from_secs(5));
-        } else {
-            break;
-        }
-    }
-
-    if let Some(local_osmosis_client_id) = local_osmosis_client_id {
-        verbose(&format!(
-            "localosmosis_client_id: {}",
-            local_osmosis_client_id
-        ));
-
-        // Create Cosmos Entrypoint chain client (Hermes chain id is currently "sidechain")
-        let create_entrypoint_chain_client_output = Command::new(&hermes_binary)
-            .current_dir(&script_dir)
-            .args(&[
-                "create",
-                "client",
-                "--host-chain",
-                "sidechain",
-                "--reference-chain",
-                "localosmosis",
-                "--trusting-period",
-                "86000s",
-            ])
-            .output()
-            .expect("Failed to query clients");
-
-        let entrypoint_chain_client_id =
-            extract_tendermint_client_id(create_entrypoint_chain_client_output);
-
-        if let Some(entrypoint_chain_client_id) = entrypoint_chain_client_id {
-            verbose(&format!(
-                "entrypoint_chain_client_id: {}",
-                entrypoint_chain_client_id
-            ));
-
-            log_or_show_progress(
-                &format!(
-                    "{} Create a connection between both clients",
-                    style("Step 3/4").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
-            // Create connection
-            let create_connection_output = Command::new(&hermes_binary)
-                .current_dir(&script_dir)
-                .args(&[
-                    "create",
-                    "connection",
-                    "--a-chain",
-                    "sidechain",
-                    "--a-client",
-                    entrypoint_chain_client_id.as_str(),
-                    "--b-client",
-                    &local_osmosis_client_id,
-                ])
-                .output()
-                .expect("Failed to create connection");
-
-            verbose(&format!(
-                "status: {}, stdout: {}, stderr: {}",
-                &create_connection_output.status,
-                String::from_utf8_lossy(&create_connection_output.stdout),
-                String::from_utf8_lossy(&create_connection_output.stderr)
-            ));
-
-            let connection_id = extract_tendermint_connection_id(create_connection_output);
-
-            if let Some(connection_id) = connection_id {
-                verbose(&format!("connection_id: {}", connection_id));
-
-                // Build transfer channel on the connection we just negotiated.
-                // We use explicit `--a-connection` so channel creation is pinned to a known
-                // open connection instead of relying on implicit connection discovery.
-                log_or_show_progress(
-                    &format!("{} Create a channel", style("Step 4/4").bold().dim()),
-                    &optional_progress_bar,
-                );
-                let create_channel_output = Command::new(&hermes_binary)
-                    .current_dir(&script_dir)
-                    .args(&[
-                        "create",
-                        "channel",
-                        "--a-chain",
-                        "sidechain",
-                        "--a-connection",
-                        &connection_id,
-                        "--a-port",
-                        "transfer",
-                        "--b-port",
-                        "transfer",
-                    ])
-                    .output()
-                    .expect("Failed to query channels");
-
-                if create_channel_output.status.success() {
-                    verbose(&format!(
-                        "{}",
-                        String::from_utf8_lossy(&create_channel_output.stdout)
-                    ));
-                } else {
-                    return Err("Failed to get channel_id".into());
-                }
-            } else {
-                return Err("Failed to get connection_id".into());
-            }
-        } else {
-            return Err("Failed to get entrypoint chain client_id".into());
-        }
-    } else {
-        return Err("Failed to get localosmosis client_id".into());
-    }
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
-
-    Ok(())
-}
-
-/// Finds the local Cardano-enabled Hermes binary by searching parent directories.
-fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut current = Some(osmosis_dir);
-    while let Some(directory) = current {
-        let candidate = directory.join("relayer/target/release/hermes");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-        current = directory.parent();
-    }
-
-    Err("Hermes binary not found at relayer/target/release/hermes. Run 'caribic start relayer' first so the demo uses the local Cardano-enabled Hermes binary.".into())
-}
-
-/// Ensures one `[[chains]]` block from the source Hermes config exists and stays up to date in `~/.hermes/config.toml`.
-fn ensure_chain_in_hermes_config(
-    script_dir: &Path,
-    chain_id: &str,
-    inserted_block_comment: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let home_path = home_dir().ok_or("Could not determine home directory")?;
-    let hermes_dir = home_path.join(".hermes");
-    if !hermes_dir.exists() {
-        fs::create_dir_all(&hermes_dir)?;
-    }
-
-    let destination_config_path = hermes_dir.join("config.toml");
-    if !destination_config_path.exists() {
-        return Err(format!(
-            "Hermes config not found at {}. Run relayer setup first.",
-            destination_config_path.display()
-        )
-        .into());
-    }
-
-    let mut destination_config = fs::read_to_string(&destination_config_path).map_err(|e| {
-        format!(
-            "Failed to read Hermes config at {}: {}",
-            destination_config_path.display(),
-            e
-        )
-    })?;
-
-    let source_config_path = {
-        let canonical_source = script_dir.join("../../configuration/hermes/config.toml");
-        if canonical_source.exists() {
-            canonical_source
-        } else {
-            script_dir.join("hermes/config.toml")
-        }
-    };
-    let source_config = fs::read_to_string(&source_config_path).map_err(|e| {
-        format!(
-            "Failed to read Osmosis Hermes config at {}: {}",
-            source_config_path.display(),
-            e
-        )
-    })?;
-
-    let chain_block = extract_chain_block(&source_config, chain_id).ok_or_else(|| {
-        format!(
-            "Failed to find chain '{}' block in {}",
-            chain_id,
-            source_config_path.display()
-        )
-    })?;
-
-    if let Some(existing_block) = extract_chain_block(&destination_config, chain_id) {
-        if existing_block.trim() == chain_block.trim() {
-            return Ok(());
-        }
-
-        destination_config = replace_chain_block(&destination_config, chain_id, &chain_block)
-            .ok_or_else(|| {
-                format!(
-                    "Failed to update chain '{}' block in {}",
-                    chain_id,
-                    destination_config_path.display()
-                )
-            })?;
-
-        fs::write(&destination_config_path, destination_config).map_err(|e| {
-            format!(
-                "Failed to update Hermes config at {}: {}",
-                destination_config_path.display(),
-                e
-            )
-        })?;
-
-        verbose(&format!(
-            "Updated '{}' chain block in Hermes config at {}",
-            chain_id,
-            destination_config_path.display(),
-        ));
-
-        return Ok(());
-    }
-
-    if !destination_config.ends_with('\n') {
-        destination_config.push('\n');
-    }
-    destination_config.push('\n');
-    destination_config.push_str("# ");
-    destination_config.push_str(inserted_block_comment);
-    destination_config.push('\n');
-    destination_config.push_str(&chain_block);
-    destination_config.push('\n');
-
-    fs::write(&destination_config_path, destination_config).map_err(|e| {
-        format!(
-            "Failed to update Hermes config at {}: {}",
-            destination_config_path.display(),
-            e
-        )
-    })?;
-
-    verbose(&format!(
-        "Added '{}' chain to Hermes config at {}",
-        chain_id,
-        destination_config_path.display(),
-    ));
-
-    Ok(())
-}
-
-/// Replaces an existing chain block in a TOML config string.
-fn replace_chain_block(
-    config: &str,
-    target_chain_id: &str,
-    replacement_block: &str,
-) -> Option<String> {
-    let lines: Vec<&str> = config.lines().collect();
-    let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
-
-    let mut updated_lines: Vec<&str> = Vec::with_capacity(
-        lines.len() - (block_end - block_start) + replacement_block.lines().count(),
-    );
-    updated_lines.extend_from_slice(&lines[..block_start]);
-    updated_lines.extend(replacement_block.lines());
-    updated_lines.extend_from_slice(&lines[block_end..]);
-
-    let mut updated = updated_lines.join("\n");
-    if !updated.ends_with('\n') {
-        updated.push('\n');
-    }
-
-    Some(updated)
-}
-
-/// Finds the start/end line indices for one `[[chains]]` block.
-fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usize, usize)> {
-    let target_id_single_quote = format!("id = '{}'", target_chain_id);
-    let target_id_double_quote = format!("id = \"{}\"", target_chain_id);
-    let mut index = 0;
-
-    while index < lines.len() {
-        if lines[index].trim() != "[[chains]]" {
-            index += 1;
-            continue;
-        }
-
-        let block_start = index;
-        let mut block_end = index + 1;
-        while block_end < lines.len() && lines[block_end].trim() != "[[chains]]" {
-            block_end += 1;
-        }
-
-        let block_lines = &lines[block_start..block_end];
-        if block_lines.iter().any(|line| {
-            let line = line.trim();
-            line == target_id_single_quote || line == target_id_double_quote
-        }) {
-            return Some((block_start, block_end));
-        }
-
-        index = block_end;
-    }
-
-    None
-}
-
-/// Extracts one `[[chains]]` TOML block by matching the requested chain id.
-fn extract_chain_block(config: &str, target_chain_id: &str) -> Option<String> {
-    let lines: Vec<&str> = config.lines().collect();
-    let (block_start, block_end) = find_chain_block_bounds(&lines, target_chain_id)?;
-    Some(lines[block_start..block_end].join("\n"))
-}
-
-/// Runs local Osmosis network initialization in interactive mode.
-fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !logger::is_quite() {
-        log("Initialize local Osmosis network ...");
-    }
-
-    execute_script_interactive(osmosis_dir, "make", Vec::from(["localnet-init"]))?;
-    Ok(())
-}
-
-/// Copies Osmosis and Hermes config assets used by caribic local flows.
-fn copy_osmosis_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {
-    verbose(&format!(
-        "Copying cosmwasm files from {} to {}",
-        osmosis_dir.join("../configuration/cosmwasm/wasm").display(),
-        osmosis_dir.join("cosmwasm").display()
-    ));
-    copy_items(
-        &vec![osmosis_dir.join("../configuration/cosmwasm/wasm")],
-        osmosis_dir.join("cosmwasm"),
-        &fs_extra::dir::CopyOptions::new().overwrite(true),
-    )?;
-
-    verbose(&format!(
-        "Copying hermes files from {} to {}",
-        osmosis_dir.join("../configuration/hermes").display(),
-        osmosis_dir.join("scripts").display()
-    ));
-    copy_items(
-        &vec![osmosis_dir.join("../configuration/hermes")],
-        osmosis_dir.join("scripts"),
-        &fs_extra::dir::CopyOptions::new().overwrite(true),
-    )?;
-
-    let options = fs_extra::file::CopyOptions::new().overwrite(true);
-
-    verbose(&format!(
-        "Copying setup_crosschain_swaps.sh from {} to {}",
-        osmosis_dir
-            .join("../scripts/setup_crosschain_swaps.sh")
-            .display(),
-        osmosis_dir
-            .join("scripts/setup_crosschain_swaps.sh")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/setup_crosschain_swaps.sh"),
-        osmosis_dir.join("scripts/setup_crosschain_swaps.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying localnet.mk from {} to {}",
-        osmosis_dir.join("../scripts/localnet.mk").display(),
-        osmosis_dir.join("scripts/makefiles/localnet.mk").display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/localnet.mk"),
-        osmosis_dir.join("scripts/makefiles/localnet.mk"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying setup_osmosis_local.sh from {} to {}",
-        osmosis_dir
-            .join("../scripts/setup_osmosis_local.sh")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/scripts/setup.sh")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/setup_osmosis_local.sh"),
-        osmosis_dir.join("tests/localosmosis/scripts/setup.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying docker-compose.yml from {} to {}",
-        osmosis_dir
-            .join("../configuration/docker-compose.yml")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/docker-compose.yml")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../configuration/docker-compose.yml"),
-        osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying Dockerfile from {} to {}",
-        osmosis_dir.join("../configuration/Dockerfile").display(),
-        osmosis_dir.join("Dockerfile").display()
-    ));
-    copy(
-        osmosis_dir.join("../configuration/Dockerfile"),
-        osmosis_dir.join("Dockerfile"),
-        &options,
-    )?;
-
     Ok(())
 }
 
@@ -2293,12 +1667,16 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             }
             result.push('\n');
         }
-        // List for Cosmos Entrypoint chain (Hermes chain id is currently "sidechain")
-        let entrypoint_output = run_hermes_command(&["keys", "list", "--chain", "sidechain"])?;
+        // List for Cosmos Entrypoint chain.
+        let entrypoint_output =
+            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
-            result.push_str("entrypoint-chain (Hermes chain id: sidechain):\n");
+            result.push_str(&format!(
+                "entrypoint-chain (Hermes chain id: {}):\n",
+                ENTRYPOINT_CHAIN_ID
+            ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
@@ -2451,7 +1829,7 @@ pub fn hermes_create_channel(
 }
 
 #[derive(Copy, Clone)]
-enum HealthCheckType {
+enum CoreHealthCheckType {
     Gateway,
     CardanoNode,
     Postgres,
@@ -2460,69 +1838,64 @@ enum HealthCheckType {
     Mithril,
     HermesDaemon,
     Cosmos,
-    Osmosis,
-    Redis,
 }
 
 #[derive(Copy, Clone)]
-struct HealthService {
+struct CoreHealthService {
     name: &'static str,
     label: &'static str,
-    check_type: HealthCheckType,
+    check_type: CoreHealthCheckType,
 }
 
-const HEALTH_SERVICES: [HealthService; 10] = [
-    HealthService {
+const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
+    CoreHealthService {
         name: "gateway",
         label: "Gateway (NestJS gRPC Server)",
-        check_type: HealthCheckType::Gateway,
+        check_type: CoreHealthCheckType::Gateway,
     },
-    HealthService {
+    CoreHealthService {
         name: "cardano",
         label: "Cardano Node",
-        check_type: HealthCheckType::CardanoNode,
+        check_type: CoreHealthCheckType::CardanoNode,
     },
-    HealthService {
+    CoreHealthService {
         name: "postgres",
         label: "PostgreSQL (db-sync)",
-        check_type: HealthCheckType::Postgres,
+        check_type: CoreHealthCheckType::Postgres,
     },
-    HealthService {
+    CoreHealthService {
         name: "kupo",
         label: "Kupo (Chain Indexer)",
-        check_type: HealthCheckType::Kupo,
+        check_type: CoreHealthCheckType::Kupo,
     },
-    HealthService {
+    CoreHealthService {
         name: "ogmios",
         label: "Ogmios (JSON/RPC)",
-        check_type: HealthCheckType::Ogmios,
+        check_type: CoreHealthCheckType::Ogmios,
     },
-    HealthService {
+    CoreHealthService {
         name: "mithril",
         label: "Mithril (Aggregator + Signers)",
-        check_type: HealthCheckType::Mithril,
+        check_type: CoreHealthCheckType::Mithril,
     },
-    HealthService {
+    CoreHealthService {
         name: "hermes",
         label: "Hermes Relayer Daemon",
-        check_type: HealthCheckType::HermesDaemon,
+        check_type: CoreHealthCheckType::HermesDaemon,
     },
-    HealthService {
+    CoreHealthService {
         name: "cosmos",
         label: "Cosmos Entrypoint chain",
-        check_type: HealthCheckType::Cosmos,
-    },
-    HealthService {
-        name: "osmosis",
-        label: "Osmosis appchain",
-        check_type: HealthCheckType::Osmosis,
-    },
-    HealthService {
-        name: "redis",
-        label: "Osmosis Redis sidecar",
-        check_type: HealthCheckType::Redis,
+        check_type: CoreHealthCheckType::Cosmos,
     },
 ];
+
+struct HealthServiceStatus {
+    name: String,
+    label: String,
+    healthy: bool,
+    status: String,
+}
 
 struct HealthContext {
     mithril_dir: PathBuf,
@@ -2534,47 +1907,105 @@ fn build_health_context(project_root_path: &Path) -> HealthContext {
     }
 }
 
-fn find_health_service(service_name: &str) -> Option<HealthService> {
-    HEALTH_SERVICES
+fn find_core_health_service(service_name: &str) -> Option<CoreHealthService> {
+    CORE_HEALTH_SERVICES
         .iter()
         .copied()
         .find(|service| service.name == service_name)
 }
 
-fn run_health_check(check_type: HealthCheckType, context: &HealthContext) -> (bool, String) {
+fn run_core_health_check(
+    check_type: CoreHealthCheckType,
+    context: &HealthContext,
+) -> (bool, String) {
     match check_type {
-        HealthCheckType::Gateway => check_container_with_optional_port(
+        CoreHealthCheckType::Gateway => check_container_with_optional_port(
             "gateway-app",
             5001,
             "Container running, gRPC port 5001 accessible",
             "Container running (gRPC not ready yet)",
         ),
-        HealthCheckType::CardanoNode => check_container_only("cardano-node"),
-        HealthCheckType::Postgres => check_postgres_service(),
-        HealthCheckType::Kupo => check_container_with_optional_port(
+        CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
+        CoreHealthCheckType::Postgres => check_postgres_service(),
+        CoreHealthCheckType::Kupo => check_container_with_optional_port(
             "cardano-kupo",
             1442,
             "Running on port 1442",
             "Container running",
         ),
-        HealthCheckType::Ogmios => check_container_with_optional_port(
+        CoreHealthCheckType::Ogmios => check_container_with_optional_port(
             "ogmios",
             1337,
             "Running on port 1337",
             "Container running",
         ),
-        HealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
-        HealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        HealthCheckType::Cosmos => check_rpc_service(
+        CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
+        CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+        CoreHealthCheckType::Cosmos => check_rpc_service(
             config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),
-        HealthCheckType::Osmosis => check_rpc_service(
-            config::get_config().health.osmosis_status_url.as_str(),
-            26658,
-        ),
-        HealthCheckType::Redis => check_port_only_service(6379, "6379"),
     }
+}
+
+fn collect_health_statuses(
+    project_root_path: &Path,
+    context: &HealthContext,
+) -> Vec<HealthServiceStatus> {
+    let mut statuses = CORE_HEALTH_SERVICES
+        .iter()
+        .map(|service| {
+            let (healthy, status) = run_core_health_check(service.check_type, context);
+            HealthServiceStatus {
+                name: service.name.to_string(),
+                label: service.label.to_string(),
+                healthy,
+                status,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    statuses.extend(collect_optional_chain_health_statuses(project_root_path));
+    statuses
+}
+
+fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<HealthServiceStatus> {
+    let mut optional_statuses = Vec::new();
+
+    for adapter in chains::registered_chain_adapters() {
+        let network = adapter.default_network();
+        let flags = chains::ChainFlags::new();
+        match adapter.health(project_root_path, network, &flags) {
+            Ok(statuses) => {
+                for status in statuses {
+                    optional_statuses.push(HealthServiceStatus {
+                        name: status.id.to_string(),
+                        label: status.label.to_string(),
+                        healthy: status.healthy,
+                        status: status.status,
+                    });
+                }
+            }
+            Err(error) => {
+                optional_statuses.push(HealthServiceStatus {
+                    name: adapter.id().to_string(),
+                    label: format!("{} (optional chain)", adapter.display_name()),
+                    healthy: false,
+                    status: format!("Failed to run adapter health check: {}", error),
+                });
+            }
+        }
+    }
+
+    optional_statuses
+}
+
+fn available_health_service_names(project_root_path: &Path, context: &HealthContext) -> String {
+    collect_health_statuses(project_root_path, context)
+        .into_iter()
+        .map(|service| service.name)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn check_service_health(
@@ -2582,9 +2013,23 @@ pub fn check_service_health(
     service_name: &str,
 ) -> Result<(bool, String), Box<dyn std::error::Error>> {
     let context = build_health_context(project_root_path);
-    let service = find_health_service(service_name)
-        .ok_or_else(|| format!("Unknown service: {service_name}"))?;
-    Ok(run_health_check(service.check_type, &context))
+    if let Some(service) = find_core_health_service(service_name) {
+        return Ok(run_core_health_check(service.check_type, &context));
+    }
+
+    if let Some(optional_status) = collect_optional_chain_health_statuses(project_root_path)
+        .into_iter()
+        .find(|status| status.name == service_name)
+    {
+        return Ok((optional_status.healthy, optional_status.status));
+    }
+
+    Err(format!(
+        "Unknown service: {}. Supported services: {}",
+        service_name,
+        available_health_service_names(project_root_path, &context)
+    )
+    .into())
 }
 
 /// Comprehensive health check for all bridge services
@@ -2593,30 +2038,35 @@ pub fn comprehensive_health_check(
     service_filter: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let context = build_health_context(project_root_path);
+    let mut services = collect_health_statuses(project_root_path, &context);
+
+    if let Some(filter) = service_filter {
+        services.retain(|service| service.name == filter);
+        if services.is_empty() {
+            return Err(format!(
+                "Unknown service: {}. Supported services: {}",
+                filter,
+                available_health_service_names(project_root_path, &context)
+            )
+            .into());
+        }
+    }
+
     let mut result = String::new();
     result.push_str("\nBridge Health Check\n");
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n");
 
-    let mut services_checked = 0;
+    let services_checked = services.len();
     let mut services_healthy = 0;
 
-    for service in HEALTH_SERVICES {
-        if let Some(filter) = service_filter {
-            if filter != service.name {
-                continue;
-            }
-        }
-
-        services_checked += 1;
-        let (is_healthy, status_msg) = run_health_check(service.check_type, &context);
-
-        if is_healthy {
+    for service in services {
+        if service.healthy {
             services_healthy += 1;
         }
 
-        let status_symbol = if is_healthy { "[OK]" } else { "[FAIL]" };
+        let status_symbol = if service.healthy { "[OK]" } else { "[FAIL]" };
         result.push_str(&format!("{} {}\n", status_symbol, service.label));
-        result.push_str(&format!("    {}\n\n", status_msg));
+        result.push_str(&format!("    {}\n\n", service.status));
     }
 
     result.push_str("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
@@ -2858,16 +2308,5 @@ fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
         (true, format!("Running on port {}", port_label))
     } else {
         (true, format!("Port {} accessible", port_label))
-    }
-}
-
-fn check_port_only_service(port: u16, port_label: &str) -> (bool, String) {
-    if is_port_accessible(port) {
-        (true, format!("Running on port {}", port_label))
-    } else {
-        (
-            false,
-            format!("Not running (port {} not accessible)", port_label),
-        )
     }
 }
