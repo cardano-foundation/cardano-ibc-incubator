@@ -1,45 +1,721 @@
+use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
-use crate::{logger, start};
+use dirs::home_dir;
+use serde_json::Value;
 
-/// Starts the message exchange demo chain and relayer services.
+use crate::{
+    logger,
+    start::{self, run_hermes_command},
+    stop::{stop_cosmos, stop_relayer},
+    utils::execute_script,
+};
+
+const CARDANO_CHAIN_ID: &str = "cardano-devnet";
+const VESSEL_CHAIN_ID: &str = "vesseloracle";
+const CARDANO_MESSAGE_PORT_ID: &str = "port-100";
+const VESSEL_MESSAGE_PORT_ID: &str = "vesseloracle";
+const VESSEL_RELAYER_KEY_NAME: &str = "vesseloracle-relayer";
+const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
+const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
+const DEFAULT_VESSEL_IMO: &str = "9525338";
+const CONSOLIDATED_REPORT_MAX_RETRIES: usize = 40;
+const CONSOLIDATED_REPORT_RETRY_DELAY_SECS: u64 = 3;
+const CHANNEL_DISCOVERY_MAX_RETRIES: usize = 20;
+const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
+const RELAY_MAX_RETRIES: usize = 20;
+const RELAY_RETRY_DELAY_SECS: u64 = 3;
+
+#[derive(Debug, Clone)]
+struct MessageChannelPair {
+    cardano_channel_id: String,
+    vessel_channel_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct ChannelEndStatus {
+    state: String,
+    remote_port_id: Option<String>,
+    remote_channel_id: Option<String>,
+}
+
+/// Runs the full message-exchange demo and executes datasource report/consolidate/transmit.
 pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), String> {
+    ensure_message_exchange_prerequisites(project_root_path)?;
+
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "cosmos") {
+        logger::log(
+            "Stopping Cosmos Entrypoint chain to free port 26657 for message-exchange demo chain",
+        );
+        stop_cosmos(
+            project_root_path.join("cosmos").as_path(),
+            "Cosmos Entrypoint chain",
+        );
+    }
+
     let project_config = crate::config::get_config();
     let chain_root_path = project_root_path.join("chains/summit-demo/");
-
     let cosmos_chain_repo_url = format!(
         "{}/archive/refs/heads/{}.zip",
         project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch
     );
 
-    match start::start_cosmos_entrypoint_chain_from_repository(
-        &cosmos_chain_repo_url,
+    start::start_cosmos_entrypoint_chain_from_repository(
+        cosmos_chain_repo_url.as_str(),
         chain_root_path.as_path(),
     )
     .await
-    {
-        Ok(_) => logger::log("PASS: Cosmos Entrypoint chain up and running"),
-        Err(error) => {
-            return Err(format!(
-                "ERROR: Failed to start Cosmos Entrypoint chain: {}",
-                error
-            ))
-        }
-    }
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to start message-exchange demo chain: {}",
+            error
+        )
+    })?;
+    logger::log("PASS: Message-exchange demo chain is up and running");
 
-    match start::start_relayer(
+    start::start_relayer(
         project_root_path.join("relayer").as_path(),
         chain_root_path.join("relayer/.env.relayer").as_path(),
         chain_root_path.join("relayer/config").as_path(),
         project_root_path
             .join("cardano/offchain/deployments/handler.json")
             .as_path(),
-    ) {
-        Ok(_) => logger::log("PASS: Relayer started successfully"),
-        Err(error) => return Err(format!("ERROR: Failed to start relayer: {}", error)),
+    )
+    .map_err(|error| format!("ERROR: Failed to prepare Hermes relayer: {}", error))?;
+    logger::log("PASS: Hermes relayer configuration prepared");
+
+    stop_relayer(project_root_path.join("relayer").as_path());
+    configure_hermes_for_message_exchange()?;
+    let channel_pair = ensure_message_exchange_channel()?;
+
+    start::start_hermes_daemon()
+        .map_err(|error| format!("ERROR: Failed to start Hermes daemon: {}", error))?;
+    logger::log("PASS: Hermes daemon started");
+
+    let datasource_dir = chain_root_path.join("datasource");
+    logger::log("Preparing vessel datasource module");
+    run_datasource_command(datasource_dir.as_path(), &["mod", "tidy"])?;
+    logger::log("Submitting simulated vessel reports");
+    run_datasource_command(
+        datasource_dir.as_path(),
+        &["run", ".", "report", "-simulate"],
+    )?;
+    logger::log("Consolidating submitted vessel reports");
+    run_datasource_command(datasource_dir.as_path(), &["run", ".", "consolidate"])?;
+
+    let consolidated_timestamp = query_latest_consolidated_timestamp(DEFAULT_VESSEL_IMO).await?;
+    let channel_arg = channel_pair.vessel_channel_id.clone();
+    let timestamp_arg = consolidated_timestamp.to_string();
+    logger::log("Transmitting consolidated report over IBC");
+    run_datasource_command(
+        datasource_dir.as_path(),
+        &[
+            "run",
+            ".",
+            "transmit",
+            "-channelid",
+            channel_arg.as_str(),
+            "-imo",
+            DEFAULT_VESSEL_IMO,
+            "-ts",
+            timestamp_arg.as_str(),
+        ],
+    )?;
+
+    relay_vessel_message_packet(&channel_pair)?;
+
+    logger::log("\nPASS: Message exchange demo flow completed successfully");
+    Ok(())
+}
+
+fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
+    let required_services = [
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril",
+    ];
+    let mut failures = Vec::new();
+
+    for service in required_services {
+        match start::check_service_health(project_root_path, service) {
+            Ok((true, _)) => {}
+            Ok((false, status)) => failures.push(format!("{service}: {status}")),
+            Err(error) => failures.push(format!("{service}: {error}")),
+        }
     }
 
-    logger::log("\nPASS: Message exchange demo services started successfully");
+    if failures.is_empty() {
+        return Ok(());
+    }
 
+    let mut error = String::from(
+        "ERROR: Message-exchange demo prerequisites are not met. Start the bridge first.\n",
+    );
+    for failure in failures {
+        error.push_str(format!("  - {failure}\n").as_str());
+    }
+    error.push_str("\nRequired command:\n  - caribic start --clean --with-mithril");
+    Err(error)
+}
+
+fn run_datasource_command(datasource_dir: &Path, args: &[&str]) -> Result<(), String> {
+    execute_script(datasource_dir, "go", args.to_vec(), None)
+        .map(|_| ())
+        .map_err(|error| format!("ERROR: Failed running datasource command: {}", error))
+}
+
+async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|error| format!("Failed to build HTTP client: {}", error))?;
+    let query_url = "http://127.0.0.1:1317/vesseloracle/vesseloracle/consolidated_data_report";
+
+    for _ in 0..CONSOLIDATED_REPORT_MAX_RETRIES {
+        let response = client.get(query_url).send().await;
+        let Ok(response) = response else {
+            tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+            continue;
+        };
+        if !response.status().is_success() {
+            tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+            continue;
+        }
+
+        let body = response
+            .text()
+            .await
+            .map_err(|error| format!("Failed to read consolidated report response: {}", error))?;
+        let json: Value = serde_json::from_str(body.as_str()).map_err(|error| {
+            format!(
+                "Failed to parse consolidated report response as JSON: {}",
+                error
+            )
+        })?;
+
+        let reports = json
+            .get("consolidatedDataReport")
+            .or_else(|| json.get("consolidated_data_report"))
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+
+        let mut latest_ts = None;
+        for report in reports {
+            let report_imo = report
+                .get("imo")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            if report_imo != imo {
+                continue;
+            }
+
+            let report_ts = report
+                .get("ts")
+                .and_then(parse_u64_value)
+                .unwrap_or_default();
+            if latest_ts.is_none() || report_ts > latest_ts.unwrap_or_default() {
+                latest_ts = Some(report_ts);
+            }
+        }
+
+        if let Some(latest_ts) = latest_ts {
+            logger::verbose(&format!(
+                "Using latest consolidated report timestamp {} for IMO {}",
+                latest_ts, imo
+            ));
+            return Ok(latest_ts);
+        }
+
+        tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+    }
+
+    Err(format!(
+        "Failed to find a consolidated report for IMO {} after retries",
+        imo
+    ))
+}
+
+fn parse_u64_value(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<u64>().ok()))
+}
+
+fn configure_hermes_for_message_exchange() -> Result<(), String> {
+    let home = home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
+    let config_path = home.join(".hermes").join("config.toml");
+    if !config_path.exists() {
+        return Err(format!(
+            "Hermes config was not found at {}. Run `caribic start relayer` first.",
+            config_path.display()
+        ));
+    }
+
+    let existing_config = fs::read_to_string(config_path.as_path())
+        .map_err(|error| format!("Failed to read Hermes config: {}", error))?;
+    let updated_config = upsert_chain_block(
+        existing_config.as_str(),
+        VESSEL_CHAIN_ID,
+        vessel_chain_block().as_str(),
+    )?;
+
+    fs::write(config_path.as_path(), updated_config)
+        .map_err(|error| format!("Failed to write Hermes config: {}", error))?;
+    logger::log("PASS: Hermes config updated with vesseloracle chain");
+
+    let mnemonic_file = std::env::temp_dir().join("vesseloracle-relayer-mnemonic.txt");
+    fs::write(mnemonic_file.as_path(), VESSEL_RELAYER_MNEMONIC).map_err(|error| {
+        format!(
+            "Failed to write temporary vesseloracle mnemonic file: {}",
+            error
+        )
+    })?;
+
+    let mnemonic_file_arg = mnemonic_file.to_string_lossy().to_string();
+    let add_key_output = run_hermes_command(&[
+        "keys",
+        "add",
+        "--overwrite",
+        "--chain",
+        VESSEL_CHAIN_ID,
+        "--mnemonic-file",
+        mnemonic_file_arg.as_str(),
+    ])
+    .map_err(|error| format!("Failed to run Hermes key setup command: {}", error))?;
+    let _ = fs::remove_file(mnemonic_file.as_path());
+
+    if !add_key_output.status.success() {
+        return Err(format!(
+            "Failed to add vesseloracle key in Hermes:\n{}",
+            String::from_utf8_lossy(&add_key_output.stderr)
+        ));
+    }
+
+    logger::log("PASS: Hermes key added for vesseloracle");
     Ok(())
+}
+
+fn vessel_chain_block() -> String {
+    format!(
+        r#"[[chains]]
+id = '{id}'
+type = 'CosmosSdk'
+rpc_addr = '{rpc_addr}'
+grpc_addr = '{grpc_addr}'
+rpc_timeout = '10s'
+account_prefix = 'vessel'
+key_name = '{key_name}'
+store_prefix = 'ibc'
+default_gas = 200000
+max_gas = 5000000
+gas_price = {{ price = 0.025, denom = 'stake' }}
+gas_multiplier = 1.1
+max_msg_num = 30
+max_tx_size = 2097152
+clock_drift = '5s'
+max_block_time = '30s'
+trusting_period = '14days'
+trust_threshold = {{ numerator = '2', denominator = '3' }}
+event_source = {{ mode = 'push', url = 'ws://127.0.0.1:26657/websocket', batch_delay = '500ms' }}
+
+[chains.packet_filter]
+policy = 'allow'
+list = [
+  ['vesseloracle', '*'],
+  ['transfer', '*'],
+]
+
+address_type = {{ derivation = 'cosmos' }}
+"#,
+        id = VESSEL_CHAIN_ID,
+        rpc_addr = VESSEL_RPC_ADDR,
+        grpc_addr = VESSEL_GRPC_ADDR,
+        key_name = VESSEL_RELAYER_KEY_NAME
+    )
+}
+
+fn upsert_chain_block(
+    config: &str,
+    chain_id: &str,
+    replacement_block: &str,
+) -> Result<String, String> {
+    let lines: Vec<&str> = config.lines().collect();
+    if let Some((block_start, block_end)) = find_chain_block_bounds(&lines, chain_id) {
+        let mut updated_lines: Vec<&str> = Vec::with_capacity(
+            lines.len() - (block_end - block_start) + replacement_block.lines().count(),
+        );
+        updated_lines.extend_from_slice(&lines[..block_start]);
+        updated_lines.extend(replacement_block.lines());
+        updated_lines.extend_from_slice(&lines[block_end..]);
+        let mut updated = updated_lines.join("\n");
+        if !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        return Ok(updated);
+    }
+
+    let mut updated = config.to_string();
+    if !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    updated.push('\n');
+    updated.push_str("# Message exchange demo chain configuration\n");
+    updated.push_str(replacement_block);
+    if !updated.ends_with('\n') {
+        updated.push('\n');
+    }
+    Ok(updated)
+}
+
+fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usize, usize)> {
+    let single_quote_id = format!("id = '{}'", target_chain_id);
+    let double_quote_id = format!("id = \"{}\"", target_chain_id);
+    let mut cursor = 0;
+
+    while cursor < lines.len() {
+        if lines[cursor].trim() != "[[chains]]" {
+            cursor += 1;
+            continue;
+        }
+
+        let block_start = cursor;
+        let mut block_end = cursor + 1;
+        while block_end < lines.len() && lines[block_end].trim() != "[[chains]]" {
+            block_end += 1;
+        }
+
+        if lines[block_start..block_end].iter().any(|line| {
+            let trimmed = line.trim();
+            trimmed == single_quote_id || trimmed == double_quote_id
+        }) {
+            return Some((block_start, block_end));
+        }
+
+        cursor = block_end;
+    }
+
+    None
+}
+
+fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
+    if let Some(pair) = wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES)? {
+        logger::log(&format!(
+            "PASS: Message-exchange channel already open (cardano={}, vesseloracle={})",
+            pair.cardano_channel_id, pair.vessel_channel_id
+        ));
+        return Ok(pair);
+    }
+
+    logger::log("No open message-exchange channel found. Creating one now.");
+    let create_output = run_hermes_command(&[
+        "create",
+        "channel",
+        "--a-chain",
+        CARDANO_CHAIN_ID,
+        "--b-chain",
+        VESSEL_CHAIN_ID,
+        "--a-port",
+        CARDANO_MESSAGE_PORT_ID,
+        "--b-port",
+        VESSEL_MESSAGE_PORT_ID,
+        "--new-client-connection",
+    ])
+    .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
+
+    if !create_output.status.success() {
+        return Err(format!(
+            "Failed to create Cardano↔vesseloracle message channel:\n{}",
+            String::from_utf8_lossy(&create_output.stderr)
+        ));
+    }
+
+    let pair =
+        wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES)?.ok_or_else(|| {
+            "Created message-exchange channel, but no open channel pair could be discovered"
+                .to_string()
+        })?;
+    logger::log(&format!(
+        "PASS: Created message-exchange channel (cardano={}, vesseloracle={})",
+        pair.cardano_channel_id, pair.vessel_channel_id
+    ));
+    Ok(pair)
+}
+
+fn wait_for_open_message_channel_pair(
+    max_retries: usize,
+) -> Result<Option<MessageChannelPair>, String> {
+    for _ in 0..max_retries {
+        if let Some(pair) = query_open_message_channel_pair()? {
+            return Ok(Some(pair));
+        }
+        std::thread::sleep(Duration::from_secs(CHANNEL_DISCOVERY_RETRY_DELAY_SECS));
+    }
+
+    Ok(None)
+}
+
+fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "channels",
+        "--chain",
+        CARDANO_CHAIN_ID,
+        "--counterparty-chain",
+        VESSEL_CHAIN_ID,
+    ])
+    .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes query channels failed for cardano↔vesseloracle:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+
+    let channel_entries = parsed_lines
+        .iter()
+        .filter_map(|entry| match entry.get("result") {
+            Some(result) if result.is_array() => result.as_array(),
+            Some(result) if result.is_object() => result.get("channels").and_then(Value::as_array),
+            _ => None,
+        })
+        .next_back()
+        .cloned()
+        .unwrap_or_default();
+
+    let mut cardano_channels: Vec<String> = channel_entries
+        .iter()
+        .filter_map(extract_cardano_message_channel_id)
+        .collect();
+    cardano_channels.sort_by(|left, right| {
+        parse_channel_sequence(right)
+            .cmp(&parse_channel_sequence(left))
+            .then_with(|| right.cmp(left))
+    });
+    cardano_channels.dedup();
+
+    for cardano_channel_id in cardano_channels {
+        let Some(cardano_end) = query_channel_end_status(
+            CARDANO_CHAIN_ID,
+            CARDANO_MESSAGE_PORT_ID,
+            cardano_channel_id.as_str(),
+        )?
+        else {
+            continue;
+        };
+        if !is_open_channel_state(cardano_end.state.as_str()) {
+            continue;
+        }
+        if cardano_end.remote_port_id.as_deref() != Some(VESSEL_MESSAGE_PORT_ID) {
+            continue;
+        }
+        let Some(vessel_channel_id) = cardano_end.remote_channel_id else {
+            continue;
+        };
+
+        let Some(vessel_end) = query_channel_end_status(
+            VESSEL_CHAIN_ID,
+            VESSEL_MESSAGE_PORT_ID,
+            vessel_channel_id.as_str(),
+        )?
+        else {
+            continue;
+        };
+        if !is_open_channel_state(vessel_end.state.as_str()) {
+            continue;
+        }
+        if vessel_end.remote_port_id.as_deref() != Some(CARDANO_MESSAGE_PORT_ID) {
+            continue;
+        }
+        if vessel_end.remote_channel_id.as_deref() != Some(cardano_channel_id.as_str()) {
+            continue;
+        }
+
+        return Ok(Some(MessageChannelPair {
+            cardano_channel_id,
+            vessel_channel_id,
+        }));
+    }
+
+    Ok(None)
+}
+
+fn extract_cardano_message_channel_id(entry: &Value) -> Option<String> {
+    let local_port = entry.get("port_id").and_then(Value::as_str);
+    let remote_port = entry
+        .get("counterparty")
+        .and_then(|counterparty| counterparty.get("port_id"))
+        .and_then(Value::as_str);
+    if local_port != Some(CARDANO_MESSAGE_PORT_ID) || remote_port != Some(VESSEL_MESSAGE_PORT_ID) {
+        return None;
+    }
+
+    let channel_id = entry
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .or_else(|| entry.get("channel_a").and_then(Value::as_str))?;
+    if channel_id.starts_with("channel-") {
+        Some(channel_id.to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_channel_sequence(channel_id: &str) -> u64 {
+    channel_id
+        .strip_prefix("channel-")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or_default()
+}
+
+fn query_channel_end_status(
+    chain_id: &str,
+    port_id: &str,
+    channel_id: &str,
+) -> Result<Option<ChannelEndStatus>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "channel",
+        "end",
+        "--chain",
+        chain_id,
+        "--port",
+        port_id,
+        "--channel",
+        channel_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+    let Some(result) = parsed_lines
+        .iter()
+        .filter_map(|entry| entry.get("result"))
+        .next_back()
+    else {
+        return Ok(None);
+    };
+
+    let state = result
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if state.is_empty() {
+        return Ok(None);
+    }
+
+    let remote = result.get("remote");
+    let remote_channel_id = remote
+        .and_then(|value| value.get("channel_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let remote_port_id = remote
+        .and_then(|value| value.get("port_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Ok(Some(ChannelEndStatus {
+        state,
+        remote_port_id,
+        remote_channel_id,
+    }))
+}
+
+fn is_open_channel_state(state: &str) -> bool {
+    state.eq_ignore_ascii_case("open")
+}
+
+fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
+    let mut recv_relayed = false;
+    for _ in 0..RELAY_MAX_RETRIES {
+        let recv_output = run_hermes_command(&[
+            "tx",
+            "packet-recv",
+            "--dst-chain",
+            CARDANO_CHAIN_ID,
+            "--src-chain",
+            VESSEL_CHAIN_ID,
+            "--src-port",
+            VESSEL_MESSAGE_PORT_ID,
+            "--src-channel",
+            channel_pair.vessel_channel_id.as_str(),
+        ])
+        .map_err(|error| format!("Failed to execute Hermes packet-recv: {}", error))?;
+
+        if recv_output.status.success() {
+            recv_relayed = true;
+            break;
+        }
+
+        let stderr = String::from_utf8_lossy(&recv_output.stderr).to_lowercase();
+        if stderr.contains("no packet commitments found")
+            || stderr.contains("no packets to relay")
+            || stderr.contains("no unreceived packets")
+        {
+            std::thread::sleep(Duration::from_secs(RELAY_RETRY_DELAY_SECS));
+            continue;
+        }
+
+        return Err(format!(
+            "Failed relaying packet to Cardano:\n{}",
+            String::from_utf8_lossy(&recv_output.stderr)
+        ));
+    }
+
+    if !recv_relayed {
+        return Err("Timed out waiting for message packet commitments on vesseloracle".to_string());
+    }
+
+    for _ in 0..RELAY_MAX_RETRIES {
+        let ack_output = run_hermes_command(&[
+            "tx",
+            "packet-ack",
+            "--dst-chain",
+            VESSEL_CHAIN_ID,
+            "--src-chain",
+            CARDANO_CHAIN_ID,
+            "--src-port",
+            CARDANO_MESSAGE_PORT_ID,
+            "--src-channel",
+            channel_pair.cardano_channel_id.as_str(),
+        ])
+        .map_err(|error| format!("Failed to execute Hermes packet-ack: {}", error))?;
+
+        if ack_output.status.success() {
+            logger::log("PASS: Message packet relayed and acknowledged");
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&ack_output.stderr).to_lowercase();
+        if stderr.contains("no acknowledgements found")
+            || stderr.contains("no packets to relay")
+            || stderr.contains("no unreceived acks")
+        {
+            std::thread::sleep(Duration::from_secs(RELAY_RETRY_DELAY_SECS));
+            continue;
+        }
+
+        return Err(format!(
+            "Failed relaying packet acknowledgement back to vesseloracle:\n{}",
+            String::from_utf8_lossy(&ack_output.stderr)
+        ));
+    }
+
+    Err("Timed out waiting for packet acknowledgement on Cardano".to_string())
 }

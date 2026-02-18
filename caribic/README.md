@@ -89,6 +89,7 @@ caribic create-channel --a-chain cardano-devnet --b-chain "$ENTRYPOINT_CHAIN_ID"
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
+`caribic demo message-exchange` expects `caribic start --clean --with-mithril` to have already been run. It then boots the summit demo chain, configures Hermes for `vesseloracle`, ensures a `port-100` ↔ `vesseloracle` channel exists, submits report/consolidate/transmit datasource commands, and relays recv/ack packets.
 `caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 
 ## `caribic test`

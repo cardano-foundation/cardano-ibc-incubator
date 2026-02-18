@@ -685,7 +685,22 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
 
-    start_cosmos_entrypoint_chain(chain_root_path, true).await
+    // This repository helper is also used by the message-exchange demo chain,
+    // whose docker-compose service names differ from the built-in entrypoint chain.
+    // Use compose-level cleanup here to avoid service-name assumptions.
+    execute_script(
+        chain_root_path,
+        "docker",
+        vec!["compose", "down", "-v", "--remove-orphans"],
+        None,
+    )?;
+    execute_script(
+        chain_root_path,
+        "docker",
+        vec!["compose", "up", "-d", "--build"],
+        None,
+    )?;
+    wait_for_cosmos_entrypoint_chain_ready().await
 }
 
 pub fn start_cosmos_entrypoint_chain_services(
