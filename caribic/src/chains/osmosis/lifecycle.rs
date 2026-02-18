@@ -13,19 +13,21 @@ use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
 use crate::utils::{execute_script, execute_script_interactive, wait_for_health_check};
 
-const OSMOSIS_SOURCE_ZIP_URL: &str =
-    "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";
-const OSMOSIS_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
-
-pub(super) async fn prepare_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_osmosisd_available(osmosis_dir).await?;
+pub(super) async fn prepare_local(
+    osmosis_dir: &Path,
+    osmosis_source_zip_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_osmosisd_available(osmosis_dir, osmosis_source_zip_url).await?;
     copy_local_config_files(osmosis_dir)?;
     verbose("PASS: Osmosis configuration files copied successfully");
     init_local_network(osmosis_dir)?;
     Ok(())
 }
 
-pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn start_local(
+    osmosis_dir: &Path,
+    osmosis_status_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -60,7 +62,6 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
             &optional_progress_bar,
         );
 
-        let osmosis_status_url = OSMOSIS_LOCAL_STATUS_URL;
         let is_healthy = wait_for_health_check(
             osmosis_status_url,
             30,
@@ -107,11 +108,14 @@ pub(super) fn stop_local(osmosis_path: &Path) {
     let _ = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
 }
 
-async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn ensure_osmosisd_available(
+    osmosis_dir: &Path,
+    osmosis_source_zip_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     if osmosis_dir.exists() {
         verbose("Osmosis directory already exists");
     } else {
-        download_osmosis_source(osmosis_dir).await?;
+        download_osmosis_source(osmosis_dir, osmosis_source_zip_url).await?;
     }
 
     let mut binary = locate_osmosisd_binary();
@@ -173,8 +177,11 @@ async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std
     Ok(())
 }
 
-async fn download_osmosis_source(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    download_repository(OSMOSIS_SOURCE_ZIP_URL, osmosis_path, "osmosis").await
+async fn download_osmosis_source(
+    osmosis_path: &Path,
+    osmosis_source_zip_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    download_repository(osmosis_source_zip_url, osmosis_path, "osmosis").await
 }
 
 async fn prompt_and_install_osmosisd(
