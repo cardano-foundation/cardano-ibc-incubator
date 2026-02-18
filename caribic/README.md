@@ -67,23 +67,21 @@ Runs three checks and reports a single pass or fail summary:
 ### `caribic keys <add|list|delete>`
 
 Convenience wrapper around Hermes keyring operations.
-Note: the Cosmos Entrypoint chain currently uses the Hermes chain id `sidechain`.
 
 ```bash
 caribic keys list
-caribic keys add --chain sidechain --mnemonic-file ./my-mnemonic.txt --overwrite
-caribic keys delete --chain sidechain --key-name relayer
+caribic keys add --chain entrypoint --mnemonic-file ./my-mnemonic.txt --overwrite
+caribic keys delete --chain entrypoint --key-name relayer
 ```
 
 ### `caribic create-client`, `caribic create-connection`, `caribic create-channel`
 
 Thin wrappers that run the corresponding Hermes IBC actions using the local Hermes binary/config.
-The Entrypoint chain is still addressed as `sidechain` at the Hermes layer.
 
 ```bash
-caribic create-client --host-chain cardano-devnet --reference-chain sidechain
-caribic create-connection --a-chain cardano-devnet --b-chain sidechain
-caribic create-channel --a-chain cardano-devnet --b-chain sidechain --a-port transfer --b-port transfer
+caribic create-client --host-chain cardano-devnet --reference-chain entrypoint
+caribic create-connection --a-chain cardano-devnet --b-chain entrypoint
+caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port transfer --b-port transfer
 ```
 
 ### `caribic demo <message-exchange|token-swap>`
