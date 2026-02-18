@@ -8,6 +8,10 @@
     "nodeModulesDir": "auto",
     "tasks": {
         "clean": "rm -rf deployments",
-        "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-ffi --allow-write index.ts"
+        "start": "deno task patch:sodium && deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-ffi --allow-write index.ts",
+        "patch:sodium": "deno run -A scripts/patch_libsodium_wrappers_sumo.ts"
+    },
+    "allowScripts": {
+        "allow": ["npm:cbor-extract@2.2.0"]
     }
 }
