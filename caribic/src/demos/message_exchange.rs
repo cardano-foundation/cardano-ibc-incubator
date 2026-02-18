@@ -422,6 +422,7 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
         "--b-port",
         VESSEL_MESSAGE_PORT_ID,
         "--new-client-connection",
+        "--yes",
     ])
     .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
 

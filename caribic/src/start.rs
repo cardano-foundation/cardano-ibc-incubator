@@ -684,6 +684,7 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
     .expect("Failed to unzip cardano-ibc-summit-demo project");
     fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
         .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
+    normalize_downloaded_demo_chain_assets(chain_root_path)?;
 
     // This repository helper is also used by the message-exchange demo chain,
     // whose docker-compose service names differ from the built-in entrypoint chain.
@@ -701,6 +702,211 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
         None,
     )?;
     wait_for_cosmos_entrypoint_chain_ready().await
+}
+
+fn normalize_downloaded_demo_chain_assets(
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dockerfile_path = chain_root_path.join("Dockerfile");
+    if !dockerfile_path.exists() {
+        return Ok(());
+    }
+
+    let dockerfile_content = fs::read_to_string(&dockerfile_path)?;
+    if !dockerfile_content.contains("get.ignite.com/cli@v28.5.1!") {
+        // Keep processing because we also normalize the Mithril codec below.
+    } else {
+        let normalized_content = dockerfile_content.replace(
+            "get.ignite.com/cli@v28.5.1!",
+            "get.ignite.com/cli@v28.11.2!",
+        );
+        fs::write(&dockerfile_path, normalized_content)?;
+        verbose("Normalized downloaded demo Dockerfile to a valid Ignite CLI tag (v28.11.2)");
+    }
+
+    normalize_downloaded_demo_mithril_proto(chain_root_path)?;
+    normalize_downloaded_demo_mithril_codec(chain_root_path)?;
+    normalize_downloaded_demo_mithril_update_logic(chain_root_path)?;
+
+    Ok(())
+}
+
+fn normalize_downloaded_demo_mithril_proto(
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let proto_path =
+        chain_root_path.join("vesseloracle/proto/ibc/clients/mithril/v1/mithril.proto");
+    if !proto_path.exists() {
+        return Ok(());
+    }
+
+    let mut proto_content = fs::read_to_string(&proto_path)?;
+    let mut changed = false;
+
+    if !proto_content.contains("bytes host_state_nft_policy_id = 8;") {
+        proto_content = proto_content.replace(
+            "  // Path at which next upgraded client will be committed.\n  repeated string upgrade_path = 7;\n}",
+            "  // Path at which next upgraded client will be committed.\n  repeated string upgrade_path = 7;\n\n  bytes host_state_nft_policy_id = 8;\n\n  bytes host_state_nft_token_name = 9;\n}",
+        );
+        changed = true;
+    }
+
+    if !proto_content.contains("bytes ibc_state_root = 4;") {
+        proto_content = proto_content.replace(
+            "  string latest_cert_hash_tx_snapshot = 3;\n}",
+            "  string latest_cert_hash_tx_snapshot = 3;\n\n  bytes ibc_state_root = 4;\n}",
+        );
+        changed = true;
+    }
+
+    if !proto_content.contains("string host_state_tx_hash = 5;") {
+        proto_content = proto_content.replace(
+            "  MithrilCertificate transaction_snapshot_certificate = 4;\n}",
+            "  MithrilCertificate transaction_snapshot_certificate = 4;\n\n  string host_state_tx_hash = 5;\n\n  bytes host_state_tx_body_cbor = 6;\n\n  uint32 host_state_tx_output_index = 7;\n\n  bytes host_state_tx_proof = 8;\n\n  repeated MithrilCertificate previous_mithril_stake_distribution_certificates = 9;\n}",
+        );
+        changed = true;
+    }
+
+    if changed {
+        fs::write(&proto_path, proto_content)?;
+        verbose("Normalized downloaded demo Mithril proto to include Cardano relayer fields");
+    }
+
+    Ok(())
+}
+
+fn normalize_downloaded_demo_mithril_codec(
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let codec_path = chain_root_path.join("vesseloracle/x/clients/mithril/codec.go");
+    if !codec_path.exists() {
+        return Ok(());
+    }
+
+    let codec_content = fs::read_to_string(&codec_path)?;
+    if codec_content.contains("registerCustomTypeURLIfSupported") {
+        return Ok(());
+    }
+
+    let normalized_codec = r#"package mithril
+
+import (
+	"reflect"
+
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+
+	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+)
+
+// RegisterInterfaces register the ibc channel submodule interfaces to protobuf
+// Any.
+func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
+	registry.RegisterImplementations(
+		(*exported.ClientState)(nil),
+		&ClientState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ConsensusState)(nil),
+		&ConsensusState{},
+	)
+	registry.RegisterImplementations(
+		(*exported.Height)(nil),
+		&Height{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&Misbehaviour{},
+	)
+	registry.RegisterImplementations(
+		(*exported.ClientMessage)(nil),
+		&MithrilHeader{},
+	)
+
+	// The demo chain still generates `ibc.clients.mithril.v1` protobuf names.
+	// Hermes and the entrypoint chain use `ibc.lightclients.mithril.v1`.
+	// Register both so tx decoding works during message-exchange setup.
+	registerCustomTypeURLIfSupported(
+		registry,
+		(*exported.ClientState)(nil),
+		"/ibc.lightclients.mithril.v1.ClientState",
+		&ClientState{},
+	)
+	registerCustomTypeURLIfSupported(
+		registry,
+		(*exported.ConsensusState)(nil),
+		"/ibc.lightclients.mithril.v1.ConsensusState",
+		&ConsensusState{},
+	)
+	registerCustomTypeURLIfSupported(
+		registry,
+		(*exported.ClientMessage)(nil),
+		"/ibc.lightclients.mithril.v1.Misbehaviour",
+		&Misbehaviour{},
+	)
+	registerCustomTypeURLIfSupported(
+		registry,
+		(*exported.ClientMessage)(nil),
+		"/ibc.lightclients.mithril.v1.MithrilHeader",
+		&MithrilHeader{},
+	)
+}
+
+func registerCustomTypeURLIfSupported(
+	registry codectypes.InterfaceRegistry,
+	iface interface{},
+	typeURL string,
+	impl interface{},
+) {
+	registerFn := reflect.ValueOf(registry).MethodByName("RegisterCustomTypeURL")
+	if !registerFn.IsValid() {
+		return
+	}
+
+	registerFn.Call([]reflect.Value{
+		reflect.ValueOf(iface),
+		reflect.ValueOf(typeURL),
+		reflect.ValueOf(impl),
+	})
+}
+"#;
+
+    fs::write(&codec_path, normalized_codec)?;
+    verbose("Normalized downloaded demo Mithril codec to accept ibc.lightclients type URLs");
+
+    Ok(())
+}
+
+fn normalize_downloaded_demo_mithril_update_logic(
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let update_path = chain_root_path.join("vesseloracle/x/clients/mithril/update.go");
+    if !update_path.exists() {
+        return Ok(());
+    }
+
+    let update_content = fs::read_to_string(&update_path)?;
+    let from = r#"	} else {
+		if firstCertInPrevEpoch == nilCertificate {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "prev epoch didn't store first mithril stake distribution certificate")
+		}
+		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
+		if header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, firstCertInPrevEpoch.Hash)
+		}
+	}"#;
+    let to = r#"	} else {
+		expectedPreviousCerForTs = *header.MithrilStakeDistributionCertificate
+		if firstCertInPrevEpoch != nilCertificate && header.MithrilStakeDistributionCertificate.PreviousHash != firstCertInPrevEpoch.Hash {
+			return errorsmod.Wrapf(ErrInvalidCertificate, "%s received: %v, expected: %v", "invalid first mithril state distribution certificate ", header.MithrilStakeDistributionCertificate.PreviousHash, firstCertInPrevEpoch.Hash)
+		}
+	}"#;
+
+    if update_content.contains(from) {
+        fs::write(&update_path, update_content.replace(from, to))?;
+        verbose("Normalized demo Mithril update logic to tolerate missing previous epoch cache");
+    }
+
+    Ok(())
 }
 
 pub fn start_cosmos_entrypoint_chain_services(
