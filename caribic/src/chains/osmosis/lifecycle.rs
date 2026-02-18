@@ -2,6 +2,8 @@ use std::env;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 use console::style;
 use dirs::home_dir;
@@ -27,6 +29,7 @@ pub(super) async fn prepare_local(
 pub(super) async fn start_local(
     osmosis_dir: &Path,
     osmosis_status_url: &str,
+    redis_port: Option<u16>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -90,11 +93,27 @@ pub(super) async fn start_local(
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-        if is_healthy.is_ok() {
-            Ok(())
-        } else {
-            Err(format!("Run into timeout while checking {}", osmosis_status_url).into())
+        if is_healthy.is_err() {
+            return Err(format!("Run into timeout while checking {}", osmosis_status_url).into());
         }
+
+        if let Some(port) = redis_port {
+            log_or_show_progress(
+                &format!(
+                    "Waiting for the Osmosis Redis sidecar to become healthy on port {} ...",
+                    port
+                ),
+                &optional_progress_bar,
+            );
+            wait_for_port(port, 30, 3000).map_err(|error| {
+                format!(
+                    "Run into timeout while checking Redis sidecar on port {}: {}",
+                    port, error
+                )
+            })?;
+        }
+
+        Ok(())
     } else {
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
@@ -102,6 +121,31 @@ pub(super) async fn start_local(
 
         Err(status.unwrap_err().into())
     }
+}
+
+fn wait_for_port(port: u16, retries: u32, interval_ms: u64) -> Result<(), String> {
+    for attempt in 1..=retries {
+        let is_accessible = Command::new("nc")
+            .args(["-z", "localhost", &port.to_string()])
+            .output()
+            .ok()
+            .is_some_and(|output| output.status.success());
+
+        if is_accessible {
+            verbose(&format!(
+                "Port {} is accessible on attempt {}",
+                port, attempt
+            ));
+            return Ok(());
+        }
+
+        thread::sleep(Duration::from_millis(interval_ms));
+    }
+
+    Err(format!(
+        "Port {} was not accessible after {} attempts",
+        port, retries
+    ))
 }
 
 pub(super) fn stop_local(osmosis_path: &Path) {

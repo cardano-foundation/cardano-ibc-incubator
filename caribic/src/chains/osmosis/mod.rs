@@ -19,6 +19,7 @@ struct OsmosisNetworkRuntime {
     status_url: &'static str,
     default_status_port: u16,
     source_zip_url: Option<&'static str>,
+    local_redis_port: Option<u16>,
 }
 
 const OSMOSIS_LOCAL_SOURCE_ZIP_URL: &str =
@@ -27,11 +28,13 @@ const OSMOSIS_LOCAL_RUNTIME: OsmosisNetworkRuntime = OsmosisNetworkRuntime {
     status_url: "http://127.0.0.1:26658/status",
     default_status_port: 26658,
     source_zip_url: Some(OSMOSIS_LOCAL_SOURCE_ZIP_URL),
+    local_redis_port: Some(6379),
 };
 const OSMOSIS_TESTNET_RUNTIME: OsmosisNetworkRuntime = OsmosisNetworkRuntime {
     status_url: "https://rpc-test.osmosis.zone/status",
     default_status_port: 443,
     source_zip_url: None,
+    local_redis_port: None,
 };
 
 const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [
@@ -111,9 +114,13 @@ impl ChainAdapter for OsmosisChainAdapter {
                 )
                 .await
                 .map_err(|error| format!("Failed to prepare Osmosis appchain: {}", error))?;
-                lifecycle::start_local(osmosis_dir.as_path(), runtime.status_url)
-                    .await
-                    .map_err(|error| format!("Failed to start Osmosis appchain: {}", error))?;
+                lifecycle::start_local(
+                    osmosis_dir.as_path(),
+                    runtime.status_url,
+                    runtime.local_redis_port,
+                )
+                .await
+                .map_err(|error| format!("Failed to start Osmosis appchain: {}", error))?;
                 Ok(())
             }
             "testnet" => {
