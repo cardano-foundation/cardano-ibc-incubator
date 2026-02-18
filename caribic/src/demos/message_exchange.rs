@@ -9,7 +9,7 @@ use crate::{
     logger,
     start::{self, run_hermes_command},
     stop::{stop_cosmos, stop_relayer},
-    utils::execute_script,
+    utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
 };
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
@@ -25,6 +25,10 @@ const CONSOLIDATED_REPORT_MAX_RETRIES: usize = 40;
 const CONSOLIDATED_REPORT_RETRY_DELAY_SECS: u64 = 3;
 const CHANNEL_DISCOVERY_MAX_RETRIES: usize = 20;
 const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
+const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
+const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
+const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 36;
+const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
 const RELAY_MAX_RETRIES: usize = 20;
 const RELAY_RETRY_DELAY_SECS: u64 = 3;
 
@@ -39,6 +43,14 @@ struct ChannelEndStatus {
     state: String,
     remote_port_id: Option<String>,
     remote_channel_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ConnectionEndStatus {
+    state: String,
+    client_id: Option<String>,
+    remote_client_id: Option<String>,
+    remote_connection_id: Option<String>,
 }
 
 /// Runs the full message-exchange demo and executes datasource report/consolidate/transmit.
@@ -88,6 +100,8 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 
     stop_relayer(project_root_path.join("relayer").as_path());
     configure_hermes_for_message_exchange()?;
+    logger::verbose("Checking Mithril artifact readiness before message-exchange channel setup");
+    wait_for_mithril_artifacts_for_message_exchange().await?;
     let channel_pair = ensure_message_exchange_channel()?;
 
     start::start_hermes_daemon()
@@ -156,6 +170,66 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     }
     error.push_str("\nRequired command:\n  - caribic start --clean --with-mithril");
     Err(error)
+}
+
+async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
+    logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
+    let aggregator_base_url = crate::config::get_config()
+        .mithril
+        .aggregator_url
+        .trim_end_matches('/')
+        .to_string();
+    let stake_distributions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/mithril-stake-distributions");
+    let cardano_transactions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/cardano-transactions");
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|error| format!("Failed to build Mithril HTTP client: {}", error))?;
+
+    for attempt in 1..=MITHRIL_ARTIFACT_MAX_RETRIES {
+        let stake_ready = match client.get(stake_distributions_url.as_str()).send().await {
+            Ok(response) if response.status().is_success() => response
+                .json::<Value>()
+                .await
+                .ok()
+                .and_then(|value| value.as_array().map(|arr| arr.len()))
+                .is_some_and(|len| len > 0),
+            _ => false,
+        };
+        let tx_ready = match client.get(cardano_transactions_url.as_str()).send().await {
+            Ok(response) if response.status().is_success() => response
+                .json::<Value>()
+                .await
+                .ok()
+                .and_then(|value| value.as_array().map(|arr| arr.len()))
+                .is_some_and(|len| len > 0),
+            _ => false,
+        };
+
+        logger::verbose(&format!(
+            "Mithril artifact readiness check (attempt {attempt}/{}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}",
+            MITHRIL_ARTIFACT_MAX_RETRIES
+        ));
+
+        if stake_ready && tx_ready {
+            logger::log("PASS: Mithril artifacts are available for message-exchange setup");
+            return Ok(());
+        }
+
+        tokio::time::sleep(Duration::from_secs(MITHRIL_ARTIFACT_RETRY_DELAY_SECS)).await;
+    }
+
+    Err(format!(
+        "Mithril artifacts did not become available in time for message-exchange channel setup.\n\
+         Checked endpoints:\n\
+         - {}\n\
+         - {}",
+        stake_distributions_url, cardano_transactions_url
+    ))
 }
 
 fn run_datasource_command(datasource_dir: &Path, args: &[&str]) -> Result<(), String> {
@@ -410,28 +484,11 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     }
 
     logger::log("No open message-exchange channel found. Creating one now.");
-    let create_output = run_hermes_command(&[
-        "create",
-        "channel",
-        "--a-chain",
-        CARDANO_CHAIN_ID,
-        "--b-chain",
-        VESSEL_CHAIN_ID,
-        "--a-port",
-        CARDANO_MESSAGE_PORT_ID,
-        "--b-port",
-        VESSEL_MESSAGE_PORT_ID,
-        "--new-client-connection",
-        "--yes",
-    ])
-    .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
-
-    if !create_output.status.success() {
-        return Err(format!(
-            "Failed to create Cardano↔vesseloracle message channel:\n{}",
-            String::from_utf8_lossy(&create_output.stderr)
-        ));
-    }
+    // Keep this flow explicit and fail hard.
+    // We intentionally avoid Hermes `--new-client-connection` here because it can hide
+    // partial state and lead to non-deterministic behavior.
+    let connection_id = ensure_open_message_exchange_connection()?;
+    create_message_exchange_channel_on_connection(connection_id.as_str())?;
 
     let pair =
         wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES)?.ok_or_else(|| {
@@ -575,6 +632,344 @@ fn parse_channel_sequence(channel_id: &str) -> u64 {
         .strip_prefix("channel-")
         .and_then(|raw| raw.parse::<u64>().ok())
         .unwrap_or_default()
+}
+
+fn parse_connection_sequence(connection_id: &str) -> u64 {
+    connection_id
+        .strip_prefix("connection-")
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .unwrap_or_default()
+}
+
+fn query_connection_ids_for_chain(chain_id: &str) -> Result<Vec<String>, String> {
+    let output = run_hermes_command(&["--json", "query", "connections", "--chain", chain_id])
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes query connections failed for chain={chain_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+
+    let mut connection_ids = Vec::new();
+    for result in parsed_lines.iter().filter_map(|entry| entry.get("result")) {
+        if let Some(array) = result.as_array() {
+            for item in array {
+                if let Some(connection_id) = item.as_str() {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                    continue;
+                }
+                if let Some(connection_id) = item.get("connection_id").and_then(Value::as_str) {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                }
+            }
+            continue;
+        }
+
+        if let Some(array) = result.get("connections").and_then(Value::as_array) {
+            for item in array {
+                if let Some(connection_id) = item.get("connection_id").and_then(Value::as_str) {
+                    if connection_id.starts_with("connection-") {
+                        connection_ids.push(connection_id.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    connection_ids.sort_by(|left, right| {
+        parse_connection_sequence(right)
+            .cmp(&parse_connection_sequence(left))
+            .then_with(|| right.cmp(left))
+    });
+    connection_ids.dedup();
+    Ok(connection_ids)
+}
+
+fn query_connection_end_status(
+    chain_id: &str,
+    connection_id: &str,
+) -> Result<Option<ConnectionEndStatus>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "connection",
+        "end",
+        "--chain",
+        chain_id,
+        "--connection",
+        connection_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        logger::verbose(&format!(
+            "Hermes query connection end failed for chain={chain_id}, connection={connection_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+        return Ok(None);
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+    let Some(result) = parsed_lines
+        .iter()
+        .filter_map(|entry| entry.get("result"))
+        .next_back()
+    else {
+        logger::verbose(&format!(
+            "Hermes query connection end returned no result object for chain={chain_id}, connection={connection_id}",
+        ));
+        return Ok(None);
+    };
+
+    let state = result
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    if state.is_empty() {
+        logger::verbose(&format!(
+            "Hermes query connection end returned empty state for chain={chain_id}, connection={connection_id}",
+        ));
+        return Ok(None);
+    }
+
+    let client_id = result
+        .get("client_id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let counterparty = result.get("counterparty");
+    let remote_client_id = counterparty
+        .and_then(|value| value.get("client_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let remote_connection_id = counterparty
+        .and_then(|value| value.get("connection_id"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+
+    Ok(Some(ConnectionEndStatus {
+        state,
+        client_id,
+        remote_client_id,
+        remote_connection_id,
+    }))
+}
+
+fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, String> {
+    let Some(cardano_end) = query_connection_end_status(CARDANO_CHAIN_ID, cardano_connection_id)?
+    else {
+        return Ok(false);
+    };
+
+    if !is_open_channel_state(cardano_end.state.as_str()) {
+        logger::verbose(&format!(
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: state={} (expected Open)",
+            cardano_end.state
+        ));
+        return Ok(false);
+    }
+
+    let Some(vessel_connection_id) = cardano_end.remote_connection_id.as_deref() else {
+        logger::verbose(&format!(
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: missing counterparty connection id"
+        ));
+        return Ok(false);
+    };
+
+    let Some(vessel_end) = query_connection_end_status(VESSEL_CHAIN_ID, vessel_connection_id)?
+    else {
+        return Ok(false);
+    };
+
+    if !is_open_channel_state(vessel_end.state.as_str()) {
+        logger::verbose(&format!(
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} is {} (expected Open)",
+            vessel_connection_id, vessel_end.state
+        ));
+        return Ok(false);
+    }
+
+    if vessel_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
+        logger::verbose(&format!(
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} does not point back to it",
+            vessel_connection_id
+        ));
+        return Ok(false);
+    }
+
+    if cardano_end.client_id.is_none()
+        || cardano_end.remote_client_id.is_none()
+        || vessel_end.client_id.is_none()
+        || vessel_end.remote_client_id.is_none()
+    {
+        logger::verbose(&format!(
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: missing client identifiers on one or both ends"
+        ));
+        return Ok(false);
+    }
+
+    Ok(true)
+}
+
+fn query_open_message_connection() -> Result<Option<String>, String> {
+    let connection_ids = query_connection_ids_for_chain(CARDANO_CHAIN_ID)?;
+    for connection_id in connection_ids {
+        if is_open_message_connection(connection_id.as_str())? {
+            return Ok(Some(connection_id));
+        }
+    }
+    Ok(None)
+}
+
+fn wait_for_open_message_connection(max_retries: usize) -> Result<Option<String>, String> {
+    for _ in 0..max_retries {
+        if let Some(connection_id) = query_open_message_connection()? {
+            return Ok(Some(connection_id));
+        }
+        std::thread::sleep(Duration::from_secs(CONNECTION_DISCOVERY_RETRY_DELAY_SECS));
+    }
+
+    Ok(None)
+}
+
+fn ensure_open_message_exchange_connection() -> Result<String, String> {
+    if let Some(open_connection_id) =
+        wait_for_open_message_connection(CONNECTION_DISCOVERY_MAX_RETRIES)?
+    {
+        logger::verbose(&format!(
+            "Using existing open Cardano↔vesseloracle connection {}",
+            open_connection_id
+        ));
+        return Ok(open_connection_id);
+    }
+
+    logger::verbose(
+        "No open Cardano↔vesseloracle connection found, creating dedicated clients and connection",
+    );
+    // Every step below is strict by design.
+    // If client or connection creation fails, we return that error directly.
+    let create_cardano_client_output = run_hermes_command(&[
+        "create",
+        "client",
+        "--host-chain",
+        CARDANO_CHAIN_ID,
+        "--reference-chain",
+        VESSEL_CHAIN_ID,
+    ])
+    .map_err(|error| error.to_string())?;
+    if !create_cardano_client_output.status.success() {
+        return Err(format!(
+            "Failed to create client for {CARDANO_CHAIN_ID}->{VESSEL_CHAIN_ID}: {}",
+            String::from_utf8_lossy(&create_cardano_client_output.stderr)
+        ));
+    }
+    let cardano_client_stdout =
+        String::from_utf8_lossy(&create_cardano_client_output.stdout).to_string();
+    let cardano_client_id =
+        parse_tendermint_client_id(&cardano_client_stdout).ok_or_else(|| {
+            format!(
+                "Failed to parse Cardano->vesseloracle client id from Hermes output:\n{}",
+                cardano_client_stdout
+            )
+        })?;
+
+    let create_vessel_client_output = run_hermes_command(&[
+        "create",
+        "client",
+        "--host-chain",
+        VESSEL_CHAIN_ID,
+        "--reference-chain",
+        CARDANO_CHAIN_ID,
+    ])
+    .map_err(|error| error.to_string())?;
+    if !create_vessel_client_output.status.success() {
+        return Err(format!(
+            "Failed to create client for {VESSEL_CHAIN_ID}->{CARDANO_CHAIN_ID}: {}",
+            String::from_utf8_lossy(&create_vessel_client_output.stderr)
+        ));
+    }
+    let vessel_client_stdout =
+        String::from_utf8_lossy(&create_vessel_client_output.stdout).to_string();
+    let vessel_client_id = parse_tendermint_client_id(&vessel_client_stdout).ok_or_else(|| {
+        format!(
+            "Failed to parse vesseloracle->Cardano client id from Hermes output:\n{}",
+            vessel_client_stdout
+        )
+    })?;
+
+    let create_connection_output = run_hermes_command(&[
+        "create",
+        "connection",
+        "--a-chain",
+        CARDANO_CHAIN_ID,
+        "--a-client",
+        cardano_client_id.as_str(),
+        "--b-client",
+        vessel_client_id.as_str(),
+    ])
+    .map_err(|error| error.to_string())?;
+    if !create_connection_output.status.success() {
+        return Err(format!(
+            "Failed to create Cardano-vesseloracle connection: {}",
+            String::from_utf8_lossy(&create_connection_output.stderr)
+        ));
+    }
+    let create_connection_stdout =
+        String::from_utf8_lossy(&create_connection_output.stdout).to_string();
+    let connection_id =
+        parse_tendermint_connection_id(&create_connection_stdout).ok_or_else(|| {
+            format!(
+                "Failed to parse Cardano-vesseloracle connection id from Hermes output:\n{}",
+                create_connection_stdout
+            )
+        })?;
+
+    let Some(open_connection_id) =
+        wait_for_open_message_connection(CONNECTION_DISCOVERY_MAX_RETRIES)?
+    else {
+        return Err(format!(
+            "Created Cardano↔vesseloracle connection artifacts from {}, but no open symmetric connection is currently usable",
+            connection_id
+        ));
+    };
+
+    Ok(open_connection_id)
+}
+
+fn create_message_exchange_channel_on_connection(connection_id: &str) -> Result<(), String> {
+    let create_output = run_hermes_command(&[
+        "create",
+        "channel",
+        "--a-chain",
+        CARDANO_CHAIN_ID,
+        "--a-connection",
+        connection_id,
+        "--a-port",
+        CARDANO_MESSAGE_PORT_ID,
+        "--b-port",
+        VESSEL_MESSAGE_PORT_ID,
+    ])
+    .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
+    if !create_output.status.success() {
+        return Err(format!(
+            "Failed to create Cardano↔vesseloracle message channel on connection {connection_id}:\n{}",
+            String::from_utf8_lossy(&create_output.stderr)
+        ));
+    }
+    Ok(())
 }
 
 fn query_channel_end_status(
