@@ -23,7 +23,7 @@ test test_validate_success() {
     [
       // valid client
       client_state.new_client_state(
-        "sidechain-0",
+        "entrypoint-0",
         unchecked_rational.from_int(1),
         1000,
         1500,
@@ -87,7 +87,7 @@ test test_validate_fail_invalid_trust_level() fail {
   let invalid_trust_level = unchecked_rational.new(1, 4)
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       invalid_trust_level,
       1000,
       1500,
@@ -102,7 +102,7 @@ test test_validate_fail_invalid_trust_level() fail {
 test test_validate_fail_zero_trusting_period() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       0,
       1500,
@@ -117,7 +117,7 @@ test test_validate_fail_zero_trusting_period() fail {
 test test_validate_fail_negative_trusting_period() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       -1,
       1500,
@@ -132,7 +132,7 @@ test test_validate_fail_negative_trusting_period() fail {
 test test_validate_zero_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       0,
@@ -147,7 +147,7 @@ test test_validate_zero_unbonding_period() fail {
 test test_validate_fail_negative_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       -1,
@@ -162,7 +162,7 @@ test test_validate_fail_negative_unbonding_period() fail {
 test test_validate_fail_zero_max_clock_drift() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       1500,
@@ -177,7 +177,7 @@ test test_validate_fail_zero_max_clock_drift() fail {
 test test_validate_fail_negative_max_clock_drift() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       1500,
@@ -192,7 +192,7 @@ test test_validate_fail_negative_max_clock_drift() fail {
 test test_validate_fail_invalid_revision_height() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       1500,
@@ -207,7 +207,7 @@ test test_validate_fail_invalid_revision_height() fail {
 test test_validate_fail_trusting_period_not_less_than_unbonding_period() fail {
   let cs =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1501,
       1500,
@@ -225,7 +225,7 @@ test test_get_timestamp_at_height() {
   let mock_height = Height { revision_number: 0, revision_height: 8 }
   let mock_client_state =
     client_state.new_client_state(
-      "sidechain-0",
+      "entrypoint-0",
       unchecked_rational.from_int(1),
       1000,
       1500,
@@ -304,7 +304,7 @@ test new_client_state() {
 }
 
 test test_get_chain_id() {
-  let mock_chain_id = "sidechain-0"
+  let mock_chain_id = "entrypoint-0"
   let mock_height = Height { revision_number: 0, revision_height: 8 }
   let mock_client_state =
     client_state.new_client_state(

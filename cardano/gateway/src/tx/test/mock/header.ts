@@ -12,7 +12,7 @@ class HeaderMockBuilder {
       signed_header: {
         header: {
           version: { block: 11n, app: 0n },
-          chain_id: 'sidechain',
+          chain_id: 'entrypoint',
           height: 158477n,
           time: { seconds: 1711685790n, nanos: 941264372 },
           last_block_id: {

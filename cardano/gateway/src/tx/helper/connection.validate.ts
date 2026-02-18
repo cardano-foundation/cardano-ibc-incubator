@@ -117,7 +117,7 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
 
   // Debug helper: Log the shape of the Any-encoded counterparty client state we received from Hermes.
-  // This is critical for diagnosing proto/type-url mismatches across Hermes ↔ sidechain ↔ Gateway.
+  // This is critical for diagnosing proto/type-url mismatches across Hermes ↔ entrypoint ↔ Gateway.
   try {
     const any = data.client_state as any;
     const typeUrl = any?.type_url ?? any?.typeUrl;

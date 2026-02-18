@@ -18,7 +18,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
 
-const mock_chain_id = "sidechain-0"
+const mock_chain_id = "entrypoint-0"
 
 const mock_auth_token_policy_id =
   #"505d7e26586b54e1f54cbe5f5854254d559549f9d5a3ba3545515831"
