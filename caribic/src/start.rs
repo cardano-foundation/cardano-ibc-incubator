@@ -6,8 +6,8 @@ use crate::setup::{
 };
 use crate::utils::{
     diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists,
-    CardanoQuery, IndicatorMessage,
+    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, CardanoQuery,
+    IndicatorMessage,
 };
 use crate::{
     chains, config,
@@ -602,35 +602,44 @@ pub async fn deploy_contracts(
         );
     }
 
-    // Remove the old handler file
-    if !project_root_path
-        .join("cardano/offchain/deployments/handler.json")
-        .exists()
-    {
-        let handler_json_exists = wait_until_file_exists(
-            project_root_path
-                .join("cardano/offchain/deployments/handler.json")
-                .as_path(),
-            20,
-            5000,
-            || {
-                let _ = execute_script(
-                    project_root_path.join("cardano").join("offchain").as_path(),
-                    "deno",
-                    Vec::from(["task", "start"]),
-                    None,
-                );
-            },
+    let handler_json_path = project_root_path.join("cardano/offchain/deployments/handler.json");
+
+    if !handler_json_path.exists() {
+        log_or_show_progress(
+            &format!(
+                "{} Generating handler.json via offchain deployment",
+                style("Step 2/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+
+        let deployment_result = execute_script(
+            project_root_path.join("cardano").join("offchain").as_path(),
+            "deno",
+            Vec::from(["task", "start"]),
+            None,
         );
 
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
 
-        if handler_json_exists.is_ok() {
+        if let Err(error) = deployment_result {
+            return Err(format!(
+                "ERROR: Offchain deployment failed while generating handler.json: {}",
+                error
+            )
+            .into());
+        }
+
+        if handler_json_path.exists() {
             Ok(())
         } else {
-            Err("ERROR: Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+            Err(format!(
+                "ERROR: Offchain deployment finished but handler.json was not created at {}",
+                handler_json_path.display()
+            )
+            .into())
         }
     } else {
         log_or_show_progress(
