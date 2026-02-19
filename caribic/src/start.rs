@@ -1606,6 +1606,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     if !gateway_ready {
+        dump_gateway_startup_logs(gateway_dir, &optional_progress_bar);
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
@@ -1619,6 +1620,110 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     Ok(())
+}
+
+fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+    log_or_print_progress(
+        "Gateway gRPC did not become ready in time. Collecting startup diagnostics",
+        optional_progress_bar,
+    );
+
+    let compose_ps = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "ps"]),
+    );
+    match compose_ps {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress("Gateway compose status", optional_progress_bar);
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!("WARN: Failed to collect `docker compose ps`: {}", error),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let compose_logs = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "logs", "--tail", "200", "app"]),
+    );
+    match compose_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway compose logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+            return;
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect compose logs for app service: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let docker_logs =
+        run_command_capture(Command::new("docker").args(["logs", "--tail", "200", "gateway-app"]));
+    match docker_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway container logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect `docker logs gateway-app`: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+}
+
+fn run_command_capture(command: &mut Command) -> Result<String, String> {
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to execute command: {}", error))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{}\n{}", stdout, stderr),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    };
+
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        let details = if combined.is_empty() {
+            "no output".to_string()
+        } else {
+            combined
+        };
+        Err(format!(
+            "command exited with status {}: {}",
+            output.status.code().unwrap_or(-1),
+            details
+        ))
+    }
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
