@@ -11,6 +11,7 @@ mod commands;
 mod config;
 mod constants;
 mod demos;
+mod install;
 mod logger;
 mod setup;
 mod start;
@@ -87,6 +88,8 @@ struct Args {
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
+    /// Installs missing local prerequisites on macOS or Ubuntu Linux and builds local Hermes from relayer/
+    Install,
     /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
@@ -280,7 +283,8 @@ async fn main() {
 
     // Dispatch each subcommand to its module-level handler.
     let command_result: Result<(), String> = match args.command {
-        Commands::Check => commands::run_check().await,
+        Commands::Check => commands::run_check(project_root_path).await,
+        Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
         Commands::Chain { command } => commands::run_chain(project_root_path, command).await,
         Commands::Demo { use_case } => commands::run_demo(use_case, project_root_path).await,

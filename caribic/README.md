@@ -13,7 +13,15 @@ cargo install --path .
 
 ### `caribic check`
 
-Verifies prerequisites are available in your `PATH` (Docker, Aiken, Deno, Go, Hermes) and can also bootstrap `osmosisd` when needed.
+Verifies prerequisites are available (Docker, Aiken, Deno, Go, Hermes). Hermes is considered available if either `hermes` is in `PATH` or `relayer/target/release/hermes` exists in the current project.
+
+### `caribic install`
+
+Installs missing prerequisites on macOS and Ubuntu Linux and builds Hermes from the local `relayer/` source tree instead of downloading a separate Hermes binary.
+
+```bash
+caribic install
+```
 
 ### `caribic start [target]`
 
@@ -97,7 +105,7 @@ Starts a demo setup step on top of already running services.
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
 
 ```bash 
-cd caribic && caribic install --path . && caribic stop && caribic start --clean --with-mithril
+cd caribic && caribic install && caribic stop && caribic start --clean --with-mithril
 ```
 
 then wait for services to boot up, then 
