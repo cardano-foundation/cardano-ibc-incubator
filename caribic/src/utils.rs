@@ -186,25 +186,6 @@ fn set_read_only(path: &Path) -> std::io::Result<()> {
     fs::set_permissions(path, permissions)
 }
 
-pub fn wait_until_file_exists(
-    file_path: &Path,
-    retries: u32,
-    interval: u64,
-    retry_command: impl Fn() -> (),
-) -> Result<(), String> {
-    let mut file_exists = file_path.exists();
-    for _ in 0..retries {
-        if file_exists {
-            return Ok(());
-        }
-        retry_command();
-
-        thread::sleep(Duration::from_millis(interval));
-        file_exists = file_path.exists();
-    }
-    Err(format!("File {} does not exist", file_path.display()))
-}
-
 pub async fn download_file(
     url: &str,
     path: &Path,
