@@ -29,7 +29,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
+            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -67,7 +67,7 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
+            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -102,6 +102,37 @@ fn stop_optional_chain(
     let resolved_network = adapter.resolve_network(network.as_deref())?;
     let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
     adapter.stop(project_root_path, resolved_network.as_str(), &parsed_flags)
+}
+
+fn stop_all_managed_optional_chain_networks(
+    project_root_path: &Path,
+    chain_id: &str,
+) -> Result<(), String> {
+    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
+        format!(
+            "ERROR: Optional chain adapter '{}' is not registered",
+            chain_id
+        )
+    })?;
+
+    for network in adapter
+        .supported_networks()
+        .iter()
+        .filter(|network| network.managed_by_caribic)
+    {
+        adapter
+            .stop(project_root_path, network.name, &chains::ChainFlags::new())
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to stop {} network '{}': {}",
+                    adapter.display_name(),
+                    network.name,
+                    error
+                )
+            })?;
+    }
+
+    Ok(())
 }
 
 /// Returns the optional-chain alias handled by `caribic stop <target>` aliases.

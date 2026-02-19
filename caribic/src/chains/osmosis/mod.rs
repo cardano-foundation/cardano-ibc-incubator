@@ -15,8 +15,8 @@ pub struct OsmosisChainAdapter;
 
 pub static OSMOSIS_CHAIN_ADAPTER: OsmosisChainAdapter = OsmosisChainAdapter;
 
-const OSMOSIS_TESTNET_STATUS_URL: &str = "https://rpc.osmotest5.osmosis.zone/status";
 const OSMOSIS_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
+const OSMOSIS_TESTNET_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
 
 const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [
     ChainNetwork {
@@ -26,8 +26,8 @@ const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [
     },
     ChainNetwork {
         name: "testnet",
-        description: "Public Osmosis testnet endpoint",
-        managed_by_caribic: false,
+        description: "Local osmosisd node synced to Osmosis testnet via state sync",
+        managed_by_caribic: true,
     },
 ];
 
@@ -37,11 +37,18 @@ const OSMOSIS_LOCAL_FLAGS: [ChainFlagSpec; 1] = [ChainFlagSpec {
     required: false,
 }];
 
-const OSMOSIS_TESTNET_FLAGS: [ChainFlagSpec; 1] = [ChainFlagSpec {
-    name: "rpc-url",
-    description: "Osmosis testnet RPC status endpoint URL",
-    required: false,
-}];
+const OSMOSIS_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
+    ChainFlagSpec {
+        name: "stateful",
+        description: "Keep local testnet node state in ~/.osmosisd-testnet between runs",
+        required: false,
+    },
+    ChainFlagSpec {
+        name: "trust-rpc-url",
+        description: "Trusted Osmosis testnet RPC base URL used for state sync bootstrap",
+        required: false,
+    },
+];
 
 #[async_trait]
 impl ChainAdapter for OsmosisChainAdapter {
@@ -95,23 +102,17 @@ impl ChainAdapter for OsmosisChainAdapter {
                 Ok(())
             }
             "testnet" => {
-                let rpc_url = request
-                    .flags
-                    .get("rpc-url")
-                    .cloned()
-                    .unwrap_or_else(|| OSMOSIS_TESTNET_STATUS_URL.to_string());
-                let status = check_rpc_health(
-                    "osmosis",
-                    rpc_url.as_str(),
-                    443,
-                    "Osmosis testnet RPC endpoint (external)",
-                );
-                if !status.healthy {
-                    return Err(format!(
-                        "Osmosis testnet endpoint is unreachable: {}",
-                        status.status
-                    ));
-                }
+                let stateful = parse_bool_flag(request.flags, "stateful", true)?;
+                let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
+                let osmosis_dir = workspace_dir(project_root_path);
+                lifecycle::prepare_testnet(osmosis_dir.as_path(), stateful)
+                    .await
+                    .map_err(|error| {
+                        format!("Failed to prepare Osmosis testnet node: {}", error)
+                    })?;
+                lifecycle::start_testnet(osmosis_dir.as_path(), trust_rpc_url.as_deref())
+                    .await
+                    .map_err(|error| format!("Failed to start Osmosis testnet node: {}", error))?;
                 Ok(())
             }
             _ => Err(format!(
@@ -136,7 +137,12 @@ impl ChainAdapter for OsmosisChainAdapter {
                 lifecycle::stop_local(osmosis_dir.as_path());
                 Ok(())
             }
-            "testnet" => Ok(()),
+            "testnet" => {
+                lifecycle::stop_testnet().map_err(|error| {
+                    format!("Failed to stop local Osmosis testnet node: {}", error)
+                })?;
+                Ok(())
+            }
             _ => Err(format!(
                 "Unsupported network '{}' for chain '{}'",
                 network,
@@ -163,18 +169,12 @@ impl ChainAdapter for OsmosisChainAdapter {
                 ),
                 check_port_health("redis", 6379, "Osmosis Redis sidecar"),
             ]),
-            "testnet" => {
-                let rpc_url = flags
-                    .get("rpc-url")
-                    .cloned()
-                    .unwrap_or_else(|| OSMOSIS_TESTNET_STATUS_URL.to_string());
-                Ok(vec![check_rpc_health(
-                    "osmosis",
-                    rpc_url.as_str(),
-                    443,
-                    "Osmosis testnet RPC endpoint (external)",
-                )])
-            }
+            "testnet" => Ok(vec![check_rpc_health(
+                "osmosis",
+                OSMOSIS_TESTNET_LOCAL_STATUS_URL,
+                26658,
+                "Osmosis testnet node (RPC)",
+            )]),
             _ => Err(format!(
                 "Unsupported network '{}' for chain '{}'",
                 network,

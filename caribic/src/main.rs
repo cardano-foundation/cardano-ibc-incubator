@@ -37,7 +37,7 @@ enum StartTarget {
     Bridge,
     /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
     Cosmos,
-    /// Starts only the local Osmosis appchain
+    /// Starts the Osmosis optional chain (network selected via --network)
     Osmosis,
     /// Starts only the Gateway service
     Gateway,
@@ -57,7 +57,7 @@ enum StopTarget {
     Bridge,
     /// Stops the Cosmos Entrypoint chain
     Cosmos,
-    /// Stops only the local Osmosis appchain
+    /// Stops the Osmosis optional chain (network selected via --network)
     Osmosis,
     /// Stops the demo services
     Demo,
