@@ -5,7 +5,7 @@ use std::process::Command;
 use dirs::home_dir;
 
 use crate::check::{collect_prerequisite_statuses, emit_statuses, ToolStatus};
-use crate::{logger, start};
+use crate::logger;
 
 const DENO_INSTALL_SCRIPT: &str = "curl -fsSL https://deno.land/install.sh | sh";
 
@@ -15,10 +15,10 @@ enum HostOs {
     Unsupported(String),
 }
 
-/// Installs missing prerequisites for caribic without downloading external Hermes binaries.
+/// Installs missing prerequisites for caribic.
 pub fn run_install(project_root_path: &Path) -> Result<(), String> {
     logger::log("Checking current prerequisite status before install");
-    let initial_statuses = collect_prerequisite_statuses(Some(project_root_path));
+    let initial_statuses = collect_prerequisite_statuses();
     emit_statuses(initial_statuses.as_slice());
 
     let missing_tools = initial_statuses
@@ -45,7 +45,7 @@ pub fn run_install(project_root_path: &Path) -> Result<(), String> {
     }
 
     logger::log("Re-checking prerequisite status after install");
-    let final_statuses = collect_prerequisite_statuses(Some(project_root_path));
+    let final_statuses = collect_prerequisite_statuses();
     emit_statuses(final_statuses.as_slice());
 
     let still_missing = final_statuses
@@ -79,7 +79,7 @@ pub fn run_install(project_root_path: &Path) -> Result<(), String> {
 
 fn install_missing_tool(
     tool: &ToolStatus,
-    project_root_path: &Path,
+    _project_root_path: &Path,
     host_os: &HostOs,
 ) -> Result<(), String> {
     match tool.command {
@@ -87,7 +87,6 @@ fn install_missing_tool(
         "aiken" => install_aiken(),
         "deno" => install_deno(host_os),
         "go" => install_go(host_os),
-        "hermes" => build_local_hermes(project_root_path),
         _ => Err(format!("Unsupported tool installer for '{}'", tool.command)),
     }
 }
@@ -193,19 +192,6 @@ fn install_go(host_os: &HostOs) -> Result<(), String> {
             os
         )),
     }
-}
-
-fn build_local_hermes(project_root_path: &Path) -> Result<(), String> {
-    let relayer_path = project_root_path.join("relayer");
-    if !relayer_path.exists() {
-        return Err(format!(
-            "Relayer directory not found at {}",
-            relayer_path.display()
-        ));
-    }
-
-    start::build_hermes_if_needed(relayer_path.as_path())
-        .map_err(|error| format!("Failed to build local Hermes binary: {}", error))
 }
 
 fn ensure_homebrew_available() -> Result<(), String> {

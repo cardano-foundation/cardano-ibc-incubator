@@ -13,11 +13,11 @@ cargo install --path .
 
 ### `caribic check`
 
-Verifies prerequisites are available (Docker, Aiken, Deno, Go, Hermes). Hermes is considered available if either `hermes` is in `PATH` or `relayer/target/release/hermes` exists in the current project.
+Verifies prerequisites are available (Docker, Aiken, Deno, Go).
 
 ### `caribic install`
 
-Installs missing prerequisites on macOS and Ubuntu Linux and builds Hermes from the local `relayer/` source tree instead of downloading a separate Hermes binary.
+Installs missing prerequisites on macOS and Ubuntu Linux.
 
 ```bash
 caribic install

@@ -1,7 +1,6 @@
 use crate::logger;
 use dirs::home_dir;
 use std::ffi::OsStr;
-use std::path::Path;
 use std::process::Command;
 
 #[derive(Clone, Debug)]
@@ -51,40 +50,29 @@ const GO_REQUIREMENT: ToolRequirement = ToolRequirement {
     install_instructions: "Install Go by following the instructions at https://go.dev/doc/install.",
 };
 
-const HERMES_REQUIREMENT: ToolRequirement = ToolRequirement {
-    name: "Hermes",
-    command: "hermes",
-    args: &["version"],
-    install_instructions:
-        "Hermes is provided by this repository's local relayer build. Run `caribic install` or `caribic start relayer` to build `relayer/target/release/hermes`.",
-};
-
-fn base_requirements() -> [ToolRequirement; 5] {
+fn base_requirements() -> [ToolRequirement; 4] {
     [
         DOCKER_REQUIREMENT,
         AIKEN_REQUIREMENT,
         DENO_REQUIREMENT,
         GO_REQUIREMENT,
-        HERMES_REQUIREMENT,
     ]
 }
 
 /// Checks whether required local tools are installed and callable.
-pub async fn check_prerequisites(project_root: Option<&Path>) -> bool {
+pub async fn check_prerequisites() -> bool {
     logger::info("Checking prerequisites...");
-    let statuses = collect_prerequisite_statuses(project_root);
+    let statuses = collect_prerequisite_statuses();
     emit_statuses(statuses.as_slice());
     statuses.iter().all(|status| status.available)
 }
 
 /// Returns tool availability without printing output.
-pub fn collect_prerequisite_statuses(project_root: Option<&Path>) -> Vec<ToolStatus> {
+pub fn collect_prerequisite_statuses() -> Vec<ToolStatus> {
     base_requirements()
         .iter()
         .map(|requirement| {
-            if requirement.command == "hermes" {
-                probe_hermes(project_root, requirement)
-            } else if requirement.command == "deno" {
+            if requirement.command == "deno" {
                 probe_deno(requirement)
             } else {
                 probe_standard_tool(requirement)
@@ -125,44 +113,6 @@ fn probe_standard_tool(requirement: &ToolRequirement) -> ToolStatus {
         install_instructions: requirement.install_instructions,
         available: version_line.is_some(),
         version_line,
-        detected_via: None,
-    }
-}
-
-fn probe_hermes(project_root: Option<&Path>, requirement: &ToolRequirement) -> ToolStatus {
-    if let Some(version_line) = run_version_command(requirement.command, requirement.args) {
-        return ToolStatus {
-            name: requirement.name,
-            command: requirement.command,
-            install_instructions: requirement.install_instructions,
-            available: true,
-            version_line: Some(version_line),
-            detected_via: Some("PATH".to_string()),
-        };
-    }
-
-    if let Some(root) = project_root {
-        let local_hermes_path = root.join("relayer/target/release/hermes");
-        if local_hermes_path.exists() {
-            if let Some(version_line) = run_version_command(&local_hermes_path, requirement.args) {
-                return ToolStatus {
-                    name: requirement.name,
-                    command: requirement.command,
-                    install_instructions: requirement.install_instructions,
-                    available: true,
-                    version_line: Some(version_line),
-                    detected_via: Some(local_hermes_path.display().to_string()),
-                };
-            }
-        }
-    }
-
-    ToolStatus {
-        name: requirement.name,
-        command: requirement.command,
-        install_instructions: requirement.install_instructions,
-        available: false,
-        version_line: None,
         detected_via: None,
     }
 }
