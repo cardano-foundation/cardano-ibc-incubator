@@ -2642,6 +2642,12 @@ fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
     if endpoint_contains_result(url) {
         (true, format!("Running on port {}", port_label))
     } else {
-        (true, format!("Port {} accessible", port_label))
+        (
+            false,
+            format!(
+                "Port {} is accessible but {} did not return a valid status payload",
+                port_label, url
+            ),
+        )
     }
 }
