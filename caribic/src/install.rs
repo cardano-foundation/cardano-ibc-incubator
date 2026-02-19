@@ -111,7 +111,7 @@ fn install_docker(host_os: &HostOs) -> Result<(), String> {
             Ok(())
         }
         HostOs::Linux => {
-            install_apt_packages(&["docker.io", "docker-compose-plugin"])?;
+            install_docker_linux_packages()?;
             let _ = run_privileged_command("systemctl", &["enable", "--now", "docker"]);
             Ok(())
         }
@@ -127,7 +127,8 @@ fn install_aiken() -> Result<(), String> {
         return Err("`cargo` is required to install Aiken automatically".to_string());
     }
 
-    run_command(
+    logger::log("Aiken install can take several minutes and prints live cargo output");
+    run_command_streaming(
         "cargo",
         &[
             "install",
@@ -211,6 +212,40 @@ fn install_apt_packages(packages: &[&str]) -> Result<(), String> {
     run_privileged_command("apt-get", args.as_slice())
 }
 
+fn install_docker_linux_packages() -> Result<(), String> {
+    if !command_exists("apt-get") {
+        return Err(
+            "`apt-get` is not available. This installer supports Ubuntu/Debian Linux only"
+                .to_string(),
+        );
+    }
+
+    run_privileged_command("apt-get", &["update"])?;
+
+    let package_sets: [&[&str]; 3] = [
+        &["docker.io", "docker-compose-plugin"],
+        &["docker.io", "docker-compose-v2"],
+        &["docker.io", "docker-compose"],
+    ];
+
+    let mut errors = Vec::new();
+    for packages in package_sets {
+        let mut args = vec!["install", "-y"];
+        args.extend_from_slice(packages);
+        match run_privileged_command("apt-get", args.as_slice()) {
+            Ok(_) => return Ok(()),
+            Err(error) => {
+                errors.push(format!("{} => {}", packages.join(" "), error));
+            }
+        }
+    }
+
+    Err(format!(
+        "Failed to install Docker packages with apt. Tried:\n{}",
+        errors.join("\n")
+    ))
+}
+
 fn run_shell(shell_command: &str) -> Result<(), String> {
     run_command("sh", &["-lc", shell_command])
 }
@@ -262,6 +297,26 @@ fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
         output.status.code().unwrap_or(-1),
         details
     ))
+}
+
+fn run_command_streaming(command: &str, args: &[&str]) -> Result<(), String> {
+    let status = Command::new(command).args(args).status().map_err(|error| {
+        format!(
+            "Failed to run `{}`: {}",
+            format_command(command, args),
+            error
+        )
+    })?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{}` failed (exit code {})",
+            format_command(command, args),
+            status.code().unwrap_or(-1)
+        ))
+    }
 }
 
 fn format_command(command: &str, args: &[&str]) -> String {
