@@ -1,6 +1,7 @@
 use crate::logger;
 use dirs::home_dir;
 use std::ffi::OsStr;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Clone, Debug)]
@@ -103,6 +104,8 @@ pub fn emit_statuses(statuses: &[ToolStatus]) {
             logger::log(status.install_instructions);
         }
     }
+
+    emit_path_hints();
 }
 
 fn probe_standard_tool(requirement: &ToolRequirement) -> ToolStatus {
@@ -177,4 +180,32 @@ fn run_version_command<S: AsRef<OsStr>>(command: S, args: &[&str]) -> Option<Str
         .find(|line| !line.trim().is_empty())
         .or_else(|| stderr.lines().find(|line| !line.trim().is_empty()))?;
     Some(line.trim().to_string())
+}
+
+fn emit_path_hints() {
+    let Some(home_path) = home_dir() else {
+        return;
+    };
+
+    let go_bin_path = home_path.join("go/bin");
+    if go_bin_path.is_dir() && !path_contains_directory(go_bin_path.as_path()) {
+        logger::warn(
+            "WARN: ~/go/bin is not in PATH. osmosisd may fail to start from shell commands",
+        );
+    }
+
+    let deno_bin_path = home_path.join(".deno/bin");
+    if deno_bin_path.is_dir() && !path_contains_directory(deno_bin_path.as_path()) {
+        logger::warn(
+            "WARN: ~/.deno/bin is not in PATH. add it or restart shell after `caribic install`",
+        );
+    }
+}
+
+fn path_contains_directory(target_directory: &Path) -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+
+    std::env::split_paths(&path_var).any(|path| path == target_directory)
 }

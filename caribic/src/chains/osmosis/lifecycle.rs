@@ -286,6 +286,9 @@ async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std
             ));
 
             if !path_visible {
+                if let Some(binary_dir) = osmosisd_binary.parent() {
+                    add_directory_to_process_path(binary_dir);
+                }
                 warn(&format!(
                     "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
                     osmosisd_binary.display()
@@ -370,6 +373,19 @@ fn locate_osmosisd_binary() -> Option<(PathBuf, bool)> {
             None
         }
     })
+}
+
+fn add_directory_to_process_path(directory: &Path) {
+    let current_path = env::var_os("PATH").unwrap_or_default();
+    let mut path_entries: Vec<PathBuf> = env::split_paths(&current_path).collect();
+    if path_entries.iter().any(|entry| entry == directory) {
+        return;
+    }
+
+    path_entries.insert(0, directory.to_path_buf());
+    if let Ok(updated_path) = env::join_paths(path_entries) {
+        env::set_var("PATH", updated_path);
+    }
 }
 
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {

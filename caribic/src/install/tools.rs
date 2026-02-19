@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::env;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use dirs::home_dir;
 
@@ -20,6 +22,65 @@ pub fn install_missing_tool(tool: &ToolStatus, host_os: &HostOs) -> Result<(), S
         "go" => install_go(host_os),
         _ => Err(format!("Unsupported tool installer for '{}'", tool.command)),
     }
+}
+
+pub fn ensure_user_bin_dirs_on_path() -> Result<(), String> {
+    let Some(home_path) = home_dir() else {
+        return Err("Unable to resolve home directory for PATH setup".to_string());
+    };
+
+    let path_entries = vec![
+        ("$HOME/go/bin", home_path.join("go/bin")),
+        ("$HOME/.deno/bin", home_path.join(".deno/bin")),
+    ];
+
+    prepend_entries_to_process_path(&path_entries);
+    let profile_path = resolve_shell_profile_path(home_path.as_path());
+    let mut profile_content = if profile_path.exists() {
+        fs::read_to_string(profile_path.as_path()).map_err(|error| {
+            format!(
+                "Failed to read shell profile {}: {}",
+                profile_path.display(),
+                error
+            )
+        })?
+    } else {
+        String::new()
+    };
+
+    let mut appended = false;
+    for (entry_expr, _) in &path_entries {
+        let export_line = format!(
+            "if [ -d \"{entry}\" ] && [[ \":$PATH:\" != *\":{entry}:\"* ]]; then export PATH=\"{entry}:$PATH\"; fi",
+            entry = entry_expr
+        );
+
+        if !profile_content.contains(&export_line) {
+            if !profile_content.ends_with('\n') && !profile_content.is_empty() {
+                profile_content.push('\n');
+            }
+            profile_content.push_str(&export_line);
+            profile_content.push('\n');
+            appended = true;
+        }
+    }
+
+    if appended {
+        fs::write(profile_path.as_path(), profile_content).map_err(|error| {
+            format!(
+                "Failed to update shell profile {}: {}",
+                profile_path.display(),
+                error
+            )
+        })?;
+        logger::log(&format!(
+            "PASS: Added Go/Deno PATH exports to {}",
+            profile_path.display()
+        ));
+        logger::warn("WARN: Restart the shell or run `source <profile>` to load PATH updates");
+    }
+
+    Ok(())
 }
 
 fn install_docker(host_os: &HostOs) -> Result<(), String> {
@@ -181,4 +242,44 @@ fn local_deno_binary() -> Option<PathBuf> {
     } else {
         None
     }
+}
+
+fn prepend_entries_to_process_path(path_entries: &[(&str, PathBuf)]) {
+    let current_path = env::var_os("PATH").unwrap_or_default();
+    let mut paths: Vec<PathBuf> = env::split_paths(&current_path).collect();
+    let mut changed = false;
+
+    for (_, absolute_path) in path_entries {
+        if !absolute_path.is_dir() {
+            continue;
+        }
+
+        if !paths.iter().any(|path| path == absolute_path) {
+            paths.insert(0, absolute_path.clone());
+            changed = true;
+        }
+    }
+
+    if changed {
+        if let Ok(joined) = env::join_paths(paths) {
+            env::set_var("PATH", joined);
+        }
+    }
+}
+
+fn resolve_shell_profile_path(home_path: &Path) -> PathBuf {
+    let shell_value = env::var("SHELL").unwrap_or_default();
+    let shell_name = Path::new(shell_value.as_str())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+
+    if shell_name.contains("zsh") {
+        return home_path.join(".zshrc");
+    }
+    if shell_name.contains("bash") {
+        return home_path.join(".bashrc");
+    }
+
+    home_path.join(".profile")
 }
