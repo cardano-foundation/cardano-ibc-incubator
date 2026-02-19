@@ -57,3 +57,6 @@ relayer/config.example.toml
 relayer/*.toml
 
 run_token_swap.sh
+
+# Private operator material (testnet/mainnet mnemonics, never commit)
+.caribic/secrets/
