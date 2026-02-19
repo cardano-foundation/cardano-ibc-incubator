@@ -58,7 +58,7 @@ caribic stop osmosis
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos). Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis). Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check
@@ -75,13 +75,11 @@ Runs three checks and reports a single pass or fail summary:
 ### `caribic keys <add|list|delete>`
 
 Convenience wrapper around Hermes keyring operations.
-Set an alias once for readability:
 
 ```bash
-ENTRYPOINT_CHAIN_ID="$(grep -m1 \"^id =\" ~/.hermes/config.toml | cut -d\"'\" -f2)"
 caribic keys list
-caribic keys add --chain "$ENTRYPOINT_CHAIN_ID" --mnemonic-file ./my-mnemonic.txt --overwrite
-caribic keys delete --chain "$ENTRYPOINT_CHAIN_ID" --key-name relayer
+caribic keys add --chain entrypoint --mnemonic-file ./my-mnemonic.txt --overwrite
+caribic keys delete --chain entrypoint --key-name relayer
 ```
 
 ### `caribic create-client`, `caribic create-connection`, `caribic create-channel`
@@ -89,15 +87,14 @@ caribic keys delete --chain "$ENTRYPOINT_CHAIN_ID" --key-name relayer
 Thin wrappers that run the corresponding Hermes IBC actions using the local Hermes binary/config.
 
 ```bash
-caribic create-client --host-chain cardano-devnet --reference-chain "$ENTRYPOINT_CHAIN_ID"
-caribic create-connection --a-chain cardano-devnet --b-chain "$ENTRYPOINT_CHAIN_ID"
-caribic create-channel --a-chain cardano-devnet --b-chain "$ENTRYPOINT_CHAIN_ID" --a-port transfer --b-port transfer
+caribic create-client --host-chain cardano-devnet --reference-chain entrypoint
+caribic create-connection --a-chain cardano-devnet --b-chain entrypoint
+caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port transfer --b-port transfer
 ```
 
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
-`caribic demo message-exchange` expects `caribic start --clean --with-mithril` to have already been run. It then boots the summit demo chain, configures Hermes for `vesseloracle`, ensures a `port-100` ↔ `vesseloracle` channel exists, submits report/consolidate/transmit datasource commands, and relays recv/ack packets.
 `caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 
 ## `caribic test`
@@ -105,7 +102,7 @@ Starts a demo setup step on top of already running services.
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
 
 ```bash 
-cd caribic && caribic install && caribic stop && caribic start --clean --with-mithril
+cd caribic && cargo install --path . --force && cd .. && caribic check && caribic install && caribic start --clean --with-mithril
 ```
 
 then wait for services to boot up, then 
