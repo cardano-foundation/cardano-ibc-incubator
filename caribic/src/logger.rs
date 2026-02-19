@@ -70,11 +70,18 @@ fn colorize_status_lines(message: &str) -> String {
                 format!("{ANSI_GREEN}{line}{ANSI_RESET}")
             } else if trimmed.starts_with("FAIL:")
                 || trimmed.starts_with("FAIL ")
+                || trimmed.starts_with("ERROR:")
+                || trimmed.starts_with("ERROR ")
+                || trimmed.starts_with("ERR:")
                 || trimmed.starts_with("[FAIL]")
             {
                 format!("{ANSI_RED}{line}{ANSI_RESET}")
             } else if trimmed.starts_with("SKIP:")
                 || trimmed.starts_with("SKIP ")
+                || trimmed.starts_with("WARN:")
+                || trimmed.starts_with("WARN ")
+                || trimmed.starts_with("WARNING:")
+                || trimmed.starts_with("WARNING ")
                 || trimmed.starts_with("[WARN]")
             {
                 format!("{ANSI_YELLOW}{line}{ANSI_RESET}")
