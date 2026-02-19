@@ -15,7 +15,7 @@ pub struct OsmosisChainAdapter;
 
 pub static OSMOSIS_CHAIN_ADAPTER: OsmosisChainAdapter = OsmosisChainAdapter;
 
-const OSMOSIS_TESTNET_STATUS_URL: &str = "https://rpc-test.osmosis.zone/status";
+const OSMOSIS_TESTNET_STATUS_URL: &str = "https://rpc.osmotest5.osmosis.zone/status";
 const OSMOSIS_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
 
 const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [

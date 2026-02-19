@@ -238,18 +238,26 @@ pub fn check_rpc_health(
     default_port: u16,
     label: &'static str,
 ) -> ChainHealthStatus {
-    let parsed_port = reqwest::Url::parse(url)
-        .ok()
+    let parsed_url = reqwest::Url::parse(url).ok();
+    let parsed_port = parsed_url
+        .as_ref()
         .and_then(|parsed_url| parsed_url.port_or_known_default())
         .unwrap_or(default_port);
+    let host = parsed_url
+        .as_ref()
+        .and_then(|parsed_url| parsed_url.host_str())
+        .unwrap_or("localhost");
+    let local_host = matches!(host, "localhost" | "127.0.0.1" | "::1");
 
-    let port_status = check_port_health(id, parsed_port, label);
-    if !port_status.healthy {
-        return port_status;
+    if local_host {
+        let port_status = check_port_health(id, parsed_port, label);
+        if !port_status.healthy {
+            return port_status;
+        }
     }
 
     let rpc_response_ok = Command::new("curl")
-        .args(["-s", "--connect-timeout", "3", url])
+        .args(["-sS", "--connect-timeout", "3", "--max-time", "8", url])
         .output()
         .ok()
         .filter(|output| output.status.success())
@@ -261,17 +269,14 @@ pub fn check_rpc_health(
             id,
             label,
             healthy: true,
-            status: format!("Running on port {}", parsed_port),
+            status: format!("RPC reachable at {} (port {})", host, parsed_port),
         }
     } else {
         ChainHealthStatus {
             id,
             label,
-            healthy: true,
-            status: format!(
-                "Port {} accessible but RPC response is not ready",
-                parsed_port
-            ),
+            healthy: false,
+            status: format!("RPC endpoint did not return a valid status response: {}", url),
         }
     }
 }
