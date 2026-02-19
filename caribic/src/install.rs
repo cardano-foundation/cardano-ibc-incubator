@@ -147,6 +147,7 @@ fn install_deno(host_os: &HostOs) -> Result<(), String> {
             run_command("brew", &["install", "deno"])
         }
         HostOs::Linux => {
+            ensure_linux_archive_tool_for_deno()?;
             run_shell(DENO_INSTALL_SCRIPT)?;
             if let Some(path) = local_deno_binary() {
                 logger::warn(&format!(
@@ -160,6 +161,23 @@ fn install_deno(host_os: &HostOs) -> Result<(), String> {
             "Automatic Deno install is not supported on '{}'. Install Deno manually",
             os
         )),
+    }
+}
+
+fn ensure_linux_archive_tool_for_deno() -> Result<(), String> {
+    if command_exists("unzip") || command_exists("7z") || command_exists("7zz") {
+        return Ok(());
+    }
+
+    match install_apt_packages(&["unzip"]) {
+        Ok(_) => Ok(()),
+        Err(unzip_error) => match install_apt_packages(&["p7zip-full"]) {
+            Ok(_) => Ok(()),
+            Err(p7zip_error) => Err(format!(
+                "Deno installer requires unzip or 7z. Failed to install unzip ({}) and p7zip-full ({})",
+                unzip_error, p7zip_error
+            )),
+        },
     }
 }
 
