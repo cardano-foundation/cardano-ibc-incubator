@@ -2,6 +2,8 @@ ARG GO_VERSION="1.21.4"
 
 FROM golang:${GO_VERSION} as builder
 
+ENV PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
+
 # Install dependencies *You don't need all of them
 RUN apt-get update -y \
     && apt-get upgrade -y \
@@ -13,6 +15,10 @@ RUN apt-get update -y \
     && apt-get clean
 
 RUN bash -c "curl https://get.ignite.com/cli@v28.11.2! | bash"
+
+# Install protobuf generator plugins required by `buf generate` in Ignite's OpenAPI step.
+RUN /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.20.0 \
+    && /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger@v1.16.0
 
 RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
 RUN bash -c "source $HOME/.bashrc"
