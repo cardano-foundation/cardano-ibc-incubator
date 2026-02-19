@@ -12,6 +12,8 @@ use crate::utils::{
     execute_script, extract_tendermint_client_id, extract_tendermint_connection_id,
 };
 
+const OSMOSIS_TESTNET_CHAIN_ID: &str = "osmo-test-5";
+
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
 pub(super) fn configure_hermes_for_demo(
     osmosis_dir: &Path,
@@ -235,6 +237,18 @@ pub(super) fn configure_hermes_for_demo(
     }
 
     Ok(())
+}
+
+/// Ensures Hermes config contains an Osmosis testnet chain block (`osmo-test-5`).
+pub(super) fn ensure_testnet_chain_in_hermes_config(
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_dir = osmosis_dir.join("scripts");
+    ensure_chain_in_hermes_config(
+        script_dir.as_path(),
+        OSMOSIS_TESTNET_CHAIN_ID,
+        "Osmosis testnet chain used by local state-sync node",
+    )
 }
 
 fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {

@@ -83,3 +83,34 @@ trust_threshold = { numerator = '1', denominator = '3' }
 #   ['ica*', '*'],
 #   ['transfer', 'channel-0'],
 # ]
+
+[[chains]]
+id = 'osmo-test-5'
+type = 'CosmosSdk'
+rpc_addr = 'http://127.0.0.1:26658'
+grpc_addr = 'http://127.0.0.1:9094'
+event_source = { mode = 'push', url = 'ws://127.0.0.1:26658/websocket', batch_delay = '200ms' }
+rpc_timeout = '10s'
+trusted_node = true
+account_prefix = 'osmo'
+key_name = 'osmo-test-5-relayer'
+address_type = { derivation = 'cosmos' }
+store_prefix = 'ibc'
+default_gas = 5000000
+max_gas = 15000000
+gas_price = { price = 0.025, denom = 'uosmo' }
+gas_multiplier = 1.8
+max_msg_num = 20
+max_tx_size = 209715
+clock_drift = '20s'
+max_block_time = '10s'
+trusting_period = '10days'
+memo_prefix = 'Caribic'
+trust_threshold = { numerator = '1', denominator = '3' }
+
+# [chains.packet_filter]
+# policy = 'allow'
+# list = [
+#   ['ica*', '*'],
+#   ['transfer', 'channel-0'],
+# ]

@@ -105,6 +105,14 @@ impl ChainAdapter for OsmosisChainAdapter {
                 let stateful = parse_bool_flag(request.flags, "stateful", true)?;
                 let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
                 let osmosis_dir = workspace_dir(project_root_path);
+                hermes::ensure_testnet_chain_in_hermes_config(osmosis_dir.as_path()).map_err(
+                    |error| {
+                        format!(
+                            "Failed to update Hermes config for Osmosis testnet: {}",
+                            error
+                        )
+                    },
+                )?;
                 lifecycle::prepare_testnet(osmosis_dir.as_path(), stateful)
                     .await
                     .map_err(|error| {
