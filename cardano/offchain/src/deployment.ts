@@ -569,7 +569,31 @@ async function createReferenceUtxos(
 
       const [newWalletUTxOs, derivedOutputs, txSignBuilder] = await tx.chain();
       const signedTx = await txSignBuilder.sign.withWallet().complete();
-      await signedTx.submit();
+
+      let txHash: string | undefined;
+      let lastSubmitError: unknown;
+      for (let attempt = 1; attempt <= 6; attempt++) {
+        try {
+          txHash = await signedTx.submit();
+          break;
+        } catch (error) {
+          lastSubmitError = error;
+          if (attempt === 6) {
+            throw error;
+          }
+          console.warn(
+            `createReferenceUtxos submit retry ${attempt}/6 after error:`,
+            error,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+
+      if (!txHash) {
+        throw lastSubmitError ?? new Error("Missing tx hash after submit retries");
+      }
+
+      await lucid.awaitTx(txHash, 1000);
 
       lucid.overrideUTxOs(newWalletUTxOs);
 

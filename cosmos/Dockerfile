@@ -16,8 +16,9 @@ RUN apt-get update -y \
 
 RUN bash -c "curl https://get.ignite.com/cli@v28.11.2! | bash"
 
-# Install protobuf generator plugins required by `buf generate` in Ignite's OpenAPI step.
-RUN /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.20.0 \
+# Install buf and protobuf generator plugins required by `buf generate` in Ignite's OpenAPI step.
+RUN /usr/local/go/bin/go install github.com/bufbuild/buf/cmd/buf@v1.32.0 \
+    && /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.20.0 \
     && /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger@v1.16.0
 
 RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
@@ -27,7 +28,7 @@ RUN bash -c "mkdir -p /root/entrypoint/workspace/entrypoint"
 COPY "./entrypoint" "/root/entrypoint/workspace/entrypoint"
 WORKDIR "/root/entrypoint/workspace/entrypoint"
 
-RUN mv /go/bin/buf /go/bin/buf.real
+RUN test -x /go/bin/buf && mv /go/bin/buf /go/bin/buf.real
 COPY "./buf-wrapper.sh" "/go/bin/buf"
 RUN chmod +x /go/bin/buf /go/bin/buf.real
 
