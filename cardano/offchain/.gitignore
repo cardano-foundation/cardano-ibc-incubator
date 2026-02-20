@@ -4,4 +4,3 @@ plutus.json
 deployments
 .vscode
 .env
-deno.lock
