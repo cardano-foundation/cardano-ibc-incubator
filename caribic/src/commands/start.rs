@@ -217,50 +217,17 @@ pub async fn run_start(
         logger::log("\nPASS: Cardano Network started successfully");
     }
 
-    if start_cosmos {
-        if start_all {
-            if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
-                match handle.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        return Err(format!(
-                            "ERROR: Failed to start Cosmos Entrypoint chain: {}",
-                            error
-                        ));
-                    }
-                    Err(error) => {
-                        return Err(format!(
-                            "ERROR: Failed to start Cosmos Entrypoint chain: {}",
-                            error
-                        ));
-                    }
-                }
-            }
-
-            match wait_for_cosmos_entrypoint_chain_ready().await {
-                Ok(_) => logger::log(
-                    "PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)",
-                ),
-                Err(error) => {
-                    return Err(format!(
-                        "ERROR: Failed to start Cosmos Entrypoint chain: {}",
-                        error
-                    ))
-                }
-            }
-        } else {
-            match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean)
-                .await
-            {
-                Ok(_) => logger::log(
-                    "PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)",
-                ),
-                Err(error) => {
-                    return Err(format!(
-                        "ERROR: Failed to start Cosmos Entrypoint chain: {}",
-                        error
-                    ))
-                }
+    if start_cosmos && !start_all {
+        match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean).await
+        {
+            Ok(_) => logger::log(
+                "PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)",
+            ),
+            Err(error) => {
+                return Err(format!(
+                    "ERROR: Failed to start Cosmos Entrypoint chain: {}",
+                    error
+                ))
             }
         }
     }
@@ -326,6 +293,44 @@ pub async fn run_start(
                     StopTarget::Bridge,
                     &format!("ERROR: Failed to start gateway: {}", error),
                 )
+            }
+        }
+
+        // In full startup mode, Cosmos is started in parallel at the beginning of `run_start`.
+        // We intentionally defer the Cosmos readiness gate until right before relayer startup so
+        // Cardano contract deployment and Gateway startup can progress independently.
+        if start_all && start_cosmos {
+            if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
+                match handle.await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => {
+                        return fail_and_stop_started_services(
+                            project_root_path,
+                            StopTarget::Bridge,
+                            &format!("ERROR: Failed to start Cosmos Entrypoint chain: {}", error),
+                        );
+                    }
+                    Err(error) => {
+                        return fail_and_stop_started_services(
+                            project_root_path,
+                            StopTarget::Bridge,
+                            &format!("ERROR: Failed to start Cosmos Entrypoint chain: {}", error),
+                        );
+                    }
+                }
+            }
+
+            match wait_for_cosmos_entrypoint_chain_ready().await {
+                Ok(_) => logger::log(
+                    "PASS: Cosmos Entrypoint chain started (packet-forwarding chain on port 26657)",
+                ),
+                Err(error) => {
+                    return fail_and_stop_started_services(
+                        project_root_path,
+                        StopTarget::Bridge,
+                        &format!("ERROR: Failed to start Cosmos Entrypoint chain: {}", error),
+                    );
+                }
             }
         }
 
