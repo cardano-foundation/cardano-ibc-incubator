@@ -27,6 +27,10 @@ RUN bash -c "mkdir -p /root/entrypoint/workspace/entrypoint"
 COPY "./entrypoint" "/root/entrypoint/workspace/entrypoint"
 WORKDIR "/root/entrypoint/workspace/entrypoint"
 
+RUN mv /go/bin/buf /go/bin/buf.real
+COPY "./buf-wrapper.sh" "/go/bin/buf"
+RUN chmod +x /go/bin/buf /go/bin/buf.real
+
 COPY "./entrypoint.sh" "/entrypoint.sh"
 RUN chmod +x /entrypoint.sh
 # RUN bash -c "cd /root/entrypoint/workspace2/entrypoint && DO_NOT_TRACK=1 ignite chain serve"
