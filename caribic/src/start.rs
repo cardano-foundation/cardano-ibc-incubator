@@ -797,9 +797,22 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
     let cosmos_status_url = config::get_config().health.cosmos_status_url;
-    let max_retries = 60;
-    let interval_ms = 10000; // 10 seconds
+    let max_retries = std::env::var("CARIBIC_COSMOS_MAX_RETRIES")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(60);
+    let interval_ms = std::env::var("CARIBIC_COSMOS_RETRY_INTERVAL_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10000); // 10 seconds
     let client = reqwest::Client::builder().no_proxy().build()?;
+
+    verbose(&format!(
+        "Cosmos readiness polling configured with max_retries={} interval_ms={}",
+        max_retries, interval_ms
+    ));
 
     for retry in 0..max_retries {
         let response = client.get(cosmos_status_url.as_str()).send().await;

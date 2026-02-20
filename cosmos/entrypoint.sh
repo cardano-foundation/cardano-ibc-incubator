@@ -3,6 +3,6 @@
 source $HOME/.bashrc
 cd /root/entrypoint/workspace/entrypoint
 
-DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' ignite chain serve -y -v
-
-exec "$@"
+echo "[ENTRYPOINT] ignite=$(command -v ignite) buf=$(command -v buf) protoc-gen-openapiv2=$(command -v protoc-gen-openapiv2)"
+echo "[ENTRYPOINT] BUF_GENERATE_TIMEOUT=${BUF_GENERATE_TIMEOUT:-10m}"
+exec env DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' ignite chain serve -y -v
