@@ -616,7 +616,7 @@ pub async fn deploy_contracts(
         let deployment_result = execute_script(
             project_root_path.join("cardano").join("offchain").as_path(),
             "deno",
-            Vec::from(["task", "start"]),
+            Vec::from(["task", "--frozen", "start"]),
             None,
         );
 
