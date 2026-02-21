@@ -51,11 +51,11 @@ const GO_REQUIREMENT: ToolRequirement = ToolRequirement {
 };
 
 const HERMES_NATIVE_TOOLCHAIN_REQUIREMENT: ToolRequirement = ToolRequirement {
-    name: "Hermes native build toolchain (cc/clang/pkg-config + libc headers)",
+    name: "Hermes native build toolchain (cc/clang/pkg-config/protoc + libc headers)",
     command: "hermes-native-toolchain",
     args: &[],
     install_instructions:
-        "Install build prerequisites for Hermes. On Ubuntu/Debian: apt-get install -y build-essential clang pkg-config libclang-dev",
+        "Install build prerequisites for Hermes. On Ubuntu/Debian: apt-get install -y build-essential clang pkg-config libclang-dev protobuf-compiler",
 };
 
 fn base_requirements() -> Vec<ToolRequirement> {
@@ -181,7 +181,7 @@ fn probe_deno(requirement: &ToolRequirement) -> ToolStatus {
 }
 
 fn probe_hermes_native_toolchain(requirement: &ToolRequirement) -> ToolStatus {
-    let command = "command -v cc >/dev/null 2>&1 && command -v clang >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && printf '#include <stddef.h>\\n' | cc -E -x c - >/dev/null 2>&1";
+    let command = "command -v cc >/dev/null 2>&1 && command -v clang >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && command -v protoc >/dev/null 2>&1 && printf '#include <stddef.h>\\n' | cc -E -x c - >/dev/null 2>&1";
     let available = Command::new("sh")
         .args(["-lc", command])
         .status()

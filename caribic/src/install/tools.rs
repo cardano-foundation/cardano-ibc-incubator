@@ -108,12 +108,13 @@ fn install_hermes_native_toolchain(host_os: &HostOs) -> Result<(), String> {
             "clang",
             "pkg-config",
             "libclang-dev",
+            "protobuf-compiler",
         ]),
         HostOs::MacOs => Err(
             "Install Xcode Command Line Tools manually: `xcode-select --install`".to_string(),
         ),
         HostOs::Unsupported(os) => Err(format!(
-            "Automatic Hermes toolchain install is not supported on '{}'. Install cc/clang/pkg-config and libc headers manually",
+            "Automatic Hermes toolchain install is not supported on '{}'. Install cc/clang/pkg-config/protoc and libc headers manually",
             os
         )),
     }
