@@ -1,5 +1,4 @@
 use crate::logger::{error, get_verbosity, log, verbose, Verbosity};
-use crate::utils::{download_file, unzip_file, IndicatorMessage};
 use console::style;
 use dirs::home_dir;
 use fs_extra::dir::create_all;
@@ -107,7 +106,7 @@ pub async fn create_config_file(config_path: &str) -> Config {
                 || input.trim().is_empty()
             {
                 let default_project_root = format!(
-                    "{}/.caribic/cardano-ibc-incubator",
+                    "{}/cardano-ibc-incubator",
                     home_path.as_path().display()
                 );
                 log(&format!(
@@ -127,54 +126,15 @@ pub async fn create_config_file(config_path: &str) -> Config {
                     project_root = project_root.replace("~", home_path.to_str().unwrap());
                 }
                 let project_root_path = Path::new(&project_root);
-                let parent_dir = project_root_path.parent().unwrap();
 
                 if !project_root_path.exists() {
-                    verbose(&format!(
-                        "cardano-ibc-incubator folder does not exist. It will be downloaded to: {}",
-                        project_root_path.display(),
+                    error(&format!(
+                        "Project root does not exist: {}",
+                        project_root_path.display()
                     ));
-
-                    let default_target_branch = "main".to_string();
-                    log(&format!(
-                        "Enter the target branch you want to fetch the source code from (default: {}):",
-                        default_target_branch
-                    ));
-
-                    let mut target_branch = String::new();
-                    stdin().read_line(&mut target_branch).unwrap();
-                    let target_branch = if target_branch.trim().is_empty() {
-                        default_target_branch
-                    } else {
-                        target_branch.trim().to_string()
-                    };
-
-                    fs::create_dir_all(parent_dir).expect("Failed to create project root folder.");
-                    let github_url = format!("https://github.com/cardano-foundation/cardano-ibc-incubator/archive/refs/heads/{}.zip", target_branch);
-                    download_file(
-                        &github_url,
-                        &parent_dir.join("cardano-ibc-incubator-main.zip"),
-                        Some(IndicatorMessage {
-                            message: "Downloading cardano-ibc-incubator project".to_string(),
-                            step: "Step 1/2".to_string(),
-                            emoji: "".to_string(),
-                        }),
-                    )
-                    .await
-                    .expect("Failed to download cardano-ibc-incubator project");
-
-                    log(&format!(
-                        "{} Extracting cardano-ibc-incubator project...",
-                        style("Step 2/2").bold().dim()
-                    ));
-
-                    unzip_file(
-                        parent_dir.join("cardano-ibc-incubator-main.zip").as_path(),
-                        project_root_path,
-                    )
-                    .expect("Failed to unzip cardano-ibc-incubator project");
-                    fs::remove_file(parent_dir.join("cardano-ibc-incubator-main.zip"))
-                        .expect("Failed to cleanup cardano-ibc-incubator-main.zip");
+                    log("Clone the repository first, for example:");
+                    log("  git clone --recurse-submodules https://github.com/cardano-foundation/cardano-ibc-incubator.git");
+                    process::exit(1);
                 }
 
                 default_config.project_root = project_root.clone();
@@ -205,7 +165,7 @@ pub async fn create_config_file(config_path: &str) -> Config {
 impl Config {
     fn default() -> Self {
         let mut default_config = Config {
-            project_root: "/root/.caribic/cardano-ibc-incubator".to_string(),
+            project_root: "/root/cardano-ibc-incubator".to_string(),
             mithril: {
                 Mithril {
                     enabled: true,
@@ -213,7 +173,7 @@ impl Config {
                     genesis_verification_key: "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d".to_string(),
                     genesis_secret_key: "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d".to_string(),
                     chain_observer_type: "pallas".to_string(),
-                    cardano_node_dir: "/root/.caribic/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
+                    cardano_node_dir: "/root/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
                     cardano_node_version: "9.1.4".to_string(),
                     aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:2450.0-c6c7eba".to_string(),
                     signer_image: "ghcr.io/input-output-hk/mithril-signer:2450.0-c6c7eba".to_string(),
@@ -255,7 +215,7 @@ impl Config {
 
         if let Some(home_path) = home_dir() {
             let default_project_root = format!(
-                "{}/.caribic/cardano-ibc-incubator",
+                "{}/cardano-ibc-incubator",
                 home_path.as_path().display()
             );
             default_config.project_root = default_project_root.clone();

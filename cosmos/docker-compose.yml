@@ -5,6 +5,9 @@ services:
       context: .
       dockerfile: Dockerfile
     entrypoint: /entrypoint.sh
+    environment:
+      BUF_GENERATE_TIMEOUT: ${BUF_GENERATE_TIMEOUT:-10m}
+      IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
     ports:
       - "26657:26657"
       - "26656:26656"

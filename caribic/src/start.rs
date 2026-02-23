@@ -6,8 +6,8 @@ use crate::setup::{
 };
 use crate::utils::{
     diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, wait_until_file_exists,
-    CardanoQuery, IndicatorMessage,
+    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, CardanoQuery,
+    IndicatorMessage,
 };
 use crate::{
     chains, config,
@@ -64,6 +64,7 @@ pub fn start_relayer(
     let hermes_binary = relayer_path.join("target/release/hermes");
 
     if !hermes_binary.exists() {
+        ensure_relayer_sources_available(relayer_path)?;
         log_or_show_progress(
             "Building Hermes with Cardano support (this may take a few minutes)...",
             &optional_progress_bar,
@@ -221,11 +222,43 @@ pub fn start_relayer(
     Ok(())
 }
 
+fn ensure_relayer_sources_available(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if relayer_path.join("Cargo.toml").exists() {
+        return Ok(());
+    }
+
+    let project_root = relayer_path
+        .parent()
+        .ok_or("Failed to resolve project root from relayer path")?;
+
+    if project_root.join(".git").exists() {
+        execute_script(
+            project_root,
+            "git",
+            Vec::from(["submodule", "update", "--init", "--recursive", "relayer"]),
+            None,
+        )?;
+
+        if relayer_path.join("Cargo.toml").exists() {
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "Hermes relayer sources are missing at {} (Cargo.toml not found). \
+Clone the repository with submodules or run `git submodule update --init --recursive relayer`.",
+        relayer_path.display()
+    )
+    .into())
+}
+
 pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
     if hermes_binary.exists() {
         return Ok(());
     }
+
+    ensure_relayer_sources_available(relayer_path)?;
 
     // This helper intentionally does not use a progress bar because it is used by
     // `caribic start` to build Hermes in parallel with other startup tasks.
@@ -602,35 +635,44 @@ pub async fn deploy_contracts(
         );
     }
 
-    // Remove the old handler file
-    if !project_root_path
-        .join("cardano/offchain/deployments/handler.json")
-        .exists()
-    {
-        let handler_json_exists = wait_until_file_exists(
-            project_root_path
-                .join("cardano/offchain/deployments/handler.json")
-                .as_path(),
-            20,
-            5000,
-            || {
-                let _ = execute_script(
-                    project_root_path.join("cardano").join("offchain").as_path(),
-                    "deno",
-                    Vec::from(["task", "start"]),
-                    None,
-                );
-            },
+    let handler_json_path = project_root_path.join("cardano/offchain/deployments/handler.json");
+
+    if !handler_json_path.exists() {
+        log_or_show_progress(
+            &format!(
+                "{} Generating handler.json via offchain deployment",
+                style("Step 2/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+
+        let deployment_result = execute_script(
+            project_root_path.join("cardano").join("offchain").as_path(),
+            "deno",
+            Vec::from(["task", "--frozen", "start"]),
+            None,
         );
 
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
 
-        if handler_json_exists.is_ok() {
+        if let Err(error) = deployment_result {
+            return Err(format!(
+                "ERROR: Offchain deployment failed while generating handler.json: {}",
+                error
+            )
+            .into());
+        }
+
+        if handler_json_path.exists() {
             Ok(())
         } else {
-            Err("ERROR: Failed to start Cardano services. The handler.json file should have been created, but it doesn't exist. Consider running the start command again using --verbose 5.".into())
+            Err(format!(
+                "ERROR: Offchain deployment finished but handler.json was not created at {}",
+                handler_json_path.display()
+            )
+            .into())
         }
     } else {
         log_or_show_progress(
@@ -755,9 +797,22 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
     let cosmos_status_url = config::get_config().health.cosmos_status_url;
-    let max_retries = 60;
-    let interval_ms = 10000; // 10 seconds
+    let max_retries = std::env::var("CARIBIC_COSMOS_MAX_RETRIES")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(60);
+    let interval_ms = std::env::var("CARIBIC_COSMOS_RETRY_INTERVAL_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10000); // 10 seconds
     let client = reqwest::Client::builder().no_proxy().build()?;
+
+    verbose(&format!(
+        "Cosmos readiness polling configured with max_retries={} interval_ms={}",
+        max_retries, interval_ms
+    ));
 
     for retry in 0..max_retries {
         let response = client.get(cosmos_status_url.as_str()).send().await;
