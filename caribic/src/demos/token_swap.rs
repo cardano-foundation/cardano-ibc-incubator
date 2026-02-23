@@ -12,6 +12,9 @@ use crate::{
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
 };
 
+const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
+const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
+
 /// Runs the full token swap demo and validates required services before execution.
 pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
     let osmosis_dir = workspace_dir(project_root_path);
@@ -182,7 +185,23 @@ fn ensure_demo_services_ready(
 
 /// Waits until Mithril exposes stake and transaction artifacts needed by demo client creation.
 async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
+    let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MITHRIL_ARTIFACT_MAX_RETRIES);
+    let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MITHRIL_ARTIFACT_RETRY_DELAY_SECS);
+    let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
+
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
+    logger::log(&format!(
+        "Waiting for Mithril artifacts to become available (up to {} minutes)...",
+        total_wait_secs / 60
+    ));
     let aggregator_base_url = crate::config::get_config()
         .mithril
         .aggregator_url
@@ -199,7 +218,7 @@ async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
         .build()
         .expect("Failed to build reqwest client for Mithril artifact check");
 
-    for attempt in 1..=36 {
+    for attempt in 1..=max_retries {
         let stake_ready = match client.get(stake_distributions_url.as_str()).send().await {
             Ok(response) if response.status().is_success() => response
                 .json::<Value>()
@@ -220,7 +239,8 @@ async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
         };
 
         logger::verbose(&format!(
-            "Mithril artifact readiness check (attempt {attempt}/36): stake_distributions={stake_ready}, cardano_transactions={tx_ready}"
+            "Mithril artifact readiness check (attempt {attempt}/{}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}",
+            max_retries
         ));
 
         if stake_ready && tx_ready {
@@ -228,7 +248,7 @@ async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
             return Ok(());
         }
 
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
     }
 
     Err(format!(

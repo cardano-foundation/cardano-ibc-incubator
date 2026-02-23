@@ -106,6 +106,14 @@ Starts a demo setup step on top of already running services.
 git submodule update --init --recursive chains/summit-demo
 ```
 
+Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
+If your machine is slower, you can tune the wait window:
+
+```bash
+export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
+export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
+```
+
 ## `caribic test`
 
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 

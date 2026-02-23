@@ -27,7 +27,7 @@ const CHANNEL_DISCOVERY_MAX_RETRIES: usize = 20;
 const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
 const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
 const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
-const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 36;
+const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
 const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
 const RELAY_MAX_RETRIES: usize = 20;
 const RELAY_RETRY_DELAY_SECS: u64 = 3;
@@ -165,7 +165,23 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
 }
 
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
+    let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MITHRIL_ARTIFACT_MAX_RETRIES);
+    let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(MITHRIL_ARTIFACT_RETRY_DELAY_SECS);
+    let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
+
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
+    logger::log(&format!(
+        "Waiting for Mithril artifacts to become available (up to {} minutes)...",
+        total_wait_secs / 60
+    ));
     let aggregator_base_url = crate::config::get_config()
         .mithril
         .aggregator_url
@@ -182,7 +198,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         .build()
         .map_err(|error| format!("Failed to build Mithril HTTP client: {}", error))?;
 
-    for attempt in 1..=MITHRIL_ARTIFACT_MAX_RETRIES {
+    for attempt in 1..=max_retries {
         let stake_ready = match client.get(stake_distributions_url.as_str()).send().await {
             Ok(response) if response.status().is_success() => response
                 .json::<Value>()
@@ -204,7 +220,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
 
         logger::verbose(&format!(
             "Mithril artifact readiness check (attempt {attempt}/{}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}",
-            MITHRIL_ARTIFACT_MAX_RETRIES
+            max_retries
         ));
 
         if stake_ready && tx_ready {
@@ -212,7 +228,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
             return Ok(());
         }
 
-        tokio::time::sleep(Duration::from_secs(MITHRIL_ARTIFACT_RETRY_DELAY_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
     }
 
     Err(format!(
