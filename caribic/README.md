@@ -100,6 +100,11 @@ caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port tr
 
 Starts a demo setup step on top of already running services.
 `caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
+`caribic demo message-exchange` uses the repository submodule at `chains/summit-demo` (no runtime ZIP download). If missing, initialize it from repo root:
+
+```bash
+git submodule update --init --recursive chains/summit-demo
+```
 
 ## `caribic test`
 

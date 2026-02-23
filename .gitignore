@@ -48,7 +48,6 @@ chains/mithrils/data
 cardano-cli
 cardano-node
 
-chains/summit-demo/
 relayer/.config
 
 # Ignore Hermes config files in relayer submodule (keep submodule clean)

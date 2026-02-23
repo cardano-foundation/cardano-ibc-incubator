@@ -67,24 +67,16 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         );
     }
 
-    let project_config = crate::config::get_config();
     let chain_root_path = project_root_path.join("chains/summit-demo/");
-    let cosmos_chain_repo_url = format!(
-        "{}/archive/refs/heads/{}.zip",
-        project_config.vessel_oracle.repo_base_url, project_config.vessel_oracle.target_branch
-    );
 
-    start::start_cosmos_entrypoint_chain_from_repository(
-        cosmos_chain_repo_url.as_str(),
-        chain_root_path.as_path(),
-    )
-    .await
-    .map_err(|error| {
-        format!(
-            "ERROR: Failed to start message-exchange demo chain: {}",
-            error
-        )
-    })?;
+    start::start_cosmos_entrypoint_chain_from_submodule(chain_root_path.as_path())
+        .await
+        .map_err(|error| {
+            format!(
+                "ERROR: Failed to start message-exchange demo chain: {}",
+                error
+            )
+        })?;
     logger::log("PASS: Message-exchange demo chain is up and running");
 
     start::start_relayer(

@@ -2,3 +2,7 @@
 	path = relayer
 	url = https://github.com/webisoftSoftware/hermes.git
 	branch = feat/cardano-integration
+[submodule "chains/summit-demo"]
+	path = chains/summit-demo
+	url = https://github.com/cardano-foundation/cardano-ibc-summit-demo.git
+	branch = main

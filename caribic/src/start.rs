@@ -5,9 +5,8 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, CardanoQuery,
-    IndicatorMessage,
+    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
+    get_user_ids, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -686,46 +685,10 @@ pub async fn deploy_contracts(
     }
 }
 
-pub async fn start_cosmos_entrypoint_chain_from_repository(
-    download_url: &str,
+pub async fn start_cosmos_entrypoint_chain_from_submodule(
     chain_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if chain_root_path.exists() {
-        log(&format!(
-            "{} Demo chain already downloaded. Cleaning up to get the most recent version...",
-            style("Step 0/2").bold().dim()
-        ));
-        fs::remove_dir_all(&chain_root_path).expect("Failed to cleanup demo chain folder.");
-    }
-    fs::create_dir_all(&chain_root_path).expect("Failed to create folder for demo chain.");
-    download_file(
-        download_url,
-        &chain_root_path
-            .join("cardano-ibc-summit-demo.zip")
-            .as_path(),
-        Some(IndicatorMessage {
-            message: "Downloading cardano-ibc-summit-demo project".to_string(),
-            step: "Step 1/2".to_string(),
-            emoji: "".to_string(),
-        }),
-    )
-    .await
-    .expect("Failed to download cardano-ibc-summit-demo project");
-
-    log(&format!(
-        "{} Extracting cardano-ibc-summit-demo project...",
-        style("Step 2/2").bold().dim()
-    ));
-
-    unzip_file(
-        chain_root_path
-            .join("cardano-ibc-summit-demo.zip")
-            .as_path(),
-        chain_root_path,
-    )
-    .expect("Failed to unzip cardano-ibc-summit-demo project");
-    fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
-        .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
+    ensure_message_exchange_demo_sources_available(chain_root_path)?;
     normalize_downloaded_demo_chain_assets(chain_root_path)?;
 
     // This repository helper is also used by the message-exchange demo chain,
@@ -744,6 +707,52 @@ pub async fn start_cosmos_entrypoint_chain_from_repository(
         None,
     )?;
     wait_for_cosmos_entrypoint_chain_ready().await
+}
+
+fn ensure_message_exchange_demo_sources_available(
+    chain_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if chain_root_path.join("docker-compose.yml").exists() {
+        return Ok(());
+    }
+
+    let project_root_path = chain_root_path
+        .parent()
+        .and_then(|path| path.parent())
+        .ok_or("Failed to resolve project root from message-exchange chain path")?;
+
+    if project_root_path.join(".git").exists() {
+        let submodule_path = chain_root_path
+            .strip_prefix(project_root_path)
+            .unwrap_or(chain_root_path);
+        let submodule_path_str = submodule_path
+            .to_str()
+            .ok_or("Message-exchange submodule path contains invalid UTF-8")?;
+
+        execute_script(
+            project_root_path,
+            "git",
+            vec![
+                "submodule",
+                "update",
+                "--init",
+                "--recursive",
+                submodule_path_str,
+            ],
+            None,
+        )?;
+
+        if chain_root_path.join("docker-compose.yml").exists() {
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "Message-exchange demo sources are missing at {}.\n\
+Run `git submodule update --init --recursive chains/summit-demo` from the repository root.",
+        chain_root_path.display()
+    )
+    .into())
 }
 
 fn normalize_downloaded_demo_chain_assets(
