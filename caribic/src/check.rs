@@ -51,13 +51,27 @@ const GO_REQUIREMENT: ToolRequirement = ToolRequirement {
     install_instructions: "Install Go by following the instructions at https://go.dev/doc/install.",
 };
 
-fn base_requirements() -> [ToolRequirement; 4] {
-    [
+const HERMES_NATIVE_TOOLCHAIN_REQUIREMENT: ToolRequirement = ToolRequirement {
+    name: "Hermes native build toolchain (cc/clang/pkg-config/protoc + libc headers)",
+    command: "hermes-native-toolchain",
+    args: &[],
+    install_instructions:
+        "Install build prerequisites for Hermes. On Ubuntu/Debian: apt-get install -y build-essential clang pkg-config libclang-dev protobuf-compiler",
+};
+
+fn base_requirements() -> Vec<ToolRequirement> {
+    let mut requirements = vec![
         DOCKER_REQUIREMENT,
         AIKEN_REQUIREMENT,
         DENO_REQUIREMENT,
         GO_REQUIREMENT,
-    ]
+    ];
+
+    if cfg!(target_os = "linux") {
+        requirements.push(HERMES_NATIVE_TOOLCHAIN_REQUIREMENT);
+    }
+
+    requirements
 }
 
 /// Checks whether required local tools are installed and callable.
@@ -75,6 +89,8 @@ pub fn collect_prerequisite_statuses() -> Vec<ToolStatus> {
         .map(|requirement| {
             if requirement.command == "deno" {
                 probe_deno(requirement)
+            } else if requirement.command == "hermes-native-toolchain" {
+                probe_hermes_native_toolchain(requirement)
             } else {
                 probe_standard_tool(requirement)
             }
@@ -163,6 +179,32 @@ fn probe_deno(requirement: &ToolRequirement) -> ToolStatus {
         install_instructions: requirement.install_instructions,
         available: false,
         version_line: None,
+        detected_via: None,
+    }
+}
+
+fn probe_hermes_native_toolchain(requirement: &ToolRequirement) -> ToolStatus {
+    let command = "command -v cc >/dev/null 2>&1 && command -v clang >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && command -v protoc >/dev/null 2>&1 && printf '#include <stddef.h>\\n' | cc -E -x c - >/dev/null 2>&1";
+    let available = Command::new("sh")
+        .args(["-lc", command])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    let version_line = if available {
+        let cc_version =
+            run_version_command("cc", &["--version"]).unwrap_or_else(|| "cc available".to_string());
+        Some(format!("{} ({})", requirement.name, cc_version))
+    } else {
+        None
+    };
+
+    ToolStatus {
+        name: requirement.name,
+        command: requirement.command,
+        install_instructions: requirement.install_instructions,
+        available,
+        version_line,
         detected_via: None,
     }
 }

@@ -37,6 +37,10 @@ caribic start cosmos --clean
 caribic start osmosis
 ```
 
+Cosmos startup note:
+- `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
+- If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start cosmos --clean`.
+
 Hermes config note:
 - Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
 - If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).

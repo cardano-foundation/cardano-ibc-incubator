@@ -16,7 +16,7 @@ RUN apt-get update -y \
 
 RUN bash -c "curl https://get.ignite.com/cli@v28.11.2! | bash"
 
-# Install buf and protobuf generator plugins required by `buf generate` in Ignite's OpenAPI step.
+# Install buf and protobuf generator plugins required by Ignite's OpenAPI generation step.
 RUN /usr/local/go/bin/go install github.com/bufbuild/buf/cmd/buf@v1.32.0 \
     && /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.20.0 \
     && /usr/local/go/bin/go install github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger@v1.16.0

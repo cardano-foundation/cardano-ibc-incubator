@@ -64,6 +64,7 @@ pub fn start_relayer(
     let hermes_binary = relayer_path.join("target/release/hermes");
 
     if !hermes_binary.exists() {
+        ensure_relayer_sources_available(relayer_path)?;
         log_or_show_progress(
             "Building Hermes with Cardano support (this may take a few minutes)...",
             &optional_progress_bar,
@@ -221,11 +222,43 @@ pub fn start_relayer(
     Ok(())
 }
 
+fn ensure_relayer_sources_available(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    if relayer_path.join("Cargo.toml").exists() {
+        return Ok(());
+    }
+
+    let project_root = relayer_path
+        .parent()
+        .ok_or("Failed to resolve project root from relayer path")?;
+
+    if project_root.join(".git").exists() {
+        execute_script(
+            project_root,
+            "git",
+            Vec::from(["submodule", "update", "--init", "--recursive", "relayer"]),
+            None,
+        )?;
+
+        if relayer_path.join("Cargo.toml").exists() {
+            return Ok(());
+        }
+    }
+
+    Err(format!(
+        "Hermes relayer sources are missing at {} (Cargo.toml not found). \
+Clone the repository with submodules or run `git submodule update --init --recursive relayer`.",
+        relayer_path.display()
+    )
+    .into())
+}
+
 pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let hermes_binary = relayer_path.join("target/release/hermes");
     if hermes_binary.exists() {
         return Ok(());
     }
+
+    ensure_relayer_sources_available(relayer_path)?;
 
     // This helper intentionally does not use a progress bar because it is used by
     // `caribic start` to build Hermes in parallel with other startup tasks.

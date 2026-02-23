@@ -12,6 +12,3 @@ Dockerfile
 # cabal-install
 haskell-part/dist-newstyle/
 go/libcardano-ibc-helper.so
-
-#openapi
-entrypoint/docs/static/openapi.yml

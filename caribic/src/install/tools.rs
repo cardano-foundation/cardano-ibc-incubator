@@ -20,6 +20,7 @@ pub fn install_missing_tool(tool: &ToolStatus, host_os: &HostOs) -> Result<(), S
         "aiken" => install_aiken(),
         "deno" => install_deno(host_os),
         "go" => install_go(host_os),
+        "hermes-native-toolchain" => install_hermes_native_toolchain(host_os),
         _ => Err(format!("Unsupported tool installer for '{}'", tool.command)),
     }
 }
@@ -156,6 +157,25 @@ fn install_go(host_os: &HostOs) -> Result<(), String> {
         HostOs::Linux => install_apt_packages(&["golang-go"]),
         HostOs::Unsupported(os) => Err(format!(
             "Automatic Go install is not supported on '{}'. Install Go manually",
+            os
+        )),
+    }
+}
+
+fn install_hermes_native_toolchain(host_os: &HostOs) -> Result<(), String> {
+    match host_os {
+        HostOs::Linux => install_apt_packages(&[
+            "build-essential",
+            "clang",
+            "pkg-config",
+            "libclang-dev",
+            "protobuf-compiler",
+        ]),
+        HostOs::MacOs => Err(
+            "Install Xcode Command Line Tools manually: `xcode-select --install`".to_string(),
+        ),
+        HostOs::Unsupported(os) => Err(format!(
+            "Automatic Hermes toolchain install is not supported on '{}'. Install cc/clang/pkg-config/protoc and libc headers manually",
             os
         )),
     }
