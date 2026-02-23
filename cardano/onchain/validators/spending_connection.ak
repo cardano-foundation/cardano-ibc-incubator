@@ -245,10 +245,18 @@ fn validate_conn_open_ack_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  let counterparty_client_state_bz =
+  let counterparty_client_state_bz_lightclients =
     mithril_pb.marshal_for_any_client_state(
       AnyMithrilClientState {
         type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
+  let counterparty_client_state_bz_clients =
+    mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd
@@ -296,7 +304,10 @@ fn validate_conn_open_ack_proof(
           item1.delay_block_period == block_delay,
           item1.proof == proof_client,
           ok1_path,
-          item1.value == counterparty_client_state_bz,
+          or {
+            item1.value == counterparty_client_state_bz_lightclients,
+            item1.value == counterparty_client_state_bz_clients,
+          },
         }
       }
       _ -> False
