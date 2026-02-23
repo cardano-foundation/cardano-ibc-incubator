@@ -1064,11 +1064,32 @@ export class ConnectionService {
       delay_period: connectionDatum.state.delay_period,
     };
 
+    const firstExist = (proof: any) => {
+      for (const p of proof?.proofs ?? []) {
+        const inner = p?.proof;
+        if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
+      }
+      return undefined;
+    };
+
+    let proofClientStateTypeUrl = connectionOpenAckOperator.counterpartyClientStateTypeUrl;
+    const proofClientExist = firstExist(connectionOpenAckOperator.proofClient as any);
+    if (proofClientExist?.value) {
+      try {
+        const proofClientAny = Any.decode(Buffer.from(proofClientExist.value, 'hex'));
+        if (proofClientAny.type_url) {
+          proofClientStateTypeUrl = proofClientAny.type_url;
+        }
+      } catch (error) {
+        this.logger.warn(`[DEBUG] ConnOpenAck failed to decode proof client Any type_url: ${error}`);
+      }
+    }
+
     const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.lightclients.mithril.v1.ClientState',
+      type_url: proofClientStateTypeUrl,
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
 
@@ -1084,14 +1105,6 @@ export class ConnectionService {
       const expectedClientValue = Any.encode(mithrilClientStateAny).finish();
       const expectedConnValueBuf = Buffer.from(expectedConnValue);
       const expectedClientValueBuf = Buffer.from(expectedClientValue);
-
-      const firstExist = (proof: any) => {
-        for (const p of proof?.proofs ?? []) {
-          const inner = p?.proof;
-          if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
-        }
-        return undefined;
-      };
 
       const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
       if (tryExist?.key && tryExist?.value) {
