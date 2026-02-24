@@ -2,6 +2,8 @@ package app
 
 import (
 	ibcmithril "entrypoint/x/clients/mithril"
+	vesseloraclemodule "entrypoint/x/vesseloracle/module"
+	vesseloracletypes "entrypoint/x/vesseloracle/types"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
@@ -203,6 +205,10 @@ func (app *App) registerIBCModules() {
 		AddRoute(ibctransfertypes.ModuleName, transferStack).
 		AddRoute(icacontrollertypes.SubModuleName, icaControllerIBCModule).
 		AddRoute(icahosttypes.SubModuleName, icaHostIBCModule)
+	ibcRouter.AddRoute(
+		vesseloracletypes.ModuleName,
+		ibcfee.NewIBCMiddleware(vesseloraclemodule.NewIBCModule(app.VesseloracleKeeper), app.IBCFeeKeeper),
+	)
 
 	// this line is used by starport scaffolding # ibc/app/module
 

@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package vesseloracle.vesseloracle;
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+message VesseloraclePacketData {
+  oneof packet {
+    NoData                                 noData                             = 1;
+    ConsolidatedDataReportPacketPacketData consolidatedDataReportPacketPacket = 2;
+  }
+}
+
+message NoData {}
+
+// ConsolidatedDataReportPacketPacketData defines a struct for the packet payload
+message ConsolidatedDataReportPacketPacketData {
+  string imo            =  1;
+  uint64 ts             =  2;
+  int32  totalSamples   =  3;
+  int32  etaOutliers    =  4;
+  uint64 etaMeanCleaned =  5;
+  uint64 etaMeanAll     =  6;
+  uint64 etaStdCleaned  =  7;
+  uint64 etaStdAll      =  8;
+  string depport        =  9;
+  int32  depportScore   = 10;
+}
+
+// ConsolidatedDataReportPacketPacketAck defines a struct for the packet acknowledgment
+message ConsolidatedDataReportPacketPacketAck {}
+

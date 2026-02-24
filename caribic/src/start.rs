@@ -686,50 +686,6 @@ pub async fn deploy_contracts(
     }
 }
 
-pub async fn start_cosmos_entrypoint_chain_from_repository(
-    download_url: &str,
-    chain_root_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if chain_root_path.exists() {
-        log(&format!(
-            "{} Demo chain already downloaded. Cleaning up to get the most recent version...",
-            style("Step 0/2").bold().dim()
-        ));
-        fs::remove_dir_all(&chain_root_path).expect("Failed to cleanup demo chain folder.");
-    }
-    fs::create_dir_all(&chain_root_path).expect("Failed to create folder for demo chain.");
-    download_file(
-        download_url,
-        &chain_root_path
-            .join("cardano-ibc-summit-demo.zip")
-            .as_path(),
-        Some(IndicatorMessage {
-            message: "Downloading cardano-ibc-summit-demo project".to_string(),
-            step: "Step 1/2".to_string(),
-            emoji: "".to_string(),
-        }),
-    )
-    .await
-    .expect("Failed to download cardano-ibc-summit-demo project");
-
-    log(&format!(
-        "{} Extracting cardano-ibc-summit-demo project...",
-        style("Step 2/2").bold().dim()
-    ));
-
-    unzip_file(
-        chain_root_path
-            .join("cardano-ibc-summit-demo.zip")
-            .as_path(),
-        chain_root_path,
-    )
-    .expect("Failed to unzip cardano-ibc-summit-demo project");
-    fs::remove_file(chain_root_path.join("cardano-ibc-summit-demo.zip"))
-        .expect("Failed to cleanup cardano-ibc-summit-demo.zip");
-
-    start_cosmos_entrypoint_chain(chain_root_path, true).await
-}
-
 pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,

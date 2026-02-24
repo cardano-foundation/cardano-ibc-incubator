@@ -1,0 +1,18 @@
+syntax = "proto3";
+package vesseloracle.vesseloracle;
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+message ConsolidatedDataReport {
+  string imo = 1; 
+  uint64 ts = 2; 
+  int32 total_samples = 3; 
+  int32 eta_outliers = 4; 
+  uint64 eta_mean_cleaned = 5; 
+  uint64 eta_mean_all = 6; 
+  uint64 eta_std_cleaned = 7; 
+  uint64 eta_std_all = 8; 
+  int32 depport_score = 9; 
+  string depport = 10; 
+  string creator = 11;
+}
