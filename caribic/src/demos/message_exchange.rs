@@ -9,7 +9,10 @@ use crate::{
     logger,
     start::{self, run_hermes_command},
     stop::{stop_cosmos, stop_relayer},
-    utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
+    utils::{
+        execute_script, get_cardano_tip_state, parse_tendermint_client_id,
+        parse_tendermint_connection_id,
+    },
 };
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
@@ -34,6 +37,8 @@ const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
 const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
 const RELAY_MAX_RETRIES: usize = 20;
 const RELAY_RETRY_DELAY_SECS: u64 = 3;
+const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
+const CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE: u64 = 50;
 
 #[derive(Debug, Clone)]
 struct MessageChannelPair {
@@ -165,7 +170,7 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     }
 
     if failures.is_empty() {
-        return Ok(());
+        return ensure_cardano_demo_window(project_root_path);
     }
 
     let mut error = String::from(
@@ -176,6 +181,51 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     }
     error.push_str("\nRequired command:\n  - caribic start --clean --with-mithril");
     Err(error)
+}
+
+fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
+    let tip_state = get_cardano_tip_state(project_root_path)
+        .map_err(|error| format!("Failed to query Cardano tip state before demo: {}", error))?;
+    let tip_json: Value = serde_json::from_str(tip_state.as_str()).map_err(|error| {
+        format!(
+            "Failed to parse Cardano tip state JSON before demo: {}",
+            error
+        )
+    })?;
+
+    let epoch = tip_json
+        .get("epoch")
+        .and_then(parse_u64_value)
+        .ok_or("Cardano tip state is missing 'epoch'".to_string())?;
+    let slot = tip_json
+        .get("slot")
+        .and_then(parse_u64_value)
+        .ok_or("Cardano tip state is missing 'slot'".to_string())?;
+    let slots_to_epoch_end = tip_json
+        .get("slotsToEpochEnd")
+        .and_then(parse_u64_value)
+        .ok_or("Cardano tip state is missing 'slotsToEpochEnd'".to_string())?;
+    let sync_progress = tip_json
+        .get("syncProgress")
+        .and_then(parse_f64_value)
+        .ok_or("Cardano tip state is missing 'syncProgress'".to_string())?;
+
+    if sync_progress < CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE
+        || epoch >= CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE
+    {
+        return Err(format!(
+            "ERROR: Cardano devnet is not in a safe state for the message-exchange demo.\n\
+             Tip snapshot: epoch={epoch}, slot={slot}, slotsToEpochEnd={slots_to_epoch_end}, syncProgress={sync_progress:.2}%\n\
+             \n\
+             This usually indicates stale/lagging Cardano chain state and leads to Hermes create-client failures.\n\
+             Recommended recovery:\n\
+               1. caribic stop\n\
+               2. caribic start --clean --with-mithril\n\
+               3. caribic demo message-exchange"
+        ));
+    }
+
+    Ok(())
 }
 
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
@@ -402,6 +452,12 @@ fn parse_u64_value(value: &Value) -> Option<u64> {
     value
         .as_u64()
         .or_else(|| value.as_str().and_then(|raw| raw.parse::<u64>().ok()))
+}
+
+fn parse_f64_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
 }
 
 fn configure_hermes_for_message_exchange() -> Result<(), String> {
