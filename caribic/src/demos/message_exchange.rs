@@ -6,9 +6,10 @@ use dirs::home_dir;
 use serde_json::Value;
 
 use crate::{
+    constants::ENTRYPOINT_CHAIN_ID,
     logger,
     start::{self, run_hermes_command},
-    stop::{stop_cosmos, stop_relayer},
+    stop::stop_relayer,
     utils::{
         execute_script, get_cardano_tip_state, parse_tendermint_client_id,
         parse_tendermint_connection_id,
@@ -16,13 +17,13 @@ use crate::{
 };
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
-const VESSEL_CHAIN_ID: &str = "vesseloracle";
+const VESSEL_CHAIN_ID: &str = ENTRYPOINT_CHAIN_ID;
 const CARDANO_MESSAGE_PORT_ID: &str = "transfer";
 const VESSEL_MESSAGE_PORT_ID: &str = "vesseloracle";
-const VESSEL_RELAYER_KEY_NAME: &str = "vesseloracle-relayer";
+const VESSEL_RELAYER_KEY_NAME: &str = "entrypoint-relayer";
 const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
-const VESSEL_DEMO_CONTAINER_NAME: &str = "vesseloracle-node-prod";
-const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.vesseloracle/keyring-test";
+const VESSEL_DEMO_CONTAINER_NAME: &str = "entrypoint-node-prod";
+const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.entrypoint/keyring-test";
 const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
 const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
@@ -35,6 +36,7 @@ const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
 const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
 const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
 const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
+const MITHRIL_READINESS_PROGRESS_INTERVAL_SECS: u64 = 30;
 const RELAY_MAX_RETRIES: usize = 20;
 const RELAY_RETRY_DELAY_SECS: u64 = 3;
 const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
@@ -65,32 +67,12 @@ struct ConnectionEndStatus {
 pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), String> {
     ensure_message_exchange_prerequisites(project_root_path)?;
 
-    if let Ok((true, _)) = start::check_service_health(project_root_path, "cosmos") {
-        logger::log(
-            "Stopping Cosmos Entrypoint chain to free port 26657 for message-exchange demo chain",
-        );
-        stop_cosmos(
-            project_root_path.join("cosmos").as_path(),
-            "Cosmos Entrypoint chain",
-        );
-    }
-
-    let chain_root_path = project_root_path.join("chains/summit-demo/");
-
-    start::start_cosmos_entrypoint_chain_from_submodule(chain_root_path.as_path())
-        .await
-        .map_err(|error| {
-            format!(
-                "ERROR: Failed to start message-exchange demo chain: {}",
-                error
-            )
-        })?;
-    logger::log("PASS: Message-exchange demo chain is up and running");
+    logger::log("PASS: Native Cosmos Entrypoint chain is up and running");
 
     start::start_relayer(
         project_root_path.join("relayer").as_path(),
-        chain_root_path.join("relayer/.env.relayer").as_path(),
-        chain_root_path.join("relayer/config").as_path(),
+        project_root_path.join("relayer/.env.example").as_path(),
+        project_root_path.join("relayer/examples").as_path(),
         project_root_path
             .join("cardano/offchain/deployments/handler.json")
             .as_path(),
@@ -108,7 +90,13 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         .map_err(|error| format!("ERROR: Failed to start Hermes daemon: {}", error))?;
     logger::log("PASS: Hermes daemon started");
 
-    let datasource_dir = chain_root_path.join("datasource");
+    let datasource_dir = project_root_path.join("cosmos/entrypoint/datasource");
+    if !datasource_dir.exists() {
+        return Err(format!(
+            "ERROR: Datasource directory is missing at {}",
+            datasource_dir.display()
+        ));
+    }
     let datasource_home = prepare_datasource_home(project_root_path)?;
     logger::log("Preparing vessel datasource module");
     run_datasource_command(
@@ -157,7 +145,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 
 fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
     ];
     let mut failures = Vec::new();
 
@@ -255,6 +243,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         format!("{aggregator_base_url}/aggregator/artifact/mithril-stake-distributions");
     let cardano_transactions_url =
         format!("{aggregator_base_url}/aggregator/artifact/cardano-transactions");
+    let certificates_url = format!("{aggregator_base_url}/aggregator/certificates");
 
     let client = reqwest::Client::builder()
         .no_proxy()
@@ -262,30 +251,43 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         .build()
         .map_err(|error| format!("Failed to build Mithril HTTP client: {}", error))?;
 
+    let progress_log_every = if retry_delay_secs == 0 {
+        1
+    } else {
+        (MITHRIL_READINESS_PROGRESS_INTERVAL_SECS / retry_delay_secs).max(1)
+    };
+    let mut last_stake_count: Option<usize> = None;
+    let mut last_tx_count: Option<usize> = None;
+    let mut last_certificate_count: Option<usize> = None;
+
     for attempt in 1..=max_retries {
-        let stake_ready = match client.get(stake_distributions_url.as_str()).send().await {
-            Ok(response) if response.status().is_success() => response
-                .json::<Value>()
-                .await
-                .ok()
-                .and_then(|value| value.as_array().map(|arr| arr.len()))
-                .is_some_and(|len| len > 0),
-            _ => false,
-        };
-        let tx_ready = match client.get(cardano_transactions_url.as_str()).send().await {
-            Ok(response) if response.status().is_success() => response
-                .json::<Value>()
-                .await
-                .ok()
-                .and_then(|value| value.as_array().map(|arr| arr.len()))
-                .is_some_and(|len| len > 0),
-            _ => false,
-        };
+        let stake_count = fetch_json_array_len(&client, stake_distributions_url.as_str()).await;
+        let tx_count = fetch_json_array_len(&client, cardano_transactions_url.as_str()).await;
+        let certificate_count = fetch_json_array_len(&client, certificates_url.as_str()).await;
+
+        last_stake_count = stake_count;
+        last_tx_count = tx_count;
+        last_certificate_count = certificate_count;
+
+        let stake_ready = stake_count.is_some_and(|len| len > 0);
+        let tx_ready = tx_count.is_some_and(|len| len > 0);
 
         logger::verbose(&format!(
-            "Mithril artifact readiness check (attempt {attempt}/{}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}",
-            max_retries
+            "Mithril artifact readiness check (attempt {attempt}/{}): certificates={}, stake_distributions={}, cardano_transactions={}, stake_ready={stake_ready}, tx_ready={tx_ready}",
+            max_retries,
+            format_optional_count(certificate_count),
+            format_optional_count(stake_count),
+            format_optional_count(tx_count),
         ));
+
+        if attempt == 1 || attempt % progress_log_every as usize == 0 {
+            logger::log(&format!(
+                "Mithril readiness: certificates={}, stake_distributions={}, cardano_transactions={} (attempt {attempt}/{max_retries})",
+                format_optional_count(certificate_count),
+                format_optional_count(stake_count),
+                format_optional_count(tx_count),
+            ));
+        }
 
         if stake_ready && tx_ready {
             logger::log("PASS: Mithril artifacts are available for message-exchange setup");
@@ -297,11 +299,35 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
 
     Err(format!(
         "Mithril artifacts did not become available in time for message-exchange channel setup.\n\
+         Last observed counts: certificates={}, stake_distributions={}, cardano_transactions={}\n\
          Checked endpoints:\n\
          - {}\n\
+         - {}\n\
          - {}",
-        stake_distributions_url, cardano_transactions_url
+        format_optional_count(last_certificate_count),
+        format_optional_count(last_stake_count),
+        format_optional_count(last_tx_count),
+        certificates_url,
+        stake_distributions_url,
+        cardano_transactions_url
     ))
+}
+
+async fn fetch_json_array_len(client: &reqwest::Client, url: &str) -> Option<usize> {
+    match client.get(url).send().await {
+        Ok(response) if response.status().is_success() => response
+            .json::<Value>()
+            .await
+            .ok()
+            .and_then(|value| value.as_array().map(|arr| arr.len())),
+        _ => None,
+    }
+}
+
+fn format_optional_count(value: Option<usize>) -> String {
+    value
+        .map(|count| count.to_string())
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
@@ -310,7 +336,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
     let datasource_home = user_home
         .join(".caribic")
         .join("message-exchange-datasource-home");
-    let vessel_home = datasource_home.join(".vesseloracle");
+    let vessel_home = datasource_home.join(".entrypoint");
     let keyring_home = vessel_home.join("keyring-test");
 
     fs::create_dir_all(vessel_home.as_path()).map_err(|error| {
@@ -343,7 +369,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
     )
     .map_err(|error| {
         format!(
-            "ERROR: Failed to sync vesseloracle keyring from container {}: {}",
+            "ERROR: Failed to sync entrypoint keyring from container {}: {}",
             VESSEL_DEMO_CONTAINER_NAME, error
         )
     })?;
@@ -355,7 +381,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
         ));
     }
 
-    logger::log("PASS: Synced vesseloracle datasource keyring for local Go commands");
+    logger::log("PASS: Synced entrypoint datasource keyring for local Go commands");
     Ok(datasource_home.to_string_lossy().to_string())
 }
 
@@ -368,7 +394,7 @@ fn run_datasource_command(
         datasource_dir,
         "go",
         args.to_vec(),
-        Some(vec![("HOME", datasource_home)]),
+        Some(vec![("HOME", datasource_home), ("GOWORK", "off")]),
     )
     .map(|_| ())
     .map_err(|error| format!("ERROR: Failed running datasource command: {}", error))
@@ -480,12 +506,12 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
 
     fs::write(config_path.as_path(), updated_config)
         .map_err(|error| format!("Failed to write Hermes config: {}", error))?;
-    logger::log("PASS: Hermes config updated with vesseloracle chain");
+    logger::log("PASS: Hermes config updated for message-exchange on entrypoint chain");
 
-    let mnemonic_file = std::env::temp_dir().join("vesseloracle-relayer-mnemonic.txt");
+    let mnemonic_file = std::env::temp_dir().join("entrypoint-relayer-mnemonic.txt");
     fs::write(mnemonic_file.as_path(), VESSEL_RELAYER_MNEMONIC).map_err(|error| {
         format!(
-            "Failed to write temporary vesseloracle mnemonic file: {}",
+            "Failed to write temporary entrypoint mnemonic file: {}",
             error
         )
     })?;
@@ -505,12 +531,12 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
 
     if !add_key_output.status.success() {
         return Err(format!(
-            "Failed to add vesseloracle key in Hermes:\n{}",
+            "Failed to add entrypoint key in Hermes:\n{}",
             String::from_utf8_lossy(&add_key_output.stderr)
         ));
     }
 
-    logger::log("PASS: Hermes key added for vesseloracle");
+    logger::log("PASS: Hermes key added for entrypoint");
     Ok(())
 }
 
@@ -522,7 +548,7 @@ type = 'CosmosSdk'
 rpc_addr = '{rpc_addr}'
 grpc_addr = '{grpc_addr}'
 rpc_timeout = '10s'
-account_prefix = 'vessel'
+account_prefix = 'cosmos'
 key_name = '{key_name}'
 store_prefix = 'ibc'
 default_gas = 200000
