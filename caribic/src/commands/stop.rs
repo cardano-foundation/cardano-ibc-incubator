@@ -22,10 +22,6 @@ pub fn run_stop(
     match target {
         Some(StopTarget::All) | None => {
             stop::stop_cosmos(
-                project_root_path.join("chains/summit-demo/").as_path(),
-                "Message-exchange demo chain",
-            );
-            stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
@@ -59,10 +55,6 @@ pub fn run_stop(
             logger::log("\nOptional chain stopped successfully");
         }
         Some(StopTarget::Demo) => {
-            stop::stop_cosmos(
-                project_root_path.join("chains/summit-demo/").as_path(),
-                "Message-exchange demo chain",
-            );
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",

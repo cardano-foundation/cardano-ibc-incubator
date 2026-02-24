@@ -1,0 +1,22 @@
+syntax = "proto3";
+package vesseloracle.vesseloracle;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+// Params defines the parameters for the module.
+message Params {
+  option (amino.name) = "entrypoint/x/vesseloracle/Params";
+  option (gogoproto.equal) = true;
+
+  // The minimum number of items in a consolidation window needed for performing outlier detection.
+  int32 consolidation_window_min_item_count = 1;
+
+  // The maximum number of items in a consolidation window chosen for performing outlier detection. Mostly used to prevent event spamming.
+  int32 consolidation_window_max_item_count = 2;
+
+  // The width of the time interval over which a consolidation is executed.
+  uint64 consolidation_window_interval_width = 3;
+}

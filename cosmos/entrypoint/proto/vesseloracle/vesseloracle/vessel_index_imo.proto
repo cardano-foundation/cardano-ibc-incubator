@@ -1,0 +1,13 @@
+syntax = "proto3";
+package vesseloracle.vesseloracle;
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+message VesselIndexImo {
+  message Key {
+    string imo = 1;
+    uint64 ts = 2;
+    string source = 3;
+  }
+  repeated Key keys = 1;
+}

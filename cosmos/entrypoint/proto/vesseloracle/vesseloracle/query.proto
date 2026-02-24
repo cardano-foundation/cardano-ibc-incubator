@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package vesseloracle.vesseloracle;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "cosmos/base/query/v1beta1/pagination.proto";
+import "entrypoint/entrypoint/params.proto";
+import "entrypoint/entrypoint/vessel.proto";
+import "entrypoint/entrypoint/consolidated_data_report.proto";
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+// Query defines the gRPC querier service.
+service Query {
+  
+  // Parameters queries the parameters of the module.
+  rpc Params (QueryParamsRequest) returns (QueryParamsResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/params";
+  
+  }
+  
+  // Queries a list of Vessel items.
+  rpc Vessel    (QueryGetVesselRequest) returns (QueryGetVesselResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/vessel/{imo}/{ts}/{source}";
+  
+  }
+  rpc VesselAll (QueryAllVesselRequest) returns (QueryAllVesselResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/vessel";
+  
+  }
+  
+  // Queries a list of ConsolidatedDataReport items.
+  rpc ConsolidatedDataReport    (QueryGetConsolidatedDataReportRequest) returns (QueryGetConsolidatedDataReportResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/consolidated_data_report/{imo}/{ts}";
+  
+  }
+  rpc ConsolidatedDataReportAll (QueryAllConsolidatedDataReportRequest) returns (QueryAllConsolidatedDataReportResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/consolidated_data_report";
+  
+  }
+}
+// QueryParamsRequest is request type for the Query/Params RPC method.
+message QueryParamsRequest {}
+
+// QueryParamsResponse is response type for the Query/Params RPC method.
+message QueryParamsResponse {
+  
+  // params holds all the parameters of this module.
+  Params params = 1 [(gogoproto.nullable) = false, (amino.dont_omitempty) = true];
+}
+
+message QueryGetVesselRequest {
+  string imo    = 1;
+  uint64 ts     = 2;
+  string source = 3;
+}
+
+message QueryGetVesselResponse {
+  Vessel vessel = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryAllVesselRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryAllVesselResponse {
+  repeated Vessel                                 vessel     = 1 [(gogoproto.nullable) = false];
+           cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryGetConsolidatedDataReportRequest {
+  string imo = 1;
+  uint64 ts  = 2;
+}
+
+message QueryGetConsolidatedDataReportResponse {
+  ConsolidatedDataReport consolidatedDataReport = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryAllConsolidatedDataReportRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryAllConsolidatedDataReportResponse {
+  repeated ConsolidatedDataReport                 consolidatedDataReport = 1 [(gogoproto.nullable) = false];
+           cosmos.base.query.v1beta1.PageResponse pagination             = 2;
+}
+

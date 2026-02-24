@@ -1,0 +1,23 @@
+syntax = "proto3";
+package vesseloracle.vesseloracle;
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+message Vessel {
+  string imo = 1;
+  uint64 ts = 2;
+  string source = 3;
+  int32 lat = 4;
+  int32 lon = 5;
+  int32 speed = 6;
+  int32 course = 7;
+  int32 heading = 8;
+  uint64 adt = 9;
+  uint64 eta = 10;
+  string name = 11;
+  string destport = 12;
+  string depport = 13;
+  string mmsi = 14;
+  string creator = 15;
+}
+

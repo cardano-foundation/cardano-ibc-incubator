@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package vesseloracle.vesseloracle;
+
+import "amino/amino.proto";
+import "gogoproto/gogo.proto";
+import "entrypoint/entrypoint/params.proto";
+import "entrypoint/entrypoint/vessel.proto";
+import "entrypoint/entrypoint/consolidated_data_report.proto";
+
+option go_package = "entrypoint/x/vesseloracle/types";
+
+// GenesisState defines the vesseloracle module's genesis state.
+message GenesisState {
+  
+  // params defines all the parameters of the module.
+  Params params = 1 [(gogoproto.nullable) = false, (amino.dont_omitempty) = true];
+  string port_id = 2;
+  repeated Vessel vesselList = 3 [(gogoproto.nullable) = false] ;
+  repeated ConsolidatedDataReport consolidatedDataReportList = 4 [(gogoproto.nullable) = false] ;
+  
+}
+
