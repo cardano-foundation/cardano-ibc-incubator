@@ -19,14 +19,17 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs::{self};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
 
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
+const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
+const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -1790,6 +1793,120 @@ fn run_command_capture(command: &mut Command) -> Result<String, String> {
     }
 }
 
+fn collect_command_output<R: std::io::Read>(
+    reader: R,
+    stream_name: &str,
+    verbose_stream: bool,
+) -> Vec<u8> {
+    let mut buffered_reader = BufReader::new(reader);
+    let mut line_buffer = String::new();
+    let mut output_bytes = Vec::new();
+
+    loop {
+        line_buffer.clear();
+        match buffered_reader.read_line(&mut line_buffer) {
+            Ok(0) => break,
+            Ok(_) => {
+                output_bytes.extend_from_slice(line_buffer.as_bytes());
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] {}",
+                        line_buffer.trim_end()
+                    ));
+                }
+            }
+            Err(error) => {
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] failed to read command output: {error}"
+                    ));
+                }
+                break;
+            }
+        }
+    }
+
+    output_bytes
+}
+
+fn run_hermes_command_with_progress(
+    hermes_binary: &Path,
+    args: &[&str],
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let command_display = format!("{} {}", hermes_binary.display(), args.join(" "));
+    let mut child = Command::new(hermes_binary)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "Failed to spawn Hermes command '{}': {}",
+                command_display, error
+            )
+        })?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stdout for '{}'", command_display))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stderr for '{}'", command_display))?;
+
+    let verbose_stream = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let stdout_thread =
+        thread::spawn(move || collect_command_output(stdout, "stdout", verbose_stream));
+    let stderr_thread =
+        thread::spawn(move || collect_command_output(stderr, "stderr", verbose_stream));
+
+    let started_at = Instant::now();
+    let mut next_progress_log = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+
+    let exit_status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            format!(
+                "Failed while waiting on Hermes command '{}': {}",
+                command_display, error
+            )
+        })? {
+            break status;
+        }
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= next_progress_log {
+            log(&format!(
+                "Hermes command still running after {}s: {}",
+                elapsed.as_secs(),
+                args.join(" ")
+            ));
+            next_progress_log += Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+        }
+
+        thread::sleep(Duration::from_millis(HERMES_PROGRESS_POLL_INTERVAL_MILLIS));
+    };
+
+    let stdout_output = stdout_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stdout reader for '{}'",
+            command_display
+        )
+    })?;
+    let stderr_output = stderr_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stderr reader for '{}'",
+            command_display
+        )
+    })?;
+
+    Ok(Output {
+        status: exit_status,
+        stdout: stdout_output,
+        stderr: stderr_output,
+    })
+}
+
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
 fn require_relayer_hermes_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let project_root = PathBuf::from(config::get_config().project_root);
@@ -1814,21 +1931,20 @@ pub fn run_hermes_command(args: &[&str]) -> Result<Output, Box<dyn std::error::E
         args.join(" ")
     ));
 
-    let output = Command::new(&hermes_binary)
-        .args(args)
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to execute Hermes command '{} {}': {}",
-                hermes_binary.display(),
-                args.join(" "),
-                error
-            )
-        })?;
+    let output = run_hermes_command_with_progress(&hermes_binary, args)?;
+
+    let elapsed = started_at.elapsed();
+    if elapsed >= Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS) {
+        log(&format!(
+            "Hermes command completed in {}s: {}",
+            elapsed.as_secs(),
+            args.join(" ")
+        ));
+    }
 
     logger::verbose(&format!(
         "Hermes command completed in {:.2}s (success={})",
-        started_at.elapsed().as_secs_f32(),
+        elapsed.as_secs_f32(),
         output.status.success()
     ));
     logger::verbose(&format!(
