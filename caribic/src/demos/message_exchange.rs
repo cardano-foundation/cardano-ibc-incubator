@@ -14,16 +14,19 @@ use crate::{
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
 const VESSEL_CHAIN_ID: &str = "vesseloracle";
-const CARDANO_MESSAGE_PORT_ID: &str = "port-100";
+const CARDANO_MESSAGE_PORT_ID: &str = "transfer";
 const VESSEL_MESSAGE_PORT_ID: &str = "vesseloracle";
 const VESSEL_RELAYER_KEY_NAME: &str = "vesseloracle-relayer";
 const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+const VESSEL_DEMO_CONTAINER_NAME: &str = "vesseloracle-node-prod";
+const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.vesseloracle/keyring-test";
 const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
 const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
 const CONSOLIDATED_REPORT_MAX_RETRIES: usize = 40;
 const CONSOLIDATED_REPORT_RETRY_DELAY_SECS: u64 = 3;
 const CHANNEL_DISCOVERY_MAX_RETRIES: usize = 20;
+const CHANNEL_DISCOVERY_MAX_RETRIES_AFTER_CREATE: usize = 120;
 const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
 const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
 const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
@@ -101,15 +104,25 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
     logger::log("PASS: Hermes daemon started");
 
     let datasource_dir = chain_root_path.join("datasource");
+    let datasource_home = prepare_datasource_home(project_root_path)?;
     logger::log("Preparing vessel datasource module");
-    run_datasource_command(datasource_dir.as_path(), &["mod", "tidy"])?;
+    run_datasource_command(
+        datasource_dir.as_path(),
+        &["mod", "tidy"],
+        datasource_home.as_str(),
+    )?;
     logger::log("Submitting simulated vessel reports");
     run_datasource_command(
         datasource_dir.as_path(),
         &["run", ".", "report", "-simulate"],
+        datasource_home.as_str(),
     )?;
     logger::log("Consolidating submitted vessel reports");
-    run_datasource_command(datasource_dir.as_path(), &["run", ".", "consolidate"])?;
+    run_datasource_command(
+        datasource_dir.as_path(),
+        &["run", ".", "consolidate"],
+        datasource_home.as_str(),
+    )?;
 
     let consolidated_timestamp = query_latest_consolidated_timestamp(DEFAULT_VESSEL_IMO).await?;
     let channel_arg = channel_pair.vessel_channel_id.clone();
@@ -128,6 +141,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
             "-ts",
             timestamp_arg.as_str(),
         ],
+        datasource_home.as_str(),
     )?;
 
     relay_vessel_message_packet(&channel_pair)?;
@@ -240,10 +254,74 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
     ))
 }
 
-fn run_datasource_command(datasource_dir: &Path, args: &[&str]) -> Result<(), String> {
-    execute_script(datasource_dir, "go", args.to_vec(), None)
-        .map(|_| ())
-        .map_err(|error| format!("ERROR: Failed running datasource command: {}", error))
+fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
+    let user_home = home_dir()
+        .ok_or("Failed to resolve user home directory for message-exchange datasource")?;
+    let datasource_home = user_home
+        .join(".caribic")
+        .join("message-exchange-datasource-home");
+    let vessel_home = datasource_home.join(".vesseloracle");
+    let keyring_home = vessel_home.join("keyring-test");
+
+    fs::create_dir_all(vessel_home.as_path()).map_err(|error| {
+        format!(
+            "Failed to create datasource home at {}: {}",
+            vessel_home.display(),
+            error
+        )
+    })?;
+    if keyring_home.exists() {
+        fs::remove_dir_all(keyring_home.as_path()).map_err(|error| {
+            format!(
+                "Failed to reset datasource keyring at {}: {}",
+                keyring_home.display(),
+                error
+            )
+        })?;
+    }
+
+    let source = format!(
+        "{}:{}",
+        VESSEL_DEMO_CONTAINER_NAME, VESSEL_KEYRING_CONTAINER_PATH
+    );
+    let destination = vessel_home.to_string_lossy().to_string();
+    execute_script(
+        project_root_path,
+        "docker",
+        vec!["cp", source.as_str(), destination.as_str()],
+        None,
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to sync vesseloracle keyring from container {}: {}",
+            VESSEL_DEMO_CONTAINER_NAME, error
+        )
+    })?;
+
+    if !keyring_home.join("ds0.info").exists() || !keyring_home.join("bob.info").exists() {
+        return Err(format!(
+            "Synced datasource keyring is incomplete at {} (missing ds0.info or bob.info)",
+            keyring_home.display()
+        ));
+    }
+
+    logger::log("PASS: Synced vesseloracle datasource keyring for local Go commands");
+    Ok(datasource_home.to_string_lossy().to_string())
+}
+
+fn run_datasource_command(
+    datasource_dir: &Path,
+    args: &[&str],
+    datasource_home: &str,
+) -> Result<(), String> {
+    execute_script(
+        datasource_dir,
+        "go",
+        args.to_vec(),
+        Some(vec![("HOME", datasource_home)]),
+    )
+    .map(|_| ())
+    .map_err(|error| format!("ERROR: Failed running datasource command: {}", error))
 }
 
 async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
@@ -498,8 +576,8 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     let connection_id = ensure_open_message_exchange_connection()?;
     create_message_exchange_channel_on_connection(connection_id.as_str())?;
 
-    let pair =
-        wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES)?.ok_or_else(|| {
+    let pair = wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES_AFTER_CREATE)?
+        .ok_or_else(|| {
             "Created message-exchange channel, but no open channel pair could be discovered"
                 .to_string()
         })?;
@@ -620,8 +698,13 @@ fn extract_cardano_message_channel_id(entry: &Value) -> Option<String> {
         .get("counterparty")
         .and_then(|counterparty| counterparty.get("port_id"))
         .and_then(Value::as_str);
-    if local_port != Some(CARDANO_MESSAGE_PORT_ID) || remote_port != Some(VESSEL_MESSAGE_PORT_ID) {
+    if local_port != Some(CARDANO_MESSAGE_PORT_ID) {
         return None;
+    }
+    if let Some(remote_port) = remote_port {
+        if remote_port != VESSEL_MESSAGE_PORT_ID {
+            return None;
+        }
     }
 
     let channel_id = entry
@@ -631,7 +714,7 @@ fn extract_cardano_message_channel_id(entry: &Value) -> Option<String> {
     if channel_id.starts_with("channel-") {
         Some(channel_id.to_string())
     } else {
-        None
+        return None;
     }
 }
 
@@ -1000,6 +1083,10 @@ fn query_channel_end_status(
     .map_err(|error| error.to_string())?;
 
     if !output.status.success() {
+        logger::verbose(&format!(
+            "Hermes query channel end failed for chain={chain_id}, port={port_id}, channel={channel_id}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
         return Ok(None);
     }
 
@@ -1024,7 +1111,7 @@ fn query_channel_end_status(
         return Ok(None);
     }
 
-    let remote = result.get("remote");
+    let remote = result.get("remote").or_else(|| result.get("counterparty"));
     let remote_channel_id = remote
         .and_then(|value| value.get("channel_id"))
         .and_then(Value::as_str)
@@ -1042,7 +1129,8 @@ fn query_channel_end_status(
 }
 
 fn is_open_channel_state(state: &str) -> bool {
-    state.eq_ignore_ascii_case("open")
+    let normalized = state.trim().to_ascii_lowercase();
+    normalized == "open" || normalized == "state_open"
 }
 
 fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {

@@ -53,6 +53,17 @@ pub fn marshal_for_any_client_state(
     |> add_and_concat(nest_record(marshal_for_client_state(value), 0x12))
 }
 
+pub fn marshal_for_any_client_state_with_zero_frozen(
+  amcs: AnyMithrilClientState,
+) -> (Int, ByteArray) {
+  let AnyMithrilClientState { type_url, value } = amcs
+  (0, #"")
+    |> add_and_concat(encode_bytearray(type_url, 10))
+    |> add_and_concat(
+        nest_record(marshal_for_client_state_with_zero_frozen(value), 0x12),
+      )
+}
+
 pub fn marshal_for_client_state(
   client_state: MithrilClientState,
 ) -> (Int, ByteArray) {
@@ -82,6 +93,50 @@ pub fn marshal_for_client_state(
           nest_record(marshal_for_height(frozen_height), 0x1a)
         },
       )
+    |> add_and_concat(encode_int(current_epoch, 0x20))
+    |> add_and_concat(
+        nest_record(marshal_for_duration(duration_proto(trusting_period)), 0x2a),
+      )
+    |> add_and_concat(
+        nest_record(marshal_for_protocol_parameters(protocol_parameters), 0x32),
+      )
+    |> add_and_concat(
+        list.reduce(
+          upgrade_path,
+          (0, #[]),
+          fn((size, bz1), path: ByteArray) -> (Int, ByteArray) {
+            let l = length(path)
+            let bz2 =
+              l
+                |> encode_length_varint()
+                |> concat(path)
+                |> push(0x3a)
+            (size + sov(l) + l + 1, concat(bz1, bz2))
+          },
+        ),
+      )
+    |> size_and_concat(encode_bytearray(host_state_nft_policy_id, 0x42))
+    |> size_and_concat(encode_bytearray(host_state_nft_token_name, 0x4a))
+}
+
+pub fn marshal_for_client_state_with_zero_frozen(
+  client_state: MithrilClientState,
+) -> (Int, ByteArray) {
+  let MithrilClientState {
+    chain_id,
+    latest_height,
+    frozen_height,
+    current_epoch,
+    trusting_period,
+    protocol_parameters,
+    upgrade_path,
+    host_state_nft_policy_id,
+    host_state_nft_token_name,
+  } = client_state
+  (0, #"")
+    |> size_and_concat(encode_bytearray(chain_id, 10))
+    |> add_and_concat(nest_record(marshal_for_height(latest_height), 0x12))
+    |> add_and_concat(nest_record(marshal_for_height(frozen_height), 0x1a))
     |> add_and_concat(encode_int(current_epoch, 0x20))
     |> add_and_concat(
         nest_record(marshal_for_duration(duration_proto(trusting_period)), 0x2a),

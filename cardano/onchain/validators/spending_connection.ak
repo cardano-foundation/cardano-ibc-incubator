@@ -261,6 +261,22 @@ fn validate_conn_open_ack_proof(
       },
     ).2nd
 
+  let counterparty_client_state_bz_lightclients_with_zero_frozen =
+    mithril_pb.marshal_for_any_client_state_with_zero_frozen(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
+  let counterparty_client_state_bz_clients_with_zero_frozen =
+    mithril_pb.marshal_for_any_client_state_with_zero_frozen(
+      AnyMithrilClientState {
+        type_url: "/ibc.clients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
@@ -307,6 +323,8 @@ fn validate_conn_open_ack_proof(
           or {
             item1.value == counterparty_client_state_bz_lightclients,
             item1.value == counterparty_client_state_bz_clients,
+            item1.value == counterparty_client_state_bz_lightclients_with_zero_frozen,
+            item1.value == counterparty_client_state_bz_clients_with_zero_frozen,
           },
         }
       }
