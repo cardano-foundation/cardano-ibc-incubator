@@ -105,10 +105,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
                 || input.trim().eq_ignore_ascii_case("y")
                 || input.trim().is_empty()
             {
-                let default_project_root = format!(
-                    "{}/cardano-ibc-incubator",
-                    home_path.as_path().display()
-                );
+                let default_project_root =
+                    format!("{}/cardano-ibc-incubator", home_path.as_path().display());
                 log(&format!(
                     "Enter the project root path for 'cardano-ibc-incubator' (default: {}):",
                     default_project_root
@@ -214,10 +212,8 @@ impl Config {
         };
 
         if let Some(home_path) = home_dir() {
-            let default_project_root = format!(
-                "{}/cardano-ibc-incubator",
-                home_path.as_path().display()
-            );
+            let default_project_root =
+                format!("{}/cardano-ibc-incubator", home_path.as_path().display());
             default_config.project_root = default_project_root.clone();
             default_config.mithril.cardano_node_dir =
                 format!("{}/chains/cardano/devnet", default_project_root);

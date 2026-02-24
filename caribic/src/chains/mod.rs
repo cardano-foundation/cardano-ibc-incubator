@@ -276,7 +276,10 @@ pub fn check_rpc_health(
             id,
             label,
             healthy: false,
-            status: format!("RPC endpoint did not return a valid status response: {}", url),
+            status: format!(
+                "RPC endpoint did not return a valid status response: {}",
+                url
+            ),
         }
     }
 }
