@@ -35,10 +35,12 @@ caribic start --clean --with-mithril
 caribic start bridge
 caribic start cosmos --clean
 caribic start osmosis
+caribic start injective --network local
 caribic start injective --network testnet
 ```
 
 Injective startup note:
+- `caribic start injective --network local` starts a local single-node Injective devnet.
 - `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
 - `caribic start injective --network mainnet` is intentionally not implemented yet.
 
@@ -63,6 +65,7 @@ Examples:
 caribic stop
 caribic stop bridge
 caribic stop osmosis
+caribic stop injective --network local
 caribic stop injective --network testnet
 ```
 

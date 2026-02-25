@@ -13,7 +13,12 @@ pub struct InjectiveChainAdapter;
 
 pub static INJECTIVE_CHAIN_ADAPTER: InjectiveChainAdapter = InjectiveChainAdapter;
 
-const INJECTIVE_NETWORKS: [ChainNetwork; 2] = [
+const INJECTIVE_NETWORKS: [ChainNetwork; 3] = [
+    ChainNetwork {
+        name: "local",
+        description: "Local single-node Injective devnet",
+        managed_by_caribic: true,
+    },
     ChainNetwork {
         name: "testnet",
         description: "Local injectived node synced to Injective testnet via state sync",
@@ -25,6 +30,12 @@ const INJECTIVE_NETWORKS: [ChainNetwork; 2] = [
         managed_by_caribic: true,
     },
 ];
+
+const INJECTIVE_LOCAL_FLAGS: [ChainFlagSpec; 1] = [ChainFlagSpec {
+    name: "stateful",
+    description: "Keep local Injective devnet state in ~/.injectived-local between runs",
+    required: false,
+}];
 
 const INJECTIVE_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
     ChainFlagSpec {
@@ -52,7 +63,7 @@ impl ChainAdapter for InjectiveChainAdapter {
     }
 
     fn default_network(&self) -> &'static str {
-        "testnet"
+        "local"
     }
 
     fn supported_networks(&self) -> &'static [ChainNetwork] {
@@ -61,6 +72,7 @@ impl ChainAdapter for InjectiveChainAdapter {
 
     fn supported_flags(&self, network: &str) -> &'static [ChainFlagSpec] {
         match network {
+            "local" => &INJECTIVE_LOCAL_FLAGS,
             "testnet" => &INJECTIVE_TESTNET_FLAGS,
             "mainnet" => &INJECTIVE_MAINNET_FLAGS,
             _ => &[],
@@ -75,6 +87,16 @@ impl ChainAdapter for InjectiveChainAdapter {
         self.validate_flags(request.network, request.flags)?;
 
         match request.network {
+            "local" => {
+                let stateful = parse_bool_flag(request.flags, "stateful", false)?;
+                lifecycle::prepare_local(stateful)
+                    .await
+                    .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
+                lifecycle::start_local()
+                    .await
+                    .map_err(|error| format!("Failed to start Injective local node: {}", error))?;
+                Ok(())
+            }
             "testnet" => {
                 let stateful = parse_bool_flag(request.flags, "stateful", true)?;
                 let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
@@ -92,7 +114,7 @@ impl ChainAdapter for InjectiveChainAdapter {
                 Ok(())
             }
             "mainnet" => Err(
-                "Injective network 'mainnet' is not implemented yet. Only 'testnet' is currently supported."
+                "Injective network 'mainnet' is not implemented yet. Supported networks: local, testnet."
                     .to_string(),
             ),
             _ => Err(format!(
@@ -112,6 +134,8 @@ impl ChainAdapter for InjectiveChainAdapter {
         self.validate_flags(network, flags)?;
 
         match network {
+            "local" => lifecycle::stop_local()
+                .map_err(|error| format!("Failed to stop local Injective node: {}", error)),
             "testnet" => lifecycle::stop_testnet()
                 .map_err(|error| format!("Failed to stop local Injective testnet node: {}", error)),
             "mainnet" => Ok(()),
@@ -132,34 +156,13 @@ impl ChainAdapter for InjectiveChainAdapter {
         self.validate_flags(network, flags)?;
 
         match network {
-            "testnet" => {
-                let rpc_ready = check_port_health("injective", 26659, "Injective node").healthy;
-                let grpc_ready = check_port_health("injective", 9096, "Injective node").healthy;
-
-                Ok(vec![ChainHealthStatus {
-                    id: "injective",
-                    label: "Injective node",
-                    healthy: rpc_ready && grpc_ready,
-                    status: format!(
-                        "RPC (26659): {}; gRPC (9096): {}",
-                        if rpc_ready {
-                            "reachable"
-                        } else {
-                            "not reachable"
-                        },
-                        if grpc_ready {
-                            "reachable"
-                        } else {
-                            "not reachable"
-                        }
-                    ),
-                }])
-            }
+            "local" => Ok(vec![combined_health_status(26660, 9097)]),
+            "testnet" => Ok(vec![combined_health_status(26659, 9096)]),
             "mainnet" => Ok(vec![ChainHealthStatus {
                 id: "injective",
                 label: "Injective mainnet",
                 healthy: false,
-                status: "Not implemented yet. Start with --network testnet for managed local mode."
+                status: "Not implemented yet. Start with --network local or --network testnet."
                     .to_string(),
             }]),
             _ => Err(format!(
@@ -168,5 +171,31 @@ impl ChainAdapter for InjectiveChainAdapter {
                 self.id()
             )),
         }
+    }
+}
+
+fn combined_health_status(rpc_port: u16, grpc_port: u16) -> ChainHealthStatus {
+    let rpc_ready = check_port_health("injective", rpc_port, "Injective node").healthy;
+    let grpc_ready = check_port_health("injective", grpc_port, "Injective node").healthy;
+
+    ChainHealthStatus {
+        id: "injective",
+        label: "Injective node",
+        healthy: rpc_ready && grpc_ready,
+        status: format!(
+            "RPC ({}): {}; gRPC ({}): {}",
+            rpc_port,
+            if rpc_ready {
+                "reachable"
+            } else {
+                "not reachable"
+            },
+            grpc_port,
+            if grpc_ready {
+                "reachable"
+            } else {
+                "not reachable"
+            }
+        ),
     }
 }
