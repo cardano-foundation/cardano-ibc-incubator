@@ -26,6 +26,7 @@ pub fn run_stop(
                 "Cosmos Entrypoint chain",
             );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -60,6 +61,7 @@ pub fn run_stop(
                 "Cosmos Entrypoint chain",
             );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
