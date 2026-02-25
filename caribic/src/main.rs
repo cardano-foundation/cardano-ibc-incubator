@@ -142,7 +142,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis, injective, injective-grpc)
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis, injective)
         #[arg(long)]
         service: Option<String>,
     },
