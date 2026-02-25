@@ -38,6 +38,10 @@ caribic start osmosis
 caribic start injective --network testnet
 ```
 
+Injective startup note:
+- `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
+- `caribic start injective --network mainnet` is intentionally not implemented yet.
+
 Cosmos startup note:
 - `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
 - If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start cosmos --clean`.
