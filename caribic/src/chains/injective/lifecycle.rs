@@ -12,6 +12,16 @@ use serde_json::Value;
 use crate::logger::{verbose, warn};
 use crate::utils::wait_for_health_check;
 
+const INJECTIVE_LOCAL_CHAIN_ID: &str = "injective-local";
+const INJECTIVE_LOCAL_MONIKER: &str = "caribic-injective-local";
+const INJECTIVE_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26660/status";
+const INJECTIVE_LOCAL_HOME_DIR: &str = ".injectived-local";
+const INJECTIVE_LOCAL_PID_FILE: &str = ".caribic/injective-local.pid";
+const INJECTIVE_LOCAL_LOG_FILE: &str = ".caribic/injective-local.log";
+const INJECTIVE_LOCAL_VALIDATOR_KEY: &str = "validator";
+const INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000inj";
+const INJECTIVE_LOCAL_GENTX_AMOUNT: &str = "50000000000000000000inj";
+
 const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
 const INJECTIVE_TESTNET_MONIKER: &str = "caribic-injective-testnet";
 const INJECTIVE_TESTNET_TRUST_RPC_URL: &str = "https://testnet.sentry.tm.injective.network";
@@ -25,6 +35,114 @@ const INJECTIVE_TESTNET_TRUST_OFFSET: u64 = 1500;
 const INJECTIVE_TESTNET_SEEDS: &str =
     "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656";
 const INJECTIVE_TESTNET_PERSISTENT_PEERS: &str = "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656";
+
+pub(super) async fn prepare_local(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_injectived_available()?;
+
+    let local_home_dir = local_home_dir()?;
+    if !stateful && local_home_dir.exists() {
+        fs::remove_dir_all(local_home_dir.as_path())?;
+    }
+
+    initialize_local_home(local_home_dir.as_path())?;
+    Ok(())
+}
+
+pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
+    let local_home_dir = local_home_dir()?;
+    let pid_path = local_pid_path()?;
+    let log_path = local_log_path()?;
+
+    if let Some(existing_pid) = read_pid_file(pid_path.as_path()) {
+        if is_process_alive(existing_pid) {
+            return Err(format!(
+                "Injective local node is already running (pid {})",
+                existing_pid
+            )
+            .into());
+        }
+    }
+
+    if let Some(parent) = pid_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let stdout_file = File::create(log_path.as_path())?;
+    let stderr_file = stdout_file.try_clone()?;
+
+    let child = Command::new("injectived")
+        .args([
+            "start",
+            "--home",
+            local_home_dir
+                .to_str()
+                .ok_or("Invalid local home directory path")?,
+            "--rpc.laddr",
+            "tcp://0.0.0.0:26660",
+            "--grpc.address",
+            "0.0.0.0:9097",
+            "--grpc-web.address",
+            "0.0.0.0:9094",
+            "--api.address",
+            "tcp://0.0.0.0:1320",
+        ])
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()?;
+
+    fs::write(pid_path.as_path(), child.id().to_string())?;
+
+    let is_healthy = wait_for_health_check(
+        INJECTIVE_LOCAL_STATUS_URL,
+        120,
+        3000,
+        Some(|response_body: &String| {
+            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
+            json["result"]["sync_info"]["latest_block_height"]
+                .as_str()
+                .and_then(|height| height.parse::<u64>().ok())
+                .is_some_and(|height| height > 0)
+        }),
+    )
+    .await;
+
+    if is_healthy.is_ok() {
+        return Ok(());
+    }
+
+    let _ = stop_local();
+    let log_tail = read_log_tail(log_path.as_path(), 120)
+        .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
+    Err(format!(
+        "Timed out while waiting for local Injective node at {}.\n{}",
+        INJECTIVE_LOCAL_STATUS_URL, log_tail
+    )
+    .into())
+}
+
+pub(super) fn stop_local() -> Result<(), Box<dyn std::error::Error>> {
+    let local_home_dir = local_home_dir()?;
+    let pid_path = local_pid_path()?;
+
+    let pid = read_pid_file(pid_path.as_path()).or_else(|| {
+        find_node_pids_for_home(local_home_dir.as_path())
+            .into_iter()
+            .next()
+    });
+
+    if let Some(pid) = pid {
+        stop_process(pid)?;
+    }
+
+    if pid_path.exists() {
+        fs::remove_file(pid_path)?;
+    }
+
+    Ok(())
+}
 
 pub(super) async fn prepare_testnet(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
     ensure_injectived_available()?;
@@ -135,7 +253,7 @@ pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
     let pid_path = testnet_pid_path()?;
 
     let pid = read_pid_file(pid_path.as_path()).or_else(|| {
-        find_testnet_node_pids(testnet_home_dir.as_path())
+        find_node_pids_for_home(testnet_home_dir.as_path())
             .into_iter()
             .next()
     });
@@ -198,6 +316,144 @@ fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
+    }
+
+    Ok(())
+}
+
+fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let config_toml_path = home_path.join("config/config.toml");
+    let genesis_path = home_path.join("config/genesis.json");
+    if config_toml_path.exists() && genesis_path.exists() {
+        return Ok(());
+    }
+
+    fs::create_dir_all(home_path)?;
+    let home_path_str = home_path
+        .to_str()
+        .ok_or("Invalid local home directory path")?;
+
+    let init_output = Command::new("injectived")
+        .args([
+            "init",
+            INJECTIVE_LOCAL_MONIKER,
+            "--chain-id",
+            INJECTIVE_LOCAL_CHAIN_ID,
+            "--home",
+            home_path_str,
+        ])
+        .output()?;
+    if !init_output.status.success() {
+        return Err(format!(
+            "Failed to initialize Injective local home: {}",
+            String::from_utf8_lossy(&init_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let add_key_output = Command::new("injectived")
+        .args([
+            "keys",
+            "add",
+            INJECTIVE_LOCAL_VALIDATOR_KEY,
+            "--keyring-backend",
+            "test",
+            "--home",
+            home_path_str,
+        ])
+        .output()?;
+    if !add_key_output.status.success() {
+        return Err(format!(
+            "Failed to create Injective local validator key: {}",
+            String::from_utf8_lossy(&add_key_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let validator_address_output = Command::new("injectived")
+        .args([
+            "keys",
+            "show",
+            INJECTIVE_LOCAL_VALIDATOR_KEY,
+            "-a",
+            "--keyring-backend",
+            "test",
+            "--home",
+            home_path_str,
+        ])
+        .output()?;
+    if !validator_address_output.status.success() {
+        return Err(format!(
+            "Failed to resolve Injective local validator address: {}",
+            String::from_utf8_lossy(&validator_address_output.stderr).trim()
+        )
+        .into());
+    }
+    let validator_address = String::from_utf8_lossy(&validator_address_output.stdout)
+        .trim()
+        .to_string();
+    if validator_address.is_empty() {
+        return Err("Injective local validator address is empty".into());
+    }
+
+    let add_genesis_output = Command::new("injectived")
+        .args([
+            "add-genesis-account",
+            validator_address.as_str(),
+            INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT,
+            "--home",
+            home_path_str,
+        ])
+        .output()?;
+    if !add_genesis_output.status.success() {
+        return Err(format!(
+            "Failed to add Injective local genesis account: {}",
+            String::from_utf8_lossy(&add_genesis_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let gentx_output = Command::new("injectived")
+        .args([
+            "gentx",
+            INJECTIVE_LOCAL_VALIDATOR_KEY,
+            INJECTIVE_LOCAL_GENTX_AMOUNT,
+            "--chain-id",
+            INJECTIVE_LOCAL_CHAIN_ID,
+            "--keyring-backend",
+            "test",
+            "--home",
+            home_path_str,
+        ])
+        .output()?;
+    if !gentx_output.status.success() {
+        return Err(format!(
+            "Failed to create Injective local gentx: {}",
+            String::from_utf8_lossy(&gentx_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let collect_gentxs_output = Command::new("injectived")
+        .args(["collect-gentxs", "--home", home_path_str])
+        .output()?;
+    if !collect_gentxs_output.status.success() {
+        return Err(format!(
+            "Failed to collect Injective local gentxs: {}",
+            String::from_utf8_lossy(&collect_gentxs_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let validate_genesis_output = Command::new("injectived")
+        .args(["validate-genesis", "--home", home_path_str])
+        .output()?;
+    if !validate_genesis_output.status.success() {
+        return Err(format!(
+            "Failed to validate Injective local genesis: {}",
+            String::from_utf8_lossy(&validate_genesis_output.stderr).trim()
+        )
+        .into());
     }
 
     Ok(())
@@ -373,6 +629,24 @@ fn add_directory_to_process_path(directory: &Path) {
     }
 }
 
+fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(INJECTIVE_LOCAL_HOME_DIR))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
+fn local_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(INJECTIVE_LOCAL_PID_FILE))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
+fn local_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(INJECTIVE_LOCAL_LOG_FILE))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
         .map(|path| path.join(INJECTIVE_TESTNET_HOME_DIR))
@@ -445,8 +719,8 @@ fn is_process_alive(pid: u32) -> bool {
         .is_some_and(|status| status.success())
 }
 
-fn find_testnet_node_pids(testnet_home_path: &Path) -> Vec<u32> {
-    let expected_home = testnet_home_path.to_string_lossy();
+fn find_node_pids_for_home(node_home_path: &Path) -> Vec<u32> {
+    let expected_home = node_home_path.to_string_lossy();
 
     let output = Command::new("ps")
         .args(["-ax", "-o", "pid=,command="])

@@ -23,7 +23,7 @@ mod utils;
 enum DemoType {
     /// Starts the message-exchange demo preset
     MessageExchange,
-    /// Starts the token-swap demo preset using a running bridge and osmosis setup
+    /// Starts the token-swap demo preset using a running bridge plus selected chain/network
     TokenSwap,
 }
 
