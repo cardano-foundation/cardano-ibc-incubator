@@ -5,9 +5,11 @@ use std::process::Command;
 use async_trait::async_trait;
 
 pub mod cheqd;
+pub mod injective;
 pub mod osmosis;
 
 pub use cheqd::CHEQD_CHAIN_ADAPTER;
+pub use injective::INJECTIVE_CHAIN_ADAPTER;
 pub use osmosis::OSMOSIS_CHAIN_ADAPTER;
 
 pub type ChainFlags = HashMap<String, String>;
@@ -140,7 +142,11 @@ pub trait ChainAdapter: Sync {
 }
 
 pub fn registered_chain_adapters() -> Vec<&'static dyn ChainAdapter> {
-    vec![&OSMOSIS_CHAIN_ADAPTER, &CHEQD_CHAIN_ADAPTER]
+    vec![
+        &OSMOSIS_CHAIN_ADAPTER,
+        &CHEQD_CHAIN_ADAPTER,
+        &INJECTIVE_CHAIN_ADAPTER,
+    ]
 }
 
 pub fn get_chain_adapter(chain_id: &str) -> Option<&'static dyn ChainAdapter> {

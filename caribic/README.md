@@ -35,6 +35,7 @@ caribic start --clean --with-mithril
 caribic start bridge
 caribic start cosmos --clean
 caribic start osmosis
+caribic start injective --network testnet
 ```
 
 Cosmos startup note:
@@ -50,7 +51,7 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `injective`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
@@ -58,11 +59,12 @@ Examples:
 caribic stop
 caribic stop bridge
 caribic stop osmosis
+caribic stop injective --network testnet
 ```
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis). Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis, plus optional chain adapter checks such as Injective). Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check

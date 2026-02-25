@@ -45,7 +45,7 @@ pub fn run_stop(
             );
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
-        Some(StopTarget::Osmosis) => {
+        Some(StopTarget::Osmosis) | Some(StopTarget::Injective) => {
             stop_optional_chain(
                 project_root_path,
                 optional_chain_alias.unwrap_or("osmosis"),
@@ -131,6 +131,7 @@ fn stop_all_managed_optional_chain_networks(
 fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
     match target {
         Some(StopTarget::Osmosis) => Some("osmosis"),
+        Some(StopTarget::Injective) => Some("injective"),
         _ => None,
     }
 }
