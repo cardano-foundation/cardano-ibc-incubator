@@ -105,7 +105,20 @@ caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port tr
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
+`caribic demo token-swap` accepts optional chain/network selection:
+
+```bash
+caribic demo token-swap --chain osmosis --network local
+caribic demo token-swap --chain osmosis --network testnet
+caribic demo token-swap --chain injective --network testnet
+```
+
+Currently implemented token-swap path:
+- `--chain osmosis --network local`
+
+Other chain/network combinations are parsed and validated but return a clear "not implemented" error for now.
+
+The implemented Osmosis local flow expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
