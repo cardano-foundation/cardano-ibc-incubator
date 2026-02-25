@@ -4,16 +4,60 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::{
-    chains::osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
+    chains::{
+        self,
+        osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
+    },
     constants::ENTRYPOINT_CHAIN_ID,
     logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
+    DemoChain,
 };
 
+const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
+const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
+const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
+const TOKEN_SWAP_SUPPORTED_CHAIN: &str = "osmosis";
+const TOKEN_SWAP_SUPPORTED_NETWORK: &str = "local";
 /// Runs the full token swap demo and validates required services before execution.
-pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+pub async fn run_token_swap_demo(
+    project_root_path: &Path,
+    chain: Option<DemoChain>,
+    network: Option<&str>,
+) -> Result<(), String> {
+    let (chain_id, resolved_network) = resolve_token_swap_target(chain, network)?;
+    if chain_id == TOKEN_SWAP_SUPPORTED_CHAIN && resolved_network == TOKEN_SWAP_SUPPORTED_NETWORK {
+        return run_osmosis_local_token_swap_demo(project_root_path).await;
+    }
+
+    Err(format!(
+        "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: --chain {} --network {}",
+        chain_id,
+        resolved_network,
+        TOKEN_SWAP_SUPPORTED_CHAIN,
+        TOKEN_SWAP_SUPPORTED_NETWORK
+    ))
+}
+
+fn resolve_token_swap_target(
+    chain: Option<DemoChain>,
+    network: Option<&str>,
+) -> Result<(String, String), String> {
+    let resolved_chain = chain.unwrap_or(TOKEN_SWAP_DEFAULT_CHAIN);
+    let chain_id = match resolved_chain {
+        DemoChain::Osmosis => "osmosis",
+        DemoChain::Injective => "injective",
+    };
+
+    let adapter = chains::get_chain_adapter(chain_id)
+        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
+    let resolved_network = adapter.resolve_network(network)?;
+    Ok((chain_id.to_string(), resolved_network))
+}
+
+async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
     let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
 

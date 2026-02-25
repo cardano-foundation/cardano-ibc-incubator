@@ -27,6 +27,12 @@ enum DemoType {
     TokenSwap,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum DemoChain {
+    Osmosis,
+    Injective,
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
     /// Starts everything (network + packet-forwarding chain + bridge)
@@ -39,7 +45,7 @@ enum StartTarget {
     Cosmos,
     /// Starts only the local Osmosis appchain
     Osmosis,
-    /// Checks Injective optional chain endpoint readiness (network selected via --network)
+    /// Starts the Injective optional chain (network selected via --network)
     Injective,
     /// Starts only the Gateway service
     Gateway,
@@ -61,7 +67,7 @@ enum StopTarget {
     Cosmos,
     /// Stops only the local Osmosis appchain
     Osmosis,
-    /// Stops Injective optional chain handling (no managed services)
+    /// Stops the Injective optional chain (network selected via --network)
     Injective,
     /// Stops the demo services
     Demo,
@@ -175,10 +181,16 @@ enum Commands {
         #[arg(long)]
         b_port: String,
     },
-    /// Starts a demo preset. Usage: `caribic demo token-swap` or `caribic demo message-exchange`
+    /// Starts a demo preset. Usage: `caribic demo token-swap --chain osmosis --network local`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
+        /// Optional chain selector for demos that support multiple chains (currently token-swap)
+        #[arg(long, value_enum)]
+        chain: Option<DemoChain>,
+        /// Optional network profile for the selected demo chain (for example: local, testnet)
+        #[arg(long)]
+        network: Option<String>,
     },
     /// Run end-to-end integration tests to verify IBC functionality
     ///
@@ -291,7 +303,11 @@ async fn main() {
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
         Commands::Chain { command } => commands::run_chain(project_root_path, command).await,
-        Commands::Demo { use_case } => commands::run_demo(use_case, project_root_path).await,
+        Commands::Demo {
+            use_case,
+            chain,
+            network,
+        } => commands::run_demo(use_case, chain, network, project_root_path).await,
         Commands::Stop {
             target,
             network,
