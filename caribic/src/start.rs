@@ -5,9 +5,8 @@ use crate::setup::{
     prepare_db_sync_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
-    diagnose_container_failure, download_file, execute_script, execute_script_with_progress,
-    get_cardano_state, get_user_ids, unzip_file, wait_for_health_check, CardanoQuery,
-    IndicatorMessage,
+    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
+    get_user_ids, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
