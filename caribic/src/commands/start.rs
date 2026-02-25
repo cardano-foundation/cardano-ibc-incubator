@@ -459,6 +459,7 @@ pub async fn run_start(
 fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static str> {
     match target {
         Some(StartTarget::Osmosis) => Some("osmosis"),
+        Some(StartTarget::Injective) => Some("injective"),
         _ => None,
     }
 }
