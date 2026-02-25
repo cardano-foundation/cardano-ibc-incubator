@@ -13,6 +13,54 @@ pub struct InjectiveChainAdapter;
 
 pub static INJECTIVE_CHAIN_ADAPTER: InjectiveChainAdapter = InjectiveChainAdapter;
 
+pub(super) struct InjectiveInstallRuntime {
+    source_repo_url: &'static str,
+    source_dir_relative: &'static str,
+}
+
+pub(super) struct InjectiveLocalRuntime {
+    status_url: &'static str,
+    rpc_port: u16,
+    grpc_port: u16,
+    api_port: u16,
+}
+
+pub(super) struct InjectiveTestnetRuntime {
+    status_url: &'static str,
+    rpc_port: u16,
+    grpc_port: u16,
+    api_port: u16,
+    trust_rpc_url: &'static str,
+    genesis_url: &'static str,
+    trust_offset: u64,
+    seeds: &'static str,
+    persistent_peers: &'static str,
+}
+
+const INJECTIVE_INSTALL_RUNTIME: InjectiveInstallRuntime = InjectiveInstallRuntime {
+    source_repo_url: "https://github.com/InjectiveFoundation/injective-core.git",
+    source_dir_relative: ".caribic/injective/injective-core",
+};
+
+const INJECTIVE_LOCAL_RUNTIME: InjectiveLocalRuntime = InjectiveLocalRuntime {
+    status_url: "http://127.0.0.1:26660/status",
+    rpc_port: 26660,
+    grpc_port: 9097,
+    api_port: 1320,
+};
+
+const INJECTIVE_TESTNET_RUNTIME: InjectiveTestnetRuntime = InjectiveTestnetRuntime {
+    status_url: "http://127.0.0.1:26659/status",
+    rpc_port: 26659,
+    grpc_port: 9096,
+    api_port: 1319,
+    trust_rpc_url: "https://testnet.sentry.tm.injective.network",
+    genesis_url: "https://raw.githubusercontent.com/InjectiveLabs/testnet/main/testnet-1/genesis.json",
+    trust_offset: 1500,
+    seeds: "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656",
+    persistent_peers: "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656",
+};
+
 const INJECTIVE_NETWORKS: [ChainNetwork; 3] = [
     ChainNetwork {
         name: "local",
@@ -89,10 +137,10 @@ impl ChainAdapter for InjectiveChainAdapter {
         match request.network {
             "local" => {
                 let stateful = parse_bool_flag(request.flags, "stateful", false)?;
-                lifecycle::prepare_local(stateful)
+                lifecycle::prepare_local(stateful, &INJECTIVE_INSTALL_RUNTIME)
                     .await
                     .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
-                lifecycle::start_local()
+                lifecycle::start_local(&INJECTIVE_LOCAL_RUNTIME)
                     .await
                     .map_err(|error| format!("Failed to start Injective local node: {}", error))?;
                 Ok(())
@@ -101,12 +149,16 @@ impl ChainAdapter for InjectiveChainAdapter {
                 let stateful = parse_bool_flag(request.flags, "stateful", true)?;
                 let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
 
-                lifecycle::prepare_testnet(stateful)
+                lifecycle::prepare_testnet(
+                    stateful,
+                    &INJECTIVE_INSTALL_RUNTIME,
+                    INJECTIVE_TESTNET_RUNTIME.genesis_url,
+                )
                     .await
                     .map_err(|error| {
                         format!("Failed to prepare Injective testnet node: {}", error)
                     })?;
-                lifecycle::start_testnet(trust_rpc_url.as_deref())
+                lifecycle::start_testnet(trust_rpc_url.as_deref(), &INJECTIVE_TESTNET_RUNTIME)
                     .await
                     .map_err(|error| {
                         format!("Failed to start Injective testnet node: {}", error)
@@ -156,8 +208,14 @@ impl ChainAdapter for InjectiveChainAdapter {
         self.validate_flags(network, flags)?;
 
         match network {
-            "local" => Ok(vec![combined_health_status(26660, 9097)]),
-            "testnet" => Ok(vec![combined_health_status(26659, 9096)]),
+            "local" => Ok(vec![combined_health_status(
+                INJECTIVE_LOCAL_RUNTIME.rpc_port,
+                INJECTIVE_LOCAL_RUNTIME.grpc_port,
+            )]),
+            "testnet" => Ok(vec![combined_health_status(
+                INJECTIVE_TESTNET_RUNTIME.rpc_port,
+                INJECTIVE_TESTNET_RUNTIME.grpc_port,
+            )]),
             "mainnet" => Ok(vec![ChainHealthStatus {
                 id: "injective",
                 label: "Injective mainnet",

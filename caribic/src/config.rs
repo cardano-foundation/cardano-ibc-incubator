@@ -16,6 +16,8 @@ pub struct Config {
     pub mithril: Mithril,
     #[serde(default)]
     pub health: Health,
+    #[serde(default)]
+    pub timeouts: Timeouts,
     pub cardano: Cardano,
 }
 
@@ -52,6 +54,31 @@ impl Default for Health {
     fn default() -> Self {
         Health {
             cosmos_status_url: default_cosmos_status_url(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Timeouts {
+    #[serde(default = "default_mithril_artifact_max_retries")]
+    pub mithril_artifact_max_retries: usize,
+    #[serde(default = "default_mithril_artifact_retry_delay_secs")]
+    pub mithril_artifact_retry_delay_secs: u64,
+}
+
+fn default_mithril_artifact_max_retries() -> usize {
+    240
+}
+
+fn default_mithril_artifact_retry_delay_secs() -> u64 {
+    5
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Timeouts {
+            mithril_artifact_max_retries: default_mithril_artifact_max_retries(),
+            mithril_artifact_retry_delay_secs: default_mithril_artifact_retry_delay_secs(),
         }
     }
 }
@@ -98,10 +125,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
                 || input.trim().eq_ignore_ascii_case("y")
                 || input.trim().is_empty()
             {
-                let default_project_root = format!(
-                    "{}/cardano-ibc-incubator",
-                    home_path.as_path().display()
-                );
+                let default_project_root =
+                    format!("{}/cardano-ibc-incubator", home_path.as_path().display());
                 log(&format!(
                     "Enter the project root path for 'cardano-ibc-incubator' (default: {}):",
                     default_project_root
@@ -174,6 +199,7 @@ impl Config {
                 }
             },
             health: Health::default(),
+            timeouts: Timeouts::default(),
             cardano: Cardano {
             services: Services {
                 db_sync: true,
@@ -203,10 +229,8 @@ impl Config {
         };
 
         if let Some(home_path) = home_dir() {
-            let default_project_root = format!(
-                "{}/cardano-ibc-incubator",
-                home_path.as_path().display()
-            );
+            let default_project_root =
+                format!("{}/cardano-ibc-incubator", home_path.as_path().display());
             default_config.project_root = default_project_root.clone();
             default_config.mithril.cardano_node_dir =
                 format!("{}/chains/cardano/devnet", default_project_root);

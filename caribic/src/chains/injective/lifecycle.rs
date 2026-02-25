@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -9,46 +10,32 @@ use std::time::Duration;
 use dirs::home_dir;
 use serde_json::Value;
 
+use super::{InjectiveInstallRuntime, InjectiveLocalRuntime, InjectiveTestnetRuntime};
 use crate::logger::{verbose, warn};
 use crate::utils::wait_for_health_check;
 
-const INJECTIVE_LOCAL_CHAIN_ID: &str = "injective-local";
-const INJECTIVE_LOCAL_MONIKER: &str = "caribic-injective-local";
-const INJECTIVE_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26660/status";
-const INJECTIVE_LOCAL_HOME_DIR: &str = ".injectived-local";
-const INJECTIVE_LOCAL_PID_FILE: &str = ".caribic/injective-local.pid";
-const INJECTIVE_LOCAL_LOG_FILE: &str = ".caribic/injective-local.log";
-const INJECTIVE_LOCAL_VALIDATOR_KEY: &str = "validator";
-const INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000inj";
-const INJECTIVE_LOCAL_GENTX_AMOUNT: &str = "50000000000000000000inj";
-
-const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
-const INJECTIVE_TESTNET_MONIKER: &str = "caribic-injective-testnet";
-const INJECTIVE_TESTNET_TRUST_RPC_URL: &str = "https://testnet.sentry.tm.injective.network";
-const INJECTIVE_TESTNET_STATUS_URL: &str = "http://127.0.0.1:26659/status";
-const INJECTIVE_TESTNET_GENESIS_URL: &str =
-    "https://raw.githubusercontent.com/InjectiveLabs/testnet/main/testnet-1/genesis.json";
-const INJECTIVE_TESTNET_HOME_DIR: &str = ".injectived-testnet";
-const INJECTIVE_TESTNET_PID_FILE: &str = ".caribic/injective-testnet.pid";
-const INJECTIVE_TESTNET_LOG_FILE: &str = ".caribic/injective-testnet.log";
-const INJECTIVE_TESTNET_TRUST_OFFSET: u64 = 1500;
-const INJECTIVE_TESTNET_SEEDS: &str =
-    "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656";
-const INJECTIVE_TESTNET_PERSISTENT_PEERS: &str = "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656";
-
-pub(super) async fn prepare_local(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_injectived_available()?;
+pub(super) async fn prepare_local(
+    stateful: bool,
+    install_runtime: &InjectiveInstallRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Local profile requires a local `injectived` binary. If missing, this path
+    // can prompt for source install.
+    ensure_injectived_available(install_runtime)?;
 
     let local_home_dir = local_home_dir()?;
     if !stateful && local_home_dir.exists() {
+        // Fresh local network when `--chain-flag stateful=false`.
         fs::remove_dir_all(local_home_dir.as_path())?;
     }
 
+    // Ensure genesis/config/keyring are initialized before runtime startup.
     initialize_local_home(local_home_dir.as_path())?;
     Ok(())
 }
 
-pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn start_local(
+    runtime: &InjectiveLocalRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
     let local_home_dir = local_home_dir()?;
     let pid_path = local_pid_path()?;
     let log_path = local_log_path()?;
@@ -74,29 +61,37 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
     let stderr_file = stdout_file.try_clone()?;
 
     let child = Command::new("injectived")
-        .args([
-            "start",
-            "--home",
+        .arg("start")
+        .arg("--home")
+        .arg(
             local_home_dir
                 .to_str()
                 .ok_or("Invalid local home directory path")?,
-            "--rpc.laddr",
-            "tcp://0.0.0.0:26660",
-            "--grpc.address",
-            "0.0.0.0:9097",
-            "--grpc-web.address",
-            "0.0.0.0:9094",
-            "--api.address",
-            "tcp://0.0.0.0:1320",
-        ])
+        )
+        .arg("--rpc.laddr")
+        .arg(format!("tcp://0.0.0.0:{}", runtime.rpc_port))
+        .arg("--grpc.address")
+        .arg(format!("0.0.0.0:{}", runtime.grpc_port))
+        .arg("--api.address")
+        .arg(format!("tcp://0.0.0.0:{}", runtime.api_port))
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()?;
 
+    // Persist PID so `caribic stop injective --network local` can terminate it.
     fs::write(pid_path.as_path(), child.id().to_string())?;
 
+    // Fail fast if process exits immediately due to argument/config/runtime errors.
+    thread::sleep(Duration::from_millis(500));
+    if !is_process_alive(child.id()) {
+        let log_tail = read_log_tail(log_path.as_path(), 120)
+            .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
+        return Err(format!("Injective local node exited early.\n{}", log_tail).into());
+    }
+
+    // Health means RPC is reachable and block production has started (>0 height).
     let is_healthy = wait_for_health_check(
-        INJECTIVE_LOCAL_STATUS_URL,
+        runtime.status_url,
         120,
         3000,
         Some(|response_body: &String| {
@@ -113,12 +108,13 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // Timeout cleanup to avoid leaving a detached local process behind.
     let _ = stop_local();
     let log_tail = read_log_tail(log_path.as_path(), 120)
         .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
     Err(format!(
         "Timed out while waiting for local Injective node at {}.\n{}",
-        INJECTIVE_LOCAL_STATUS_URL, log_tail
+        runtime.status_url, log_tail
     )
     .into())
 }
@@ -128,6 +124,8 @@ pub(super) fn stop_local() -> Result<(), Box<dyn std::error::Error>> {
     let pid_path = local_pid_path()?;
 
     let pid = read_pid_file(pid_path.as_path()).or_else(|| {
+        // Fallback: recover process by matching `injectived start --home ...`
+        // when PID file is stale/missing.
         find_node_pids_for_home(local_home_dir.as_path())
             .into_iter()
             .next()
@@ -144,20 +142,28 @@ pub(super) fn stop_local() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub(super) async fn prepare_testnet(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_injectived_available()?;
+pub(super) async fn prepare_testnet(
+    stateful: bool,
+    install_runtime: &InjectiveInstallRuntime,
+    genesis_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Same binary prerequisite behavior as local profile.
+    ensure_injectived_available(install_runtime)?;
 
     let testnet_home_dir = testnet_home_dir()?;
     if !stateful && testnet_home_dir.exists() {
+        // Fresh testnet statesync state when user requests non-stateful mode.
         fs::remove_dir_all(testnet_home_dir.as_path())?;
     }
 
-    initialize_testnet_home(testnet_home_dir.as_path()).await?;
+    // Initialize home dir + fetch canonical testnet genesis when needed.
+    initialize_testnet_home(testnet_home_dir.as_path(), genesis_url).await?;
     Ok(())
 }
 
 pub(super) async fn start_testnet(
     trust_rpc_url: Option<&str>,
+    runtime: &InjectiveTestnetRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let testnet_home_dir = testnet_home_dir()?;
     let pid_path = testnet_pid_path()?;
@@ -173,8 +179,10 @@ pub(super) async fn start_testnet(
         }
     }
 
-    let trust_rpc_url = trust_rpc_url.unwrap_or(INJECTIVE_TESTNET_TRUST_RPC_URL);
-    let (rpc_servers, trust_height, trust_hash) = fetch_statesync_params(trust_rpc_url).await?;
+    // Resolve trusted RPC params (rpc servers, trust height/hash) before startup.
+    let trust_rpc_url = trust_rpc_url.unwrap_or(runtime.trust_rpc_url);
+    let (rpc_servers, trust_height, trust_hash) =
+        fetch_statesync_params(trust_rpc_url, runtime.trust_offset).await?;
 
     if let Some(parent) = pid_path.parent() {
         fs::create_dir_all(parent)?;
@@ -187,21 +195,19 @@ pub(super) async fn start_testnet(
     let stderr_file = stdout_file.try_clone()?;
 
     let child = Command::new("injectived")
-        .args([
-            "start",
-            "--home",
+        .arg("start")
+        .arg("--home")
+        .arg(
             testnet_home_dir
                 .to_str()
                 .ok_or("Invalid testnet home directory path")?,
-            "--rpc.laddr",
-            "tcp://0.0.0.0:26659",
-            "--grpc.address",
-            "0.0.0.0:9096",
-            "--grpc-web.address",
-            "0.0.0.0:9093",
-            "--api.address",
-            "tcp://0.0.0.0:1319",
-        ])
+        )
+        .arg("--rpc.laddr")
+        .arg(format!("tcp://0.0.0.0:{}", runtime.rpc_port))
+        .arg("--grpc.address")
+        .arg(format!("0.0.0.0:{}", runtime.grpc_port))
+        .arg("--api.address")
+        .arg(format!("tcp://0.0.0.0:{}", runtime.api_port))
         .env("INJECTIVED_STATESYNC_ENABLE", "true")
         .env("INJECTIVED_STATESYNC_RPC_SERVERS", rpc_servers)
         .env(
@@ -209,19 +215,23 @@ pub(super) async fn start_testnet(
             trust_height.to_string(),
         )
         .env("INJECTIVED_STATESYNC_TRUST_HASH", trust_hash)
-        .env("INJECTIVED_P2P_SEEDS", INJECTIVE_TESTNET_SEEDS)
-        .env(
-            "INJECTIVED_P2P_PERSISTENT_PEERS",
-            INJECTIVE_TESTNET_PERSISTENT_PEERS,
-        )
+        .env("INJECTIVED_P2P_SEEDS", runtime.seeds)
+        .env("INJECTIVED_P2P_PERSISTENT_PEERS", runtime.persistent_peers)
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
         .spawn()?;
 
+    // PID file and early-exit detection mirror local profile behavior.
     fs::write(pid_path.as_path(), child.id().to_string())?;
+    thread::sleep(Duration::from_millis(500));
+    if !is_process_alive(child.id()) {
+        let log_tail = read_log_tail(log_path.as_path(), 120)
+            .unwrap_or_else(|_| "Unable to read Injective testnet log file".to_string());
+        return Err(format!("Injective testnet node exited early.\n{}", log_tail).into());
+    }
 
     let is_healthy = wait_for_health_check(
-        INJECTIVE_TESTNET_STATUS_URL,
+        runtime.status_url,
         180,
         3000,
         Some(|response_body: &String| {
@@ -238,12 +248,13 @@ pub(super) async fn start_testnet(
         return Ok(());
     }
 
+    // Timeout cleanup to keep testnet lifecycle idempotent across retries.
     let _ = stop_testnet();
     let log_tail = read_log_tail(log_path.as_path(), 120)
         .unwrap_or_else(|_| "Unable to read Injective testnet log file".to_string());
     Err(format!(
         "Timed out while waiting for local Injective testnet node at {}.\n{}",
-        INJECTIVE_TESTNET_STATUS_URL, log_tail
+        runtime.status_url, log_tail
     )
     .into())
 }
@@ -253,6 +264,7 @@ pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
     let pid_path = testnet_pid_path()?;
 
     let pid = read_pid_file(pid_path.as_path()).or_else(|| {
+        // Fallback process discovery for stale/missing PID files.
         find_node_pids_for_home(testnet_home_dir.as_path())
             .into_iter()
             .next()
@@ -269,9 +281,22 @@ pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
-    let (injectived_binary, path_visible) = locate_injectived_binary().ok_or(
-        "injectived is not installed or not available in PATH. Install injectived and retry.",
+fn ensure_injectived_available(
+    install_runtime: &InjectiveInstallRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // First try current PATH and well-known GOPATH install location.
+    let mut injectived_location = locate_injectived_binary();
+    if injectived_location.is_none() {
+        // Interactive fallback install path (source clone + make install).
+        let should_continue = prompt_and_install_injectived(install_runtime)?;
+        if !should_continue {
+            return Err("injectived is required for Injective local/testnet startup".into());
+        }
+        injectived_location = locate_injectived_binary();
+    }
+
+    let (injectived_binary, path_visible) = injectived_location.ok_or(
+        "injectived is still not available after install step. Install injectived and retry.",
     )?;
 
     match Command::new(&injectived_binary).arg("version").output() {
@@ -291,6 +316,8 @@ fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
             ));
 
             if !path_visible {
+                // We can still execute this binary in-process by prepending its
+                // parent dir to PATH, even if user shell PATH is not updated.
                 if let Some(binary_dir) = injectived_binary.parent() {
                     add_directory_to_process_path(binary_dir);
                 }
@@ -321,10 +348,103 @@ fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn prompt_and_install_injectived(
+    install_runtime: &InjectiveInstallRuntime,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let question = "injectived is missing. Do you want to install it now from source? (yes/no): ";
+    print!("{}", question);
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    if !(input == "yes" || input == "y") {
+        return Ok(false);
+    }
+
+    install_injectived_from_source(install_runtime)?;
+    Ok(true)
+}
+
+fn install_injectived_from_source(
+    install_runtime: &InjectiveInstallRuntime,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Keep prerequisites explicit so failures are actionable.
+    if !command_exists("go") {
+        return Err("`go` is required to install injectived. Run `caribic install` first.".into());
+    }
+    if !command_exists("git") {
+        return Err("`git` is required to install injectived from source.".into());
+    }
+    if !command_exists("make") {
+        return Err("`make` is required to install injectived from source.".into());
+    }
+
+    let source_path = injective_source_path(install_runtime.source_dir_relative)?;
+    let parent_path = source_path
+        .parent()
+        .ok_or("Failed to resolve parent directory for Injective source checkout")?;
+    fs::create_dir_all(parent_path)?;
+
+    if source_path.exists() {
+        // Reuse checkout but force it to current upstream head.
+        let fetch_status = Command::new("git")
+            .current_dir(source_path.as_path())
+            .args(["fetch", "--all", "--tags"])
+            .status()?;
+        if !fetch_status.success() {
+            return Err("Failed to refresh Injective source repository".into());
+        }
+
+        let reset_status = Command::new("git")
+            .current_dir(source_path.as_path())
+            .args(["reset", "--hard", "origin/master"])
+            .status()?;
+        if !reset_status.success() {
+            return Err("Failed to reset Injective source repository to origin/master".into());
+        }
+    } else {
+        // Minimal checkout footprint for first-time install.
+        let clone_status = Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                install_runtime.source_repo_url,
+                source_path
+                    .to_str()
+                    .ok_or("Invalid injective source path")?,
+            ])
+            .status()?;
+        if !clone_status.success() {
+            return Err("Failed to clone Injective source repository".into());
+        }
+    }
+
+    let make_status = Command::new("make")
+        .current_dir(source_path.as_path())
+        .arg("install")
+        .status()?;
+
+    if !make_status.success() {
+        return Err("Failed to build/install injectived via `make install`".into());
+    }
+
+    Ok(())
+}
+
 fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    // Local profile is intentionally self-contained and deterministic.
+    let chain_id = "injective-777";
+    let moniker = "caribic-injective-local";
+    let validator_key = "validator";
+    let genesis_account_amount = "100000000000000000000stake";
+    let gentx_amount = "50000000000000000000stake";
+
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
     if config_toml_path.exists() && genesis_path.exists() {
+        // Existing initialized state is reused (stateful profile).
         return Ok(());
     }
 
@@ -336,9 +456,9 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     let init_output = Command::new("injectived")
         .args([
             "init",
-            INJECTIVE_LOCAL_MONIKER,
+            moniker,
             "--chain-id",
-            INJECTIVE_LOCAL_CHAIN_ID,
+            chain_id,
             "--home",
             home_path_str,
         ])
@@ -355,7 +475,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .args([
             "keys",
             "add",
-            INJECTIVE_LOCAL_VALIDATOR_KEY,
+            validator_key,
             "--keyring-backend",
             "test",
             "--home",
@@ -374,7 +494,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .args([
             "keys",
             "show",
-            INJECTIVE_LOCAL_VALIDATOR_KEY,
+            validator_key,
             "-a",
             "--keyring-backend",
             "test",
@@ -398,9 +518,12 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
 
     let add_genesis_output = Command::new("injectived")
         .args([
+            "genesis",
             "add-genesis-account",
             validator_address.as_str(),
-            INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT,
+            genesis_account_amount,
+            "--chain-id",
+            chain_id,
             "--home",
             home_path_str,
         ])
@@ -415,11 +538,12 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
 
     let gentx_output = Command::new("injectived")
         .args([
+            "genesis",
             "gentx",
-            INJECTIVE_LOCAL_VALIDATOR_KEY,
-            INJECTIVE_LOCAL_GENTX_AMOUNT,
+            validator_key,
+            gentx_amount,
             "--chain-id",
-            INJECTIVE_LOCAL_CHAIN_ID,
+            chain_id,
             "--keyring-backend",
             "test",
             "--home",
@@ -435,7 +559,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     }
 
     let collect_gentxs_output = Command::new("injectived")
-        .args(["collect-gentxs", "--home", home_path_str])
+        .args(["genesis", "collect-gentxs", "--home", home_path_str])
         .output()?;
     if !collect_gentxs_output.status.success() {
         return Err(format!(
@@ -446,7 +570,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     }
 
     let validate_genesis_output = Command::new("injectived")
-        .args(["validate-genesis", "--home", home_path_str])
+        .args(["genesis", "validate", "--home", home_path_str])
         .output()?;
     if !validate_genesis_output.status.success() {
         return Err(format!(
@@ -459,10 +583,17 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-async fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+async fn initialize_testnet_home(
+    home_path: &Path,
+    genesis_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let chain_id = "injective-888";
+    let moniker = "caribic-injective-testnet";
+
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
     if config_toml_path.exists() && genesis_path.exists() {
+        // Reuse existing initialized state.
         return Ok(());
     }
 
@@ -471,9 +602,9 @@ async fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::er
     let output = Command::new("injectived")
         .args([
             "init",
-            INJECTIVE_TESTNET_MONIKER,
+            moniker,
             "--chain-id",
-            INJECTIVE_TESTNET_CHAIN_ID,
+            chain_id,
             "--home",
             home_path
                 .to_str()
@@ -489,11 +620,11 @@ async fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::er
         .into());
     }
 
-    let genesis_response = reqwest::get(INJECTIVE_TESTNET_GENESIS_URL).await?;
+    let genesis_response = reqwest::get(genesis_url).await?;
     if !genesis_response.status().is_success() {
         return Err(format!(
             "Failed to download Injective testnet genesis from {} (HTTP {})",
-            INJECTIVE_TESTNET_GENESIS_URL,
+            genesis_url,
             genesis_response.status()
         )
         .into());
@@ -506,7 +637,9 @@ async fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::er
 
 async fn fetch_statesync_params(
     trust_rpc_url: &str,
+    trust_offset: u64,
 ) -> Result<(String, u64, String), Box<dyn std::error::Error>> {
+    // Convert user input into canonical base URL to avoid malformed paths.
     let trust_rpc_base_url = normalize_trust_rpc_url(trust_rpc_url)?;
     let status_url = trust_rpc_base_url.join("status")?;
 
@@ -526,15 +659,15 @@ async fn fetch_statesync_params(
         .and_then(|height| height.parse::<u64>().ok())
         .ok_or("Unable to parse latest_block_height from trusted Injective RPC status response")?;
 
-    if latest_height <= INJECTIVE_TESTNET_TRUST_OFFSET {
+    if latest_height <= trust_offset {
         return Err(format!(
             "Latest Injective testnet height {} is too low to compute trust height with offset {}",
-            latest_height, INJECTIVE_TESTNET_TRUST_OFFSET
+            latest_height, trust_offset
         )
         .into());
     }
 
-    let trust_height = latest_height - INJECTIVE_TESTNET_TRUST_OFFSET;
+    let trust_height = latest_height - trust_offset;
     let block_url = trust_rpc_base_url.join(format!("block?height={}", trust_height).as_str())?;
 
     let block_response = reqwest::get(block_url.as_str()).await?;
@@ -555,12 +688,14 @@ async fn fetch_statesync_params(
         .to_string();
 
     let rpc_server = format_rpc_server_address(&trust_rpc_base_url)?;
+    // CometBFT statesync expects two RPC endpoints; for now duplicate one.
     let rpc_servers = format!("{},{}", rpc_server, rpc_server);
 
     Ok((rpc_servers, trust_height, trust_hash))
 }
 
 fn normalize_trust_rpc_url(raw_url: &str) -> Result<reqwest::Url, Box<dyn std::error::Error>> {
+    // Accept values with optional trailing `/status` and normalize to base URL.
     let normalized = raw_url
         .trim()
         .trim_end_matches('/')
@@ -597,6 +732,7 @@ fn format_rpc_server_address(url: &reqwest::Url) -> Result<String, Box<dyn std::
 }
 
 fn locate_injectived_binary() -> Option<(PathBuf, bool)> {
+    // Preferred path: resolve from current process PATH.
     if let Some(path_var) = env::var_os("PATH") {
         for directory in env::split_paths(&path_var) {
             let candidate = directory.join("injectived");
@@ -606,6 +742,7 @@ fn locate_injectived_binary() -> Option<(PathBuf, bool)> {
         }
     }
 
+    // Fallback path: typical `go install` destination.
     home_dir().and_then(|home| {
         let candidate = home.join("go/bin/injectived");
         if candidate.is_file() {
@@ -629,39 +766,53 @@ fn add_directory_to_process_path(directory: &Path) {
     }
 }
 
+fn injective_source_path(source_dir_relative: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(source_dir_relative))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
+fn command_exists(binary: &str) -> bool {
+    let Some(path_var) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path_var).any(|directory| directory.join(binary).is_file())
+}
+
 fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_LOCAL_HOME_DIR))
+        .map(|path| path.join(".injectived-local"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn local_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_LOCAL_PID_FILE))
+        .map(|path| path.join(".caribic/injective-local.pid"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn local_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_LOCAL_LOG_FILE))
+        .map(|path| path.join(".caribic/injective-local.log"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_TESTNET_HOME_DIR))
+        .map(|path| path.join(".injectived-testnet"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_TESTNET_PID_FILE))
+        .map(|path| path.join(".caribic/injective-testnet.pid"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(INJECTIVE_TESTNET_LOG_FILE))
+        .map(|path| path.join(".caribic/injective-testnet.log"))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
@@ -672,6 +823,7 @@ fn read_pid_file(pid_file_path: &Path) -> Option<u32> {
 }
 
 fn stop_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
+    // Graceful shutdown first, hard kill as fallback.
     if !is_process_alive(pid) {
         return Ok(());
     }
@@ -714,6 +866,8 @@ fn stop_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
 fn is_process_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", pid.to_string().as_str()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .ok()
         .is_some_and(|status| status.success())

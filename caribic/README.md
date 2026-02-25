@@ -42,7 +42,8 @@ caribic start injective --network testnet
 Injective startup note:
 - `caribic start injective --network local` starts a local single-node Injective devnet.
 - `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
-- `caribic start injective --network mainnet` is intentionally not implemented yet.
+- `caribic start injective --network mainnet` is not implemented yet.
+- If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
 Cosmos startup note:
 - `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
@@ -131,6 +132,19 @@ If your machine is slower, you can tune the wait window:
 export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
 export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
 ```
+
+You can also set defaults in `~/.caribic/config.json`:
+
+```json
+{
+  "timeouts": {
+    "mithril_artifact_max_retries": 360,
+    "mithril_artifact_retry_delay_secs": 5
+  }
+}
+```
+
+Environment variables take precedence over config values.
 
 ## `caribic test`
 

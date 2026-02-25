@@ -34,8 +34,6 @@ const CHANNEL_DISCOVERY_MAX_RETRIES_AFTER_CREATE: usize = 120;
 const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
 const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
 const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
-const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
-const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
 const MITHRIL_READINESS_PROGRESS_INTERVAL_SECS: u64 = 30;
 const RELAY_MAX_RETRIES: usize = 20;
 const RELAY_RETRY_DELAY_SECS: u64 = 3;
@@ -217,16 +215,19 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
 }
 
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
+    let config = crate::config::get_config();
+    let configured_max_retries = config.timeouts.mithril_artifact_max_retries.max(1);
+    let configured_retry_delay_secs = config.timeouts.mithril_artifact_retry_delay_secs.max(1);
     let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_MAX_RETRIES);
+        .unwrap_or(configured_max_retries);
     let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_RETRY_DELAY_SECS);
+        .unwrap_or(configured_retry_delay_secs);
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
 
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
@@ -234,7 +235,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         "Waiting for Mithril artifacts to become available (up to {} minutes)...",
         total_wait_secs / 60
     ));
-    let aggregator_base_url = crate::config::get_config()
+    let aggregator_base_url = config
         .mithril
         .aggregator_url
         .trim_end_matches('/')
