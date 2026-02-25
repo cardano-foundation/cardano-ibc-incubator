@@ -33,6 +33,9 @@ import (
 	_ "cosmossdk.io/x/feegrant/module" // import for side-effects
 	_ "cosmossdk.io/x/upgrade"         // import for side-effects
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+	vesseloraclemodulev1 "entrypoint/api/vesseloracle/vesseloracle/module"
+	_ "entrypoint/x/vesseloracle/module" // import for side-effects
+	vesseloracletypes "entrypoint/x/vesseloracle/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config" // import for side-effects
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -108,7 +111,7 @@ var (
 		circuittypes.ModuleName,
 		group.ModuleName,
 		consensusparamtypes.ModuleName,
-		circuittypes.ModuleName,
+		vesseloracletypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	}
@@ -134,6 +137,7 @@ var (
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
 		ibcfeetypes.ModuleName,
+		vesseloracletypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
 	}
@@ -153,6 +157,7 @@ var (
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
 		ibcfeetypes.ModuleName,
+		vesseloracletypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/endBlockers
 	}
@@ -302,6 +307,10 @@ var (
 			{
 				Name:   circuittypes.ModuleName,
 				Config: appconfig.WrapAny(&circuitmodulev1.Module{}),
+			},
+			{
+				Name:   vesseloracletypes.ModuleName,
+				Config: appconfig.WrapAny(&vesseloraclemodulev1.Module{}),
 			},
 			// this line is used by starport scaffolding # stargate/app/moduleConfig
 		},

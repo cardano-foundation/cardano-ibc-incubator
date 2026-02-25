@@ -15,6 +15,40 @@ accounts:
       - 10000token
       - 100000000stake
     mnemonic: engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance
+  # Message-exchange demo datasource accounts (ds0..ds7).
+  # These are used by `caribic demo message-exchange` when submitting simulated vessel reports.
+  - name: ds0
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds1
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds2
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds3
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds4
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds5
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds6
+    coins:
+      - 10000token
+      - 100000000stake
+  - name: ds7
+    coins:
+      - 10000token
+      - 100000000stake
   - name: zebra
     coins:
       - 10000token

@@ -296,27 +296,14 @@ Make sure you have the bridge and network components running. Then, run the foll
 cargo run demo message-exchange
 ```
 
-To demonstrate the ability to exchange messages, a small [vessel demo use case](https://github.com/cardano-foundation/cardano-ibc-summit-demo) is included in the deployment.  
-It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way using a scaffolded Cosmos app-chain. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by a relayer and written to the Cardano blockchain, acting as an oracle.
+To demonstrate message exchange, a vessel-oracle module is integrated directly into the local `entrypoint` chain.  
+It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by Hermes and written to the Cardano blockchain, acting as an oracle.
 
 You can run the demo use case by following these steps:
 
 - Follow the steps above to run a local Cardano network and the bridge components.
 - Make sure you see a message like `successfully created channel` in the logs of the relayer container.
-- Get the IBC (vessel→packet-forwarding chain) channel ID (e.g., `channel-0`).
-- Enter the vessel use case production container and run:
-
-```zsh
-go mod tidy
-go run . report -simulate
-go run . consolidate
-```
-
-Search in the container logs for the last message beginning with "Consolidate". Copy the timestamp, as you will need it for the next command:
-
-```zsh
-go run . transmit -channelid $CHANNEL_ID -ts $CONSOLIDATION_TIMESTAMP
-```
+- The demo command runs the datasource flow from `cosmos/entrypoint/datasource` automatically (`report`, `consolidate`, `transmit`), including channel discovery and relay steps.
 
 - Check in the relayer or gateway if the message has been picked up and delivered to Cardano. Usually it should invoke the recvPacket function. This function would also be able to handle business logic.
 
