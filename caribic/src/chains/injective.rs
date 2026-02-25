@@ -3,8 +3,8 @@ use std::path::Path;
 use async_trait::async_trait;
 
 use crate::chains::{
-    check_port_health, check_rpc_health, parse_bool_flag, ChainAdapter, ChainFlagSpec, ChainFlags,
-    ChainHealthStatus, ChainNetwork, ChainStartRequest,
+    check_port_health, parse_bool_flag, ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus,
+    ChainNetwork, ChainStartRequest,
 };
 
 mod lifecycle;
@@ -12,8 +12,6 @@ mod lifecycle;
 pub struct InjectiveChainAdapter;
 
 pub static INJECTIVE_CHAIN_ADAPTER: InjectiveChainAdapter = InjectiveChainAdapter;
-
-const INJECTIVE_TESTNET_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26659/status";
 
 const INJECTIVE_NETWORKS: [ChainNetwork; 2] = [
     ChainNetwork {
@@ -134,15 +132,29 @@ impl ChainAdapter for InjectiveChainAdapter {
         self.validate_flags(network, flags)?;
 
         match network {
-            "testnet" => Ok(vec![
-                check_rpc_health(
-                    "injective",
-                    INJECTIVE_TESTNET_LOCAL_STATUS_URL,
-                    26659,
-                    "Injective testnet node (RPC)",
-                ),
-                check_port_health("injective-grpc", 9096, "Injective testnet node (gRPC)"),
-            ]),
+            "testnet" => {
+                let rpc_ready = check_port_health("injective", 26659, "Injective node").healthy;
+                let grpc_ready = check_port_health("injective", 9096, "Injective node").healthy;
+
+                Ok(vec![ChainHealthStatus {
+                    id: "injective",
+                    label: "Injective node",
+                    healthy: rpc_ready && grpc_ready,
+                    status: format!(
+                        "RPC (26659): {}; gRPC (9096): {}",
+                        if rpc_ready {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        },
+                        if grpc_ready {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        }
+                    ),
+                }])
+            }
             "mainnet" => Ok(vec![ChainHealthStatus {
                 id: "injective",
                 label: "Injective mainnet",
