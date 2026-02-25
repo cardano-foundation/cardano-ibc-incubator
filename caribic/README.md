@@ -43,6 +43,7 @@ Injective startup note:
 - `caribic start injective --network local` starts a local single-node Injective devnet.
 - `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
 - `caribic start injective --network mainnet` is intentionally not implemented yet.
+- If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
 Cosmos startup note:
 - `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.

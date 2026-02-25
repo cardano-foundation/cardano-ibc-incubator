@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -12,15 +13,18 @@ use serde_json::Value;
 use crate::logger::{verbose, warn};
 use crate::utils::wait_for_health_check;
 
-const INJECTIVE_LOCAL_CHAIN_ID: &str = "injective-local";
+const INJECTIVE_SOURCE_REPO_URL: &str = "https://github.com/InjectiveFoundation/injective-core.git";
+const INJECTIVE_SOURCE_DIR: &str = ".caribic/injective/injective-core";
+
+const INJECTIVE_LOCAL_CHAIN_ID: &str = "injective-777";
 const INJECTIVE_LOCAL_MONIKER: &str = "caribic-injective-local";
 const INJECTIVE_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26660/status";
 const INJECTIVE_LOCAL_HOME_DIR: &str = ".injectived-local";
 const INJECTIVE_LOCAL_PID_FILE: &str = ".caribic/injective-local.pid";
 const INJECTIVE_LOCAL_LOG_FILE: &str = ".caribic/injective-local.log";
 const INJECTIVE_LOCAL_VALIDATOR_KEY: &str = "validator";
-const INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000inj";
-const INJECTIVE_LOCAL_GENTX_AMOUNT: &str = "50000000000000000000inj";
+const INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000stake";
+const INJECTIVE_LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
 
 const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
 const INJECTIVE_TESTNET_MONIKER: &str = "caribic-injective-testnet";
@@ -84,8 +88,6 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
             "tcp://0.0.0.0:26660",
             "--grpc.address",
             "0.0.0.0:9097",
-            "--grpc-web.address",
-            "0.0.0.0:9094",
             "--api.address",
             "tcp://0.0.0.0:1320",
         ])
@@ -94,6 +96,12 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
         .spawn()?;
 
     fs::write(pid_path.as_path(), child.id().to_string())?;
+    thread::sleep(Duration::from_millis(500));
+    if !is_process_alive(child.id()) {
+        let log_tail = read_log_tail(log_path.as_path(), 120)
+            .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
+        return Err(format!("Injective local node exited early.\n{}", log_tail).into());
+    }
 
     let is_healthy = wait_for_health_check(
         INJECTIVE_LOCAL_STATUS_URL,
@@ -197,8 +205,6 @@ pub(super) async fn start_testnet(
             "tcp://0.0.0.0:26659",
             "--grpc.address",
             "0.0.0.0:9096",
-            "--grpc-web.address",
-            "0.0.0.0:9093",
             "--api.address",
             "tcp://0.0.0.0:1319",
         ])
@@ -219,6 +225,12 @@ pub(super) async fn start_testnet(
         .spawn()?;
 
     fs::write(pid_path.as_path(), child.id().to_string())?;
+    thread::sleep(Duration::from_millis(500));
+    if !is_process_alive(child.id()) {
+        let log_tail = read_log_tail(log_path.as_path(), 120)
+            .unwrap_or_else(|_| "Unable to read Injective testnet log file".to_string());
+        return Err(format!("Injective testnet node exited early.\n{}", log_tail).into());
+    }
 
     let is_healthy = wait_for_health_check(
         INJECTIVE_TESTNET_STATUS_URL,
@@ -270,8 +282,17 @@ pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
-    let (injectived_binary, path_visible) = locate_injectived_binary().ok_or(
-        "injectived is not installed or not available in PATH. Install injectived and retry.",
+    let mut injectived_location = locate_injectived_binary();
+    if injectived_location.is_none() {
+        let should_continue = prompt_and_install_injectived()?;
+        if !should_continue {
+            return Err("injectived is required for Injective local/testnet startup".into());
+        }
+        injectived_location = locate_injectived_binary();
+    }
+
+    let (injectived_binary, path_visible) = injectived_location.ok_or(
+        "injectived is still not available after install step. Install injectived and retry.",
     )?;
 
     match Command::new(&injectived_binary).arg("version").output() {
@@ -316,6 +337,84 @@ fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
             )
             .into());
         }
+    }
+
+    Ok(())
+}
+
+fn prompt_and_install_injectived() -> Result<bool, Box<dyn std::error::Error>> {
+    let question = "injectived is missing. Do you want to install it now from source? (yes/no): ";
+    print!("{}", question);
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let input = input.trim().to_lowercase();
+    if !(input == "yes" || input == "y") {
+        return Ok(false);
+    }
+
+    install_injectived_from_source()?;
+    Ok(true)
+}
+
+fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
+    if !command_exists("go") {
+        return Err("`go` is required to install injectived. Run `caribic install` first.".into());
+    }
+    if !command_exists("git") {
+        return Err("`git` is required to install injectived from source.".into());
+    }
+    if !command_exists("make") {
+        return Err("`make` is required to install injectived from source.".into());
+    }
+
+    let source_path = injective_source_path()?;
+    let parent_path = source_path
+        .parent()
+        .ok_or("Failed to resolve parent directory for Injective source checkout")?;
+    fs::create_dir_all(parent_path)?;
+
+    if source_path.exists() {
+        let fetch_status = Command::new("git")
+            .current_dir(source_path.as_path())
+            .args(["fetch", "--all", "--tags"])
+            .status()?;
+        if !fetch_status.success() {
+            return Err("Failed to refresh Injective source repository".into());
+        }
+
+        let reset_status = Command::new("git")
+            .current_dir(source_path.as_path())
+            .args(["reset", "--hard", "origin/master"])
+            .status()?;
+        if !reset_status.success() {
+            return Err("Failed to reset Injective source repository to origin/master".into());
+        }
+    } else {
+        let clone_status = Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                INJECTIVE_SOURCE_REPO_URL,
+                source_path
+                    .to_str()
+                    .ok_or("Invalid injective source path")?,
+            ])
+            .status()?;
+        if !clone_status.success() {
+            return Err("Failed to clone Injective source repository".into());
+        }
+    }
+
+    let make_status = Command::new("make")
+        .current_dir(source_path.as_path())
+        .arg("install")
+        .status()?;
+
+    if !make_status.success() {
+        return Err("Failed to build/install injectived via `make install`".into());
     }
 
     Ok(())
@@ -398,9 +497,12 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
 
     let add_genesis_output = Command::new("injectived")
         .args([
+            "genesis",
             "add-genesis-account",
             validator_address.as_str(),
             INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT,
+            "--chain-id",
+            INJECTIVE_LOCAL_CHAIN_ID,
             "--home",
             home_path_str,
         ])
@@ -415,6 +517,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
 
     let gentx_output = Command::new("injectived")
         .args([
+            "genesis",
             "gentx",
             INJECTIVE_LOCAL_VALIDATOR_KEY,
             INJECTIVE_LOCAL_GENTX_AMOUNT,
@@ -435,7 +538,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     }
 
     let collect_gentxs_output = Command::new("injectived")
-        .args(["collect-gentxs", "--home", home_path_str])
+        .args(["genesis", "collect-gentxs", "--home", home_path_str])
         .output()?;
     if !collect_gentxs_output.status.success() {
         return Err(format!(
@@ -446,7 +549,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
     }
 
     let validate_genesis_output = Command::new("injectived")
-        .args(["validate-genesis", "--home", home_path_str])
+        .args(["genesis", "validate", "--home", home_path_str])
         .output()?;
     if !validate_genesis_output.status.success() {
         return Err(format!(
@@ -629,6 +732,20 @@ fn add_directory_to_process_path(directory: &Path) {
     }
 }
 
+fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(INJECTIVE_SOURCE_DIR))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
+fn command_exists(binary: &str) -> bool {
+    let Some(path_var) = env::var_os("PATH") else {
+        return false;
+    };
+
+    env::split_paths(&path_var).any(|directory| directory.join(binary).is_file())
+}
+
 fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
         .map(|path| path.join(INJECTIVE_LOCAL_HOME_DIR))
@@ -714,6 +831,8 @@ fn stop_process(pid: u32) -> Result<(), Box<dyn std::error::Error>> {
 fn is_process_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", pid.to_string().as_str()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .status()
         .ok()
         .is_some_and(|status| status.success())
