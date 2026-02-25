@@ -14,21 +14,26 @@ const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
 
 if (!cardanoNetworkMagic) {
-  throw new Error("CARDANO_NETWORK_MAGIC is not set in the environment variables");
+  throw new Error(
+    "CARDANO_NETWORK_MAGIC is not set in the environment variables",
+  );
 }
 
-let cardanoNetwork: Network = 'Custom';
-if (cardanoNetworkMagic === '1') {
-  cardanoNetwork = 'Preprod';
-} else if (cardanoNetworkMagic === '2') {
-  cardanoNetwork = 'Preview';
-} else if (cardanoNetworkMagic === '764824073') {
-  cardanoNetwork = 'Mainnet';
+let cardanoNetwork: Network = "Custom";
+if (cardanoNetworkMagic === "1") {
+  cardanoNetwork = "Preprod";
+} else if (cardanoNetworkMagic === "2") {
+  cardanoNetwork = "Preview";
+} else if (cardanoNetworkMagic === "764824073") {
+  cardanoNetwork = "Mainnet";
 }
 
 if (!deployerSk || !kupoUrl || !ogmiosUrl) {
   throw new Error("Unable to load environment variables");
 }
+
+const KUPMIOS_SUBMIT_ATTEMPTS = 6;
+const KUPMIOS_SUBMIT_RETRY_DELAY_MS = 2000;
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
@@ -54,7 +59,9 @@ function toSafeCostModelInteger(value: unknown): number {
   }
 
   if (!Number.isSafeInteger(parsedValue)) {
-    return parsedValue > 0 ? MAX_SAFE_COST_MODEL_VALUE : -MAX_SAFE_COST_MODEL_VALUE;
+    return parsedValue > 0
+      ? MAX_SAFE_COST_MODEL_VALUE
+      : -MAX_SAFE_COST_MODEL_VALUE;
   }
 
   return parsedValue;
@@ -68,7 +75,11 @@ function sanitizeProtocolParameters(protocolParameters: any): any {
   let sanitizedEntries = 0;
   const sanitizedCostModels: Record<string, Record<string, number>> = {};
 
-  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, Record<string, unknown>>)) {
+  for (
+    const [version, model] of Object.entries(
+      protocolParameters.costModels as Record<string, Record<string, unknown>>,
+    )
+  ) {
     const sanitizedModel: Record<string, number> = {};
     for (const [index, value] of Object.entries(model ?? {})) {
       const sanitized = toSafeCostModelInteger(value);
@@ -93,9 +104,31 @@ function sanitizeProtocolParameters(protocolParameters: any): any {
 }
 
 const provider = new Kupmios(kupoUrl, ogmiosUrl);
+const kupmiosSubmitTx = provider.submitTx.bind(provider);
+provider.submitTx = async (cbor: string): Promise<string> => {
+  for (let attempt = 1; attempt <= KUPMIOS_SUBMIT_ATTEMPTS; attempt++) {
+    try {
+      return await kupmiosSubmitTx(cbor);
+    } catch (error) {
+      if (attempt === KUPMIOS_SUBMIT_ATTEMPTS) {
+        throw error;
+      }
+      console.warn(
+        `Kupmios submit retry ${attempt}/${KUPMIOS_SUBMIT_ATTEMPTS} after error:`,
+        error,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, KUPMIOS_SUBMIT_RETRY_DELAY_MS)
+      );
+    }
+  }
+  throw new Error("Kupmios submit retries exhausted");
+};
 const chainZeroTime = await querySystemStart(ogmiosUrl);
 SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
-const protocolParameters = sanitizeProtocolParameters(await provider.getProtocolParameters());
+const protocolParameters = sanitizeProtocolParameters(
+  await provider.getProtocolParameters(),
+);
 
 const lucid = await Lucid(
   provider,
