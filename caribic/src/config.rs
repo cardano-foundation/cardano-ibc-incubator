@@ -42,16 +42,30 @@ fn default_mithril_aggregator_url() -> String {
 pub struct Health {
     #[serde(default = "default_cosmos_status_url")]
     pub cosmos_status_url: String,
+    #[serde(default = "default_gateway_max_retries")]
+    pub gateway_max_retries: u32,
+    #[serde(default = "default_gateway_retry_interval_ms")]
+    pub gateway_retry_interval_ms: u64,
 }
 
 fn default_cosmos_status_url() -> String {
     "http://127.0.0.1:26657/status".to_string()
 }
 
+fn default_gateway_max_retries() -> u32 {
+    60
+}
+
+fn default_gateway_retry_interval_ms() -> u64 {
+    1000
+}
+
 impl Default for Health {
     fn default() -> Self {
         Health {
             cosmos_status_url: default_cosmos_status_url(),
+            gateway_max_retries: default_gateway_max_retries(),
+            gateway_retry_interval_ms: default_gateway_retry_interval_ms(),
         }
     }
 }

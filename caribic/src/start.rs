@@ -1372,16 +1372,20 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
+    let health_config = config::get_config().health;
+
+    // Keep a minimum of 1 so misconfigured values like 0 do not skip readiness checks entirely.
     let max_retries = std::env::var("CARIBIC_GATEWAY_MAX_RETRIES")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(60);
+        .unwrap_or(health_config.gateway_max_retries.max(1));
+    // Keep a minimum of 1ms so misconfigured values like 0 do not create a busy-loop.
     let interval_ms = std::env::var("CARIBIC_GATEWAY_RETRY_INTERVAL_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(1000);
+        .unwrap_or(health_config.gateway_retry_interval_ms.max(1));
     let mut gateway_ready = false;
 
     verbose(&format!(
