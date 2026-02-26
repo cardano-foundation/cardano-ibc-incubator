@@ -1372,8 +1372,22 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
-    let max_retries = 30; // 30 seconds max
+    let max_retries = std::env::var("CARIBIC_GATEWAY_MAX_RETRIES")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(60);
+    let interval_ms = std::env::var("CARIBIC_GATEWAY_RETRY_INTERVAL_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1000);
     let mut gateway_ready = false;
+
+    verbose(&format!(
+        "Gateway readiness polling configured with max_retries={} interval_ms={}",
+        max_retries, interval_ms
+    ));
 
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
@@ -1389,7 +1403,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         }
 
         if i < max_retries - 1 {
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_millis(interval_ms));
             log_or_show_progress(
                 &format!("Waiting for Gateway gRPC... ({}/{})", i + 1, max_retries),
                 &optional_progress_bar,
