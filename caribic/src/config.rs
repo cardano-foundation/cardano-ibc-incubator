@@ -14,9 +14,7 @@ use std::sync::Mutex;
 pub struct Config {
     pub project_root: String,
     pub mithril: Mithril,
-    #[serde(default)]
     pub health: Health,
-    #[serde(default)]
     pub demo: Demo,
     pub cardano: Cardano,
 }
@@ -42,15 +40,10 @@ fn default_mithril_aggregator_url() -> String {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Health {
-    #[serde(default = "default_cosmos_status_url")]
     pub cosmos_status_url: String,
-    #[serde(default = "default_cosmos_max_retries")]
     pub cosmos_max_retries: u32,
-    #[serde(default = "default_cosmos_retry_interval_ms")]
     pub cosmos_retry_interval_ms: u64,
-    #[serde(default = "default_gateway_max_retries")]
     pub gateway_max_retries: u32,
-    #[serde(default = "default_gateway_retry_interval_ms")]
     pub gateway_retry_interval_ms: u64,
 }
 
@@ -88,11 +81,8 @@ impl Default for Health {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Demo {
-    #[serde(default = "default_demo_mithril_artifact_max_retries")]
     pub mithril_artifact_max_retries: usize,
-    #[serde(default = "default_demo_mithril_artifact_retry_delay_secs")]
     pub mithril_artifact_retry_delay_secs: u64,
-    #[serde(default)]
     pub message_exchange: MessageExchangeDemo,
 }
 
@@ -116,25 +106,15 @@ impl Default for Demo {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageExchangeDemo {
-    #[serde(default = "default_message_consolidated_report_max_retries")]
     pub consolidated_report_max_retries: usize,
-    #[serde(default = "default_message_consolidated_report_retry_delay_secs")]
     pub consolidated_report_retry_delay_secs: u64,
-    #[serde(default = "default_message_channel_discovery_max_retries")]
     pub channel_discovery_max_retries: usize,
-    #[serde(default = "default_message_channel_discovery_after_create_max_retries")]
     pub channel_discovery_max_retries_after_create: usize,
-    #[serde(default = "default_message_channel_discovery_retry_delay_secs")]
     pub channel_discovery_retry_delay_secs: u64,
-    #[serde(default = "default_message_connection_discovery_max_retries")]
     pub connection_discovery_max_retries: usize,
-    #[serde(default = "default_message_connection_discovery_retry_delay_secs")]
     pub connection_discovery_retry_delay_secs: u64,
-    #[serde(default = "default_message_mithril_readiness_progress_interval_secs")]
     pub mithril_readiness_progress_interval_secs: u64,
-    #[serde(default = "default_message_relay_max_retries")]
     pub relay_max_retries: usize,
-    #[serde(default = "default_message_relay_retry_delay_secs")]
     pub relay_retry_delay_secs: u64,
 }
 
@@ -358,9 +338,12 @@ impl Config {
         if Path::new(config_path).exists() {
             let file_content =
                 fs::read_to_string(config_path).expect("Failed to read config file.");
-            serde_json::from_str(&file_content).unwrap_or_else(|_| {
-                eprintln!("Failed to parse config file, using default config.");
-                Config::default()
+            serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+                error(&format!(
+                    "Failed to parse config file at {}: {}",
+                    config_path, parse_error
+                ));
+                process::exit(1);
             })
         } else {
             let default_config = create_config_file(config_path).await;

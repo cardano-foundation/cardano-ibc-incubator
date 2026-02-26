@@ -207,16 +207,27 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
     let demo_config = crate::config::get_config().demo;
     let message_exchange_config = demo_config.message_exchange;
-    let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(demo_config.mithril_artifact_max_retries.max(1));
-    let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(demo_config.mithril_artifact_retry_delay_secs.max(1));
+    let max_retries = demo_config.mithril_artifact_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: demo.mithril_artifact_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let retry_delay_secs = demo_config.mithril_artifact_retry_delay_secs;
+    if retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.mithril_artifact_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let progress_interval_secs = message_exchange_config.mithril_readiness_progress_interval_secs;
+    if progress_interval_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.mithril_readiness_progress_interval_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
 
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
@@ -241,11 +252,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         .build()
         .map_err(|error| format!("Failed to build Mithril HTTP client: {}", error))?;
 
-    let progress_log_every = if retry_delay_secs == 0 {
-        1
-    } else {
-        (message_exchange_config.mithril_readiness_progress_interval_secs / retry_delay_secs).max(1)
-    };
+    let progress_log_every = (progress_interval_secs / retry_delay_secs).max(1);
     let mut last_stake_count: Option<usize> = None;
     let mut last_tx_count: Option<usize> = None;
     let mut last_certificate_count: Option<usize> = None;
@@ -392,8 +399,20 @@ fn run_datasource_command(
 
 async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
-    let max_retries = message_exchange_config.consolidated_report_max_retries.max(1);
-    let retry_delay_secs = message_exchange_config.consolidated_report_retry_delay_secs.max(1);
+    let max_retries = message_exchange_config.consolidated_report_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.consolidated_report_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let retry_delay_secs = message_exchange_config.consolidated_report_retry_delay_secs;
+    if retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.consolidated_report_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(5))
@@ -637,8 +656,32 @@ fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usi
 
 fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
-    if let Some(pair) =
-        wait_for_open_message_channel_pair(message_exchange_config.channel_discovery_max_retries.max(1))?
+    let channel_discovery_max_retries = message_exchange_config.channel_discovery_max_retries;
+    if channel_discovery_max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.channel_discovery_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let channel_discovery_max_retries_after_create =
+        message_exchange_config.channel_discovery_max_retries_after_create;
+    if channel_discovery_max_retries_after_create == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.channel_discovery_max_retries_after_create must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let channel_discovery_retry_delay_secs = message_exchange_config.channel_discovery_retry_delay_secs;
+    if channel_discovery_retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.channel_discovery_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    if let Some(pair) = wait_for_open_message_channel_pair(
+        channel_discovery_max_retries,
+        channel_discovery_retry_delay_secs,
+    )?
     {
         logger::log(&format!(
             "PASS: Message-exchange channel already open (cardano={}, vesseloracle={})",
@@ -654,13 +697,11 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     let connection_id = ensure_open_message_exchange_connection()?;
     create_message_exchange_channel_on_connection(connection_id.as_str())?;
 
-    let pair =
-        wait_for_open_message_channel_pair(
-            message_exchange_config
-                .channel_discovery_max_retries_after_create
-                .max(1),
-        )?
-        .ok_or_else(|| {
+    let pair = wait_for_open_message_channel_pair(
+        channel_discovery_max_retries_after_create,
+        channel_discovery_retry_delay_secs,
+    )?
+    .ok_or_else(|| {
             "Created message-exchange channel, but no open channel pair could be discovered"
                 .to_string()
         })?;
@@ -673,12 +714,8 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
 
 fn wait_for_open_message_channel_pair(
     max_retries: usize,
+    retry_delay_secs: u64,
 ) -> Result<Option<MessageChannelPair>, String> {
-    let retry_delay_secs = crate::config::get_config()
-        .demo
-        .message_exchange
-        .channel_discovery_retry_delay_secs
-        .max(1);
     for _ in 0..max_retries {
         if let Some(pair) = query_open_message_channel_pair()? {
             return Ok(Some(pair));
@@ -1013,12 +1050,10 @@ fn query_open_message_connection() -> Result<Option<String>, String> {
     Ok(None)
 }
 
-fn wait_for_open_message_connection(max_retries: usize) -> Result<Option<String>, String> {
-    let retry_delay_secs = crate::config::get_config()
-        .demo
-        .message_exchange
-        .connection_discovery_retry_delay_secs
-        .max(1);
+fn wait_for_open_message_connection(
+    max_retries: usize,
+    retry_delay_secs: u64,
+) -> Result<Option<String>, String> {
     for _ in 0..max_retries {
         if let Some(connection_id) = query_open_message_connection()? {
             return Ok(Some(connection_id));
@@ -1031,8 +1066,26 @@ fn wait_for_open_message_connection(max_retries: usize) -> Result<Option<String>
 
 fn ensure_open_message_exchange_connection() -> Result<String, String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    let connection_discovery_max_retries = message_exchange_config.connection_discovery_max_retries;
+    if connection_discovery_max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.connection_discovery_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let connection_discovery_retry_delay_secs =
+        message_exchange_config.connection_discovery_retry_delay_secs;
+    if connection_discovery_retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.connection_discovery_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     if let Some(open_connection_id) =
-        wait_for_open_message_connection(message_exchange_config.connection_discovery_max_retries.max(1))?
+        wait_for_open_message_connection(
+            connection_discovery_max_retries,
+            connection_discovery_retry_delay_secs,
+        )?
     {
         logger::verbose(&format!(
             "Using existing open Cardano↔vesseloracle connection {}",
@@ -1123,7 +1176,10 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         })?;
 
     let Some(open_connection_id) =
-        wait_for_open_message_connection(message_exchange_config.connection_discovery_max_retries.max(1))?
+        wait_for_open_message_connection(
+            connection_discovery_max_retries,
+            connection_discovery_retry_delay_secs,
+        )?
     else {
         return Err(format!(
             "Created Cardano↔vesseloracle connection artifacts from {}, but no open symmetric connection is currently usable",
@@ -1229,8 +1285,20 @@ fn is_open_channel_state(state: &str) -> bool {
 
 fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
-    let relay_max_retries = message_exchange_config.relay_max_retries.max(1);
-    let relay_retry_delay_secs = message_exchange_config.relay_retry_delay_secs.max(1);
+    let relay_max_retries = message_exchange_config.relay_max_retries;
+    if relay_max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let relay_retry_delay_secs = message_exchange_config.relay_retry_delay_secs;
+    if relay_retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     let mut recv_relayed = false;
     for _ in 0..relay_max_retries {
         let recv_output = run_hermes_command(&[

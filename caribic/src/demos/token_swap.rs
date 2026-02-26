@@ -226,16 +226,20 @@ fn ensure_demo_services_ready(
 /// Waits until Mithril exposes stake and transaction artifacts needed by demo client creation.
 async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
     let demo_config = crate::config::get_config().demo;
-    let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(demo_config.mithril_artifact_max_retries.max(1));
-    let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(demo_config.mithril_artifact_retry_delay_secs.max(1));
+    let max_retries = demo_config.mithril_artifact_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: demo.mithril_artifact_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let retry_delay_secs = demo_config.mithril_artifact_retry_delay_secs;
+    if retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.mithril_artifact_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
 
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
