@@ -1,12 +1,9 @@
-ARG GO_VERSION="1.21.4"
-
-FROM golang:${GO_VERSION} as builder
+FROM golang:1.21.4@sha256:9baee0edab4139ae9b108fffabb8e2e98a67f0b259fd25283c2a084bd74fea0d as builder
 
 ENV PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 
 # Install dependencies *You don't need all of them
 RUN apt-get update -y \
-    && apt-get upgrade -y \
     && apt-get install -y git jq bc make automake libnuma-dev \
     && apt-get install -y rsync htop curl build-essential \
     && apt-get install -y pkg-config libffi-dev libgmp-dev \
