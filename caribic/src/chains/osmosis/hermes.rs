@@ -6,11 +6,15 @@ use console::style;
 use dirs::home_dir;
 use indicatif::{ProgressBar, ProgressStyle};
 
-use crate::constants::ENTRYPOINT_CHAIN_ID;
+use crate::config;
 use crate::logger::{self, log, log_or_show_progress, verbose};
 use crate::utils::{
     execute_script, extract_tendermint_client_id, extract_tendermint_connection_id,
 };
+
+fn entrypoint_chain_id() -> String {
+    config::get_config().chains.entrypoint.chain_id
+}
 
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
 pub(super) fn configure_hermes_for_demo(
@@ -65,7 +69,7 @@ pub(super) fn configure_hermes_for_demo(
             "add",
             "--overwrite",
             "--chain",
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain_id().as_str(),
             "--mnemonic-file",
             osmosis_dir.join("scripts/hermes/cosmos").to_str().unwrap(),
         ]),
@@ -105,7 +109,7 @@ pub(super) fn configure_hermes_for_demo(
                 "--host-chain",
                 "localosmosis",
                 "--reference-chain",
-                ENTRYPOINT_CHAIN_ID,
+                entrypoint_chain_id().as_str(),
             ])
             .output()
             .expect("Failed to create osmosis client");
@@ -139,7 +143,7 @@ pub(super) fn configure_hermes_for_demo(
                 "create",
                 "client",
                 "--host-chain",
-                ENTRYPOINT_CHAIN_ID,
+                entrypoint_chain_id().as_str(),
                 "--reference-chain",
                 "localosmosis",
                 "--trusting-period",
@@ -170,7 +174,7 @@ pub(super) fn configure_hermes_for_demo(
                     "create",
                     "connection",
                     "--a-chain",
-                    ENTRYPOINT_CHAIN_ID,
+                    entrypoint_chain_id().as_str(),
                     "--a-client",
                     entrypoint_chain_client_id.as_str(),
                     "--b-client",
@@ -201,7 +205,7 @@ pub(super) fn configure_hermes_for_demo(
                         "create",
                         "channel",
                         "--a-chain",
-                        ENTRYPOINT_CHAIN_ID,
+                        entrypoint_chain_id().as_str(),
                         "--a-connection",
                         &connection_id,
                         "--a-port",

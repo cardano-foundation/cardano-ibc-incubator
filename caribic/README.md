@@ -103,12 +103,7 @@ Starts a demo setup step on top of already running services.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
-If your machine is slower, you can tune the wait window:
-
-```bash
-export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
-export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
-```
+If your machine is slower, tune retry windows in `~/.caribic/config.json`.
 
 ## `caribic test`
 

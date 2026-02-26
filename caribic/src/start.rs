@@ -1,4 +1,3 @@
-use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -24,9 +23,6 @@ use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
-
-const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -115,7 +111,17 @@ pub fn start_relayer(
     );
 
     // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
-    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+    let entrypoint_mnemonic = config::get_config().relayer.entrypoint_mnemonic;
+    if entrypoint_mnemonic.trim().is_empty() {
+        return Err(
+            "Invalid config: relayer.entrypoint_mnemonic must be set in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+
+    let entrypoint_chain = config::get_config().chains.entrypoint;
+    let entrypoint_chain_id = entrypoint_chain.chain_id;
+
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
@@ -125,7 +131,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain_id.as_str(),
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -690,6 +696,8 @@ pub fn start_cosmos_entrypoint_chain_services(
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if clean {
+        let entrypoint_chain = config::get_config().chains.entrypoint;
+        let cleanup_command = format!("rm -rf {} /root/.ignite", entrypoint_chain.home_dir);
         execute_script(
             cosmos_dir,
             "docker",
@@ -705,9 +713,9 @@ pub fn start_cosmos_entrypoint_chain_services(
                 "--rm",
                 "--entrypoint",
                 "bash",
-                ENTRYPOINT_CONTAINER_NAME,
+                entrypoint_chain.container_name.as_str(),
                 "-lc",
-                &format!("rm -rf {} /root/.ignite", ENTRYPOINT_HOME_DIR),
+                cleanup_command.as_str(),
             ]),
             None,
         )?;
@@ -751,17 +759,22 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Disk space errors (requires freeing up disk space)
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let cosmos_status_url = config::get_config().health.cosmos_status_url;
-    let max_retries = std::env::var("CARIBIC_COSMOS_MAX_RETRIES")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(60);
-    let interval_ms = std::env::var("CARIBIC_COSMOS_RETRY_INTERVAL_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(10000); // 10 seconds
+    let runtime_config = config::get_config().runtime;
+    let cosmos_status_url = runtime_config.cosmos_status_url;
+    let max_retries = runtime_config.cosmos_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: runtime.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+    let interval_ms = runtime_config.cosmos_retry_interval_ms;
+    if interval_ms == 0 {
+        return Err(
+            "Invalid config: runtime.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
     let client = reqwest::Client::builder().no_proxy().build()?;
 
     verbose(&format!(
@@ -820,7 +833,8 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let container_names = [ENTRYPOINT_CONTAINER_NAME];
+            let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
+            let container_names = [entrypoint_container_name.as_str()];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -838,7 +852,8 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let container_names = [ENTRYPOINT_CONTAINER_NAME];
+    let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
+    let container_names = [entrypoint_container_name.as_str()];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1369,7 +1384,22 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
-    let max_retries = 30; // 30 seconds max
+    let runtime_config = config::get_config().runtime;
+
+    let max_retries = runtime_config.gateway_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: runtime.gateway_max_retries must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+    let interval_ms = runtime_config.gateway_retry_interval_ms;
+    if interval_ms == 0 {
+        return Err(
+            "Invalid config: runtime.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
     let mut gateway_ready = false;
 
     for i in 0..max_retries {
@@ -1386,7 +1416,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         }
 
         if i < max_retries - 1 {
-            thread::sleep(Duration::from_secs(1));
+            thread::sleep(Duration::from_millis(interval_ms));
             log_or_show_progress(
                 &format!("Waiting for Gateway gRPC... ({}/{})", i + 1, max_retries),
                 &optional_progress_bar,
@@ -1678,14 +1708,15 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             result.push('\n');
         }
         // List for Cosmos Entrypoint chain.
+        let entrypoint_chain_id = config::get_config().chains.entrypoint.chain_id;
         let entrypoint_output =
-            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
+            run_hermes_command(&["keys", "list", "--chain", entrypoint_chain_id.as_str()])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
             result.push_str(&format!(
                 "entrypoint-chain (Hermes chain id: {}):\n",
-                ENTRYPOINT_CHAIN_ID
+                entrypoint_chain_id
             ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
@@ -1952,7 +1983,7 @@ fn run_core_health_check(
         CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
         CoreHealthCheckType::Cosmos => check_rpc_service(
-            config::get_config().health.cosmos_status_url.as_str(),
+            config::get_config().runtime.cosmos_status_url.as_str(),
             26657,
         ),
     }
