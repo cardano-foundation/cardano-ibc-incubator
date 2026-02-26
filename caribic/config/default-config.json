@@ -1,5 +1,21 @@
 {
   "project_root": "/root/cardano-ibc-incubator",
+  "chains": {
+    "cardano": {
+      "chain_id": "cardano-devnet",
+      "message_port_id": "transfer"
+    },
+    "entrypoint": {
+      "chain_id": "entrypoint",
+      "message_port_id": "vesseloracle",
+      "rpc_addr": "http://127.0.0.1:26657",
+      "grpc_addr": "http://127.0.0.1:9090",
+      "container_name": "entrypoint-node-prod",
+      "home_dir": "/root/.entrypoint",
+      "keyring_container_path": "/root/.entrypoint/keyring-test",
+      "relayer_key_name": "entrypoint-relayer"
+    }
+  },
   "mithril": {
     "enabled": true,
     "aggregator_url": "http://127.0.0.1:8080",

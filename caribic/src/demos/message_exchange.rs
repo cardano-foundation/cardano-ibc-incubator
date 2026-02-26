@@ -6,11 +6,7 @@ use dirs::home_dir;
 use serde_json::Value;
 
 use crate::{
-    constants::{
-        CARDANO_CHAIN_ID, CARDANO_MESSAGE_PORT_ID, ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CONTAINER_NAME,
-        ENTRYPOINT_GRPC_ADDR, ENTRYPOINT_KEYRING_CONTAINER_PATH, ENTRYPOINT_MESSAGE_PORT_ID,
-        ENTRYPOINT_RELAYER_KEY_NAME, ENTRYPOINT_RPC_ADDR,
-    },
+    config,
     logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
@@ -39,6 +35,14 @@ struct ConnectionEndStatus {
     client_id: Option<String>,
     remote_client_id: Option<String>,
     remote_connection_id: Option<String>,
+}
+
+fn cardano_chain_config() -> crate::config::ChainConfig {
+    config::get_config().chains.cardano
+}
+
+fn entrypoint_chain_config() -> crate::config::EntrypointChainConfig {
+    config::get_config().chains.entrypoint
 }
 
 /// Runs the full message-exchange demo and executes datasource report/consolidate/transmit.
@@ -347,6 +351,7 @@ fn format_optional_count(value: Option<usize>) -> String {
 }
 
 fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
+    let entrypoint_chain = entrypoint_chain_config();
     let user_home = home_dir()
         .ok_or("Failed to resolve user home directory for message-exchange datasource")?;
     let datasource_home = user_home
@@ -374,7 +379,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
 
     let source = format!(
         "{}:{}",
-        ENTRYPOINT_CONTAINER_NAME, ENTRYPOINT_KEYRING_CONTAINER_PATH
+        entrypoint_chain.container_name, entrypoint_chain.keyring_container_path
     );
     let destination = vessel_home.to_string_lossy().to_string();
     execute_script(
@@ -386,7 +391,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
     .map_err(|error| {
         format!(
             "ERROR: Failed to sync entrypoint keyring from container {}: {}",
-            ENTRYPOINT_CONTAINER_NAME, error
+            entrypoint_chain.container_name, error
         )
     })?;
 
@@ -518,6 +523,7 @@ fn parse_f64_value(value: &Value) -> Option<f64> {
 }
 
 fn configure_hermes_for_message_exchange() -> Result<(), String> {
+    let entrypoint_chain = entrypoint_chain_config();
     let entrypoint_mnemonic = crate::config::get_config().relayer.entrypoint_mnemonic;
     if entrypoint_mnemonic.trim().is_empty() {
         return Err(
@@ -538,7 +544,7 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
         .map_err(|error| format!("Failed to read Hermes config: {}", error))?;
     let updated_config = upsert_chain_block(
         existing_config.as_str(),
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain.chain_id.as_str(),
         vessel_chain_block().as_str(),
     )?;
 
@@ -556,7 +562,7 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
         "add",
         "--overwrite",
         "--chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain.chain_id.as_str(),
         "--mnemonic-file",
         mnemonic_file_arg.as_str(),
     ])
@@ -575,6 +581,8 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
 }
 
 fn vessel_chain_block() -> String {
+    let entrypoint_chain = entrypoint_chain_config();
+    let cardano_chain = cardano_chain_config();
     format!(
         r#"[[chains]]
 id = '{id}'
@@ -606,15 +614,15 @@ list = [
 
 address_type = {{ derivation = 'cosmos' }}
 "#,
-        id = ENTRYPOINT_CHAIN_ID,
-        rpc_addr = ENTRYPOINT_RPC_ADDR,
-        grpc_addr = ENTRYPOINT_GRPC_ADDR,
-        key_name = ENTRYPOINT_RELAYER_KEY_NAME,
-        vessel_port = ENTRYPOINT_MESSAGE_PORT_ID,
-        cardano_port = CARDANO_MESSAGE_PORT_ID,
+        id = entrypoint_chain.chain_id,
+        rpc_addr = entrypoint_chain.rpc_addr,
+        grpc_addr = entrypoint_chain.grpc_addr,
+        key_name = entrypoint_chain.relayer_key_name,
+        vessel_port = entrypoint_chain.message_port_id,
+        cardano_port = cardano_chain.message_port_id,
         event_source_url = format!(
             "{}{}",
-            ENTRYPOINT_RPC_ADDR.replacen("http://", "ws://", 1),
+            entrypoint_chain.rpc_addr.replacen("http://", "ws://", 1),
             "/websocket"
         )
     )
@@ -756,14 +764,16 @@ fn wait_for_open_message_channel_pair(
 }
 
 fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, String> {
+    let cardano_chain = cardano_chain_config();
+    let entrypoint_chain = entrypoint_chain_config();
     let output = run_hermes_command(&[
         "--json",
         "query",
         "channels",
         "--chain",
-        CARDANO_CHAIN_ID,
+        cardano_chain.chain_id.as_str(),
         "--counterparty-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain.chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !output.status.success() {
@@ -789,8 +799,8 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         .cloned()
         .unwrap_or_default();
 
-    let cardano_port_id = CARDANO_MESSAGE_PORT_ID;
-    let vessel_port_id = ENTRYPOINT_MESSAGE_PORT_ID;
+    let cardano_port_id = cardano_chain.message_port_id.as_str();
+    let vessel_port_id = entrypoint_chain.message_port_id.as_str();
     let mut cardano_channels: Vec<String> = channel_entries
         .iter()
         .filter_map(|entry| extract_cardano_message_channel_id(entry, cardano_port_id, vessel_port_id))
@@ -804,7 +814,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
 
     for cardano_channel_id in cardano_channels {
         let Some(cardano_end) = query_channel_end_status(
-            CARDANO_CHAIN_ID,
+            cardano_chain.chain_id.as_str(),
             cardano_port_id,
             cardano_channel_id.as_str(),
         )?
@@ -822,7 +832,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         };
 
         let Some(vessel_end) = query_channel_end_status(
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain.chain_id.as_str(),
             vessel_port_id,
             vessel_channel_id.as_str(),
         )?
@@ -1020,43 +1030,48 @@ fn query_connection_end_status(
 }
 
 fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, String> {
-    let Some(cardano_end) = query_connection_end_status(CARDANO_CHAIN_ID, cardano_connection_id)?
+    let cardano_chain_id = cardano_chain_config().chain_id;
+    let entrypoint_chain_id = entrypoint_chain_config().chain_id;
+    let Some(cardano_end) =
+        query_connection_end_status(cardano_chain_id.as_str(), cardano_connection_id)?
     else {
         return Ok(false);
     };
 
     if !is_open_channel_state(cardano_end.state.as_str()) {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: state={} (expected Open)",
-            cardano_end.state
+            "Skipping {} connection {}: state={} (expected Open)",
+            cardano_chain_id, cardano_connection_id, cardano_end.state
         ));
         return Ok(false);
     }
 
     let Some(vessel_connection_id) = cardano_end.remote_connection_id.as_deref() else {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: missing counterparty connection id"
+            "Skipping {} connection {}: missing counterparty connection id",
+            cardano_chain_id, cardano_connection_id
         ));
         return Ok(false);
     };
 
-    let Some(vessel_end) = query_connection_end_status(ENTRYPOINT_CHAIN_ID, vessel_connection_id)?
+    let Some(vessel_end) =
+        query_connection_end_status(entrypoint_chain_id.as_str(), vessel_connection_id)?
     else {
         return Ok(false);
     };
 
     if !is_open_channel_state(vessel_end.state.as_str()) {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} is {} (expected Open)",
-            vessel_connection_id, vessel_end.state
+            "Skipping {} connection {}: vesseloracle counterparty {} is {} (expected Open)",
+            cardano_chain_id, cardano_connection_id, vessel_connection_id, vessel_end.state
         ));
         return Ok(false);
     }
 
     if vessel_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} does not point back to it",
-            vessel_connection_id
+            "Skipping {} connection {}: vesseloracle counterparty {} does not point back to it",
+            cardano_chain_id, cardano_connection_id, vessel_connection_id
         ));
         return Ok(false);
     }
@@ -1067,7 +1082,8 @@ fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, Strin
         || vessel_end.remote_client_id.is_none()
     {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: missing client identifiers on one or both ends"
+            "Skipping {} connection {}: missing client identifiers on one or both ends",
+            cardano_chain_id, cardano_connection_id
         ));
         return Ok(false);
     }
@@ -1076,7 +1092,8 @@ fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, Strin
 }
 
 fn query_open_message_connection() -> Result<Option<String>, String> {
-    let connection_ids = query_connection_ids_for_chain(CARDANO_CHAIN_ID)?;
+    let cardano_chain_id = cardano_chain_config().chain_id;
+    let connection_ids = query_connection_ids_for_chain(cardano_chain_id.as_str())?;
     for connection_id in connection_ids {
         if is_open_message_connection(connection_id.as_str())? {
             return Ok(Some(connection_id));
@@ -1101,6 +1118,8 @@ fn wait_for_open_message_connection(
 
 fn ensure_open_message_exchange_connection() -> Result<String, String> {
     let message_exchange_config = crate::config::get_config().runtime.message_exchange;
+    let cardano_chain_id = cardano_chain_config().chain_id;
+    let entrypoint_chain_id = entrypoint_chain_config().chain_id;
     let connection_discovery_max_retries = message_exchange_config.connection_discovery_max_retries;
     if connection_discovery_max_retries == 0 {
         return Err(
@@ -1138,14 +1157,16 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         "create",
         "client",
         "--host-chain",
-        CARDANO_CHAIN_ID,
+        cardano_chain_id.as_str(),
         "--reference-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for {CARDANO_CHAIN_ID}->{ENTRYPOINT_CHAIN_ID}: {}",
+            "Failed to create client for {}->{}: {}",
+            cardano_chain_id,
+            entrypoint_chain_id,
             String::from_utf8_lossy(&create_cardano_client_output.stderr)
         ));
     }
@@ -1163,14 +1184,16 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         "create",
         "client",
         "--host-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain_id.as_str(),
         "--reference-chain",
-        CARDANO_CHAIN_ID,
+        cardano_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_vessel_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for {ENTRYPOINT_CHAIN_ID}->{CARDANO_CHAIN_ID}: {}",
+            "Failed to create client for {}->{}: {}",
+            entrypoint_chain_id,
+            cardano_chain_id,
             String::from_utf8_lossy(&create_vessel_client_output.stderr)
         ));
     }
@@ -1187,7 +1210,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         "create",
         "connection",
         "--a-chain",
-        CARDANO_CHAIN_ID,
+        cardano_chain_id.as_str(),
         "--a-client",
         cardano_client_id.as_str(),
         "--b-client",
@@ -1226,17 +1249,19 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
 }
 
 fn create_message_exchange_channel_on_connection(connection_id: &str) -> Result<(), String> {
+    let cardano_chain = cardano_chain_config();
+    let entrypoint_chain = entrypoint_chain_config();
     let create_output = run_hermes_command(&[
         "create",
         "channel",
         "--a-chain",
-        CARDANO_CHAIN_ID,
+        cardano_chain.chain_id.as_str(),
         "--a-connection",
         connection_id,
         "--a-port",
-        CARDANO_MESSAGE_PORT_ID,
+        cardano_chain.message_port_id.as_str(),
         "--b-port",
-        ENTRYPOINT_MESSAGE_PORT_ID,
+        entrypoint_chain.message_port_id.as_str(),
     ])
     .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
     if !create_output.status.success() {
@@ -1319,6 +1344,8 @@ fn is_open_channel_state(state: &str) -> bool {
 }
 
 fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
+    let cardano_chain = cardano_chain_config();
+    let entrypoint_chain = entrypoint_chain_config();
     let message_exchange_config = crate::config::get_config().runtime.message_exchange;
     let relay_max_retries = message_exchange_config.relay_max_retries;
     if relay_max_retries == 0 {
@@ -1340,11 +1367,11 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             "tx",
             "packet-recv",
             "--dst-chain",
-            CARDANO_CHAIN_ID,
+            cardano_chain.chain_id.as_str(),
             "--src-chain",
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain.chain_id.as_str(),
             "--src-port",
-            ENTRYPOINT_MESSAGE_PORT_ID,
+            entrypoint_chain.message_port_id.as_str(),
             "--src-channel",
             channel_pair.vessel_channel_id.as_str(),
         ])
@@ -1379,11 +1406,11 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             "tx",
             "packet-ack",
             "--dst-chain",
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain.chain_id.as_str(),
             "--src-chain",
-            CARDANO_CHAIN_ID,
+            cardano_chain.chain_id.as_str(),
             "--src-port",
-            CARDANO_MESSAGE_PORT_ID,
+            cardano_chain.message_port_id.as_str(),
             "--src-channel",
             channel_pair.cardano_channel_id.as_str(),
         ])

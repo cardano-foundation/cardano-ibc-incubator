@@ -13,10 +13,35 @@ use std::sync::Mutex;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub project_root: String,
+    pub chains: Chains,
     pub mithril: Mithril,
     pub runtime: Runtime,
     pub relayer: Relayer,
     pub cardano: Cardano,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Chains {
+    pub cardano: ChainConfig,
+    pub entrypoint: EntrypointChainConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChainConfig {
+    pub chain_id: String,
+    pub message_port_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EntrypointChainConfig {
+    pub chain_id: String,
+    pub message_port_id: String,
+    pub rpc_addr: String,
+    pub grpc_addr: String,
+    pub container_name: String,
+    pub home_dir: String,
+    pub keyring_container_path: String,
+    pub relayer_key_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

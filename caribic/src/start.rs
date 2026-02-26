@@ -1,4 +1,3 @@
-use crate::constants::{ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CONTAINER_NAME, ENTRYPOINT_HOME_DIR};
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -120,6 +119,9 @@ pub fn start_relayer(
         );
     }
 
+    let entrypoint_chain = config::get_config().chains.entrypoint;
+    let entrypoint_chain_id = entrypoint_chain.chain_id;
+
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
@@ -129,7 +131,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            ENTRYPOINT_CHAIN_ID,
+            entrypoint_chain_id.as_str(),
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -694,6 +696,8 @@ pub fn start_cosmos_entrypoint_chain_services(
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if clean {
+        let entrypoint_chain = config::get_config().chains.entrypoint;
+        let cleanup_command = format!("rm -rf {} /root/.ignite", entrypoint_chain.home_dir);
         execute_script(
             cosmos_dir,
             "docker",
@@ -709,9 +713,9 @@ pub fn start_cosmos_entrypoint_chain_services(
                 "--rm",
                 "--entrypoint",
                 "bash",
-                ENTRYPOINT_CONTAINER_NAME,
+                entrypoint_chain.container_name.as_str(),
                 "-lc",
-                &format!("rm -rf {} /root/.ignite", ENTRYPOINT_HOME_DIR),
+                cleanup_command.as_str(),
             ]),
             None,
         )?;
@@ -829,7 +833,8 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let container_names = [ENTRYPOINT_CONTAINER_NAME];
+            let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
+            let container_names = [entrypoint_container_name.as_str()];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -847,7 +852,8 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let container_names = [ENTRYPOINT_CONTAINER_NAME];
+    let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
+    let container_names = [entrypoint_container_name.as_str()];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1702,14 +1708,15 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             result.push('\n');
         }
         // List for Cosmos Entrypoint chain.
+        let entrypoint_chain_id = config::get_config().chains.entrypoint.chain_id;
         let entrypoint_output =
-            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
+            run_hermes_command(&["keys", "list", "--chain", entrypoint_chain_id.as_str()])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
             result.push_str(&format!(
                 "entrypoint-chain (Hermes chain id: {}):\n",
-                ENTRYPOINT_CHAIN_ID
+                entrypoint_chain_id
             ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");

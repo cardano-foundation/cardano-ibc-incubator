@@ -9,7 +9,6 @@ mod chains;
 mod check;
 mod commands;
 mod config;
-mod constants;
 mod demos;
 mod install;
 mod logger;
