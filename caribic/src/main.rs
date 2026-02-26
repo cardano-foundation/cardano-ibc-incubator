@@ -78,7 +78,7 @@ struct Args {
     /// Verbosity level (0 = quiet, 1 = standard, 2 = warning, 3 = error, 4 = info, 5 = verbose)
     #[arg(long, default_value_t = 1)]
     verbose: usize,
-    /// Path to the Caribic config file (defaults to $CARIBIC_CONFIG_PATH or ./.caribic.json)
+    /// Path to the Caribic config file (defaults to caribic/config/default-config.json)
     #[arg(short, long, default_value = default_config_path().into_os_string())]
     config: PathBuf,
 }

@@ -1,11 +1,7 @@
-use crate::logger::{error, get_verbosity, log, verbose, Verbosity};
-use console::style;
-use dirs::home_dir;
-use fs_extra::dir::create_all;
+use crate::logger::error;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{stdin, stdout, Write};
 use std::path::Path;
 use std::process;
 use std::sync::Mutex;
@@ -113,122 +109,29 @@ pub struct Services {
     pub postgres: bool,
 }
 
-pub async fn create_config_file(config_path: &str) -> Config {
-    let mut default_config = Config::default();
-
-    if get_verbosity() == Verbosity::Verbose
-        || get_verbosity() == Verbosity::Info
-        || get_verbosity() == Verbosity::Standard
-    {
-        println!("Config file not found at: {}", config_path);
-        let mut input = String::new();
-        log(&format!(
-            "Do you want to create it now? ({}es/no): ",
-            style("y").bold().underlined()
-        ));
-        stdout().flush().unwrap();
-        stdin().read_line(&mut input).unwrap();
-
-        if let Some(home_path) = home_dir() {
-            if input.trim().eq_ignore_ascii_case("yes")
-                || input.trim().eq_ignore_ascii_case("y")
-                || input.trim().is_empty()
-            {
-                let default_project_root = format!(
-                    "{}/cardano-ibc-incubator",
-                    home_path.as_path().display()
-                );
-                log(&format!(
-                    "Enter the project root path for 'cardano-ibc-incubator' (default: {}):",
-                    default_project_root
-                ));
-
-                let mut project_root = String::new();
-                stdin().read_line(&mut project_root).unwrap();
-                let mut project_root = if project_root.trim().is_empty() {
-                    default_project_root
-                } else {
-                    project_root.trim().to_string()
-                };
-
-                if project_root.starts_with("~") {
-                    project_root = project_root.replace("~", home_path.to_str().unwrap());
-                }
-                let project_root_path = Path::new(&project_root);
-
-                if !project_root_path.exists() {
-                    error(&format!(
-                        "Project root does not exist: {}",
-                        project_root_path.display()
-                    ));
-                    log("Clone the repository first, for example:");
-                    log("  git clone --recurse-submodules https://github.com/cardano-foundation/cardano-ibc-incubator.git");
-                    process::exit(1);
-                }
-
-                default_config.project_root = project_root.clone();
-                default_config.mithril.cardano_node_dir =
-                    format!("{}/chains/cardano/devnet", project_root);
-                verbose(&format!(
-                    "Project root path set to: {}",
-                    default_config.project_root
-                ));
-            } else {
-                error("Config file not found. Exiting.");
-                process::exit(0);
-            }
-        } else {
-            error("Failed to resolve home directory. Exiting.");
-            process::exit(0);
-        }
-    } else {
-        error("No config file has been found. Creating a new config does not work with log levels warning, error or quiet.");
-        process::exit(0);
-    }
-
-    verbose(&format!("caribic config file: {:#?}", default_config));
-
-    default_config
-}
-
 impl Config {
     fn default() -> Self {
-        let mut default_config: Config = serde_json::from_str(include_str!("../config/default-config.json"))
-            .expect("Failed to parse bundled default config template");
-
-        if let Some(home_path) = home_dir() {
-            let default_project_root = format!(
-                "{}/cardano-ibc-incubator",
-                home_path.as_path().display()
-            );
-            default_config.project_root = default_project_root.clone();
-            default_config.mithril.cardano_node_dir =
-                format!("{}/chains/cardano/devnet", default_project_root);
-        }
-        default_config
+        serde_json::from_str(include_str!("../config/default-config.json"))
+            .expect("Failed to parse bundled default config template")
     }
 
     async fn load_from_file(config_path: &str) -> Self {
-        if Path::new(config_path).exists() {
-            let file_content =
-                fs::read_to_string(config_path).expect("Failed to read config file.");
-            serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
-                error(&format!(
-                    "Failed to parse config file at {}: {}",
-                    config_path, parse_error
-                ));
-                process::exit(1);
-            })
-        } else {
-            let default_config = create_config_file(config_path).await;
-            let parent_dir = Path::new(config_path).parent().unwrap();
-            create_all(parent_dir, false).expect("Failed to create config dir.");
-            let json_content = serde_json::to_string_pretty(&default_config)
-                .expect("Failed to serialize default config.");
-            fs::write(Path::new(config_path), json_content)
-                .expect("Failed to write default config file.");
-            default_config
+        if !Path::new(config_path).exists() {
+            error(&format!(
+                "Config file not found: {}. caribic requires caribic/config/default-config.json to exist.",
+                config_path
+            ));
+            process::exit(1);
         }
+
+        let file_content = fs::read_to_string(config_path).expect("Failed to read config file.");
+        serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+            error(&format!(
+                "Failed to parse config file at {}: {}",
+                config_path, parse_error
+            ));
+            process::exit(1);
+        })
     }
 }
 

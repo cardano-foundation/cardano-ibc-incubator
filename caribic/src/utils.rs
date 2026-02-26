@@ -45,14 +45,27 @@ pub struct IndicatorMessage {
 }
 
 pub fn default_config_path() -> PathBuf {
-    if let Ok(config_path) = std::env::var("CARIBIC_CONFIG_PATH") {
-        let trimmed = config_path.trim();
-        if !trimmed.is_empty() {
-            return PathBuf::from(trimmed);
+    let current_dir = std::env::current_dir().unwrap_or_else(|error| {
+        eprintln!("Failed to resolve current directory while locating config file: {error}");
+        std::process::exit(1);
+    });
+
+    for dir in current_dir.ancestors() {
+        let repo_relative = dir.join("caribic/config/default-config.json");
+        if repo_relative.exists() {
+            return repo_relative;
+        }
+
+        let caribic_relative = dir.join("config/default-config.json");
+        if caribic_relative.exists() {
+            return caribic_relative;
         }
     }
 
-    PathBuf::from("./.caribic.json")
+    eprintln!(
+        "Missing required config file: expected caribic/config/default-config.json in this repository."
+    );
+    std::process::exit(1);
 }
 
 pub fn get_cardano_tip_state(
