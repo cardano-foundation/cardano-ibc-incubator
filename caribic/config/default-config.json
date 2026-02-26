@@ -21,6 +21,9 @@
     "mithril_artifact_max_retries": 240,
     "mithril_artifact_retry_delay_secs": 5,
     "message_exchange": {
+      "vessel_default_imo": "9525338",
+      "cardano_min_sync_progress": 99.0,
+      "cardano_max_safe_epoch": 50,
       "consolidated_report_max_retries": 40,
       "consolidated_report_retry_delay_secs": 3,
       "channel_discovery_max_retries": 20,
@@ -32,6 +35,9 @@
       "relay_max_retries": 20,
       "relay_retry_delay_secs": 3
     }
+  },
+  "relayer": {
+    "entrypoint_mnemonic": "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance"
   },
   "cardano": {
     "services": {

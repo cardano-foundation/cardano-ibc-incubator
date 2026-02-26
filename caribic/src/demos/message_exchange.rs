@@ -6,7 +6,11 @@ use dirs::home_dir;
 use serde_json::Value;
 
 use crate::{
-    constants::ENTRYPOINT_CHAIN_ID,
+    constants::{
+        CARDANO_CHAIN_ID, CARDANO_MESSAGE_PORT_ID, ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CONTAINER_NAME,
+        ENTRYPOINT_GRPC_ADDR, ENTRYPOINT_KEYRING_CONTAINER_PATH, ENTRYPOINT_MESSAGE_PORT_ID,
+        ENTRYPOINT_RELAYER_KEY_NAME, ENTRYPOINT_RPC_ADDR,
+    },
     logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
@@ -15,20 +19,6 @@ use crate::{
         parse_tendermint_connection_id,
     },
 };
-
-const CARDANO_CHAIN_ID: &str = "cardano-devnet";
-const VESSEL_CHAIN_ID: &str = ENTRYPOINT_CHAIN_ID;
-const CARDANO_MESSAGE_PORT_ID: &str = "transfer";
-const VESSEL_MESSAGE_PORT_ID: &str = "vesseloracle";
-const VESSEL_RELAYER_KEY_NAME: &str = "entrypoint-relayer";
-const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
-const VESSEL_DEMO_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.entrypoint/keyring-test";
-const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
-const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
-const DEFAULT_VESSEL_IMO: &str = "9525338";
-const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
-const CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE: u64 = 50;
 
 #[derive(Debug, Clone)]
 struct MessageChannelPair {
@@ -53,7 +43,7 @@ struct ConnectionEndStatus {
 
 /// Runs the full message-exchange demo and executes datasource report/consolidate/transmit.
 pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), String> {
-    ensure_message_exchange_prerequisites(project_root_path)?;
+    let message_exchange_config = ensure_message_exchange_prerequisites(project_root_path)?;
 
     logger::log("PASS: Native Cosmos Entrypoint chain is up and running");
 
@@ -105,7 +95,8 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         datasource_home.as_str(),
     )?;
 
-    let consolidated_timestamp = query_latest_consolidated_timestamp(DEFAULT_VESSEL_IMO).await?;
+    let consolidated_timestamp =
+        query_latest_consolidated_timestamp(&message_exchange_config.vessel_default_imo).await?;
     let channel_arg = channel_pair.vessel_channel_id.clone();
     let timestamp_arg = consolidated_timestamp.to_string();
     logger::log("Transmitting consolidated report over IBC");
@@ -118,7 +109,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
             "-channelid",
             channel_arg.as_str(),
             "-imo",
-            DEFAULT_VESSEL_IMO,
+            &message_exchange_config.vessel_default_imo,
             "-ts",
             timestamp_arg.as_str(),
         ],
@@ -131,7 +122,31 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
     Ok(())
 }
 
-fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
+fn ensure_message_exchange_prerequisites(
+    project_root_path: &Path,
+) -> Result<crate::config::MessageExchangeRuntime, String> {
+    let message_exchange_config = crate::config::get_config().runtime.message_exchange;
+    if message_exchange_config.vessel_default_imo.trim().is_empty() {
+        return Err(
+            "Invalid config: runtime.message_exchange.vessel_default_imo must be set in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    if message_exchange_config.cardano_min_sync_progress <= 0.0
+        || message_exchange_config.cardano_min_sync_progress > 100.0
+    {
+        return Err(
+            "Invalid config: runtime.message_exchange.cardano_min_sync_progress must be in (0, 100] in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    if message_exchange_config.cardano_max_safe_epoch == 0 {
+        return Err(
+            "Invalid config: runtime.message_exchange.cardano_max_safe_epoch must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+
     let required_services = [
         "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
     ];
@@ -146,7 +161,8 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     }
 
     if failures.is_empty() {
-        return ensure_cardano_demo_window(project_root_path);
+        ensure_cardano_demo_window(project_root_path, &message_exchange_config)?;
+        return Ok(message_exchange_config);
     }
 
     let mut error = String::from(
@@ -159,7 +175,10 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     Err(error)
 }
 
-fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
+fn ensure_cardano_demo_window(
+    project_root_path: &Path,
+    message_exchange_config: &crate::config::MessageExchangeRuntime,
+) -> Result<(), String> {
     let tip_state = get_cardano_tip_state(project_root_path)
         .map_err(|error| format!("Failed to query Cardano tip state before demo: {}", error))?;
     let tip_json: Value = serde_json::from_str(tip_state.as_str()).map_err(|error| {
@@ -186,8 +205,8 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
         .and_then(parse_f64_value)
         .ok_or("Cardano tip state is missing 'syncProgress'".to_string())?;
 
-    if sync_progress < CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE
-        || epoch >= CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE
+    if sync_progress < message_exchange_config.cardano_min_sync_progress
+        || epoch >= message_exchange_config.cardano_max_safe_epoch
     {
         return Err(format!(
             "ERROR: Cardano devnet is not in a safe state for the message-exchange demo.\n\
@@ -355,7 +374,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
 
     let source = format!(
         "{}:{}",
-        VESSEL_DEMO_CONTAINER_NAME, VESSEL_KEYRING_CONTAINER_PATH
+        ENTRYPOINT_CONTAINER_NAME, ENTRYPOINT_KEYRING_CONTAINER_PATH
     );
     let destination = vessel_home.to_string_lossy().to_string();
     execute_script(
@@ -367,7 +386,7 @@ fn prepare_datasource_home(project_root_path: &Path) -> Result<String, String> {
     .map_err(|error| {
         format!(
             "ERROR: Failed to sync entrypoint keyring from container {}: {}",
-            VESSEL_DEMO_CONTAINER_NAME, error
+            ENTRYPOINT_CONTAINER_NAME, error
         )
     })?;
 
@@ -499,6 +518,13 @@ fn parse_f64_value(value: &Value) -> Option<f64> {
 }
 
 fn configure_hermes_for_message_exchange() -> Result<(), String> {
+    let entrypoint_mnemonic = crate::config::get_config().relayer.entrypoint_mnemonic;
+    if entrypoint_mnemonic.trim().is_empty() {
+        return Err(
+            "Invalid config: relayer.entrypoint_mnemonic must be set in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
     let home = home_dir().ok_or_else(|| "Could not determine home directory".to_string())?;
     let config_path = home.join(".hermes").join("config.toml");
     if !config_path.exists() {
@@ -512,7 +538,7 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
         .map_err(|error| format!("Failed to read Hermes config: {}", error))?;
     let updated_config = upsert_chain_block(
         existing_config.as_str(),
-        VESSEL_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
         vessel_chain_block().as_str(),
     )?;
 
@@ -521,12 +547,8 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
     logger::log("PASS: Hermes config updated for message-exchange on entrypoint chain");
 
     let mnemonic_file = std::env::temp_dir().join("entrypoint-relayer-mnemonic.txt");
-    fs::write(mnemonic_file.as_path(), VESSEL_RELAYER_MNEMONIC).map_err(|error| {
-        format!(
-            "Failed to write temporary entrypoint mnemonic file: {}",
-            error
-        )
-    })?;
+    fs::write(mnemonic_file.as_path(), entrypoint_mnemonic)
+    .map_err(|error| format!("Failed to write temporary entrypoint mnemonic file: {}", error))?;
 
     let mnemonic_file_arg = mnemonic_file.to_string_lossy().to_string();
     let add_key_output = run_hermes_command(&[
@@ -534,7 +556,7 @@ fn configure_hermes_for_message_exchange() -> Result<(), String> {
         "add",
         "--overwrite",
         "--chain",
-        VESSEL_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
         "--mnemonic-file",
         mnemonic_file_arg.as_str(),
     ])
@@ -573,21 +595,28 @@ clock_drift = '5s'
 max_block_time = '30s'
 trusting_period = '14days'
 trust_threshold = {{ numerator = '2', denominator = '3' }}
-event_source = {{ mode = 'push', url = 'ws://127.0.0.1:26657/websocket', batch_delay = '500ms' }}
+event_source = {{ mode = 'push', url = '{event_source_url}', batch_delay = '500ms' }}
 
 [chains.packet_filter]
 policy = 'allow'
 list = [
-  ['vesseloracle', '*'],
-  ['transfer', '*'],
+  ['{vessel_port}', '*'],
+  ['{cardano_port}', '*'],
 ]
 
 address_type = {{ derivation = 'cosmos' }}
 "#,
-        id = VESSEL_CHAIN_ID,
-        rpc_addr = VESSEL_RPC_ADDR,
-        grpc_addr = VESSEL_GRPC_ADDR,
-        key_name = VESSEL_RELAYER_KEY_NAME
+        id = ENTRYPOINT_CHAIN_ID,
+        rpc_addr = ENTRYPOINT_RPC_ADDR,
+        grpc_addr = ENTRYPOINT_GRPC_ADDR,
+        key_name = ENTRYPOINT_RELAYER_KEY_NAME,
+        vessel_port = ENTRYPOINT_MESSAGE_PORT_ID,
+        cardano_port = CARDANO_MESSAGE_PORT_ID,
+        event_source_url = format!(
+            "{}{}",
+            ENTRYPOINT_RPC_ADDR.replacen("http://", "ws://", 1),
+            "/websocket"
+        )
     )
 }
 
@@ -734,7 +763,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         "--chain",
         CARDANO_CHAIN_ID,
         "--counterparty-chain",
-        VESSEL_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
     if !output.status.success() {
@@ -760,9 +789,11 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         .cloned()
         .unwrap_or_default();
 
+    let cardano_port_id = CARDANO_MESSAGE_PORT_ID;
+    let vessel_port_id = ENTRYPOINT_MESSAGE_PORT_ID;
     let mut cardano_channels: Vec<String> = channel_entries
         .iter()
-        .filter_map(extract_cardano_message_channel_id)
+        .filter_map(|entry| extract_cardano_message_channel_id(entry, cardano_port_id, vessel_port_id))
         .collect();
     cardano_channels.sort_by(|left, right| {
         parse_channel_sequence(right)
@@ -774,7 +805,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
     for cardano_channel_id in cardano_channels {
         let Some(cardano_end) = query_channel_end_status(
             CARDANO_CHAIN_ID,
-            CARDANO_MESSAGE_PORT_ID,
+            cardano_port_id,
             cardano_channel_id.as_str(),
         )?
         else {
@@ -783,7 +814,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         if !is_open_channel_state(cardano_end.state.as_str()) {
             continue;
         }
-        if cardano_end.remote_port_id.as_deref() != Some(VESSEL_MESSAGE_PORT_ID) {
+        if cardano_end.remote_port_id.as_deref() != Some(vessel_port_id) {
             continue;
         }
         let Some(vessel_channel_id) = cardano_end.remote_channel_id else {
@@ -791,8 +822,8 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         };
 
         let Some(vessel_end) = query_channel_end_status(
-            VESSEL_CHAIN_ID,
-            VESSEL_MESSAGE_PORT_ID,
+            ENTRYPOINT_CHAIN_ID,
+            vessel_port_id,
             vessel_channel_id.as_str(),
         )?
         else {
@@ -801,7 +832,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
         if !is_open_channel_state(vessel_end.state.as_str()) {
             continue;
         }
-        if vessel_end.remote_port_id.as_deref() != Some(CARDANO_MESSAGE_PORT_ID) {
+        if vessel_end.remote_port_id.as_deref() != Some(cardano_port_id) {
             continue;
         }
         if vessel_end.remote_channel_id.as_deref() != Some(cardano_channel_id.as_str()) {
@@ -817,17 +848,21 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
     Ok(None)
 }
 
-fn extract_cardano_message_channel_id(entry: &Value) -> Option<String> {
+fn extract_cardano_message_channel_id(
+    entry: &Value,
+    cardano_port_id: &str,
+    vessel_port_id: &str,
+) -> Option<String> {
     let local_port = entry.get("port_id").and_then(Value::as_str);
     let remote_port = entry
         .get("counterparty")
         .and_then(|counterparty| counterparty.get("port_id"))
         .and_then(Value::as_str);
-    if local_port != Some(CARDANO_MESSAGE_PORT_ID) {
+    if local_port != Some(cardano_port_id) {
         return None;
     }
     if let Some(remote_port) = remote_port {
-        if remote_port != VESSEL_MESSAGE_PORT_ID {
+        if remote_port != vessel_port_id {
             return None;
         }
     }
@@ -1005,7 +1040,7 @@ fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, Strin
         return Ok(false);
     };
 
-    let Some(vessel_end) = query_connection_end_status(VESSEL_CHAIN_ID, vessel_connection_id)?
+    let Some(vessel_end) = query_connection_end_status(ENTRYPOINT_CHAIN_ID, vessel_connection_id)?
     else {
         return Ok(false);
     };
@@ -1105,12 +1140,12 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         "--host-chain",
         CARDANO_CHAIN_ID,
         "--reference-chain",
-        VESSEL_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for {CARDANO_CHAIN_ID}->{VESSEL_CHAIN_ID}: {}",
+            "Failed to create client for {CARDANO_CHAIN_ID}->{ENTRYPOINT_CHAIN_ID}: {}",
             String::from_utf8_lossy(&create_cardano_client_output.stderr)
         ));
     }
@@ -1128,14 +1163,14 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         "create",
         "client",
         "--host-chain",
-        VESSEL_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
         "--reference-chain",
         CARDANO_CHAIN_ID,
     ])
     .map_err(|error| error.to_string())?;
     if !create_vessel_client_output.status.success() {
         return Err(format!(
-            "Failed to create client for {VESSEL_CHAIN_ID}->{CARDANO_CHAIN_ID}: {}",
+            "Failed to create client for {ENTRYPOINT_CHAIN_ID}->{CARDANO_CHAIN_ID}: {}",
             String::from_utf8_lossy(&create_vessel_client_output.stderr)
         ));
     }
@@ -1201,7 +1236,7 @@ fn create_message_exchange_channel_on_connection(connection_id: &str) -> Result<
         "--a-port",
         CARDANO_MESSAGE_PORT_ID,
         "--b-port",
-        VESSEL_MESSAGE_PORT_ID,
+        ENTRYPOINT_MESSAGE_PORT_ID,
     ])
     .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
     if !create_output.status.success() {
@@ -1307,9 +1342,9 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             "--dst-chain",
             CARDANO_CHAIN_ID,
             "--src-chain",
-            VESSEL_CHAIN_ID,
+            ENTRYPOINT_CHAIN_ID,
             "--src-port",
-            VESSEL_MESSAGE_PORT_ID,
+            ENTRYPOINT_MESSAGE_PORT_ID,
             "--src-channel",
             channel_pair.vessel_channel_id.as_str(),
         ])
@@ -1344,7 +1379,7 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             "tx",
             "packet-ack",
             "--dst-chain",
-            VESSEL_CHAIN_ID,
+            ENTRYPOINT_CHAIN_ID,
             "--src-chain",
             CARDANO_CHAIN_ID,
             "--src-port",

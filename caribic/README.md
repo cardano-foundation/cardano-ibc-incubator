@@ -105,37 +105,6 @@ Starts a demo setup step on top of already running services.
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
 If your machine is slower, tune retry windows in `~/.caribic/config.json`.
 
-Operator-facing retry/timeout tuning is configurable in one place: `~/.caribic/config.json`.
-For example:
-
-```json
-{
-  "runtime": {
-    "cosmos_max_retries": 60,
-    "cosmos_retry_interval_ms": 10000,
-    "gateway_max_retries": 180,
-    "gateway_retry_interval_ms": 2000,
-    "mithril_artifact_max_retries": 240,
-    "mithril_artifact_retry_delay_secs": 5,
-    "message_exchange": {
-      "consolidated_report_max_retries": 40,
-      "consolidated_report_retry_delay_secs": 3,
-      "channel_discovery_max_retries": 20,
-      "channel_discovery_max_retries_after_create": 120,
-      "channel_discovery_retry_delay_secs": 3,
-      "connection_discovery_max_retries": 20,
-      "connection_discovery_retry_delay_secs": 3,
-      "mithril_readiness_progress_interval_secs": 30,
-      "relay_max_retries": 20,
-      "relay_retry_delay_secs": 3
-    }
-  }
-}
-```
-
-These values are read directly from `~/.caribic/config.json` (no environment-variable override).
-If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
-
 ## `caribic test`
 
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 

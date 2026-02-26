@@ -15,6 +15,7 @@ pub struct Config {
     pub project_root: String,
     pub mithril: Mithril,
     pub runtime: Runtime,
+    pub relayer: Relayer,
     pub cardano: Cardano,
 }
 
@@ -46,6 +47,9 @@ pub struct Runtime {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageExchangeRuntime {
+    pub vessel_default_imo: String,
+    pub cardano_min_sync_progress: f64,
+    pub cardano_max_safe_epoch: u64,
     pub consolidated_report_max_retries: usize,
     pub consolidated_report_retry_delay_secs: u64,
     pub channel_discovery_max_retries: usize,
@@ -56,6 +60,11 @@ pub struct MessageExchangeRuntime {
     pub mithril_readiness_progress_interval_secs: u64,
     pub relay_max_retries: usize,
     pub relay_retry_delay_secs: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Relayer {
+    pub entrypoint_mnemonic: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

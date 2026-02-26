@@ -1,4 +1,4 @@
-use crate::constants::ENTRYPOINT_CHAIN_ID;
+use crate::constants::{ENTRYPOINT_CHAIN_ID, ENTRYPOINT_CONTAINER_NAME, ENTRYPOINT_HOME_DIR};
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -24,9 +24,6 @@ use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
-
-const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -115,7 +112,14 @@ pub fn start_relayer(
     );
 
     // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
-    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
+    let entrypoint_mnemonic = config::get_config().relayer.entrypoint_mnemonic;
+    if entrypoint_mnemonic.trim().is_empty() {
+        return Err(
+            "Invalid config: relayer.entrypoint_mnemonic must be set in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
