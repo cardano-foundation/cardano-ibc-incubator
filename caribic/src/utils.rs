@@ -1,6 +1,5 @@
 use crate::logger::{self, verbose};
 use console::style;
-use dirs::home_dir;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use regex::Regex;
@@ -46,10 +45,14 @@ pub struct IndicatorMessage {
 }
 
 pub fn default_config_path() -> PathBuf {
-    let mut config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
-    config_path.push(".caribic");
-    config_path.push("config.json");
-    config_path
+    if let Ok(config_path) = std::env::var("CARIBIC_CONFIG_PATH") {
+        let trimmed = config_path.trim();
+        if !trimmed.is_empty() {
+            return PathBuf::from(trimmed);
+        }
+    }
+
+    PathBuf::from("./.caribic.json")
 }
 
 pub fn get_cardano_tip_state(
