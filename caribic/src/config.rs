@@ -14,17 +14,13 @@ use std::sync::Mutex;
 pub struct Config {
     pub project_root: String,
     pub mithril: Mithril,
-    #[serde(default)]
-    pub health: Health,
-    #[serde(default)]
-    pub demo: Demo,
+    pub runtime: Runtime,
     pub cardano: Cardano,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Mithril {
     pub enabled: bool,
-    #[serde(default = "default_mithril_aggregator_url")]
     pub aggregator_url: String,
     pub genesis_verification_key: String,
     pub genesis_secret_key: String,
@@ -36,167 +32,30 @@ pub struct Mithril {
     pub signer_image: String,
 }
 
-fn default_mithril_aggregator_url() -> String {
-    "http://127.0.0.1:8080".to_string()
-}
-
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Health {
-    #[serde(default = "default_cosmos_status_url")]
+pub struct Runtime {
     pub cosmos_status_url: String,
-    #[serde(default = "default_cosmos_max_retries")]
     pub cosmos_max_retries: u32,
-    #[serde(default = "default_cosmos_retry_interval_ms")]
     pub cosmos_retry_interval_ms: u64,
-    #[serde(default = "default_gateway_max_retries")]
     pub gateway_max_retries: u32,
-    #[serde(default = "default_gateway_retry_interval_ms")]
     pub gateway_retry_interval_ms: u64,
-}
-
-fn default_cosmos_status_url() -> String {
-    "http://127.0.0.1:26657/status".to_string()
-}
-
-fn default_cosmos_max_retries() -> u32 {
-    60
-}
-
-fn default_cosmos_retry_interval_ms() -> u64 {
-    10000
-}
-
-fn default_gateway_max_retries() -> u32 {
-    60
-}
-
-fn default_gateway_retry_interval_ms() -> u64 {
-    1000
-}
-
-impl Default for Health {
-    fn default() -> Self {
-        Health {
-            cosmos_status_url: default_cosmos_status_url(),
-            cosmos_max_retries: default_cosmos_max_retries(),
-            cosmos_retry_interval_ms: default_cosmos_retry_interval_ms(),
-            gateway_max_retries: default_gateway_max_retries(),
-            gateway_retry_interval_ms: default_gateway_retry_interval_ms(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Demo {
-    #[serde(default = "default_demo_mithril_artifact_max_retries")]
     pub mithril_artifact_max_retries: usize,
-    #[serde(default = "default_demo_mithril_artifact_retry_delay_secs")]
     pub mithril_artifact_retry_delay_secs: u64,
-    #[serde(default)]
-    pub message_exchange: MessageExchangeDemo,
-}
-
-fn default_demo_mithril_artifact_max_retries() -> usize {
-    240
-}
-
-fn default_demo_mithril_artifact_retry_delay_secs() -> u64 {
-    5
-}
-
-impl Default for Demo {
-    fn default() -> Self {
-        Demo {
-            mithril_artifact_max_retries: default_demo_mithril_artifact_max_retries(),
-            mithril_artifact_retry_delay_secs: default_demo_mithril_artifact_retry_delay_secs(),
-            message_exchange: MessageExchangeDemo::default(),
-        }
-    }
+    pub message_exchange: MessageExchangeRuntime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MessageExchangeDemo {
-    #[serde(default = "default_message_consolidated_report_max_retries")]
+pub struct MessageExchangeRuntime {
     pub consolidated_report_max_retries: usize,
-    #[serde(default = "default_message_consolidated_report_retry_delay_secs")]
     pub consolidated_report_retry_delay_secs: u64,
-    #[serde(default = "default_message_channel_discovery_max_retries")]
     pub channel_discovery_max_retries: usize,
-    #[serde(default = "default_message_channel_discovery_after_create_max_retries")]
     pub channel_discovery_max_retries_after_create: usize,
-    #[serde(default = "default_message_channel_discovery_retry_delay_secs")]
     pub channel_discovery_retry_delay_secs: u64,
-    #[serde(default = "default_message_connection_discovery_max_retries")]
     pub connection_discovery_max_retries: usize,
-    #[serde(default = "default_message_connection_discovery_retry_delay_secs")]
     pub connection_discovery_retry_delay_secs: u64,
-    #[serde(default = "default_message_mithril_readiness_progress_interval_secs")]
     pub mithril_readiness_progress_interval_secs: u64,
-    #[serde(default = "default_message_relay_max_retries")]
     pub relay_max_retries: usize,
-    #[serde(default = "default_message_relay_retry_delay_secs")]
     pub relay_retry_delay_secs: u64,
-}
-
-fn default_message_consolidated_report_max_retries() -> usize {
-    40
-}
-
-fn default_message_consolidated_report_retry_delay_secs() -> u64 {
-    3
-}
-
-fn default_message_channel_discovery_max_retries() -> usize {
-    20
-}
-
-fn default_message_channel_discovery_after_create_max_retries() -> usize {
-    120
-}
-
-fn default_message_channel_discovery_retry_delay_secs() -> u64 {
-    3
-}
-
-fn default_message_connection_discovery_max_retries() -> usize {
-    20
-}
-
-fn default_message_connection_discovery_retry_delay_secs() -> u64 {
-    3
-}
-
-fn default_message_mithril_readiness_progress_interval_secs() -> u64 {
-    30
-}
-
-fn default_message_relay_max_retries() -> usize {
-    20
-}
-
-fn default_message_relay_retry_delay_secs() -> u64 {
-    3
-}
-
-impl Default for MessageExchangeDemo {
-    fn default() -> Self {
-        MessageExchangeDemo {
-            consolidated_report_max_retries: default_message_consolidated_report_max_retries(),
-            consolidated_report_retry_delay_secs:
-                default_message_consolidated_report_retry_delay_secs(),
-            channel_discovery_max_retries: default_message_channel_discovery_max_retries(),
-            channel_discovery_max_retries_after_create:
-                default_message_channel_discovery_after_create_max_retries(),
-            channel_discovery_retry_delay_secs: default_message_channel_discovery_retry_delay_secs(),
-            connection_discovery_max_retries: default_message_connection_discovery_max_retries(),
-            connection_discovery_retry_delay_secs:
-                default_message_connection_discovery_retry_delay_secs(),
-            mithril_readiness_progress_interval_secs:
-                default_message_mithril_readiness_progress_interval_secs(),
-            relay_max_retries: default_message_relay_max_retries(),
-            relay_retry_delay_secs: default_message_relay_retry_delay_secs(),
-        }
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -300,51 +159,8 @@ pub async fn create_config_file(config_path: &str) -> Config {
 
 impl Config {
     fn default() -> Self {
-        let mut default_config = Config {
-            project_root: "/root/cardano-ibc-incubator".to_string(),
-            mithril: {
-                Mithril {
-                    enabled: true,
-                    aggregator_url: default_mithril_aggregator_url(),
-                    genesis_verification_key: "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d".to_string(),
-                    genesis_secret_key: "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d".to_string(),
-                    chain_observer_type: "pallas".to_string(),
-                    cardano_node_dir: "/root/cardano-ibc-incubator/chains/cardano/devnet".to_string(),
-                    cardano_node_version: "9.1.4".to_string(),
-                    aggregator_image: "ghcr.io/input-output-hk/mithril-aggregator:2450.0-c6c7eba".to_string(),
-                    signer_image: "ghcr.io/input-output-hk/mithril-signer:2450.0-c6c7eba".to_string(),
-                    client_image: "ghcr.io/input-output-hk/mithril-client:2450.0-c6c7eba".to_string(),
-                }
-            },
-            health: Health::default(),
-            demo: Demo::default(),
-            cardano: Cardano {
-            services: Services {
-                db_sync: true,
-                kupo: true,
-                ogmios: true,
-                cardano_node: true,
-                postgres: true,
-            },
-            bootstrap_addresses: vec![
-                BootstrapAddress {
-                    address: "addr_test1qrwuz99eywdpm9puylccmvqfu6lue968rtt36nzeal7czuu4wq3n84h8ntp3ta30kyxx8r0x2u4tgr5a8y9hp5vjpngsmwy0wg".to_string(),
-                    amount: 60000000000,
-                },
-                BootstrapAddress {
-                    address: "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m".to_string(),
-                    amount: 30000000000,
-                },
-                BootstrapAddress {
-                    address: "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql".to_string(),
-                    amount: 30000000000,
-                },
-                BootstrapAddress {
-                    address: "addr_test1wzfvnh20kanpp0qppn5a92kaamjdu9jfamt8hxqqrl43t7c2jw6u4".to_string(),
-                    amount: 30000000000,
-                },
-            ]},
-        };
+        let mut default_config: Config = serde_json::from_str(include_str!("../config/default-config.json"))
+            .expect("Failed to parse bundled default config template");
 
         if let Some(home_path) = home_dir() {
             let default_project_root = format!(
@@ -362,9 +178,12 @@ impl Config {
         if Path::new(config_path).exists() {
             let file_content =
                 fs::read_to_string(config_path).expect("Failed to read config file.");
-            serde_json::from_str(&file_content).unwrap_or_else(|_| {
-                eprintln!("Failed to parse config file, using default config.");
-                Config::default()
+            serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+                error(&format!(
+                    "Failed to parse config file at {}: {}",
+                    config_path, parse_error
+                ));
+                process::exit(1);
             })
         } else {
             let default_config = create_config_file(config_path).await;

@@ -103,25 +103,18 @@ Starts a demo setup step on top of already running services.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
-If your machine is slower, you can tune the wait window:
-
-```bash
-export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
-export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
-```
+If your machine is slower, tune retry windows in `~/.caribic/config.json`.
 
 Operator-facing retry/timeout tuning is configurable in one place: `~/.caribic/config.json`.
 For example:
 
 ```json
 {
-  "health": {
+  "runtime": {
     "cosmos_max_retries": 60,
     "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 180,
-    "gateway_retry_interval_ms": 2000
-  },
-  "demo": {
+    "gateway_retry_interval_ms": 2000,
     "mithril_artifact_max_retries": 240,
     "mithril_artifact_retry_delay_secs": 5,
     "message_exchange": {
@@ -140,16 +133,8 @@ For example:
 }
 ```
 
-Environment variables still override config values when set:
-
-```bash
-export CARIBIC_COSMOS_MAX_RETRIES=60
-export CARIBIC_COSMOS_RETRY_INTERVAL_MS=10000
-export CARIBIC_GATEWAY_MAX_RETRIES=180
-export CARIBIC_GATEWAY_RETRY_INTERVAL_MS=2000
-export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=240
-export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
-```
+These values are read directly from `~/.caribic/config.json` (no environment-variable override).
+If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
 
 ## `caribic test`
 

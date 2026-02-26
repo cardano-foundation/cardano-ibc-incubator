@@ -751,18 +751,22 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Disk space errors (requires freeing up disk space)
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let health_config = config::get_config().health;
-    let cosmos_status_url = health_config.cosmos_status_url;
-    let max_retries = std::env::var("CARIBIC_COSMOS_MAX_RETRIES")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(health_config.cosmos_max_retries.max(1));
-    let interval_ms = std::env::var("CARIBIC_COSMOS_RETRY_INTERVAL_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(health_config.cosmos_retry_interval_ms.max(1));
+    let runtime_config = config::get_config().runtime;
+    let cosmos_status_url = runtime_config.cosmos_status_url;
+    let max_retries = runtime_config.cosmos_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: runtime.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+    let interval_ms = runtime_config.cosmos_retry_interval_ms;
+    if interval_ms == 0 {
+        return Err(
+            "Invalid config: runtime.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
     let client = reqwest::Client::builder().no_proxy().build()?;
 
     verbose(&format!(
@@ -1370,20 +1374,22 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
-    let health_config = config::get_config().health;
+    let runtime_config = config::get_config().runtime;
 
-    // Keep a minimum of 1 so misconfigured values like 0 do not skip readiness checks entirely.
-    let max_retries = std::env::var("CARIBIC_GATEWAY_MAX_RETRIES")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(health_config.gateway_max_retries.max(1));
-    // Keep a minimum of 1ms so misconfigured values like 0 do not create a busy-loop.
-    let interval_ms = std::env::var("CARIBIC_GATEWAY_RETRY_INTERVAL_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(health_config.gateway_retry_interval_ms.max(1));
+    let max_retries = runtime_config.gateway_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: runtime.gateway_max_retries must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
+    let interval_ms = runtime_config.gateway_retry_interval_ms;
+    if interval_ms == 0 {
+        return Err(
+            "Invalid config: runtime.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+                .into(),
+        );
+    }
     let mut gateway_ready = false;
 
     for i in 0..max_retries {
@@ -1966,7 +1972,7 @@ fn run_core_health_check(
         CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
         CoreHealthCheckType::Cosmos => check_rpc_service(
-            config::get_config().health.cosmos_status_url.as_str(),
+            config::get_config().runtime.cosmos_status_url.as_str(),
             26657,
         ),
     }
