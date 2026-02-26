@@ -130,7 +130,7 @@ services:
         max-file: "10"
 
   cardano-db-sync:
-    image: ghcr.io/blinklabs-io/cardano-db-sync:main
+    image: ${CARDANO_DB_SYNC_IMAGE:-ghcr.io/blinklabs-io/cardano-db-sync:main@sha256:04b04848fb062e8993a39da863a87cb9863de1bc4cd3baf0a84b60a7b772d8f7}
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_HOST=postgres
