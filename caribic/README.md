@@ -110,13 +110,32 @@ export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
 export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
 ```
 
-Gateway readiness retry settings are configurable in `~/.caribic/config.json` under `health`:
+Operator-facing retry/timeout tuning is configurable in one place: `~/.caribic/config.json`.
+For example:
 
 ```json
 {
   "health": {
+    "cosmos_max_retries": 60,
+    "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 180,
     "gateway_retry_interval_ms": 2000
+  },
+  "demo": {
+    "mithril_artifact_max_retries": 240,
+    "mithril_artifact_retry_delay_secs": 5,
+    "message_exchange": {
+      "consolidated_report_max_retries": 40,
+      "consolidated_report_retry_delay_secs": 3,
+      "channel_discovery_max_retries": 20,
+      "channel_discovery_max_retries_after_create": 120,
+      "channel_discovery_retry_delay_secs": 3,
+      "connection_discovery_max_retries": 20,
+      "connection_discovery_retry_delay_secs": 3,
+      "mithril_readiness_progress_interval_secs": 30,
+      "relay_max_retries": 20,
+      "relay_retry_delay_secs": 3
+    }
   }
 }
 ```
@@ -124,8 +143,12 @@ Gateway readiness retry settings are configurable in `~/.caribic/config.json` un
 Environment variables still override config values when set:
 
 ```bash
+export CARIBIC_COSMOS_MAX_RETRIES=60
+export CARIBIC_COSMOS_RETRY_INTERVAL_MS=10000
 export CARIBIC_GATEWAY_MAX_RETRIES=180
 export CARIBIC_GATEWAY_RETRY_INTERVAL_MS=2000
+export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=240
+export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
 ```
 
 ## `caribic test`

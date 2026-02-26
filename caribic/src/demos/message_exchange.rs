@@ -27,18 +27,6 @@ const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.entrypoint/keyring-test";
 const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
 const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
-const CONSOLIDATED_REPORT_MAX_RETRIES: usize = 40;
-const CONSOLIDATED_REPORT_RETRY_DELAY_SECS: u64 = 3;
-const CHANNEL_DISCOVERY_MAX_RETRIES: usize = 20;
-const CHANNEL_DISCOVERY_MAX_RETRIES_AFTER_CREATE: usize = 120;
-const CHANNEL_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
-const CONNECTION_DISCOVERY_MAX_RETRIES: usize = 20;
-const CONNECTION_DISCOVERY_RETRY_DELAY_SECS: u64 = 3;
-const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
-const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
-const MITHRIL_READINESS_PROGRESS_INTERVAL_SECS: u64 = 30;
-const RELAY_MAX_RETRIES: usize = 20;
-const RELAY_RETRY_DELAY_SECS: u64 = 3;
 const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
 const CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE: u64 = 50;
 
@@ -217,16 +205,18 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
 }
 
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
+    let demo_config = crate::config::get_config().demo;
+    let message_exchange_config = demo_config.message_exchange;
     let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_MAX_RETRIES);
+        .unwrap_or(demo_config.mithril_artifact_max_retries.max(1));
     let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_RETRY_DELAY_SECS);
+        .unwrap_or(demo_config.mithril_artifact_retry_delay_secs.max(1));
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
 
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
@@ -254,7 +244,7 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
     let progress_log_every = if retry_delay_secs == 0 {
         1
     } else {
-        (MITHRIL_READINESS_PROGRESS_INTERVAL_SECS / retry_delay_secs).max(1)
+        (message_exchange_config.mithril_readiness_progress_interval_secs / retry_delay_secs).max(1)
     };
     let mut last_stake_count: Option<usize> = None;
     let mut last_tx_count: Option<usize> = None;
@@ -401,6 +391,9 @@ fn run_datasource_command(
 }
 
 async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    let max_retries = message_exchange_config.consolidated_report_max_retries.max(1);
+    let retry_delay_secs = message_exchange_config.consolidated_report_retry_delay_secs.max(1);
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(5))
@@ -408,14 +401,14 @@ async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
         .map_err(|error| format!("Failed to build HTTP client: {}", error))?;
     let query_url = "http://127.0.0.1:1317/vesseloracle/vesseloracle/consolidated_data_report";
 
-    for _ in 0..CONSOLIDATED_REPORT_MAX_RETRIES {
+    for _ in 0..max_retries {
         let response = client.get(query_url).send().await;
         let Ok(response) = response else {
-            tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
             continue;
         };
         if !response.status().is_success() {
-            tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
             continue;
         }
 
@@ -465,7 +458,7 @@ async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
             return Ok(latest_ts);
         }
 
-        tokio::time::sleep(Duration::from_secs(CONSOLIDATED_REPORT_RETRY_DELAY_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
     }
 
     Err(format!(
@@ -643,7 +636,10 @@ fn find_chain_block_bounds(lines: &[&str], target_chain_id: &str) -> Option<(usi
 }
 
 fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
-    if let Some(pair) = wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES)? {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    if let Some(pair) =
+        wait_for_open_message_channel_pair(message_exchange_config.channel_discovery_max_retries.max(1))?
+    {
         logger::log(&format!(
             "PASS: Message-exchange channel already open (cardano={}, vesseloracle={})",
             pair.cardano_channel_id, pair.vessel_channel_id
@@ -658,7 +654,12 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     let connection_id = ensure_open_message_exchange_connection()?;
     create_message_exchange_channel_on_connection(connection_id.as_str())?;
 
-    let pair = wait_for_open_message_channel_pair(CHANNEL_DISCOVERY_MAX_RETRIES_AFTER_CREATE)?
+    let pair =
+        wait_for_open_message_channel_pair(
+            message_exchange_config
+                .channel_discovery_max_retries_after_create
+                .max(1),
+        )?
         .ok_or_else(|| {
             "Created message-exchange channel, but no open channel pair could be discovered"
                 .to_string()
@@ -673,11 +674,16 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
 fn wait_for_open_message_channel_pair(
     max_retries: usize,
 ) -> Result<Option<MessageChannelPair>, String> {
+    let retry_delay_secs = crate::config::get_config()
+        .demo
+        .message_exchange
+        .channel_discovery_retry_delay_secs
+        .max(1);
     for _ in 0..max_retries {
         if let Some(pair) = query_open_message_channel_pair()? {
             return Ok(Some(pair));
         }
-        std::thread::sleep(Duration::from_secs(CHANNEL_DISCOVERY_RETRY_DELAY_SECS));
+        std::thread::sleep(Duration::from_secs(retry_delay_secs));
     }
 
     Ok(None)
@@ -1008,19 +1014,25 @@ fn query_open_message_connection() -> Result<Option<String>, String> {
 }
 
 fn wait_for_open_message_connection(max_retries: usize) -> Result<Option<String>, String> {
+    let retry_delay_secs = crate::config::get_config()
+        .demo
+        .message_exchange
+        .connection_discovery_retry_delay_secs
+        .max(1);
     for _ in 0..max_retries {
         if let Some(connection_id) = query_open_message_connection()? {
             return Ok(Some(connection_id));
         }
-        std::thread::sleep(Duration::from_secs(CONNECTION_DISCOVERY_RETRY_DELAY_SECS));
+        std::thread::sleep(Duration::from_secs(retry_delay_secs));
     }
 
     Ok(None)
 }
 
 fn ensure_open_message_exchange_connection() -> Result<String, String> {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
     if let Some(open_connection_id) =
-        wait_for_open_message_connection(CONNECTION_DISCOVERY_MAX_RETRIES)?
+        wait_for_open_message_connection(message_exchange_config.connection_discovery_max_retries.max(1))?
     {
         logger::verbose(&format!(
             "Using existing open Cardano↔vesseloracle connection {}",
@@ -1111,7 +1123,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         })?;
 
     let Some(open_connection_id) =
-        wait_for_open_message_connection(CONNECTION_DISCOVERY_MAX_RETRIES)?
+        wait_for_open_message_connection(message_exchange_config.connection_discovery_max_retries.max(1))?
     else {
         return Err(format!(
             "Created Cardano↔vesseloracle connection artifacts from {}, but no open symmetric connection is currently usable",
@@ -1216,8 +1228,11 @@ fn is_open_channel_state(state: &str) -> bool {
 }
 
 fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    let relay_max_retries = message_exchange_config.relay_max_retries.max(1);
+    let relay_retry_delay_secs = message_exchange_config.relay_retry_delay_secs.max(1);
     let mut recv_relayed = false;
-    for _ in 0..RELAY_MAX_RETRIES {
+    for _ in 0..relay_max_retries {
         let recv_output = run_hermes_command(&[
             "tx",
             "packet-recv",
@@ -1242,7 +1257,7 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             || stderr.contains("no packets to relay")
             || stderr.contains("no unreceived packets")
         {
-            std::thread::sleep(Duration::from_secs(RELAY_RETRY_DELAY_SECS));
+            std::thread::sleep(Duration::from_secs(relay_retry_delay_secs));
             continue;
         }
 
@@ -1256,7 +1271,7 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
         return Err("Timed out waiting for message packet commitments on vesseloracle".to_string());
     }
 
-    for _ in 0..RELAY_MAX_RETRIES {
+    for _ in 0..relay_max_retries {
         let ack_output = run_hermes_command(&[
             "tx",
             "packet-ack",
@@ -1281,7 +1296,7 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             || stderr.contains("no packets to relay")
             || stderr.contains("no unreceived acks")
         {
-            std::thread::sleep(Duration::from_secs(RELAY_RETRY_DELAY_SECS));
+            std::thread::sleep(Duration::from_secs(relay_retry_delay_secs));
             continue;
         }
 
