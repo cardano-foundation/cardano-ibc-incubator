@@ -110,6 +110,24 @@ export CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES=360
 export CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS=5
 ```
 
+Gateway readiness retry settings are configurable in `~/.caribic/config.json` under `health`:
+
+```json
+{
+  "health": {
+    "gateway_max_retries": 180,
+    "gateway_retry_interval_ms": 2000
+  }
+}
+```
+
+Environment variables still override config values when set:
+
+```bash
+export CARIBIC_GATEWAY_MAX_RETRIES=180
+export CARIBIC_GATEWAY_RETRY_INTERVAL_MS=2000
+```
+
 ## `caribic test`
 
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
