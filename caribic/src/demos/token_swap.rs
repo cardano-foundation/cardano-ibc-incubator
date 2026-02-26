@@ -16,8 +16,6 @@ use crate::{
     DemoChain,
 };
 
-const MITHRIL_ARTIFACT_MAX_RETRIES: usize = 240;
-const MITHRIL_ARTIFACT_RETRY_DELAY_SECS: u64 = 5;
 const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
 const TOKEN_SWAP_SUPPORTED_CHAIN: &str = "osmosis";
 const TOKEN_SWAP_SUPPORTED_NETWORK: &str = "local";
@@ -227,16 +225,17 @@ fn ensure_demo_services_ready(
 
 /// Waits until Mithril exposes stake and transaction artifacts needed by demo client creation.
 async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
+    let demo_config = crate::config::get_config().demo;
     let max_retries = std::env::var("CARIBIC_MITHRIL_ARTIFACT_MAX_RETRIES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_MAX_RETRIES);
+        .unwrap_or(demo_config.mithril_artifact_max_retries.max(1));
     let retry_delay_secs = std::env::var("CARIBIC_MITHRIL_ARTIFACT_RETRY_DELAY_SECS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(MITHRIL_ARTIFACT_RETRY_DELAY_SECS);
+        .unwrap_or(demo_config.mithril_artifact_retry_delay_secs.max(1));
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
 
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");

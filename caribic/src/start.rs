@@ -754,17 +754,18 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Disk space errors (requires freeing up disk space)
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let cosmos_status_url = config::get_config().health.cosmos_status_url;
+    let health_config = config::get_config().health;
+    let cosmos_status_url = health_config.cosmos_status_url;
     let max_retries = std::env::var("CARIBIC_COSMOS_MAX_RETRIES")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(60);
+        .unwrap_or(health_config.cosmos_max_retries.max(1));
     let interval_ms = std::env::var("CARIBIC_COSMOS_RETRY_INTERVAL_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|value| *value > 0)
-        .unwrap_or(10000); // 10 seconds
+        .unwrap_or(health_config.cosmos_retry_interval_ms.max(1));
     let client = reqwest::Client::builder().no_proxy().build()?;
 
     verbose(&format!(

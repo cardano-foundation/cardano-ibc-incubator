@@ -16,6 +16,8 @@ pub struct Config {
     pub mithril: Mithril,
     #[serde(default)]
     pub health: Health,
+    #[serde(default)]
+    pub demo: Demo,
     pub cardano: Cardano,
 }
 
@@ -42,6 +44,10 @@ fn default_mithril_aggregator_url() -> String {
 pub struct Health {
     #[serde(default = "default_cosmos_status_url")]
     pub cosmos_status_url: String,
+    #[serde(default = "default_cosmos_max_retries")]
+    pub cosmos_max_retries: u32,
+    #[serde(default = "default_cosmos_retry_interval_ms")]
+    pub cosmos_retry_interval_ms: u64,
     #[serde(default = "default_gateway_max_retries")]
     pub gateway_max_retries: u32,
     #[serde(default = "default_gateway_retry_interval_ms")]
@@ -50,6 +56,14 @@ pub struct Health {
 
 fn default_cosmos_status_url() -> String {
     "http://127.0.0.1:26657/status".to_string()
+}
+
+fn default_cosmos_max_retries() -> u32 {
+    60
+}
+
+fn default_cosmos_retry_interval_ms() -> u64 {
+    10000
 }
 
 fn default_gateway_max_retries() -> u32 {
@@ -64,8 +78,123 @@ impl Default for Health {
     fn default() -> Self {
         Health {
             cosmos_status_url: default_cosmos_status_url(),
+            cosmos_max_retries: default_cosmos_max_retries(),
+            cosmos_retry_interval_ms: default_cosmos_retry_interval_ms(),
             gateway_max_retries: default_gateway_max_retries(),
             gateway_retry_interval_ms: default_gateway_retry_interval_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Demo {
+    #[serde(default = "default_demo_mithril_artifact_max_retries")]
+    pub mithril_artifact_max_retries: usize,
+    #[serde(default = "default_demo_mithril_artifact_retry_delay_secs")]
+    pub mithril_artifact_retry_delay_secs: u64,
+    #[serde(default)]
+    pub message_exchange: MessageExchangeDemo,
+}
+
+fn default_demo_mithril_artifact_max_retries() -> usize {
+    240
+}
+
+fn default_demo_mithril_artifact_retry_delay_secs() -> u64 {
+    5
+}
+
+impl Default for Demo {
+    fn default() -> Self {
+        Demo {
+            mithril_artifact_max_retries: default_demo_mithril_artifact_max_retries(),
+            mithril_artifact_retry_delay_secs: default_demo_mithril_artifact_retry_delay_secs(),
+            message_exchange: MessageExchangeDemo::default(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MessageExchangeDemo {
+    #[serde(default = "default_message_consolidated_report_max_retries")]
+    pub consolidated_report_max_retries: usize,
+    #[serde(default = "default_message_consolidated_report_retry_delay_secs")]
+    pub consolidated_report_retry_delay_secs: u64,
+    #[serde(default = "default_message_channel_discovery_max_retries")]
+    pub channel_discovery_max_retries: usize,
+    #[serde(default = "default_message_channel_discovery_after_create_max_retries")]
+    pub channel_discovery_max_retries_after_create: usize,
+    #[serde(default = "default_message_channel_discovery_retry_delay_secs")]
+    pub channel_discovery_retry_delay_secs: u64,
+    #[serde(default = "default_message_connection_discovery_max_retries")]
+    pub connection_discovery_max_retries: usize,
+    #[serde(default = "default_message_connection_discovery_retry_delay_secs")]
+    pub connection_discovery_retry_delay_secs: u64,
+    #[serde(default = "default_message_mithril_readiness_progress_interval_secs")]
+    pub mithril_readiness_progress_interval_secs: u64,
+    #[serde(default = "default_message_relay_max_retries")]
+    pub relay_max_retries: usize,
+    #[serde(default = "default_message_relay_retry_delay_secs")]
+    pub relay_retry_delay_secs: u64,
+}
+
+fn default_message_consolidated_report_max_retries() -> usize {
+    40
+}
+
+fn default_message_consolidated_report_retry_delay_secs() -> u64 {
+    3
+}
+
+fn default_message_channel_discovery_max_retries() -> usize {
+    20
+}
+
+fn default_message_channel_discovery_after_create_max_retries() -> usize {
+    120
+}
+
+fn default_message_channel_discovery_retry_delay_secs() -> u64 {
+    3
+}
+
+fn default_message_connection_discovery_max_retries() -> usize {
+    20
+}
+
+fn default_message_connection_discovery_retry_delay_secs() -> u64 {
+    3
+}
+
+fn default_message_mithril_readiness_progress_interval_secs() -> u64 {
+    30
+}
+
+fn default_message_relay_max_retries() -> usize {
+    20
+}
+
+fn default_message_relay_retry_delay_secs() -> u64 {
+    3
+}
+
+impl Default for MessageExchangeDemo {
+    fn default() -> Self {
+        MessageExchangeDemo {
+            consolidated_report_max_retries: default_message_consolidated_report_max_retries(),
+            consolidated_report_retry_delay_secs:
+                default_message_consolidated_report_retry_delay_secs(),
+            channel_discovery_max_retries: default_message_channel_discovery_max_retries(),
+            channel_discovery_max_retries_after_create:
+                default_message_channel_discovery_after_create_max_retries(),
+            channel_discovery_retry_delay_secs: default_message_channel_discovery_retry_delay_secs(),
+            connection_discovery_max_retries: default_message_connection_discovery_max_retries(),
+            connection_discovery_retry_delay_secs:
+                default_message_connection_discovery_retry_delay_secs(),
+            mithril_readiness_progress_interval_secs:
+                default_message_mithril_readiness_progress_interval_secs(),
+            relay_max_retries: default_message_relay_max_retries(),
+            relay_retry_delay_secs: default_message_relay_retry_delay_secs(),
         }
     }
 }
@@ -186,6 +315,7 @@ impl Config {
                 }
             },
             health: Health::default(),
+            demo: Demo::default(),
             cardano: Cardano {
             services: Services {
                 db_sync: true,
