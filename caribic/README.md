@@ -126,9 +126,9 @@ The implemented Osmosis local flow expects `caribic start --with-mithril` and `c
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
-If your machine is slower, tune retry windows in `~/.caribic/config.json`.
+If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 
-Operator-facing retry/timeout tuning is configurable in one place: `~/.caribic/config.json`.
+Operator-facing retry/timeout tuning is configurable in one place: `caribic/config/default-config.json` by default.
 For example:
 
 ```json
@@ -158,7 +158,8 @@ For example:
 }
 ```
 
-These values are read directly from `~/.caribic/config.json` (no environment-variable override).
+These values are read directly from the selected config file (default: `caribic/config/default-config.json`).
+If the default config file is missing, caribic fails fast at startup.
 If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
 
 ## `caribic test`

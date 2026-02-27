@@ -1,6 +1,5 @@
 use crate::logger::{self, verbose};
 use console::style;
-use dirs::home_dir;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use regex::Regex;
@@ -46,10 +45,24 @@ pub struct IndicatorMessage {
 }
 
 pub fn default_config_path() -> PathBuf {
-    let mut config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
-    config_path.push(".caribic");
-    config_path.push("config.json");
-    config_path
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    for dir in current_dir.ancestors() {
+        let repo_relative = dir.join("caribic/config/default-config.json");
+        if repo_relative.exists() {
+            return repo_relative;
+        }
+
+        let caribic_relative = dir.join("config/default-config.json");
+        if caribic_relative.exists() {
+            return caribic_relative;
+        }
+    }
+
+    eprintln!(
+        "Missing required config file: expected caribic/config/default-config.json in this repository."
+    );
+    std::process::exit(1);
 }
 
 pub fn get_cardano_tip_state(
