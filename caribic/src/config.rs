@@ -115,32 +115,28 @@ impl Config {
             .expect("Failed to parse bundled default config template")
     }
 
-    fn resolve_repo_project_root_from_default_config_path(config_path: &Path) -> Option<String> {
-        if config_path.file_name()?.to_str()? != "default-config.json" {
-            return None;
+    fn resolve_path_from_config_dir(config_dir: &Path, configured_path: &str) -> String {
+        let raw_path = Path::new(configured_path);
+        if raw_path.is_absolute() {
+            return configured_path.to_string();
         }
 
-        let config_dir = config_path.parent()?;
-        if config_dir.file_name()?.to_str()? != "config" {
-            return None;
+        let resolved_path = config_dir.join(raw_path);
+        if let Ok(canonicalized) = resolved_path.canonicalize() {
+            return canonicalized.to_string_lossy().to_string();
         }
 
-        let caribic_dir = config_dir.parent()?;
-        if caribic_dir.file_name()?.to_str()? != "caribic" {
-            return None;
-        }
-
-        let repo_root = caribic_dir.parent()?;
-        Some(repo_root.to_string_lossy().to_string())
+        resolved_path.to_string_lossy().to_string()
     }
 
-    fn apply_runtime_path_overrides(mut config: Self, config_path: &Path) -> Self {
-        if let Some(repo_root) =
-            Self::resolve_repo_project_root_from_default_config_path(config_path)
-        {
-            config.project_root = repo_root.clone();
-            config.mithril.cardano_node_dir = format!("{repo_root}/chains/cardano/devnet");
+    fn resolve_runtime_paths(mut config: Self, config_path: &Path) -> Self {
+        if let Some(config_dir) = config_path.parent() {
+            config.project_root =
+                Self::resolve_path_from_config_dir(config_dir, &config.project_root);
+            config.mithril.cardano_node_dir =
+                Self::resolve_path_from_config_dir(config_dir, &config.mithril.cardano_node_dir);
         }
+
         config
     }
 
@@ -165,7 +161,7 @@ impl Config {
             process::exit(1);
         });
 
-        Self::apply_runtime_path_overrides(config, &config_path_buf)
+        Self::resolve_runtime_paths(config, &config_path_buf)
     }
 }
 
