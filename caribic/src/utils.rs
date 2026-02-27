@@ -1,6 +1,5 @@
 use crate::logger::{self, verbose};
 use console::style;
-use dirs::home_dir;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 use regex::Regex;
@@ -60,11 +59,10 @@ pub fn default_config_path() -> PathBuf {
         }
     }
 
-    // Legacy fallback for existing installs.
-    let mut legacy_config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
-    legacy_config_path.push(".caribic");
-    legacy_config_path.push("config.json");
-    legacy_config_path
+    eprintln!(
+        "Missing required config file: expected caribic/config/default-config.json in this repository."
+    );
+    std::process::exit(1);
 }
 
 pub fn get_cardano_tip_state(

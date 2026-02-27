@@ -158,7 +158,8 @@ For example:
 }
 ```
 
-These values are read directly from the selected config file (default: `caribic/config/default-config.json`; legacy fallback: `~/.caribic/config.json`).
+These values are read directly from the selected config file (default: `caribic/config/default-config.json`).
+If the default config file is missing, caribic fails fast at startup.
 If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
 
 ## `caribic test`
