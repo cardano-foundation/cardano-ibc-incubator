@@ -4,9 +4,18 @@ services:
     build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
-    network_mode: 'host'
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    networks:
+      - cardano_network
     volumes:
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
     env_file:
       - .env
+
+networks:
+  cardano_network:
+    external: true
+    name: cardano_ibc_net

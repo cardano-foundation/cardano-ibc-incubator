@@ -557,6 +557,26 @@ pub fn prepare_db_sync_and_gateway(
         copy(gateway_dir.join(".env.example"), &gateway_env, &options)?;
     }
 
+    // Keep gateway networking aligned with docker-compose service DNS instead of host loopback.
+    let gateway_network_defaults = [
+        ("DBSYNC_HOST", "postgres"),
+        ("DBSYNC_PORT", "5432"),
+        ("GATEWAY_DB_HOST", "postgres"),
+        ("GATEWAY_DB_PORT", "5432"),
+        ("KUPO_ENDPOINT", "http://kupo:1442"),
+        ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+        ("CARDANO_CHAIN_HOST", "cardano-node"),
+        ("CARDANO_CHAIN_PORT", "3001"),
+        ("MITHRIL_ENDPOINT", "http://mithril-aggregator:8080/aggregator"),
+    ];
+    for (key, value) in gateway_network_defaults {
+        replace_text_in_file(
+            &gateway_env,
+            format!(r#"{}=.*"#, key).as_str(),
+            format!("{}={}", key, value).as_str(),
+        )?;
+    }
+
     replace_text_in_file(
         &gateway_env,
         r#"CARDANO_EPOCH_NONCE_GENESIS=.*"#,
