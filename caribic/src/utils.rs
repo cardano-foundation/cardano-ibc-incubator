@@ -46,10 +46,25 @@ pub struct IndicatorMessage {
 }
 
 pub fn default_config_path() -> PathBuf {
-    let mut config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
-    config_path.push(".caribic");
-    config_path.push("config.json");
-    config_path
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+    for dir in current_dir.ancestors() {
+        let repo_relative = dir.join("caribic/config/default-config.json");
+        if repo_relative.exists() {
+            return repo_relative;
+        }
+
+        let caribic_relative = dir.join("config/default-config.json");
+        if caribic_relative.exists() {
+            return caribic_relative;
+        }
+    }
+
+    // Legacy fallback for existing installs.
+    let mut legacy_config_path = home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    legacy_config_path.push(".caribic");
+    legacy_config_path.push("config.json");
+    legacy_config_path
 }
 
 pub fn get_cardano_tip_state(
