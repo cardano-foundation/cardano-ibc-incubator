@@ -6,6 +6,23 @@ export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
+const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 5;
+const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
+const TRANSIENT_STARTUP_ERROR_MARKERS = [
+  'timeoutexception',
+  'timeout',
+  'timed out',
+  'etimedout',
+  'econnreset',
+  'econnrefused',
+  'requesterror',
+  'request error',
+  'transport error',
+  'kupmioserror',
+  'socket hang up',
+  'network error',
+  'fetch failed',
+];
 
 function toSafeCostModelInteger(value: unknown): number {
   let parsedValue: number;
@@ -65,6 +82,132 @@ function sanitizeProtocolParameters(protocolParameters: any): any {
     ...protocolParameters,
     costModels: sanitizedCostModels,
   };
+}
+
+async function sleep(durationMs: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+function collectErrorSignals(error: unknown): string[] {
+  const signals: string[] = [];
+  const visited = new Set<unknown>();
+
+  const pushSignal = (value: unknown) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+    const normalized = value.trim();
+    if (normalized.length > 0) {
+      signals.push(normalized);
+    }
+  };
+
+  const visit = (value: unknown, depth: number) => {
+    if (value == null || depth > 3 || visited.has(value)) {
+      return;
+    }
+    visited.add(value);
+
+    if (typeof value === 'string') {
+      pushSignal(value);
+      return;
+    }
+
+    if (value instanceof Error) {
+      pushSignal(value.name);
+      pushSignal(value.message);
+      if (typeof value.stack === 'string') {
+        const firstStackLine = value.stack.split('\n')[0]?.trim();
+        pushSignal(firstStackLine);
+      }
+    }
+
+    if (typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      pushSignal(record.message);
+      pushSignal(record.name);
+      pushSignal(record.code);
+      pushSignal(record.reason);
+      pushSignal(record.details);
+      pushSignal(record.type);
+      pushSignal(record.statusText);
+
+      visit(record.cause, depth + 1);
+      visit(record.error, depth + 1);
+      visit(record.originalError, depth + 1);
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      pushSignal(String(value));
+    }
+  };
+
+  visit(error, 0);
+
+  return signals;
+}
+
+function summarizeError(error: unknown): string {
+  const uniqueSignals = Array.from(new Set(collectErrorSignals(error)));
+  if (uniqueSignals.length === 0) {
+    return 'Unknown error';
+  }
+  return uniqueSignals.slice(0, 4).join(' | ');
+}
+
+function isTransientStartupError(error: unknown): boolean {
+  const normalizedSignals = collectErrorSignals(error).map((signal) =>
+    signal.toLowerCase(),
+  );
+  if (normalizedSignals.length === 0) {
+    return false;
+  }
+
+  return normalizedSignals.some((signal) =>
+    TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)),
+  );
+}
+
+function computeJitteredBackoffDelayMs(failedAttempt: number): number {
+  const backoffDelay =
+    PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const jitterMultiplier = 0.8 + Math.random() * 0.4;
+  return Math.round(backoffDelay * jitterMultiplier);
+}
+
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+): Promise<T> {
+  for (
+    let attempt = 1;
+    attempt <= PROTOCOL_PARAMETERS_MAX_ATTEMPTS;
+    attempt += 1
+  ) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (!isTransientStartupError(error)) {
+        throw error;
+      }
+
+      const errorSummary = summarizeError(error);
+      if (attempt >= PROTOCOL_PARAMETERS_MAX_ATTEMPTS) {
+        throw new Error(
+          `[startup] Kupmios protocol parameters fetch failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts: ${errorSummary}`,
+        );
+      }
+
+      const retryDelayMs = computeJitteredBackoffDelayMs(attempt);
+      console.warn(
+        `[startup] Kupmios protocol parameters fetch failed (attempt ${attempt}/${PROTOCOL_PARAMETERS_MAX_ATTEMPTS}): ${errorSummary}. Retrying in ${retryDelayMs}ms`,
+      );
+      await sleep(retryDelayMs);
+    }
+  }
+
+  throw new Error(
+    `[startup] Kupmios protocol parameters fetch failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts`,
+  );
 }
 
 export const LucidClient = {
@@ -216,7 +359,9 @@ export const LucidClient = {
     }
 
     const network = configService.get('cardanoNetwork') as Network;
-    const protocolParameters = sanitizeProtocolParameters(await provider.getProtocolParameters());
+    const protocolParameters = sanitizeProtocolParameters(
+      await retryWithBackoff(() => provider.getProtocolParameters()),
+    );
     const lucid = await Lucid.Lucid(provider, network, {
       presetProtocolParameters: protocolParameters,
     } as any);
