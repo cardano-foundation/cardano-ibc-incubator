@@ -297,6 +297,37 @@ pub async fn create_config_file(config_path: &str) -> Config {
 }
 
 impl Config {
+    fn resolve_repo_project_root_from_default_config_path(config_path: &Path) -> Option<String> {
+        let file_name = config_path.file_name()?.to_str()?;
+        if file_name != "default-config.json" {
+            return None;
+        }
+
+        // Expected layout: <repo-root>/caribic/config/default-config.json
+        let config_dir = config_path.parent()?;
+        if config_dir.file_name()?.to_str()? != "config" {
+            return None;
+        }
+        let caribic_dir = config_dir.parent()?;
+        if caribic_dir.file_name()?.to_str()? != "caribic" {
+            return None;
+        }
+
+        let repo_root = caribic_dir.parent()?;
+        Some(repo_root.to_string_lossy().to_string())
+    }
+
+    fn apply_runtime_path_overrides(mut config: Self, config_path: &Path) -> Self {
+        if let Some(repo_root) =
+            Self::resolve_repo_project_root_from_default_config_path(config_path)
+        {
+            config.project_root = repo_root.clone();
+            config.mithril.cardano_node_dir = format!("{}/chains/cardano/devnet", repo_root);
+        }
+
+        config
+    }
+
     fn default() -> Self {
         let mut default_config = Config {
             project_root: "/root/cardano-ibc-incubator".to_string(),
@@ -355,25 +386,26 @@ impl Config {
     }
 
     async fn load_from_file(config_path: &str) -> Self {
-        if Path::new(config_path).exists() {
+        let config_path_buf = Path::new(config_path);
+        if config_path_buf.exists() {
             let file_content =
                 fs::read_to_string(config_path).expect("Failed to read config file.");
-            serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+            let config: Self = serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
                 error(&format!(
                     "Failed to parse config file at {}: {}",
                     config_path, parse_error
                 ));
                 process::exit(1);
-            })
+            });
+            Self::apply_runtime_path_overrides(config, config_path_buf)
         } else {
             let default_config = create_config_file(config_path).await;
-            let parent_dir = Path::new(config_path).parent().unwrap();
+            let parent_dir = config_path_buf.parent().unwrap();
             create_all(parent_dir, false).expect("Failed to create config dir.");
             let json_content = serde_json::to_string_pretty(&default_config)
                 .expect("Failed to serialize default config.");
-            fs::write(Path::new(config_path), json_content)
-                .expect("Failed to write default config file.");
-            default_config
+            fs::write(config_path_buf, json_content).expect("Failed to write default config file.");
+            Self::apply_runtime_path_overrides(default_config, config_path_buf)
         }
     }
 }

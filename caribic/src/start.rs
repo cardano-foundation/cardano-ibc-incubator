@@ -1336,6 +1336,7 @@ pub fn wait_and_start_mithril_genesis(
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
+    const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -1351,6 +1352,27 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         progress_bar.set_prefix("Starting Gateway ...".to_owned());
     } else {
         log("Starting Gateway ...");
+    }
+
+    let network_exists = Command::new("docker")
+        .args(&["network", "inspect", SHARED_CARDANO_NETWORK])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    if !network_exists {
+        log_or_show_progress(
+            &format!(
+                "Creating shared Docker network '{}' for gateway dependencies",
+                SHARED_CARDANO_NETWORK
+            ),
+            &optional_progress_bar,
+        );
+        execute_script(
+            gateway_dir,
+            "docker",
+            vec!["network", "create", SHARED_CARDANO_NETWORK],
+            None,
+        )?;
     }
 
     log_or_show_progress(

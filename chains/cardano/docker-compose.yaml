@@ -162,6 +162,10 @@ services:
         max-size: "200k"
         max-file: "10"
 
+networks:
+  default:
+    name: cardano_ibc_net
+
 secrets:
   postgres_db:
     file: ./config/secrets/postgres_db
