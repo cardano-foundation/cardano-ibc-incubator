@@ -5,7 +5,8 @@ import { join } from 'path';
 export const grpcClientOptions: GrpcOptions = {
   transport: Transport.GRPC,
   options: {
-    url: '127.0.0.1:5001',
+    // Bind gRPC on all interfaces by default so it is reachable through Docker port publishing.
+    url: `${process.env.GRPC_HOST || '0.0.0.0'}:${process.env.GRPC_PORT || '5001'}`,
     package: [
       'ibc.core.client.v1',
       'ibc.core.types.v1',
