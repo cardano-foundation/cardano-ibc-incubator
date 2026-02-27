@@ -14,6 +14,7 @@ use std::io::{self, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 use std::{collections::HashMap, fs};
@@ -325,29 +326,58 @@ pub fn execute_script(
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let stdout = cmd.stdout.take().expect("Failed to capture stdout");
-    let stderr = cmd.stderr.take().expect("Failed to capture stderr");
+    let stdout = cmd
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to capture stdout"))?;
+    let stderr = cmd
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to capture stderr"))?;
 
-    let stdout_reader = io::BufReader::new(stdout);
-    let stderr_reader = io::BufReader::new(stderr);
+    let (line_tx, line_rx) = mpsc::channel::<String>();
 
-    let mut output = String::new();
-    let mut stderr_output = String::new();
-    for line in stdout_reader.lines() {
-        let line = line?;
-        output.push_str(&line);
-        output.push('\n');
-        logger::info(&line);
-    }
+    let stdout_tx = line_tx.clone();
+    let stdout_handle = thread::spawn(move || -> io::Result<String> {
+        let mut output = String::new();
+        let reader = io::BufReader::new(stdout);
+        for line in reader.lines() {
+            let line = line?;
+            output.push_str(&line);
+            output.push('\n');
+            let _ = stdout_tx.send(line);
+        }
+        Ok(output)
+    });
 
-    for line in stderr_reader.lines() {
-        let line = line?;
-        stderr_output.push_str(&line);
-        stderr_output.push('\n');
+    let stderr_tx = line_tx.clone();
+    let stderr_handle = thread::spawn(move || -> io::Result<String> {
+        let mut output = String::new();
+        let reader = io::BufReader::new(stderr);
+        for line in reader.lines() {
+            let line = line?;
+            output.push_str(&line);
+            output.push('\n');
+            let _ = stderr_tx.send(line);
+        }
+        Ok(output)
+    });
+
+    // Close this sender so the channel terminates once both reader threads exit.
+    drop(line_tx);
+
+    for line in line_rx {
         logger::info(&line);
     }
 
     let status = cmd.wait()?;
+    let output = stdout_handle
+        .join()
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to join stdout reader"))??;
+    let stderr_output = stderr_handle
+        .join()
+        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to join stderr reader"))??;
+
     logger::info(&format!("Script exited with status: {}", status));
     if !status.success() {
         return Err(io::Error::new(
