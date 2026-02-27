@@ -335,6 +335,9 @@ pub async fn run_start(
         }
 
         if let Some(handle) = hermes_build_handle.take() {
+            logger::log(
+                "Waiting for Hermes relayer build to complete (this can take a few minutes) ...",
+            );
             match handle.await {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
