@@ -1,16 +1,26 @@
 # Image proto type
-FROM node:18@sha256:c6ae79e38498325db67193d391e6ec1d224d96c693a8a4d943498556716d3783 AS protos
+FROM node:20 AS protos
 
 WORKDIR /usr/src/proto-types
 
 COPY ./proto-types .
 
-RUN npm ci
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-factor 2 \
+    && npm config set fetch-retry-mintimeout 1000 \
+    && npm config set fetch-retry-maxtimeout 60000 \
+    && npm config set registry https://registry.npmjs.org/ \
+    && for attempt in 1 2 3; do \
+        npm ci --no-audit --prefer-offline && exit 0; \
+        echo "npm ci failed for proto-types (attempt ${attempt}/3), retrying..."; \
+        sleep $((attempt * 5)); \
+      done; \
+    exit 1
 
 RUN npm run build
 
 # Base image
-FROM node:18@sha256:c6ae79e38498325db67193d391e6ec1d224d96c693a8a4d943498556716d3783
+FROM node:20
 
 ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
@@ -21,7 +31,17 @@ COPY ${MAIN_CONTEXT} .
 COPY --from=protos /usr/src/proto-types /usr/proto-types
 
 # Install app dependencies
-RUN npm ci --legacy-peer-deps
+RUN npm config set fetch-retries 5 \
+    && npm config set fetch-retry-factor 2 \
+    && npm config set fetch-retry-mintimeout 1000 \
+    && npm config set fetch-retry-maxtimeout 60000 \
+    && npm config set registry https://registry.npmjs.org/ \
+    && for attempt in 1 2 3; do \
+        npm ci --legacy-peer-deps --no-audit --prefer-offline && exit 0; \
+        echo "npm ci failed for gateway app (attempt ${attempt}/3), retrying..."; \
+        sleep $((attempt * 5)); \
+      done; \
+    exit 1
 
 # Creates a "dist" folder with the production build
 RUN npm run build

@@ -29,8 +29,22 @@ RUN test -x /go/bin/buf && mv /go/bin/buf /go/bin/buf.real
 COPY "./buf-wrapper.sh" "/go/bin/buf"
 RUN chmod +x /go/bin/buf /go/bin/buf.real
 
+# Build the chain binary ahead of runtime startup.
+RUN for attempt in 1 2 3; do \
+  echo "[build] ignite chain build attempt ${attempt}/3"; \
+  if timeout 900 env PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}" DO_NOT_TRACK=1 GOFLAGS="-buildvcs=false" ignite chain build -y -v --skip-proto; then \
+    exit 0; \
+  fi; \
+  echo "[build] ignite chain build attempt ${attempt}/3 failed; retrying..."; \
+  sleep $((attempt * 5)); \
+done; \
+exit 1
+
 COPY "./entrypoint.sh" "/entrypoint.sh"
-RUN chmod +x /entrypoint.sh
+COPY "./chain-state-hash.sh" "/chain-state-hash.sh"
+COPY "./init-entrypoint.sh" "/init-entrypoint.sh"
+COPY "./run-entrypoint.sh" "/run-entrypoint.sh"
+RUN chmod +x /entrypoint.sh /chain-state-hash.sh /init-entrypoint.sh /run-entrypoint.sh
 # RUN bash -c "cd /root/entrypoint/workspace2/entrypoint && DO_NOT_TRACK=1 ignite chain serve"
 
 EXPOSE 26657
@@ -40,5 +54,5 @@ EXPOSE 1317
 
 # RUN bash -c "DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' C_INCLUDE_PATH="/root/.ghcup/ghc/8.10.7/lib/ghc-8.10.7/include:$C_INCLUDE_PATH" ignite chain build -y && ignite chain init -y "
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/run-entrypoint.sh"]
 CMD ["sh"]

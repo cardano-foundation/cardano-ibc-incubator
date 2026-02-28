@@ -24,6 +24,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
 
+const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
+const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
+const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
 /// - Linux: Uses actual user UID/GID
@@ -695,9 +698,10 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let node_service_name = "entrypoint-node-prod";
+    let init_service_name = "entrypoint-init";
+
     if clean {
-        let entrypoint_chain = config::get_config().chains.entrypoint;
-        let cleanup_command = format!("rm -rf {} /root/.ignite", entrypoint_chain.home_dir);
         execute_script(
             cosmos_dir,
             "docker",
@@ -707,28 +711,24 @@ pub fn start_cosmos_entrypoint_chain_services(
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from([
-                "compose",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "bash",
-                entrypoint_chain.container_name.as_str(),
-                "-lc",
-                cleanup_command.as_str(),
-            ]),
+            Vec::from(["compose", "build", node_service_name]),
             None,
         )?;
-    } else {
-        execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
-    let mut args = vec!["compose", "up", "-d"];
-    if clean {
-        args.push("--build");
-    }
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "run", "--rm", init_service_name]),
+        None,
+    )?;
 
-    execute_script(cosmos_dir, "docker", args, None)?;
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", node_service_name]),
+        None,
+    )?;
     Ok(())
 }
 
