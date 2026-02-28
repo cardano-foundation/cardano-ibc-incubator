@@ -27,7 +27,6 @@ use std::time::{Duration, Instant};
 use std::u64;
 
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const ENTRYPOINT_HOME_DIR: &str = "/root/.entrypoint";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 
@@ -692,6 +691,9 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let node_service_name = "entrypoint-node-prod";
+    let init_service_name = "entrypoint-init";
+
     if clean {
         execute_script(
             cosmos_dir,
@@ -702,28 +704,24 @@ pub fn start_cosmos_entrypoint_chain_services(
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from([
-                "compose",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "bash",
-                ENTRYPOINT_CONTAINER_NAME,
-                "-lc",
-                &format!("rm -rf {} /root/.ignite", ENTRYPOINT_HOME_DIR),
-            ]),
+            Vec::from(["compose", "build", node_service_name]),
             None,
         )?;
-    } else {
-        execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
-    let mut args = vec!["compose", "up", "-d"];
-    if clean {
-        args.push("--build");
-    }
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "run", "--rm", init_service_name]),
+        None,
+    )?;
 
-    execute_script(cosmos_dir, "docker", args, None)?;
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", node_service_name]),
+        None,
+    )?;
     Ok(())
 }
 

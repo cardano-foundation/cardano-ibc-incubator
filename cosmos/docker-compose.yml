@@ -1,17 +1,38 @@
 services:
+  entrypoint-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: [ "/init-entrypoint.sh" ]
+    environment:
+      IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
+    volumes:
+      - entrypoint-home:/root/.entrypoint
+    restart: "no"
+
   entrypoint-node-prod:
     container_name: entrypoint-node-prod
     build:
       context: .
       dockerfile: Dockerfile
-    entrypoint: /entrypoint.sh
+    entrypoint: [ "/run-entrypoint.sh" ]
     environment:
-      BUF_GENERATE_TIMEOUT: ${BUF_GENERATE_TIMEOUT:-10m}
       IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
+    volumes:
+      - entrypoint-home:/root/.entrypoint
     ports:
       - "26657:26657"
       - "26656:26656"
       - "9090:9090"
       - "127.0.0.1:4500:4500"
       - "1317:1317"
-    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -fsS http://localhost:26657/status | jq -e '.result.sync_info.latest_block_height | tonumber > 0' >/dev/null" ]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  entrypoint-home:
