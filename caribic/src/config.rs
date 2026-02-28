@@ -2,7 +2,7 @@ use crate::logger::error;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Mutex;
 
@@ -115,8 +115,35 @@ impl Config {
             .expect("Failed to parse bundled default config template")
     }
 
+    fn resolve_path_from_config_dir(config_dir: &Path, configured_path: &str) -> String {
+        let raw_path = Path::new(configured_path);
+        if raw_path.is_absolute() {
+            return configured_path.to_string();
+        }
+
+        let resolved_path = config_dir.join(raw_path);
+        if let Ok(canonicalized) = resolved_path.canonicalize() {
+            return canonicalized.to_string_lossy().to_string();
+        }
+
+        resolved_path.to_string_lossy().to_string()
+    }
+
+    fn resolve_runtime_paths(mut config: Self, config_path: &Path) -> Self {
+        if let Some(config_dir) = config_path.parent() {
+            config.project_root =
+                Self::resolve_path_from_config_dir(config_dir, &config.project_root);
+            config.mithril.cardano_node_dir =
+                Self::resolve_path_from_config_dir(config_dir, &config.mithril.cardano_node_dir);
+        }
+
+        config
+    }
+
     async fn load_from_file(config_path: &str) -> Self {
-        if !Path::new(config_path).exists() {
+        let config_path_buf = PathBuf::from(config_path);
+
+        if !config_path_buf.exists() {
             error(&format!(
                 "Config file not found: {}. caribic requires caribic/config/default-config.json to exist.",
                 config_path
@@ -124,14 +151,17 @@ impl Config {
             process::exit(1);
         }
 
-        let file_content = fs::read_to_string(config_path).expect("Failed to read config file.");
-        serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+        let file_content =
+            fs::read_to_string(&config_path_buf).expect("Failed to read config file.");
+        let config = serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
             error(&format!(
                 "Failed to parse config file at {}: {}",
                 config_path, parse_error
             ));
             process::exit(1);
-        })
+        });
+
+        Self::resolve_runtime_paths(config, &config_path_buf)
     }
 }
 
