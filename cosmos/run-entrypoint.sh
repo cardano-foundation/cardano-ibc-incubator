@@ -3,7 +3,7 @@
 set -euo pipefail
 
 export CHAIN_WORKDIR="/root/entrypoint/workspace/entrypoint"
-export ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint}"
+export ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint-data/node}"
 export STAMP_FILE="${STAMP_FILE:-${ENTRYPOINT_HOME}/.caribic-init-stamp.json}"
 export GENESIS_FILE="${GENESIS_FILE:-${ENTRYPOINT_HOME}/config/genesis.json}"
 

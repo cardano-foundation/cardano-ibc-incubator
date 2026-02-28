@@ -6,8 +6,9 @@ services:
     entrypoint: [ "/init-entrypoint.sh" ]
     environment:
       IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
+      ENTRYPOINT_HOME: ${ENTRYPOINT_HOME:-/root/.entrypoint-data/node}
     volumes:
-      - entrypoint-home:/root/.entrypoint
+      - entrypoint-home:/root/.entrypoint-data
     restart: "no"
 
   entrypoint-node-prod:
@@ -18,8 +19,9 @@ services:
     entrypoint: [ "/run-entrypoint.sh" ]
     environment:
       IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
+      ENTRYPOINT_HOME: ${ENTRYPOINT_HOME:-/root/.entrypoint-data/node}
     volumes:
-      - entrypoint-home:/root/.entrypoint
+      - entrypoint-home:/root/.entrypoint-data
     ports:
       - "26657:26657"
       - "26656:26656"

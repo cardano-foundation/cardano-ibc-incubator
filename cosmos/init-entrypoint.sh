@@ -9,9 +9,10 @@ fi
 
 export PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 export CHAIN_WORKDIR="/root/entrypoint/workspace/entrypoint"
-export ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint}"
+export ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint-data/node}"
 export STAMP_FILE="${STAMP_FILE:-${ENTRYPOINT_HOME}/.caribic-init-stamp.json}"
 export GENESIS_FILE="${GENESIS_FILE:-${ENTRYPOINT_HOME}/config/genesis.json}"
+export IGNITE_DEFAULT_HOME="/root/.entrypoint"
 
 # shellcheck disable=SC1091
 source /chain-state-hash.sh
@@ -62,10 +63,14 @@ else
     env DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' ignite chain init -y
 fi
 
-if [ ! -f "${GENESIS_FILE}" ]; then
-    echo "[INIT] Initialization completed but genesis file is missing: ${GENESIS_FILE}" >&2
+if [ ! -f "${IGNITE_DEFAULT_HOME}/config/genesis.json" ]; then
+    echo "[INIT] Initialization completed but genesis file is missing: ${IGNITE_DEFAULT_HOME}/config/genesis.json" >&2
     exit 1
 fi
+
+mkdir -p "$(dirname "${ENTRYPOINT_HOME}")"
+rm -rf "${ENTRYPOINT_HOME}"
+cp -a "${IGNITE_DEFAULT_HOME}" "${ENTRYPOINT_HOME}"
 
 mkdir -p "${ENTRYPOINT_HOME}"
 jq -n \

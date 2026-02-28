@@ -711,7 +711,7 @@ pub fn start_cosmos_entrypoint_chain_services(
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from(["compose", "build", node_service_name]),
+            Vec::from(["compose", "build", init_service_name, node_service_name]),
             None,
         )?;
     }

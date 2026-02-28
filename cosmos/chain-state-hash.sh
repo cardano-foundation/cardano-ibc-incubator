@@ -4,7 +4,7 @@ set -euo pipefail
 
 INIT_SCHEMA_VERSION="${INIT_SCHEMA_VERSION:-1}"
 CHAIN_WORKDIR="${CHAIN_WORKDIR:-/root/entrypoint/workspace/entrypoint}"
-ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint}"
+ENTRYPOINT_HOME="${ENTRYPOINT_HOME:-/root/.entrypoint-data/node}"
 STAMP_FILE="${STAMP_FILE:-${ENTRYPOINT_HOME}/.caribic-init-stamp.json}"
 GENESIS_FILE="${GENESIS_FILE:-${ENTRYPOINT_HOME}/config/genesis.json}"
 
