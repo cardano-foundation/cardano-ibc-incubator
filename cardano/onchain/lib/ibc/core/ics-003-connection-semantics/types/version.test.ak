@@ -4,14 +4,12 @@ use ibc/core/ics_003_connection_semantics/types/version.{Version}
 pub const default_ibc_version_identifier = "1"
 
 test test_get_supported_orderings() {
-  let supported_oderings =
-    ["ORDER_ORDERED", "ORDER_UNORDERED"]
+  let supported_oderings = ["ORDER_ORDERED", "ORDER_UNORDERED"]
   version.get_supported_orderings() == supported_oderings
 }
 
 test test_get_default_ibc_version() {
-  let supported_oderings =
-    ["ORDER_ORDERED", "ORDER_UNORDERED"]
+  let supported_oderings = ["ORDER_ORDERED", "ORDER_UNORDERED"]
   version.get_default_ibc_version() == Version {
     identifier: default_ibc_version_identifier,
     features: supported_oderings,
@@ -19,8 +17,7 @@ test test_get_default_ibc_version() {
 }
 
 test test_new_version() {
-  let supported_oderings =
-    ["ORDER_ORDERED", "ORDER_UNORDERED"]
+  let supported_oderings = ["ORDER_ORDERED", "ORDER_UNORDERED"]
   version.new_version(default_ibc_version_identifier, supported_oderings) == Version {
     identifier: default_ibc_version_identifier,
     features: supported_oderings,
@@ -28,8 +25,7 @@ test test_new_version() {
 }
 
 test test_validate_version() {
-  let supported_oderings =
-    ["ORDER_ORDERED", "ORDER_UNORDERED"]
+  let supported_oderings = ["ORDER_ORDERED", "ORDER_UNORDERED"]
   let test_cases: List<(Version, Bool)> =
     [
       (
@@ -53,8 +49,7 @@ test test_validate_version() {
 }
 
 test test_get_compatible_versions() {
-  let supported_oderings =
-    ["ORDER_ORDERED", "ORDER_UNORDERED"]
+  let supported_oderings = ["ORDER_ORDERED", "ORDER_UNORDERED"]
   version.get_compatible_versions() == [
     Version {
       identifier: default_ibc_version_identifier,

@@ -75,5 +75,5 @@ test marshal_for_connection_end_produces_same_results_empty_values() {
   let bytes_deprecated =
     marshal_for_connection_end_deprecated(Some(connection_end_deprecated))
 
-  bytes == #"1202120022021A00" && bytes == bytes_deprecated
+  bytes == #"1202120022021a00" && bytes == bytes_deprecated
 }

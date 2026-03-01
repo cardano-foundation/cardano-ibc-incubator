@@ -49,12 +49,14 @@ validator mint_client_stt(
     let client_id_sequence = host_state_datum.state.next_client_sequence
 
     // Generate client token name using the HostState NFT as base token
-    let host_state_nft = AuthToken {
-      policy_id: host_state_nft_policy_id,
-      name: host_state_token_name,
-    }
+    let host_state_nft =
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
     let id_str = string_utils.int_to_string(client_id_sequence)
-    let client_token_name = auth.generate_token_name(host_state_nft, client_prefix, id_str)
+    let client_token_name =
+      auth.generate_token_name(host_state_nft, client_prefix, id_str)
     let client_token =
       AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
 
@@ -83,6 +85,7 @@ validator mint_client_stt(
       is_state_active?,
     }
   }
+
   else(_) {
     fail
   }

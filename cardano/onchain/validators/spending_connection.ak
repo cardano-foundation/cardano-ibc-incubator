@@ -245,8 +245,16 @@ fn validate_conn_open_ack_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  let counterparty_client_state_bz =
+  let counterparty_client_state_bz_lightclients =
     mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
+  let counterparty_client_state_bz_lightclients_with_zero_frozen =
+    mithril_pb.marshal_for_any_client_state_with_zero_frozen(
       AnyMithrilClientState {
         type_url: "/ibc.lightclients.mithril.v1.ClientState",
         value: counterparty_client_state,
@@ -267,12 +275,18 @@ fn validate_conn_open_ack_proof(
         expect [item0_prefix, item0_key] = item0.path.key_path
         expect [exp0_prefix, exp0_key] = conn_merkle_path.key_path
 
-        let ok0_path = and { item0_prefix == exp0_prefix, item0_key == exp0_key }
+        let ok0_path = and {
+            item0_prefix == exp0_prefix,
+            item0_key == exp0_key,
+          }
 
         expect [item1_prefix, item1_key] = item1.path.key_path
         expect [exp1_prefix, exp1_key] = client_merkle_path.key_path
 
-        let ok1_path = and { item1_prefix == exp1_prefix, item1_key == exp1_key }
+        let ok1_path = and {
+            item1_prefix == exp1_prefix,
+            item1_key == exp1_key,
+          }
 
         and {
           item0.cs == client_datum_state.client_state,
@@ -290,7 +304,10 @@ fn validate_conn_open_ack_proof(
           item1.delay_block_period == block_delay,
           item1.proof == proof_client,
           ok1_path,
-          item1.value == counterparty_client_state_bz,
+          or {
+            item1.value == counterparty_client_state_bz_lightclients,
+            item1.value == counterparty_client_state_bz_lightclients_with_zero_frozen,
+          },
         }
       }
       _ -> False

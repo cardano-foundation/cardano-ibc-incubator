@@ -12,6 +12,7 @@ const getEntrypointRpcEndpoint = () =>
 
 const getEntrypointRestEndpoint = () =>
   process.env.REACT_APP_ENTRYPOINT_REST_ENDPOINT || '';
+
 const entrypointChainConfig: Chain = {
   chain_name: ENTRYPOINT_CHAIN_ID,
   status: 'active',

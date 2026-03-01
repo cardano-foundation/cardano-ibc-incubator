@@ -209,7 +209,7 @@ test succeed_verify_channel_state() {
   let client_datum_state =
     ClientDatumState {
       client_state,
-      consensus_states: [Pair(proof_height, cons_state)]
+      consensus_states: [Pair(proof_height, cons_state)],
     }
 
   verify_mod.verify_channel_state(

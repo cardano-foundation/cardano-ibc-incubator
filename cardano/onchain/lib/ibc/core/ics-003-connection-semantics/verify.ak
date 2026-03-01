@@ -68,6 +68,14 @@ pub fn verify_client_state(
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
 
+  let counterparty_client_state_bz_lightclients =
+    mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
@@ -76,12 +84,7 @@ pub fn verify_client_state(
     0,
     proof,
     merkle_path,
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd,
+    counterparty_client_state_bz_lightclients,
   )
 }
 

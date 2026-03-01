@@ -32,7 +32,9 @@ pub fn packet_commitment_prefix_path(
 ) -> ByteArray {
   key_packet_commitment_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
     |> bytearray.concat("/")
     |> bytearray.concat(key_sequence_prefix)
 }
@@ -53,7 +55,9 @@ pub fn packet_acknowledgement_prefix_path(
 ) -> ByteArray {
   key_packet_ack_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
     |> bytearray.concat("/")
     |> bytearray.concat(key_sequence_prefix)
 }
@@ -65,7 +69,9 @@ pub fn packet_receipt_path(
 ) -> ByteArray {
   key_packet_receipt_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
     |> bytearray.concat("/")
     |> bytearray.concat(sequence_path(sequence))
 }
@@ -76,7 +82,9 @@ pub fn next_sequence_recv_path(
 ) -> ByteArray {
   key_next_seq_recv_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
 }
 
 pub fn next_sequence_send_path(
@@ -85,7 +93,9 @@ pub fn next_sequence_send_path(
 ) -> ByteArray {
   key_next_seq_send_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
 }
 
 pub fn next_sequence_ack_path(
@@ -94,7 +104,9 @@ pub fn next_sequence_ack_path(
 ) -> ByteArray {
   key_next_seq_ack_prefix
     |> bytearray.concat("/")
-    |> bytearray.concat(channel_keys.channel_path_for_packet(port_id, channel_id))
+    |> bytearray.concat(
+        channel_keys.channel_path_for_packet(port_id, channel_id),
+      )
 }
 
 fn sequence_path(sequence: Int) -> ByteArray {

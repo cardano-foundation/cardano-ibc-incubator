@@ -54,19 +54,8 @@ pub fn is_valid_port_id(port_id: ByteArray) -> Bool {
 
 fn is_valid_port_char(byte: Int) -> Bool {
   // 0-9
-  (byte >= 0x30 && byte <= 0x39)
-    // A-Z
-    || (byte >= 0x41 && byte <= 0x5a)
-    // a-z
-    || (byte >= 0x61 && byte <= 0x7a)
-    // Allowed punctuation: _ . + - # [ ] < >
-    || byte == 0x5f
-    || byte == 0x2e
-    || byte == 0x2b
-    || byte == 0x2d
-    || byte == 0x23
-    || byte == 0x5b
-    || byte == 0x5d
-    || byte == 0x3c
-    || byte == 0x3e
+  byte >= 0x30 && byte <= 0x39 || // A-Z
+  byte >= 0x41 && byte <= 0x5a || // a-z
+  byte >= 0x61 && byte <= 0x7a || // Allowed punctuation: _ . + - # [ ] < >
+  byte == 0x5f || byte == 0x2e || byte == 0x2b || byte == 0x2d || byte == 0x23 || byte == 0x5b || byte == 0x5d || byte == 0x3c || byte == 0x3e
 }

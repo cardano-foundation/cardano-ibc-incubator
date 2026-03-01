@@ -17,7 +17,8 @@ use aiken/collection/list
 use aiken/primitive/int
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
-pub const empty_ibc_state_root = #"0000000000000000000000000000000000000000000000000000000000000000"
+pub const empty_ibc_state_root =
+  #"0000000000000000000000000000000000000000000000000000000000000000"
 
 // IBC Host State NFT token name
 pub const host_state_token_name = "ibc_host_state"
@@ -30,20 +31,16 @@ pub type HostState {
   // Monotonic version counter - increments with each state update
   // Used to enforce forward-only state progression and prevent replay attacks
   version: Int,
-  
   // ICS-23 Merkle root commitment over all IBC host state
   // This root covers: clients/, connections/, channels/, packets/, etc.
   // Computed off-chain by Gateway, verified via ICS-23 proofs on Cosmos
   ibc_state_root: ByteArray,
-  
   // Sequence counters for IBC object creation
   next_client_sequence: Int,
   next_connection_sequence: Int,
   next_channel_sequence: Int,
-  
   // List of bound port identifiers
   bound_port: List<Int>,
-  
   // Optional: Timestamp of last update (Unix epoch milliseconds)
   // Useful for debugging and monitoring
   last_update_time: Int,
@@ -70,7 +67,6 @@ pub fn is_initialized_valid(
   expected_nft_policy: ByteArray,
 ) -> Bool {
   let HostStateDatum { state, nft_policy } = datum
-  
   and {
     state.version == 0,
     state.next_client_sequence == 0,
@@ -102,10 +98,7 @@ pub fn validate_version_increment(old: HostState, new: HostState) -> Bool {
 /// - bound_port unchanged
 /// - ibc_state_root MAY change (updated by Gateway)
 /// - NFT policy unchanged
-pub fn validate_create_client(
-  old: HostStateDatum,
-  new: HostStateDatum,
-) -> Bool {
+pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool {
   and {
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence + 1,
@@ -132,10 +125,7 @@ pub fn validate_create_connection(
 }
 
 /// Validate HostState transition for channel creation
-pub fn validate_create_channel(
-  old: HostStateDatum,
-  new: HostStateDatum,
-) -> Bool {
+pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool {
   and {
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
@@ -168,8 +158,9 @@ pub fn validate_bind_port(
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
     // Port list should have the new port added and be sorted.
-    new.state.bound_port ==
-      (list.push(old.state.bound_port, port) |> list.sort(int.compare)),
+    new.state.bound_port == (
+      list.push(old.state.bound_port, port) |> list.sort(int.compare)
+    ),
     new.nft_policy == old.nft_policy,
   }
 }

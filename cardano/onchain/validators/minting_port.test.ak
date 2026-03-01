@@ -69,7 +69,10 @@ fn setup() -> MockData {
   let port_token_name =
     string_utils.int_to_string(port_number)
       |> auth.generate_token_name(
-          AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
+          AuthToken {
+            policy_id: host_state_nft_policy_id,
+            name: host_state_token_name,
+          },
           port_keys.port_prefix,
           _,
         )
