@@ -1,5 +1,15 @@
 {
   "project_root": "/root/cardano-ibc-incubator",
+  "chains": {
+    "cardano": {
+      "chain_id": "cardano-devnet",
+      "message_port_id": "transfer"
+    },
+    "entrypoint": {
+      "chain_id": "entrypoint",
+      "message_port_id": "transfer"
+    }
+  },
   "mithril": {
     "enabled": true,
     "aggregator_url": "http://127.0.0.1:8080",

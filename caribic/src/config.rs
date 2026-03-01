@@ -13,12 +13,81 @@ use std::sync::Mutex;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Config {
     pub project_root: String,
+    #[serde(default)]
+    pub chains: Chains,
     pub mithril: Mithril,
     #[serde(default)]
     pub health: Health,
     #[serde(default)]
     pub demo: Demo,
     pub cardano: Cardano,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Chains {
+    #[serde(default)]
+    pub cardano: CardanoChain,
+    #[serde(default)]
+    pub entrypoint: EntrypointChain,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CardanoChain {
+    #[serde(default = "default_cardano_chain_id")]
+    pub chain_id: String,
+    #[serde(default = "default_cardano_message_port_id")]
+    pub message_port_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EntrypointChain {
+    #[serde(default = "default_entrypoint_chain_id")]
+    pub chain_id: String,
+    #[serde(default = "default_entrypoint_message_port_id")]
+    pub message_port_id: String,
+}
+
+fn default_cardano_chain_id() -> String {
+    "cardano-devnet".to_string()
+}
+
+fn default_cardano_message_port_id() -> String {
+    "transfer".to_string()
+}
+
+fn default_entrypoint_chain_id() -> String {
+    "entrypoint".to_string()
+}
+
+fn default_entrypoint_message_port_id() -> String {
+    "transfer".to_string()
+}
+
+impl Default for CardanoChain {
+    fn default() -> Self {
+        CardanoChain {
+            chain_id: default_cardano_chain_id(),
+            message_port_id: default_cardano_message_port_id(),
+        }
+    }
+}
+
+impl Default for EntrypointChain {
+    fn default() -> Self {
+        EntrypointChain {
+            chain_id: default_entrypoint_chain_id(),
+            message_port_id: default_entrypoint_message_port_id(),
+        }
+    }
+}
+
+impl Default for Chains {
+    fn default() -> Self {
+        Chains {
+            cardano: CardanoChain::default(),
+            entrypoint: EntrypointChain::default(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -187,7 +256,8 @@ impl Default for MessageExchangeDemo {
             channel_discovery_max_retries: default_message_channel_discovery_max_retries(),
             channel_discovery_max_retries_after_create:
                 default_message_channel_discovery_after_create_max_retries(),
-            channel_discovery_retry_delay_secs: default_message_channel_discovery_retry_delay_secs(),
+            channel_discovery_retry_delay_secs: default_message_channel_discovery_retry_delay_secs(
+            ),
             connection_discovery_max_retries: default_message_connection_discovery_max_retries(),
             connection_discovery_retry_delay_secs:
                 default_message_connection_discovery_retry_delay_secs(),
@@ -331,6 +401,7 @@ impl Config {
     fn default() -> Self {
         let mut default_config = Config {
             project_root: "/root/cardano-ibc-incubator".to_string(),
+            chains: Chains::default(),
             mithril: {
                 Mithril {
                     enabled: true,

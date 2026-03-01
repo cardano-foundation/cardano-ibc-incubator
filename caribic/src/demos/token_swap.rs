@@ -8,8 +8,7 @@ use crate::{
         self,
         osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     },
-    constants::ENTRYPOINT_CHAIN_ID,
-    logger,
+    config, logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
@@ -19,6 +18,22 @@ use crate::{
 const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
 const TOKEN_SWAP_SUPPORTED_CHAIN: &str = "osmosis";
 const TOKEN_SWAP_SUPPORTED_NETWORK: &str = "local";
+
+fn cardano_chain_id() -> String {
+    config::get_config().chains.cardano.chain_id
+}
+
+fn cardano_message_port_id() -> String {
+    config::get_config().chains.cardano.message_port_id
+}
+
+fn entrypoint_chain_id() -> String {
+    config::get_config().chains.entrypoint.chain_id
+}
+
+fn entrypoint_message_port_id() -> String {
+    config::get_config().chains.entrypoint.message_port_id
+}
 
 /// Runs the full token swap demo and validates required services before execution.
 pub async fn run_token_swap_demo(
@@ -360,6 +375,7 @@ fn parse_connection_sequence(connection_id: &str) -> Option<u64> {
 /// frequently remain in local dev environments after interrupted handshakes.
 fn query_transfer_channel_end_status(
     chain_id: &str,
+    port_id: &str,
     channel_id: &str,
 ) -> Result<Option<TransferChannelEndStatus>, String> {
     let output = run_hermes_command(&[
@@ -370,7 +386,7 @@ fn query_transfer_channel_end_status(
         "--chain",
         chain_id,
         "--port",
-        "transfer",
+        port_id,
         "--channel",
         channel_id,
     ])
@@ -571,7 +587,10 @@ fn query_connection_end_status(
 /// Using only fully-open symmetric connections avoids non-deterministic behavior where
 /// partially-created handshakes remain in state and break later channel operations.
 fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<bool, String> {
-    let Some(cardano_end) = query_connection_end_status("cardano-devnet", cardano_connection_id)?
+    let cardano_chain_id = cardano_chain_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
+    let Some(cardano_end) =
+        query_connection_end_status(cardano_chain_id.as_str(), cardano_connection_id)?
     else {
         return Ok(false);
     };
@@ -590,7 +609,7 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
         return Ok(false);
     };
     let Some(entrypoint_end) =
-        query_connection_end_status(ENTRYPOINT_CHAIN_ID, entrypoint_connection_id)?
+        query_connection_end_status(entrypoint_chain_id.as_str(), entrypoint_connection_id)?
     else {
         return Ok(false);
     };
@@ -623,10 +642,12 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
 
 /// Selects the newest fully-open Cardano↔Entrypoint connection, if one exists.
 fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> {
-    let candidate_connection_ids = query_connection_ids_for_chain("cardano-devnet")?;
+    let cardano_chain_id = cardano_chain_id();
+    let candidate_connection_ids = query_connection_ids_for_chain(cardano_chain_id.as_str())?;
     logger::verbose(&format!(
-        "Hermes query returned {} cardano-devnet connection candidates",
-        candidate_connection_ids.len()
+        "Hermes query returned {} {} connection candidates",
+        candidate_connection_ids.len(),
+        cardano_chain_id
     ));
 
     for connection_id in candidate_connection_ids {
@@ -649,8 +670,15 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
 ///
 /// This prevents selecting stale channel ids that exist but are not open.
 fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Result<bool, String> {
-    let Some(cardano_end) =
-        query_transfer_channel_end_status("cardano-devnet", cardano_channel_id)?
+    let cardano_chain_id = cardano_chain_id();
+    let cardano_port_id = cardano_message_port_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
+    let entrypoint_port_id = entrypoint_message_port_id();
+    let Some(cardano_end) = query_transfer_channel_end_status(
+        cardano_chain_id.as_str(),
+        cardano_port_id.as_str(),
+        cardano_channel_id,
+    )?
     else {
         return Ok(false);
     };
@@ -663,9 +691,10 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     }
 
-    if cardano_end.remote_port_id.as_deref() != Some("transfer") {
+    if cardano_end.remote_port_id.as_deref() != Some(entrypoint_port_id.as_str()) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not transfer",
+            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not {}",
+            entrypoint_port_id
         ));
         return Ok(false);
     }
@@ -677,8 +706,11 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     };
 
-    let Some(entrypoint_end) =
-        query_transfer_channel_end_status(ENTRYPOINT_CHAIN_ID, entrypoint_channel_id.as_str())?
+    let Some(entrypoint_end) = query_transfer_channel_end_status(
+        entrypoint_chain_id.as_str(),
+        entrypoint_port_id.as_str(),
+        entrypoint_channel_id.as_str(),
+    )?
     else {
         return Ok(false);
     };
@@ -691,10 +723,10 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     }
 
-    if entrypoint_end.remote_port_id.as_deref() != Some("transfer") {
+    if entrypoint_end.remote_port_id.as_deref() != Some(cardano_port_id.as_str()) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not transfer",
-            entrypoint_channel_id
+            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not {}",
+            entrypoint_channel_id, cardano_port_id
         ));
         return Ok(false);
     }
@@ -712,14 +744,16 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
 
 /// Queries Hermes for the latest Cardano to Entrypoint transfer channel id.
 fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
+    let cardano_chain_id = cardano_chain_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
     let output = run_hermes_command(&[
         "--json",
         "query",
         "channels",
         "--chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--counterparty-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
 
@@ -746,11 +780,16 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 
     if let Some(channels) = chain_channels {
         logger::verbose(&format!(
-            "Hermes query returned {} chain channels on cardano-devnet↔entrypoint",
-            channels.len()
+            "Hermes query returned {} chain channels on {}↔{}",
+            channels.len(),
+            cardano_chain_id,
+            entrypoint_chain_id
         ));
     } else {
-        logger::verbose("Hermes query returned no channel list for cardano-devnet↔entrypoint");
+        logger::verbose(&format!(
+            "Hermes query returned no channel list for {}↔{}",
+            cardano_chain_id, entrypoint_chain_id
+        ));
     }
 
     if let Some(channels) = chain_channels {
@@ -785,6 +824,9 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 fn create_cardano_entrypoint_transfer_channel_on_connection(
     connection_id: &str,
 ) -> Result<(), String> {
+    let cardano_chain_id = cardano_chain_id();
+    let cardano_port_id = cardano_message_port_id();
+    let entrypoint_port_id = entrypoint_message_port_id();
     logger::verbose("Creating transfer channel on the Cardano↔Entrypoint connection");
     logger::verbose(&format!(
         "Creating transfer channel on connection {connection_id} (Cardano↔Entrypoint)"
@@ -793,13 +835,13 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
         "create",
         "channel",
         "--a-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--a-connection",
         connection_id,
         "--a-port",
-        "transfer",
+        cardano_port_id.as_str(),
         "--b-port",
-        "transfer",
+        entrypoint_port_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_channel_output.status.success() {
@@ -809,11 +851,14 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
             String::from_utf8_lossy(&create_channel_output.stderr)
         ));
     }
+
     Ok(())
 }
 
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
 fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
+    let cardano_chain_id = cardano_chain_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
     if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
         logger::log(&format!(
             "PASS: Cardano->Entrypoint transfer channel already exists and is open ({open_channel_id})"
@@ -850,9 +895,9 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--reference-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
@@ -879,9 +924,9 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        ENTRYPOINT_CHAIN_ID,
+        entrypoint_chain_id.as_str(),
         "--reference-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_entrypoint_client_output.status.success() {
@@ -908,7 +953,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "connection",
         "--a-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--a-client",
         cardano_client_id.as_str(),
         "--b-client",
