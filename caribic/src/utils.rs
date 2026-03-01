@@ -46,10 +46,7 @@ pub struct IndicatorMessage {
 }
 
 pub fn default_config_path() -> PathBuf {
-    let current_dir = std::env::current_dir().unwrap_or_else(|error| {
-        eprintln!("Failed to resolve current directory while locating config file: {error}");
-        std::process::exit(1);
-    });
+    let current_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     for dir in current_dir.ancestors() {
         let repo_relative = dir.join("caribic/config/default-config.json");
@@ -681,6 +678,41 @@ fn has_unrecoverable_error(logs: &str) -> bool {
         || logs.contains("No such file or directory")
 }
 
+fn detect_known_startup_failure(logs: &str) -> Option<&'static str> {
+    if logs.contains("could not find protoc plugin for name openapiv2") {
+        return Some(
+            "Missing protoc plugin 'protoc-gen-openapiv2' in container PATH (required for OpenAPI generation)",
+        );
+    }
+
+    if logs.contains("failed to generate openapi spec")
+        && logs.contains("buf generate")
+        && logs.contains("context deadline exceeded")
+    {
+        return Some(
+            "Ignite failed while generating OpenAPI specs via buf (context deadline exceeded)",
+        );
+    }
+
+    if logs.contains("failed to generate openapi spec") && logs.contains("buf generate") {
+        return Some("Ignite failed while generating OpenAPI specs via buf");
+    }
+
+    None
+}
+
+fn format_log_excerpt(logs: &str, line_count: usize) -> String {
+    logs.lines()
+        .rev()
+        .take(line_count)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|line| format!("   {}", line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Diagnose why Docker containers failed to start
 /// Returns (diagnostics_string, should_fail_fast)
 pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
@@ -690,6 +722,30 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
     for container_name in container_names {
         match check_container_status(container_name) {
             Ok(status) => {
+                let logs = get_container_logs(container_name, 80).ok();
+
+                if let Some(logs_content) = logs.as_deref() {
+                    if let Some(reason) = detect_known_startup_failure(logs_content) {
+                        diagnostics.push_str(&format!(
+                            "\n\nContainer '{}' reported startup failure: {}",
+                            container_name, reason
+                        ));
+                        diagnostics.push_str(&format!("\n   Container status: {}", status));
+                        diagnostics.push_str(&format!(
+                            "\n   Last log entries:\n{}",
+                            format_log_excerpt(logs_content, 12)
+                        ));
+                        should_fail_fast = true;
+
+                        // The container may still be "running" while the main startup process is
+                        // stuck/failing (for example, Ignite failing proto/OpenAPI generation).
+                        // In that case this diagnostic is already the actionable root cause.
+                        if status == "running" {
+                            continue;
+                        }
+                    }
+                }
+
                 if status != "running" {
                     diagnostics.push_str(&format!(
                         "\n\nContainer '{}' is not running (status: {})",
@@ -702,7 +758,7 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                     }
 
                     // Get last 20 lines of logs
-                    if let Ok(logs) = get_container_logs(container_name, 20) {
+                    if let Some(logs) = logs.as_deref() {
                         // Check for errors that require immediate intervention
                         if logs.contains("permission denied") || logs.contains("Permission denied")
                         {
@@ -735,11 +791,7 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
 
                         diagnostics.push_str(&format!(
                             "\n   Last log entries:\n{}",
-                            logs.lines()
-                                .take(10)
-                                .map(|line| format!("   {}", line))
-                                .collect::<Vec<_>>()
-                                .join("\n")
+                            format_log_excerpt(logs, 10)
                         ));
                     }
                 }

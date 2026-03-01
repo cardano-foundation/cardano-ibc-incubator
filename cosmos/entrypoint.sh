@@ -9,6 +9,14 @@ fi
 export PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 cd /root/entrypoint/workspace/entrypoint
 
+for binary in ignite buf protoc-gen-openapiv2; do
+    if ! command -v "$binary" >/dev/null 2>&1; then
+        echo "[ENTRYPOINT] Missing required binary in PATH: $binary"
+        echo "[ENTRYPOINT] PATH=$PATH"
+        exit 127
+    fi
+done
+
 skip_proto_value="${IGNITE_SKIP_PROTO:-1}"
 skip_proto_normalized="${skip_proto_value,,}"
 skip_proto_flag=""

@@ -8,10 +8,17 @@ mod runner;
 mod tools;
 
 use platform::detect_host_os;
-use tools::install_missing_tool;
+use tools::{ensure_user_bin_dirs_on_path, install_missing_tool};
 
 /// Installs missing prerequisites for caribic.
 pub fn run_install(_project_root_path: &Path) -> Result<(), String> {
+    if let Err(error) = ensure_user_bin_dirs_on_path() {
+        logger::warn(&format!(
+            "WARN: Failed to update PATH profile entries: {}",
+            error
+        ));
+    }
+
     logger::log("Checking current prerequisite status before install");
     let initial_statuses = collect_prerequisite_statuses();
     emit_statuses(initial_statuses.as_slice());
@@ -37,6 +44,13 @@ pub fn run_install(_project_root_path: &Path) -> Result<(), String> {
         } else {
             logger::log(&format!("PASS: Installed {}", tool.name));
         }
+    }
+
+    if let Err(error) = ensure_user_bin_dirs_on_path() {
+        logger::warn(&format!(
+            "WARN: Failed to update PATH profile entries: {}",
+            error
+        ));
     }
 
     logger::log("Re-checking prerequisite status after install");

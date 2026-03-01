@@ -9,6 +9,7 @@ mod chains;
 mod check;
 mod commands;
 mod config;
+mod constants;
 mod demos;
 mod install;
 mod logger;
@@ -22,8 +23,14 @@ mod utils;
 enum DemoType {
     /// Starts the message-exchange demo preset
     MessageExchange,
-    /// Starts the token-swap demo preset using a running bridge and osmosis setup
+    /// Starts the token-swap demo preset using a running bridge plus selected chain/network
     TokenSwap,
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum DemoChain {
+    Osmosis,
+    Injective,
 }
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
@@ -36,8 +43,10 @@ enum StartTarget {
     Bridge,
     /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
     Cosmos,
-    /// Starts only the local Osmosis appchain
+    /// Starts the Osmosis optional chain (network selected via --network)
     Osmosis,
+    /// Starts the Injective optional chain (network selected via --network)
+    Injective,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -56,8 +65,10 @@ enum StopTarget {
     Bridge,
     /// Stops the Cosmos Entrypoint chain
     Cosmos,
-    /// Stops only the local Osmosis appchain
+    /// Stops the Osmosis optional chain (network selected via --network)
     Osmosis,
+    /// Stops the Injective optional chain (network selected via --network)
+    Injective,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -78,7 +89,7 @@ struct Args {
     /// Verbosity level (0 = quiet, 1 = standard, 2 = warning, 3 = error, 4 = info, 5 = verbose)
     #[arg(long, default_value_t = 1)]
     verbose: usize,
-    /// Path to the Caribic config file (defaults to caribic/config/default-config.json)
+    /// Path to the Caribic config file (defaults to repo caribic/config/default-config.json)
     #[arg(short, long, default_value = default_config_path().into_os_string())]
     config: PathBuf,
 }
@@ -89,7 +100,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, injective, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -106,7 +117,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, osmosis, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, osmosis, injective, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -131,7 +142,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis)
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis, injective)
         #[arg(long)]
         service: Option<String>,
     },
@@ -170,10 +181,16 @@ enum Commands {
         #[arg(long)]
         b_port: String,
     },
-    /// Starts a demo preset. Usage: `caribic demo token-swap` or `caribic demo message-exchange`
+    /// Starts a demo preset. Usage: `caribic demo token-swap --chain osmosis --network local`
     Demo {
         #[arg(value_enum)]
         use_case: DemoType,
+        /// Optional chain selector for demos that support multiple chains (currently token-swap)
+        #[arg(long, value_enum)]
+        chain: Option<DemoChain>,
+        /// Optional network profile for the selected demo chain (for example: local, testnet)
+        #[arg(long)]
+        network: Option<String>,
     },
     /// Run end-to-end integration tests to verify IBC functionality
     ///
@@ -223,7 +240,7 @@ enum KeysCommand {
 enum ChainCommand {
     /// Start an optional chain adapter
     Start {
-        /// Chain identifier (for example: osmosis)
+        /// Chain identifier (for example: osmosis, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -234,7 +251,7 @@ enum ChainCommand {
     },
     /// Stop an optional chain adapter
     Stop {
-        /// Chain identifier (for example: osmosis)
+        /// Chain identifier (for example: osmosis, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -245,7 +262,7 @@ enum ChainCommand {
     },
     /// Check health for an optional chain adapter
     Health {
-        /// Chain identifier (for example: osmosis)
+        /// Chain identifier (for example: osmosis, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -286,7 +303,11 @@ async fn main() {
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
         Commands::Chain { command } => commands::run_chain(project_root_path, command).await,
-        Commands::Demo { use_case } => commands::run_demo(use_case, project_root_path).await,
+        Commands::Demo {
+            use_case,
+            chain,
+            network,
+        } => commands::run_demo(use_case, chain, network, project_root_path).await,
         Commands::Stop {
             target,
             network,

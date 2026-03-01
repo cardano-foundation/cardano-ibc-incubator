@@ -1,45 +1,28 @@
 {
-  "project_root": "../..",
-  "chains": {
-    "cardano": {
-      "chain_id": "cardano-devnet",
-      "message_port_id": "transfer"
-    },
-    "entrypoint": {
-      "chain_id": "entrypoint",
-      "message_port_id": "vesseloracle",
-      "rpc_addr": "http://127.0.0.1:26657",
-      "grpc_addr": "http://127.0.0.1:9090",
-      "container_name": "entrypoint-node-prod",
-      "home_dir": "/root/.entrypoint",
-      "keyring_container_path": "/root/.entrypoint/keyring-test",
-      "relayer_key_name": "entrypoint-relayer"
-    }
-  },
+  "project_root": "/root/cardano-ibc-incubator",
   "mithril": {
     "enabled": true,
     "aggregator_url": "http://127.0.0.1:8080",
     "genesis_verification_key": "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d",
     "genesis_secret_key": "5b3131382c3138342c3232342c3137332c3136302c3234312c36312c3134342c36342c39332c3130362c3232392c38332c3133342c3138392c34302c3138392c3231302c32352c3138342c3136302c3134312c3233372c32362c3136382c35342c3233392c3230342c3133392c3131392c31332c3139395d",
     "chain_observer_type": "pallas",
-    "cardano_node_dir": "../../chains/cardano/devnet",
+    "cardano_node_dir": "/root/cardano-ibc-incubator/chains/cardano/devnet",
     "cardano_node_version": "9.1.4",
     "aggregator_image": "ghcr.io/input-output-hk/mithril-aggregator:2450.0-c6c7eba",
     "client_image": "ghcr.io/input-output-hk/mithril-client:2450.0-c6c7eba",
     "signer_image": "ghcr.io/input-output-hk/mithril-signer:2450.0-c6c7eba"
   },
-  "runtime": {
+  "health": {
     "cosmos_status_url": "http://127.0.0.1:26657/status",
     "cosmos_max_retries": 60,
     "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 60,
-    "gateway_retry_interval_ms": 1000,
+    "gateway_retry_interval_ms": 1000
+  },
+  "demo": {
     "mithril_artifact_max_retries": 240,
     "mithril_artifact_retry_delay_secs": 5,
     "message_exchange": {
-      "vessel_default_imo": "9525338",
-      "cardano_min_sync_progress": 99.0,
-      "cardano_max_safe_epoch": 50,
       "consolidated_report_max_retries": 40,
       "consolidated_report_retry_delay_secs": 3,
       "channel_discovery_max_retries": 20,
@@ -51,9 +34,6 @@
       "relay_max_retries": 20,
       "relay_retry_delay_secs": 3
     }
-  },
-  "relayer": {
-    "entrypoint_mnemonic": "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance"
   },
   "cardano": {
     "services": {

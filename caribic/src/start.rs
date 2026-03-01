@@ -1,3 +1,4 @@
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -18,11 +19,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs::{self};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
+
+const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
+const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
+const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -111,17 +117,7 @@ pub fn start_relayer(
     );
 
     // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
-    let entrypoint_mnemonic = config::get_config().relayer.entrypoint_mnemonic;
-    if entrypoint_mnemonic.trim().is_empty() {
-        return Err(
-            "Invalid config: relayer.entrypoint_mnemonic must be set in ~/.caribic/config.json"
-                .into(),
-        );
-    }
-
-    let entrypoint_chain = config::get_config().chains.entrypoint;
-    let entrypoint_chain_id = entrypoint_chain.chain_id;
-
+    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
@@ -131,7 +127,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            entrypoint_chain_id.as_str(),
+            ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -695,9 +691,10 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let node_service_name = "entrypoint-node-prod";
+    let init_service_name = "entrypoint-init";
+
     if clean {
-        let entrypoint_chain = config::get_config().chains.entrypoint;
-        let cleanup_command = format!("rm -rf {} /root/.ignite", entrypoint_chain.home_dir);
         execute_script(
             cosmos_dir,
             "docker",
@@ -707,28 +704,24 @@ pub fn start_cosmos_entrypoint_chain_services(
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from([
-                "compose",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "bash",
-                entrypoint_chain.container_name.as_str(),
-                "-lc",
-                cleanup_command.as_str(),
-            ]),
+            Vec::from(["compose", "build", init_service_name]),
             None,
         )?;
-    } else {
-        execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
-    let mut args = vec!["compose", "up", "-d"];
-    if clean {
-        args.push("--build");
-    }
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "run", "--rm", init_service_name]),
+        None,
+    )?;
 
-    execute_script(cosmos_dir, "docker", args, None)?;
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", node_service_name]),
+        None,
+    )?;
     Ok(())
 }
 
@@ -759,19 +752,19 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Disk space errors (requires freeing up disk space)
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let runtime_config = config::get_config().runtime;
-    let cosmos_status_url = runtime_config.cosmos_status_url;
-    let max_retries = runtime_config.cosmos_max_retries;
+    let health_config = config::get_config().health;
+    let cosmos_status_url = health_config.cosmos_status_url;
+    let max_retries = health_config.cosmos_max_retries;
     if max_retries == 0 {
         return Err(
-            "Invalid config: runtime.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
-    let interval_ms = runtime_config.cosmos_retry_interval_ms;
+    let interval_ms = health_config.cosmos_retry_interval_ms;
     if interval_ms == 0 {
         return Err(
-            "Invalid config: runtime.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
@@ -833,8 +826,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
-            let container_names = [entrypoint_container_name.as_str()];
+            let container_names = [ENTRYPOINT_CONTAINER_NAME];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -852,8 +844,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
-    let container_names = [entrypoint_container_name.as_str()];
+    let container_names = [ENTRYPOINT_CONTAINER_NAME];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1406,23 +1397,28 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
-    let runtime_config = config::get_config().runtime;
+    let health_config = config::get_config().health;
 
-    let max_retries = runtime_config.gateway_max_retries;
+    let max_retries = health_config.gateway_max_retries;
     if max_retries == 0 {
         return Err(
-            "Invalid config: runtime.gateway_max_retries must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.gateway_max_retries must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
-    let interval_ms = runtime_config.gateway_retry_interval_ms;
+    let interval_ms = health_config.gateway_retry_interval_ms;
     if interval_ms == 0 {
         return Err(
-            "Invalid config: runtime.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
     let mut gateway_ready = false;
+
+    verbose(&format!(
+        "Gateway readiness polling configured with max_retries={} interval_ms={}",
+        max_retries, interval_ms
+    ));
 
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
@@ -1447,6 +1443,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     if !gateway_ready {
+        dump_gateway_startup_logs(gateway_dir, &optional_progress_bar);
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
@@ -1460,6 +1457,224 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     Ok(())
+}
+
+fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+    log_or_print_progress(
+        "Gateway gRPC did not become ready in time. Collecting startup diagnostics",
+        optional_progress_bar,
+    );
+
+    let compose_ps = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "ps"]),
+    );
+    match compose_ps {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress("Gateway compose status", optional_progress_bar);
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!("WARN: Failed to collect `docker compose ps`: {}", error),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let compose_logs = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "logs", "--tail", "200", "app"]),
+    );
+    match compose_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway compose logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+            return;
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect compose logs for app service: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let docker_logs =
+        run_command_capture(Command::new("docker").args(["logs", "--tail", "200", "gateway-app"]));
+    match docker_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway container logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect `docker logs gateway-app`: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+}
+
+fn run_command_capture(command: &mut Command) -> Result<String, String> {
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to execute command: {}", error))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{}\n{}", stdout, stderr),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    };
+
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        let details = if combined.is_empty() {
+            "no output".to_string()
+        } else {
+            combined
+        };
+        Err(format!(
+            "command exited with status {}: {}",
+            output.status.code().unwrap_or(-1),
+            details
+        ))
+    }
+}
+
+fn collect_command_output<R: std::io::Read>(
+    reader: R,
+    stream_name: &str,
+    verbose_stream: bool,
+) -> Vec<u8> {
+    let mut buffered_reader = BufReader::new(reader);
+    let mut line_buffer = String::new();
+    let mut output_bytes = Vec::new();
+
+    loop {
+        line_buffer.clear();
+        match buffered_reader.read_line(&mut line_buffer) {
+            Ok(0) => break,
+            Ok(_) => {
+                output_bytes.extend_from_slice(line_buffer.as_bytes());
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] {}",
+                        line_buffer.trim_end()
+                    ));
+                }
+            }
+            Err(error) => {
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] failed to read command output: {error}"
+                    ));
+                }
+                break;
+            }
+        }
+    }
+
+    output_bytes
+}
+
+fn run_hermes_command_with_progress(
+    hermes_binary: &Path,
+    args: &[&str],
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let command_display = format!("{} {}", hermes_binary.display(), args.join(" "));
+    let mut child = Command::new(hermes_binary)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "Failed to spawn Hermes command '{}': {}",
+                command_display, error
+            )
+        })?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stdout for '{}'", command_display))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stderr for '{}'", command_display))?;
+
+    let verbose_stream = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let stdout_thread =
+        thread::spawn(move || collect_command_output(stdout, "stdout", verbose_stream));
+    let stderr_thread =
+        thread::spawn(move || collect_command_output(stderr, "stderr", verbose_stream));
+
+    let started_at = Instant::now();
+    let mut next_progress_log = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+
+    let exit_status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            format!(
+                "Failed while waiting on Hermes command '{}': {}",
+                command_display, error
+            )
+        })? {
+            break status;
+        }
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= next_progress_log {
+            log(&format!(
+                "Hermes command still running after {}s: {}",
+                elapsed.as_secs(),
+                args.join(" ")
+            ));
+            next_progress_log += Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+        }
+
+        thread::sleep(Duration::from_millis(HERMES_PROGRESS_POLL_INTERVAL_MILLIS));
+    };
+
+    let stdout_output = stdout_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stdout reader for '{}'",
+            command_display
+        )
+    })?;
+    let stderr_output = stderr_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stderr reader for '{}'",
+            command_display
+        )
+    })?;
+
+    Ok(Output {
+        status: exit_status,
+        stdout: stdout_output,
+        stderr: stderr_output,
+    })
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
@@ -1486,21 +1701,20 @@ pub fn run_hermes_command(args: &[&str]) -> Result<Output, Box<dyn std::error::E
         args.join(" ")
     ));
 
-    let output = Command::new(&hermes_binary)
-        .args(args)
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to execute Hermes command '{} {}': {}",
-                hermes_binary.display(),
-                args.join(" "),
-                error
-            )
-        })?;
+    let output = run_hermes_command_with_progress(&hermes_binary, args)?;
+
+    let elapsed = started_at.elapsed();
+    if elapsed >= Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS) {
+        log(&format!(
+            "Hermes command completed in {}s: {}",
+            elapsed.as_secs(),
+            args.join(" ")
+        ));
+    }
 
     logger::verbose(&format!(
         "Hermes command completed in {:.2}s (success={})",
-        started_at.elapsed().as_secs_f32(),
+        elapsed.as_secs_f32(),
         output.status.success()
     ));
     logger::verbose(&format!(
@@ -1730,15 +1944,14 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             result.push('\n');
         }
         // List for Cosmos Entrypoint chain.
-        let entrypoint_chain_id = config::get_config().chains.entrypoint.chain_id;
         let entrypoint_output =
-            run_hermes_command(&["keys", "list", "--chain", entrypoint_chain_id.as_str()])?;
+            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
             result.push_str(&format!(
                 "entrypoint-chain (Hermes chain id: {}):\n",
-                entrypoint_chain_id
+                ENTRYPOINT_CHAIN_ID
             ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
@@ -2005,7 +2218,7 @@ fn run_core_health_check(
         CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
         CoreHealthCheckType::Cosmos => check_rpc_service(
-            config::get_config().runtime.cosmos_status_url.as_str(),
+            config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),
     }
@@ -2370,6 +2583,12 @@ fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
     if endpoint_contains_result(url) {
         (true, format!("Running on port {}", port_label))
     } else {
-        (true, format!("Port {} accessible", port_label))
+        (
+            false,
+            format!(
+                "Port {} is accessible but {} did not return a valid status payload",
+                port_label, url
+            ),
+        )
     }
 }

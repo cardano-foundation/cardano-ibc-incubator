@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 use std::time::Duration;
 use std::time::Instant;
@@ -15,6 +16,9 @@ use crate::{
     utils::query_balance,
     StartTarget, StopTarget,
 };
+
+const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
+const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
 
 /// Starts the requested target and orchestrates startup dependencies for network and bridge components.
 pub async fn run_start(
@@ -301,6 +305,9 @@ pub async fn run_start(
         // Cardano contract deployment and Gateway startup can progress independently.
         if start_all && start_cosmos {
             if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
+                logger::log(
+                    "Waiting for Cosmos Entrypoint startup task to complete (build/init may take a few minutes) ...",
+                );
                 match handle.await {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => {
@@ -338,7 +345,49 @@ pub async fn run_start(
             logger::log(
                 "Waiting for Hermes relayer build to complete (this can take a few minutes) ...",
             );
-            match handle.await {
+            let mut handle = handle;
+            let hermes_started_at = Instant::now();
+            let mut next_progress_log =
+                Duration::from_secs(HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS);
+            let relayer_release_deps_dir = project_root_path.join("relayer/target/release/deps");
+            let mut last_artifact_count =
+                count_release_artifacts(relayer_release_deps_dir.as_path());
+
+            let join_result = loop {
+                match tokio::time::timeout(
+                    Duration::from_secs(HERMES_BUILD_POLL_INTERVAL_SECS),
+                    &mut handle,
+                )
+                .await
+                {
+                    Ok(result) => break result,
+                    Err(_) => {
+                        let elapsed = hermes_started_at.elapsed();
+                        if elapsed >= next_progress_log {
+                            let artifact_count =
+                                count_release_artifacts(relayer_release_deps_dir.as_path());
+                            if artifact_count > last_artifact_count {
+                                logger::log(&format!(
+                                    "Hermes build progress: {} compiled release artifacts ({}s elapsed)",
+                                    artifact_count,
+                                    elapsed.as_secs()
+                                ));
+                                last_artifact_count = artifact_count;
+                            } else {
+                                logger::log(&format!(
+                                    "Hermes build still running ({}s elapsed, artifacts: {})",
+                                    elapsed.as_secs(),
+                                    artifact_count
+                                ));
+                            }
+                            next_progress_log +=
+                                Duration::from_secs(HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS);
+                        }
+                    }
+                }
+            };
+
+            match join_result {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     return fail_and_stop_started_services(
@@ -462,6 +511,7 @@ pub async fn run_start(
 fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static str> {
     match target {
         Some(StartTarget::Osmosis) => Some("osmosis"),
+        Some(StartTarget::Injective) => Some("injective"),
         _ => None,
     }
 }
@@ -476,6 +526,17 @@ fn fail_and_stop_started_services(
     logger::log("Stopping services...");
     crate::commands::stop::run_stop(Some(stop_target), None, Vec::new()).unwrap_or_default();
     Err(message.to_string())
+}
+
+fn count_release_artifacts(path: &Path) -> usize {
+    fs::read_dir(path)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .filter(|entry| entry.path().is_file())
+                .count()
+        })
+        .unwrap_or(0)
 }
 
 /// Formats elapsed time in human readable units for user-facing logs.
