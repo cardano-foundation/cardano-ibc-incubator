@@ -301,6 +301,9 @@ pub async fn run_start(
         // Cardano contract deployment and Gateway startup can progress independently.
         if start_all && start_cosmos {
             if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
+                logger::log(
+                    "Waiting for Cosmos Entrypoint startup task to complete (build/init may take a few minutes) ...",
+                );
                 match handle.await {
                     Ok(Ok(())) => {}
                     Ok(Err(error)) => {
