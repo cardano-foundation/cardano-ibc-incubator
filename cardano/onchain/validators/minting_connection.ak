@@ -261,26 +261,10 @@ fn validate_conn_open_try_proof(
       },
     ).2nd
 
-  let counterparty_client_state_bz_clients =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.clients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
   let counterparty_client_state_bz_lightclients_with_zero_frozen =
     mithril_pb.marshal_for_any_client_state_with_zero_frozen(
       AnyMithrilClientState {
         type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
-  let counterparty_client_state_bz_clients_with_zero_frozen =
-    mithril_pb.marshal_for_any_client_state_with_zero_frozen(
-      AnyMithrilClientState {
-        type_url: "/ibc.clients.mithril.v1.ClientState",
         value: counterparty_client_state,
       },
     ).2nd
@@ -334,55 +318,7 @@ fn validate_conn_open_try_proof(
           delay_block_period: block_delay,
           proof: proof_client,
           path: client_merkle_path,
-          value: counterparty_client_state_bz_clients,
-        },
-      ],
-    ),
-    verify_proof_redeemer == BatchVerifyMembership(
-      [
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_init,
-          path: conn_merkle_path,
-          value: expected_connection_bz,
-        },
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_client,
-          path: client_merkle_path,
           value: counterparty_client_state_bz_lightclients_with_zero_frozen,
-        },
-      ],
-    ),
-    verify_proof_redeemer == BatchVerifyMembership(
-      [
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_init,
-          path: conn_merkle_path,
-          value: expected_connection_bz,
-        },
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_client,
-          path: client_merkle_path,
-          value: counterparty_client_state_bz_clients_with_zero_frozen,
         },
       ],
     ),
