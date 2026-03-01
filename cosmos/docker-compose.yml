@@ -1,5 +1,6 @@
 services:
   entrypoint-init:
+    image: ${ENTRYPOINT_CHAIN_IMAGE:-caribic-entrypoint-chain:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,9 +14,7 @@ services:
 
   entrypoint-node-prod:
     container_name: entrypoint-node-prod
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ${ENTRYPOINT_CHAIN_IMAGE:-caribic-entrypoint-chain:local}
     entrypoint: [ "/run-entrypoint.sh" ]
     environment:
       IGNITE_SKIP_PROTO: ${IGNITE_SKIP_PROTO:-1}
