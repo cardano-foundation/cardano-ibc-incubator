@@ -116,21 +116,18 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const decodedProofTryMsg: MerkleProofMsg = decodeMerkleProof(data.proof_try);
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
 
-  // Debug helper: Log the shape of the Any-encoded counterparty client state we received from Hermes.
-  // This is critical for diagnosing proto/type-url mismatches across Hermes ↔ entrypoint ↔ Gateway.
-  try {
-    const any = data.client_state as any;
-    const typeUrl = any?.type_url ?? any?.typeUrl;
-    const value = any?.value;
-    const valueLen = value?.length ?? 0;
-    const valueHex = value ? Buffer.from(value).toString('hex') : '';
-    // eslint-disable-next-line no-console
-    console.log(
-      `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
-    );
-  } catch {
-    // Best-effort debug logging only.
+  const any = data.client_state as any;
+  const typeUrl = any?.type_url ?? any?.typeUrl;
+  if (typeof typeUrl !== 'string' || typeUrl.length === 0) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_state.type_url" is required');
   }
+  const counterpartyClientStateTypeUrl = typeUrl;
+  const value = any?.value;
+  const valueLen = value?.length ?? 0;
+  const valueHex = value ? Buffer.from(value).toString('hex') : '';
+  console.log(
+    `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
+  );
 
   const decodedMithrilClientStateMsg: ClientStateMithrilMsg = decodeClientStateMithril(data.client_state.value);
   // eslint-disable-next-line no-console
@@ -143,6 +140,7 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const connectionOpenAckOperator: ConnectionOpenAckOperator = {
     connectionSequence: connectionSequence,
     counterpartyClientState: clientState,
+    counterpartyClientStateTypeUrl,
     counterpartyConnectionID: convertString2Hex(data.counterparty_connection_id),
     proofTry: initializeMerkleProof(decodedProofTryMsg),
     proofClient: initializeMerkleProof(decodedProofClientMsg),
