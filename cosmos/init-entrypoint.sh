@@ -72,6 +72,16 @@ mkdir -p "$(dirname "${ENTRYPOINT_HOME}")"
 rm -rf "${ENTRYPOINT_HOME}"
 cp -a "${IGNITE_DEFAULT_HOME}" "${ENTRYPOINT_HOME}"
 
+ignite_version_value="unknown"
+if command -v timeout >/dev/null 2>&1; then
+    ignite_version_candidate="$(
+        timeout 5s ignite version 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g; s/^ //; s/ $//' || true
+    )"
+    if [ -n "${ignite_version_candidate}" ]; then
+        ignite_version_value="${ignite_version_candidate}"
+    fi
+fi
+
 mkdir -p "${ENTRYPOINT_HOME}"
 jq -n \
     --arg schema_version "${INIT_SCHEMA_VERSION}" \
@@ -80,7 +90,7 @@ jq -n \
     --arg ignite_skip_proto "${skip_proto_normalized}" \
     --arg entrypointd_sha256 "${binary_hash}" \
     --arg created_at "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-    --arg ignite_version "$(ignite version 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]\\+/ /g; s/^ //; s/ $//')" \
+    --arg ignite_version "${ignite_version_value}" \
     '{
       schema_version: $schema_version,
       init_hash: $init_hash,

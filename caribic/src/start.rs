@@ -23,10 +23,6 @@ use std::process::{Command, Output};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
-
-const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
-const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
 /// - Linux: Uses actual user UID/GID
