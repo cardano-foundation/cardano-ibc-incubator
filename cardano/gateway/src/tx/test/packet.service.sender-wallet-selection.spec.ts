@@ -132,7 +132,7 @@ describe('PacketService sender wallet selection for escrow', () => {
       sourcePort: 'transfer',
       sourceChannel: 'channel-7',
       token: {
-        denom: 'stake',
+        denom: 'lovelace',
         amount: 10n,
       },
       sender: senderAddress,
@@ -172,7 +172,7 @@ describe('PacketService sender wallet selection for escrow', () => {
         sourcePort: 'transfer',
         sourceChannel: 'channel-7',
         token: {
-          denom: 'stake',
+          denom: 'lovelace',
           amount: 10n,
         },
         sender: 'addr_test1sender',

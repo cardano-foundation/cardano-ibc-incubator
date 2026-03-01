@@ -5,6 +5,7 @@ import { MithrilClientState } from '@shared/types/mithril';
 export type ConnectionOpenAckOperator = {
   connectionSequence: string;
   counterpartyClientState: MithrilClientState;
+  counterpartyClientStateTypeUrl: string;
   counterpartyConnectionID: string;
   proofTry: MerkleProof;
   proofClient: MerkleProof;

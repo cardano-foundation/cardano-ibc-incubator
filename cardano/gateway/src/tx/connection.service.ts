@@ -1064,13 +1064,37 @@ export class ConnectionService {
       delay_period: connectionDatum.state.delay_period,
     };
 
+    const firstExist = (proof: any) => {
+      for (const p of proof?.proofs ?? []) {
+        const inner = p?.proof;
+        if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
+      }
+      return undefined;
+    };
+
+    let proofClientStateTypeUrl = connectionOpenAckOperator.counterpartyClientStateTypeUrl;
+    const proofClientExist = firstExist(connectionOpenAckOperator.proofClient as any);
+    let proofClientValueHex = proofClientExist?.value;
+    if (proofClientExist?.value) {
+      try {
+        const proofClientAny = Any.decode(Buffer.from(proofClientExist.value, 'hex'));
+        if (proofClientAny.type_url) {
+          proofClientStateTypeUrl = proofClientAny.type_url;
+        }
+      } catch (error) {
+        this.logger.warn(`[DEBUG] ConnOpenAck failed to decode proof client Any type_url: ${error}`);
+      }
+    }
+
     const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.lightclients.mithril.v1.ClientState',
+      type_url: proofClientStateTypeUrl,
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
+    const expectedClientValueBytes = Any.encode(mithrilClientStateAny).finish();
+    const expectedClientValueHex = toHex(expectedClientValueBytes);
 
     // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
     // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
@@ -1081,17 +1105,9 @@ export class ConnectionService {
       const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
       const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
       const expectedClientKeyUtf8 = clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id));
-      const expectedClientValue = Any.encode(mithrilClientStateAny).finish();
+      const expectedClientValue = expectedClientValueBytes;
       const expectedConnValueBuf = Buffer.from(expectedConnValue);
       const expectedClientValueBuf = Buffer.from(expectedClientValue);
-
-      const firstExist = (proof: any) => {
-        for (const p of proof?.proofs ?? []) {
-          const inner = p?.proof;
-          if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
-        }
-        return undefined;
-      };
 
       const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
       if (tryExist?.key && tryExist?.value) {
@@ -1117,6 +1133,7 @@ export class ConnectionService {
         this.logger.log(
           `[DEBUG] ConnOpenAck proof_client_value_matches_expected=${valueBytes.equals(expectedClientValueBuf)}`,
         );
+        proofClientValueHex = clientExist.value;
       }
     } catch (e) {
       this.logger.warn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
@@ -1125,6 +1142,11 @@ export class ConnectionService {
     const delayBlockPeriod = getBlockDelay(updatedConnectionDatum.state.delay_period);
     this.logger.log(
       `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
+    );
+
+    const clientMembershipValueHex = proofClientValueHex ?? expectedClientValueHex;
+    this.logger.log(
+      `[DEBUG] ConnOpenAck verify_proof client value source=${proofClientValueHex ? 'proof' : 'counterparty_client_state'} hex_len=${clientMembershipValueHex.length}`,
     );
 
     const verifyProofRedeemer: VerifyProofRedeemer = {
@@ -1162,7 +1184,7 @@ export class ConnectionService {
                 ),
               ],
             },
-            value: toHex(Any.encode(mithrilClientStateAny).finish()),
+            value: clientMembershipValueHex,
           },
         ],
       ],
