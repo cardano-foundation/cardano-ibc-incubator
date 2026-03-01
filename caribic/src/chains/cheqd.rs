@@ -87,7 +87,7 @@ impl ChainAdapter for CheqdChainAdapter {
         self.validate_flags(network, flags)?;
         Ok(vec![ChainHealthStatus {
             id: "cheqd",
-            label: "cheqd chain",
+            label: "Cheqd",
             healthy: false,
             status: "Not implemented for cheqd.".to_string(),
         }])
