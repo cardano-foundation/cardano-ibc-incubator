@@ -1,10 +1,20 @@
 # Cross-chain Swap
 
-Cross-chain swap is a feature allows us to leverage IBC connections to swap assets on the exchanges of other networks. In this project, we attempt to swap native assets of Cardano on the DEX of Osmosis through an IBC connection with a packet-forwarding chain we operate (a Cosmos chain dedicated to bridging).
+Cross-chain swap is a feature that uses IBC connections to swap assets on other networks. In this project, we swap Cardano-native assets on Osmosis through an IBC path that includes our packet-forwarding Cosmos Entrypoint chain.
 
 To support this, the packet-forwarding chain must implement [Packet Forward Middleware](https://github.com/cosmos/ibc-apps/tree/main/middleware/packet-forward-middleware). This middleware allows messages from Cardano relay to Osmosis without requiring a direct connection between Cardano and Osmosis.
 
 Setting up and executing cross-chain swap is a bit complicated, so we written scripts [setup_crosschain_swaps.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/chains/osmosis/scripts/setup_crosschain_swaps.sh) and [swap.sh](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/main/swap.sh) to automate these processes. This document is based on steps on these scripts, you can refer them for more detail.
+
+## Quick run (current flow)
+
+```bash
+caribic start --clean --with-mithril
+caribic start osmosis
+caribic demo token-swap
+```
+
+`caribic demo token-swap` runs the setup script, extracts the `crosschain_swaps` address, and then executes the swap script.
 
 ## Setup
 
@@ -16,7 +26,7 @@ Setup cross-chain swap involves these steps:
 
 ### Create IBC connections
 
-This step includes creating channels on the transfer port among chains, allowing us to transfer and swap tokens on these channels. To create connection between Cardano and the packet-forwarding chain, we use custom `go-relayer` that supports Cardano. Connection between the packet-forwarding chain and Osmosis is just a standard Cosmos IBC connection, so we can use any existing relayer like `hermes` or `go-relayer`.
+This step includes creating channels on the transfer port among chains, allowing us to transfer and swap tokens on these channels. In this repository, both `Cardano<=>Entrypoint` and `Entrypoint<=>Osmosis` are configured with the Cardano-enabled Hermes binary built at `relayer/target/release/hermes`.
 
 ### Transfer tokens from Cardano to Osmosis
 

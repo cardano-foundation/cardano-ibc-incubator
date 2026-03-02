@@ -48,7 +48,6 @@ chains/mithrils/data
 cardano-cli
 cardano-node
 
-chains/summit-demo/
 relayer/.config
 
 # Ignore Hermes config files in relayer submodule (keep submodule clean)
@@ -57,3 +56,6 @@ relayer/config.example.toml
 relayer/*.toml
 
 run_token_swap.sh
+
+# Private operator material (testnet/mainnet mnemonics, never commit)
+.caribic/secrets/
