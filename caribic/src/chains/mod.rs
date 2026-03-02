@@ -196,25 +196,6 @@ pub fn parse_chain_flags(raw_flags: &[String]) -> Result<ChainFlags, String> {
     Ok(parsed_flags)
 }
 
-pub fn parse_bool_flag(
-    flags: &ChainFlags,
-    flag_name: &str,
-    default_value: bool,
-) -> Result<bool, String> {
-    let Some(raw_value) = flags.get(flag_name) else {
-        return Ok(default_value);
-    };
-
-    match raw_value.to_lowercase().as_str() {
-        "1" | "true" | "yes" => Ok(true),
-        "0" | "false" | "no" => Ok(false),
-        _ => Err(format!(
-            "Flag '{}' expects a boolean value (true/false), got '{}'",
-            flag_name, raw_value
-        )),
-    }
-}
-
 pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> ChainHealthStatus {
     let is_healthy = Command::new("nc")
         .args(["-z", "localhost", &port.to_string()])

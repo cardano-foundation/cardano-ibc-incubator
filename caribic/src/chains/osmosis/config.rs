@@ -1,5 +1,4 @@
 pub(super) const LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
-pub(super) const TESTNET_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
 
 pub(super) const SOURCE_ZIP_URL: &str =
     "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";

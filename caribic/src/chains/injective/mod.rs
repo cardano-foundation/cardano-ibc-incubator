@@ -3,8 +3,11 @@ use std::path::Path;
 use async_trait::async_trait;
 
 use crate::chains::{
-    check_port_health, check_rpc_health, parse_bool_flag, ChainAdapter, ChainFlagSpec, ChainFlags,
-    ChainHealthStatus, ChainNetwork, ChainStartRequest,
+    cosmos_node::{
+        managed_node_health, CosmosChainOptions, CosmosNetworkKind, CosmosNodeSpec,
+        CosmosStateSyncSpec,
+    },
+    ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
 mod config;
@@ -53,6 +56,45 @@ const INJECTIVE_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
 
 const INJECTIVE_MAINNET_FLAGS: [ChainFlagSpec; 0] = [];
 
+const INJECTIVE_LOCAL_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
+    chain_name: "Injective",
+    binary: "injectived",
+    chain_id: config::LOCAL_CHAIN_ID,
+    moniker: config::LOCAL_MONIKER,
+    status_url: config::LOCAL_STATUS_URL,
+    rpc_laddr: config::LOCAL_RPC_LADDR,
+    grpc_address: config::LOCAL_GRPC_ADDRESS,
+    grpc_web_address: None,
+    api_address: config::LOCAL_API_ADDRESS,
+    home_dir: config::LOCAL_HOME_DIR,
+    pid_file: config::LOCAL_PID_FILE,
+    log_file: config::LOCAL_LOG_FILE,
+    state_sync: None,
+};
+
+const INJECTIVE_TESTNET_STATE_SYNC_SPEC: CosmosStateSyncSpec = CosmosStateSyncSpec {
+    default_trust_rpc_url: config::TESTNET_TRUST_RPC_URL,
+    trust_offset: config::TESTNET_TRUST_OFFSET,
+    seeds: config::TESTNET_SEEDS,
+    persistent_peers: config::TESTNET_PERSISTENT_PEERS,
+};
+
+const INJECTIVE_TESTNET_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
+    chain_name: "Injective",
+    binary: "injectived",
+    chain_id: config::TESTNET_CHAIN_ID,
+    moniker: config::TESTNET_MONIKER,
+    status_url: config::TESTNET_STATUS_URL,
+    rpc_laddr: config::TESTNET_RPC_LADDR,
+    grpc_address: config::TESTNET_GRPC_ADDRESS,
+    grpc_web_address: None,
+    api_address: config::TESTNET_API_ADDRESS,
+    home_dir: config::TESTNET_HOME_DIR,
+    pid_file: config::TESTNET_PID_FILE,
+    log_file: config::TESTNET_LOG_FILE,
+    state_sync: Some(INJECTIVE_TESTNET_STATE_SYNC_SPEC),
+};
+
 #[async_trait]
 impl ChainAdapter for InjectiveChainAdapter {
     fn id(&self) -> &'static str {
@@ -86,43 +128,41 @@ impl ChainAdapter for InjectiveChainAdapter {
         request: &ChainStartRequest<'_>,
     ) -> Result<(), String> {
         self.validate_flags(request.network, request.flags)?;
+        let network = CosmosNetworkKind::parse(request.network)?;
+        let options = CosmosChainOptions::from_flags(request.flags)?;
 
-        match request.network {
-            "local" => {
-                let stateful = parse_bool_flag(request.flags, "stateful", false)?;
-                lifecycle::prepare_local(stateful)
+        match network {
+            CosmosNetworkKind::Local => {
+                lifecycle::prepare_local(&INJECTIVE_LOCAL_NODE_SPEC, options.stateful_or(false))
                     .await
                     .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
-                lifecycle::start_local()
+                lifecycle::start_local(&INJECTIVE_LOCAL_NODE_SPEC)
                     .await
                     .map_err(|error| format!("Failed to start Injective local node: {}", error))?;
                 Ok(())
             }
-            "testnet" => {
-                let stateful = parse_bool_flag(request.flags, "stateful", true)?;
-                let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
-
-                lifecycle::prepare_testnet(stateful)
+            CosmosNetworkKind::Testnet => {
+                lifecycle::prepare_testnet(&INJECTIVE_TESTNET_NODE_SPEC, options.stateful_or(true))
                     .await
                     .map_err(|error| {
                         format!("Failed to prepare Injective testnet node: {}", error)
                     })?;
-                lifecycle::start_testnet(trust_rpc_url.as_deref())
+                lifecycle::start_testnet(
+                    &INJECTIVE_TESTNET_NODE_SPEC,
+                    options.trust_rpc_url(
+                        INJECTIVE_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url,
+                    ),
+                )
                     .await
                     .map_err(|error| {
                         format!("Failed to start Injective testnet node: {}", error)
                     })?;
                 Ok(())
             }
-            "mainnet" => Err(
+            CosmosNetworkKind::Mainnet => Err(
                 "Injective network 'mainnet' is not implemented yet. Supported networks: local, testnet."
                     .to_string(),
             ),
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                request.network,
-                self.id()
-            )),
         }
     }
 
@@ -133,18 +173,12 @@ impl ChainAdapter for InjectiveChainAdapter {
         flags: &ChainFlags,
     ) -> Result<(), String> {
         self.validate_flags(network, flags)?;
-
-        match network {
-            "local" => lifecycle::stop_local()
+        match CosmosNetworkKind::parse(network)? {
+            CosmosNetworkKind::Local => lifecycle::stop_local(&INJECTIVE_LOCAL_NODE_SPEC)
                 .map_err(|error| format!("Failed to stop local Injective node: {}", error)),
-            "testnet" => lifecycle::stop_testnet()
+            CosmosNetworkKind::Testnet => lifecycle::stop_testnet(&INJECTIVE_TESTNET_NODE_SPEC)
                 .map_err(|error| format!("Failed to stop local Injective testnet node: {}", error)),
-            "mainnet" => Ok(()),
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                network,
-                self.id()
-            )),
+            CosmosNetworkKind::Mainnet => Ok(()),
         }
     }
 
@@ -155,96 +189,24 @@ impl ChainAdapter for InjectiveChainAdapter {
         flags: &ChainFlags,
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
-
-        match network {
-            "local" => {
-                Ok(vec![combined_health_status(
-                    config::LOCAL_STATUS_URL,
-                    config::LOCAL_GRPC_ADDRESS,
-                )?])
-            }
-            "testnet" => {
-                Ok(vec![combined_health_status(
-                    config::TESTNET_STATUS_URL,
-                    config::TESTNET_GRPC_ADDRESS,
-                )?])
-            }
-            "mainnet" => Ok(vec![ChainHealthStatus {
+        match CosmosNetworkKind::parse(network)? {
+            CosmosNetworkKind::Local => Ok(vec![managed_node_health(
+                "injective",
+                "Injective node",
+                &INJECTIVE_LOCAL_NODE_SPEC,
+            )?]),
+            CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
+                "injective",
+                "Injective node",
+                &INJECTIVE_TESTNET_NODE_SPEC,
+            )?]),
+            CosmosNetworkKind::Mainnet => Ok(vec![ChainHealthStatus {
                 id: "injective",
                 label: "Injective mainnet",
                 healthy: false,
                 status: "Not implemented yet. Start with --network local or --network testnet."
                     .to_string(),
             }]),
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                network,
-                self.id()
-            )),
         }
     }
-}
-
-fn combined_health_status(
-    status_url: &str,
-    grpc_address: &str,
-) -> Result<ChainHealthStatus, String> {
-    let default_rpc_port = parse_port_from_url(status_url, "status_url")?;
-    let grpc_port = parse_port_from_socket_address(grpc_address, "grpc_address")?;
-
-    let rpc_ready = check_rpc_health(
-        "injective",
-        status_url,
-        default_rpc_port,
-        "Injective node (RPC)",
-    )
-    .healthy;
-    let grpc_ready = check_port_health("injective", grpc_port, "Injective node").healthy;
-
-    Ok(ChainHealthStatus {
-        id: "injective",
-        label: "Injective node",
-        healthy: rpc_ready && grpc_ready,
-        status: format!(
-            "RPC ({}): {}; gRPC ({}): {}",
-            default_rpc_port,
-            if rpc_ready {
-                "reachable"
-            } else {
-                "not reachable"
-            },
-            grpc_port,
-            if grpc_ready {
-                "reachable"
-            } else {
-                "not reachable"
-            }
-        ),
-    })
-}
-
-fn parse_port_from_url(url: &str, field_name: &str) -> Result<u16, String> {
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|error| format!("Invalid Injective {} '{}': {}", field_name, url, error))?;
-    parsed.port_or_known_default().ok_or_else(|| {
-        format!(
-            "Injective {} '{}' does not include a known port",
-            field_name, url
-        )
-    })
-}
-
-fn parse_port_from_socket_address(address: &str, field_name: &str) -> Result<u16, String> {
-    let port_text = address
-        .trim()
-        .rsplit(':')
-        .next()
-        .ok_or_else(|| format!("Invalid Injective {} '{}'", field_name, address))?;
-
-    port_text.parse::<u16>().map_err(|error| {
-        format!(
-            "Invalid Injective {} '{}' (cannot parse port): {}",
-            field_name, address, error
-        )
-    })
 }

@@ -6,6 +6,7 @@
 
 use std::env;
 use std::fs;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -13,6 +14,334 @@ use std::time::Duration;
 
 use dirs::home_dir;
 use serde_json::Value;
+
+use crate::chains::{check_port_health, check_rpc_health, ChainFlags, ChainHealthStatus};
+use crate::utils::wait_for_health_check;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CosmosNetworkKind {
+    Local,
+    Testnet,
+    Mainnet,
+}
+
+impl CosmosNetworkKind {
+    pub(crate) fn parse(raw_network: &str) -> Result<Self, String> {
+        match raw_network {
+            "local" => Ok(Self::Local),
+            "testnet" => Ok(Self::Testnet),
+            "mainnet" => Ok(Self::Mainnet),
+            _ => Err(format!(
+                "Unsupported Cosmos network '{}'. Expected one of: local, testnet, mainnet",
+                raw_network
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct CosmosChainOptions {
+    pub stateful: Option<bool>,
+    pub trust_rpc_url: Option<String>,
+}
+
+impl CosmosChainOptions {
+    pub(crate) fn from_flags(flags: &ChainFlags) -> Result<Self, String> {
+        let mut options = Self::default();
+        for (flag_name, raw_value) in flags {
+            match flag_name.as_str() {
+                "stateful" => {
+                    options.stateful = Some(parse_bool_option(raw_value, "stateful")?);
+                }
+                "trust-rpc-url" => {
+                    options.trust_rpc_url = Some(raw_value.clone());
+                }
+                _ => {
+                    return Err(format!(
+                        "Unsupported Cosmos flag '{}'. Allowed options: stateful, trust-rpc-url",
+                        flag_name
+                    ));
+                }
+            }
+        }
+        Ok(options)
+    }
+
+    pub(crate) fn stateful_or(&self, default_value: bool) -> bool {
+        self.stateful.unwrap_or(default_value)
+    }
+
+    pub(crate) fn trust_rpc_url<'a>(&'a self, default_value: &'a str) -> &'a str {
+        self.trust_rpc_url.as_deref().unwrap_or(default_value)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CosmosStateSyncSpec {
+    pub default_trust_rpc_url: &'static str,
+    pub trust_offset: u64,
+    pub seeds: &'static str,
+    pub persistent_peers: &'static str,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CosmosNodeSpec {
+    pub chain_name: &'static str,
+    pub binary: &'static str,
+    pub chain_id: &'static str,
+    pub moniker: &'static str,
+    pub status_url: &'static str,
+    pub rpc_laddr: &'static str,
+    pub grpc_address: &'static str,
+    pub grpc_web_address: Option<&'static str>,
+    pub api_address: &'static str,
+    pub home_dir: &'static str,
+    pub pid_file: &'static str,
+    pub log_file: &'static str,
+    pub state_sync: Option<CosmosStateSyncSpec>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CosmosNodePaths {
+    pub home_dir: PathBuf,
+    pub pid_path: PathBuf,
+    pub log_path: PathBuf,
+}
+
+impl CosmosNodeSpec {
+    pub(crate) fn paths(&self) -> Result<CosmosNodePaths, Box<dyn std::error::Error>> {
+        Ok(CosmosNodePaths {
+            home_dir: resolve_home_relative_path(self.home_dir)?,
+            pid_path: resolve_home_relative_path(self.pid_file)?,
+            log_path: resolve_home_relative_path(self.log_file)?,
+        })
+    }
+}
+
+pub(crate) async fn start_managed_node(
+    spec: &CosmosNodeSpec,
+    trust_rpc_url_override: Option<&str>,
+    health_retries: u32,
+    health_retry_interval_ms: u64,
+    process_label: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let paths = spec.paths()?;
+    if let Some(existing_pid) = read_pid_file(paths.pid_path.as_path()) {
+        if is_process_alive(existing_pid) {
+            return Err(format!(
+                "{} is already running (pid {})",
+                process_label, existing_pid
+            )
+            .into());
+        }
+    }
+
+    let state_sync_params = if let Some(state_sync_spec) = spec.state_sync {
+        let trust_rpc_url = trust_rpc_url_override.unwrap_or(state_sync_spec.default_trust_rpc_url);
+        Some((
+            fetch_statesync_params(trust_rpc_url, state_sync_spec.trust_offset, spec.chain_name)
+                .await?,
+            state_sync_spec,
+        ))
+    } else {
+        None
+    };
+
+    if let Some(parent) = paths.pid_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if let Some(parent) = paths.log_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let stdout_file = File::create(paths.log_path.as_path())?;
+    let stderr_file = stdout_file.try_clone()?;
+
+    let mut command = Command::new(spec.binary);
+    command
+        .arg("start")
+        .arg("--home")
+        .arg(
+            paths
+                .home_dir
+                .to_str()
+                .ok_or("Invalid node home directory path")?,
+        )
+        .arg("--rpc.laddr")
+        .arg(spec.rpc_laddr)
+        .arg("--grpc.address")
+        .arg(spec.grpc_address)
+        .arg("--api.address")
+        .arg(spec.api_address);
+
+    if let Some(grpc_web_address) = spec.grpc_web_address {
+        command.arg("--grpc-web.address").arg(grpc_web_address);
+    }
+
+    if let Some(((rpc_servers, trust_height, trust_hash), state_sync_spec)) = state_sync_params {
+        let binary_prefix = spec.binary.to_ascii_uppercase();
+        command
+            .env(format!("{}_STATESYNC_ENABLE", binary_prefix), "true")
+            .env(
+                format!("{}_STATESYNC_RPC_SERVERS", binary_prefix),
+                rpc_servers,
+            )
+            .env(
+                format!("{}_STATESYNC_TRUST_HEIGHT", binary_prefix),
+                trust_height.to_string(),
+            )
+            .env(
+                format!("{}_STATESYNC_TRUST_HASH", binary_prefix),
+                trust_hash,
+            )
+            .env(
+                format!("{}_P2P_SEEDS", binary_prefix),
+                state_sync_spec.seeds,
+            )
+            .env(
+                format!("{}_P2P_PERSISTENT_PEERS", binary_prefix),
+                state_sync_spec.persistent_peers,
+            );
+    }
+
+    let child = command
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()?;
+
+    fs::write(paths.pid_path.as_path(), child.id().to_string())?;
+    thread::sleep(Duration::from_millis(500));
+    if !is_process_alive(child.id()) {
+        let log_tail = read_log_tail(paths.log_path.as_path(), 120)
+            .unwrap_or_else(|_| format!("Unable to read {} log file", process_label));
+        return Err(format!("{} exited early.\n{}", process_label, log_tail).into());
+    }
+
+    let is_healthy = wait_for_health_check(
+        spec.status_url,
+        health_retries,
+        health_retry_interval_ms,
+        Some(|response_body: &String| {
+            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
+            json["result"]["sync_info"]["latest_block_height"]
+                .as_str()
+                .and_then(|height| height.parse::<u64>().ok())
+                .is_some_and(|height| height > 0)
+        }),
+    )
+    .await;
+
+    if is_healthy.is_ok() {
+        return Ok(());
+    }
+
+    let _ = stop_managed_node(spec, process_label);
+    let log_tail = read_log_tail(paths.log_path.as_path(), 120)
+        .unwrap_or_else(|_| format!("Unable to read {} log file", process_label));
+    Err(format!(
+        "Timed out while waiting for {} at {}.\n{}",
+        process_label, spec.status_url, log_tail
+    )
+    .into())
+}
+
+pub(crate) fn stop_managed_node(
+    spec: &CosmosNodeSpec,
+    process_label: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let paths = spec.paths()?;
+    let pid = read_pid_file(paths.pid_path.as_path()).or_else(|| {
+        find_node_pids_for_home(spec.binary, paths.home_dir.as_path())
+            .into_iter()
+            .next()
+    });
+
+    if let Some(pid) = pid {
+        stop_process(pid, process_label)?;
+    }
+
+    if paths.pid_path.exists() {
+        fs::remove_file(paths.pid_path.as_path())?;
+    }
+
+    Ok(())
+}
+
+pub(crate) fn managed_node_health(
+    id: &'static str,
+    label: &'static str,
+    spec: &CosmosNodeSpec,
+) -> Result<ChainHealthStatus, String> {
+    let default_rpc_port = parse_port_from_url(spec.status_url, "status_url", spec.chain_name)?;
+    let grpc_port =
+        parse_port_from_socket_address(spec.grpc_address, "grpc_address", spec.chain_name)?;
+
+    let rpc_ready = check_rpc_health(id, spec.status_url, default_rpc_port, label).healthy;
+    let grpc_ready = check_port_health(id, grpc_port, label).healthy;
+
+    Ok(ChainHealthStatus {
+        id,
+        label,
+        healthy: rpc_ready && grpc_ready,
+        status: format!(
+            "RPC ({}): {}; gRPC ({}): {}",
+            default_rpc_port,
+            if rpc_ready {
+                "reachable"
+            } else {
+                "not reachable"
+            },
+            grpc_port,
+            if grpc_ready {
+                "reachable"
+            } else {
+                "not reachable"
+            }
+        ),
+    })
+}
+
+pub(crate) fn resolve_home_relative_path(
+    relative_path: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    home_dir()
+        .map(|path| path.join(relative_path))
+        .ok_or_else(|| "Unable to resolve home directory".into())
+}
+
+pub(crate) fn parse_port_from_url(
+    url: &str,
+    field_name: &str,
+    chain_name: &str,
+) -> Result<u16, String> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|error| format!("Invalid {} {} '{}': {}", chain_name, field_name, url, error))?;
+    parsed.port_or_known_default().ok_or_else(|| {
+        format!(
+            "{} {} '{}' does not include a known port",
+            chain_name, field_name, url
+        )
+    })
+}
+
+pub(crate) fn parse_port_from_socket_address(
+    address: &str,
+    field_name: &str,
+    chain_name: &str,
+) -> Result<u16, String> {
+    let port_text = address
+        .trim()
+        .rsplit(':')
+        .next()
+        .ok_or_else(|| format!("Invalid {} {} '{}'", chain_name, field_name, address))?;
+
+    port_text.parse::<u16>().map_err(|error| {
+        format!(
+            "Invalid {} {} '{}' (cannot parse port): {}",
+            chain_name, field_name, address, error
+        )
+    })
+}
 
 /// Returns true if `binary` is available on `PATH`.
 pub(crate) fn command_exists(binary: &str) -> bool {
@@ -285,4 +614,15 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = parts.next()?.trim().parse::<u32>().ok()?;
     let command = parts.next()?.trim().to_string();
     Some((pid, command))
+}
+
+fn parse_bool_option(raw_value: &str, field_name: &str) -> Result<bool, String> {
+    match raw_value.to_lowercase().as_str() {
+        "1" | "true" | "yes" => Ok(true),
+        "0" | "false" | "no" => Ok(false),
+        _ => Err(format!(
+            "Option '{}' expects a boolean value (true/false), got '{}'",
+            field_name, raw_value
+        )),
+    }
 }

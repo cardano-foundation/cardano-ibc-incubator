@@ -1,268 +1,69 @@
 use std::fs;
-use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::thread;
-use std::time::Duration;
-
-use dirs::home_dir;
-use serde_json::Value;
+use std::process::Command;
 
 use super::config;
 use crate::chains::cosmos_node::{
-    add_directory_to_process_path, command_exists, fetch_statesync_params, find_node_pids_for_home,
-    is_process_alive, locate_binary_in_path_or_go_bin, read_log_tail, read_pid_file, stop_process,
+    add_directory_to_process_path, command_exists, locate_binary_in_path_or_go_bin,
+    resolve_home_relative_path, start_managed_node, stop_managed_node, CosmosNodeSpec,
 };
 use crate::logger::{verbose, warn};
-use crate::utils::wait_for_health_check;
 
-pub(super) async fn prepare_local(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn prepare_local(
+    spec: &CosmosNodeSpec,
+    stateful: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_injectived_available()?;
 
-    let local_home_dir = local_home_dir()?;
-    if !stateful && local_home_dir.exists() {
-        fs::remove_dir_all(local_home_dir.as_path())?;
+    let paths = spec.paths()?;
+    if !stateful && paths.home_dir.exists() {
+        fs::remove_dir_all(paths.home_dir.as_path())?;
     }
 
-    initialize_local_home(local_home_dir.as_path())?;
+    initialize_local_home(spec, paths.home_dir.as_path())?;
     Ok(())
 }
 
-pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
-    let local_home_dir = local_home_dir()?;
-    let pid_path = local_pid_path()?;
-    let log_path = local_log_path()?;
-
-    if let Some(existing_pid) = read_pid_file(pid_path.as_path()) {
-        if is_process_alive(existing_pid) {
-            return Err(format!(
-                "Injective local node is already running (pid {})",
-                existing_pid
-            )
-            .into());
-        }
-    }
-
-    if let Some(parent) = pid_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let stdout_file = File::create(log_path.as_path())?;
-    let stderr_file = stdout_file.try_clone()?;
-
-    let child = Command::new("injectived")
-        .args([
-            "start",
-            "--home",
-            local_home_dir
-                .to_str()
-                .ok_or("Invalid local home directory path")?,
-            "--rpc.laddr",
-            config::LOCAL_RPC_LADDR,
-            "--grpc.address",
-            config::LOCAL_GRPC_ADDRESS,
-            "--api.address",
-            config::LOCAL_API_ADDRESS,
-        ])
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .spawn()?;
-
-    fs::write(pid_path.as_path(), child.id().to_string())?;
-    thread::sleep(Duration::from_millis(500));
-    if !is_process_alive(child.id()) {
-        let log_tail = read_log_tail(log_path.as_path(), 120)
-            .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
-        return Err(format!("Injective local node exited early.\n{}", log_tail).into());
-    }
-
-    let is_healthy = wait_for_health_check(
-        config::LOCAL_STATUS_URL,
-        120,
-        3000,
-        Some(|response_body: &String| {
-            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
-            json["result"]["sync_info"]["latest_block_height"]
-                .as_str()
-                .and_then(|height| height.parse::<u64>().ok())
-                .is_some_and(|height| height > 0)
-        }),
-    )
-    .await;
-
-    if is_healthy.is_ok() {
-        return Ok(());
-    }
-
-    let _ = stop_local();
-    let log_tail = read_log_tail(log_path.as_path(), 120)
-        .unwrap_or_else(|_| "Unable to read Injective local log file".to_string());
-    Err(format!(
-        "Timed out while waiting for local Injective node at {}.\n{}",
-        config::LOCAL_STATUS_URL,
-        log_tail
-    )
-    .into())
+pub(super) async fn start_local(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
+    start_managed_node(spec, None, 120, 3000, "Injective local node").await
 }
 
-pub(super) fn stop_local() -> Result<(), Box<dyn std::error::Error>> {
-    let local_home_dir = local_home_dir()?;
-    let pid_path = local_pid_path()?;
-
-    let pid = read_pid_file(pid_path.as_path()).or_else(|| {
-        find_node_pids_for_home("injectived", local_home_dir.as_path())
-            .into_iter()
-            .next()
-    });
-
-    if let Some(pid) = pid {
-        stop_process(pid, "Injective local")?;
-    }
-
-    if pid_path.exists() {
-        fs::remove_file(pid_path)?;
-    }
-
-    Ok(())
+pub(super) fn stop_local(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
+    stop_managed_node(spec, "Injective local node")
 }
 
-pub(super) async fn prepare_testnet(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn prepare_testnet(
+    spec: &CosmosNodeSpec,
+    stateful: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_injectived_available()?;
 
-    let testnet_home_dir = testnet_home_dir()?;
-    if !stateful && testnet_home_dir.exists() {
-        fs::remove_dir_all(testnet_home_dir.as_path())?;
+    let paths = spec.paths()?;
+    if !stateful && paths.home_dir.exists() {
+        fs::remove_dir_all(paths.home_dir.as_path())?;
     }
 
-    initialize_testnet_home(testnet_home_dir.as_path()).await?;
+    initialize_testnet_home(spec, paths.home_dir.as_path()).await?;
     Ok(())
 }
 
 pub(super) async fn start_testnet(
-    trust_rpc_url: Option<&str>,
+    spec: &CosmosNodeSpec,
+    trust_rpc_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let testnet_home_dir = testnet_home_dir()?;
-    let pid_path = testnet_pid_path()?;
-    let log_path = testnet_log_path()?;
-
-    if let Some(existing_pid) = read_pid_file(pid_path.as_path()) {
-        if is_process_alive(existing_pid) {
-            return Err(format!(
-                "Injective testnet node is already running (pid {})",
-                existing_pid
-            )
-            .into());
-        }
-    }
-
-    let trust_rpc_url = trust_rpc_url.unwrap_or(config::TESTNET_TRUST_RPC_URL);
-    let (rpc_servers, trust_height, trust_hash) = fetch_statesync_params(
-        trust_rpc_url,
-        config::TESTNET_TRUST_OFFSET,
-        "Injective",
-    )
-    .await?;
-
-    if let Some(parent) = pid_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let stdout_file = File::create(log_path.as_path())?;
-    let stderr_file = stdout_file.try_clone()?;
-
-    let child = Command::new("injectived")
-        .args([
-            "start",
-            "--home",
-            testnet_home_dir
-                .to_str()
-                .ok_or("Invalid testnet home directory path")?,
-            "--rpc.laddr",
-            config::TESTNET_RPC_LADDR,
-            "--grpc.address",
-            config::TESTNET_GRPC_ADDRESS,
-            "--api.address",
-            config::TESTNET_API_ADDRESS,
-        ])
-        .env("INJECTIVED_STATESYNC_ENABLE", "true")
-        .env("INJECTIVED_STATESYNC_RPC_SERVERS", rpc_servers)
-        .env(
-            "INJECTIVED_STATESYNC_TRUST_HEIGHT",
-            trust_height.to_string(),
-        )
-        .env("INJECTIVED_STATESYNC_TRUST_HASH", trust_hash)
-        .env("INJECTIVED_P2P_SEEDS", config::TESTNET_SEEDS)
-        .env(
-            "INJECTIVED_P2P_PERSISTENT_PEERS",
-            config::TESTNET_PERSISTENT_PEERS,
-        )
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .spawn()?;
-
-    fs::write(pid_path.as_path(), child.id().to_string())?;
-    thread::sleep(Duration::from_millis(500));
-    if !is_process_alive(child.id()) {
-        let log_tail = read_log_tail(log_path.as_path(), 120)
-            .unwrap_or_else(|_| "Unable to read Injective testnet log file".to_string());
-        return Err(format!("Injective testnet node exited early.\n{}", log_tail).into());
-    }
-
-    let is_healthy = wait_for_health_check(
-        config::TESTNET_STATUS_URL,
+    start_managed_node(
+        spec,
+        Some(trust_rpc_url),
         180,
         3000,
-        Some(|response_body: &String| {
-            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
-            json["result"]["sync_info"]["latest_block_height"]
-                .as_str()
-                .and_then(|height| height.parse::<u64>().ok())
-                .is_some_and(|height| height > 0)
-        }),
+        "Injective testnet node",
     )
-    .await;
-
-    if is_healthy.is_ok() {
-        return Ok(());
-    }
-
-    let _ = stop_testnet();
-    let log_tail = read_log_tail(log_path.as_path(), 120)
-        .unwrap_or_else(|_| "Unable to read Injective testnet log file".to_string());
-    Err(format!(
-        "Timed out while waiting for local Injective testnet node at {}.\n{}",
-        config::TESTNET_STATUS_URL,
-        log_tail
-    )
-    .into())
+    .await
 }
 
-pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
-    let testnet_home_dir = testnet_home_dir()?;
-    let pid_path = testnet_pid_path()?;
-
-    let pid = read_pid_file(pid_path.as_path()).or_else(|| {
-        find_node_pids_for_home("injectived", testnet_home_dir.as_path())
-            .into_iter()
-            .next()
-    });
-
-    if let Some(pid) = pid {
-        stop_process(pid, "Injective testnet")?;
-    }
-
-    if pid_path.exists() {
-        fs::remove_file(pid_path)?;
-    }
-
-    Ok(())
+pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
+    stop_managed_node(spec, "Injective testnet node")
 }
 
 fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
@@ -404,7 +205,10 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn initialize_local_home(
+    spec: &CosmosNodeSpec,
+    home_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
     if config_toml_path.exists() && genesis_path.exists() {
@@ -416,12 +220,12 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .to_str()
         .ok_or("Invalid local home directory path")?;
 
-    let init_output = Command::new("injectived")
+    let init_output = Command::new(spec.binary)
         .args([
             "init",
-            config::LOCAL_MONIKER,
+            spec.moniker,
             "--chain-id",
-            config::LOCAL_CHAIN_ID,
+            spec.chain_id,
             "--home",
             home_path_str,
         ])
@@ -434,7 +238,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .into());
     }
 
-    let add_key_output = Command::new("injectived")
+    let add_key_output = Command::new(spec.binary)
         .args([
             "keys",
             "add",
@@ -453,7 +257,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .into());
     }
 
-    let validator_address_output = Command::new("injectived")
+    let validator_address_output = Command::new(spec.binary)
         .args([
             "keys",
             "show",
@@ -479,14 +283,14 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         return Err("Injective local validator address is empty".into());
     }
 
-    let add_genesis_output = Command::new("injectived")
+    let add_genesis_output = Command::new(spec.binary)
         .args([
             "genesis",
             "add-genesis-account",
             validator_address.as_str(),
             config::LOCAL_GENESIS_ACCOUNT_AMOUNT,
             "--chain-id",
-            config::LOCAL_CHAIN_ID,
+            spec.chain_id,
             "--home",
             home_path_str,
         ])
@@ -499,14 +303,14 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .into());
     }
 
-    let gentx_output = Command::new("injectived")
+    let gentx_output = Command::new(spec.binary)
         .args([
             "genesis",
             "gentx",
             config::LOCAL_VALIDATOR_KEY,
             config::LOCAL_GENTX_AMOUNT,
             "--chain-id",
-            config::LOCAL_CHAIN_ID,
+            spec.chain_id,
             "--keyring-backend",
             "test",
             "--home",
@@ -521,7 +325,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .into());
     }
 
-    let collect_gentxs_output = Command::new("injectived")
+    let collect_gentxs_output = Command::new(spec.binary)
         .args(["genesis", "collect-gentxs", "--home", home_path_str])
         .output()?;
     if !collect_gentxs_output.status.success() {
@@ -532,7 +336,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
         .into());
     }
 
-    let validate_genesis_output = Command::new("injectived")
+    let validate_genesis_output = Command::new(spec.binary)
         .args(["genesis", "validate", "--home", home_path_str])
         .output()?;
     if !validate_genesis_output.status.success() {
@@ -547,6 +351,7 @@ fn initialize_local_home(home_path: &Path) -> Result<(), Box<dyn std::error::Err
 }
 
 async fn initialize_testnet_home(
+    spec: &CosmosNodeSpec,
     home_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
@@ -557,12 +362,12 @@ async fn initialize_testnet_home(
 
     fs::create_dir_all(home_path)?;
 
-    let output = Command::new("injectived")
+    let output = Command::new(spec.binary)
         .args([
             "init",
-            config::TESTNET_MONIKER,
+            spec.moniker,
             "--chain-id",
-            config::TESTNET_CHAIN_ID,
+            spec.chain_id,
             "--home",
             home_path
                 .to_str()
@@ -595,34 +400,4 @@ async fn initialize_testnet_home(
 
 fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     resolve_home_relative_path(config::SOURCE_DIR)
-}
-
-fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::LOCAL_HOME_DIR)
-}
-
-fn local_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::LOCAL_PID_FILE)
-}
-
-fn local_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::LOCAL_LOG_FILE)
-}
-
-fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::TESTNET_HOME_DIR)
-}
-
-fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::TESTNET_PID_FILE)
-}
-
-fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::TESTNET_LOG_FILE)
-}
-
-fn resolve_home_relative_path(relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    home_dir()
-        .map(|path| path.join(relative_path))
-        .ok_or_else(|| "Unable to resolve home directory".into())
 }

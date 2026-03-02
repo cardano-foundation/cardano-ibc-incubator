@@ -1,19 +1,17 @@
 use std::fs;
-use std::fs::File;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::Path;
+use std::process::Command;
 
 use console::style;
-use dirs::home_dir;
 use fs_extra::{copy_items, file::copy};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 
 use super::config;
 use crate::chains::cosmos_node::{
-    add_directory_to_process_path, fetch_statesync_params, find_node_pids_for_home,
-    is_process_alive, locate_binary_in_path_or_go_bin, read_log_tail, read_pid_file, stop_process,
+    add_directory_to_process_path, locate_binary_in_path_or_go_bin, start_managed_node,
+    stop_managed_node, CosmosNodeSpec,
 };
 use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
@@ -116,132 +114,31 @@ pub(super) fn stop_local(osmosis_path: &Path) {
 pub(super) async fn prepare_testnet(
     project_root_path: &Path,
     osmosis_dir: &Path,
+    spec: &CosmosNodeSpec,
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_osmosisd_available(osmosis_dir).await?;
     sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
     copy_local_config_files(osmosis_dir)?;
 
-    let testnet_home_dir = testnet_home_dir()?;
-    if !stateful && testnet_home_dir.exists() {
-        fs::remove_dir_all(testnet_home_dir.as_path())?;
+    let paths = spec.paths()?;
+    if !stateful && paths.home_dir.exists() {
+        fs::remove_dir_all(paths.home_dir.as_path())?;
     }
 
-    initialize_testnet_home(testnet_home_dir.as_path())?;
+    initialize_testnet_home(spec, paths.home_dir.as_path())?;
     Ok(())
 }
 
 pub(super) async fn start_testnet(
-    _osmosis_dir: &Path,
-    trust_rpc_url: Option<&str>,
+    spec: &CosmosNodeSpec,
+    trust_rpc_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let testnet_home_dir = testnet_home_dir()?;
-    let pid_path = testnet_pid_path()?;
-    let log_path = testnet_log_path()?;
-
-    if let Some(existing_pid) = read_pid_file(pid_path.as_path()) {
-        if is_process_alive(existing_pid) {
-            return Err(format!(
-                "Osmosis testnet node is already running (pid {})",
-                existing_pid
-            )
-            .into());
-        }
-    }
-
-    let trust_rpc_url = trust_rpc_url.unwrap_or(config::TESTNET_RPC_URL);
-    let (rpc_servers, trust_height, trust_hash) =
-        fetch_statesync_params(trust_rpc_url, config::TESTNET_TRUST_OFFSET, "Osmosis").await?;
-
-    if let Some(parent) = pid_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    if let Some(parent) = log_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let stdout_file = File::create(log_path.as_path())?;
-    let stderr_file = stdout_file.try_clone()?;
-
-    let child = Command::new("osmosisd")
-        .args([
-            "start",
-            "--home",
-            testnet_home_dir
-                .to_str()
-                .ok_or("Invalid testnet home directory path")?,
-            "--rpc.laddr",
-            config::TESTNET_RPC_LADDR,
-            "--grpc.address",
-            config::TESTNET_GRPC_ADDRESS,
-            "--grpc-web.address",
-            config::TESTNET_GRPC_WEB_ADDRESS,
-            "--api.address",
-            config::TESTNET_API_ADDRESS,
-        ])
-        .env("OSMOSISD_STATESYNC_ENABLE", "true")
-        .env("OSMOSISD_STATESYNC_RPC_SERVERS", rpc_servers)
-        .env("OSMOSISD_STATESYNC_TRUST_HEIGHT", trust_height.to_string())
-        .env("OSMOSISD_STATESYNC_TRUST_HASH", trust_hash)
-        .env("OSMOSISD_P2P_SEEDS", config::TESTNET_SEEDS)
-        .env(
-            "OSMOSISD_P2P_PERSISTENT_PEERS",
-            config::TESTNET_PERSISTENT_PEERS,
-        )
-        .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .spawn()?;
-
-    fs::write(pid_path.as_path(), child.id().to_string())?;
-
-    let is_healthy = wait_for_health_check(
-        config::TESTNET_STATUS_URL,
-        120,
-        3000,
-        Some(|response_body: &String| {
-            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
-            json["result"]["sync_info"]["latest_block_height"]
-                .as_str()
-                .and_then(|height| height.parse::<u64>().ok())
-                .is_some_and(|height| height > 0)
-        }),
-    )
-    .await;
-
-    if is_healthy.is_ok() {
-        return Ok(());
-    }
-
-    let _ = stop_testnet();
-    let log_tail = read_log_tail(log_path.as_path(), 120)
-        .unwrap_or_else(|_| "Unable to read Osmosis testnet log file".to_string());
-    Err(format!(
-        "Timed out while waiting for local Osmosis testnet node at {}.\n{}",
-        config::TESTNET_STATUS_URL,
-        log_tail
-    )
-    .into())
+    start_managed_node(spec, Some(trust_rpc_url), 120, 3000, "Osmosis testnet node").await
 }
 
-pub(super) fn stop_testnet() -> Result<(), Box<dyn std::error::Error>> {
-    let testnet_home_dir = testnet_home_dir()?;
-    let pid_path = testnet_pid_path()?;
-
-    let pid = read_pid_file(pid_path.as_path()).or_else(|| {
-        find_node_pids_for_home("osmosisd", testnet_home_dir.as_path())
-            .into_iter()
-            .next()
-    });
-
-    if let Some(pid) = pid {
-        stop_process(pid, "Osmosis testnet")?;
-    }
-
-    if pid_path.exists() {
-        fs::remove_file(pid_path)?;
-    }
-
-    Ok(())
+pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
+    stop_managed_node(spec, "Osmosis testnet node")
 }
 
 async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -352,25 +249,10 @@ async fn prompt_and_install_osmosisd(
     }
 }
 
-fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    home_dir()
-        .map(|path| path.join(config::TESTNET_HOME_DIR))
-        .ok_or_else(|| "Unable to resolve home directory".into())
-}
-
-fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    home_dir()
-        .map(|path| path.join(config::TESTNET_PID_FILE))
-        .ok_or_else(|| "Unable to resolve home directory".into())
-}
-
-fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    home_dir()
-        .map(|path| path.join(config::TESTNET_LOG_FILE))
-        .ok_or_else(|| "Unable to resolve home directory".into())
-}
-
-fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn initialize_testnet_home(
+    spec: &CosmosNodeSpec,
+    home_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
     if config_toml_path.exists() && genesis_path.exists() {
@@ -379,12 +261,12 @@ fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::error::E
 
     fs::create_dir_all(home_path)?;
 
-    let output = Command::new("osmosisd")
+    let output = Command::new(spec.binary)
         .args([
             "init",
-            config::TESTNET_MONIKER,
+            spec.moniker,
             "--chain-id",
-            config::TESTNET_CHAIN_ID,
+            spec.chain_id,
             "--home",
             home_path
                 .to_str()

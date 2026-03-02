@@ -4,8 +4,12 @@ use async_trait::async_trait;
 use dirs::home_dir;
 
 use crate::chains::{
-    check_port_health, check_rpc_health, parse_bool_flag, ChainAdapter, ChainFlagSpec, ChainFlags,
-    ChainHealthStatus, ChainNetwork, ChainStartRequest,
+    check_port_health, check_rpc_health,
+    cosmos_node::{
+        managed_node_health, CosmosChainOptions, CosmosNetworkKind, CosmosNodeSpec,
+        CosmosStateSyncSpec,
+    },
+    ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 use crate::logger::warn;
 
@@ -49,6 +53,29 @@ const OSMOSIS_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
     },
 ];
 
+const OSMOSIS_TESTNET_STATE_SYNC_SPEC: CosmosStateSyncSpec = CosmosStateSyncSpec {
+    default_trust_rpc_url: config::TESTNET_RPC_URL,
+    trust_offset: config::TESTNET_TRUST_OFFSET,
+    seeds: config::TESTNET_SEEDS,
+    persistent_peers: config::TESTNET_PERSISTENT_PEERS,
+};
+
+const OSMOSIS_TESTNET_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
+    chain_name: "Osmosis",
+    binary: "osmosisd",
+    chain_id: config::TESTNET_CHAIN_ID,
+    moniker: config::TESTNET_MONIKER,
+    status_url: config::TESTNET_STATUS_URL,
+    rpc_laddr: config::TESTNET_RPC_LADDR,
+    grpc_address: config::TESTNET_GRPC_ADDRESS,
+    grpc_web_address: Some(config::TESTNET_GRPC_WEB_ADDRESS),
+    api_address: config::TESTNET_API_ADDRESS,
+    home_dir: config::TESTNET_HOME_DIR,
+    pid_file: config::TESTNET_PID_FILE,
+    log_file: config::TESTNET_LOG_FILE,
+    state_sync: Some(OSMOSIS_TESTNET_STATE_SYNC_SPEC),
+};
+
 #[async_trait]
 impl ChainAdapter for OsmosisChainAdapter {
     fn id(&self) -> &'static str {
@@ -81,11 +108,12 @@ impl ChainAdapter for OsmosisChainAdapter {
         request: &ChainStartRequest<'_>,
     ) -> Result<(), String> {
         self.validate_flags(request.network, request.flags)?;
+        let network = CosmosNetworkKind::parse(request.network)?;
+        let options = CosmosChainOptions::from_flags(request.flags)?;
 
-        match request.network {
-            "local" => {
-                let stateful = parse_bool_flag(request.flags, "stateful", false)?;
-                if stateful {
+        match network {
+            CosmosNetworkKind::Local => {
+                if options.stateful_or(false) {
                     warn(
                         "Local Osmosis 'stateful=true' was requested, but this mode is not wired yet. Proceeding with clean local setup.",
                     );
@@ -100,33 +128,33 @@ impl ChainAdapter for OsmosisChainAdapter {
                     .map_err(|error| format!("Failed to start Osmosis appchain: {}", error))?;
                 Ok(())
             }
-            "testnet" => {
-                let stateful = parse_bool_flag(request.flags, "stateful", true)?;
-                let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
+            CosmosNetworkKind::Testnet => {
                 let osmosis_dir = workspace_dir(project_root_path);
-                lifecycle::prepare_testnet(project_root_path, osmosis_dir.as_path(), stateful)
-                    .await
-                    .map_err(|error| {
-                        format!("Failed to prepare Osmosis testnet node: {}", error)
-                    })?;
+                lifecycle::prepare_testnet(
+                    project_root_path,
+                    osmosis_dir.as_path(),
+                    &OSMOSIS_TESTNET_NODE_SPEC,
+                    options.stateful_or(true),
+                )
+                .await
+                .map_err(|error| format!("Failed to prepare Osmosis testnet node: {}", error))?;
+
                 hermes::ensure_testnet_chain_in_hermes_config(osmosis_dir.as_path()).map_err(
-                    |error| {
-                        format!(
-                            "Failed to update Hermes config for Osmosis testnet: {}",
-                            error
-                        )
-                    },
+                    |error| format!("Failed to update Hermes config for Osmosis testnet: {}", error),
                 )?;
-                lifecycle::start_testnet(osmosis_dir.as_path(), trust_rpc_url.as_deref())
-                    .await
-                    .map_err(|error| format!("Failed to start Osmosis testnet node: {}", error))?;
+
+                lifecycle::start_testnet(
+                    &OSMOSIS_TESTNET_NODE_SPEC,
+                    options.trust_rpc_url(OSMOSIS_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url),
+                )
+                .await
+                .map_err(|error| format!("Failed to start Osmosis testnet node: {}", error))?;
                 Ok(())
             }
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                request.network,
-                self.id()
-            )),
+            CosmosNetworkKind::Mainnet => Err(
+                "Osmosis network 'mainnet' is not implemented yet. Supported networks: local, testnet."
+                    .to_string(),
+            ),
         }
     }
 
@@ -138,23 +166,15 @@ impl ChainAdapter for OsmosisChainAdapter {
     ) -> Result<(), String> {
         self.validate_flags(network, flags)?;
 
-        match network {
-            "local" => {
+        match CosmosNetworkKind::parse(network)? {
+            CosmosNetworkKind::Local => {
                 let osmosis_dir = workspace_dir(project_root_path);
                 lifecycle::stop_local(osmosis_dir.as_path());
                 Ok(())
             }
-            "testnet" => {
-                lifecycle::stop_testnet().map_err(|error| {
-                    format!("Failed to stop local Osmosis testnet node: {}", error)
-                })?;
-                Ok(())
-            }
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                network,
-                self.id()
-            )),
+            CosmosNetworkKind::Testnet => lifecycle::stop_testnet(&OSMOSIS_TESTNET_NODE_SPEC)
+                .map_err(|error| format!("Failed to stop local Osmosis testnet node: {}", error)),
+            CosmosNetworkKind::Mainnet => Ok(()),
         }
     }
 
@@ -166,8 +186,8 @@ impl ChainAdapter for OsmosisChainAdapter {
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
 
-        match network {
-            "local" => Ok(vec![
+        match CosmosNetworkKind::parse(network)? {
+            CosmosNetworkKind::Local => Ok(vec![
                 check_rpc_health(
                     "osmosis",
                     config::LOCAL_STATUS_URL,
@@ -176,17 +196,18 @@ impl ChainAdapter for OsmosisChainAdapter {
                 ),
                 check_port_health("redis", 6379, "Osmosis Redis sidecar"),
             ]),
-            "testnet" => Ok(vec![check_rpc_health(
+            CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
                 "osmosis",
-                config::TESTNET_LOCAL_STATUS_URL,
-                26658,
-                "Osmosis testnet node (RPC)",
-            )]),
-            _ => Err(format!(
-                "Unsupported network '{}' for chain '{}'",
-                network,
-                self.id()
-            )),
+                "Osmosis testnet node",
+                &OSMOSIS_TESTNET_NODE_SPEC,
+            )?]),
+            CosmosNetworkKind::Mainnet => Ok(vec![ChainHealthStatus {
+                id: "osmosis",
+                label: "Osmosis mainnet",
+                healthy: false,
+                status: "Not implemented yet. Start with --network local or --network testnet."
+                    .to_string(),
+            }]),
         }
     }
 }
