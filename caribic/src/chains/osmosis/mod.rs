@@ -8,15 +8,13 @@ use crate::chains::{
 };
 use crate::logger::warn;
 
+mod config;
 mod hermes;
 mod lifecycle;
 
 pub struct OsmosisChainAdapter;
 
 pub static OSMOSIS_CHAIN_ADAPTER: OsmosisChainAdapter = OsmosisChainAdapter;
-
-const OSMOSIS_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
-const OSMOSIS_TESTNET_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
 
 const OSMOSIS_NETWORKS: [ChainNetwork; 2] = [
     ChainNetwork {
@@ -171,7 +169,7 @@ impl ChainAdapter for OsmosisChainAdapter {
             "local" => Ok(vec![
                 check_rpc_health(
                     "osmosis",
-                    OSMOSIS_LOCAL_STATUS_URL,
+                    config::LOCAL_STATUS_URL,
                     26658,
                     "Osmosis appchain (RPC)",
                 ),
@@ -179,7 +177,7 @@ impl ChainAdapter for OsmosisChainAdapter {
             ]),
             "testnet" => Ok(vec![check_rpc_health(
                 "osmosis",
-                OSMOSIS_TESTNET_LOCAL_STATUS_URL,
+                config::TESTNET_LOCAL_STATUS_URL,
                 26658,
                 "Osmosis testnet node (RPC)",
             )]),

@@ -10,25 +10,14 @@ use std::time::Duration;
 use dirs::home_dir;
 use serde_json::Value;
 
-use crate::config;
+use super::config;
 use crate::logger::{verbose, warn};
 use crate::utils::wait_for_health_check;
-
-fn injective_config() -> config::Injective {
-    config::get_config().optional_chains.injective
-}
-
-fn resolve_home_relative_path(relative_path: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    home_dir()
-        .map(|path| path.join(relative_path))
-        .ok_or_else(|| "Unable to resolve home directory".into())
-}
 
 pub(super) async fn prepare_local(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
     ensure_injectived_available()?;
 
-    let injective = injective_config();
-    let local_config = injective.local;
+    let local_config = config::local_runtime();
     let local_home_dir = local_home_dir()?;
     if !stateful && local_home_dir.exists() {
         fs::remove_dir_all(local_home_dir.as_path())?;
@@ -39,8 +28,7 @@ pub(super) async fn prepare_local(stateful: bool) -> Result<(), Box<dyn std::err
 }
 
 pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    let local_config = injective.local;
+    let local_config = config::local_runtime();
     let local_home_dir = local_home_dir()?;
     let pid_path = local_pid_path()?;
     let log_path = local_log_path()?;
@@ -143,8 +131,7 @@ pub(super) fn stop_local() -> Result<(), Box<dyn std::error::Error>> {
 pub(super) async fn prepare_testnet(stateful: bool) -> Result<(), Box<dyn std::error::Error>> {
     ensure_injectived_available()?;
 
-    let injective = injective_config();
-    let testnet_config = injective.testnet;
+    let testnet_config = config::testnet_runtime();
     let testnet_home_dir = testnet_home_dir()?;
     if !stateful && testnet_home_dir.exists() {
         fs::remove_dir_all(testnet_home_dir.as_path())?;
@@ -157,8 +144,7 @@ pub(super) async fn prepare_testnet(stateful: bool) -> Result<(), Box<dyn std::e
 pub(super) async fn start_testnet(
     trust_rpc_url: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    let testnet_config = injective.testnet;
+    let testnet_config = config::testnet_runtime();
     let testnet_home_dir = testnet_home_dir()?;
     let pid_path = testnet_pid_path()?;
     let log_path = testnet_log_path()?;
@@ -362,7 +348,7 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
         return Err("`make` is required to install injectived from source.".into());
     }
 
-    let injective = injective_config();
+    let injective = config::runtime();
     let source_path = injective_source_path()?;
     let parent_path = source_path
         .parent()
@@ -416,7 +402,7 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
 
 fn initialize_local_home(
     home_path: &Path,
-    local_config: &config::InjectiveLocal,
+    local_config: &crate::config::InjectiveLocal,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
@@ -561,7 +547,7 @@ fn initialize_local_home(
 
 async fn initialize_testnet_home(
     home_path: &Path,
-    testnet_config: &config::InjectiveTestnet,
+    testnet_config: &crate::config::InjectiveTestnet,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
@@ -734,8 +720,8 @@ fn add_directory_to_process_path(directory: &Path) {
 }
 
 fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.source_dir.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.source_dir.as_str())
 }
 
 fn command_exists(binary: &str) -> bool {
@@ -747,33 +733,33 @@ fn command_exists(binary: &str) -> bool {
 }
 
 fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.local.home_dir.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.local.home_dir.as_str())
 }
 
 fn local_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.local.pid_file.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.local.pid_file.as_str())
 }
 
 fn local_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.local.log_file.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.local.log_file.as_str())
 }
 
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.testnet.home_dir.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.testnet.home_dir.as_str())
 }
 
 fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.testnet.pid_file.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.testnet.pid_file.as_str())
 }
 
 fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let injective = injective_config();
-    resolve_home_relative_path(injective.testnet.log_file.as_str())
+    let injective = config::runtime();
+    config::resolve_home_relative_path(injective.testnet.log_file.as_str())
 }
 
 fn read_pid_file(pid_file_path: &Path) -> Option<u32> {

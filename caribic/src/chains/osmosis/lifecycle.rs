@@ -13,23 +13,10 @@ use fs_extra::{copy_items, file::copy};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 
+use super::config;
 use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
 use crate::utils::{execute_script, execute_script_interactive, wait_for_health_check};
-
-const OSMOSIS_SOURCE_ZIP_URL: &str =
-    "https://github.com/osmosis-labs/osmosis/archive/refs/tags/v30.0.1.zip";
-const OSMOSIS_LOCAL_STATUS_URL: &str = "http://127.0.0.1:26658/status";
-const OSMOSIS_TESTNET_RPC_URL: &str = "https://rpc.osmotest5.osmosis.zone";
-const OSMOSIS_TESTNET_STATUS_URL: &str = "http://127.0.0.1:26658/status";
-const OSMOSIS_TESTNET_CHAIN_ID: &str = "osmo-test-5";
-const OSMOSIS_TESTNET_MONIKER: &str = "caribic-osmosis-testnet";
-const OSMOSIS_TESTNET_HOME_DIR: &str = ".osmosisd-testnet";
-const OSMOSIS_TESTNET_PID_FILE: &str = ".caribic/osmosis-testnet.pid";
-const OSMOSIS_TESTNET_LOG_FILE: &str = ".caribic/osmosis-testnet.log";
-const OSMOSIS_TESTNET_TRUST_OFFSET: u64 = 1500;
-const OSMOSIS_TESTNET_SEEDS: &str = "bb197876fd952d245ef6377e3651c157e3d7ed81@157.245.26.231:26656,7c2b9e76be5c2142c76b429d9c29e902599ceb44@157.245.21.183:26656";
-const OSMOSIS_TESTNET_PERSISTENT_PEERS: &str = "51084fccec1c309a415e89d39e6f0881c49493ed@95.217.144.107:12556,a5c34bdd777dd418ff7152a8646fd2f31f53f8a5@46.232.248.117:2000";
 
 pub(super) async fn prepare_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     ensure_osmosisd_available(osmosis_dir).await?;
@@ -74,7 +61,7 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
             &optional_progress_bar,
         );
 
-        let osmosis_status_url = OSMOSIS_LOCAL_STATUS_URL;
+        let osmosis_status_url = config::LOCAL_STATUS_URL;
         let is_healthy = wait_for_health_check(
             osmosis_status_url,
             30,
@@ -154,7 +141,7 @@ pub(super) async fn start_testnet(
         }
     }
 
-    let trust_rpc_url = trust_rpc_url.unwrap_or(OSMOSIS_TESTNET_RPC_URL);
+    let trust_rpc_url = trust_rpc_url.unwrap_or(config::TESTNET_RPC_URL);
     let (rpc_servers, trust_height, trust_hash) = fetch_statesync_params(trust_rpc_url).await?;
 
     if let Some(parent) = pid_path.parent() {
@@ -175,22 +162,22 @@ pub(super) async fn start_testnet(
                 .to_str()
                 .ok_or("Invalid testnet home directory path")?,
             "--rpc.laddr",
-            "tcp://0.0.0.0:26658",
+            config::TESTNET_RPC_LADDR,
             "--grpc.address",
-            "0.0.0.0:9094",
+            config::TESTNET_GRPC_ADDRESS,
             "--grpc-web.address",
-            "0.0.0.0:9091",
+            config::TESTNET_GRPC_WEB_ADDRESS,
             "--api.address",
-            "tcp://0.0.0.0:1318",
+            config::TESTNET_API_ADDRESS,
         ])
         .env("OSMOSISD_STATESYNC_ENABLE", "true")
         .env("OSMOSISD_STATESYNC_RPC_SERVERS", rpc_servers)
         .env("OSMOSISD_STATESYNC_TRUST_HEIGHT", trust_height.to_string())
         .env("OSMOSISD_STATESYNC_TRUST_HASH", trust_hash)
-        .env("OSMOSISD_P2P_SEEDS", OSMOSIS_TESTNET_SEEDS)
+        .env("OSMOSISD_P2P_SEEDS", config::TESTNET_SEEDS)
         .env(
             "OSMOSISD_P2P_PERSISTENT_PEERS",
-            OSMOSIS_TESTNET_PERSISTENT_PEERS,
+            config::TESTNET_PERSISTENT_PEERS,
         )
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
@@ -199,7 +186,7 @@ pub(super) async fn start_testnet(
     fs::write(pid_path.as_path(), child.id().to_string())?;
 
     let is_healthy = wait_for_health_check(
-        OSMOSIS_TESTNET_STATUS_URL,
+        config::TESTNET_STATUS_URL,
         120,
         3000,
         Some(|response_body: &String| {
@@ -221,7 +208,8 @@ pub(super) async fn start_testnet(
         .unwrap_or_else(|_| "Unable to read Osmosis testnet log file".to_string());
     Err(format!(
         "Timed out while waiting for local Osmosis testnet node at {}.\n{}",
-        OSMOSIS_TESTNET_STATUS_URL, log_tail
+        config::TESTNET_STATUS_URL,
+        log_tail
     )
     .into())
 }
@@ -317,7 +305,7 @@ async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std
 }
 
 async fn download_osmosis_source(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    download_repository(OSMOSIS_SOURCE_ZIP_URL, osmosis_path, "osmosis").await
+    download_repository(config::SOURCE_ZIP_URL, osmosis_path, "osmosis").await
 }
 
 async fn prompt_and_install_osmosisd(
@@ -390,19 +378,19 @@ fn add_directory_to_process_path(directory: &Path) {
 
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(OSMOSIS_TESTNET_HOME_DIR))
+        .map(|path| path.join(config::TESTNET_HOME_DIR))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(OSMOSIS_TESTNET_PID_FILE))
+        .map(|path| path.join(config::TESTNET_PID_FILE))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
 fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     home_dir()
-        .map(|path| path.join(OSMOSIS_TESTNET_LOG_FILE))
+        .map(|path| path.join(config::TESTNET_LOG_FILE))
         .ok_or_else(|| "Unable to resolve home directory".into())
 }
 
@@ -418,9 +406,9 @@ fn initialize_testnet_home(home_path: &Path) -> Result<(), Box<dyn std::error::E
     let output = Command::new("osmosisd")
         .args([
             "init",
-            OSMOSIS_TESTNET_MONIKER,
+            config::TESTNET_MONIKER,
             "--chain-id",
-            OSMOSIS_TESTNET_CHAIN_ID,
+            config::TESTNET_CHAIN_ID,
             "--home",
             home_path
                 .to_str()
@@ -461,15 +449,16 @@ async fn fetch_statesync_params(
         .and_then(|height| height.parse::<u64>().ok())
         .ok_or("Unable to parse latest_block_height from trusted Osmosis RPC status response")?;
 
-    if latest_height <= OSMOSIS_TESTNET_TRUST_OFFSET {
+    if latest_height <= config::TESTNET_TRUST_OFFSET {
         return Err(format!(
             "Latest testnet height {} is too low to compute trust height with offset {}",
-            latest_height, OSMOSIS_TESTNET_TRUST_OFFSET
+            latest_height,
+            config::TESTNET_TRUST_OFFSET
         )
         .into());
     }
 
-    let trust_height = latest_height - OSMOSIS_TESTNET_TRUST_OFFSET;
+    let trust_height = latest_height - config::TESTNET_TRUST_OFFSET;
     let block_url = trust_rpc_base_url.join(format!("block?height={}", trust_height).as_str())?;
 
     let block_response = reqwest::get(block_url.as_str()).await?;
