@@ -1,3 +1,9 @@
+//! Shared runtime utilities for Cosmos-style chain adapters.
+//!
+//! This module centralizes operational helpers that are reused across
+//! multiple Cosmos chains (currently Osmosis and Injective), so chain
+//! implementations can keep only chain-specific logic in their own modules.
+
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +14,7 @@ use std::time::Duration;
 use dirs::home_dir;
 use serde_json::Value;
 
+/// Returns true if `binary` is available on `PATH`.
 pub(crate) fn command_exists(binary: &str) -> bool {
     let Some(path_var) = env::var_os("PATH") else {
         return false;
@@ -16,6 +23,10 @@ pub(crate) fn command_exists(binary: &str) -> bool {
     env::split_paths(&path_var).any(|directory| directory.join(binary).is_file())
 }
 
+/// Resolves a binary either from `PATH` or from `$HOME/go/bin`.
+///
+/// The returned boolean indicates whether the binary came from `PATH` (`true`)
+/// or from the Go fallback location (`false`).
 pub(crate) fn locate_binary_in_path_or_go_bin(binary: &str) -> Option<(PathBuf, bool)> {
     if let Some(path_var) = env::var_os("PATH") {
         for directory in env::split_paths(&path_var) {
@@ -36,6 +47,7 @@ pub(crate) fn locate_binary_in_path_or_go_bin(binary: &str) -> Option<(PathBuf, 
     })
 }
 
+/// Prepends `directory` to the current process `PATH` if it is not already present.
 pub(crate) fn add_directory_to_process_path(directory: &Path) {
     let current_path = env::var_os("PATH").unwrap_or_default();
     let mut path_entries: Vec<PathBuf> = env::split_paths(&current_path).collect();
@@ -49,6 +61,10 @@ pub(crate) fn add_directory_to_process_path(directory: &Path) {
     }
 }
 
+/// Fetches state-sync parameters from a trusted RPC endpoint.
+///
+/// Returns `(rpc_servers, trust_height, trust_hash)` for use in Cosmos SDK
+/// state-sync startup.
 pub(crate) async fn fetch_statesync_params(
     trust_rpc_url: &str,
     trust_offset: u64,
@@ -118,12 +134,14 @@ pub(crate) async fn fetch_statesync_params(
     Ok((rpc_servers, trust_height, trust_hash))
 }
 
+/// Reads a PID from a pid-file.
 pub(crate) fn read_pid_file(pid_file_path: &Path) -> Option<u32> {
     fs::read_to_string(pid_file_path)
         .ok()
         .and_then(|value| value.trim().parse::<u32>().ok())
 }
 
+/// Gracefully terminates a process, then force-kills if needed.
 pub(crate) fn stop_process(
     pid: u32,
     process_label: &str,
@@ -167,6 +185,7 @@ pub(crate) fn stop_process(
     .into())
 }
 
+/// Checks whether a process ID is currently alive.
 pub(crate) fn is_process_alive(pid: u32) -> bool {
     Command::new("kill")
         .args(["-0", pid.to_string().as_str()])
@@ -177,6 +196,7 @@ pub(crate) fn is_process_alive(pid: u32) -> bool {
         .is_some_and(|status| status.success())
 }
 
+/// Finds running node PIDs for a specific binary and `--home` directory.
 pub(crate) fn find_node_pids_for_home(binary_name: &str, node_home_path: &Path) -> Vec<u32> {
     let expected_home = node_home_path.to_string_lossy();
     let output = Command::new("ps")
@@ -205,6 +225,7 @@ pub(crate) fn find_node_pids_for_home(binary_name: &str, node_home_path: &Path) 
     }
 }
 
+/// Reads the last `max_lines` lines from a log file.
 pub(crate) fn read_log_tail(
     log_path: &Path,
     max_lines: usize,
@@ -215,6 +236,7 @@ pub(crate) fn read_log_tail(
     Ok(lines.join("\n"))
 }
 
+/// Normalizes a trusted RPC URL to its base form.
 fn normalize_trust_rpc_url(raw_url: &str) -> Result<reqwest::Url, Box<dyn std::error::Error>> {
     let normalized = raw_url
         .trim()
@@ -241,6 +263,7 @@ fn normalize_trust_rpc_url(raw_url: &str) -> Result<reqwest::Url, Box<dyn std::e
     Ok(parsed)
 }
 
+/// Formats a URL as `{scheme}://{host}:{port}` for state-sync RPC servers.
 fn format_rpc_server_address(url: &reqwest::Url) -> Result<String, Box<dyn std::error::Error>> {
     let host = url
         .host_str()
@@ -251,6 +274,7 @@ fn format_rpc_server_address(url: &reqwest::Url) -> Result<String, Box<dyn std::
     Ok(format!("{}://{}:{}", url.scheme(), host, port))
 }
 
+/// Parses `ps` output lines of the shape `pid command...`.
 fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
