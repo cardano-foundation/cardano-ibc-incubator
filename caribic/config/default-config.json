@@ -10,6 +10,42 @@
       "message_port_id": "transfer"
     }
   },
+  "optional_chains": {
+    "injective": {
+      "source_repo_url": "https://github.com/InjectiveFoundation/injective-core.git",
+      "source_dir": ".caribic/injective/injective-core",
+      "local": {
+        "chain_id": "injective-777",
+        "moniker": "caribic-injective-local",
+        "status_url": "http://127.0.0.1:26660/status",
+        "rpc_laddr": "tcp://0.0.0.0:26660",
+        "grpc_address": "0.0.0.0:9097",
+        "api_address": "tcp://0.0.0.0:1320",
+        "home_dir": ".injectived-local",
+        "pid_file": ".caribic/injective-local.pid",
+        "log_file": ".caribic/injective-local.log",
+        "validator_key": "validator",
+        "genesis_account_amount": "100000000000000000000stake",
+        "gentx_amount": "50000000000000000000stake"
+      },
+      "testnet": {
+        "chain_id": "injective-888",
+        "moniker": "caribic-injective-testnet",
+        "trust_rpc_url": "https://testnet.sentry.tm.injective.network",
+        "status_url": "http://127.0.0.1:26659/status",
+        "rpc_laddr": "tcp://0.0.0.0:26659",
+        "grpc_address": "0.0.0.0:9096",
+        "api_address": "tcp://0.0.0.0:1319",
+        "genesis_url": "https://raw.githubusercontent.com/InjectiveLabs/testnet/main/testnet-1/genesis.json",
+        "home_dir": ".injectived-testnet",
+        "pid_file": ".caribic/injective-testnet.pid",
+        "log_file": ".caribic/injective-testnet.log",
+        "trust_offset": 1500,
+        "seeds": "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656",
+        "persistent_peers": "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656"
+      }
+    }
+  },
   "mithril": {
     "enabled": true,
     "aggregator_url": "http://127.0.0.1:8080",
