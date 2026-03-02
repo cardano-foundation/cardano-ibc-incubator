@@ -1,8 +1,10 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use dirs::home_dir;
 
 use crate::chains::{
+    check_port_health, check_rpc_health,
     cosmos_node::{
         managed_node_health, CosmosChainOptions, CosmosNetworkKind, CosmosNodeSpec,
         CosmosStateSyncSpec,
@@ -20,7 +22,7 @@ pub static INJECTIVE_CHAIN_ADAPTER: InjectiveChainAdapter = InjectiveChainAdapte
 const INJECTIVE_NETWORKS: [ChainNetwork; 3] = [
     ChainNetwork {
         name: "local",
-        description: "Local single-node Injective devnet",
+        description: "Local Docker-based Injective devnet",
         managed_by_caribic: true,
     },
     ChainNetwork {
@@ -37,7 +39,7 @@ const INJECTIVE_NETWORKS: [ChainNetwork; 3] = [
 
 const INJECTIVE_LOCAL_FLAGS: [ChainFlagSpec; 1] = [ChainFlagSpec {
     name: "stateful",
-    description: "Keep local Injective devnet state in ~/.injectived-local between runs",
+    description: "Keep local Injective Docker state in ~/.injectived-local between runs",
     required: false,
 }];
 
@@ -55,22 +57,6 @@ const INJECTIVE_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
 ];
 
 const INJECTIVE_MAINNET_FLAGS: [ChainFlagSpec; 0] = [];
-
-const INJECTIVE_LOCAL_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
-    chain_name: "Injective",
-    binary: "injectived",
-    chain_id: config::LOCAL_CHAIN_ID,
-    moniker: config::LOCAL_MONIKER,
-    status_url: config::LOCAL_STATUS_URL,
-    rpc_laddr: config::LOCAL_RPC_LADDR,
-    grpc_address: config::LOCAL_GRPC_ADDRESS,
-    grpc_web_address: None,
-    api_address: config::LOCAL_API_ADDRESS,
-    home_dir: config::LOCAL_HOME_DIR,
-    pid_file: config::LOCAL_PID_FILE,
-    log_file: config::LOCAL_LOG_FILE,
-    state_sync: None,
-};
 
 const INJECTIVE_TESTNET_STATE_SYNC_SPEC: CosmosStateSyncSpec = CosmosStateSyncSpec {
     default_trust_rpc_url: config::TESTNET_TRUST_RPC_URL,
@@ -124,7 +110,7 @@ impl ChainAdapter for InjectiveChainAdapter {
 
     async fn start(
         &self,
-        _project_root_path: &Path,
+        project_root_path: &Path,
         request: &ChainStartRequest<'_>,
     ) -> Result<(), String> {
         self.validate_flags(request.network, request.flags)?;
@@ -133,10 +119,15 @@ impl ChainAdapter for InjectiveChainAdapter {
 
         match network {
             CosmosNetworkKind::Local => {
-                lifecycle::prepare_local(&INJECTIVE_LOCAL_NODE_SPEC, options.stateful_or(false))
-                    .await
-                    .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
-                lifecycle::start_local(&INJECTIVE_LOCAL_NODE_SPEC)
+                let injective_dir = workspace_dir(project_root_path);
+                lifecycle::prepare_local(
+                    project_root_path,
+                    injective_dir.as_path(),
+                    options.stateful_or(false),
+                )
+                .await
+                .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
+                lifecycle::start_local(injective_dir.as_path())
                     .await
                     .map_err(|error| format!("Failed to start Injective local node: {}", error))?;
                 Ok(())
@@ -149,14 +140,10 @@ impl ChainAdapter for InjectiveChainAdapter {
                     })?;
                 lifecycle::start_testnet(
                     &INJECTIVE_TESTNET_NODE_SPEC,
-                    options.trust_rpc_url(
-                        INJECTIVE_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url,
-                    ),
+                    options.trust_rpc_url(INJECTIVE_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url),
                 )
-                    .await
-                    .map_err(|error| {
-                        format!("Failed to start Injective testnet node: {}", error)
-                    })?;
+                .await
+                .map_err(|error| format!("Failed to start Injective testnet node: {}", error))?;
                 Ok(())
             }
             CosmosNetworkKind::Mainnet => Err(
@@ -168,14 +155,17 @@ impl ChainAdapter for InjectiveChainAdapter {
 
     fn stop(
         &self,
-        _project_root_path: &Path,
+        project_root_path: &Path,
         network: &str,
         flags: &ChainFlags,
     ) -> Result<(), String> {
         self.validate_flags(network, flags)?;
         match CosmosNetworkKind::parse(network)? {
-            CosmosNetworkKind::Local => lifecycle::stop_local(&INJECTIVE_LOCAL_NODE_SPEC)
-                .map_err(|error| format!("Failed to stop local Injective node: {}", error)),
+            CosmosNetworkKind::Local => {
+                let injective_dir = workspace_dir(project_root_path);
+                lifecycle::stop_local(injective_dir.as_path());
+                Ok(())
+            }
             CosmosNetworkKind::Testnet => lifecycle::stop_testnet(&INJECTIVE_TESTNET_NODE_SPEC)
                 .map_err(|error| format!("Failed to stop local Injective testnet node: {}", error)),
             CosmosNetworkKind::Mainnet => Ok(()),
@@ -190,11 +180,15 @@ impl ChainAdapter for InjectiveChainAdapter {
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
         match CosmosNetworkKind::parse(network)? {
-            CosmosNetworkKind::Local => Ok(vec![managed_node_health(
-                "injective",
-                "Injective node",
-                &INJECTIVE_LOCAL_NODE_SPEC,
-            )?]),
+            CosmosNetworkKind::Local => Ok(vec![
+                check_rpc_health(
+                    "injective",
+                    config::LOCAL_STATUS_URL,
+                    26660,
+                    "Injective local node (RPC)",
+                ),
+                check_port_health("injective", 9097, "Injective local node (gRPC)"),
+            ]),
             CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
                 "injective",
                 "Injective node",
@@ -209,4 +203,21 @@ impl ChainAdapter for InjectiveChainAdapter {
             }]),
         }
     }
+}
+
+/// Returns the local runtime workspace used by Injective scripts and docker compose.
+pub fn workspace_dir(project_root: &Path) -> PathBuf {
+    if let Some(home) = home_dir() {
+        return home
+            .join(".caribic")
+            .join("injective")
+            .join("workspace")
+            .join("injective");
+    }
+
+    project_root
+        .join(".caribic")
+        .join("injective")
+        .join("workspace")
+        .join("injective")
 }

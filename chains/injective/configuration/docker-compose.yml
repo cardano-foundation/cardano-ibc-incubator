@@ -1,0 +1,19 @@
+services:
+  injectived:
+    image: ${INJECTIVE_LOCAL_IMAGE:-injectivelabs/injective-core:v1.18.0}
+    entrypoint: ["/bin/sh", "/injective/scripts/setup_injective_local.sh"]
+    environment:
+      INJECTIVE_HOME: /root/.injectived
+      INJECTIVE_LOCAL_CHAIN_ID: ${INJECTIVE_LOCAL_CHAIN_ID:-injective-777}
+      INJECTIVE_LOCAL_MONIKER: ${INJECTIVE_LOCAL_MONIKER:-caribic-injective-local}
+      INJECTIVE_LOCAL_VALIDATOR_KEY: ${INJECTIVE_LOCAL_VALIDATOR_KEY:-validator}
+      INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: ${INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT:-100000000000000000000stake}
+      INJECTIVE_LOCAL_GENTX_AMOUNT: ${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}
+    volumes:
+      - ../scripts:/injective/scripts:ro
+      - ${HOME}/.injectived-local:/root/.injectived
+    ports:
+      - "26660:26657"
+      - "1320:1317"
+      - "9097:9090"
+    restart: unless-stopped

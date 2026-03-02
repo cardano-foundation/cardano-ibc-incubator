@@ -3,34 +3,93 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use fs_extra::copy_items;
+use serde_json::Value;
+
 use super::config;
 use crate::chains::cosmos_node::{
     add_directory_to_process_path, command_exists, locate_binary_in_path_or_go_bin,
     resolve_home_relative_path, start_managed_node, stop_managed_node, CosmosNodeSpec,
 };
-use crate::logger::{verbose, warn};
+use crate::logger::{log, verbose, warn};
+use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
-    spec: &CosmosNodeSpec,
+    project_root_path: &Path,
+    injective_dir: &Path,
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_injectived_available()?;
+    sync_workspace_assets_from_repo(project_root_path, injective_dir)?;
 
-    let paths = spec.paths()?;
-    if !stateful && paths.home_dir.exists() {
-        fs::remove_dir_all(paths.home_dir.as_path())?;
+    if !stateful {
+        stop_local(injective_dir);
+
+        let local_home_dir = resolve_home_relative_path(config::LOCAL_HOME_DIR)?;
+        if local_home_dir.exists() {
+            fs::remove_dir_all(local_home_dir.as_path())?;
+        }
     }
 
-    initialize_local_home(spec, paths.home_dir.as_path())?;
     Ok(())
 }
 
-pub(super) async fn start_local(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
-    start_managed_node(spec, None, 120, 3000, "Injective local node").await
+pub(super) async fn start_local(injective_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    execute_script(
+        injective_dir,
+        "docker",
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "up",
+            "-d",
+        ]),
+        Some(vec![
+            ("INJECTIVE_LOCAL_IMAGE", config::LOCAL_DOCKER_IMAGE),
+            ("INJECTIVE_LOCAL_CHAIN_ID", config::LOCAL_CHAIN_ID),
+            ("INJECTIVE_LOCAL_MONIKER", config::LOCAL_MONIKER),
+            ("INJECTIVE_LOCAL_VALIDATOR_KEY", config::LOCAL_VALIDATOR_KEY),
+            (
+                "INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT",
+                config::LOCAL_GENESIS_ACCOUNT_AMOUNT,
+            ),
+            ("INJECTIVE_LOCAL_GENTX_AMOUNT", config::LOCAL_GENTX_AMOUNT),
+        ]),
+    )?;
+
+    let is_healthy = wait_for_health_check(
+        config::LOCAL_STATUS_URL,
+        120,
+        3000,
+        Some(|response_body: &String| {
+            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
+            json["result"]["sync_info"]["latest_block_height"]
+                .as_str()
+                .and_then(|height| height.parse::<u64>().ok())
+                .is_some_and(|height| height > 0)
+        }),
+    )
+    .await;
+
+    if is_healthy.is_ok() {
+        return Ok(());
+    }
+
+    stop_local(injective_dir);
+    Err(format!(
+        "Timed out while waiting for local Injective node at {}",
+        config::LOCAL_STATUS_URL
+    )
+    .into())
 }
 
-pub(super) fn stop_local(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
-    stop_managed_node(spec, "Injective local node")
+pub(super) fn stop_local(injective_path: &Path) {
+    let _ = execute_script(
+        injective_path,
+        "docker",
+        Vec::from(["compose", "-f", "configuration/docker-compose.yml", "down"]),
+        None,
+    );
 }
 
 pub(super) async fn prepare_testnet(
@@ -71,7 +130,7 @@ fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
     if injectived_location.is_none() {
         let should_continue = prompt_and_install_injectived()?;
         if !should_continue {
-            return Err("injectived is required for Injective local/testnet startup".into());
+            return Err("injectived is required for Injective testnet startup".into());
         }
         injectived_location = locate_binary_in_path_or_go_bin("injectived");
     }
@@ -205,151 +264,6 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn initialize_local_home(
-    spec: &CosmosNodeSpec,
-    home_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config_toml_path = home_path.join("config/config.toml");
-    let genesis_path = home_path.join("config/genesis.json");
-    if config_toml_path.exists() && genesis_path.exists() {
-        return Ok(());
-    }
-
-    fs::create_dir_all(home_path)?;
-    let home_path_str = home_path
-        .to_str()
-        .ok_or("Invalid local home directory path")?;
-
-    let init_output = Command::new(spec.binary)
-        .args([
-            "init",
-            spec.moniker,
-            "--chain-id",
-            spec.chain_id,
-            "--home",
-            home_path_str,
-        ])
-        .output()?;
-    if !init_output.status.success() {
-        return Err(format!(
-            "Failed to initialize Injective local home: {}",
-            String::from_utf8_lossy(&init_output.stderr).trim()
-        )
-        .into());
-    }
-
-    let add_key_output = Command::new(spec.binary)
-        .args([
-            "keys",
-            "add",
-            config::LOCAL_VALIDATOR_KEY,
-            "--keyring-backend",
-            "test",
-            "--home",
-            home_path_str,
-        ])
-        .output()?;
-    if !add_key_output.status.success() {
-        return Err(format!(
-            "Failed to create Injective local validator key: {}",
-            String::from_utf8_lossy(&add_key_output.stderr).trim()
-        )
-        .into());
-    }
-
-    let validator_address_output = Command::new(spec.binary)
-        .args([
-            "keys",
-            "show",
-            config::LOCAL_VALIDATOR_KEY,
-            "-a",
-            "--keyring-backend",
-            "test",
-            "--home",
-            home_path_str,
-        ])
-        .output()?;
-    if !validator_address_output.status.success() {
-        return Err(format!(
-            "Failed to resolve Injective local validator address: {}",
-            String::from_utf8_lossy(&validator_address_output.stderr).trim()
-        )
-        .into());
-    }
-    let validator_address = String::from_utf8_lossy(&validator_address_output.stdout)
-        .trim()
-        .to_string();
-    if validator_address.is_empty() {
-        return Err("Injective local validator address is empty".into());
-    }
-
-    let add_genesis_output = Command::new(spec.binary)
-        .args([
-            "genesis",
-            "add-genesis-account",
-            validator_address.as_str(),
-            config::LOCAL_GENESIS_ACCOUNT_AMOUNT,
-            "--chain-id",
-            spec.chain_id,
-            "--home",
-            home_path_str,
-        ])
-        .output()?;
-    if !add_genesis_output.status.success() {
-        return Err(format!(
-            "Failed to add Injective local genesis account: {}",
-            String::from_utf8_lossy(&add_genesis_output.stderr).trim()
-        )
-        .into());
-    }
-
-    let gentx_output = Command::new(spec.binary)
-        .args([
-            "genesis",
-            "gentx",
-            config::LOCAL_VALIDATOR_KEY,
-            config::LOCAL_GENTX_AMOUNT,
-            "--chain-id",
-            spec.chain_id,
-            "--keyring-backend",
-            "test",
-            "--home",
-            home_path_str,
-        ])
-        .output()?;
-    if !gentx_output.status.success() {
-        return Err(format!(
-            "Failed to create Injective local gentx: {}",
-            String::from_utf8_lossy(&gentx_output.stderr).trim()
-        )
-        .into());
-    }
-
-    let collect_gentxs_output = Command::new(spec.binary)
-        .args(["genesis", "collect-gentxs", "--home", home_path_str])
-        .output()?;
-    if !collect_gentxs_output.status.success() {
-        return Err(format!(
-            "Failed to collect Injective local gentxs: {}",
-            String::from_utf8_lossy(&collect_gentxs_output.stderr).trim()
-        )
-        .into());
-    }
-
-    let validate_genesis_output = Command::new(spec.binary)
-        .args(["genesis", "validate", "--home", home_path_str])
-        .output()?;
-    if !validate_genesis_output.status.success() {
-        return Err(format!(
-            "Failed to validate Injective local genesis: {}",
-            String::from_utf8_lossy(&validate_genesis_output.stderr).trim()
-        )
-        .into());
-    }
-
-    Ok(())
-}
-
 async fn initialize_testnet_home(
     spec: &CosmosNodeSpec,
     home_path: &Path,
@@ -400,4 +314,34 @@ async fn initialize_testnet_home(
 
 fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     resolve_home_relative_path(config::SOURCE_DIR)
+}
+
+fn sync_workspace_assets_from_repo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source_root = project_root_path.join("chains").join("injective");
+    let configuration_source = source_root.join("configuration");
+    let scripts_source = source_root.join("scripts");
+
+    if !configuration_source.exists() || !scripts_source.exists() {
+        return Err(format!(
+            "Missing Injective asset templates under {}. Expected {}/configuration and {}/scripts",
+            source_root.display(),
+            source_root.display(),
+            source_root.display()
+        )
+        .into());
+    }
+
+    fs::create_dir_all(injective_dir)?;
+
+    copy_items(
+        &vec![configuration_source, scripts_source],
+        injective_dir,
+        &fs_extra::dir::CopyOptions::new().overwrite(true),
+    )?;
+
+    log("PASS: Injective configuration files copied successfully");
+    Ok(())
 }

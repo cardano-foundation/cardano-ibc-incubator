@@ -1,16 +1,12 @@
 pub(super) const SOURCE_REPO_URL: &str =
     "https://github.com/InjectiveFoundation/injective-core.git";
 pub(super) const SOURCE_DIR: &str = ".caribic/injective/injective-core";
+pub(super) const LOCAL_DOCKER_IMAGE: &str = "injectivelabs/injective-core:v1.18.0";
 
 pub(super) const LOCAL_CHAIN_ID: &str = "injective-777";
 pub(super) const LOCAL_MONIKER: &str = "caribic-injective-local";
 pub(super) const LOCAL_STATUS_URL: &str = "http://127.0.0.1:26660/status";
-pub(super) const LOCAL_RPC_LADDR: &str = "tcp://0.0.0.0:26660";
-pub(super) const LOCAL_GRPC_ADDRESS: &str = "0.0.0.0:9097";
-pub(super) const LOCAL_API_ADDRESS: &str = "tcp://0.0.0.0:1320";
 pub(super) const LOCAL_HOME_DIR: &str = ".injectived-local";
-pub(super) const LOCAL_PID_FILE: &str = ".caribic/injective-local.pid";
-pub(super) const LOCAL_LOG_FILE: &str = ".caribic/injective-local.log";
 pub(super) const LOCAL_VALIDATOR_KEY: &str = "validator";
 pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000stake";
 pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
