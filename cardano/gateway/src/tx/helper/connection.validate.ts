@@ -116,21 +116,18 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const decodedProofTryMsg: MerkleProofMsg = decodeMerkleProof(data.proof_try);
   const decodedProofClientMsg: MerkleProofMsg = decodeMerkleProof(data.proof_client);
 
-  let counterpartyClientStateTypeUrl = '/ibc.lightclients.mithril.v1.ClientState';
-  try {
-    const any = data.client_state as any;
-    const typeUrl = any?.type_url ?? any?.typeUrl;
-    if (typeof typeUrl === 'string' && typeUrl.length > 0) {
-      counterpartyClientStateTypeUrl = typeUrl;
-    }
-    const value = any?.value;
-    const valueLen = value?.length ?? 0;
-    const valueHex = value ? Buffer.from(value).toString('hex') : '';
-    console.log(
-      `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
-    );
-  } catch {
+  const any = data.client_state as any;
+  const typeUrl = any?.type_url ?? any?.typeUrl;
+  if (typeof typeUrl !== 'string' || typeUrl.length === 0) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "client_state.type_url" is required');
   }
+  const counterpartyClientStateTypeUrl = typeUrl;
+  const value = any?.value;
+  const valueLen = value?.length ?? 0;
+  const valueHex = value ? Buffer.from(value).toString('hex') : '';
+  console.log(
+    `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
+  );
 
   const decodedMithrilClientStateMsg: ClientStateMithrilMsg = decodeClientStateMithril(data.client_state.value);
   // eslint-disable-next-line no-console

@@ -4,7 +4,7 @@ import { TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -1072,18 +1072,29 @@ export class ConnectionService {
       return undefined;
     };
 
-    let proofClientStateTypeUrl = connectionOpenAckOperator.counterpartyClientStateTypeUrl;
+    // `verify_proof` checks exact bytes at the proof path. Require proof Any and
+    // request Any.type_url to match exactly; reject mismatches.
     const proofClientExist = firstExist(connectionOpenAckOperator.proofClient as any);
-    let proofClientValueHex = proofClientExist?.value;
-    if (proofClientExist?.value) {
-      try {
-        const proofClientAny = Any.decode(Buffer.from(proofClientExist.value, 'hex'));
-        if (proofClientAny.type_url) {
-          proofClientStateTypeUrl = proofClientAny.type_url;
-        }
-      } catch (error) {
-        this.logger.warn(`[DEBUG] ConnOpenAck failed to decode proof client Any type_url: ${error}`);
-      }
+    if (!proofClientExist?.value) {
+      throw new GrpcInvalidArgumentException(
+        'Invalid argument: proof_client must include an existence proof with Any-encoded client state value',
+      );
+    }
+    const proofClientValueHex = proofClientExist.value;
+    let proofClientStateTypeUrl = '';
+    try {
+      const proofClientAny = Any.decode(Buffer.from(proofClientValueHex, 'hex'));
+      proofClientStateTypeUrl = proofClientAny.type_url;
+    } catch (error) {
+      throw new GrpcInvalidArgumentException(`Invalid argument: failed to decode proof_client Any value: ${error}`);
+    }
+    if (!proofClientStateTypeUrl) {
+      throw new GrpcInvalidArgumentException('Invalid argument: proof_client Any.type_url is required');
+    }
+    if (proofClientStateTypeUrl !== connectionOpenAckOperator.counterpartyClientStateTypeUrl) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: client_state.type_url mismatch (request=${connectionOpenAckOperator.counterpartyClientStateTypeUrl}, proof=${proofClientStateTypeUrl})`,
+      );
     }
 
     const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
@@ -1094,7 +1105,6 @@ export class ConnectionService {
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
     const expectedClientValueBytes = Any.encode(mithrilClientStateAny).finish();
-    const expectedClientValueHex = toHex(expectedClientValueBytes);
 
     // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
     // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
@@ -1133,7 +1143,6 @@ export class ConnectionService {
         this.logger.log(
           `[DEBUG] ConnOpenAck proof_client_value_matches_expected=${valueBytes.equals(expectedClientValueBuf)}`,
         );
-        proofClientValueHex = clientExist.value;
       }
     } catch (e) {
       this.logger.warn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
@@ -1144,9 +1153,9 @@ export class ConnectionService {
       `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
     );
 
-    const clientMembershipValueHex = proofClientValueHex ?? expectedClientValueHex;
+    const clientMembershipValueHex = proofClientValueHex;
     this.logger.log(
-      `[DEBUG] ConnOpenAck verify_proof client value source=${proofClientValueHex ? 'proof' : 'counterparty_client_state'} hex_len=${clientMembershipValueHex.length}`,
+      `[DEBUG] ConnOpenAck verify_proof client value source=proof hex_len=${clientMembershipValueHex.length}`,
     );
 
     const verifyProofRedeemer: VerifyProofRedeemer = {
