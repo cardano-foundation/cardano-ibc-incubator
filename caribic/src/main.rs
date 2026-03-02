@@ -286,7 +286,7 @@ async fn main() {
     // Initialize logger before any config work so setup errors are visible immediately.
     logger::init(args.verbose);
 
-    // Load config from the selected path or create defaults if missing.
+    // Load config from the selected path.
     config::init(args.config.to_str().unwrap_or_else(|| {
         logger::error("Failed to get configuration file path");
         panic!("Failed to get configuration file path");
