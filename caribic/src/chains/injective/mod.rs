@@ -13,6 +13,7 @@ use crate::chains::{
 };
 
 mod config;
+mod hermes;
 mod lifecycle;
 
 pub struct InjectiveChainAdapter;
@@ -133,11 +134,24 @@ impl ChainAdapter for InjectiveChainAdapter {
                 Ok(())
             }
             CosmosNetworkKind::Testnet => {
+                let injective_dir = workspace_dir(project_root_path);
                 lifecycle::prepare_testnet(&INJECTIVE_TESTNET_NODE_SPEC, options.stateful_or(true))
                     .await
                     .map_err(|error| {
                         format!("Failed to prepare Injective testnet node: {}", error)
                     })?;
+
+                hermes::ensure_testnet_chain_in_hermes_config(
+                    project_root_path,
+                    injective_dir.as_path(),
+                )
+                .map_err(|error| {
+                    format!(
+                        "Failed to update Hermes config for Injective testnet: {}",
+                        error
+                    )
+                })?;
+
                 lifecycle::start_testnet(
                     &INJECTIVE_TESTNET_NODE_SPEC,
                     options.trust_rpc_url(INJECTIVE_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url),
