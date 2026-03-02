@@ -44,4 +44,7 @@ if [ -z "${entrypointd_binary}" ]; then
 fi
 
 echo "[RUN] Starting ${entrypointd_binary} with --home ${ENTRYPOINT_HOME}"
-exec "${entrypointd_binary}" start --home "${ENTRYPOINT_HOME}"
+exec "${entrypointd_binary}" start \
+  --home "${ENTRYPOINT_HOME}" \
+  --grpc.address "0.0.0.0:9090" \
+  --api.address "tcp://0.0.0.0:1317"
