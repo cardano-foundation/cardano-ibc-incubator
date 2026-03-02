@@ -4,7 +4,7 @@ import { TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -1064,13 +1064,47 @@ export class ConnectionService {
       delay_period: connectionDatum.state.delay_period,
     };
 
+    const firstExist = (proof: any) => {
+      for (const p of proof?.proofs ?? []) {
+        const inner = p?.proof;
+        if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
+      }
+      return undefined;
+    };
+
+    // `verify_proof` checks exact bytes at the proof path. Require proof Any and
+    // request Any.type_url to match exactly; reject mismatches.
+    const proofClientExist = firstExist(connectionOpenAckOperator.proofClient as any);
+    if (!proofClientExist?.value) {
+      throw new GrpcInvalidArgumentException(
+        'Invalid argument: proof_client must include an existence proof with Any-encoded client state value',
+      );
+    }
+    const proofClientValueHex = proofClientExist.value;
+    let proofClientStateTypeUrl = '';
+    try {
+      const proofClientAny = Any.decode(Buffer.from(proofClientValueHex, 'hex'));
+      proofClientStateTypeUrl = proofClientAny.type_url;
+    } catch (error) {
+      throw new GrpcInvalidArgumentException(`Invalid argument: failed to decode proof_client Any value: ${error}`);
+    }
+    if (!proofClientStateTypeUrl) {
+      throw new GrpcInvalidArgumentException('Invalid argument: proof_client Any.type_url is required');
+    }
+    if (proofClientStateTypeUrl !== connectionOpenAckOperator.counterpartyClientStateTypeUrl) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: client_state.type_url mismatch (request=${connectionOpenAckOperator.counterpartyClientStateTypeUrl}, proof=${proofClientStateTypeUrl})`,
+      );
+    }
+
     const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
       connectionOpenAckOperator.counterpartyClientState,
     );
     const mithrilClientStateAny: Any = {
-      type_url: '/ibc.lightclients.mithril.v1.ClientState',
+      type_url: proofClientStateTypeUrl,
       value: MithrilClientState.encode(mithrilClientState).finish(),
     };
+    const expectedClientValueBytes = Any.encode(mithrilClientStateAny).finish();
 
     // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
     // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
@@ -1081,17 +1115,9 @@ export class ConnectionService {
       const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
       const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
       const expectedClientKeyUtf8 = clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id));
-      const expectedClientValue = Any.encode(mithrilClientStateAny).finish();
+      const expectedClientValue = expectedClientValueBytes;
       const expectedConnValueBuf = Buffer.from(expectedConnValue);
       const expectedClientValueBuf = Buffer.from(expectedClientValue);
-
-      const firstExist = (proof: any) => {
-        for (const p of proof?.proofs ?? []) {
-          const inner = p?.proof;
-          if (inner?.CommitmentProof_Exist?.exist) return inner.CommitmentProof_Exist.exist;
-        }
-        return undefined;
-      };
 
       const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
       if (tryExist?.key && tryExist?.value) {
@@ -1125,6 +1151,11 @@ export class ConnectionService {
     const delayBlockPeriod = getBlockDelay(updatedConnectionDatum.state.delay_period);
     this.logger.log(
       `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
+    );
+
+    const clientMembershipValueHex = proofClientValueHex;
+    this.logger.log(
+      `[DEBUG] ConnOpenAck verify_proof client value source=proof hex_len=${clientMembershipValueHex.length}`,
     );
 
     const verifyProofRedeemer: VerifyProofRedeemer = {
@@ -1162,7 +1193,7 @@ export class ConnectionService {
                 ),
               ],
             },
-            value: toHex(Any.encode(mithrilClientStateAny).finish()),
+            value: clientMembershipValueHex,
           },
         ],
       ],
