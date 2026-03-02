@@ -160,15 +160,15 @@ impl ChainAdapter for InjectiveChainAdapter {
             "local" => {
                 let local = config::local_runtime();
                 Ok(vec![combined_health_status(
-                    local.status_url.as_str(),
-                    local.grpc_address.as_str(),
+                    local.status_url,
+                    local.grpc_address,
                 )?])
             }
             "testnet" => {
                 let testnet = config::testnet_runtime();
                 Ok(vec![combined_health_status(
-                    testnet.status_url.as_str(),
-                    testnet.grpc_address.as_str(),
+                    testnet.status_url,
+                    testnet.grpc_address,
                 )?])
             }
             "mainnet" => Ok(vec![ChainHealthStatus {

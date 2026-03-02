@@ -15,8 +15,6 @@ pub struct Config {
     pub project_root: String,
     #[serde(default)]
     pub chains: Chains,
-    #[serde(default)]
-    pub optional_chains: OptionalChains,
     pub mithril: Mithril,
     #[serde(default)]
     pub health: Health,
@@ -31,84 +29,6 @@ pub struct Chains {
     pub cardano: CardanoChain,
     #[serde(default)]
     pub entrypoint: EntrypointChain,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct OptionalChains {
-    #[serde(default)]
-    pub injective: Injective,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Injective {
-    #[serde(default = "default_injective_source_repo_url")]
-    pub source_repo_url: String,
-    #[serde(default = "default_injective_source_dir")]
-    pub source_dir: String,
-    #[serde(default)]
-    pub local: InjectiveLocal,
-    #[serde(default)]
-    pub testnet: InjectiveTestnet,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InjectiveLocal {
-    #[serde(default = "default_injective_local_chain_id")]
-    pub chain_id: String,
-    #[serde(default = "default_injective_local_moniker")]
-    pub moniker: String,
-    #[serde(default = "default_injective_local_status_url")]
-    pub status_url: String,
-    #[serde(default = "default_injective_local_rpc_laddr")]
-    pub rpc_laddr: String,
-    #[serde(default = "default_injective_local_grpc_address")]
-    pub grpc_address: String,
-    #[serde(default = "default_injective_local_api_address")]
-    pub api_address: String,
-    #[serde(default = "default_injective_local_home_dir")]
-    pub home_dir: String,
-    #[serde(default = "default_injective_local_pid_file")]
-    pub pid_file: String,
-    #[serde(default = "default_injective_local_log_file")]
-    pub log_file: String,
-    #[serde(default = "default_injective_local_validator_key")]
-    pub validator_key: String,
-    #[serde(default = "default_injective_local_genesis_account_amount")]
-    pub genesis_account_amount: String,
-    #[serde(default = "default_injective_local_gentx_amount")]
-    pub gentx_amount: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct InjectiveTestnet {
-    #[serde(default = "default_injective_testnet_chain_id")]
-    pub chain_id: String,
-    #[serde(default = "default_injective_testnet_moniker")]
-    pub moniker: String,
-    #[serde(default = "default_injective_testnet_trust_rpc_url")]
-    pub trust_rpc_url: String,
-    #[serde(default = "default_injective_testnet_status_url")]
-    pub status_url: String,
-    #[serde(default = "default_injective_testnet_rpc_laddr")]
-    pub rpc_laddr: String,
-    #[serde(default = "default_injective_testnet_grpc_address")]
-    pub grpc_address: String,
-    #[serde(default = "default_injective_testnet_api_address")]
-    pub api_address: String,
-    #[serde(default = "default_injective_testnet_genesis_url")]
-    pub genesis_url: String,
-    #[serde(default = "default_injective_testnet_home_dir")]
-    pub home_dir: String,
-    #[serde(default = "default_injective_testnet_pid_file")]
-    pub pid_file: String,
-    #[serde(default = "default_injective_testnet_log_file")]
-    pub log_file: String,
-    #[serde(default = "default_injective_testnet_trust_offset")]
-    pub trust_offset: u64,
-    #[serde(default = "default_injective_testnet_seeds")]
-    pub seeds: String,
-    #[serde(default = "default_injective_testnet_persistent_peers")]
-    pub persistent_peers: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -143,119 +63,6 @@ fn default_entrypoint_message_port_id() -> String {
     "transfer".to_string()
 }
 
-fn default_injective_source_repo_url() -> String {
-    "https://github.com/InjectiveFoundation/injective-core.git".to_string()
-}
-
-fn default_injective_source_dir() -> String {
-    ".caribic/injective/injective-core".to_string()
-}
-
-fn default_injective_local_chain_id() -> String {
-    "injective-777".to_string()
-}
-
-fn default_injective_local_moniker() -> String {
-    "caribic-injective-local".to_string()
-}
-
-fn default_injective_local_status_url() -> String {
-    "http://127.0.0.1:26660/status".to_string()
-}
-
-fn default_injective_local_rpc_laddr() -> String {
-    "tcp://0.0.0.0:26660".to_string()
-}
-
-fn default_injective_local_grpc_address() -> String {
-    "0.0.0.0:9097".to_string()
-}
-
-fn default_injective_local_api_address() -> String {
-    "tcp://0.0.0.0:1320".to_string()
-}
-
-fn default_injective_local_home_dir() -> String {
-    ".injectived-local".to_string()
-}
-
-fn default_injective_local_pid_file() -> String {
-    ".caribic/injective-local.pid".to_string()
-}
-
-fn default_injective_local_log_file() -> String {
-    ".caribic/injective-local.log".to_string()
-}
-
-fn default_injective_local_validator_key() -> String {
-    "validator".to_string()
-}
-
-fn default_injective_local_genesis_account_amount() -> String {
-    "100000000000000000000stake".to_string()
-}
-
-fn default_injective_local_gentx_amount() -> String {
-    "50000000000000000000stake".to_string()
-}
-
-fn default_injective_testnet_chain_id() -> String {
-    "injective-888".to_string()
-}
-
-fn default_injective_testnet_moniker() -> String {
-    "caribic-injective-testnet".to_string()
-}
-
-fn default_injective_testnet_trust_rpc_url() -> String {
-    "https://testnet.sentry.tm.injective.network".to_string()
-}
-
-fn default_injective_testnet_status_url() -> String {
-    "http://127.0.0.1:26659/status".to_string()
-}
-
-fn default_injective_testnet_rpc_laddr() -> String {
-    "tcp://0.0.0.0:26659".to_string()
-}
-
-fn default_injective_testnet_grpc_address() -> String {
-    "0.0.0.0:9096".to_string()
-}
-
-fn default_injective_testnet_api_address() -> String {
-    "tcp://0.0.0.0:1319".to_string()
-}
-
-fn default_injective_testnet_genesis_url() -> String {
-    "https://raw.githubusercontent.com/InjectiveLabs/testnet/main/testnet-1/genesis.json"
-        .to_string()
-}
-
-fn default_injective_testnet_home_dir() -> String {
-    ".injectived-testnet".to_string()
-}
-
-fn default_injective_testnet_pid_file() -> String {
-    ".caribic/injective-testnet.pid".to_string()
-}
-
-fn default_injective_testnet_log_file() -> String {
-    ".caribic/injective-testnet.log".to_string()
-}
-
-fn default_injective_testnet_trust_offset() -> u64 {
-    1500
-}
-
-fn default_injective_testnet_seeds() -> String {
-    "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656".to_string()
-}
-
-fn default_injective_testnet_persistent_peers() -> String {
-    "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656".to_string()
-}
-
 impl Default for CardanoChain {
     fn default() -> Self {
         CardanoChain {
@@ -279,65 +86,6 @@ impl Default for Chains {
         Chains {
             cardano: CardanoChain::default(),
             entrypoint: EntrypointChain::default(),
-        }
-    }
-}
-
-impl Default for InjectiveLocal {
-    fn default() -> Self {
-        InjectiveLocal {
-            chain_id: default_injective_local_chain_id(),
-            moniker: default_injective_local_moniker(),
-            status_url: default_injective_local_status_url(),
-            rpc_laddr: default_injective_local_rpc_laddr(),
-            grpc_address: default_injective_local_grpc_address(),
-            api_address: default_injective_local_api_address(),
-            home_dir: default_injective_local_home_dir(),
-            pid_file: default_injective_local_pid_file(),
-            log_file: default_injective_local_log_file(),
-            validator_key: default_injective_local_validator_key(),
-            genesis_account_amount: default_injective_local_genesis_account_amount(),
-            gentx_amount: default_injective_local_gentx_amount(),
-        }
-    }
-}
-
-impl Default for InjectiveTestnet {
-    fn default() -> Self {
-        InjectiveTestnet {
-            chain_id: default_injective_testnet_chain_id(),
-            moniker: default_injective_testnet_moniker(),
-            trust_rpc_url: default_injective_testnet_trust_rpc_url(),
-            status_url: default_injective_testnet_status_url(),
-            rpc_laddr: default_injective_testnet_rpc_laddr(),
-            grpc_address: default_injective_testnet_grpc_address(),
-            api_address: default_injective_testnet_api_address(),
-            genesis_url: default_injective_testnet_genesis_url(),
-            home_dir: default_injective_testnet_home_dir(),
-            pid_file: default_injective_testnet_pid_file(),
-            log_file: default_injective_testnet_log_file(),
-            trust_offset: default_injective_testnet_trust_offset(),
-            seeds: default_injective_testnet_seeds(),
-            persistent_peers: default_injective_testnet_persistent_peers(),
-        }
-    }
-}
-
-impl Default for Injective {
-    fn default() -> Self {
-        Injective {
-            source_repo_url: default_injective_source_repo_url(),
-            source_dir: default_injective_source_dir(),
-            local: InjectiveLocal::default(),
-            testnet: InjectiveTestnet::default(),
-        }
-    }
-}
-
-impl Default for OptionalChains {
-    fn default() -> Self {
-        OptionalChains {
-            injective: Injective::default(),
         }
     }
 }
@@ -654,7 +402,6 @@ impl Config {
         let mut default_config = Config {
             project_root: "/root/cardano-ibc-incubator".to_string(),
             chains: Chains::default(),
-            optional_chains: OptionalChains::default(),
             mithril: {
                 Mithril {
                     enabled: true,

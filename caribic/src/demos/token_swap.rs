@@ -149,7 +149,21 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         project_root_path,
         setup_script,
         Vec::new(),
-        Some(vec![("CARIBIC_CLEAR_SWAP_PACKETS", "true")]),
+        Some(vec![
+            ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
+            (
+                "CARIBIC_PROJECT_ROOT",
+                project_root_path
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+            ),
+            (
+                "CARIBIC_OSMOSIS_DIR",
+                osmosis_dir
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+            ),
+        ]),
     ) {
         Ok(output) => {
             logger::log("\nPASS: Token swap demo setup script completed");

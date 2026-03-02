@@ -18,8 +18,12 @@ use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
 use crate::utils::{execute_script, execute_script_interactive, wait_for_health_check};
 
-pub(super) async fn prepare_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn prepare_local(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_osmosisd_available(osmosis_dir).await?;
+    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
     copy_local_config_files(osmosis_dir)?;
     verbose("PASS: Osmosis configuration files copied successfully");
     init_local_network(osmosis_dir)?;
@@ -109,10 +113,13 @@ pub(super) fn stop_local(osmosis_path: &Path) {
 }
 
 pub(super) async fn prepare_testnet(
+    project_root_path: &Path,
     osmosis_dir: &Path,
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_osmosisd_available(osmosis_dir).await?;
+    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
+    copy_local_config_files(osmosis_dir)?;
 
     let testnet_home_dir = testnet_home_dir()?;
     if !stateful && testnet_home_dir.exists() {
@@ -721,6 +728,38 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
         osmosis_dir.join("../configuration/Dockerfile"),
         osmosis_dir.join("Dockerfile"),
         &options,
+    )?;
+
+    Ok(())
+}
+
+fn sync_workspace_assets_from_repo(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source_root = project_root_path.join("chains").join("osmosis");
+    let configuration_source = source_root.join("configuration");
+    let scripts_source = source_root.join("scripts");
+
+    if !configuration_source.exists() || !scripts_source.exists() {
+        return Err(format!(
+            "Missing Osmosis asset templates under {}. Expected {}/configuration and {}/scripts",
+            source_root.display(),
+            source_root.display(),
+            source_root.display()
+        )
+        .into());
+    }
+
+    let workspace_root = osmosis_dir
+        .parent()
+        .ok_or("Failed to resolve Osmosis workspace root")?;
+    fs::create_dir_all(workspace_root)?;
+
+    copy_items(
+        &vec![configuration_source, scripts_source],
+        workspace_root,
+        &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
 
     Ok(())

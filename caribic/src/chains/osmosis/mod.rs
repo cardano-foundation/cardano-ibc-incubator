@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use dirs::home_dir;
 
 use crate::chains::{
     check_port_health, check_rpc_health, parse_bool_flag, ChainAdapter, ChainFlagSpec, ChainFlags,
@@ -91,7 +92,7 @@ impl ChainAdapter for OsmosisChainAdapter {
                 }
 
                 let osmosis_dir = workspace_dir(project_root_path);
-                lifecycle::prepare_local(osmosis_dir.as_path())
+                lifecycle::prepare_local(project_root_path, osmosis_dir.as_path())
                     .await
                     .map_err(|error| format!("Failed to prepare Osmosis appchain: {}", error))?;
                 lifecycle::start_local(osmosis_dir.as_path())
@@ -103,6 +104,11 @@ impl ChainAdapter for OsmosisChainAdapter {
                 let stateful = parse_bool_flag(request.flags, "stateful", true)?;
                 let trust_rpc_url = request.flags.get("trust-rpc-url").cloned();
                 let osmosis_dir = workspace_dir(project_root_path);
+                lifecycle::prepare_testnet(project_root_path, osmosis_dir.as_path(), stateful)
+                    .await
+                    .map_err(|error| {
+                        format!("Failed to prepare Osmosis testnet node: {}", error)
+                    })?;
                 hermes::ensure_testnet_chain_in_hermes_config(osmosis_dir.as_path()).map_err(
                     |error| {
                         format!(
@@ -111,11 +117,6 @@ impl ChainAdapter for OsmosisChainAdapter {
                         )
                     },
                 )?;
-                lifecycle::prepare_testnet(osmosis_dir.as_path(), stateful)
-                    .await
-                    .map_err(|error| {
-                        format!("Failed to prepare Osmosis testnet node: {}", error)
-                    })?;
                 lifecycle::start_testnet(osmosis_dir.as_path(), trust_rpc_url.as_deref())
                     .await
                     .map_err(|error| format!("Failed to start Osmosis testnet node: {}", error))?;
@@ -190,13 +191,21 @@ impl ChainAdapter for OsmosisChainAdapter {
     }
 }
 
-/// Returns the local workspace directory used by Osmosis scripts and docker compose.
+/// Returns the local runtime workspace used by Osmosis scripts and docker compose.
 pub fn workspace_dir(project_root: &Path) -> PathBuf {
+    if let Some(home) = home_dir() {
+        return home
+            .join(".caribic")
+            .join("osmosis")
+            .join("workspace")
+            .join("osmosis");
+    }
+
     project_root
-        .join("chains")
+        .join(".caribic")
         .join("osmosis")
+        .join("workspace")
         .join("osmosis")
-        .to_path_buf()
 }
 
 /// Stops local Osmosis containers if they exist.

@@ -61,11 +61,11 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
                 .to_str()
                 .ok_or("Invalid local home directory path")?,
             "--rpc.laddr",
-            local_config.rpc_laddr.as_str(),
+            local_config.rpc_laddr,
             "--grpc.address",
-            local_config.grpc_address.as_str(),
+            local_config.grpc_address,
             "--api.address",
-            local_config.api_address.as_str(),
+            local_config.api_address,
         ])
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
@@ -80,7 +80,7 @@ pub(super) async fn start_local() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let is_healthy = wait_for_health_check(
-        local_config.status_url.as_str(),
+        local_config.status_url,
         120,
         3000,
         Some(|response_body: &String| {
@@ -159,7 +159,7 @@ pub(super) async fn start_testnet(
         }
     }
 
-    let trust_rpc_url = trust_rpc_url.unwrap_or(testnet_config.trust_rpc_url.as_str());
+    let trust_rpc_url = trust_rpc_url.unwrap_or(testnet_config.trust_rpc_url);
     let (rpc_servers, trust_height, trust_hash) =
         fetch_statesync_params(trust_rpc_url, testnet_config.trust_offset).await?;
 
@@ -181,11 +181,11 @@ pub(super) async fn start_testnet(
                 .to_str()
                 .ok_or("Invalid testnet home directory path")?,
             "--rpc.laddr",
-            testnet_config.rpc_laddr.as_str(),
+            testnet_config.rpc_laddr,
             "--grpc.address",
-            testnet_config.grpc_address.as_str(),
+            testnet_config.grpc_address,
             "--api.address",
-            testnet_config.api_address.as_str(),
+            testnet_config.api_address,
         ])
         .env("INJECTIVED_STATESYNC_ENABLE", "true")
         .env("INJECTIVED_STATESYNC_RPC_SERVERS", rpc_servers)
@@ -194,10 +194,10 @@ pub(super) async fn start_testnet(
             trust_height.to_string(),
         )
         .env("INJECTIVED_STATESYNC_TRUST_HASH", trust_hash)
-        .env("INJECTIVED_P2P_SEEDS", testnet_config.seeds.as_str())
+        .env("INJECTIVED_P2P_SEEDS", testnet_config.seeds)
         .env(
             "INJECTIVED_P2P_PERSISTENT_PEERS",
-            testnet_config.persistent_peers.as_str(),
+            testnet_config.persistent_peers,
         )
         .stdout(Stdio::from(stdout_file))
         .stderr(Stdio::from(stderr_file))
@@ -212,7 +212,7 @@ pub(super) async fn start_testnet(
     }
 
     let is_healthy = wait_for_health_check(
-        testnet_config.status_url.as_str(),
+        testnet_config.status_url,
         180,
         3000,
         Some(|response_body: &String| {
@@ -377,7 +377,7 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
                 "clone",
                 "--depth",
                 "1",
-                injective.source_repo_url.as_str(),
+                injective.source_repo_url,
                 source_path
                     .to_str()
                     .ok_or("Invalid injective source path")?,
@@ -402,7 +402,7 @@ fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
 
 fn initialize_local_home(
     home_path: &Path,
-    local_config: &crate::config::InjectiveLocal,
+    local_config: &config::InjectiveLocalRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
@@ -418,9 +418,9 @@ fn initialize_local_home(
     let init_output = Command::new("injectived")
         .args([
             "init",
-            local_config.moniker.as_str(),
+            local_config.moniker,
             "--chain-id",
-            local_config.chain_id.as_str(),
+            local_config.chain_id,
             "--home",
             home_path_str,
         ])
@@ -437,7 +437,7 @@ fn initialize_local_home(
         .args([
             "keys",
             "add",
-            local_config.validator_key.as_str(),
+            local_config.validator_key,
             "--keyring-backend",
             "test",
             "--home",
@@ -456,7 +456,7 @@ fn initialize_local_home(
         .args([
             "keys",
             "show",
-            local_config.validator_key.as_str(),
+            local_config.validator_key,
             "-a",
             "--keyring-backend",
             "test",
@@ -483,9 +483,9 @@ fn initialize_local_home(
             "genesis",
             "add-genesis-account",
             validator_address.as_str(),
-            local_config.genesis_account_amount.as_str(),
+            local_config.genesis_account_amount,
             "--chain-id",
-            local_config.chain_id.as_str(),
+            local_config.chain_id,
             "--home",
             home_path_str,
         ])
@@ -502,10 +502,10 @@ fn initialize_local_home(
         .args([
             "genesis",
             "gentx",
-            local_config.validator_key.as_str(),
-            local_config.gentx_amount.as_str(),
+            local_config.validator_key,
+            local_config.gentx_amount,
             "--chain-id",
-            local_config.chain_id.as_str(),
+            local_config.chain_id,
             "--keyring-backend",
             "test",
             "--home",
@@ -547,7 +547,7 @@ fn initialize_local_home(
 
 async fn initialize_testnet_home(
     home_path: &Path,
-    testnet_config: &crate::config::InjectiveTestnet,
+    testnet_config: &config::InjectiveTestnetRuntime,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config_toml_path = home_path.join("config/config.toml");
     let genesis_path = home_path.join("config/genesis.json");
@@ -560,9 +560,9 @@ async fn initialize_testnet_home(
     let output = Command::new("injectived")
         .args([
             "init",
-            testnet_config.moniker.as_str(),
+            testnet_config.moniker,
             "--chain-id",
-            testnet_config.chain_id.as_str(),
+            testnet_config.chain_id,
             "--home",
             home_path
                 .to_str()
@@ -578,7 +578,7 @@ async fn initialize_testnet_home(
         .into());
     }
 
-    let genesis_response = reqwest::get(testnet_config.genesis_url.as_str()).await?;
+    let genesis_response = reqwest::get(testnet_config.genesis_url).await?;
     if !genesis_response.status().is_success() {
         return Err(format!(
             "Failed to download Injective testnet genesis from {} (HTTP {})",
@@ -721,7 +721,7 @@ fn add_directory_to_process_path(directory: &Path) {
 
 fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.source_dir.as_str())
+    config::resolve_home_relative_path(injective.source_dir)
 }
 
 fn command_exists(binary: &str) -> bool {
@@ -734,32 +734,32 @@ fn command_exists(binary: &str) -> bool {
 
 fn local_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.local.home_dir.as_str())
+    config::resolve_home_relative_path(injective.local.home_dir)
 }
 
 fn local_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.local.pid_file.as_str())
+    config::resolve_home_relative_path(injective.local.pid_file)
 }
 
 fn local_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.local.log_file.as_str())
+    config::resolve_home_relative_path(injective.local.log_file)
 }
 
 fn testnet_home_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.testnet.home_dir.as_str())
+    config::resolve_home_relative_path(injective.testnet.home_dir)
 }
 
 fn testnet_pid_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.testnet.pid_file.as_str())
+    config::resolve_home_relative_path(injective.testnet.pid_file)
 }
 
 fn testnet_log_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let injective = config::runtime();
-    config::resolve_home_relative_path(injective.testnet.log_file.as_str())
+    config::resolve_home_relative_path(injective.testnet.log_file)
 }
 
 fn read_pid_file(pid_file_path: &Path) -> Option<u32> {

@@ -7,13 +7,17 @@ check_string_empty() {
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root=$(
-  if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
-    git -C "$script_dir" rev-parse --show-toplevel
-  else
-    realpath "$script_dir/../../../.."
-  fi
-)
+if [ -n "${CARIBIC_PROJECT_ROOT:-}" ]; then
+  repo_root=$(realpath "$CARIBIC_PROJECT_ROOT")
+else
+  repo_root=$(
+    if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
+      git -C "$script_dir" rev-parse --show-toplevel
+    else
+      realpath "$script_dir/../../../.."
+    fi
+  )
+fi
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 OSMOSISD_BIN="${OSMOSISD_BIN:-$(command -v osmosisd || true)}"
 if [ -z "$OSMOSISD_BIN" ] && [ -x "$HOME/go/bin/osmosisd" ]; then
@@ -346,8 +350,9 @@ fi
 SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 ENTRYPOINT_RECEIVER="pfm"
 OSMOSIS_NODE="http://localhost:26658"
-SWAPROUTER_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/swaprouter.wasm"
-CROSSCHAIN_SWAPS_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/crosschain_swaps.wasm"
+OSMOSIS_WORKSPACE_DIR="${CARIBIC_OSMOSIS_DIR:-$repo_root/chains/osmosis/osmosis}"
+SWAPROUTER_WASM="$OSMOSIS_WORKSPACE_DIR/cosmwasm/wasm/swaprouter.wasm"
+CROSSCHAIN_SWAPS_WASM="$OSMOSIS_WORKSPACE_DIR/cosmwasm/wasm/crosschain_swaps.wasm"
 
 # query channels' id
 cardano_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_ENTRYPOINT_NAME")
