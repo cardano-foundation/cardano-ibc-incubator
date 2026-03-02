@@ -158,17 +158,15 @@ impl ChainAdapter for InjectiveChainAdapter {
 
         match network {
             "local" => {
-                let local = config::local_runtime();
                 Ok(vec![combined_health_status(
-                    local.status_url,
-                    local.grpc_address,
+                    config::LOCAL_STATUS_URL,
+                    config::LOCAL_GRPC_ADDRESS,
                 )?])
             }
             "testnet" => {
-                let testnet = config::testnet_runtime();
                 Ok(vec![combined_health_status(
-                    testnet.status_url,
-                    testnet.grpc_address,
+                    config::TESTNET_STATUS_URL,
+                    config::TESTNET_GRPC_ADDRESS,
                 )?])
             }
             "mainnet" => Ok(vec![ChainHealthStatus {
@@ -191,8 +189,8 @@ fn combined_health_status(
     status_url: &str,
     grpc_address: &str,
 ) -> Result<ChainHealthStatus, String> {
-    let default_rpc_port = config::parse_port_from_url(status_url, "status_url")?;
-    let grpc_port = config::parse_port_from_socket_address(grpc_address, "grpc_address")?;
+    let default_rpc_port = parse_port_from_url(status_url, "status_url")?;
+    let grpc_port = parse_port_from_socket_address(grpc_address, "grpc_address")?;
 
     let rpc_ready = check_rpc_health(
         "injective",
@@ -222,5 +220,31 @@ fn combined_health_status(
                 "not reachable"
             }
         ),
+    })
+}
+
+fn parse_port_from_url(url: &str, field_name: &str) -> Result<u16, String> {
+    let parsed = reqwest::Url::parse(url)
+        .map_err(|error| format!("Invalid Injective {} '{}': {}", field_name, url, error))?;
+    parsed.port_or_known_default().ok_or_else(|| {
+        format!(
+            "Injective {} '{}' does not include a known port",
+            field_name, url
+        )
+    })
+}
+
+fn parse_port_from_socket_address(address: &str, field_name: &str) -> Result<u16, String> {
+    let port_text = address
+        .trim()
+        .rsplit(':')
+        .next()
+        .ok_or_else(|| format!("Invalid Injective {} '{}'", field_name, address))?;
+
+    port_text.parse::<u16>().map_err(|error| {
+        format!(
+            "Invalid Injective {} '{}' (cannot parse port): {}",
+            field_name, address, error
+        )
     })
 }
