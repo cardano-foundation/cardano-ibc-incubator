@@ -11,6 +11,8 @@ use super::config;
 use crate::logger::{log, verbose};
 use crate::utils::{execute_script, extract_tendermint_connection_id, parse_tendermint_client_id};
 
+const INJECTIVE_ETH_HD_PATH: &str = "m/44'/60'/0'/0/0";
+
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective local demo routing.
 pub(super) fn configure_hermes_for_demo(
     project_root_path: &Path,
@@ -77,6 +79,8 @@ pub(super) fn configure_hermes_for_demo(
             "--overwrite",
             "--chain",
             config::LOCAL_CHAIN_ID,
+            "--hd-path",
+            INJECTIVE_ETH_HD_PATH,
             "--mnemonic-file",
             injective_mnemonic,
         ],

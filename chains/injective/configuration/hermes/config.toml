@@ -8,7 +8,7 @@ rpc_timeout = '10s'
 trusted_node = true
 account_prefix = 'inj'
 key_name = 'injective-local-relayer'
-address_type = { derivation = 'cosmos' }
+address_type = { derivation = 'ethermint', proto_type = { pk_type = '/injective.crypto.v1beta1.ethsecp256k1.PubKey' } }
 store_prefix = 'ibc'
 default_gas = 5000000
 max_gas = 15000000
@@ -33,7 +33,7 @@ rpc_timeout = '10s'
 trusted_node = true
 account_prefix = 'inj'
 key_name = 'injective-888-relayer'
-address_type = { derivation = 'cosmos' }
+address_type = { derivation = 'ethermint', proto_type = { pk_type = '/injective.crypto.v1beta1.ethsecp256k1.PubKey' } }
 store_prefix = 'ibc'
 default_gas = 5000000
 max_gas = 15000000
