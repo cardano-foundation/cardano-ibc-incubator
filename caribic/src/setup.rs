@@ -643,59 +643,76 @@ pub fn prepare_db_sync_and_gateway(
         return Err("Postgres failed to become ready after 60 seconds".into());
     }
 
-    // Create the gateway application database if it doesn't exist
-    let db_check = Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(&[
-            "compose",
-            "exec",
-            "-T",
-            "postgres",
-            "psql",
-            "-U",
-            "postgres",
-            "-tc",
-            "SELECT 1 FROM pg_database WHERE datname = 'gateway_app'",
-        ])
-        .output();
+    let ensure_database_exists =
+        |database_name: &str, label: &str| -> Result<(), Box<dyn std::error::Error>> {
+            let db_check = Command::new("docker")
+                .current_dir(cardano_dir)
+                .args(&[
+                    "compose",
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "postgres",
+                    "-tc",
+                    &format!(
+                        "SELECT 1 FROM pg_database WHERE datname = '{}'",
+                        database_name
+                    ),
+                ])
+                .output();
 
-    let db_exists = db_check
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|result| result.trim().contains("1"))
-        .unwrap_or(false);
+            let db_exists = db_check
+                .ok()
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .map(|result| result.trim().contains("1"))
+                .unwrap_or(false);
 
-    if !db_exists {
-        log("Creating gateway_app database...");
-        let create_result = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args(&[
-                "compose",
-                "exec",
-                "-T",
-                "postgres",
-                "psql",
-                "-U",
-                "postgres",
-                "-c",
-                "CREATE DATABASE gateway_app",
-            ])
-            .output()
-            .map_err(|error| {
-                format!(
-                    "Failed to create gateway_app database: {}",
-                    error.to_string()
-                )
-            })?;
+            if db_exists {
+                verbose(&format!("{label} database already exists"));
+                return Ok(());
+            }
 
-        if !create_result.status.success() {
-            let error_msg = String::from_utf8_lossy(&create_result.stderr);
-            return Err(format!("Failed to create gateway_app database: {}", error_msg).into());
-        }
-        log("Gateway application database created successfully");
-    } else {
-        verbose("Gateway application database already exists");
-    }
+            log(&format!("Creating {database_name} database..."));
+            let create_result = Command::new("docker")
+                .current_dir(cardano_dir)
+                .args(&[
+                    "compose",
+                    "exec",
+                    "-T",
+                    "postgres",
+                    "psql",
+                    "-U",
+                    "postgres",
+                    "-c",
+                    &format!("CREATE DATABASE {}", database_name),
+                ])
+                .output()
+                .map_err(|error| {
+                    format!(
+                        "Failed to create {} database: {}",
+                        database_name,
+                        error.to_string()
+                    )
+                })?;
+
+            if !create_result.status.success() {
+                let error_msg = String::from_utf8_lossy(&create_result.stderr);
+                return Err(
+                    format!("Failed to create {} database: {}", database_name, error_msg).into(),
+                );
+            }
+
+            log(&format!("{label} database created successfully"));
+            Ok(())
+        };
+
+    // Gateway reads both databases at startup:
+    // - `gateway_app`: gateway-owned app tables
+    // - `cexplorer`: db-sync schema consumed via DBSYNC_* settings
+    ensure_database_exists("gateway_app", "Gateway application")?;
+    ensure_database_exists("cexplorer", "Db-sync (cexplorer)")?;
 
     Ok(())
 }
