@@ -129,7 +129,7 @@ run_with_timeout() {
       echo "timeout" >"$timeout_file"
       kill "$cmd_pid" >/dev/null 2>&1 || true
     fi
-  ) &
+  ) >/dev/null 2>&1 &
   local watchdog_pid=$!
 
   local cmd_status
