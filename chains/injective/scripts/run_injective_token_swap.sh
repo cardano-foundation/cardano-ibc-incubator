@@ -13,6 +13,8 @@ trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 SETTLEMENT_CLEAR_TIMEOUT_SECS="${SETTLEMENT_CLEAR_TIMEOUT_SECS:-120}"
 SETTLEMENT_PROGRESS_EVERY_N_POLLS="${SETTLEMENT_PROGRESS_EVERY_N_POLLS:-2}"
 TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-300}"
+TRANSFER_SUBMIT_MAX_ATTEMPTS="${TRANSFER_SUBMIT_MAX_ATTEMPTS:-4}"
+TRANSFER_RETRY_BASE_DELAY_SECS="${TRANSFER_RETRY_BASE_DELAY_SECS:-3}"
 
 check_string_empty() {
   if [ -z "$1" ]; then
@@ -164,6 +166,104 @@ run_with_timeout() {
 
   rm -f "$output_file" "$timeout_file"
   return 0
+}
+
+is_transient_transfer_error() {
+  local output_file="$1"
+  if [ ! -f "$output_file" ]; then
+    return 1
+  fi
+
+  local lowered
+  lowered="$(tr '[:upper:]' '[:lower:]' <"$output_file")"
+  printf '%s' "$lowered" | grep -Eq \
+    'h2 protocol error|http2 error|transport error|requesterror|timeoutexception|timed out|timeout|econnreset|econnrefused|etimedout|connection reset|connection refused|broken pipe|kupmioserror'
+}
+
+dump_gateway_log_tail() {
+  echo "Gateway logs (last 80 lines):"
+  docker logs --tail 80 gateway-app 2>&1 || echo "Unable to read gateway-app logs"
+}
+
+run_transfer_with_retries() {
+  local description="$1"
+  shift
+
+  local attempt=1
+  while [ "$attempt" -le "$TRANSFER_SUBMIT_MAX_ATTEMPTS" ]; do
+    local output_file
+    output_file="$(mktemp)"
+    local timeout_file
+    timeout_file="$(mktemp)"
+    rm -f "$timeout_file"
+
+    "$@" >"$output_file" 2>&1 &
+    local cmd_pid=$!
+
+    (
+      sleep "$TRANSFER_SUBMIT_TIMEOUT_SECS"
+      if kill -0 "$cmd_pid" >/dev/null 2>&1; then
+        echo "timeout" >"$timeout_file"
+        kill "$cmd_pid" >/dev/null 2>&1 || true
+      fi
+    ) >/dev/null 2>&1 &
+    local watchdog_pid=$!
+
+    local cmd_status
+    if wait "$cmd_pid"; then
+      cmd_status=0
+    else
+      cmd_status=$?
+    fi
+
+    kill "$watchdog_pid" >/dev/null 2>&1 || true
+    wait "$watchdog_pid" >/dev/null 2>&1 || true
+
+    local timed_out=0
+    if [ -s "$timeout_file" ]; then
+      timed_out=1
+    fi
+
+    if [ "$cmd_status" -eq 0 ] && [ "$timed_out" -eq 0 ]; then
+      rm -f "$output_file" "$timeout_file"
+      return 0
+    fi
+
+    if [ "$timed_out" -eq 1 ]; then
+      echo "WARNING: ${description} timed out after ${TRANSFER_SUBMIT_TIMEOUT_SECS}s (attempt ${attempt}/${TRANSFER_SUBMIT_MAX_ATTEMPTS})."
+    else
+      echo "WARNING: ${description} failed with exit ${cmd_status} (attempt ${attempt}/${TRANSFER_SUBMIT_MAX_ATTEMPTS})."
+    fi
+
+    if [ -s "$output_file" ]; then
+      echo "Last command output:"
+      tail -n 20 "$output_file"
+    fi
+
+    local should_retry=0
+    if [ "$timed_out" -eq 1 ] || is_transient_transfer_error "$output_file"; then
+      should_retry=1
+    fi
+
+    rm -f "$output_file" "$timeout_file"
+
+    if [ "$should_retry" -eq 1 ] && [ "$attempt" -lt "$TRANSFER_SUBMIT_MAX_ATTEMPTS" ]; then
+      local delay=$((TRANSFER_RETRY_BASE_DELAY_SECS * (2 ** (attempt - 1))))
+      echo "Retrying ${description} in ${delay}s ..."
+      sleep "$delay"
+      attempt=$((attempt + 1))
+      continue
+    fi
+
+    echo "${description} failed after ${attempt} attempt(s)."
+    dump_gateway_log_tail
+    if [ "$timed_out" -eq 1 ]; then
+      return 124
+    fi
+    return "$cmd_status"
+  done
+
+  return 1
 }
 
 current_max_commitment_seq() {
@@ -398,7 +498,7 @@ forward_to_injective_memo="$(
 )"
 
 echo "Submitting Cardano->Entrypoint->Injective transfer..."
-if run_with_timeout "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Cardano->Entrypoint->Injective transfer submit" \
+if run_transfer_with_retries "Cardano->Entrypoint->Injective transfer submit" \
   "$HERMES_BIN" tx ft-transfer \
   --src-chain "$CARDANO_CHAIN_ID" \
   --dst-chain "$ENTRYPOINT_CHAIN_ID" \
@@ -424,7 +524,7 @@ forward_to_cardano_memo="$(
 )"
 
 echo "Submitting Injective->Entrypoint->Cardano return leg..."
-if run_with_timeout "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Injective->Entrypoint->Cardano transfer submit" \
+if run_transfer_with_retries "Injective->Entrypoint->Cardano transfer submit" \
   "$HERMES_BIN" tx ft-transfer \
   --src-chain "$INJECTIVE_CHAIN_ID" \
   --dst-chain "$ENTRYPOINT_CHAIN_ID" \
