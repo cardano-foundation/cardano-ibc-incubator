@@ -295,7 +295,9 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         }
     }
 
-    let swap_script_path = injective_dir
+    let swap_script_path = project_root_path
+        .join("chains")
+        .join("injective")
         .join("scripts")
         .join("run_injective_token_swap.sh");
     let swap_script = swap_script_path
