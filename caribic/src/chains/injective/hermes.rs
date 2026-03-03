@@ -167,9 +167,9 @@ fn create_client_with_retry(
     reference_chain: &str,
     trusting_period: Option<&str>,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let mut last_stderr = String::new();
+    let mut last_error = String::new();
 
-    for _ in 0..10 {
+    for attempt in 1..=10 {
         let mut args = vec![
             "create",
             "client",
@@ -195,14 +195,29 @@ fn create_client_with_retry(
             }
         }
 
-        if !output.stderr.is_empty() {
-            last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        } else {
-            last_stderr = stdout;
-        }
+        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-        if last_stderr.trim().is_empty() {
-            last_stderr = "Hermes did not return a client id".to_string();
+        last_error = format!(
+            "attempt {attempt}/10 failed (status={}):\nstdout:\n{}\nstderr:\n{}",
+            output.status,
+            if stdout.trim().is_empty() {
+                "<empty>"
+            } else {
+                stdout.trim()
+            },
+            if stderr.trim().is_empty() {
+                "<empty>"
+            } else {
+                stderr.trim()
+            }
+        );
+
+        if output.status.success() {
+            // Command succeeded but output did not match expected client id pattern.
+            // Retry, because some chains/indexers can delay parsable event materialization.
+            verbose(&format!(
+                "Hermes create client succeeded without a parseable client id on {host_chain} -> {reference_chain}; retrying..."
+            ));
         }
 
         thread::sleep(Duration::from_secs(5));
@@ -210,7 +225,7 @@ fn create_client_with_retry(
 
     Err(format!(
         "Failed to create Hermes client for host={} reference={}: {}",
-        host_chain, reference_chain, last_stderr
+        host_chain, reference_chain, last_error
     )
     .into())
 }

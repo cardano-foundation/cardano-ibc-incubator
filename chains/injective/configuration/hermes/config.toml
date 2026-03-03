@@ -21,6 +21,7 @@ max_block_time = '10s'
 trusting_period = '10days'
 memo_prefix = 'Caribic'
 trust_threshold = { numerator = '1', denominator = '3' }
+compat_mode = '0.38'
 
 [[chains]]
 id = 'injective-888'
@@ -45,3 +46,4 @@ max_block_time = '10s'
 trusting_period = '10days'
 memo_prefix = 'Caribic'
 trust_threshold = { numerator = '1', denominator = '3' }
+compat_mode = '0.38'
