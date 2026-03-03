@@ -10,6 +10,7 @@ services:
       INJECTIVE_LOCAL_VALIDATOR_MNEMONIC: ${INJECTIVE_LOCAL_VALIDATOR_MNEMONIC:-bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort}
       INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT: ${INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT:-100000000000000000000stake,100000000000000000000inj}
       INJECTIVE_LOCAL_GENTX_AMOUNT: ${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}
+      INJECTIVE_LOCAL_MIN_GAS_PRICES: ${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}
     volumes:
       - ../scripts:/injective/scripts:ro
       - ${HOME}/.injectived-local:/root/.injectived

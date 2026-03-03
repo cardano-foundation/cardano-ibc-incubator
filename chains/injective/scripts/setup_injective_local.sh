@@ -9,6 +9,7 @@ VALIDATOR_KEY="${INJECTIVE_LOCAL_VALIDATOR_KEY:-validator}"
 VALIDATOR_MNEMONIC="${INJECTIVE_LOCAL_VALIDATOR_MNEMONIC:-bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort}"
 GENESIS_ACCOUNT_AMOUNT="${INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT:-100000000000000000000stake}"
 GENTX_AMOUNT="${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}"
+MIN_GAS_PRICES="${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}"
 
 GENESIS_FILE="${INJECTIVE_HOME}/config/genesis.json"
 
@@ -50,4 +51,5 @@ exec injectived start \
   --home "${INJECTIVE_HOME}" \
   --rpc.laddr "tcp://0.0.0.0:26657" \
   --grpc.address "0.0.0.0:9090" \
-  --api.address "tcp://0.0.0.0:1317"
+  --api.address "tcp://0.0.0.0:1317" \
+  --minimum-gas-prices "${MIN_GAS_PRICES}"
