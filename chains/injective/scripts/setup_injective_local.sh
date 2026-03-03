@@ -12,6 +12,7 @@ GENTX_AMOUNT="${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}"
 MIN_GAS_PRICES="${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}"
 
 GENESIS_FILE="${INJECTIVE_HOME}/config/genesis.json"
+APP_TOML_FILE="${INJECTIVE_HOME}/config/app.toml"
 
 if [ ! -f "${GENESIS_FILE}" ]; then
   echo "[injective-local] Initializing local chain home at ${INJECTIVE_HOME}..."
@@ -45,6 +46,15 @@ if [ ! -f "${GENESIS_FILE}" ]; then
   injectived genesis validate --home "${INJECTIVE_HOME}"
 else
   echo "[injective-local] Reusing existing chain home at ${INJECTIVE_HOME}."
+fi
+
+if [ -f "${APP_TOML_FILE}" ]; then
+  if grep -q '^[[:space:]]*minimum-gas-prices[[:space:]]*=' "${APP_TOML_FILE}"; then
+    sed -i "s|^[[:space:]]*minimum-gas-prices[[:space:]]*=.*$|minimum-gas-prices = \"${MIN_GAS_PRICES}\"|g" "${APP_TOML_FILE}"
+  else
+    printf '\nminimum-gas-prices = "%s"\n' "${MIN_GAS_PRICES}" >> "${APP_TOML_FILE}"
+  fi
+  echo "[injective-local] Set app minimum-gas-prices to ${MIN_GAS_PRICES}."
 fi
 
 exec injectived start \
