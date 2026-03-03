@@ -10,7 +10,10 @@ pub(super) const LOCAL_RPC_PORT: u16 = 26660;
 pub(super) const LOCAL_GRPC_PORT: u16 = 9097;
 pub(super) const LOCAL_HOME_DIR: &str = ".injectived-local";
 pub(super) const LOCAL_VALIDATOR_KEY: &str = "validator";
-pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str = "100000000000000000000stake";
+pub(super) const LOCAL_VALIDATOR_MNEMONIC: &str =
+    "bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort";
+pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str =
+    "100000000000000000000stake,100000000000000000000inj";
 pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
 
 pub(super) const TESTNET_CHAIN_ID: &str = "injective-888";

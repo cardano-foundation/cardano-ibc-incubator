@@ -6,6 +6,10 @@ use serde_json::Value;
 use crate::{
     chains::{
         self,
+        injective::{
+            configure_hermes_for_demo as configure_injective_hermes_for_demo,
+            stop_local as stop_injective_local, workspace_dir as injective_workspace_dir,
+        },
         osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     },
     config, logger,
@@ -16,8 +20,8 @@ use crate::{
 };
 
 const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
-const TOKEN_SWAP_SUPPORTED_CHAIN: &str = "osmosis";
-const TOKEN_SWAP_SUPPORTED_NETWORK: &str = "local";
+const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 2] =
+    [("osmosis", "local"), ("injective", "local")];
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id
@@ -42,17 +46,20 @@ pub async fn run_token_swap_demo(
     network: Option<&str>,
 ) -> Result<(), String> {
     let (chain_id, resolved_network) = resolve_token_swap_target(chain, network)?;
-    if chain_id == TOKEN_SWAP_SUPPORTED_CHAIN && resolved_network == TOKEN_SWAP_SUPPORTED_NETWORK {
-        return run_osmosis_local_token_swap_demo(project_root_path).await;
+    match (chain_id.as_str(), resolved_network.as_str()) {
+        ("osmosis", "local") => run_osmosis_local_token_swap_demo(project_root_path).await,
+        ("injective", "local") => run_injective_local_token_swap_demo(project_root_path).await,
+        _ => Err(format!(
+            "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: {}",
+            chain_id,
+            resolved_network,
+            TOKEN_SWAP_SUPPORTED_TARGETS
+                .iter()
+                .map(|(chain, network)| format!("--chain {} --network {}", chain, network))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )),
     }
-
-    Err(format!(
-        "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: --chain {} --network {}",
-        chain_id,
-        resolved_network,
-        TOKEN_SWAP_SUPPORTED_CHAIN,
-        TOKEN_SWAP_SUPPORTED_NETWORK
-    ))
 }
 
 fn resolve_token_swap_target(
@@ -215,6 +222,113 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     )
     .map_err(|error| format!("ERROR: Failed to run token swap transfer script: {}", error))?;
     logger::log("PASS: Cardano-to-Osmosis token swap completed");
+    logger::log("\nPASS: Token swap demo flow completed successfully");
+
+    Ok(())
+}
+
+async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    let injective_dir = injective_workspace_dir(project_root_path);
+    logger::verbose(&format!("{}", injective_dir.display()));
+
+    let required_services = [
+        "gateway",
+        "cardano",
+        "postgres",
+        "kupo",
+        "ogmios",
+        "hermes",
+        "mithril",
+        "cosmos",
+        "injective",
+    ];
+    if let Err(error) =
+        ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+    }
+
+    logger::log("PASS: Required token-swap services are running");
+
+    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+    wait_for_mithril_artifacts_for_demo().await?;
+
+    let relayer_path = project_root_path.join("relayer");
+    let mut restart_relayer_after_setup = false;
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+        logger::verbose(
+            "Stopping Hermes daemon during token-swap setup to avoid account sequence contention",
+        );
+        stop_relayer(relayer_path.as_path());
+        restart_relayer_after_setup = true;
+    }
+
+    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+        return fail_with_injective_cleanup(
+            injective_dir.as_path(),
+            &format!(
+                "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
+                error
+            ),
+        );
+    }
+
+    match configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()) {
+        Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
+        Err(error) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                &format!("ERROR: Failed to configure Hermes for Injective: {}", error),
+            )
+        }
+    }
+
+    if restart_relayer_after_setup {
+        match start::start_hermes_daemon() {
+            Ok(_) => logger::log("PASS: Hermes daemon restarted for token relay"),
+            Err(error) => {
+                return fail_with_injective_cleanup(
+                    injective_dir.as_path(),
+                    &format!("ERROR: Failed to restart Hermes daemon: {}", error),
+                )
+            }
+        }
+    }
+
+    let swap_script_path = injective_dir
+        .join("scripts")
+        .join("run_injective_token_swap.sh");
+    let swap_script = swap_script_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid run_injective_token_swap.sh path".to_string())?;
+
+    execute_script(
+        project_root_path,
+        swap_script,
+        Vec::new(),
+        Some(vec![
+            (
+                "CARIBIC_PROJECT_ROOT",
+                project_root_path
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+            ),
+            (
+                "CARIBIC_INJECTIVE_DIR",
+                injective_dir
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid injective workspace path".to_string())?,
+            ),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to run injective token swap transfer script: {}",
+            error
+        )
+    })?;
+
+    logger::log("PASS: Cardano-to-Injective token swap completed");
     logger::log("\nPASS: Token swap demo flow completed successfully");
 
     Ok(())
@@ -1012,5 +1126,12 @@ fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
     stop_local(osmosis_dir);
+    Err(message.to_string())
+}
+
+fn fail_with_injective_cleanup(injective_dir: &Path, message: &str) -> Result<(), String> {
+    logger::error(message);
+    logger::log("Stopping services...");
+    stop_injective_local(injective_dir);
     Err(message.to_string())
 }

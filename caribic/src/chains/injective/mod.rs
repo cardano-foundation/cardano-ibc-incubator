@@ -257,3 +257,16 @@ pub fn workspace_dir(project_root: &Path) -> PathBuf {
         .join("workspace")
         .join("injective")
 }
+
+/// Stops local Injective containers if they exist.
+pub fn stop_local(injective_path: &Path) {
+    lifecycle::stop_local(injective_path);
+}
+
+/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective.
+pub fn configure_hermes_for_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    hermes::configure_hermes_for_demo(project_root_path, injective_dir)
+}

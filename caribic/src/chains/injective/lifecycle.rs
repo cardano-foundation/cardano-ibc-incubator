@@ -50,6 +50,10 @@ pub(super) async fn start_local(injective_dir: &Path) -> Result<(), Box<dyn std:
             ("INJECTIVE_LOCAL_MONIKER", config::LOCAL_MONIKER),
             ("INJECTIVE_LOCAL_VALIDATOR_KEY", config::LOCAL_VALIDATOR_KEY),
             (
+                "INJECTIVE_LOCAL_VALIDATOR_MNEMONIC",
+                config::LOCAL_VALIDATOR_MNEMONIC,
+            ),
+            (
                 "INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT",
                 config::LOCAL_GENESIS_ACCOUNT_AMOUNT,
             ),

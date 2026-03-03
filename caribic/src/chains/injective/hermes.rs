@@ -1,10 +1,151 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::thread;
+use std::time::Duration;
 
 use dirs::home_dir;
+use serde_json::Value;
 
 use super::config;
-use crate::logger::verbose;
+use crate::logger::{log, verbose};
+use crate::utils::{execute_script, extract_tendermint_connection_id, parse_tendermint_client_id};
+
+/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective local demo routing.
+pub(super) fn configure_hermes_for_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_chain_in_hermes_config(
+        project_root_path,
+        injective_dir,
+        config::LOCAL_CHAIN_ID,
+        "Injective local chain used by token-swap demo",
+    )?;
+
+    let hermes_binary = resolve_local_hermes_binary(project_root_path, injective_dir)?;
+    let cosmos_mnemonic_path = resolve_mnemonic_path(injective_dir, "cosmos")?;
+    let injective_mnemonic_path = resolve_mnemonic_path(injective_dir, "injective")?;
+
+    if has_open_transfer_channel(
+        hermes_binary.as_path(),
+        injective_dir,
+        "entrypoint",
+        config::LOCAL_CHAIN_ID,
+    )? {
+        log("PASS: Hermes transfer channel already open for Entrypoint↔Injective");
+        return Ok(());
+    }
+
+    let hermes_binary_str = hermes_binary
+        .to_str()
+        .ok_or_else(|| format!("Invalid Hermes binary path: {}", hermes_binary.display()))?;
+    let cosmos_mnemonic = cosmos_mnemonic_path.to_str().ok_or_else(|| {
+        format!(
+            "Invalid mnemonic file path: {}",
+            cosmos_mnemonic_path.display()
+        )
+    })?;
+    let injective_mnemonic = injective_mnemonic_path.to_str().ok_or_else(|| {
+        format!(
+            "Invalid mnemonic file path: {}",
+            injective_mnemonic_path.display()
+        )
+    })?;
+
+    execute_script(
+        injective_dir,
+        hermes_binary_str,
+        vec![
+            "keys",
+            "add",
+            "--overwrite",
+            "--chain",
+            "entrypoint",
+            "--mnemonic-file",
+            cosmos_mnemonic,
+        ],
+        None,
+    )?;
+
+    execute_script(
+        injective_dir,
+        hermes_binary_str,
+        vec![
+            "keys",
+            "add",
+            "--overwrite",
+            "--chain",
+            config::LOCAL_CHAIN_ID,
+            "--mnemonic-file",
+            injective_mnemonic,
+        ],
+        None,
+    )?;
+
+    let injective_client_id = create_client_with_retry(
+        hermes_binary.as_path(),
+        injective_dir,
+        config::LOCAL_CHAIN_ID,
+        "entrypoint",
+        None,
+    )?;
+    let entrypoint_client_id = create_client_with_retry(
+        hermes_binary.as_path(),
+        injective_dir,
+        "entrypoint",
+        config::LOCAL_CHAIN_ID,
+        Some("86000s"),
+    )?;
+
+    let create_connection_output = Command::new(&hermes_binary)
+        .current_dir(injective_dir)
+        .args([
+            "create",
+            "connection",
+            "--a-chain",
+            "entrypoint",
+            "--a-client",
+            entrypoint_client_id.as_str(),
+            "--b-client",
+            injective_client_id.as_str(),
+        ])
+        .output()?;
+    if !create_connection_output.status.success() {
+        return Err(format!(
+            "Failed to create Entrypoint↔Injective connection:\n{}",
+            String::from_utf8_lossy(&create_connection_output.stderr)
+        )
+        .into());
+    }
+    let connection_id = extract_tendermint_connection_id(create_connection_output)
+        .ok_or("Failed to parse connection id from Hermes output")?;
+
+    let create_channel_output = Command::new(&hermes_binary)
+        .current_dir(injective_dir)
+        .args([
+            "create",
+            "channel",
+            "--a-chain",
+            "entrypoint",
+            "--a-connection",
+            connection_id.as_str(),
+            "--a-port",
+            "transfer",
+            "--b-port",
+            "transfer",
+        ])
+        .output()?;
+    if !create_channel_output.status.success() {
+        return Err(format!(
+            "Failed to create Entrypoint↔Injective transfer channel:\n{}",
+            String::from_utf8_lossy(&create_channel_output.stderr)
+        )
+        .into());
+    }
+
+    Ok(())
+}
 
 /// Ensures Hermes config contains an Injective testnet chain block (`injective-888`).
 pub(super) fn ensure_testnet_chain_in_hermes_config(
@@ -17,6 +158,189 @@ pub(super) fn ensure_testnet_chain_in_hermes_config(
         config::TESTNET_CHAIN_ID,
         "Injective testnet chain used by local state-sync node",
     )
+}
+
+fn create_client_with_retry(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    host_chain: &str,
+    reference_chain: &str,
+    trusting_period: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut last_stderr = String::new();
+
+    for _ in 0..10 {
+        let mut args = vec![
+            "create",
+            "client",
+            "--host-chain",
+            host_chain,
+            "--reference-chain",
+            reference_chain,
+        ];
+        if let Some(trusting_period) = trusting_period {
+            args.push("--trusting-period");
+            args.push(trusting_period);
+        }
+
+        let output: Output = Command::new(hermes_binary)
+            .current_dir(working_dir)
+            .args(args.as_slice())
+            .output()?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        if output.status.success() {
+            if let Some(client_id) = parse_tendermint_client_id(stdout.as_str()) {
+                return Ok(client_id);
+            }
+        }
+
+        if !output.stderr.is_empty() {
+            last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        } else {
+            last_stderr = stdout;
+        }
+
+        if last_stderr.trim().is_empty() {
+            last_stderr = "Hermes did not return a client id".to_string();
+        }
+
+        thread::sleep(Duration::from_secs(5));
+    }
+
+    Err(format!(
+        "Failed to create Hermes client for host={} reference={}: {}",
+        host_chain, reference_chain, last_stderr
+    )
+    .into())
+}
+
+fn has_open_transfer_channel(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    chain_id: &str,
+    counterparty_chain_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new(hermes_binary)
+        .current_dir(working_dir)
+        .args([
+            "--json",
+            "query",
+            "channels",
+            "--chain",
+            chain_id,
+            "--counterparty-chain",
+            counterparty_chain_id,
+        ])
+        .output()?;
+
+    if !output.status.success() {
+        verbose(&format!(
+            "Hermes channel query failed for {}↔{}: {}",
+            chain_id,
+            counterparty_chain_id,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+        return Ok(false);
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(entry) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+
+        let Some(result) = entry.get("result") else {
+            continue;
+        };
+
+        if result
+            .as_array()
+            .is_some_and(|array| array.iter().any(is_open_transfer_channel_entry))
+        {
+            return Ok(true);
+        }
+
+        if is_open_transfer_channel_entry(result) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn is_open_transfer_channel_entry(value: &Value) -> bool {
+    let state = value
+        .get("state")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if state != "open" {
+        return false;
+    }
+
+    let channel_id = value
+        .get("channel_id")
+        .and_then(Value::as_str)
+        .or_else(|| value.get("channel_a").and_then(Value::as_str))
+        .unwrap_or_default();
+    if !channel_id.starts_with("channel-") {
+        return false;
+    }
+
+    let local_port_id = value
+        .get("port_id")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let remote_port_id = value
+        .get("counterparty")
+        .and_then(|counterparty| counterparty.get("port_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    local_port_id == "transfer" || remote_port_id == "transfer"
+}
+
+fn resolve_local_hermes_binary(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let configured_candidate = project_root_path.join("relayer/target/release/hermes");
+    if configured_candidate.is_file() {
+        return Ok(configured_candidate);
+    }
+
+    let mut current = Some(injective_dir);
+    while let Some(directory) = current {
+        let candidate = directory.join("relayer/target/release/hermes");
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
+        current = directory.parent();
+    }
+
+    Err(format!(
+        "Local Hermes binary not found. Expected {}",
+        configured_candidate.display()
+    )
+    .into())
+}
+
+fn resolve_mnemonic_path(
+    injective_dir: &Path,
+    mnemonic_name: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = injective_dir
+        .join("configuration/hermes")
+        .join(mnemonic_name);
+    if path.is_file() {
+        return Ok(path);
+    }
+
+    Err(format!(
+        "Injective Hermes mnemonic file not found at {}",
+        path.display()
+    )
+    .into())
 }
 
 fn ensure_chain_in_hermes_config(
