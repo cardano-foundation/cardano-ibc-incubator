@@ -166,47 +166,6 @@ run_with_timeout() {
   return 0
 }
 
-run_with_timeout_stream() {
-  local timeout_seconds="$1"
-  shift
-  local description="$1"
-  shift
-  local timeout_file
-  timeout_file="$(mktemp)"
-  rm -f "$timeout_file"
-
-  "$@" &
-  local cmd_pid=$!
-
-  (
-    sleep "$timeout_seconds"
-    if kill -0 "$cmd_pid" >/dev/null 2>&1; then
-      echo "timeout" >"$timeout_file"
-      echo "WARNING: ${description} timed out after ${timeout_seconds}s."
-      kill "$cmd_pid" >/dev/null 2>&1 || true
-    fi
-  ) &
-  local watchdog_pid=$!
-
-  local cmd_status
-  if wait "$cmd_pid"; then
-    cmd_status=0
-  else
-    cmd_status=$?
-  fi
-
-  kill "$watchdog_pid" >/dev/null 2>&1 || true
-  wait "$watchdog_pid" >/dev/null 2>&1 || true
-
-  if [ -s "$timeout_file" ]; then
-    rm -f "$timeout_file"
-    return 124
-  fi
-
-  rm -f "$timeout_file"
-  return "$cmd_status"
-}
-
 current_max_commitment_seq() {
   local chain="$1"
   local channel="$2"
@@ -439,7 +398,7 @@ forward_to_injective_memo="$(
 )"
 
 echo "Submitting Cardano->Entrypoint->Injective transfer..."
-if run_with_timeout_stream "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Cardano->Entrypoint->Injective transfer submit" \
+if run_with_timeout "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Cardano->Entrypoint->Injective transfer submit" \
   "$HERMES_BIN" tx ft-transfer \
   --src-chain "$CARDANO_CHAIN_ID" \
   --dst-chain "$ENTRYPOINT_CHAIN_ID" \
@@ -465,7 +424,7 @@ forward_to_cardano_memo="$(
 )"
 
 echo "Submitting Injective->Entrypoint->Cardano return leg..."
-if run_with_timeout_stream "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Injective->Entrypoint->Cardano transfer submit" \
+if run_with_timeout "$TRANSFER_SUBMIT_TIMEOUT_SECS" "Injective->Entrypoint->Cardano transfer submit" \
   "$HERMES_BIN" tx ft-transfer \
   --src-chain "$INJECTIVE_CHAIN_ID" \
   --dst-chain "$ENTRYPOINT_CHAIN_ID" \
