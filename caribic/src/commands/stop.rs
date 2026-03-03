@@ -47,12 +47,12 @@ pub fn run_stop(
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
         Some(StopTarget::Osmosis) | Some(StopTarget::Injective) => {
-            stop_optional_chain(
-                project_root_path,
-                optional_chain_alias.unwrap_or("osmosis"),
-                network,
-                chain_flags,
-            )?;
+            let chain_id = optional_chain_alias.unwrap_or("osmosis");
+            if network.is_some() || !chain_flags.is_empty() {
+                stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
+            } else {
+                stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
+            }
             logger::log("\nOptional chain stopped successfully");
         }
         Some(StopTarget::Demo) => {

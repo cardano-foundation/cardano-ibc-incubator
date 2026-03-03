@@ -115,12 +115,21 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
 }
 
 pub(super) fn stop_local(osmosis_path: &Path) {
-    let _ = execute_script(
-        osmosis_path,
-        "docker",
-        Vec::from(["compose", "-f", config::LOCAL_DOCKER_COMPOSE_FILE, "down"]),
-        None,
-    );
+    for compose_file in [
+        config::LOCAL_DOCKER_COMPOSE_FILE,
+        config::LOCAL_LEGACY_DOCKER_COMPOSE_FILE,
+    ] {
+        if !osmosis_path.join(compose_file).exists() {
+            continue;
+        }
+
+        let _ = execute_script(
+            osmosis_path,
+            "docker",
+            Vec::from(["compose", "-f", compose_file, "down"]),
+            None,
+        );
+    }
 }
 
 pub(super) async fn prepare_testnet(
