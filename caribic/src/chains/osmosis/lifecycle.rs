@@ -10,22 +10,32 @@ use serde_json::Value;
 
 use super::config;
 use crate::chains::cosmos_node::{
-    add_directory_to_process_path, locate_binary_in_path_or_go_bin, start_managed_node,
-    stop_managed_node, CosmosNodeSpec,
+    add_directory_to_process_path, locate_binary_in_path_or_go_bin, resolve_home_relative_path,
+    start_managed_node, stop_managed_node, CosmosNodeSpec,
 };
 use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
-use crate::utils::{execute_script, execute_script_interactive, wait_for_health_check};
+use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
     project_root_path: &Path,
     osmosis_dir: &Path,
+    stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_osmosisd_available(osmosis_dir).await?;
+    ensure_osmosis_source_available(osmosis_dir).await?;
     sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
     copy_local_config_files(osmosis_dir)?;
     verbose("PASS: Osmosis configuration files copied successfully");
-    init_local_network(osmosis_dir)?;
+
+    if !stateful {
+        stop_local(osmosis_dir);
+
+        let local_home_dir = resolve_home_relative_path(config::LOCAL_HOME_DIR)?;
+        if local_home_dir.exists() {
+            fs::remove_dir_all(local_home_dir.as_path())?;
+        }
+    }
+
     Ok(())
 }
 
@@ -48,14 +58,11 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
         Vec::from([
             "compose",
             "-f",
-            "tests/localosmosis/docker-compose.yml",
+            config::LOCAL_DOCKER_COMPOSE_FILE,
             "up",
             "-d",
         ]),
-        Some(Vec::from([(
-            "OSMOSISD_CONTAINER_NAME",
-            "localosmosis-osmosisd-1",
-        )])),
+        None,
     );
 
     if status.is_ok() {
@@ -108,7 +115,12 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
 }
 
 pub(super) fn stop_local(osmosis_path: &Path) {
-    let _ = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
+    let _ = execute_script(
+        osmosis_path,
+        "docker",
+        Vec::from(["compose", "-f", config::LOCAL_DOCKER_COMPOSE_FILE, "down"]),
+        None,
+    );
 }
 
 pub(super) async fn prepare_testnet(
@@ -142,11 +154,7 @@ pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::err
 }
 
 async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if osmosis_dir.exists() {
-        verbose("Osmosis directory already exists");
-    } else {
-        download_osmosis_source(osmosis_dir).await?;
-    }
+    ensure_osmosis_source_available(osmosis_dir).await?;
 
     let mut binary = locate_binary_in_path_or_go_bin("osmosisd");
     if binary.is_none() {
@@ -208,6 +216,17 @@ async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std
     }
 
     Ok(())
+}
+
+async fn ensure_osmosis_source_available(
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if osmosis_dir.exists() {
+        verbose("Osmosis directory already exists");
+        return Ok(());
+    }
+
+    download_osmosis_source(osmosis_dir).await
 }
 
 async fn download_osmosis_source(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
@@ -285,15 +304,6 @@ fn initialize_testnet_home(
     Ok(())
 }
 
-fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !logger::is_quite() {
-        log("Initialize local Osmosis network ...");
-    }
-
-    execute_script_interactive(osmosis_dir, "make", Vec::from(["localnet-init"]))?;
-    Ok(())
-}
-
 fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {
     verbose(&format!(
         "Copying cosmwasm files from {} to {}",
@@ -331,47 +341,6 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
     copy(
         osmosis_dir.join("../scripts/setup_crosschain_swaps.sh"),
         osmosis_dir.join("scripts/setup_crosschain_swaps.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying localnet.mk from {} to {}",
-        osmosis_dir.join("../scripts/localnet.mk").display(),
-        osmosis_dir.join("scripts/makefiles/localnet.mk").display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/localnet.mk"),
-        osmosis_dir.join("scripts/makefiles/localnet.mk"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying setup_osmosis_local.sh from {} to {}",
-        osmosis_dir
-            .join("../scripts/setup_osmosis_local.sh")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/scripts/setup.sh")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/setup_osmosis_local.sh"),
-        osmosis_dir.join("tests/localosmosis/scripts/setup.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying docker-compose.yml from {} to {}",
-        osmosis_dir
-            .join("../configuration/docker-compose.yml")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/docker-compose.yml")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../configuration/docker-compose.yml"),
-        osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
         &options,
     )?;
 

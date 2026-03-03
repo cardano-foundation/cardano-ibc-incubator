@@ -11,7 +11,6 @@ use crate::chains::{
     },
     ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
-use crate::logger::warn;
 
 mod config;
 mod hermes;
@@ -113,14 +112,12 @@ impl ChainAdapter for OsmosisChainAdapter {
 
         match network {
             CosmosNetworkKind::Local => {
-                if options.stateful_or(false) {
-                    warn(
-                        "Local Osmosis 'stateful=true' was requested, but this mode is not wired yet. Proceeding with clean local setup.",
-                    );
-                }
-
                 let osmosis_dir = workspace_dir(project_root_path);
-                lifecycle::prepare_local(project_root_path, osmosis_dir.as_path())
+                lifecycle::prepare_local(
+                    project_root_path,
+                    osmosis_dir.as_path(),
+                    options.stateful_or(false),
+                )
                     .await
                     .map_err(|error| format!("Failed to prepare Osmosis appchain: {}", error))?;
                 lifecycle::start_local(osmosis_dir.as_path())
