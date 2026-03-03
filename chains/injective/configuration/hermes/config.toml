@@ -11,7 +11,7 @@ key_name = 'injective-local-relayer'
 address_type = { derivation = 'ethermint', proto_type = { pk_type = '/injective.crypto.v1beta1.ethsecp256k1.PubKey' } }
 store_prefix = 'ibc'
 default_gas = 5000000
-max_gas = 15000000
+max_gas = 9000000
 gas_price = { price = 0.025, denom = 'inj' }
 gas_multiplier = 2.0
 max_msg_num = 20
@@ -36,7 +36,7 @@ key_name = 'injective-888-relayer'
 address_type = { derivation = 'ethermint', proto_type = { pk_type = '/injective.crypto.v1beta1.ethsecp256k1.PubKey' } }
 store_prefix = 'ibc'
 default_gas = 5000000
-max_gas = 15000000
+max_gas = 9000000
 gas_price = { price = 0.025, denom = 'inj' }
 gas_multiplier = 1.8
 max_msg_num = 20
