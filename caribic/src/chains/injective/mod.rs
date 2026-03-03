@@ -194,15 +194,37 @@ impl ChainAdapter for InjectiveChainAdapter {
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
         match CosmosNetworkKind::parse(network)? {
-            CosmosNetworkKind::Local => Ok(vec![
-                check_rpc_health(
+            CosmosNetworkKind::Local => {
+                let rpc_status = check_rpc_health(
                     "injective",
                     config::LOCAL_STATUS_URL,
-                    26660,
-                    "Injective local node (RPC)",
-                ),
-                check_port_health("injective", 9097, "Injective local node (gRPC)"),
-            ]),
+                    config::LOCAL_RPC_PORT,
+                    "Injective local node",
+                );
+                let grpc_status =
+                    check_port_health("injective", config::LOCAL_GRPC_PORT, "Injective local node");
+
+                Ok(vec![ChainHealthStatus {
+                    id: "injective",
+                    label: "Injective local node",
+                    healthy: rpc_status.healthy && grpc_status.healthy,
+                    status: format!(
+                        "RPC ({}): {}; gRPC ({}): {}",
+                        config::LOCAL_RPC_PORT,
+                        if rpc_status.healthy {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        },
+                        config::LOCAL_GRPC_PORT,
+                        if grpc_status.healthy {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        }
+                    ),
+                }])
+            }
             CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
                 "injective",
                 "Injective node",
