@@ -45,6 +45,7 @@ describe('PacketService denom invariants', () => {
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
   });
 

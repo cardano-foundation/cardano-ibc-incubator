@@ -43,6 +43,7 @@ import {
 } from '../shared/helpers/ibc-state-root';
 import { TxEventsService } from './tx-events.service';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class ClientService {
@@ -52,6 +53,7 @@ export class ClientService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -132,47 +134,37 @@ export class ClientService {
 
       this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
 
-      const unSignedTxValidTo: TxBuilder = unsignedCreateClientTx
-        .validFrom(validFromTimestamp)
-        .validTo(validToTimestamp);
-
-      await this.refreshWalletContext(constructedAddress, 'createClient');
-      
-      // Return unsigned transaction for Hermes to sign
-      // Hermes will use its CardanoSigner (CIP-1852 + Ed25519) to sign this CBOR
-      const completedUnsignedTx = await unSignedTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
-      });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      // Register the pending in-memory tree update keyed by the finalized tx body hash.
-      // We can only compute a stable hash after `.complete()` (fees/inputs are finalized there).
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
-      
-      // Return the CBOR hex string as bytes for Hermes to parse
-      // unsignedTxCbor is a hex string from Lucid's toCBOR()
-      // Hermes expects to receive this as a UTF-8 string (hex characters as bytes)
-      // So we encode the string itself as a Uint8Array of its character codes
-      const hexStringBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      
       const createdClientId = `${CLIENT_ID_PREFIX}-${clientId.toString()}`;
-
-      // Track expected IBC events for Hermes (keyed by tx hash, stable across signing).
-      this.txEventsService.register(unsignedTxHash, [
-        {
-          type: 'create_client',
-          attributes: [
-            { key: 'client_id', value: createdClientId },
-            { key: 'client_type', value: '07-tendermint' },
-            {
-              key: 'consensus_height',
-              value: `${clientState.latestHeight.revisionNumber.toString()}-${clientState.latestHeight.revisionHeight.toString()}`,
-            },
-          ],
+      const { unsignedTxCbor, unsignedTxBytes: hexStringBytes } = await this.txOperationRunnerService.run({
+        operationName: 'createClient',
+        unsignedTx: unsignedCreateClientTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTimestamp).validTo(validToTimestamp),
         },
-      ]);
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'createClient',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: 'create_client',
+            attributes: [
+              { key: 'client_id', value: createdClientId },
+              { key: 'client_type', value: '07-tendermint' },
+              {
+                key: 'consensus_height',
+                value: `${clientState.latestHeight.revisionNumber.toString()}-${clientState.latestHeight.revisionHeight.toString()}`,
+              },
+            ],
+          },
+        ],
+      });
 
       this.logger.log(`Returning unsigned tx for client creation (client_id: ${createdClientId})`);
       this.logger.log(`CBOR hex string length: ${unsignedTxCbor.length}, first 40 chars: ${unsignedTxCbor.substring(0, 40)}`);

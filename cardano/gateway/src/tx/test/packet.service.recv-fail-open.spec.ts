@@ -94,6 +94,7 @@ describe('PacketService recv packet fail-open regression', () => {
       lucidServiceMock as unknown as LucidService,
       {} as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
   });
 

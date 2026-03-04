@@ -78,6 +78,7 @@ import {
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class PacketService {
@@ -87,6 +88,7 @@ export class PacketService {
     @Inject(LucidService) private lucidService: LucidService,
     private denomTraceService: DenomTraceService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
   /**
    * @param data
@@ -369,20 +371,24 @@ export class PacketService {
       ) {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 >= packet.timeout_timestamp');
       }
-      const unsignedRecvPacketTxValidTo: TxBuilder = unsignedRecvPacketTx.validTo(validToTime);
-
-      await this.refreshWalletContext(constructedAddress, 'recvPacket');
-      
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedRecvPacketTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'recvPacket',
+        unsignedTx: unsignedRecvPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'custom_before_complete',
+          run: async () => {
+            await this.refreshWalletContext(constructedAddress, 'recvPacket');
+          },
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
       });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for recv packet');
       const response: MsgTransferResponse = {
@@ -417,35 +423,40 @@ export class PacketService {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
 
-      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
-
-      if (walletOverride) {
-        // Ensure the sender's UTxOs are used right before completion to avoid wallet drift
-        // between build and complete (e.g., concurrent tx builds with different wallets).
-        const refreshedUtxos = await this.lucidService.tryFindUtxosAt(walletOverride.address, {
-          maxAttempts: 6,
-          retryDelayMs: 1000,
-        });
-        const mergedUtxos = this.dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
-        const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
-        this.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
-        this.logger.log(
-          `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(
-            utxosToUse,
-          )}`,
-        );
-      }
-
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'sendPacket',
+        unsignedTx: unsignedSendPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'custom_before_complete',
+          run: async () => {
+            if (!walletOverride) {
+              return;
+            }
+            // Ensure the sender's UTxOs are used right before completion to avoid wallet drift
+            // between build and complete (e.g., concurrent tx builds with different wallets).
+            const refreshedUtxos = await this.lucidService.tryFindUtxosAt(walletOverride.address, {
+              maxAttempts: 6,
+              retryDelayMs: 1000,
+            });
+            const mergedUtxos = this.dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
+            const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
+            this.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
+            this.logger.log(
+              `[walletOverride] sendPacket selecting wallet from ${walletOverride.address}, utxos=${utxosToUse.length}, refreshed=${refreshedUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(
+                utxosToUse,
+              )}`,
+            );
+          },
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
       });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for send packet');
       const response: MsgTransferResponse = {
