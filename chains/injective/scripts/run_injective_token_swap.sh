@@ -12,6 +12,9 @@ trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 SETTLEMENT_CLEAR_TIMEOUT_SECS="${SETTLEMENT_CLEAR_TIMEOUT_SECS:-120}"
 SETTLEMENT_PROGRESS_EVERY_N_POLLS="${SETTLEMENT_PROGRESS_EVERY_N_POLLS:-2}"
+# Keep this watchdog conservative by default since Mithril certification can be slow.
+SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS="${SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS:-540}"
+SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES="${SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES:-12}"
 TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-300}"
 TRANSFER_SUBMIT_MAX_ATTEMPTS="${TRANSFER_SUBMIT_MAX_ATTEMPTS:-4}"
 TRANSFER_RETRY_BASE_DELAY_SECS="${TRANSFER_RETRY_BASE_DELAY_SECS:-3}"
@@ -185,6 +188,96 @@ is_transient_transfer_error() {
 dump_gateway_log_tail() {
   echo "Gateway logs (last 80 lines):"
   docker logs --tail 80 gateway-app 2>&1 || echo "Unable to read gateway-app logs"
+}
+
+dump_hermes_log_tail() {
+  local hermes_log_path="${HOME}/.hermes/hermes.log"
+  echo "Hermes daemon log tail (last 120 lines):"
+  if [ -f "$hermes_log_path" ]; then
+    tail -n 120 "$hermes_log_path" 2>&1 || echo "Unable to read $hermes_log_path"
+  else
+    echo "Hermes log not found at $hermes_log_path"
+  fi
+}
+
+dump_container_log_tail() {
+  local container_name="$1"
+  echo "${container_name} logs (last 80 lines):"
+  if docker ps -a --format '{{.Names}}' | grep -qx "$container_name"; then
+    docker logs --tail 80 "$container_name" 2>&1 || echo "Unable to read $container_name logs"
+  else
+    echo "Container $container_name not found"
+  fi
+}
+
+dump_mithril_log_tails() {
+  dump_container_log_tail "scripts-mithril-aggregator-1"
+  dump_container_log_tail "scripts-mithril-signer-1-1"
+  dump_container_log_tail "scripts-mithril-signer-2-1"
+}
+
+dump_packet_commitments() {
+  local chain="$1"
+  local channel="$2"
+  echo "Hermes packet commitments for ${chain}/${channel}:"
+  "$HERMES_BIN" query packet commitments --chain "$chain" --port transfer --channel "$channel" 2>&1 |
+    tail -n 40 || echo "Unable to query packet commitments for ${chain}/${channel}"
+}
+
+dump_channel_end_status() {
+  local chain="$1"
+  local channel="$2"
+  echo "Hermes channel end for ${chain}/${channel}:"
+  "$HERMES_BIN" --json query channel end --chain "$chain" --port transfer --channel "$channel" 2>&1 |
+    tail -n 40 || echo "Unable to query channel end for ${chain}/${channel}"
+}
+
+dump_commitment_snapshot_line() {
+  local label="$1"
+  local chain="$2"
+  local channel="$3"
+  local baseline_max_seq="$4"
+
+  local current_max_seq
+  current_max_seq="$(current_max_commitment_seq "$chain" "$channel" || true)"
+  if [ -z "$current_max_seq" ]; then
+    current_max_seq=0
+  fi
+
+  local pending_count=0
+  if [ "$current_max_seq" -gt "$baseline_max_seq" ]; then
+    pending_count=$((current_max_seq - baseline_max_seq))
+  fi
+
+  echo "  - ${label}: baseline=${baseline_max_seq}, current_max=${current_max_seq}, pending=${pending_count}"
+}
+
+dump_settlement_diagnostics() {
+  echo "==== Injective token-swap settlement diagnostics ===="
+  echo "Commitment snapshot:"
+  dump_commitment_snapshot_line "cardano->entrypoint (${CARDANO_CHAIN_ID}/${cardano_entrypoint_channel_id})" \
+    "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq"
+  dump_commitment_snapshot_line "entrypoint->injective (${ENTRYPOINT_CHAIN_ID}/${entrypoint_injective_channel_id})" \
+    "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id" "$baseline_entrypoint_injective_seq"
+  dump_commitment_snapshot_line "injective->entrypoint (${INJECTIVE_CHAIN_ID}/${injective_entrypoint_channel_id})" \
+    "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id" "$baseline_injective_entrypoint_seq"
+  dump_commitment_snapshot_line "entrypoint->cardano (${ENTRYPOINT_CHAIN_ID}/${entrypoint_cardano_channel_id})" \
+    "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id" "$baseline_entrypoint_cardano_seq"
+
+  dump_channel_end_status "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id"
+  dump_channel_end_status "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id"
+  dump_channel_end_status "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id"
+  dump_channel_end_status "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id"
+
+  dump_packet_commitments "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id"
+  dump_packet_commitments "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id"
+  dump_packet_commitments "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id"
+  dump_packet_commitments "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id"
+
+  dump_gateway_log_tail
+  dump_hermes_log_tail
+  dump_mithril_log_tails
+  echo "==== End diagnostics ===="
 }
 
 run_transfer_with_retries() {
@@ -364,6 +457,9 @@ wait_for_settlement() {
   local start_epoch
   start_epoch="$(date +%s)"
   local attempt=1
+  local last_pending_signature=""
+  local last_progress_epoch="$start_epoch"
+  local clear_passes_since_progress=0
 
   while true; do
     local pending_cardano_entrypoint
@@ -378,6 +474,7 @@ wait_for_settlement() {
 
     local pending_total
     pending_total=$((pending_cardano_entrypoint + pending_entrypoint_injective + pending_injective_entrypoint + pending_entrypoint_cardano))
+    local pending_signature="${pending_cardano_entrypoint}:${pending_entrypoint_injective}:${pending_injective_entrypoint}:${pending_entrypoint_cardano}"
 
     local elapsed
     elapsed=$(( $(date +%s) - start_epoch ))
@@ -389,6 +486,19 @@ wait_for_settlement() {
 
     if [ "$attempt" -eq 1 ] || [ $((attempt % SETTLEMENT_PROGRESS_EVERY_N_POLLS)) -eq 0 ]; then
       echo "Settlement status (${elapsed}s): pending commitments cardano->entrypoint=${pending_cardano_entrypoint}, entrypoint->injective=${pending_entrypoint_injective}, injective->entrypoint=${pending_injective_entrypoint}, entrypoint->cardano=${pending_entrypoint_cardano}, total=${pending_total}"
+    fi
+
+    if [ -z "$last_pending_signature" ]; then
+      last_pending_signature="$pending_signature"
+    elif [ "$pending_signature" != "$last_pending_signature" ]; then
+      local now_epoch
+      now_epoch="$(date +%s)"
+      local since_last_progress
+      since_last_progress=$((now_epoch - last_progress_epoch))
+      echo "Settlement progress observed after ${since_last_progress}s (signature ${last_pending_signature} -> ${pending_signature})."
+      last_pending_signature="$pending_signature"
+      last_progress_epoch="$now_epoch"
+      clear_passes_since_progress=0
     fi
 
     if [ $((attempt % 3)) -eq 0 ]; then
@@ -405,10 +515,23 @@ wait_for_settlement() {
       if [ "$pending_entrypoint_cardano" -gt 0 ]; then
         clear_packets_since_baseline "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id" "$baseline_entrypoint_cardano_seq"
       fi
+
+      clear_passes_since_progress=$((clear_passes_since_progress + 1))
+      local now_epoch
+      now_epoch="$(date +%s)"
+      local no_progress_elapsed
+      no_progress_elapsed=$((now_epoch - last_progress_epoch))
+      if [ "$no_progress_elapsed" -ge "$SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS" ] &&
+        [ "$clear_passes_since_progress" -ge "$SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES" ]; then
+        echo "Settlement appears stuck: no commitment-count change for ${no_progress_elapsed}s across ${clear_passes_since_progress} clear passes."
+        dump_settlement_diagnostics
+        return 1
+      fi
     fi
 
     if [ "$elapsed" -ge "$timeout_seconds" ]; then
       echo "Timed out after ${timeout_seconds}s waiting for Injective token swap settlement."
+      dump_settlement_diagnostics
       return 1
     fi
 
