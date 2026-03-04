@@ -1,29 +1,28 @@
-import { UTxO, PolicyId } from '@lucid-evolution/lucid';
-import { AuthToken } from '../../../../types/auth-token';
+import {
+  WithChannelContext,
+  WithChannelSpend,
+  WithConstructedAddress,
+  WithHostStateUpdate,
+  WithMintVoucherRedeemer,
+  WithPacketPolicyAndChannelToken,
+  WithTransferAmount,
+  WithTransferModuleSpend,
+  WithTransferModuleUtxo,
+  WithVerifyProof,
+} from './fragments';
 
-export type UnsignedAckPacketMintDto = {
-  hostStateUtxo: UTxO;
-  channelUtxo: UTxO;
-  connectionUtxo: UTxO;
-  clientUtxo: UTxO;
-  transferModuleUtxo: UTxO;
-
-  encodedHostStateRedeemer: string;
-  encodedUpdatedHostStateDatum: string;
-  encodedSpendChannelRedeemer: string;
-  encodedSpendTransferModuleRedeemer: string;
-  encodedMintVoucherRedeemer: string;
-  encodedUpdatedChannelDatum: string;
-
-  channelTokenUnit: string;
+// Operation DTOs are assembled from shared `With*` fragments plus only
+// operation-specific fields to keep structural contracts consistent.
+export type UnsignedAckPacketMintDto = WithHostStateUpdate &
+  WithChannelContext &
+  WithTransferModuleUtxo &
+  WithChannelSpend &
+  WithTransferModuleSpend &
+  WithMintVoucherRedeemer &
+  WithTransferAmount &
+  WithConstructedAddress &
+  WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &
+  WithVerifyProof & {
   voucherTokenUnit: string;
-  transferAmount: bigint;
   senderAddress: string;
-  constructedAddress: string;
-
-  ackPacketPolicyId: PolicyId;
-  channelToken: AuthToken;
-
-  verifyProofPolicyId: PolicyId;
-  encodedVerifyProofRedeemer: string;
 };

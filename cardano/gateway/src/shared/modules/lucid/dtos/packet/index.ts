@@ -8,3 +8,4 @@ export * from './send-packet-burn.dto';
 export * from './timeout-refresh-dto';
 export * from './timeout-packet-mint.dto';
 export * from './timeout-packet-unescrow.dto';
+export * from './fragments';
