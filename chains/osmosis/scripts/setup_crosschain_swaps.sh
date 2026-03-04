@@ -46,7 +46,8 @@ extract_channel_end_state() {
 }
 
 is_open_channel_state() {
-  [ "${1,,}" = "open" ]
+  _state_lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  [ "$_state_lower" = "open" ]
 }
 
 # Resolve a transfer channel id that has a valid, symmetric counterparty channel end.
