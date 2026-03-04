@@ -68,6 +68,7 @@ describe('PacketService sender wallet selection for escrow', () => {
       lucidServiceMock as unknown as LucidService,
       {} as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
 
     // Keep this test scoped to escrow wallet-selection behavior instead of HostState internals.

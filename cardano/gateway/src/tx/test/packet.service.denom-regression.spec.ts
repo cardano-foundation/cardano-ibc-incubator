@@ -70,6 +70,7 @@ describe('PacketService denom regression coverage', () => {
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
@@ -238,6 +239,7 @@ describe('PacketService denom regression coverage', () => {
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -410,6 +412,7 @@ describe('PacketService denom regression coverage', () => {
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
 
     const refreshWalletContextSpy = jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -569,6 +572,7 @@ describe('PacketService denom regression coverage', () => {
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as IbcTreePendingUpdatesService,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
